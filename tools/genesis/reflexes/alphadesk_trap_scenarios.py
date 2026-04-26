@@ -42,6 +42,11 @@ try:
 except ImportError:
     _run_scenario = None  # type: ignore[assignment]
 
+try:
+    from tools.fathomdesk.constants import BacktestResult as _BacktestResult
+except ImportError:
+    _BacktestResult = None  # type: ignore[assignment,misc]
+
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 CONFIDENCE_THRESHOLD = 0.8
@@ -174,6 +179,84 @@ def _write_digest(
     return digest_id
 
 
+# Maps trap patterns to a representative options strategy type for artifacts
+_PATTERN_TO_STRATEGY_TYPE: Dict[str, str] = {
+    "bull_trap": "risk_reversal_bear",
+    "bear_trap": "risk_reversal_bull",
+    "trap_against_position": "iron_condor",
+    "potential_reversal_cascade": "put_backspread",
+    "breakout_failure": "bear_put_spread",
+}
+_DEFAULT_STRATEGY_TYPE = "long_put"
+
+
+def _write_backtest_artifact(
+    trap: Dict[str, Any],
+    scenario_run_id: Optional[str],
+    date_str: str,
+) -> Optional[Path]:
+    """Write a BacktestResult institutional memory markdown artifact.
+
+    Filename: memory/institutional/backtest-[strategy_id]-[YYYY-MM-DD].md
+    Never overwrites — skips silently if the file already exists for that date.
+    Numeric fields unavailable from scenario simulation are recorded as None.
+    """
+    if _BacktestResult is None:
+        return None
+
+    ticker = trap.get("ticker", "unknown")
+    pattern = trap.get("pattern", "unknown")
+    confidence = trap.get("confidence", 0.0)
+    broken_level = trap.get("broken_level")
+    trap_created_at = trap.get("created_at", _utcnow_iso())
+
+    strategy_id = f"trap-{pattern.replace('_', '-')}"
+    safe_sid = strategy_id.replace("/", "-").replace("\\", "-")
+    strategy_type = _PATTERN_TO_STRATEGY_TYPE.get(pattern, _DEFAULT_STRATEGY_TYPE)
+
+    out_dir = BASE_DIR / "memory" / "institutional"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    out_path = out_dir / f"backtest-{safe_sid}-{date_str}.md"
+    if out_path.exists():
+        return None  # append-only: never overwrite
+
+    now_iso = _utcnow_iso()
+    lines = [
+        "# BacktestResult — Institutional Memory",
+        "",
+        f"**Generated:** {now_iso}",
+        f"**Date:** {date_str}",
+        "**Source:** alphadesk_trap_scenarios reflex",
+        "",
+        "## Fields",
+        "",
+        "| Field | Value | Note |",
+        "|-------|-------|------|",
+        f"| ticker | {ticker} | |",
+        f"| strategy_id | {strategy_id} | derived from trap pattern |",
+        f"| strategy_type | {strategy_type} | mapped from pattern `{pattern}` |",
+        "| sharpe_ratio | None | unavailable — scenario simulation only |",
+        "| max_drawdown_pct | None | unavailable — scenario simulation only |",
+        "| win_rate | None | unavailable — scenario simulation only |",
+        "| ev_per_trade | None | unavailable — scenario simulation only |",
+        "| trade_count | None | unavailable — scenario simulation only |",
+        f"| backtest_start | {trap_created_at} | trap event creation time |",
+        f"| backtest_end | {now_iso} | artifact write time |",
+        "| paper_default | True | scenario-based, not a live backtest |",
+        f"| created_at | {now_iso} | |",
+        "",
+        "## Context",
+        "",
+        f"- **Trap pattern:** {pattern}",
+        f"- **Confidence:** {confidence}",
+        f"- **Broken level:** {broken_level if broken_level is not None else 'N/A'}",
+        f"- **Scenario run ID:** {scenario_run_id or 'N/A (engine unavailable)'}",
+    ]
+    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out_path
+
+
 # ── Genesis contract ──────────────────────────────────────────────────────────
 
 
@@ -216,9 +299,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     print(f"  [trap_scenarios] found {len(events)} qualifying event(s)")
 
+    date_str = _today_date_str()
+
     # ── Spawn scenario for each qualifying event ──────────────────────────────
     scenarios_spawned = 0
     scenario_run_ids: List[str] = []
+    backtest_artifacts: List[str] = []
     for ev in events:
         ticker = ev.get("ticker", "?")
         pattern = ev.get("pattern", "?")
@@ -233,9 +319,22 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         elif _run_scenario is None:
             print("  [trap_scenarios] scenario_engine unavailable — skipping spawn")
 
+        # Emit BacktestResult institutional memory artifact
+        try:
+            artifact_path = _write_backtest_artifact(ev, run_result, date_str)
+            if artifact_path is not None:
+                backtest_artifacts.append(str(artifact_path))
+                print(f"  [trap_scenarios] backtest artifact written: {artifact_path.name}")
+            else:
+                print(
+                    "  [trap_scenarios] backtest artifact skipped "
+                    "(already exists or BacktestResult unavailable)"
+                )
+        except Exception as exc:
+            print(f"  [trap_scenarios] WARNING: backtest artifact write failed: {exc}")
+
     # ── Daily digest (at most once per calendar day) ──────────────────────────
     digest_post_id: Optional[str] = None
-    date_str = _today_date_str()
     digest_written = False
     try:
         if not _digest_already_written(config, date_str):
@@ -270,6 +369,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "scenarios_spawned": scenarios_spawned,
             "scenario_run_ids": scenario_run_ids,
             "scenario_engine_available": _run_scenario is not None,
+            "backtest_artifacts_written": len(backtest_artifacts),
+            "backtest_artifact_paths": backtest_artifacts,
             "digest_written": digest_written,
             "digest_post_id": digest_post_id,
             "run_at": check_started_at,
