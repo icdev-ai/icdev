@@ -71,6 +71,10 @@ TOTAL_GATES = 6
 _GATES_PATH = (
     Path(__file__).resolve().parents[3] / "args" / "options_risk_gates.yaml"
 )
+_FLOORS_PATH = (
+    Path(__file__).resolve().parents[3] / "args" / "fathomdesk_strategy_floors.yaml"
+)
+_BASE_DIR = Path(__file__).resolve().parents[3]
 
 _FALLBACK_GATES = {
     "max_loss_pct_of_equity": 2.0,
@@ -81,9 +85,80 @@ _FALLBACK_GATES = {
     "max_loss_floor_usd": 25,
 }
 
+_FALLBACK_FLOORS = {
+    "defaults": {"sharpe_min": 1.5, "max_drawdown_pct": 15.0},
+    "overrides": {},
+}
+
 _TIER_RANK = {"L1": 1, "L2": 2, "L3": 3, "L4": 4}
 
 _cache: dict[str, Any] = {"mtime": 0.0, "data": None}
+_floors_cache: dict[str, Any] = {"mtime": 0.0, "data": None}
+
+
+def _floors() -> dict:
+    """Hot-reload fathomdesk_strategy_floors.yaml. Returns merged defaults + overrides."""
+    try:
+        st = _FLOORS_PATH.stat()
+    except OSError:
+        return _FALLBACK_FLOORS
+    if st.st_mtime != _floors_cache["mtime"] or _floors_cache["data"] is None:
+        try:
+            _floors_cache["data"] = yaml.safe_load(_FLOORS_PATH.read_text(encoding="utf-8"))
+            _floors_cache["mtime"] = st.st_mtime
+        except Exception as e:
+            _log.warning("preflight: floors reload failed (%s)", e)
+            _floors_cache["data"] = _FALLBACK_FLOORS
+    return _floors_cache["data"] or _FALLBACK_FLOORS
+
+
+def _get_floor(strategy_id: str) -> dict:
+    """Return the effective floor config for a strategy (override merged onto defaults)."""
+    cfg = _floors()
+    defaults = dict(cfg.get("defaults") or {})
+    override = dict((cfg.get("overrides") or {}).get(strategy_id) or {})
+    return {**defaults, **override}
+
+
+def _latest_backtest(strategy_id: str) -> dict | None:
+    """Find the most recent institutional memory backtest artifact for strategy_id.
+
+    Searches memory/institutional/backtest-{strategy_id}-*.md.
+    Returns a dict with sharpe_ratio and max_drawdown_pct (either float or None),
+    or None if no artifact file exists.
+    """
+    inst_dir = _BASE_DIR / "memory" / "institutional"
+    if not inst_dir.is_dir():
+        return None
+
+    # Match files: backtest-{strategy_id}-YYYY-MM-DD.md
+    pattern = f"backtest-{strategy_id.replace('/', '-')}-*.md"
+    matches = sorted(inst_dir.glob(pattern), reverse=True)  # newest first by filename date
+
+    if not matches:
+        return None
+
+    # Parse the most recent file
+    text = matches[0].read_text(encoding="utf-8")
+    result: dict = {"sharpe_ratio": None, "max_drawdown_pct": None, "source_file": matches[0].name}
+
+    for line in text.splitlines():
+        if "| sharpe_ratio |" in line:
+            parts = [p.strip() for p in line.split("|")]
+            val = parts[2] if len(parts) > 2 else "None"
+            try:
+                result["sharpe_ratio"] = float(val) if val not in ("None", "", "—") else None
+            except ValueError:
+                pass
+        elif "| max_drawdown_pct |" in line:
+            parts = [p.strip() for p in line.split("|")]
+            val = parts[2] if len(parts) > 2 else "None"
+            try:
+                result["max_drawdown_pct"] = float(val) if val not in ("None", "", "—") else None
+            except ValueError:
+                pass
+
+    return result
 
 
 def _gates() -> dict:
@@ -180,6 +255,57 @@ def run_preflight(
     payoff = proposal.get("payoff") or {}
     max_loss_abs = abs(float(payoff.get("max_loss") or 0))
 
+    # ---- gate 0: per-strategy backtest quality floor -------------------
+    floor = _get_floor(strategy_id)
+    backtest = _latest_backtest(strategy_id)
+
+    if backtest is None:
+        # No artifact exists at all
+        msg = (
+            f"No backtest record found for '{strategy_id}'. "
+            "Run the signal tuner reflex to generate one before going live."
+        )
+        if is_live:
+            blocks.append({"code": GateResultCode.NO_BACKTEST_ON_RECORD, "message": msg})
+        else:
+            warnings.append({"code": GateResultCode.NO_BACKTEST_ON_RECORD, "message": msg})
+    else:
+        sharpe = backtest.get("sharpe_ratio")
+        drawdown = backtest.get("max_drawdown_pct")
+        sharpe_min = float(floor.get("sharpe_min") or 1.5)
+        dd_max = float(floor.get("max_drawdown_pct") or 15.0)
+
+        if sharpe is None or drawdown is None:
+            # Artifact exists but metrics not populated yet (scenario simulation artifacts)
+            msg = (
+                f"Backtest artifact for '{strategy_id}' exists but Sharpe/drawdown "
+                "metrics are not yet populated — scenario simulation only."
+            )
+            if is_live:
+                blocks.append({"code": GateResultCode.NO_BACKTEST_ON_RECORD, "message": msg})
+            else:
+                warnings.append({"code": GateResultCode.NO_BACKTEST_ON_RECORD, "message": msg})
+        else:
+            if sharpe < sharpe_min:
+                msg = (
+                    f"'{strategy_id}' Sharpe {sharpe:.2f} is below floor "
+                    f"{sharpe_min:.2f} (source: {backtest.get('source_file', 'unknown')})"
+                )
+                if is_live:
+                    blocks.append({"code": GateResultCode.BELOW_SHARPE_FLOOR, "message": msg})
+                else:
+                    warnings.append({"code": GateResultCode.BELOW_SHARPE_FLOOR, "message": msg})
+
+            if drawdown > dd_max:
+                msg = (
+                    f"'{strategy_id}' max drawdown {drawdown:.1f}% exceeds floor "
+                    f"{dd_max:.1f}% (source: {backtest.get('source_file', 'unknown')})"
+                )
+                if is_live:
+                    blocks.append({"code": GateResultCode.ABOVE_DRAWDOWN_FLOOR, "message": msg})
+                else:
+                    warnings.append({"code": GateResultCode.ABOVE_DRAWDOWN_FLOOR, "message": msg})
+
     # ---- gate 1: max-loss vs equity ------------------------------------
     eq = _account_equity(user_id, equity)
     max_loss_pct = None
@@ -269,5 +395,7 @@ def run_preflight(
             "dte": dte,
             "options_tier": options_tier,
             "is_live": is_live,
+            "gate0_backtest": backtest,
+            "gate0_floor": floor,
         },
     }
