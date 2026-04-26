@@ -704,10 +704,14 @@ def run_selenium(
 
     # Propagate the worktree root via PYTHONPATH so `import tools` resolves in
     # the subprocess even when the parent environment doesn't have it set.
+    # Prepend icdev/ before project root so `import tools` resolves via
+    # icdev.tools first, preventing bare tools/ from shadowing it.
     env = os.environ.copy()
     root_str = str(PROJECT_ROOT)
+    icdev_str = str(PROJECT_ROOT / "icdev")
+    combined = icdev_str + os.pathsep + root_str
     existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
+    env["PYTHONPATH"] = combined if not existing else combined + os.pathsep + existing
 
     try:
         proc = subprocess.run(

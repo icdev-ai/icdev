@@ -72,8 +72,12 @@ from selenium.webdriver.common.by import By
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+_ICDEV_DIR = BASE_DIR / "icdev"
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+# Prepend icdev/ so `import tools` resolves via icdev.tools before bare tools/
+if str(_ICDEV_DIR) not in sys.path:
+    sys.path.insert(0, str(_ICDEV_DIR))
 
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5050")
 SCREENSHOT_DIR = BASE_DIR / "playwright" / "screenshots"

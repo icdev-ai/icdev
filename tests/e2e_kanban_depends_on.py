@@ -31,9 +31,14 @@ from selenium.webdriver.common.by import By
 
 # Ensure project root is on sys.path so tools.* and icdev.tools.* resolve
 # regardless of the working directory the test is invoked from.
+# icdev/ is prepended first so `import tools` resolves via icdev.tools before
+# the bare tools/ package at the project root.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_ICDEV_ROOT = _PROJECT_ROOT / "icdev"
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+if str(_ICDEV_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ICDEV_ROOT))
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
