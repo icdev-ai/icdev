@@ -77,7 +77,7 @@ def observe(
         logger.debug(
             "reflex_observer: %s completed in %dms", reflex_name, duration_ms
         )
-        _record(reflex_name, started_at, finished_at, duration_ms, "ok", None, result)
+        _record(reflex_name, started_at, finished_at, duration_ms, "done", None, result)
         return result
     except Exception as exc:
         duration_ms = int((time.monotonic() - t0) * 1000)
