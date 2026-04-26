@@ -11301,6 +11301,25 @@ Planning rules:
             logger.exception("IP plan failed")
             return jsonify({"error": str(exc)}), 500
 
+    # ── AI Context Messages ────────────────────────────────────────────────
+    @bp.route("/api/ai-context/<ctx_id>/messages", methods=["GET"])
+    def nc_api_ai_context_messages(ctx_id):
+        """Return up to 50 messages for an AI context, ordered by turn_number."""
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, role, content, turn_number FROM chat_messages"
+                " WHERE context_id = ? ORDER BY turn_number ASC LIMIT 50",
+                (ctx_id,),
+            ).fetchall()
+            messages = [
+                {"role": r[1], "content": r[2], "turn_number": r[3]}
+                for r in rows
+            ]
+            return jsonify({"messages": messages})
+        finally:
+            conn.close()
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
