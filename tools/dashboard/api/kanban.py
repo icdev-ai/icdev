@@ -741,8 +741,10 @@ def move_task(task_id):
         if new_status == "done" and existing["status"] != "done":
             sql += ", completed_at = ?"
             vals.append(now)
+            if bypass:
+                sql += ", completed_via_bypass = 1"
         elif new_status != "done" and existing["status"] == "done":
-            sql += ", completed_at = NULL"
+            sql += ", completed_at = NULL, completed_via_bypass = 0"
         sql += " WHERE id = ?"
         vals.append(task_id)
 
