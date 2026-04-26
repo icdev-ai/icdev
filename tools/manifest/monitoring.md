@@ -14,4 +14,5 @@
 | Outcome Verifier | tools/monitor/outcome_verifier.py | Track PR merge status + failure recurrence, update pattern confidence (D-EVO-6) | --check-pending, --check-recurrence, --run-all, --status, --json | Verification log |
 | Push Agent | tools/monitor/push_agent.py | Lightweight sidecar: collect CPU/memory/disk per container (Docker stats or psutil), buffer to SQLite, push to dashboard on configurable interval; IL5/IL6 air-gap safe | --once, --daemon, --flush, --status, --interval, --dry-run, --json | Metrics JSON / push receipt |
 | Retention Manager | tools/monitor/retention.py | SQLite retention policy for container_metrics and heartbeat_checks; configurable window (default 7d, floor 1d); daemon or one-shot purge | --purge, --status, --daemon, --retention-days, --interval, --dry-run, --json | Purge summary JSON |
+| Reflex Observer | tools/monitoring/reflex_observer.py | observe() wrapper for Genesis reflexes; records to reflex_observations table | reflex_name, run_fn, *args, **kwargs | Reflex observation record |
 

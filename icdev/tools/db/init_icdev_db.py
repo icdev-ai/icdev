@@ -1785,7 +1785,7 @@ CREATE TABLE IF NOT EXISTS simulation_results (
     scenario_id TEXT NOT NULL REFERENCES simulation_scenarios(id),
     dimension TEXT NOT NULL
         CHECK(dimension IN ('architecture', 'compliance', 'supply_chain',
-            'schedule', 'cost', 'risk')),
+            'schedule', 'cost', 'risk', 'resource_allocation', 'quality')),
     metric_name TEXT NOT NULL,
     baseline_value REAL,
     simulated_value REAL,
@@ -9826,6 +9826,22 @@ CREATE TABLE IF NOT EXISTS canvas_kg_edges (
 );
 CREATE INDEX IF NOT EXISTS idx_ckg_edges_canvas
     ON canvas_kg_edges(canvas, design_id);
+
+CREATE TABLE IF NOT EXISTS reflex_observations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    reflex_name     TEXT NOT NULL,
+    started_at      TIMESTAMP NOT NULL DEFAULT (datetime('now')),
+    finished_at     TIMESTAMP,
+    duration_ms     INTEGER,
+    status          TEXT NOT NULL DEFAULT 'running',
+    artifact_count  INTEGER DEFAULT 0,
+    error_msg       TEXT,
+    result_json     TEXT DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_reflex_obs_name
+    ON reflex_observations(reflex_name);
+CREATE INDEX IF NOT EXISTS idx_reflex_obs_started
+    ON reflex_observations(started_at);
 """
 
 
