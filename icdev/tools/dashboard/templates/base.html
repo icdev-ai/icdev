@@ -184,9 +184,10 @@
             {% if migration_canvas_enabled %}
             <!-- Migration Design Canvas -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if '/migration-canvas' in request.path %}active{% endif %}" style="color:#27ae60;font-weight:600;">Migration</a>
+                <a href="#" class="{% if '/migration-canvas' in request.path or '/migration-intel' in request.path %}active{% endif %}" style="color:#27ae60;font-weight:600;">Migration</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/migration-canvas/">Dashboard</a></li>
+                    <li><a href="/migration-canvas/">Design Canvas</a></li>
+                    <li><a href="/migration-intel/">Intelligence Engine</a></li>
                     <li><a href="/migration-canvas/canvas/new">New Design</a></li>
                     <li><a href="/migration-canvas/templates">Templates</a></li>
                     <li><a href="/migration-canvas/assessments">Assessments</a></li>
@@ -268,11 +269,12 @@
 
             <!-- Utility -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/notifications'] %}active{% endif %}">More</a>
+                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/notifications', '/profile'] %}active{% endif %}">More</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/usage">Usage</a></li>
                     <li><a href="/notifications">Notifications</a></li>
                     <li><a href="/quick-paths">Quick Paths</a></li>
+                    <li><a href="/profile">Profile &amp; Settings</a></li>
                     <li><a href="/wizard" style="color: var(--accent-blue-light);">Get Started</a></li>
                 </ul>
             </li>

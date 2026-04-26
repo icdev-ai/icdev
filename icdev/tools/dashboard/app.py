@@ -884,6 +884,71 @@ _CANVAS_COMPLIANCE_CACHE: dict = {}   # {"ts": float, "data": list}
 _CANVAS_TREND_CACHE: dict = {}        # {"ts": float, "data": list}
 _CANVAS_CACHE_TTL = 45.0              # seconds
 
+_PATTERN_LABELS: dict[str, str] = {
+    "double_top": "▼ Double Top",
+    "double_bottom": "▲ Double Bottom",
+    "triple_top": "▼ Triple Top",
+    "triple_bottom": "▲ Triple Bottom",
+    "rising_wedge": "⋀ Rising Wedge",
+    "falling_wedge": "⋁ Falling Wedge",
+}
+
+
+def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
+    """Attach label, breakout_bar, confidence, price_low/high to each pattern."""
+    enriched = []
+    for p in patterns:
+        ep = dict(p)
+        ep["label"] = _PATTERN_LABELS.get(p["type"], p["type"])
+        ep["breakout_bar"] = p["end_bar"]
+
+        tol = p.get("tolerance_pct", 3.0) or 3.0
+
+        if p["type"] in ("double_top", "double_bottom"):
+            avg = p.get("avg_price") or 0.0
+            if p["type"] == "double_top":
+                s1, s2 = p["high_1"], p["high_2"]
+                ep["price_high"] = round(avg, 4)
+                ep["price_low"] = round(p["neckline"]["price"], 4)
+            else:
+                s1, s2 = p["low_1"], p["low_2"]
+                ep["price_low"] = round(avg, 4)
+                ep["price_high"] = round(p["neckline"]["price"], 4)
+            max_dev_pct = (max(abs(s1["price"] - avg), abs(s2["price"] - avg)) / avg * 100) if avg else 0
+            ep["confidence"] = round(max(0.10, min(0.99, 1.0 - max_dev_pct / tol)), 2)
+
+        elif p["type"] in ("triple_top", "triple_bottom"):
+            avg = p.get("avg_price") or 0.0
+            prices = [p["swing_1"]["price"], p["swing_2"]["price"], p["swing_3"]["price"]]
+            if p["type"] == "triple_top":
+                ep["price_high"] = round(avg, 4)
+                ep["price_low"] = round(min(prices), 4)
+            else:
+                ep["price_low"] = round(avg, 4)
+                ep["price_high"] = round(max(prices), 4)
+            max_dev_pct = (max(abs(pr - avg) for pr in prices) / avg * 100) if avg else 0
+            ep["confidence"] = round(max(0.10, min(0.99, 1.0 - max_dev_pct / tol)), 2)
+
+        elif p["type"] in ("rising_wedge", "falling_wedge"):
+            sb, eb = p["start_bar"], p["end_bar"]
+            sh = p.get("slope_high", 0)
+            ih = p.get("intercept_high", 0)
+            sl = p.get("slope_low", 0)
+            il = p.get("intercept_low", 0)
+            res_prices = [sh * sb + ih, sh * eb + ih]
+            sup_prices = [sl * sb + il, sl * eb + il]
+            ep["price_high"] = round(max(res_prices), 4)
+            ep["price_low"] = round(min(sup_prices), 4)
+            ep["confidence"] = 0.65
+
+        else:
+            ep["confidence"] = 0.50
+            ep.setdefault("price_low", 0.0)
+            ep.setdefault("price_high", 0.0)
+
+        enriched.append(ep)
+    return enriched
+
 
 def create_app() -> Flask:
     app = Flask(
@@ -930,6 +995,74 @@ def create_app() -> Flask:
             },
             200,
         )
+
+    @app.route("/api/live-check", methods=["GET"])
+    def api_live_check():
+        """Scheduler heartbeat + in_progress task count for the Live Activity panel."""
+        import pathlib
+        import time as _t
+        from flask import jsonify as _j
+        from tools.db.storage import get_connection as _gc
+
+        hb_path = pathlib.Path(".tmp/kanban_scheduler.heartbeat")
+        log_path = pathlib.Path(".tmp/kanban_scheduler.log")
+        sched_secs = None
+        for _p in (hb_path, log_path):
+            if _p.exists():
+                sched_secs = int(_t.time() - _p.stat().st_mtime)
+                break
+
+        if sched_secs is None:
+            staleness = "unknown"
+        elif sched_secs > 600:
+            staleness = "stale"
+        elif sched_secs > 180:
+            staleness = "warning"
+        else:
+            staleness = "active"
+
+        conn = _gc()
+        try:
+            rows = conn.execute(
+                "SELECT id, title, priority, task_type, failure_count, status, "
+                "last_failure_at, updated_at, dispatch_source, executor_type "
+                "FROM kanban_tasks WHERE status = 'in_progress' ORDER BY updated_at DESC"
+            ).fetchall()
+            tasks = [dict(r) for r in rows]
+            # kv-viz: add attempt_count, current_attempt_started_at, last_reaped_reason
+            from tools.dashboard.api.kanban import _annotate_in_progress_tasks
+            _annotate_in_progress_tasks(conn, tasks)
+        except Exception:
+            tasks = []
+        finally:
+            conn.close()
+
+        # Enrich each task with per-task liveness from its agent log file.
+        # .tmp/kanban/{task_id}.log is written by the Claude CLI subprocess
+        # while the agent is running. A stale or missing log while the task
+        # is still in_progress means the subprocess is dead or hung.
+        #
+        # task_log_age_secs thresholds (independent of scheduler heartbeat):
+        #   null          → log file not found yet (task just dispatched)
+        #   0 – 300       → active   (agent writing output in last 5 min)
+        #   300 – 900     → quiet    (agent silent 5-15 min; may be thinking)
+        #   > 900         → suspect  (likely zombie — log older than task timeout)
+        kanban_dir = BASE_DIR / ".tmp" / "kanban"
+        now_ts = _t.time()
+        for task in tasks:
+            log_file = kanban_dir / f"{task['id']}.log"
+            if log_file.exists():
+                task["task_log_age_secs"] = int(now_ts - log_file.stat().st_mtime)
+                task["task_log_size"] = log_file.stat().st_size
+            else:
+                task["task_log_age_secs"] = None
+                task["task_log_size"] = None
+
+        return _j({
+            "scheduler_last_seen_secs": sched_secs,
+            "staleness": staleness,
+            "tasks": tasks,
+        })
 
     # Role-based view configuration
     ROLE_VIEWS = {
@@ -1085,7 +1218,13 @@ def create_app() -> Flask:
     @app.route("/canvas-compliance")
     def canvas_compliance_page():
         """Unified compliance posture across all 7 design canvases."""
-        return render_template("canvas_compliance.html")
+        try:
+            from tools.canvas_compliance.compliance import get_all_cards
+            cards = get_all_cards()
+        except Exception as _exc:
+            app.logger.warning("canvas_compliance: get_all_cards failed: %s", _exc)
+            cards = []
+        return render_template("canvas_compliance.html", cards=cards)
 
     # ---- Design Canvases (all 8) ----
     _CANVAS_ROUTES = {
@@ -1109,6 +1248,33 @@ def create_app() -> Flask:
             app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
+
+    # ---- Simulation Chat Blueprint ----
+    try:
+        from tools.simulation.blueprint import create_simulation_blueprint
+        _sim_bp = create_simulation_blueprint()
+        if _sim_bp:
+            app.register_blueprint(_sim_bp)
+            app.logger.info("Simulation chat blueprint registered")
+    except Exception as _exc:
+        app.logger.warning("Simulation blueprint failed to register: %s", _exc)
+
+    # ---- Infra IaC Generator Blueprint ----
+    try:
+        from tools.infra.blueprint import bp as _infra_iac_bp
+        app.register_blueprint(_infra_iac_bp, url_prefix="/infra")
+        app.logger.info("Infra IaC blueprint registered at /infra")
+    except Exception as _exc:
+        app.logger.warning("Infra IaC blueprint failed to register: %s", _exc)
+
+    # ---- Migration Intelligence Engine Blueprint ----
+    try:
+        from tools.migration_intelligence.blueprint import create_migration_intel_blueprint
+        _mi_bp = create_migration_intel_blueprint()
+        app.register_blueprint(_mi_bp)
+        app.logger.info("Migration Intelligence blueprint registered at /migration-intel")
+    except Exception as _exc:
+        app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -7793,7 +7959,7 @@ def create_app() -> Flask:
     _LIKE_ESCAPE = "\\"
 
     def _escape_like(s: str) -> str:
-        """Escape LIKE metacharacters (% _ \) for use with `LIKE ? ESCAPE '\\'`."""
+        r"""Escape LIKE metacharacters (% _ \) for use with `LIKE ? ESCAPE '\\'`."""
         if not isinstance(s, str):
             return ""
         return (s.replace(_LIKE_ESCAPE, _LIKE_ESCAPE + _LIKE_ESCAPE)
@@ -8138,6 +8304,117 @@ def create_app() -> Flask:
         the anchor so old links still work."""
         return redirect("/kanban#project-digital-twin", code=302)
 
+    # ── FathomDesk News Intelligence ─────────────────────────────────────────
+    @app.route("/news")
+    def news_page():
+        """FathomDesk News — category-tab layout with sentiment sparklines."""
+        return render_template("news.html")
+
+    # ── FathomDesk Options Chain ──────────────────────────────────────────────
+    @app.route("/options")
+    def options_page():
+        """Options page — IV Rank/Percentile badge and chain viewer."""
+        ticker = flask_request.args.get("ticker", "SPY").upper()
+        return render_template("options.html", ticker=ticker)
+
+    # ── FathomDesk Trading Engine ─────────────────────────────────────────────
+    @app.route("/fathomdesk")
+    def fathomdesk_page():
+        """FathomDesk — trading chart with volume profile overlay."""
+        ticker = flask_request.args.get("ticker", "SPY").upper()
+        return render_template("fathomdesk.html", ticker=ticker)
+
+    @app.route("/api/trading/market")
+    def api_trading_market():
+        """Return macro context snapshot including qeqt_phase for FathomDesk overlay."""
+        try:
+            from tools.trading.data.macro_data import fetch_macro_context, fetch_extended_macro
+            ctx = fetch_macro_context()
+            ext = fetch_extended_macro()
+            return jsonify({
+                "macro_score": ctx.get("macro_score"),
+                "regime": ctx.get("regime"),
+                "qeqt_phase": ctx.get("qeqt_phase"),
+                "qeqt_magnitude": ext.get("qeqt_magnitude"),
+                "fed_bs_4w_roc_b": ext.get("fed_bs_4w_roc_b"),
+                "fed_bs_13w_roc_b": ext.get("fed_bs_13w_roc_b"),
+                "data_source": ctx.get("data_source"),
+                "fetched_at": ctx.get("fetched_at"),
+                "summary": ctx.get("summary"),
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/trading/chart/<ticker>")
+    def api_trading_chart(ticker: str):
+        """Return OHLCV bars, volume profile, patterns, and S/R levels for *ticker*."""
+        ticker = ticker.upper()
+        timeframe = flask_request.args.get("tf", "1D")
+        limit = min(int(flask_request.args.get("limit", 120)), 500)
+        try:
+            from tools.trading.data.market_data import fetch_bars
+            from tools.trading.ta.volume_profile import volume_profile as compute_vp
+            from tools.trading.ta.swings import find_swings
+            from tools.trading.ta.patterns import detect_patterns
+            from tools.trading.ta.support_resistance import compute_sr
+
+            bars = fetch_bars(ticker, timeframe, limit)
+            vp = compute_vp(bars, bucket_count=40)
+            swings = find_swings(bars)
+            raw_patterns = detect_patterns(bars)
+            sr_levels = compute_sr(bars, swings=swings)
+            patterns = _enrich_chart_patterns(raw_patterns)
+            return jsonify({
+                "ticker": ticker,
+                "bars": bars,
+                "volume_profile": vp,
+                "patterns": patterns,
+                "sr_levels": sr_levels,
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/fathomdesk/api/traps")
+    def fathomdesk_api_traps():
+        """Return last 20 trap events from ad_trap_events for the Trap History panel."""
+        def _confidence_to_severity(conf):
+            if conf is None:
+                return "medium"
+            if conf >= 0.8:
+                return "critical"
+            if conf >= 0.6:
+                return "high"
+            return "medium"
+
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                rows = conn.execute(
+                    "SELECT id, ticker, pattern, broken_level, confidence, "
+                    "volume_ratio, timeframe, evidence_json, created_at "
+                    "FROM ad_trap_events "
+                    "ORDER BY created_at DESC "
+                    "LIMIT 20"
+                ).fetchall()
+            finally:
+                conn.close()
+
+            events = []
+            for r in rows:
+                row = dict(r) if hasattr(r, "keys") else {
+                    "id": r[0], "ticker": r[1], "pattern": r[2],
+                    "broken_level": r[3], "confidence": r[4],
+                    "volume_ratio": r[5], "timeframe": r[6],
+                    "evidence_json": r[7], "created_at": r[8],
+                }
+                row["severity"] = _confidence_to_severity(row.get("confidence"))
+                events.append(row)
+
+            return jsonify({"events": events})
+        except Exception as exc:
+            return jsonify({"events": [], "error": str(exc)})
+
     return app
 
 
@@ -8195,6 +8472,42 @@ if __name__ == "__main__":
             print("[ICDEV™ Dashboard] Kanban scheduler started (60s interval)")
         else:
             print("[ICDEV™ Dashboard] Kanban scheduler not found — skipping")
+
+        # ── Watchdog: auto-restart scheduler if it dies ────────────────
+        # Polls the heartbeat file every 120s. If it's > 300s old the
+        # scheduler process crashed; spawn a fresh one.
+        if _ks_script.exists():
+            import threading as _ks_threading
+
+            def _ks_watchdog():
+                import time as _wt
+                _POLL = 120   # check every 2 min
+                _STALE = 300  # restart if heartbeat > 5 min old
+                while True:
+                    _wt.sleep(_POLL)
+                    try:
+                        age = _wt.time() - _ks_hb.stat().st_mtime if _ks_hb.exists() else 9999
+                        if age > _STALE:
+                            _log_dir = BASE_DIR / ".tmp"
+                            _log_dir.mkdir(parents=True, exist_ok=True)
+                            _lf = open(str(_log_dir / "kanban_scheduler.log"), "a", encoding="utf-8")  # noqa: SIM115
+                            _ks_sp.Popen(
+                                [sys.executable, str(_ks_script), "--interval", "60"],
+                                stdout=_lf,
+                                stderr=_ks_sp.STDOUT,
+                                cwd=str(BASE_DIR),
+                            )
+                            print(
+                                f"[ICDEV™ Dashboard] Kanban scheduler watchdog: "
+                                f"heartbeat was {int(age)}s old — restarted scheduler"
+                            )
+                    except Exception as _we:
+                        print(f"[ICDEV™ Dashboard] Kanban scheduler watchdog error: {_we}")
+
+            _ks_wd = _ks_threading.Thread(target=_ks_watchdog, name="kanban-scheduler-watchdog", daemon=True)
+            _ks_wd.start()
+            print("[ICDEV™ Dashboard] Kanban scheduler watchdog started (polls every 120s, restarts if >300s stale)")
+
     except Exception as _ks_err:
         print(f"[ICDEV™ Dashboard] Kanban scheduler failed to start: {_ks_err}")
 

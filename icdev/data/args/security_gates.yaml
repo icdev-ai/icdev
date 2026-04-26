@@ -1302,3 +1302,11 @@ fathomdesk_news_pipeline:
   thresholds:
     max_feed_parse_failures: 3
     max_classifier_backlog: 500
+
+osv_scanner:
+  description: "SCA vulnerability scanning via osv-scanner binary (github.com/google/osv-scanner)"
+  enabled: true
+  block_on_critical: true
+  warn_on_high: true
+  target: "requirements.txt"
+  binary_required: false  # graceful degradation when binary absent (air-gap)

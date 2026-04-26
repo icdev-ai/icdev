@@ -6,7 +6,6 @@ PostgreSQL only — SQLite uses BLOB which is untyped and unaffected.
 Requires pgvector extension (already present at v0.8.2).
 Safe to run with 0 existing embeddings (rows with NULL embedding remain NULL).
 """
-import importlib
 
 
 def _is_postgres(conn) -> bool:

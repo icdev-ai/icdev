@@ -32,6 +32,13 @@ from typing import Any, Dict, List, Optional
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+# Propagate the worktree root via os.environ so that any subprocess launched
+# without an explicit env= dict still resolves `import tools` correctly.
+_existing_pp = os.environ.get("PYTHONPATH", "")
+os.environ["PYTHONPATH"] = (
+    str(PROJECT_ROOT) if not _existing_pp
+    else str(PROJECT_ROOT) + os.pathsep + _existing_pp
+)
 
 from tools.testing.data_types import E2ETestResult  # noqa: E402
 from tools.testing.utils import (  # noqa: E402
@@ -704,13 +711,17 @@ def run_selenium(
     logger.info("e2e_runner: running tests via Selenium (pytest)")
     target = test_file or str(PROJECT_ROOT / "tests" / "e2e_selenium")
     cmd = [sys.executable, "-m", "pytest", target, "-v", "--tb=short", "-q"]
+    logger.info("e2e_runner: command: %s", " ".join(cmd))
 
+    # Propagate the worktree root via PYTHONPATH so `import tools` resolves in
+    # the subprocess even when the parent environment doesn't have it set.
+    # Use only the project root (parent of icdev/) — not icdev/ itself — so
+    # `import tools` resolves from the canonical project root.
     env = os.environ.copy()
     root_str = str(PROJECT_ROOT)
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
     logger.info("e2e_runner: PYTHONPATH=%s", env["PYTHONPATH"])
-    logger.info("e2e_runner: command: %s", " ".join(cmd))
 
     try:
         proc = subprocess.run(

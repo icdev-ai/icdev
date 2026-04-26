@@ -200,7 +200,15 @@ def get_safe_subprocess_env() -> Dict[str, str]:
     other key from the calling environment is dropped to minimise the
     risk of leaking unrelated credentials into a child process. Values
     that resolve to ``None`` are stripped from the result.
+
+    PROJECT_ROOT is always prepended to PYTHONPATH so that ``import tools``
+    resolves in subprocesses even when the parent environment does not have
+    the worktree root on sys.path.
     """
+    root_str = str(PROJECT_ROOT)
+    existing_pp = os.getenv("PYTHONPATH", "")
+    pythonpath = root_str if not existing_pp else root_str + os.pathsep + existing_pp
+
     raw: Dict[str, Optional[str]] = {
         # ── ICDEV configuration ────────────────────────────────────
         "ICDEV_DB_PATH": os.getenv(
@@ -242,7 +250,8 @@ def get_safe_subprocess_env() -> Dict[str, str]:
         # ── GitHub CLI ─────────────────────────────────────────────
         "GH_TOKEN": os.getenv("GH_TOKEN") or os.getenv("GITHUB_PAT"),
         # ── Python tunables ────────────────────────────────────────
-        "PYTHONPATH": os.getenv("PYTHONPATH"),
+        # Always includes worktree root so `import tools` resolves in subprocesses.
+        "PYTHONPATH": pythonpath,
         "PYTHONUNBUFFERED": "1",
         # ── Working directory at call time ─────────────────────────
         "PWD": os.getcwd(),
