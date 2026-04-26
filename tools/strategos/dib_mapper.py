@@ -598,20 +598,22 @@ def critical_path(db_path: str | None = None, side: str | None = None) -> list[d
         _ensure_tables(conn)
         build_dib_graph(db_path)
 
-        where = ""
-        params: list = []
-        if side:
-            where = "WHERE side = ?"
-            params.append(side)
+        _sql_all = (
+            "SELECT id, node_name, side, node_type, country, lat, lon,"
+            " systems_produced, blast_radius, criticality, notes"
+            " FROM dib_nodes ORDER BY blast_radius DESC, criticality ASC"
+        )
+        _sql_side = (
+            "SELECT id, node_name, side, node_type, country, lat, lon,"
+            " systems_produced, blast_radius, criticality, notes"
+            " FROM dib_nodes WHERE side = ?"
+            " ORDER BY blast_radius DESC, criticality ASC"
+        )
 
-        rows = conn.execute(
-            f"""SELECT id, node_name, side, node_type, country, lat, lon,
-                       systems_produced, blast_radius, criticality, notes
-                FROM dib_nodes
-                {where}
-                ORDER BY blast_radius DESC, criticality ASC""",
-            params,
-        ).fetchall()
+        if side:
+            rows = conn.execute(_sql_side, (side,)).fetchall()
+        else:
+            rows = conn.execute(_sql_all).fetchall()
 
         result = []
         for rank, row in enumerate(rows, 1):
