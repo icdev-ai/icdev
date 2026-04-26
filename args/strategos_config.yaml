@@ -20,3 +20,48 @@ sio:
     indicator_density: 0.9    # Raw indicator saturation across mobilisation axes
     temporal_pattern: 0.8     # Velocity / acceleration of indicator change
   min_confidence_threshold: 0.40
+
+osint:
+  # Maximum files processed per FILE_INBOX run (prevents inbox flood).
+  file_inbox_max: 500
+
+  # Internet-tier OSINT sources.
+  # internet_required: true  → only fetched in TIER_INTERNET mode
+  # internet_required: false → also attempted in TIER_GITLAB / TIER_FILE_INBOX (rare)
+  sources:
+    - name: "Reuters World News"
+      url: "https://feeds.reuters.com/reuters/worldNews"
+      type: rss
+      internet_required: true
+
+    - name: "BBC World News"
+      url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+      type: rss
+      internet_required: true
+
+    - name: "Al Jazeera"
+      url: "https://www.aljazeera.com/xml/rss/all.xml"
+      type: rss
+      internet_required: true
+
+    - name: "Defense One"
+      url: "https://www.defenseone.com/rss/all/"
+      type: rss
+      internet_required: true
+
+    - name: "CISA Alerts"
+      url: "https://www.cisa.gov/uscert/ncas/alerts.xml"
+      type: rss
+      internet_required: true
+
+    - name: "Bellingcat"
+      url: "https://www.bellingcat.com/feed/"
+      type: rss
+      internet_required: true
+
+  # GitLab artifact download settings (TIER_GITLAB).
+  gitlab:
+    # Env: GITLAB_URL, GITLAB_TOKEN, GITLAB_OSINT_PROJECT_ID, GITLAB_OSINT_REF
+    job_name: "osint_collect"
+    signals_file: "osint_signals.json"
+    kg_delta_file: "kg_delta.json"
