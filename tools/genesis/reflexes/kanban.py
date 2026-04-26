@@ -2751,6 +2751,29 @@ def _run_verify_checks(task_id, claude_output):
         # If scan task crashed immediately (<60s, non-zero exit), fall through
         # to the normal checks which will reject it properly.
 
+    # Check 0c — BYPASS COMPLETION EARLY EXIT: agent detected pre-existing
+    # correct state and completed without any code changes. The move-to-done
+    # API writes a kanban_verifications row with result='bypassed' when the
+    # caller supplies bypass_verification=true + bypass_reason. These tasks
+    # produce no git commits by design — skip the no-commits check entirely.
+    try:
+        _c0c = get_connection()
+        _brow = _c0c.execute(
+            "SELECT reason FROM kanban_verifications "
+            "WHERE task_id = ? AND result = 'bypassed' "
+            "ORDER BY verified_at DESC LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        _c0c.close()
+        if _brow is not None:
+            _bypass_reason_txt = (_brow["reason"] or "pre-existing correct state")[:80]
+            return True, (
+                f"Verified (bypass): task completed via bypass — "
+                f"no git commits expected ({_bypass_reason_txt})"
+            )
+    except Exception:
+        pass
+
     # Check 1: Claude output must be substantial
     if not claude_output or len(claude_output) < 200:
         return False, "Output too short — likely no work done"
@@ -3035,7 +3058,7 @@ def _run_verify_checks(task_id, claude_output):
         # (self_debug card diag-efff350a5b).
         if task_id.startswith("diag-"):
             _kanban_tmp = BASE_DIR / ".tmp" / "kanban"
-            _diag_artifacts = list(_kanban_tmp.glob(f"*-findings.md")) if _kanban_tmp.exists() else []
+            _diag_artifacts = list(_kanban_tmp.glob("*-findings.md")) if _kanban_tmp.exists() else []
             if _diag_artifacts:
                 return True, (
                     f"Verified (diag): findings artifact exists "
