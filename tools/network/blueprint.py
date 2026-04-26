@@ -8760,7 +8760,7 @@ Output ONLY the JSON object. No other text."""
         """Unified AI chat: route to topology generation or direct Q&A."""
         data = request.get_json(force=True, silent=True) or {}
         message = (data.get("message") or "").strip()
-        context_id = (data.get("context_id") or "").strip()
+        context_id = (data.get("context_id") or "").strip()  # noqa: F841
         mode = data.get("mode", "qa")
 
         if not message:
@@ -8768,7 +8768,7 @@ Output ONLY the JSON object. No other text."""
 
         is_topology = mode == "topology"
 
-        qa_system = (
+        qa_system = (  # noqa: F841
             _AI_TOPO_SYSTEM_PROMPT
             + "\n\nYou are also a network expert who can answer questions directly"
             " without generating JSON. When the user asks a question (rather than"
