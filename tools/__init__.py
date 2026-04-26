@@ -3,8 +3,8 @@
 The ICDEV™ tools package has moved to icdev.tools. This shim provides
 backward compatibility for existing scripts and child applications.
 
-Use the canonical absolute import form:
-    from icdev.tools.llm.router import LLMRouter
+Use relative imports within the package:
+    from .llm.router import LLMRouter
 """
 
 __all__ = []
@@ -44,11 +44,7 @@ class _ToolsRedirect(types.ModuleType):
         self.__file__ = __file__
 
     def __getattr__(self, name):
-        try:
-            return importlib.import_module(f"icdev.tools.{name}")
-        except ModuleNotFoundError:
-            # Fall back to normal sub-module resolution
-            return importlib.import_module(f".{name}", package=__name__)
+        return importlib.import_module(f".{name}", package=__name__)
 
 
 _redirect = _ToolsRedirect(__name__, __doc__)
