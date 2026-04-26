@@ -1,0 +1,72 @@
+# Authoritative exclusion registry for pip install icdev.
+# sync_package_tree.py, pyproject.toml, and MANIFEST.in all derive from this file.
+# Categories: marketplace | child_app | runtime_state | parent_platform
+#
+# Rules:
+#   marketplace      - external product sold via ICDEV Marketplace; not ICDEV core
+#   child_app        - standalone app built ON icdev, not part of the framework
+#   parent_platform  - SaaS/multi-tenant hosting layer; only needed for SaaS operators
+#   runtime_state    - generated at runtime; never shipped in a wheel
+
+exclusions:
+  # --- Marketplace modules (sold separately, synced to D:/ICDEV_BACKUP) ---
+  - path: apps/fathomdesk
+    category: marketplace
+    reason: FathomDesk is a marketplace product, not ICDEV core
+  - path: apps/alphadesk
+    category: marketplace
+    reason: AlphaDesk is a marketplace product
+  - path: tools/trading
+    category: marketplace
+    reason: FathomDesk trading tools; ships with FathomDesk, not core
+  - path: args/trading_config.yaml
+    category: marketplace
+    reason: FathomDesk config
+  - path: args/trading_daemon_config.yaml
+    category: marketplace
+    reason: FathomDesk config
+  - path: args/llm_config_trading.yaml
+    category: marketplace
+    reason: FathomDesk LLM override
+
+  # --- Child apps (standalone apps built on ICDEV, not the framework itself) ---
+  - path: marketplace-saas
+    category: child_app
+    reason: Marketplace SaaS hosting layer; not shipped in wheel
+  - path: intaas-saas
+    category: child_app
+    reason: INTaaS SaaS child app
+  - path: intaas-frontend
+    category: child_app
+    reason: INTaaS frontend child app
+
+  # --- Parent-platform (SaaS operator tier; not needed for framework users) ---
+  - path: tools/saas
+    category: parent_platform
+    reason: Multi-tenant SaaS API gateway; only needed when running icdev as a hosted service
+  - path: tools/marketplace
+    category: parent_platform
+    reason: Marketplace hosting engine
+  - path: tools/gateway
+    category: parent_platform
+    reason: API gateway for SaaS hosting
+
+  # --- Runtime state (never ship generated artifacts) ---
+  - path: data/pgdata
+    category: runtime_state
+  - path: data/backups
+    category: runtime_state
+  - path: data/genesis/exports
+    category: runtime_state
+  - path: data/pulse
+    category: runtime_state
+  - path: data/pulse_content
+    category: runtime_state
+  - path: backups
+    category: runtime_state
+  - path: build
+    category: runtime_state
+  - path: videos
+    category: runtime_state
+  - path: playwright
+    category: runtime_state
