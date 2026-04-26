@@ -114,7 +114,8 @@ _EXTENDED_TIMEOUT_PATTERNS = [
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
-    pytest / E2E / regression tasks get MAX_EXECUTION_SECONDS_PYTEST (30 min);
+    pytest / E2E suite / regression tasks get MAX_EXECUTION_SECONDS_PYTEST (40 min);
+    codelens / coherence / single-E2E tasks get MAX_EXECUTION_SECONDS_SCAN (20 min);
     everything else gets MAX_EXECUTION_SECONDS (15 min).
     Also checks the task description for a TIMEOUT_HINT:NNNs directive.
     """
@@ -123,23 +124,31 @@ def _get_task_timeout(task_id: str) -> int:
         if re.search(pattern, task_id_lower):
             return timeout
 
-    # Check task description for TIMEOUT_HINT:NNNs
+    # Check task description + task_type for TIMEOUT_HINT or heavy-tool heuristics
     try:
         conn = get_connection()
         row = conn.execute(
-            "SELECT description FROM kanban_tasks WHERE id = ?",
+            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
             (task_id,),
         ).fetchone()
         conn.close()
-        desc = ((row["description"] or "") if row else "").lower()
-        # Match "TIMEOUT_HINT:1800s" or "TIMEOUT_HINT: 1800"
+        d = dict(row) if row else {}
+        desc = (d.get("description") or "").lower()
+        task_type = (d.get("task_type") or "").lower()
+        # Explicit override always wins
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
-        # Heuristic: descriptions mentioning heavy tools get extended budget
-        if "pytest" in desc or "regression" in desc or "full test" in desc:
+        # PYTEST-level (40 min): full test suites, E2E suites, regression runs
+        _pytest_kw = ("pytest", "regression", "full test", "test suite",
+                      "e2e suite", "e2e test", "test_orchestrator")
+        if any(kw in desc for kw in _pytest_kw):
             return MAX_EXECUTION_SECONDS_PYTEST
-        if any(kw in desc for kw in ("codelens", "coherence_checker", "e2e_full", "companion")):
+        if task_type == "test" and any(kw in desc for kw in ("e2e", "playwright", "selenium")):
+            return MAX_EXECUTION_SECONDS_PYTEST
+        # SCAN-level (20 min): single tool runs, coherence checks, single E2E steps
+        _scan_kw = ("codelens", "coherence_checker", "e2e_full", "companion", "e2e")
+        if any(kw in desc for kw in _scan_kw):
             return MAX_EXECUTION_SECONDS_SCAN
     except Exception:
         pass
@@ -4006,6 +4015,21 @@ def _check_completed():
                     f"TIMEOUT after {int(elapsed)}s "
                     f"(max {task_budget}s) — task exceeded dispatch budget"
                 )
+                # Increment failure_count so the task health signal is accurate
+                try:
+                    _fc_conn = get_connection()
+                    _fc_now = datetime.now(timezone.utc).isoformat()
+                    _fc_conn.execute(
+                        "UPDATE kanban_tasks SET "
+                        "failure_count = COALESCE(failure_count, 0) + 1, "
+                        "last_failure_reason = ?, last_failure_at = ? "
+                        "WHERE id = ?",
+                        (_timeout_reason, _fc_now, task_id),
+                    )
+                    _fc_conn.commit()
+                    _fc_conn.close()
+                except Exception as _fc_exc:
+                    logger.warning("failure_count update failed for %s: %s", task_id, _fc_exc)
                 if _tout_count >= MAX_TIMEOUT_RETRIES:
                     _move_task(
                         task_id, "suggested",
