@@ -22,9 +22,14 @@ import pytest
 
 # Ensure the worktree root is first on sys.path so `import tools` resolves
 # correctly regardless of how pytest is invoked (subprocess, worktree, CI).
+# icdev/ is prepended before the project root so `import tools` resolves via
+# icdev.tools first, preventing bare tools/ from shadowing it.
 _WORKTREE_ROOT = str(Path(__file__).resolve().parents[2])
+_ICDEV_ROOT = str(Path(__file__).resolve().parents[2] / "icdev")
 if _WORKTREE_ROOT not in sys.path:
     sys.path.insert(0, _WORKTREE_ROOT)
+if _ICDEV_ROOT not in sys.path:
+    sys.path.insert(0, _ICDEV_ROOT)
 
 BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000")
 
