@@ -29,6 +29,12 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
+# Ensure project root is on sys.path so tools.* and icdev.tools.* resolve
+# regardless of the working directory the test is invoked from.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 BASE_URL = os.environ.get("DASHBOARD_URL", "http://localhost:5050")
