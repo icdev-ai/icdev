@@ -4,6 +4,40 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ob1
+  name: OB1 Memory Enhancements
+  description: 'Five patterns adapted from OB1 (Open Brain): (1) SHA-256 content_fingerprint
+    dedup on memory_entries; (2) entity relationship graph (supports/contradicts/supersedes)
+    + memory lint reflex; (3) match_thoughts PostgreSQL function + structured metadata
+    columns; (4) parallel embedding + metadata extraction in memory_write.py; (5)
+    wiki compiler 4-phase pipeline in Genesis v2.'
+  task_prefix: ob1-
+  default_open: true
+  briefs:
+  - 'Dedup: content_fingerprint column + SHA-256 upsert in memory_write.py — ob1-dedup'
+  - 'Relationships: memory_entity_relationships table + lint reflex — ob1-relgraph'
+  - 'Search: match_thoughts PG function + metadata columns — ob1-matchfn'
+  - 'Parallel: asyncio.gather for embed+metadata in memory_write.py — ob1-parallel'
+  - 'Wiki: 4-phase knowledge compiler Genesis reflex — ob1-wiki'
+  epics:
+  - key: dedup
+    title: SHA-256 Content Fingerprint Deduplication
+    priority: high
+  - key: relgraph
+    title: Entity Relationship Graph + Memory Lint Reflex
+    priority: high
+  - key: matchfn
+    title: match_thoughts PG Function + Metadata Columns
+    priority: medium
+  - key: parallel
+    title: Parallel Embedding + Metadata Extraction
+    priority: medium
+  - key: wiki
+    title: Wiki Compiler 4-Phase Genesis Reflex
+    priority: medium
+  - key: vv
+    title: V&V — Coherence, Companion, Health Check
+    priority: high
 - key: kv
   name: Kanban Task Visibility
   description: 'Surface in-progress task health on the Kanban board: attempt count
