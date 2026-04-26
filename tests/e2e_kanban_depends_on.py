@@ -157,8 +157,7 @@ def main() -> int:
     # don't get dispatched as real kanban work by the scheduler.
     try:
         wiped = _cleanup_stale_dep_rows()
-        if wiped:
-            result.ok("cleanup stale E2E-DEP rows", f"{wiped} removed")
+        result.ok("cleanup stale E2E-DEP rows", f"{wiped} removed")
     except Exception as e:
         result.fail("cleanup stale E2E-DEP rows", e)
 
