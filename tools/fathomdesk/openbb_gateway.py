@@ -94,6 +94,66 @@ class OpenBBGateway:
         """Return ``True`` if the openbb SDK is ready to serve requests."""
         return self._available
 
+    def get_price(self, ticker: str, period: str) -> dict:
+        """Fetch historical OHLCV price data for *ticker* over *period*.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+            period: Period string accepted by :func:`_period_to_date`,
+                e.g. ``"7d"``, ``"6m"``, ``"2y"``, ``"ytd"``.
+
+        Returns:
+            Dict with keys ``ticker``, ``indicator``, ``data``, ``source``,
+            and optionally ``error``.
+        """
+        if not self._available:
+            return {"ticker": ticker, "indicator": "price", "data": [], "source": "openbb", "error": "openbb not available"}
+        try:
+            start_date = _period_to_date(period)
+            result = self._obb.equity.price.historical(symbol=ticker, start_date=str(start_date))
+            data = result.to_df().to_dict(orient="records")
+            return {"ticker": ticker, "indicator": "price", "data": data, "source": "openbb"}
+        except Exception as exc:
+            return {"ticker": ticker, "indicator": "price", "data": [], "source": "openbb", "error": str(exc)}
+
+    def get_fundamentals(self, ticker: str) -> dict:
+        """Fetch fundamental overview data for *ticker*.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+
+        Returns:
+            Dict with keys ``ticker``, ``indicator``, ``data``, ``source``,
+            and optionally ``error``.
+        """
+        if not self._available:
+            return {"ticker": ticker, "indicator": "fundamentals", "data": [], "source": "openbb", "error": "openbb not available"}
+        try:
+            result = self._obb.equity.fundamental.overview(symbol=ticker)
+            data = result.to_df().to_dict(orient="records")
+            return {"ticker": ticker, "indicator": "fundamentals", "data": data, "source": "openbb"}
+        except Exception as exc:
+            return {"ticker": ticker, "indicator": "fundamentals", "data": [], "source": "openbb", "error": str(exc)}
+
+    def get_options_chain(self, ticker: str) -> dict:
+        """Fetch the full options chain for *ticker*.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+
+        Returns:
+            Dict with keys ``ticker``, ``indicator``, ``data``, ``source``,
+            and optionally ``error``.
+        """
+        if not self._available:
+            return {"ticker": ticker, "indicator": "options_chain", "data": [], "source": "openbb", "error": "openbb not available"}
+        try:
+            result = self._obb.derivatives.options.chains(symbol=ticker)
+            data = result.to_df().to_dict(orient="records")
+            return {"ticker": ticker, "indicator": "options_chain", "data": data, "source": "openbb"}
+        except Exception as exc:
+            return {"ticker": ticker, "indicator": "options_chain", "data": [], "source": "openbb", "error": str(exc)}
+
 
 # Module-level singleton — import and use directly:
 #   from tools.fathomdesk.openbb_gateway import gateway
