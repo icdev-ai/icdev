@@ -2757,12 +2757,29 @@ def _run_verify_checks(task_id, claude_output):
         # to the normal checks which will reject it properly.
 
     # Check 0c — BYPASS COMPLETION EARLY EXIT: agent detected pre-existing
-    # correct state and completed without any code changes. The move-to-done
-    # API writes a kanban_verifications row with result='bypassed' when the
-    # caller supplies bypass_verification=true + bypass_reason. These tasks
-    # produce no git commits by design — skip the no-commits check entirely.
+    # correct state and completed without any code changes. Two signals are
+    # checked (either is sufficient):
+    #   1. completed_via_bypass flag on the task row (primary — set by move
+    #      API / _move_task when bypass_verification=true is supplied)
+    #   2. kanban_verifications row with result='bypassed' (secondary —
+    #      belt-and-suspenders for callers that write the verifications row
+    #      but do not set the task flag)
+    # Tasks completed via bypass produce no git commits by design — skip the
+    # no-commits check entirely.
     try:
         _c0c = get_connection()
+        # Primary signal: metadata flag on the task row — cheapest check.
+        _bypass_meta = _c0c.execute(
+            "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if _bypass_meta and _bypass_meta["completed_via_bypass"]:
+            _c0c.close()
+            return True, (
+                "Verified (bypass): completed_via_bypass flag set on task — "
+                "no git commits expected (pre-existing correct state)"
+            )
+        # Secondary signal: verification row written by the move-to-done API.
         _brow = _c0c.execute(
             "SELECT reason FROM kanban_verifications "
             "WHERE task_id = ? AND result = 'bypassed' "
