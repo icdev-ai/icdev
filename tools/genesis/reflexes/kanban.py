@@ -1539,7 +1539,7 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
 
 
 def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
-               reason: str | None = None):
+               reason: str | None = None, completed_via_bypass: bool = False):
     """Update task status in the database.
 
     Policy changes (2026-04-15 V&V hardening):
@@ -1556,6 +1556,9 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         the operator can make explicitly).
       * Audit log: every transition (accepted or refused) is appended to
         ``kanban_status_transitions`` via ``_record_status_transition``.
+      * completed_via_bypass: when True and new_status == 'done', sets
+        the completed_via_bypass flag on the task row so bypass completions
+        are queryable without a JOIN to kanban_verifications.
     """
     conn = get_connection()
     try:
@@ -1587,6 +1590,8 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         if new_status == "done":
             sql += ", completed_at = ?"
             vals.append(now)
+            if completed_via_bypass:
+                sql += ", completed_via_bypass = 1"
         elif new_status == "in_progress":
             # Clear stale failure reason on re-dispatch so the Autonomous
             # Recovery panel doesn't keep showing this task as broken.

@@ -965,7 +965,8 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     failure_count        INTEGER DEFAULT 0,
     last_failure_reason  TEXT,
     last_failure_at      TEXT,
-    dispatch_source      TEXT DEFAULT 'unknown'
+    dispatch_source      TEXT DEFAULT 'unknown',
+    completed_via_bypass INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id);
 CREATE INDEX IF NOT EXISTS idx_kanban_failure_count ON kanban_tasks(failure_count);

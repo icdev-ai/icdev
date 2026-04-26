@@ -20,7 +20,6 @@ gate only applies to external callers (dashboard drag-drop, curl, tests).
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import uuid
 
@@ -37,21 +36,22 @@ def gated_kanban_client(tmp_path, monkeypatch):
     conn.executescript(
         """
         CREATE TABLE kanban_tasks (
-            id                 TEXT PRIMARY KEY,
-            title              TEXT NOT NULL,
-            description        TEXT,
-            task_type          TEXT DEFAULT 'build',
-            priority           TEXT DEFAULT 'medium',
-            status             TEXT DEFAULT 'backlog',
-            scheduled_at       TEXT,
-            created_at         TEXT,
-            updated_at         TEXT,
-            completed_at       TEXT,
-            executor_type      TEXT,
-            execution_id       TEXT,
-            executor_url       TEXT,
+            id                   TEXT PRIMARY KEY,
+            title                TEXT NOT NULL,
+            description          TEXT,
+            task_type            TEXT DEFAULT 'build',
+            priority             TEXT DEFAULT 'medium',
+            status               TEXT DEFAULT 'backlog',
+            scheduled_at         TEXT,
+            created_at           TEXT,
+            updated_at           TEXT,
+            completed_at         TEXT,
+            executor_type        TEXT,
+            execution_id         TEXT,
+            executor_url         TEXT,
             source_prediction_id TEXT,
-            depends_on_task_id TEXT
+            depends_on_task_id   TEXT,
+            completed_via_bypass INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE oracle_predictions (
             id              TEXT PRIMARY KEY,
@@ -187,10 +187,18 @@ class TestMoveEndpointGate:
             "WHERE task_id = ? ORDER BY verified_at DESC LIMIT 1",
             (tid,),
         ).fetchone()
-        conn.close()
         assert row is not None
         assert row["result"] == "bypassed"
         assert row["reason"] == "migration fixture"
+
+        # metadata flag: completed_via_bypass must be 1 on the task row
+        task_row = conn.execute(
+            "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
+            (tid,),
+        ).fetchone()
+        conn.close()
+        assert task_row is not None
+        assert task_row["completed_via_bypass"] == 1
 
     # [D]
     def test_non_done_transition_not_gated(self, gated_kanban_client):
