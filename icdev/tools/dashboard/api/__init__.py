@@ -245,6 +245,24 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.studio import studio_api
     _mount(studio_api, v1_prefix="/api/v1/studio")
 
+    try:
+        from tools.dashboard.api.news import news_api
+        _mount_inline(news_api)   # inline routes: /api/news/*
+    except Exception as exc:
+        logger.warning("news_api skipped: %s", exc)
+
+    try:
+        from tools.fathomdesk.blueprint import fathomdesk_api
+        _mount_inline(fathomdesk_api)   # inline routes: /fathomdesk/api/*
+    except Exception as exc:
+        logger.warning("fathomdesk_api skipped: %s", exc)
+
+    try:
+        from tools.dashboard.api.options import options_api
+        _mount_inline(options_api)   # inline routes: /api/options/*
+    except Exception as exc:
+        logger.warning("options_api skipped: %s", exc)
+
     # ------------------------------------------------------------------ #
     #  Optional blueprints — graceful skip on ImportError                 #
     # ------------------------------------------------------------------ #
@@ -298,6 +316,20 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
     logger.info("register_api_blueprints: all API blueprints mounted.")
+
+    # km-autoclose: sweep decomposed parents stuck before the auto-close hook
+    try:
+        from tools.kanban.state_machine import backfill_auto_close_parents
+        from tools.db.storage import get_connection as _gc
+        _conn = _gc()
+        try:
+            closed = backfill_auto_close_parents(_conn, actor="startup_backfill")
+            if closed:
+                logger.info("startup backfill auto-closed %d parent tasks: %s", len(closed), closed)
+        finally:
+            _conn.close()
+    except Exception as _exc:
+        logger.debug("startup auto-close backfill skipped: %s", _exc)
 
 
 # ---------------------------------------------------------------------------

@@ -7,19 +7,19 @@ Use the canonical absolute import form:
     from icdev.tools.llm.router import LLMRouter  # preferred
 """
 
-__all__ = []
+__all__ = ["LLMRouter"]
 
 import importlib
 import os
 import sys
 import types
-import warnings
 
-warnings.warn(
-    "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
-    DeprecationWarning,
-    stacklevel=2,
-)
+_tools_dir = os.path.dirname(os.path.abspath(__file__))
+_project_root = os.path.dirname(_tools_dir)
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+from icdev.tools.llm.router import LLMRouter  # noqa: E402
+_ICDEV_TOOLS_BASE = "icdev.tools"  # namespace root for dynamic importlib calls
 
 
 class _ToolsRedirect(types.ModuleType):
@@ -38,9 +38,8 @@ class _ToolsRedirect(types.ModuleType):
 
     def __getattr__(self, name):
         try:
-            return importlib.import_module(f"icdev.tools.{name}")
+            return importlib.import_module(f"{_ICDEV_TOOLS_BASE}.{name}")
         except ModuleNotFoundError:
-            # Fall back to normal sub-module resolution
             return importlib.import_module(f".{name}", package=__name__)
 
 

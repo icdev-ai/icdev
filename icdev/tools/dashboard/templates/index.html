@@ -381,6 +381,7 @@ function renderTaskKanban(tasks) {
     var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
+        if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
         if (columns[s]) columns[s].push(t);
         else columns.backlog.push(t);
     });
@@ -773,16 +774,18 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 </script>
 
-<!-- Remediation History Timeline -->
-<div class="card" style="padding:20px; margin-bottom:24px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-        <h2 style="margin:0; font-size:15px; font-weight:600;">Remediation History</h2>
-        <a href="/oracle" class="btn" style="font-size:12px; padding:5px 12px;">View All &rarr;</a>
+<!-- Remediation History Timeline (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Remediation History</span>
+        <a href="/oracle" class="btn" style="font-size:12px; padding:5px 12px;" onclick="event.stopPropagation();">View All &rarr;</a>
+    </summary>
+    <div class="card" style="padding:20px; margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <div id="remediation-history-list">
+            <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:13px;">Loading history...</div>
+        </div>
     </div>
-    <div id="remediation-history-list">
-        <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:13px;">Loading history...</div>
-    </div>
-</div>
+</details>
 
 <script>
 function _relativeTime(isoStr) {
@@ -878,74 +881,78 @@ function refreshRemediationHistory() {
 document.addEventListener('DOMContentLoaded', function() { refreshRemediationHistory(); });
 </script>
 
-<!-- Recent Activity & Findings -->
-<div class="table-container">
-    <div class="table-header">
-        <h2>Recent Activity &amp; Findings</h2>
-        <a href="/monitoring">View All</a>
+<!-- Recent Activity & Findings (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Recent Activity &amp; Findings</span>
+        <a href="/monitoring" onclick="event.stopPropagation();">View All</a>
+    </summary>
+    <div class="table-container" style="margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Source</th>
+                    <th>Details</th>
+                    <th>Severity</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in recent_activity %}
+                <tr>
+                    <td><span class="badge badge-info">{{ item.event_type }}</span></td>
+                    <td>{{ item.source }}</td>
+                    <td>{{ item.details }}</td>
+                    <td><span class="badge badge-{{ item.severity }}">{{ item.severity }}</span></td>
+                    <td class="text-muted" data-timestamp="{{ item.created_at }}">{{ item.created_at | friendly_time }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No recent activity &mdash; all clear</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-    <table>
-        <thead>
-            <tr>
-                <th>Event Type</th>
-                <th>Source</th>
-                <th>Details</th>
-                <th>Severity</th>
-                <th>When</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in recent_activity %}
-            <tr>
-                <td><span class="badge badge-info">{{ item.event_type }}</span></td>
-                <td>{{ item.source }}</td>
-                <td>{{ item.details }}</td>
-                <td><span class="badge badge-{{ item.severity }}">{{ item.severity }}</span></td>
-                <td class="text-muted" data-timestamp="{{ item.created_at }}">{{ item.created_at | friendly_time }}</td>
-            </tr>
-            {% else %}
-            <tr class="empty-row"><td colspan="5">No recent activity &mdash; all clear</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+</details>
 
-<!-- Recent Audit Trail -->
-<div class="table-container">
-    <div class="table-header">
-        <h2>Recent Activity</h2>
+<!-- Recent Audit Trail (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Recent Activity</span>
+    </summary>
+    <div class="table-container" style="margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Project</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in recent_audit %}
+                <tr>
+                    <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+                    <td>{{ entry.actor }}</td>
+                    <td>{{ entry.action }}</td>
+                    <td>
+                        {% if entry.project_id %}
+                        <a href="/projects/{{ entry.project_id }}">{{ entry.project_id[:12] }}</a>
+                        {% else %}
+                        <span class="text-muted">&mdash;</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted" data-timestamp="{{ entry.created_at }}" data-timestamp-format="ago">{{ entry.created_at | friendly_time }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No activity recorded yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
     </div>
-    <table>
-        <thead>
-            <tr>
-                <th>Event Type</th>
-                <th>Actor</th>
-                <th>Action</th>
-                <th>Project</th>
-                <th>When</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for entry in recent_audit %}
-            <tr>
-                <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
-                <td>{{ entry.actor }}</td>
-                <td>{{ entry.action }}</td>
-                <td>
-                    {% if entry.project_id %}
-                    <a href="/projects/{{ entry.project_id }}">{{ entry.project_id[:12] }}</a>
-                    {% else %}
-                    <span class="text-muted">&mdash;</span>
-                    {% endif %}
-                </td>
-                <td class="text-muted" data-timestamp="{{ entry.created_at }}" data-timestamp-format="ago">{{ entry.created_at | friendly_time }}</td>
-            </tr>
-            {% else %}
-            <tr class="empty-row"><td colspan="5">No activity recorded yet</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
+</details>
 {% endblock %}
 
 {% block scripts %}
