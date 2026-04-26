@@ -29,16 +29,11 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 
-# Ensure project root is on sys.path so tools.* and icdev.tools.* resolve
-# regardless of the working directory the test is invoked from.
-# icdev/ is prepended first so `import tools` resolves via icdev.tools before
-# the bare tools/ package at the project root.
+# Ensure project root is on sys.path so tools.* resolves regardless of the
+# working directory the test is invoked from.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_ICDEV_ROOT = _PROJECT_ROOT / "icdev"
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
-if str(_ICDEV_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ICDEV_ROOT))
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -130,7 +125,7 @@ def _cleanup_stale_dep_rows() -> int:
     Without this, leftover tasks are picked up by the kanban scheduler and
     dispatched as real work items, causing false-positive task failures.
     """
-    from icdev.tools.db.storage import get_connection
+    from tools.db.storage import get_connection
 
     conn = get_connection()
     try:
