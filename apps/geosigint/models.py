@@ -138,6 +138,36 @@ CREATE TABLE IF NOT EXISTS sg_tracks (
 CREATE INDEX IF NOT EXISTS idx_sg_tracks_mmsi ON sg_tracks(mmsi);
 CREATE INDEX IF NOT EXISTS idx_sg_tracks_timestamp ON sg_tracks(timestamp);
 CREATE INDEX IF NOT EXISTS idx_sg_tracks_location ON sg_tracks(lat, lon);
+
+-- Naval ORBAT — vessels of interest with capability flags
+CREATE TABLE IF NOT EXISTS vessel_orbat (
+    orbat_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    mmsi           TEXT NOT NULL UNIQUE,
+    vessel_name    TEXT NOT NULL,
+    vessel_class   TEXT,
+    nation         TEXT,
+    hull_number    TEXT,
+    displacement_t INTEGER,
+    kalibr_capable INTEGER NOT NULL DEFAULT 0,  -- 1 = carries Kalibr-NK/Kalibr-NKE
+    kalibr_range_km INTEGER DEFAULT 1500,        -- max range for threat ring
+    notes          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_orbat_mmsi ON vessel_orbat(mmsi);
+CREATE INDEX IF NOT EXISTS idx_orbat_kalibr ON vessel_orbat(kalibr_capable);
+
+-- KG nodes for ORBAT vessels (used by /graph endpoint enrichment)
+CREATE TABLE IF NOT EXISTS vessel_kg_nodes (
+    node_id        TEXT PRIMARY KEY,   -- "vessel:<mmsi>"
+    mmsi           TEXT NOT NULL UNIQUE,
+    vessel_name    TEXT NOT NULL,
+    nation         TEXT,
+    entity_type    TEXT DEFAULT 'vessel',
+    kalibr_capable INTEGER DEFAULT 0,
+    properties_json TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
 """
 
 

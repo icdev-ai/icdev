@@ -8,9 +8,17 @@ from __future__ import annotations
 
 import argparse
 
+import json
+import sys
+from pathlib import Path
+
 from flask import Flask, jsonify, render_template, request
 
 from models import get_connection, init_db
+
+# Allow importing domains/sea/tracker from repo root
+_REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_REPO))
 
 app = Flask(__name__)
 
@@ -276,6 +284,69 @@ def api_bands():
     conn = get_connection()
     try:
         return jsonify({"bands": _rows(conn.execute("SELECT * FROM frequency_bands ORDER BY min_freq_hz"))})
+    finally:
+        conn.close()
+
+
+@app.route("/api/sea/vessels")
+def api_sea_vessels():
+    """Latest AIS position per MMSI — used by the vessel track layer."""
+    from domains.sea.tracker import get_latest_positions
+    limit = min(int(request.args.get("limit", 2000)), 10000)
+    return jsonify({"vessels": get_latest_positions(limit)})
+
+
+@app.route("/api/sea/history")
+def api_sea_history():
+    """Chronological position history for a single MMSI."""
+    mmsi = request.args.get("mmsi", "").strip()
+    if not mmsi:
+        return jsonify({"error": "mmsi param required"}), 400
+    from domains.sea.tracker import get_vessel_history
+    limit = min(int(request.args.get("limit", 200)), 2000)
+    return jsonify({"history": get_vessel_history(mmsi, limit)})
+
+
+@app.route("/api/sea/summary")
+def api_sea_summary():
+    """Fleet-level statistics from sg_tracks."""
+    from domains.sea.tracker import get_vessel_summary
+    return jsonify(get_vessel_summary())
+
+
+@app.route("/api/sea/kalibr-zones")
+def api_kalibr_zones():
+    """Latest position of every Kalibr-capable ORBAT vessel.
+
+    Used by the Leaflet range ring layer to render 1 500 km threat circles.
+    """
+    from domains.sea.tracker import get_kalibr_positions
+    positions = get_kalibr_positions()
+    return jsonify({"kalibr_vessels": positions, "range_km": 1500})
+
+
+@app.route("/api/orbat/vessels")
+def api_orbat_vessels():
+    """All ORBAT vessel records."""
+    conn = get_connection()
+    try:
+        rows = _rows(conn.execute(
+            "SELECT * FROM vessel_orbat ORDER BY nation, vessel_name"
+        ))
+        return jsonify({"vessels": rows, "total": len(rows)})
+    finally:
+        conn.close()
+
+
+@app.route("/api/orbat/kg-nodes")
+def api_orbat_kg_nodes():
+    """Vessel KG nodes for knowledge-graph overlay."""
+    conn = get_connection()
+    try:
+        rows = _rows(conn.execute(
+            "SELECT * FROM vessel_kg_nodes ORDER BY nation, vessel_name"
+        ))
+        return jsonify({"nodes": rows})
     finally:
         conn.close()
 

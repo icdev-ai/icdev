@@ -334,6 +334,113 @@ def seed_space_weather(conn, days: int = 30):
     return len(obs)
 
 
+# ── Naval ORBAT: Kalibr-capable vessels (public-domain identification) ────
+# Sources: USNI News, GlobalSecurity.org, Federation of American Scientists
+ORBAT_VESSELS = [
+    # (mmsi, vessel_name, vessel_class, nation, hull_number, displacement_t, kalibr_capable, kalibr_range_km, seed_lat, seed_lon, notes)
+    # Russian Pacific Fleet — South China Sea / Indian Ocean transit
+    ("273394000", "Marshal Shaposhnikov", "Udaloy I (mod)", "Russia", "543",  7900, 1, 1500,   5.18, 104.32, "Upgraded 2021 with Kalibr-NK cells"),
+    ("273452000", "Admiral Tributs",      "Udaloy I",        "Russia", "564",  7900, 0, None,   13.42, 109.15, "No Kalibr upgrade confirmed"),
+    ("273271000", "Admiral Panteleyev",   "Udaloy I",        "Russia", "548",  7900, 0, None,    6.30, 106.80, "No Kalibr upgrade confirmed"),
+    # Kalibr-capable corvettes — Indian Ocean patrol
+    ("273381000", "Sovershenny",          "Steregushchy II", "Russia", "335",  2200, 1, 1500,   3.95, 103.50, "Kalibr-NK; Pacific Fleet"),
+    ("273401000", "Gromky",              "Steregushchy II", "Russia", "337",  2200, 1, 1500,  -1.20,  98.60, "Kalibr-NK; Pacific Fleet"),
+    # Russian Indian Ocean task group — near Diego Garcia approach
+    ("273344000", "Varyag",              "Slava-class",     "Russia", "011", 12000, 1, 1500,  -7.10,  74.90, "Upgraded; flagship Pacific Fleet"),
+    # PLAN vessels nearby (no Kalibr — different weapon but notable ORBAT)
+    ("412456789", "Nanjing",             "Type 052D",       "China",  "155",  7500, 0, None,   10.50, 114.20, "YJ-18 armed; not Kalibr"),
+    ("412678901", "Guiyang",             "Type 052D",       "China",  "119",  7500, 0, None,    8.75, 111.30, "YJ-18 armed; not Kalibr"),
+]
+
+
+def seed_orbat(conn) -> tuple[int, int, int]:
+    """Insert ORBAT vessels, KG nodes, and representative AIS track positions.
+
+    Returns (orbat_rows, kg_nodes, tracks_inserted).
+    """
+    import json as _json
+    from datetime import datetime, timezone, timedelta
+
+    now = datetime.now(timezone.utc)
+    orbat_inserted = 0
+    kg_inserted = 0
+    tracks_inserted = 0
+
+    for entry in ORBAT_VESSELS:
+        (mmsi, vname, vclass, nation, hull, disp, kalibr, k_range,
+         seed_lat, seed_lon, notes) = entry
+
+        # vessel_orbat
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO vessel_orbat
+                (mmsi, vessel_name, vessel_class, nation, hull_number,
+                 displacement_t, kalibr_capable, kalibr_range_km, notes)
+            VALUES (?,?,?,?,?,?,?,?,?)
+            """,
+            (mmsi, vname, vclass, nation, hull, disp, kalibr, k_range, notes),
+        )
+        orbat_inserted += 1
+
+        # vessel_kg_nodes
+        node_id = f"vessel:{mmsi}"
+        props = _json.dumps({
+            "vessel_class": vclass,
+            "hull_number": hull,
+            "displacement_t": disp,
+            "kalibr_capable": bool(kalibr),
+            "kalibr_range_km": k_range,
+            "notes": notes,
+        })
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO vessel_kg_nodes
+                (node_id, mmsi, vessel_name, nation, entity_type,
+                 kalibr_capable, properties_json)
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            (node_id, mmsi, vname, nation, "vessel", kalibr, props),
+        )
+        kg_inserted += 1
+
+        # Synthetic AIS track positions (1–4 fixes staggered over 6 h)
+        for offset_h in [6, 4, 2, 0]:
+            ts = (now - timedelta(hours=offset_h)).isoformat()
+            jlat = seed_lat + random.uniform(-0.05, 0.05) * (offset_h + 1)
+            jlon = seed_lon + random.uniform(-0.08, 0.08) * (offset_h + 1)
+            conn.execute(
+                """
+                INSERT INTO sg_tracks
+                    (mmsi, lat, lon, speed, heading, timestamp, vessel_type,
+                     source_file, msg_type)
+                VALUES (?,?,?,?,?,?,?,?,?)
+                """,
+                (mmsi, round(jlat, 5), round(jlon, 5),
+                 round(random.uniform(8, 18), 1),
+                 round(random.uniform(0, 359), 0),
+                 ts, f"Military ops ({vclass})", "orbat-seed", 1),
+            )
+            tracks_inserted += 1
+
+        # KG edge: vessel kg-node ↔ nearest station (located_near, if within 5000 km)
+        for row in conn.execute("SELECT station_id, lat, lon FROM stations"):
+            dist_km = math.hypot(seed_lat - row[1], seed_lon - row[2]) * 111
+            if dist_km < 5000:
+                conn.execute(
+                    """
+                    INSERT INTO kg_edges
+                        (source_type, source_id, target_type, target_id,
+                         relation, weight, metadata)
+                    VALUES ('vessel', ?, 'station', ?, 'located_near', ?, ?)
+                    """,
+                    (mmsi, row[0],
+                     round(max(0.05, 1 - dist_km / 5000), 3),
+                     _json.dumps({"dist_km": round(dist_km)})),
+                )
+
+    return orbat_inserted, kg_inserted, tracks_inserted
+
+
 def run_seed():
     """Full seed pipeline."""
     result = init_db()
@@ -364,6 +471,9 @@ def run_seed():
 
         wx_count = seed_space_weather(conn)
         print(f"  Space weather: {wx_count}")
+
+        o, k, t = seed_orbat(conn)
+        print(f"  ORBAT vessels: {o}  KG nodes: {k}  Tracks: {t}")
 
         conn.commit()
         print("Seed complete.")
