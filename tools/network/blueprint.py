@@ -8812,8 +8812,55 @@ Output ONLY the JSON object. No other text."""
             resp_data["mode"] = "topology"
             return jsonify(resp_data), resp.status_code
 
-        # Q&A mode — implemented in subsequent task (d4)
-        return jsonify({"ok": True, "is_topology": False, "mode": "qa"}), 200
+        # Q&A mode — call Anthropic with conversation history
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return jsonify({"error": "No ANTHROPIC_API_KEY set"}), 503
+
+        try:
+            history_messages = []
+            if context_id:
+                try:
+                    conn = get_connection()
+                    rows = conn.execute(
+                        "SELECT role, content FROM chat_messages WHERE context_id=? "
+                        "ORDER BY turn_number DESC LIMIT 10",
+                        (context_id,),
+                    ).fetchall()
+                    history_messages = [{"role": r[0], "content": r[1]} for r in reversed(rows)]
+                except Exception as exc:
+                    logger.warning("qa history load failed: %s", exc)
+
+            messages = history_messages + [{"role": "user", "content": description}]
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 1024,
+                    "system": qa_system,
+                    "messages": messages,
+                },
+                timeout=45,
+            )
+            if r.status_code != 200:
+                return jsonify({"error": f"Claude API error {r.status_code}"}), 503
+            answer = r.json()["content"][0]["text"]
+        except Exception as exc:
+            logger.exception("Q&A chat failed")
+            return jsonify({"error": str(exc)}), 500
+
+        if context_id:
+            _nc_save_message(context_id, "user", description)
+            _nc_save_message(context_id, "assistant", answer)
+
+        return jsonify({"ok": True, "mode": "qa", "answer": answer}), 200
 
     # ══════════════════════════════════════════════════════════════════════
     # API: AI Chat Pre-flight — Grilling / Clarifying Questions
