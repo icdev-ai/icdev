@@ -389,17 +389,17 @@ def _persist_lesson(task_id: str, reason: str, diag: Dict[str, Any]) -> Optional
         f"to recognize the same structural pattern."
     )
     try:
-        entry_id, dup = write_to_db(
+        result = write_to_db(
             content=lesson,
             entry_type="insight",
             importance=8,
             source="auto",
         )
-        if dup:
-            logger.info("self_debug: lesson already recorded (entry %s)", entry_id)
+        if result["status"] == "duplicate_merged":
+            logger.info("self_debug: lesson already recorded (entry %s)", result["id"])
         else:
-            logger.info("self_debug: persisted lesson as memory entry %s", entry_id)
-        return entry_id
+            logger.info("self_debug: persisted lesson as memory entry %s", result["id"])
+        return result["id"]
     except Exception as exc:
         logger.warning("self_debug: failed to persist lesson: %s", exc)
         return None
