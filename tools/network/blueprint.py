@@ -8813,6 +8813,8 @@ Output ONLY the JSON object. No other text."""
             return jsonify(resp_data), resp.status_code
 
         # Q&A mode — call Anthropic with conversation history
+        from tools.http.client import request as _req_request  # noqa: PLC0415
+
         api_key = os.environ.get("ANTHROPIC_API_KEY", "")
         if not api_key:
             return jsonify({"error": "No ANTHROPIC_API_KEY set"}), 503
