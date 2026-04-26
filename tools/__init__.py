@@ -23,9 +23,13 @@ import importlib
 import os
 import sys
 import types
+import warnings
 
-# Deprecation warning intentionally suppressed — this shim keeps legacy
-# ``tools.*`` imports working while the codebase migrates to ``icdev.tools.*``.
+warnings.warn(
+    "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class _ToolsRedirect(types.ModuleType):
