@@ -1023,11 +1023,14 @@ def create_app() -> Flask:
         conn = _gc()
         try:
             rows = conn.execute(
-                "SELECT id, title, priority, task_type, failure_count, "
+                "SELECT id, title, priority, task_type, failure_count, status, "
                 "last_failure_at, updated_at, dispatch_source, executor_type "
                 "FROM kanban_tasks WHERE status = 'in_progress' ORDER BY updated_at DESC"
             ).fetchall()
             tasks = [dict(r) for r in rows]
+            # kv-viz: add attempt_count, current_attempt_started_at, last_reaped_reason
+            from tools.dashboard.api.kanban import _annotate_in_progress_tasks
+            _annotate_in_progress_tasks(conn, tasks)
         except Exception:
             tasks = []
         finally:
