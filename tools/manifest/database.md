@@ -22,4 +22,5 @@
 | PG Init | tools/db/pg_init.py | PostgreSQL database initialization | --json | Initialization status |
 | PG Optimize All | tools/db/pg_optimize_all.py | PostgreSQL optimization for all tables | --json | Optimization results |
 | PG Optimize DataBridge | tools/db/pg_optimize_databridge.py | PostgreSQL optimization for DataBridge tables | --json | Optimization results |
+| Migration 018 — Reflex Observations | tools/db/migrations/018_reflex_observations.py | Idempotent DDL: creates `reflex_observations` table + 2 indexes for Genesis reflex execution telemetry (name, started_at, finished_at, duration_ms, status, artifact_count, error_msg, result_json) | (run via migrate.py --up) | Table + indexes created |
 
