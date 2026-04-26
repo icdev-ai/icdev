@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Knowledge Graph — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+#sg-kg-canvas { background: var(--bg-secondary); border-radius: 6px; width: 100%; height: 520px; }
+.kg-legend { display:flex;flex-wrap:wrap;gap:.75rem;margin-top:.75rem;font-size:.8rem }
+.kg-legend-item { display:flex;align-items:center;gap:.4rem }
+.kg-dot { width:10px;height:10px;border-radius:50%;display:inline-block }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Knowledge Graph <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Entity relationships</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<div class="card" style="padding:.75rem">
+    <canvas id="sg-kg-canvas"></canvas>
+    <div class="kg-legend">
+        <div class="kg-legend-item"><span class="kg-dot" style="background:#38bdf8"></span> Unit</div>
+        <div class="kg-legend-item"><span class="kg-dot" style="background:#f59e0b"></span> Signal</div>
+        <div class="kg-legend-item"><span class="kg-dot" style="background:#e94560"></span> Threat</div>
+        <div class="kg-legend-item"><span class="kg-dot" style="background:#10b981"></span> Actor</div>
+        <div class="kg-legend-item"><span class="kg-dot" style="background:#9b59b6"></span> Location</div>
+        <div class="kg-legend-item"><span class="kg-dot" style="background:#6b7280"></span> Event</div>
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem">
+    <div class="card">
+        <h3 style="margin-top:0">Graph Stats</h3>
+        <table style="width:100%;font-size:.875rem;border-collapse:collapse">
+            <tr><td style="padding:.35rem 0;color:var(--text-secondary)">Nodes</td><td style="text-align:right;font-weight:500">{{ graph.nodes|length }}</td></tr>
+            <tr><td style="padding:.35rem 0;color:var(--text-secondary)">Edges</td><td style="text-align:right;font-weight:500">{{ graph.edges|length }}</td></tr>
+        </table>
+    </div>
+    <div class="card">
+        <h3 style="margin-top:0">Relation Types</h3>
+        <div style="font-size:.875rem">
+            {% for r in graph.relation_counts[:8] %}
+            <div style="display:flex;justify-content:space-between;padding:.2rem 0">
+                <span style="color:var(--text-secondary)">{{ r.relation }}</span>
+                <span style="font-weight:500">{{ r.count }}</span>
+            </div>
+            {% else %}
+            <div style="color:var(--text-muted)">No edges yet.</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const NODE_COLORS = { unit:'#38bdf8', signal:'#f59e0b', threat:'#e94560', actor:'#10b981', location:'#9b59b6', event:'#6b7280', unknown:'#94a3b8' };
+    const canvas = document.getElementById('sg-kg-canvas');
+    const ctx = canvas.getContext('2d');
+
+    fetch('/strategos/api/kg').then(r=>r.json()).then(data => {
+        const nodes = data.nodes || [];
+        const edges = data.edges || [];
+        if (!nodes.length) {
+            ctx.fillStyle = 'var(--text-muted)';
+            ctx.font = '14px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('No knowledge graph data.', canvas.width/2, canvas.height/2);
+            return;
+        }
+        // Simple force layout (spring)
+        const W = canvas.offsetWidth, H = canvas.height;
+        canvas.width = W;
+        const pos = {};
+        nodes.forEach(n => {
+            pos[n.node_id] = { x: Math.random()*W, y: Math.random()*H, vx:0, vy:0 };
+        });
+        const edgeMap = {};
+        nodes.forEach(n => { edgeMap[n.node_id] = []; });
+        edges.forEach(e => {
+            if(edgeMap[e.source_id]) edgeMap[e.source_id].push(e.target_id);
+        });
+        for(let i=0;i<120;i++){
+            // Repulse
+            nodes.forEach(a => {
+                nodes.forEach(b => {
+                    if(a.node_id===b.node_id) return;
+                    const dx=pos[a.node_id].x-pos[b.node_id].x, dy=pos[a.node_id].y-pos[b.node_id].y;
+                    const d=Math.max(Math.sqrt(dx*dx+dy*dy),1);
+                    const f=600/(d*d);
+                    pos[a.node_id].vx+=dx/d*f; pos[a.node_id].vy+=dy/d*f;
+                });
+            });
+            // Attract
+            edges.forEach(e => {
+                if(!pos[e.source_id]||!pos[e.target_id]) return;
+                const dx=pos[e.target_id].x-pos[e.source_id].x, dy=pos[e.target_id].y-pos[e.source_id].y;
+                const d=Math.max(Math.sqrt(dx*dx+dy*dy),1);
+                const f=(d-80)*0.04;
+                pos[e.source_id].vx+=dx/d*f; pos[e.source_id].vy+=dy/d*f;
+                pos[e.target_id].vx-=dx/d*f; pos[e.target_id].vy-=dy/d*f;
+            });
+            nodes.forEach(n => {
+                pos[n.node_id].vx*=0.7; pos[n.node_id].vy*=0.7;
+                pos[n.node_id].x=Math.max(20,Math.min(W-20,pos[n.node_id].x+pos[n.node_id].vx));
+                pos[n.node_id].y=Math.max(20,Math.min(H-20,pos[n.node_id].y+pos[n.node_id].vy));
+            });
+        }
+        ctx.clearRect(0,0,W,H);
+        // Draw edges
+        ctx.strokeStyle='rgba(148,163,184,.3)'; ctx.lineWidth=1;
+        edges.forEach(e => {
+            if(!pos[e.source_id]||!pos[e.target_id]) return;
+            ctx.beginPath();
+            ctx.moveTo(pos[e.source_id].x,pos[e.source_id].y);
+            ctx.lineTo(pos[e.target_id].x,pos[e.target_id].y);
+            ctx.stroke();
+        });
+        // Draw nodes
+        nodes.forEach(n => {
+            const p=pos[n.node_id];
+            ctx.beginPath();
+            ctx.arc(p.x,p.y,7,0,Math.PI*2);
+            ctx.fillStyle=NODE_COLORS[n.node_type]||'#94a3b8';
+            ctx.fill();
+            ctx.fillStyle='var(--text-secondary)';
+            ctx.font='10px sans-serif';
+            ctx.textAlign='center';
+            ctx.fillText((n.label||n.node_id).slice(0,12),p.x,p.y+18);
+        });
+    }).catch(()=>{
+        ctx.fillStyle='#6b7280'; ctx.font='13px sans-serif'; ctx.textAlign='center';
+        ctx.fillText('Graph unavailable', canvas.width/2, canvas.height/2);
+    });
+})();
+</script>
+{% endblock %}
