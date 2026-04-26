@@ -392,6 +392,11 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "canvas_events",
         # ODC MITRE ATT&CK technique catalog (migration cvo-odc-01, append-only NIST AU)
         "odc_mitre_techniques",
+        # FathomDesk Market Breadth (migration 047 — periodic breadth snapshots, NIST AU)
+        "ad_breadth_snapshots",
+        # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
+        "ad_fear_greed_snapshots",
+        "ad_buffett_snapshots",
     ]
 
     if tool_name == "Bash":

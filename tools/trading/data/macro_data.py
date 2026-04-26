@@ -2118,3 +2118,266 @@ def score_extended_indicator(name: str, value) -> dict:
             return {"signal": "GREEN", "score": 75, "label": "Consumer confidence stable/rising"}
 
     return {"signal": "YELLOW", "score": 50, "label": f"Unknown extended indicator: {name}"}
+
+
+# ---------------------------------------------------------------------------
+# Fear & Greed Index  (7-component CNN-style composite, 0 = extreme fear, 100 = extreme greed)
+# ---------------------------------------------------------------------------
+
+def _fg_clamp(value: float, lo: float, hi: float) -> float:
+    """Linearly interpolate value from [lo..hi] → [0..100]."""
+    if hi == lo:
+        return 50.0
+    return max(0.0, min(100.0, (value - lo) / (hi - lo) * 100.0))
+
+
+def _fg_label(score: float) -> str:
+    if score < 25:
+        return "Extreme Fear"
+    if score < 45:
+        return "Fear"
+    if score < 56:
+        return "Neutral"
+    if score < 75:
+        return "Greed"
+    return "Extreme Greed"
+
+
+def get_value_signal(fg_score: float, buffett_pct: float) -> str:
+    """Combined Buffett/Munger entry-exit signal from Fear & Greed + Buffett Indicator."""
+    if fg_score < 25 and buffett_pct < 100:
+        return "BUFFETT WINDOW: ACCUMULATE QUALITY"
+    if fg_score < 25:
+        return "FEAR PRESENT: SELECTIVE BUYING"
+    if fg_score < 45 and buffett_pct < 115:
+        return "CAUTIOUS OPTIMISM"
+    if fg_score < 56:
+        return "NEUTRAL — WAIT FOR SETUP"
+    if fg_score < 75:
+        return "GREED BUILDING: BE SELECTIVE"
+    if buffett_pct > 175:
+        return "EXTREME GREED: RAISE CASH NOW"
+    return "BUFFETT EXIT: TRIM POSITIONS"
+
+
+def compute_fear_greed(
+    macro_ctx: dict | None = None,
+    bond_snap: dict | None = None,
+    ema_breadth: dict | None = None,
+) -> dict:
+    """Compute a 7-component Fear & Greed index (0 = extreme fear, 100 = extreme greed).
+
+    Args:
+        macro_ctx:   Output of fetch_macro_context() — provides VIX, SPY, put/call.
+        bond_snap:   Output of bond_etf_data.get_bond_etf_snapshot() — SPY/TLT/HYG/LQD momentum.
+        ema_breadth: Output of batch_scanner.compute_200ema_breadth() — breadth metrics.
+
+    Returns dict with composite score, label, per-component breakdown, and entry/exit signal.
+    """
+    try:
+        import yfinance as yf
+        _yf_ok = True
+    except ImportError:
+        _yf_ok = False
+
+    if macro_ctx is None:
+        try:
+            macro_ctx = fetch_macro_context()
+        except Exception:
+            macro_ctx = {}
+
+    raw = macro_ctx.get("raw_values", {})
+    components: dict[str, float] = {}
+
+    # 1. Market Momentum — SPY vs 125-day SMA
+    try:
+        spy_price = raw.get("sp500") or 0.0
+        spy_sma50 = raw.get("sp500_sma50") or 0.0
+        # Use SMA-50 as proxy for SMA-125 when not available; deviation still meaningful
+        sma_ref = spy_sma50 or spy_price
+        if sma_ref > 0 and spy_price > 0:
+            deviation_pct = (spy_price - sma_ref) / sma_ref * 100
+            components["momentum"] = round(_fg_clamp(deviation_pct, -5.0, 5.0), 1)
+        else:
+            components["momentum"] = 50.0
+    except Exception:
+        components["momentum"] = 50.0
+
+    # 2. Stock Price Strength — net 52W hi/lo ratio from breadth
+    try:
+        if ema_breadth and "net_hi_lo_ratio" in ema_breadth:
+            ratio = float(ema_breadth["net_hi_lo_ratio"])
+            components["strength"] = round(_fg_clamp(ratio, -0.4, 0.4), 1)
+        else:
+            components["strength"] = 50.0
+    except Exception:
+        components["strength"] = 50.0
+
+    # 3. Stock Breadth — % above 200 EMA
+    try:
+        if ema_breadth and "pct_above_200ema" in ema_breadth:
+            pct = float(ema_breadth["pct_above_200ema"])
+            components["breadth"] = round(_fg_clamp(pct, 20.0, 80.0), 1)
+        else:
+            components["breadth"] = 50.0
+    except Exception:
+        components["breadth"] = 50.0
+
+    # 4. Put/Call Ratio — lower PCR = greed (everyone buying calls)
+    try:
+        pcr = raw.get("put_call_ratio")
+        if pcr is None and _yf_ok:
+            # Fetch CBOE equity PCR via yfinance (^PCCE proxy)
+            try:
+                import yfinance as yf
+                pcr_data = yf.Ticker("^PCCE").history(period="5d")
+                if not pcr_data.empty:
+                    pcr = float(pcr_data["Close"].iloc[-1])
+            except Exception:
+                pcr = None
+        if pcr is not None:
+            # PCR < 0.7 = greed (100), PCR > 1.2 = fear (0)
+            components["put_call"] = round(_fg_clamp(pcr, 1.2, 0.7), 1)
+        else:
+            components["put_call"] = 50.0
+    except Exception:
+        components["put_call"] = 50.0
+
+    # 5. Market Volatility — VIX vs its 50-day average (lower VIX = greed)
+    try:
+        vix_current = raw.get("vix") or 0.0
+        if _yf_ok and vix_current > 0:
+            try:
+                import yfinance as yf
+                vix_hist = yf.Ticker("^VIX").history(period="3mo", interval="1d")
+                if len(vix_hist) >= 50:
+                    vix_50ma = float(vix_hist["Close"].iloc[-50:].mean())
+                    # VIX below its 50-MA = calm = greed; above = fear
+                    components["vix"] = round(_fg_clamp(vix_50ma - vix_current, -8.0, 8.0), 1)
+                else:
+                    components["vix"] = 50.0
+            except Exception:
+                components["vix"] = 50.0
+        else:
+            components["vix"] = 50.0
+    except Exception:
+        components["vix"] = 50.0
+
+    # 6. Safe Haven Demand — SPY 4W momentum vs TLT 4W momentum
+    try:
+        if bond_snap and "SPY" in bond_snap and "TLT" in bond_snap:
+            spy_mom = bond_snap["SPY"].get("momentum_4w") or 0.0
+            tlt_mom = bond_snap["TLT"].get("momentum_4w") or 0.0
+            spread = spy_mom - tlt_mom  # positive = stocks leading = greed
+            components["safe_haven"] = round(_fg_clamp(spread, -0.08, 0.08), 1)
+        else:
+            components["safe_haven"] = 50.0
+    except Exception:
+        components["safe_haven"] = 50.0
+
+    # 7. Junk Bond Demand — HYG momentum vs LQD momentum (tight spread = greed)
+    try:
+        if bond_snap and "HYG" in bond_snap and "LQD" in bond_snap:
+            hyg_mom = bond_snap["HYG"].get("momentum_4w") or 0.0
+            lqd_mom = bond_snap["LQD"].get("momentum_4w") or 0.0
+            spread = hyg_mom - lqd_mom  # positive = risk appetite = greed
+            components["junk_bond"] = round(_fg_clamp(spread, -0.06, 0.06), 1)
+        else:
+            components["junk_bond"] = 50.0
+    except Exception:
+        components["junk_bond"] = 50.0
+
+    composite = round(sum(components.values()) / len(components), 1)
+    label = _fg_label(composite)
+
+    # Fetch latest Buffett indicator for entry/exit signal
+    try:
+        buffett = compute_buffett_indicator()
+        buffett_pct = buffett.get("ratio_pct", 130.0)
+    except Exception:
+        buffett_pct = 130.0
+
+    return {
+        "composite": composite,
+        "label":     label,
+        "components": components,
+        "entry_exit_signal": get_value_signal(composite, buffett_pct),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Buffett Indicator  (Total Market Cap / GDP)
+# ---------------------------------------------------------------------------
+
+def _buffett_signal(ratio_pct: float) -> str:
+    if ratio_pct < 75:
+        return "DEEPLY UNDERVALUED"
+    if ratio_pct < 100:
+        return "UNDERVALUED"
+    if ratio_pct < 115:
+        return "FAIR VALUE"
+    if ratio_pct < 145:
+        return "OVERVALUED"
+    if ratio_pct < 175:
+        return "EXPENSIVE"
+    return "DANGEROUSLY OVERVALUED"
+
+
+def compute_buffett_indicator() -> dict:
+    """Compute the Buffett Indicator: Wilshire 5000 total-return index / US GDP.
+
+    Uses yfinance '^W5000' for market cap proxy and FRED 'GDP' for nominal GDP (already
+    fetched elsewhere in this module). Falls back to sample values when unavailable.
+
+    Returns dict with ratio_pct, wilshire_trn, gdp_trn, signal.
+    """
+    wilshire_trn: float | None = None
+    gdp_trn: float | None = None
+
+    # --- Wilshire 5000 via yfinance ---
+    try:
+        import yfinance as yf
+        w5 = yf.Ticker("^W5000")
+        hist = w5.history(period="5d")
+        if not hist.empty:
+            # ^W5000 is a price index, not market-cap directly.
+            # Market cap ≈ index_value * 1.35B shares equivalent (conventional scaling).
+            # Better: use the Wilshire 5000 Full-Cap Index level directly as a market-cap proxy
+            # (the index is designed so 1 point ≈ $1B of market cap historically).
+            w5_level = float(hist["Close"].iloc[-1])
+            wilshire_trn = round(w5_level / 1_000, 4)   # index points → approximate $T
+    except Exception:
+        wilshire_trn = None
+
+    # --- GDP level via FRED (series "GDP", quarterly, seasonally adjusted, billions) ---
+    try:
+        import os
+        fred_key = os.environ.get("FRED_API_KEY", "")
+        if fred_key:
+            from fredapi import Fred  # type: ignore
+            fred = Fred(api_key=fred_key)
+            gdp_series = fred.get_series("GDP", observation_start="2020-01-01")
+            gdp_clean  = gdp_series.dropna()
+            if len(gdp_clean) > 0:
+                gdp_billions = float(gdp_clean.iloc[-1])
+                gdp_trn = round(gdp_billions / 1_000, 4)
+    except Exception:
+        gdp_trn = None
+
+    # Fallback: US GDP ~$29T (2025 estimate)
+    if gdp_trn is None or gdp_trn < 1:
+        gdp_trn = 29.0
+
+    # Fallback: Wilshire 5000 ~$46T (2025 estimate, very high)
+    if wilshire_trn is None or wilshire_trn < 1:
+        wilshire_trn = 46.0
+
+    ratio_pct = round(wilshire_trn / gdp_trn * 100, 1)
+    signal    = _buffett_signal(ratio_pct)
+
+    return {
+        "ratio_pct":    ratio_pct,
+        "wilshire_trn": wilshire_trn,
+        "gdp_trn":      gdp_trn,
+        "signal":       signal,
+    }
