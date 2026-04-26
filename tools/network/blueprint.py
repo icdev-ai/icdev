@@ -151,6 +151,26 @@ def create_network_blueprint():
             "current_user": user,
         }
 
+    # ── Chat message helper ────────────────────────────────────────────────
+    def _nc_save_message(ctx_id: str, role: str, content: str) -> None:
+        """Insert a chat message into chat_messages with auto-incrementing turn_number."""
+        try:
+            msg_id = "ncmsg-" + _uuid.uuid4().hex[:12]
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT MAX(turn_number) FROM chat_messages WHERE context_id=?",
+                (ctx_id,),
+            ).fetchone()
+            turn_number = (row[0] or 0) + 1
+            conn.execute(
+                "INSERT INTO chat_messages (id, context_id, turn_number, role, content, content_type, created_at) "
+                "VALUES (?, ?, ?, ?, ?, 'text', ?)",
+                (msg_id, ctx_id, turn_number, role, content, datetime.utcnow().isoformat()),
+            )
+            conn.commit()
+        except Exception as exc:
+            logger.warning("_nc_save_message failed: %s", exc)
+
     # ══════════════════════════════════════════════════════════════════════
     # PAGE ROUTES
     # ══════════════════════════════════════════════════════════════════════
