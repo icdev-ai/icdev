@@ -7,7 +7,7 @@ Use relative imports within the package:
     from .llm.router import LLMRouter
 """
 
-__all__ = []
+__all__ = ["LLMRouter"]
 
 import importlib
 import os
