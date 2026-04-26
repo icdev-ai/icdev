@@ -1836,6 +1836,7 @@ function ncChatToggle() {
   panel.classList.toggle('hidden');
   if (!panel.classList.contains('hidden')) {
     document.getElementById('nc-chat-input').focus();
+    if (typeof ncChatInitContext === 'function') ncChatInitContext();
   }
 }
 

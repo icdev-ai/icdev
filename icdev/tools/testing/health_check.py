@@ -465,6 +465,54 @@ def check_playwright() -> CheckResult:
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# OSV-Scanner SCA check
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def check_osv_scanner() -> CheckResult:
+    """SCA vulnerability scan via osv-scanner binary."""
+    try:
+        from tools.security.osv_scanner import OsvScanner
+    except ImportError as exc:
+        return CheckResult(success=True, warning=f"osv_scanner module unavailable: {exc}", details={"status": "unavailable"})
+
+    scanner = OsvScanner()
+    if not scanner.available:
+        return CheckResult(
+            success=True,
+            warning="osv-scanner binary not in PATH — install from github.com/google/osv-scanner",
+            details={"status": "unavailable"},
+        )
+
+    result = scanner.run("requirements.txt")
+    if result.status == "error":
+        return CheckResult(success=False, error=f"osv-scanner error: {result.error}", details={"status": "error"})
+    if result.status == "clean":
+        return CheckResult(success=True, details={"status": "clean", "vuln_count": 0})
+
+    # vulnerabilities_found — block on critical, warn on high
+    details = {
+        "status": result.status,
+        "vuln_count": result.vuln_count,
+        "critical": result.critical,
+        "high": result.high,
+        "medium": result.medium,
+        "low": result.low,
+    }
+    if result.critical > 0:
+        return CheckResult(
+            success=False,
+            error=f"{result.critical} CRITICAL vulnerabilities found by osv-scanner",
+            details=details,
+        )
+    return CheckResult(
+        success=True,
+        warning=f"{result.vuln_count} vulnerabilities found (crit=0 high={result.high})",
+        details=details,
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Aggregate driver
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -478,6 +526,7 @@ _HEALTH_CHECKS: Dict[str, Callable[[], CheckResult]] = {
     "git_repository": check_git_repo,
     "claude_code": check_claude_code,
     "playwright": check_playwright,
+    "osv_scanner": check_osv_scanner,
 }
 
 
