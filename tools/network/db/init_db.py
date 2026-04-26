@@ -1735,6 +1735,18 @@ CREATE TABLE IF NOT EXISTS nc_ai_history (
     created_at   TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_nc_ai_history_created ON nc_ai_history(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id           TEXT PRIMARY KEY,
+    context_id   TEXT NOT NULL,
+    turn_number  INTEGER NOT NULL,
+    role         TEXT NOT NULL,
+    content      TEXT NOT NULL,
+    content_type TEXT,
+    created_at   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ncmsg_ctx  ON chat_messages(context_id);
+CREATE INDEX IF NOT EXISTS idx_ncmsg_turn ON chat_messages(context_id, turn_number);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
