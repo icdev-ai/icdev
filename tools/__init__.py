@@ -4,7 +4,7 @@ The ICDEV™ tools package has moved to icdev.tools. This shim provides
 backward compatibility for existing scripts and child applications.
 
 Use the canonical absolute import form:
-    from icdev.tools.llm.router import LLMRouter  # preferred
+    from icdev.tools.llm.router import LLMRouter
 """
 
 import importlib
