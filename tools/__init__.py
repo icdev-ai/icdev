@@ -13,13 +13,10 @@ import sys
 import types
 import warnings
 
-# Ensure the worktree/project root (parent of tools/) is on sys.path so that
-# 'import tools' works from any working directory or subdirectory.
 _tools_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_tools_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
-
 warnings.warn(
     "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
     DeprecationWarning,
