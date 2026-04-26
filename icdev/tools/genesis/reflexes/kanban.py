@@ -3071,13 +3071,32 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             )
     else:
         # Anchor to a single line so newlines don't pull in section headers.
+        # Skip "IF NOT EXISTS" so "Add CREATE TABLE IF NOT EXISTS foo" extracts "foo".
         table_match = re.search(
-            r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))[ \t]+(\w+)",
+            r"(?:create\s+table|add\s+(?:table|DB\s+table|schema))[ \t]+"
+            r"(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
             description,
             re.IGNORECASE,
         )
         if table_match:
             table_name = table_match.group(1)
+            # Skip tokens that are SQL keywords or common English words that appear
+            # near "CREATE TABLE IF NOT EXISTS" in descriptive prose — e.g.,
+            # "use the CREATE TABLE IF NOT EXISTS pattern from migration X".
+            _NON_TABLE_WORDS = frozenset({
+                "if", "pattern", "template", "approach", "style",
+                "format", "structure", "syntax", "statement", "clause",
+            })
+            if table_name.lower() in _NON_TABLE_WORDS:
+                table_name = None
+            # Blocklist: common English words that appear after "CREATE TABLE IF NOT EXISTS"
+            # in prose descriptions but are never actual table names.
+            _PROSE_WORDS = {
+                "pattern", "syntax", "template", "like", "similar", "example",
+                "approach", "format", "style", "convention", "idiom", "method",
+            }
+            if table_name and table_name.lower() in _PROSE_WORDS:
+                table_name = None
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
         # file with CREATE TABLE <name>, but that migration has not been
