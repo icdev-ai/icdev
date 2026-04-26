@@ -4,20 +4,74 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: km
+  name: Km Project
+  description: Auto-registered project for tasks with prefix 'km-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: km-
+  default_open: true
+  briefs: []
+  epics:
+  - key: autoclose
+    title: AUTOCLOSE
+    priority: medium
+  - key: multidep
+    title: MULTIDEP
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: erb
+    title: ERB
+    priority: medium
+  - key: portdiag
+    title: PORTDIAG
+    priority: medium
+  - key: wizard
+    title: WIZARD
+    priority: medium
+- key: fd
+  name: Fd Project
+  description: Auto-registered project for tasks with prefix 'fd-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: fd-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cost
+    title: COST
+    priority: medium
+  - key: floor
+    title: FLOOR
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: sync
+    title: SYNC
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: nmig
   name: Network Device Migration Workflow
   description: Vendor-agnostic network device migration workflow (chassis swap, peering
     add/change/move) — physical port mapping, compatibility checklist, config conversion,
-    SVG port diagram, cutover planner, ERB/CCB package generation, and SOP approval flow.
+    SVG port diagram, cutover planner, ERB/CCB package generation, and SOP approval
+    flow.
   task_prefix: nmig-
   default_open: true
   briefs:
-  - "DB schema: 6 mc_net_* tables — nmig-db-01 (done)"
-  - "Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01 (done)"
-  - "Blueprint: 23 network-migration API + page routes — nmig-engine-02 (done)"
-  - "UI: 8-step wizard (device/config/ports/compat/diff/test/cutover/ERB) — nmig-wizard-01/02/03 (done)"
-  - "Port diagram: SVG front-panel chassis view — nmig-portdiag-01 (done)"
-  - "ERB/CCB: print template + SOP approval flow — nmig-erb-01 (done)"
+  - 'DB schema: 6 mc_net_* tables — nmig-db-01 (done)'
+  - 'Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01 (done)'
+  - 'Blueprint: 23 network-migration API + page routes — nmig-engine-02 (done)'
+  - 'UI: 8-step wizard (device/config/ports/compat/diff/test/cutover/ERB) — nmig-wizard-01/02/03
+    (done)'
+  - 'Port diagram: SVG front-panel chassis view — nmig-portdiag-01 (done)'
+  - 'ERB/CCB: print template + SOP approval flow — nmig-erb-01 (done)'
   epics:
   - key: db
     title: DB Schema
@@ -34,22 +88,47 @@ projects:
   - key: erb
     title: ERB/CCB Package & Approval
     priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: cq
+    title: CQ
+    priority: medium
+  - key: pa
+    title: PA
+    priority: medium
+  - key: ph
+    title: PH
+    priority: medium
+  - key: pi
+    title: PI
+    priority: medium
+  - key: pl
+    title: PL
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
 - key: mi
   name: Migration Intelligence Engine
-  description: Autonomous migration opportunity discovery and planning aligned to enterprise
-    technical goals (5-10 year horizon). Canvas cross-scan, goal management, 7R strategy
-    generation, wave-based roadmaps, wishlist/budget lifecycle tracking, and Genesis reflex.
+  description: Autonomous migration opportunity discovery and planning aligned to
+    enterprise technical goals (5-10 year horizon). Canvas cross-scan, goal management,
+    7R strategy generation, wave-based roadmaps, wishlist/budget lifecycle tracking,
+    and Genesis reflex.
   task_prefix: mi-
   default_open: true
   briefs:
-  - "DB schema: 8 mi_* tables (goals, opps, strategies, roadmaps, wishlist, budget cycles, scans) — mi-db-01 (done)"
-  - "Goal manager: CRUD + NL chat parsing (air-gap conditional) — mi-goal-01 (done)"
-  - "Opportunity scanner: NDC EOL, topology, MDC cross-canvas — mi-scan-01 (done)"
-  - "Strategy generator: 7R + roadmap builder — mi-strat-01 (done)"
-  - "Migration manager: 8-stage pipeline + daemon + CLI — mi-mgr-01 (done)"
-  - "Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API — mi-api-01 (done)"
-  - "Dashboard UI: index.html with tabbed goals/opps/roadmaps/wishlist/chat — mi-ui-01 (done)"
-  - "Genesis reflex: migration_intel.py autonomous 24h scan — mi-reflex-01 (done)"
+  - 'DB schema: 8 mi_* tables (goals, opps, strategies, roadmaps, wishlist, budget
+    cycles, scans) — mi-db-01 (done)'
+  - 'Goal manager: CRUD + NL chat parsing (air-gap conditional) — mi-goal-01 (done)'
+  - 'Opportunity scanner: NDC EOL, topology, MDC cross-canvas — mi-scan-01 (done)'
+  - 'Strategy generator: 7R + roadmap builder — mi-strat-01 (done)'
+  - 'Migration manager: 8-stage pipeline + daemon + CLI — mi-mgr-01 (done)'
+  - 'Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API — mi-api-01
+    (done)'
+  - 'Dashboard UI: index.html with tabbed goals/opps/roadmaps/wishlist/chat — mi-ui-01
+    (done)'
+  - 'Genesis reflex: migration_intel.py autonomous 24h scan — mi-reflex-01 (done)'
   epics:
   - key: db
     title: DB Schema
@@ -185,6 +264,12 @@ projects:
   - key: vv
     title: V&V Gate
     priority: critical
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
 - key: cdh
   name: Code Health
   description: 'Systematic cleanup of 1,014 open oracle predictions: fix CRITICAL
@@ -210,6 +295,9 @@ projects:
   - key: test
     title: TEST
     priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
 - key: task_kb
   name: Task Kb Project
   description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
@@ -226,6 +314,30 @@ projects:
     priority: medium
   - key: twin
     title: TWIN
+    priority: medium
+  - key: l0
+    title: L0 — Foundation
+    priority: medium
+  - key: l1
+    title: L1 — Parsers / Ingestion
+    priority: medium
+  - key: l2
+    title: L2 — Router / Dispatch
+    priority: medium
+  - key: l3
+    title: L3 — Core Agent / Engine
+    priority: medium
+  - key: l4
+    title: L4 — Artifacts / Output
+    priority: medium
+  - key: l5
+    title: L5 — Dashboard UI
+    priority: medium
+  - key: l6
+    title: L6 — Integrations
+    priority: medium
+  - key: l7
+    title: L7 — Validation / Gate
     priority: medium
 - key: plan_dtwin_pdc_pipeline
   name: Plan Dtwin Pdc Pipeline Project
@@ -529,6 +641,27 @@ projects:
     priority: medium
   - key: share
     title: SHARE
+    priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: data
+    title: DATA
+    priority: medium
+  - key: ivr
+    title: IVR
+    priority: medium
+  - key: pgm
+    title: PGM
+    priority: medium
+  - key: profile
+    title: PROFILE
+    priority: medium
+  - key: sog
+    title: SOG
+    priority: medium
+  - key: viz
+    title: VIZ
     priority: medium
 - key: fathomdesk-7-8
   name: FathomDesk 7.8 — Greeks Deep Dive + Quick Wins
