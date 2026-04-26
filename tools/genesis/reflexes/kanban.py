@@ -3483,8 +3483,14 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         )
         if table_match:
             table_name = table_match.group(1)
-            # "IF" means the pattern matched "TABLE IF" (no actual table name) — skip
-            if table_name.upper() == "IF":
+            # Skip tokens that are SQL keywords or common English words that appear
+            # near "CREATE TABLE IF NOT EXISTS" in descriptive prose — e.g.,
+            # "use the CREATE TABLE IF NOT EXISTS pattern from migration X".
+            _NON_TABLE_WORDS = frozenset({
+                "if", "pattern", "template", "approach", "style",
+                "format", "structure", "syntax", "statement", "clause",
+            })
+            if table_name.lower() in _NON_TABLE_WORDS:
                 table_name = None
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
