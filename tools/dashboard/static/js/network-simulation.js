@@ -2004,7 +2004,59 @@ async function ncChatSend(opts) {
   }
 
   _ncChatAppendMsg('assistant', '<span class="nc-chat-thinking">Generating topology...</span>');
-  await _ncChatDirectGenerate(fullDescription, {architect_mode: !!opts.architect_mode});
+  try {
+    const r = await fetch(NC_BASE + '/api/ai-chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        description: fullDescription,
+        context_id: _ncChatContextId,
+        architect_mode: !!opts.architect_mode,
+      }),
+    });
+    const data = await r.json();
+
+    // Remove thinking indicator
+    const msgs = document.getElementById('nc-chat-messages');
+    const thinking = msgs ? msgs.querySelector('.nc-chat-thinking') : null;
+    if (thinking) thinking.closest('.nc-chat-msg').remove();
+
+    if (!r.ok || data.error) {
+      _ncChatAppendMsg('system', 'Error: ' + (data.error || 'Unknown'));
+    } else if (data.mode === 'qa') {
+      _ncChatAppendMsg('assistant', data.answer);
+    } else {
+      // topology mode
+      if (typeof pushUndo === 'function') pushUndo();
+      if (typeof loadGraphJSON === 'function') loadGraphJSON(data.graph_json);
+      if (typeof updateStatusBar === 'function') updateStatusBar();
+      if (typeof markDirty === 'function') markDirty();
+
+      const prov = data.provider ? ' via ' + data.provider : '';
+      let resultHtml = `Generated <strong>${data.node_count} nodes</strong> and <strong>${data.edge_count} edges</strong>${prov}. Loaded onto canvas.` +
+        `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">` +
+        `<button class="nc-chat-action-btn" onclick="if(typeof undoAction==='function')undoAction()" style="background:rgba(231,76,60,0.15);border-color:rgba(231,76,60,0.4);">↩ Undo</button>`;
+
+      if (data.migration_session_url) {
+        resultHtml += `<a class="nc-chat-action-btn" href="${_escHtml(data.migration_session_url)}" target="_blank" style="background:rgba(39,174,96,0.15);border-color:rgba(39,174,96,0.4);text-decoration:none;">🔄 Open Migration Workflow</a>`;
+      }
+      resultHtml += `</div>`;
+
+      if (data.is_migration) {
+        resultHtml += `<div style="margin-top:6px;padding:5px 8px;background:rgba(243,156,18,0.1);border-radius:4px;font-size:11px;color:#f39c12;">
+        Migration diagram: phases are laid out left-to-right (Silver=AS-IS → Orange=Phase 1 → Green=TO-BE).
+      </div>`;
+      }
+
+      _ncChatAppendMsg('assistant', resultHtml);
+      setStatus('AI generated: ' + data.node_count + ' nodes, ' + data.edge_count + ' edges');
+    }
+  } catch (err) {
+    const msgs = document.getElementById('nc-chat-messages');
+    const thinking = msgs ? msgs.querySelector('.nc-chat-thinking') : null;
+    if (thinking) thinking.closest('.nc-chat-msg').remove();
+    _ncChatAppendMsg('system', 'Request failed: ' + _escHtml(err.message));
+  }
 
   sendBtn.disabled = false;
   sendBtn.textContent = 'Send';
