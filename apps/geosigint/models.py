@@ -168,6 +168,47 @@ CREATE TABLE IF NOT EXISTS vessel_kg_nodes (
     properties_json TEXT,
     created_at     TEXT DEFAULT (datetime('now'))
 );
+
+-- Theater supply chain entities (logistics nodes, depots, corridors, ports)
+CREATE TABLE IF NOT EXISTS sg_entities (
+    entity_id      TEXT PRIMARY KEY,
+    entity_name    TEXT NOT NULL,
+    entity_type    TEXT NOT NULL,   -- logistics_node, port, rail_hub, depot, border_crossing, airbase
+    theater        TEXT NOT NULL,   -- ukraine, pacific, europe, ...
+    country        TEXT NOT NULL,
+    lat            REAL,
+    lon            REAL,
+    domain_profile TEXT DEFAULT 'war_economy',
+    capacity_json  TEXT,            -- JSON: {throughput_tpd, modes, gauge, ...}
+    criticality    TEXT DEFAULT 'high',
+    status         TEXT DEFAULT 'active',   -- active, degraded, contested, destroyed
+    notes          TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sg_ent_theater ON sg_entities(theater);
+CREATE INDEX IF NOT EXISTS idx_sg_ent_type    ON sg_entities(entity_type);
+CREATE INDEX IF NOT EXISTS idx_sg_ent_country ON sg_entities(country);
+
+-- Theater KG nodes — multi-entity-type knowledge graph (extends vessel_kg_nodes)
+--   Supported entity_type values:
+--     DefenseIndustrialNode, SupplyRoute, CriticalMaterial,
+--     SanctionsEvader, HumanitarianCorridor, logistics_node
+CREATE TABLE IF NOT EXISTS sg_kg_nodes (
+    node_id         TEXT PRIMARY KEY,   -- "<entity_type>:<entity_id>"
+    entity_id       TEXT NOT NULL,
+    entity_type     TEXT NOT NULL,
+    label           TEXT NOT NULL,
+    theater         TEXT,
+    country         TEXT,
+    lat             REAL,
+    lon             REAL,
+    properties_json TEXT,
+    created_at      TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sg_kg_theater ON sg_kg_nodes(theater);
+CREATE INDEX IF NOT EXISTS idx_sg_kg_type    ON sg_kg_nodes(entity_type);
 """
 
 
