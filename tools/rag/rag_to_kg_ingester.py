@@ -408,6 +408,32 @@ def run_backfill(tier: Optional[str] = None, as_json: bool = False) -> dict:
         conn.close()
 
 
+def ingest_chunk(conn, chunk_id: str) -> dict:
+    """Post-ingest hook: extract KG entities from a single newly-written chunk.
+
+    Accepts an existing connection so the caller can reuse a long-lived conn.
+    Commits internally. Raises on hard DB errors — caller's try/except isolates
+    KG failures from the RAG ingest transaction.
+    """
+    use_llm = _has_llm()
+    _ensure_tables(conn)
+
+    ph = sql_placeholder(conn)
+    row = conn.execute(
+        f"SELECT id, content, metadata, tier, tenant_id, classification, "  # nosec B608 — ph only; chunk_id bound
+        f"COALESCE(kg_node_ids, '[]') AS kg_node_ids "
+        f"FROM rag_chunks WHERE id = {ph}",
+        (chunk_id,),
+    ).fetchone()
+
+    if row is None:
+        return {"status": "not_found", "chunk_id": chunk_id}
+
+    stats = _ingest_chunk(conn, dict(row), use_llm)
+    conn.commit()
+    return {"status": "ok", "chunk_id": chunk_id, **stats}
+
+
 def run_single(chunk_id: str, as_json: bool = False) -> dict:
     """Process a single chunk by id."""
     use_llm = _has_llm()
