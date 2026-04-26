@@ -115,7 +115,7 @@ class AnthropicLLMProvider(LLMProvider):
         except Exception as exc:
             if use_thinking and "budget_tokens" in str(exc):
                 # Model doesn't support adaptive thinking — retry without it
-                logger.warning("Adaptive thinking not supported, retrying without: %s", exc)
+                logger.debug("Adaptive thinking not supported, retrying without: %s", exc)
                 kwargs.pop("thinking", None)
                 try:
                     message = client.messages.create(**kwargs)
