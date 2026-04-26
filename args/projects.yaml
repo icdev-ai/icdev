@@ -1010,3 +1010,36 @@ projects:
   - key: ui
     title: Phase 8 — FathomDesk UI Integration
     priority: critical
+- key: ragkg
+  name: RAG-KG Bridge
+  description: 'Connect the existing RAG pipeline (rag_chunks, hybrid_search.py) to
+    the Knowledge Graph (kg_nodes, kg_edges) so retrieved chunks are enriched with
+    entity relationships. Supports greenfield (RAG+KG from scratch) and brownfield
+    (existing RAG, KG only via resumable backfill). Includes source_chunk_id back-ref
+    for stale-node invalidation, tier filter, no-LLM NER fallback, tenant isolation,
+    classification boundary enforcement, disambiguation sweep, and unified /api/rag-kg/search
+    endpoint.'
+  task_prefix: ragkg-
+  default_open: true
+  briefs:
+  - 'Schema: source_chunk_id on kg_nodes + kg_node_ids on rag_chunks + backfill cursor — ragkg-schema-01'
+  - 'Ingester: rag_to_kg_ingester.py — backfill, tier filter, no-LLM NER, passthrough mode — ragkg-ingester-01/02'
+  - 'Hook: post-ingest trigger + stale-node invalidation in ingestion_manager.py — ragkg-hook-01'
+  - 'API: /api/rag-kg/search unified retrieval (classification-safe, pgvector/SQLite aware) — ragkg-api-01'
+  - 'V&V: greenfield + brownfield smoke tests, coherence, companion — ragkg-vv-01'
+  epics:
+  - key: schema
+    title: DB Migration (source_chunk_id + kg_node_ids + backfill cursor)
+    priority: high
+  - key: ingester
+    title: Core Ingester + Disambiguation Sweep
+    priority: high
+  - key: hook
+    title: Post-Ingest Hook + Stale-Node Invalidation
+    priority: high
+  - key: api
+    title: Unified /api/rag-kg/search Endpoint
+    priority: medium
+  - key: vv
+    title: V&V Sign-Off
+    priority: critical
