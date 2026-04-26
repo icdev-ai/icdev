@@ -24,3 +24,10 @@
 | PG Optimize DataBridge | tools/db/pg_optimize_databridge.py | PostgreSQL optimization for DataBridge tables | --json | Optimization results |
 | Migration 018 — Reflex Observations | tools/db/migrations/018_reflex_observations.py | Idempotent DDL: creates `reflex_observations` table + 2 indexes for Genesis reflex execution telemetry (name, started_at, finished_at, duration_ms, status, artifact_count, error_msg, result_json) | (run via migrate.py --up) | Table + indexes created |
 
+
+## Database Migrations
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Migration 018 — reflex_observations | tools/db/migrations/018_reflex_observations.py | Create reflex_observations table for tracking reflex execution telemetry (name, timing, status, artifact count, errors) | (library / `python … up()`) | Applies DDL; prints confirmation |
+| Migration 019 — backlog_task_reassign | tools/db/migrations/019_backlog_task_reassign.py | Re-assign orphaned backlog tasks (task-XXXXXXXX / diag-XXXXXXXX) to project-scoped IDs matching args/projects.yaml | (library / `python … up()`) | Applies data migration; prints confirmation |
+| Migration 020 — nc_topologies_schema | tools/db/migrations/020_nc_topologies_schema.py | Register nc_topologies table in icdev.db so the orphan_db_table gap rule resolves; primary schema lives in network_canvas.db | (library / `python … up()`) | Applies DDL; prints confirmation |
