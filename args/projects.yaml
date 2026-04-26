@@ -1046,3 +1046,32 @@ projects:
   - key: install
     title: pip install icdev — Greenfield/Brownfield Setup Wizard
     priority: high
+- key: pkgbuild
+  name: pip install icdev — Full Package Audit & Fix
+  description: 'Ensure pip install icdev ships the entire ICDEV framework (all 78+
+    tools/subsystems) except marketplace modules, untethered child apps, and runtime
+    state. Introduce args/package_exclusions.yaml as the single exclusion registry
+    so pyproject.toml, MANIFEST.in, and sync_package_tree.py never drift apart.
+    Fix version mismatch (1.2.23 vs 1.2.21), restore incorrectly excluded core
+    subsystems (pulse, govcon, proposal_genesis, rfx, autoresearch, scout, creative),
+    and wire icdev setup --rag-kg into the post-install flow.'
+  task_prefix: pkgbuild-
+  default_open: true
+  briefs:
+  - 'Exclusion registry: args/package_exclusions.yaml — authoritative list (marketplace/child_app/runtime_state) — pkgbuild-registry-01'
+  - 'pyproject.toml + MANIFEST.in + sync_package_tree.py: derive from registry, restore wrongly excluded core modules — pkgbuild-fix-01'
+  - 'Version sync: _version.py == pyproject.toml == changelog — pkgbuild-version-01'
+  - 'Wheel smoke test: build wheel, inspect contents, confirm core modules present + excluded absent — pkgbuild-vv-01'
+  epics:
+  - key: registry
+    title: Package Exclusion Registry (args/package_exclusions.yaml)
+    priority: high
+  - key: fix
+    title: pyproject.toml + MANIFEST.in + sync_package_tree.py Fix
+    priority: high
+  - key: version
+    title: Version Mismatch Fix
+    priority: medium
+  - key: vv
+    title: Wheel Smoke Test + V&V Gate
+    priority: critical
