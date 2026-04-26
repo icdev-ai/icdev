@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -47,6 +48,7 @@ class KanbanState(str, Enum):
     MERGE_CONFLICT = "merge_conflict"
     CHANGES_REQUESTED = "changes_requested"
     TOKEN_EXHAUSTED = "token_exhausted"
+    DECOMPOSED = "decomposed"
     DONE = "done"
     FAILED = "failed"
 
@@ -101,6 +103,8 @@ _TRANSITIONS: Dict[Tuple[KanbanState, KanbanState], str] = {
     (KanbanState.TOKEN_EXHAUSTED, KanbanState.IN_PROGRESS): "resume_after_wait",
     (KanbanState.TOKEN_EXHAUSTED, KanbanState.BACKLOG): "give_up",
     (KanbanState.TOKEN_EXHAUSTED, KanbanState.FAILED): "fail",
+    # Decomposed parents are closed by the auto-close sweep once all subtasks finish
+    (KanbanState.DECOMPOSED, KanbanState.DONE): "auto_complete",
 }
 
 
@@ -115,6 +119,7 @@ _STATE_TO_DB_STATUS: Dict[KanbanState, str] = {
     KanbanState.MERGE_CONFLICT: "in_progress",
     KanbanState.CHANGES_REQUESTED: "in_progress",
     KanbanState.TOKEN_EXHAUSTED: "token_exhausted",
+    KanbanState.DECOMPOSED: "decomposed",
     KanbanState.DONE: "done",
     # `failed` has no direct schema slot; map to token_exhausted so the
     # scheduler keeps it out of the active queue.
@@ -315,6 +320,103 @@ def parse_state(value: Optional[str]) -> Optional[KanbanState]:
 # Decomposed-parent auto-close (km-autoclose)
 # ────────────────────────────────────────────────────────────────────────────
 
+# Pattern: a subtask ID looks like "{parent_id}-d{digits}", e.g. fd-floor-02-d3
+_DECOMPOSED_SUBTASK_RE = re.compile(r"^(.+)-d\d+$")
+
+
+def _infer_decomposed_parent_id(task_id: str) -> Optional[str]:
+    """Extract the parent task ID from a decomposed subtask ID.
+
+    Returns ``None`` if the ID doesn't match the ``{parent}-d{N}`` convention.
+
+    Examples
+    --------
+    >>> _infer_decomposed_parent_id("fd-floor-02-d3")
+    'fd-floor-02'
+    >>> _infer_decomposed_parent_id("fd-floor-02")
+    None
+    """
+    m = _DECOMPOSED_SUBTASK_RE.match(task_id)
+    return m.group(1) if m else None
+
+
+def auto_close_by_naming_convention(
+    child_task_id: str,
+    conn,
+    actor: str = "auto_close_sweep",
+) -> Optional[TransitionResult]:
+    """Close a decomposed parent when every ``{parent_id}-d{N}`` subtask is done.
+
+    This is Path 3 of the auto-close sweep — it handles the case where subtasks
+    were created with the ``{parent}-d{N}`` ID convention but do NOT share a
+    ``source_prediction_id`` with the parent and do NOT directly declare
+    ``depends_on_task_id = parent_id``.
+
+    The function is safe to call on any task completion — it is a no-op when
+    the ID doesn't match the convention or the parent isn't in ``decomposed``
+    status.
+
+    Parameters
+    ----------
+    child_task_id:
+        The just-completed subtask, e.g. ``fd-floor-02-d4``.
+    conn:
+        Open DB connection (``get_connection()`` wrapper). Caller commits.
+    actor:
+        Label written to the audit trail.
+
+    Returns
+    -------
+    TransitionResult if the parent was closed, None otherwise.
+    """
+    parent_id = _infer_decomposed_parent_id(child_task_id)
+    if not parent_id:
+        return None
+
+    parent_row = conn.execute(
+        "SELECT status FROM kanban_tasks WHERE id = %s", (parent_id,)
+    ).fetchone()
+    if not parent_row:
+        return None
+
+    parent_status = dict(parent_row)["status"] if hasattr(parent_row, "keys") else parent_row[0]
+    if parent_status == "done":
+        return None
+    if parent_status != "decomposed":
+        # Only auto-close parents that were explicitly decomposed
+        return None
+
+    # Are ALL {parent_id}-d* subtasks done?
+    pattern = f"{parent_id}-d%"
+    total = conn.execute(
+        "SELECT COUNT(*) FROM kanban_tasks WHERE id LIKE %s", (pattern,)
+    ).fetchone()[0]
+    if total == 0:
+        return None
+
+    undone = conn.execute(
+        "SELECT COUNT(*) FROM kanban_tasks WHERE id LIKE %s AND status != 'done'",
+        (pattern,),
+    ).fetchone()[0]
+    if undone > 0:
+        return None
+
+    def _db_exec(sql: str, params: tuple) -> None:
+        conn.execute(sql, params)
+
+    def _audit_exec(sql: str, params: tuple) -> None:
+        conn.execute(sql, params)
+
+    return transition(
+        task_id=parent_id,
+        from_state=KanbanState.DECOMPOSED,
+        to_state=KanbanState.DONE,
+        reason=f"auto-closed (naming-convention): all {total} subtask(s) done",
+        actor=actor,
+        db_exec=_db_exec,
+        audit_exec=_audit_exec,
+    )
+
 
 def auto_close_parent_if_all_children_done(
     parent_id: str,
@@ -385,26 +487,49 @@ def auto_close_parent_if_all_children_done(
 def backfill_auto_close_parents(conn, actor: str = "startup_backfill") -> List[str]:
     """Sweep all non-done tasks that have dependents and close eligible ones.
 
-    Called once at dashboard startup to catch parent tasks that were stuck
-    before the auto-close hook was wired in.  Returns task IDs closed.
+    Runs three passes:
+    1. FK-based: tasks that are parent via ``depends_on_task_id`` (existing path)
+    2. Naming-convention: tasks in ``decomposed`` status whose ``{id}-d{N}``
+       subtasks are all done (the new Path 3 — fixes the fd-floor-02 class of bug)
+
+    Called once at dashboard startup and by the periodic kanban reflex sweep.
+    Returns task IDs closed.
     """
     closed: List[str] = []
+
+    # Pass 1 — FK-based parent close
     try:
         rows = conn.execute(
             "SELECT DISTINCT depends_on_task_id FROM kanban_tasks "
             "WHERE depends_on_task_id IS NOT NULL"
         ).fetchall()
-    except Exception:
-        return []
+        for row in rows:
+            pid = dict(row).get("depends_on_task_id") if hasattr(row, "keys") else row[0]
+            if not pid:
+                continue
+            result = auto_close_parent_if_all_children_done(pid, conn, actor=actor)
+            if result and result.applied:
+                closed.append(pid)
+                logger.info("backfill_auto_close (fk): closed %s", pid)
+    except Exception as exc:
+        logger.warning("backfill_auto_close pass-1 failed: %s", exc)
 
-    for row in rows:
-        pid = dict(row).get("depends_on_task_id") if hasattr(row, "keys") else row[0]
-        if not pid:
-            continue
-        result = auto_close_parent_if_all_children_done(pid, conn, actor=actor)
-        if result and result.applied:
-            closed.append(pid)
-            logger.info("backfill_auto_close: closed parent %s", pid)
+    # Pass 2 — Naming-convention: decomposed parents with all {id}-d{N} subtasks done
+    try:
+        decomposed_rows = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE status = 'decomposed'"
+        ).fetchall()
+        for row in decomposed_rows:
+            pid = dict(row)["id"] if hasattr(row, "keys") else row[0]
+            if not pid or pid in closed:
+                continue
+            # Synthesise a child task ID to trigger the naming-convention check
+            result = auto_close_by_naming_convention(f"{pid}-d1", conn, actor=actor)
+            if result and result.applied:
+                closed.append(pid)
+                logger.info("backfill_auto_close (naming): closed %s", pid)
+    except Exception as exc:
+        logger.warning("backfill_auto_close pass-2 failed: %s", exc)
 
     if closed:
         conn.commit()
