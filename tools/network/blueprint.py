@@ -8763,6 +8763,17 @@ Output ONLY the JSON object. No other text."""
             return jsonify({"error": str(exc)}), 500
 
     # ══════════════════════════════════════════════════════════════════════
+    # API: AI Context Creation — allocate a new conversation context id
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/ai-context", methods=["POST"])
+    @nc_login_required
+    def nc_api_ai_context_create():
+        """Create a new AI chat context and return its id (nc-<uuid8>)."""
+        ctx_id = "nc-" + str(_uuid.uuid4())[:8]
+        return jsonify({"context_id": ctx_id}), 201
+
+    # ══════════════════════════════════════════════════════════════════════
     # API: Unified AI Chat — topology generation + Q&A in one endpoint
     # ══════════════════════════════════════════════════════════════════════
 
@@ -8793,8 +8804,14 @@ Output ONLY the JSON object. No other text."""
         keyword_hit = any(kw in desc_lower for kw in _TOPOLOGY_KEYWORDS) or any(
             kw in desc_lower for kw in _MIGRATION_KEYWORDS
         )
-        # ≤3 words → too short to be a topology request; treat as Q&A
-        is_topology = (mode == "topology") or (keyword_hit and word_count > 3)
+        # Explicit mode wins; auto-detect only when mode is unspecified (default "qa")
+        if mode == "topology":
+            is_topology = True
+        elif mode == "qa":
+            is_topology = False
+        else:
+            # ≤3 words → too short to be a topology request; treat as Q&A
+            is_topology = keyword_hit and word_count > 3
 
         if is_topology:
             cookie_header = request.headers.get("Cookie", "")
