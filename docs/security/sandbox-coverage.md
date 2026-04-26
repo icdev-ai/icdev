@@ -2,7 +2,7 @@
 
 > **Classification:** CUI // SP-CTI
 > **ADR:** D-SEC-11 (Phase 72 — LLM Sandbox Integration)
-> **Last audit:** 2026-04-12 (OPT-58)
+> **Last audit:** 2026-04-26 (OPT-58 / ZBX — Gaps 6-8 added)
 
 This document inventories every code path in `tools/` that processes
 content whose origin is not strictly first-party-developer-authored,
@@ -87,6 +87,39 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - Append-only tables prevent mutation of ingested data.
   - `ICDEV_STRICT_SANDBOX=1` routes ingest through `SandboxExecutor` in IL5.
 - **Revisit if:** feedparser CVE ships, or if feed content is ever rendered as raw HTML in the dashboard (currently text-only).
+
+### Gap 6 — OSV-Scanner subprocess execution (OPT-58 / ZBX)
+- **File:** `tools/security/osv_scanner.py`
+- **Risk:** Spawns the `osv-scanner` binary as a subprocess against `requirements.txt` (or a lockfile). The binary is a trusted Google-signed release. Its JSON output is parsed with `json.loads` — no `eval()` or `exec()`. Output is treated as read-only data, never executed.
+- **Decision:** **bypass-documented**
+- **Rationale:** The binary is first-party security tooling (google/osv-scanner), not user-supplied code. The subprocess call uses a fixed argument list (`['osv-scanner', '--format', 'json', '--lockfile', target]`); the `target` path is validated to exist before invocation. There is no shell=True, no user-controlled command interpolation, and no code execution of scan results.
+- **Guardrails:**
+  - Target path existence validated with `Path(target).exists()` before spawn.
+  - No `shell=True` — argument list only.
+  - Output parsed as JSON data only, never executed.
+  - `OsvScanner` degrades to `status='unavailable'` when binary absent — no crash path.
+- **Revisit if:** the binary invocation adds user-supplied arguments (e.g. `extra_args` from an untrusted source); at that point, `extra_args` must be validated against an allowlist.
+
+### Gap 7 — SaaS API Gateway child workers (OPT-58 / ZBX)
+- **File:** `tools/saas/api_gateway.py`
+- **Risk:** The gateway references `--workers` for gunicorn multi-process mode. No `subprocess.run` / `Popen` calls exist in the current implementation — gunicorn spawns workers internally via its own process manager, not via ICDEV™ code.
+- **Decision:** **bypass-documented**
+- **Rationale:** No user-controlled subprocess call exists in `api_gateway.py` as of OPT-58 audit (2026-04-26). Gunicorn worker management is internal to the gunicorn library — ICDEV™ code does not call `subprocess` for worker spawning. `CredentialProxy` (Gap 8) is available for any future subprocess additions.
+- **Guardrails:**
+  - Regression guard: `grep -n "subprocess\." tools/saas/api_gateway.py` should return empty.
+  - If subprocess calls are added in future, use `CredentialProxy.spawn()` and add a new gap entry.
+- **Revisit if:** gunicorn is replaced with a custom process manager that uses `subprocess`.
+
+### Gap 8 — CredentialProxy spawn wrapper (OPT-58 / ZBX)
+- **File:** `tools/security/credential_proxy.py`
+- **Risk:** `CredentialProxy.spawn()` wraps `subprocess.run()`. The command (`cmd`) is caller-supplied. If a caller passes user-controlled input as the command, that is an SSRF/injection risk.
+- **Decision:** **bypass-documented**
+- **Rationale:** `CredentialProxy` is infrastructure only — it does not accept commands from user-facing HTTP endpoints. All current and intended callers are first-party `tools/` scripts that pass hard-coded command lists. The proxy reduces risk (strips credential env vars) rather than increasing it.
+- **Guardrails:**
+  - Do not wire `CredentialProxy.spawn()` to an HTTP endpoint that accepts a user-supplied command string.
+  - `shell=True` is not added by the proxy itself; callers that use it must justify it separately.
+  - Any new caller that receives command input from a user-facing API must add a gap entry here.
+- **Revisit if:** `CredentialProxy.spawn()` is called from a route that accepts user-supplied command arguments.
 
 ## Coherence rule
 

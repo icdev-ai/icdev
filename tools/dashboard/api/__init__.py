@@ -317,6 +317,20 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
 
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
+    # km-autoclose: sweep decomposed parents stuck before the auto-close hook
+    try:
+        from tools.kanban.state_machine import backfill_auto_close_parents
+        from tools.db.storage import get_connection as _gc
+        _conn = _gc()
+        try:
+            closed = backfill_auto_close_parents(_conn, actor="startup_backfill")
+            if closed:
+                logger.info("startup backfill auto-closed %d parent tasks: %s", len(closed), closed)
+        finally:
+            _conn.close()
+    except Exception as _exc:
+        logger.debug("startup auto-close backfill skipped: %s", _exc)
+
 
 # ---------------------------------------------------------------------------
 # ALL_BLUEPRINTS — flat list of (blueprint_name, v1_prefix) for tooling

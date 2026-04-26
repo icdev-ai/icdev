@@ -5,6 +5,8 @@
 ## Security (Additional)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| OSV Scanner | tools/security/osv_scanner.py | SCA vulnerability detection via osv-scanner binary. Wraps `osv-scanner --format json`; degrades gracefully when binary absent (air-gap safe). Wired into health_check.py and security_gates.yaml. | `OsvScanner().run(target)` / `--target requirements.txt --json` | OsvResult(status, vuln_count, critical, high, medium, low) |
+| Credential Proxy | tools/security/credential_proxy.py | Zerobox-pattern credential proxy (OPT-58). Strips secrets from child-process env; keeps only PATH, HOME, TEMP, PYTHONPATH + caller-specified extras. | `CredentialProxy().sanitized_env(extra_allowed)` / `.spawn(cmd, ...)` | Sanitized env dict / subprocess.CompletedProcess |
 | Confabulation Detector | tools/security/confabulation_detector.py | Deterministic confabulation detection (D310) | --check-output, --summary, --json | Detection results |
 | Endpoint Security Scanner | tools/security/endpoint_security_scanner.py | API endpoint security assessment | --scan, --json | Scan results |
 | Sandbox Executor | tools/security/sandbox_executor.py | Container-isolated code execution with resource limits, network isolation, and audit logging (D-SEC-10) | --execute --code, --execute-file --path, --health, --gate, --language, --timeout, --memory, --json | SandboxResult JSON |

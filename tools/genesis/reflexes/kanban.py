@@ -957,18 +957,25 @@ def _get_due_tasks() -> list:
     """
     conn = get_connection()
     try:
-        # Native task dependency gating — a task with a non-NULL
-        # depends_on_task_id is invisible to the listener until its
-        # dependency has been marked `done`. This replaces the
-        # park-in-scheduled workaround previously handled by
-        # tools/awareness/promote_next_phase.py. Idempotent and
-        # backward compatible: rows with NULL depends_on_task_id behave
-        # exactly as before.
+        # Native task dependency gating — a task is blocked if ANY of its
+        # declared dependencies (scalar OR junction table) are not yet done.
+        # Junction table (kanban_task_deps) is authoritative for multi-parent;
+        # scalar depends_on_task_id is checked as fallback for compat.
         dep_clause = (
-            "(kt.depends_on_task_id IS NULL "
-            " OR EXISTS (SELECT 1 FROM kanban_tasks dep "
-            "            WHERE dep.id = kt.depends_on_task_id "
-            "              AND dep.status = 'done'))"
+            "("
+            "  NOT EXISTS (SELECT 1 FROM kanban_task_deps d "
+            "              WHERE d.task_id = kt.id) "
+            "  AND (kt.depends_on_task_id IS NULL "
+            "       OR EXISTS (SELECT 1 FROM kanban_tasks dep "
+            "                  WHERE dep.id = kt.depends_on_task_id "
+            "                    AND dep.status = 'done'))"
+            "  OR ("
+            "  EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
+            "  AND NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
+            "                  JOIN kanban_tasks p ON p.id = d2.depends_on_id "
+            "                  WHERE d2.task_id = kt.id AND p.status != 'done')"
+            "  )"
+            ")"
         )
 
         # Always pick up scheduled-and-due tasks.

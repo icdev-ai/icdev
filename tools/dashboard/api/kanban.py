@@ -313,6 +313,63 @@ def list_tasks():
         conn.close()
 
 
+def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
+    """If *child_task_id* has a parent, attempt to auto-close it."""
+    try:
+        from tools.kanban.state_machine import auto_close_parent_if_all_children_done
+        row = conn.execute(
+            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (child_task_id,)
+        ).fetchone()
+        if not row:
+            return
+        parent_id = dict(row).get("depends_on_task_id")
+        if parent_id:
+            auto_close_parent_if_all_children_done(parent_id, conn, actor="auto_close_hook")
+            conn.commit()
+    except Exception:
+        pass  # auto-close is best-effort — never block the main update
+
+
+def _check_dependency_cycle_dfs(task_id: str, new_deps: list, conn) -> tuple:
+    """DFS cycle detection over kanban_task_deps junction table.
+
+    Returns (ok: bool, error: str|None).
+    Traverses the dependency graph depth-first starting from each node in
+    new_deps; if we ever reach task_id we have a cycle.
+    """
+    if not new_deps:
+        return True, None
+    if task_id in new_deps:
+        return False, "task cannot depend on itself"
+
+    visited: set = set()
+
+    def _dfs(node: str) -> bool:
+        if node == task_id:
+            return True  # cycle found
+        if node in visited:
+            return False
+        visited.add(node)
+        rows = conn.execute(
+            "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
+            (node,),
+        ).fetchall()
+        for r in rows:
+            dep = dict(r).get("depends_on_id") if hasattr(r, "keys") else r[0]
+            if dep and _dfs(dep):
+                return True
+        return False
+
+    for dep_id in new_deps:
+        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (dep_id,)).fetchone()
+        if not row:
+            return False, f"depends_on_task_id {dep_id!r} not found"
+        if _dfs(dep_id):
+            return False, f"dependency on {dep_id!r} would create a cycle"
+
+    return True, None
+
+
 def _validate_dependency(conn, task_id: str, depends_on: str):
     """Validate a proposed depends_on_task_id.
 
@@ -350,9 +407,17 @@ def create_task():
     task_id = data.get("id") or _gen_id()
     now = _utcnow()
     depends_on = data.get("depends_on_task_id") or None
+    # Multi-parent: depends_on_task_ids list (junction table); scalar is kept for compat.
+    dep_ids: list = data.get("depends_on_task_ids") or ([] if depends_on is None else [depends_on])
+    # Scalar takes priority over list when both present; deduplicate.
+    if depends_on and depends_on not in dep_ids:
+        dep_ids = [depends_on] + dep_ids
+    dep_ids = list(dict.fromkeys(d for d in dep_ids if d))  # dedupe, preserve order
+
     conn = get_connection()
     try:
-        ok, err = _validate_dependency(conn, task_id, depends_on)
+        # Validate all deps via DFS cycle detection
+        ok, err = _check_dependency_cycle_dfs(task_id, dep_ids, conn)
         if not ok:
             return jsonify({"error": err}), 400
         conn.execute(
@@ -370,11 +435,18 @@ def create_task():
                 data.get("status", "backlog"),
                 data.get("scheduled_at"),
                 data.get("executor_type", "claude_cli"),
-                depends_on,
+                depends_on or (dep_ids[0] if dep_ids else None),
                 now,
                 now,
             ),
         )
+        # Write all deps to junction table
+        for dep_id in dep_ids:
+            conn.execute(
+                "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
+                "VALUES (%s, %s, %s) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
+                (task_id, dep_id, now),
+            )
         conn.commit()
         try:
             sse_manager.broadcast(
@@ -422,11 +494,22 @@ def update_task(task_id):
             "executor_type",
             "depends_on_task_id",
         )
-        # Validate dependency change before staging the UPDATE
-        if "depends_on_task_id" in data:
+        # Multi-parent deps: validate via DFS before any DB writes
+        new_dep_ids: list = data.get("depends_on_task_ids") or []
+        if "depends_on_task_id" in data and data["depends_on_task_id"]:
+            scalar = data["depends_on_task_id"]
+            if scalar not in new_dep_ids:
+                new_dep_ids = [scalar] + new_dep_ids
+        new_dep_ids = list(dict.fromkeys(d for d in new_dep_ids if d))
+        if new_dep_ids:
+            ok, err = _check_dependency_cycle_dfs(task_id, new_dep_ids, conn)
+            if not ok:
+                return jsonify({"error": err}), 400
+        elif "depends_on_task_id" in data:
             ok, err = _validate_dependency(conn, task_id, data["depends_on_task_id"])
             if not ok:
                 return jsonify({"error": err}), 400
+
         sets = []
         vals = []
         for field in allowed:
@@ -454,6 +537,24 @@ def update_task(task_id):
             tuple(vals),
         )
         conn.commit()
+
+        # Multi-parent: update junction table when depends_on_task_ids provided
+        if new_dep_ids:
+            now_ts = _utcnow()
+            conn.execute("DELETE FROM kanban_task_deps WHERE task_id = %s", (task_id,))
+            for dep_id in new_dep_ids:
+                conn.execute(
+                    "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
+                    (task_id, dep_id, now_ts),
+                )
+            conn.commit()
+
+        # km-autoclose: when a child task is marked done, check if its parent
+        # can now be auto-closed (all siblings also done).
+        if data.get("status") == "done":
+            _maybe_auto_close_parent(conn, task_id)
+
         try:
             sse_manager.broadcast(
                 {

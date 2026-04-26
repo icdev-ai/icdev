@@ -309,3 +309,104 @@ def parse_state(value: Optional[str]) -> Optional[KanbanState]:
         return KanbanState(value.lower())
     except (KeyError, ValueError):
         return None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Decomposed-parent auto-close (km-autoclose)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def auto_close_parent_if_all_children_done(
+    parent_id: str,
+    conn,
+    actor: str = "auto_close_sweep",
+) -> Optional[TransitionResult]:
+    """Close *parent_id* if every child task that depends on it is done.
+
+    Parameters
+    ----------
+    parent_id:
+        The kanban_tasks.id of the potential parent to close.
+    conn:
+        Open DB connection (get_connection() wrapper). Used for reads;
+        the UPDATE is issued via the same conn so the caller commits.
+    actor:
+        Actor label written to the audit trail.
+
+    Returns
+    -------
+    TransitionResult if the parent was closed, None if not eligible (already
+    done, no children, or children not all done).
+    """
+    parent_row = conn.execute(
+        "SELECT status FROM kanban_tasks WHERE id = %s", (parent_id,)
+    ).fetchone()
+    if not parent_row:
+        return None
+
+    parent_status = dict(parent_row)["status"]
+    if parent_status == "done":
+        return None
+
+    total_children = conn.execute(
+        "SELECT COUNT(*) FROM kanban_tasks WHERE depends_on_task_id = %s",
+        (parent_id,),
+    ).fetchone()[0]
+    if total_children == 0:
+        return None
+
+    undone = conn.execute(
+        "SELECT COUNT(*) FROM kanban_tasks "
+        "WHERE depends_on_task_id = %s AND status != 'done'",
+        (parent_id,),
+    ).fetchone()[0]
+    if undone > 0:
+        return None
+
+    from_state = parse_state(parent_status) or KanbanState.IN_PROGRESS
+
+    def _db_exec(sql: str, params: tuple) -> None:
+        conn.execute(sql, params)
+
+    def _audit_exec(sql: str, params: tuple) -> None:
+        conn.execute(sql, params)
+
+    return transition(
+        task_id=parent_id,
+        from_state=from_state,
+        to_state=KanbanState.DONE,
+        reason=f"auto-closed: all {total_children} child tasks done",
+        actor=actor,
+        db_exec=_db_exec,
+        audit_exec=_audit_exec,
+    )
+
+
+def backfill_auto_close_parents(conn, actor: str = "startup_backfill") -> List[str]:
+    """Sweep all non-done tasks that have dependents and close eligible ones.
+
+    Called once at dashboard startup to catch parent tasks that were stuck
+    before the auto-close hook was wired in.  Returns task IDs closed.
+    """
+    closed: List[str] = []
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT depends_on_task_id FROM kanban_tasks "
+            "WHERE depends_on_task_id IS NOT NULL"
+        ).fetchall()
+    except Exception:
+        return []
+
+    for row in rows:
+        pid = dict(row).get("depends_on_task_id") if hasattr(row, "keys") else row[0]
+        if not pid:
+            continue
+        result = auto_close_parent_if_all_children_done(pid, conn, actor=actor)
+        if result and result.applied:
+            closed.append(pid)
+            logger.info("backfill_auto_close: closed parent %s", pid)
+
+    if closed:
+        conn.commit()
+
+    return closed
