@@ -223,6 +223,7 @@ def run_playwright_native(
     env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
     json_results_file = results_dir / "playwright-results.json"
     env["PLAYWRIGHT_JSON_OUTPUT_NAME"] = str(json_results_file)
+    logger.info("e2e_runner: PYTHONPATH=%s", env["PYTHONPATH"])
     logger.info("e2e_runner: command: %s", " ".join(cmd))
 
     try:
@@ -713,6 +714,7 @@ def run_selenium(
     root_str = str(PROJECT_ROOT)
     existing = env.get("PYTHONPATH", "")
     env["PYTHONPATH"] = root_str if not existing else root_str + os.pathsep + existing
+    logger.info("e2e_runner: PYTHONPATH=%s", env["PYTHONPATH"])
 
     try:
         proc = subprocess.run(
