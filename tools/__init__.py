@@ -1,19 +1,7 @@
 """Backward-compatibility shim: tools.* -> icdev.tools.*
 
-Both ``import tools`` and ``from icdev import tools`` (i.e. ``icdev.tools``)
-are supported for backward compatibility. The canonical package is
-``icdev.tools``; this shim re-exports it under the legacy ``tools`` namespace
-so that the hundreds of existing scripts, child apps, and CLAUDE.md CLI
-examples that reference ``tools.*`` continue to work without modification.
-
-Why both namespaces exist:
-  - ``icdev.tools`` — the installed, pip-distributable location (``icdev/tools/``)
-  - ``tools``       — the repo-root flat layout used by all legacy imports and
-                      the CLAUDE.md quick-reference commands
-
-The ``_ToolsRedirect`` module below intercepts attribute access on the
-``tools`` module and resolves it to ``icdev.tools.<name>``, falling back to
-normal package resolution when the sub-module doesn't exist under ``icdev.tools``.
+The ICDEV™ tools package has moved to icdev.tools. This shim provides
+backward compatibility for existing scripts and child applications.
 
 Use the canonical absolute import form:
     from icdev.tools.llm.router import LLMRouter  # preferred
