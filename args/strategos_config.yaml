@@ -1,0 +1,22 @@
+# CUI // SP-CTI
+# STRATEGOS Oracle — SIO Engine configuration
+# ─────────────────────────────────────────────
+# Governs the zero-LLM SIO lens runner in intelligence/oracle/sio_engine.py.
+#
+# lens_weights: per-lens confidence multiplier keyed on BaseSIOLens.name.
+#   Default 1.0 (no adjustment). > 1.0 boosts; < 1.0 discounts.
+#   Final value is clamped to [0, 1].
+#
+# min_confidence_threshold: assessments below this value are dropped.
+#   Range 0.0–1.0. STANAG 2511 D/4 boundary sits near 0.35; 0.4 catches
+#   marginally-doubtful signals while discarding noise.
+
+sio:
+  # Confidence multipliers applied per-lens (default 1.0 = no adjustment).
+  # Values > 1.0 boost a lens; values < 1.0 discount it.
+  # Final confidence is clamped to [0, 1] after multiplication.
+  lens_weights:
+    baseline_match: 1.0       # Historical case similarity (sg_war_readiness_events)
+    indicator_density: 0.9    # Raw indicator saturation across mobilisation axes
+    temporal_pattern: 0.8     # Velocity / acceleration of indicator change
+  min_confidence_threshold: 0.40
