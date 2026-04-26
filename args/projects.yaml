@@ -168,6 +168,25 @@ projects:
   - key: pacific
     title: Pacific Theater Extension — PLAN/A2AD/Taiwan/Militia
     priority: medium
+  - key: sc
+    title: Supply Chain Intelligence — DIB, War Endurance, Sanctions, Humanitarian
+    priority: high
+- key: sc-core
+  name: Supply Chain Core Promotion
+  description: 'Promote tools/supply_chain/ to true ICDEV core: domain-agnostic DB
+    schema (migration 048), pluggable scoring profiles (it_scrm/war_economy/govcon),
+    MCP tool updates. Enables FathomDesk + STRATEGOS + CPMP to share one supply chain
+    engine.'
+  task_prefix: sc-
+  default_open: true
+  briefs:
+  - 'Migration 048: extend DB CHECK constraints for war_economy + govcon domain types'
+  - 'Scoring profiles: tools/supply_chain/profiles/ — it_scrm.py + war_economy.py + govcon stub'
+  - 'Manifest + MCP + companion sync + coherence gate'
+  epics:
+  - key: core
+    title: Supply Chain Core — Migration + Profiles + Manifest
+    priority: critical
 - key: nmig
   name: Network Device Migration Workflow
   description: Vendor-agnostic network device migration workflow (chassis swap, peering
