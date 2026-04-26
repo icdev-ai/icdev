@@ -106,6 +106,61 @@ def get_vessel_summary() -> dict:
         conn.close()
 
 
+def build_orbat_kg_nodes() -> dict:
+    """Sync vessel_orbat → vessel_kg_nodes.
+
+    Creates or updates one KG node per ORBAT entry so the /api/orbat/kg-nodes
+    endpoint and the knowledge-graph overlay stay current.
+
+    Returns {"status", "synced", "skipped"}.
+    """
+    from datetime import datetime, timezone
+    import json as _json
+
+    conn = get_connection()
+    synced = 0
+    skipped = 0
+    try:
+        tbl = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='vessel_orbat'"
+        ).fetchone()
+        if tbl is None:
+            return {"status": "ok", "synced": 0, "skipped": 0, "note": "vessel_orbat table absent"}
+
+        rows = conn.execute("SELECT * FROM vessel_orbat").fetchall()
+        now = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            node_id = f"vessel:{row['mmsi']}"
+            props = _json.dumps({
+                "hull_number": row["hull_number"],
+                "displacement_t": row["displacement_t"],
+                "kalibr_range_km": row["kalibr_range_km"],
+                "notes": row["notes"],
+            })
+            conn.execute(
+                """
+                INSERT INTO vessel_kg_nodes
+                    (node_id, mmsi, vessel_name, nation, entity_type,
+                     kalibr_capable, properties_json, created_at)
+                VALUES (?, ?, ?, ?, 'vessel', ?, ?, ?)
+                ON CONFLICT(node_id) DO UPDATE SET
+                    vessel_name    = excluded.vessel_name,
+                    nation         = excluded.nation,
+                    kalibr_capable = excluded.kalibr_capable,
+                    properties_json = excluded.properties_json
+                """,
+                (node_id, row["mmsi"], row["vessel_name"], row["nation"],
+                 row["kalibr_capable"], props, now),
+            )
+            synced += 1
+        conn.commit()
+        return {"status": "ok", "synced": synced, "skipped": skipped}
+    except Exception as exc:
+        return {"status": "error", "error": str(exc), "synced": synced, "skipped": skipped}
+    finally:
+        conn.close()
+
+
 def get_kalibr_positions() -> list[dict]:
     """Latest position for each Kalibr-capable vessel in vessel_orbat.
 
