@@ -453,6 +453,22 @@ function renderTaskKanban(tasks) {
                 }
             }
 
+            // Dependency badge — show on any status where dep is unmet
+            var depLine = '';
+            if (t.depends_on_task_id) {
+                if (t.is_blocked) {
+                    var depLabel = t.depends_on_title ? esc(t.depends_on_title) : esc(t.depends_on_task_id);
+                    var depStatus = t.depends_on_status ? ' [' + esc(t.depends_on_status) + ']' : '';
+                    depLine = '<div style="font-size:11px; color:#f97316; margin-top:4px;" title="Waiting for: ' + depLabel + depStatus + '">'
+                        + '⛔ Blocked by: <span style="font-weight:600;">' + depLabel + '</span>' + depStatus + '</div>';
+                } else {
+                    // Dep is done — show a subtle unblocked indicator
+                    var unblockLabel = t.depends_on_title ? esc(t.depends_on_title) : esc(t.depends_on_task_id);
+                    depLine = '<div style="font-size:11px; color:#22c55e; margin-top:4px;" title="Dependency met: ' + unblockLabel + '">'
+                        + '✓ After: <span style="opacity:0.8;">' + unblockLabel + '</span></div>';
+                }
+            }
+
             var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
             return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;" onclick="openEditTaskModal(' + snapAttr + ')">'
                 + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
@@ -464,6 +480,7 @@ function renderTaskKanban(tasks) {
                 + llmBadge
                 + attemptBadge
                 + '</div>'
+                + depLine
                 + tifLine
                 + lastKilledLine
                 + schedLine

@@ -1278,11 +1278,18 @@ def create_app() -> Flask:
 
     # ---- Strategos Blueprint ----
     try:
-        from apps.strategos.blueprint import create_strategos_blueprint
+        from apps.strategos.blueprint import (
+            create_strategos_blueprint,
+            create_strategos_api_blueprint,
+        )
         _sg_bp = create_strategos_blueprint()
         if _sg_bp:
             app.register_blueprint(_sg_bp, url_prefix="/strategos")
             app.logger.info("Strategos blueprint registered at /strategos")
+        _sg_api_bp = create_strategos_api_blueprint()
+        if _sg_api_bp:
+            app.register_blueprint(_sg_api_bp, url_prefix="/api/strategos")
+            app.logger.info("Strategos API blueprint registered at /api/strategos")
     except Exception as _exc:
         app.logger.warning("Strategos blueprint failed to register: %s", _exc)
 
