@@ -17,23 +17,24 @@ Run: python tests/e2e_kanban_depends_on.py
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Prepend worktree root to sys.path before any non-stdlib imports so
+# `tools.*` is resolvable regardless of how this script is invoked.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import json
 import os
-import sys
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
-
-# Ensure project root is on sys.path so tools.* resolves regardless of the
-# working directory the test is invoked from.
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(_PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(_PROJECT_ROOT))
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
