@@ -26,6 +26,7 @@ from pathlib import Path
 from flask import (
     Blueprint,
     abort,
+    current_app,
     g,
     jsonify,
     redirect,
@@ -8499,6 +8500,17 @@ OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, STP, VXLAN, BGP EVPN, GRE
 
 Output ONLY the JSON object. No other text."""
 
+    # Topology generation keywords — message contains one of these → likely a diagram request
+    _TOPOLOGY_KEYWORDS = {
+        "design", "create", "build", "draw", "generate", "diagram", "topology",
+        "network", "configure", "connect", "setup", "set up", "show me", "map",
+        "add router", "add switch", "add firewall", "add server", "add node",
+        "wan", "lan", "dmz", "vlan", "vrf", "mpls", "bgp", "ospf", "ipsec",
+        "data center", "datacenter", "cloud", "hub", "spoke", "mesh",
+        "three tier", "three-tier", "two tier", "two-tier", "spine", "leaf",
+        "core", "distribution", "access layer",
+    }
+
     # Migration scenario keywords — trigger multi-phase layout + migration canvas session
     _MIGRATION_KEYWORDS = {
         "migrat", "replac", "cutover", "cut-over", "parallel run", "incremental",
@@ -8759,14 +8771,13 @@ Output ONLY the JSON object. No other text."""
     def nc_api_ai_chat():
         """Unified AI chat: route to topology generation or direct Q&A."""
         data = request.get_json(force=True, silent=True) or {}
-        message = (data.get("message") or "").strip()
+        description = (data.get("description") or data.get("message") or "").strip()
         context_id = (data.get("context_id") or "").strip()  # noqa: F841
+        architect_mode = data.get("architect_mode", False)
         mode = data.get("mode", "qa")
 
-        if not message:
+        if not description:
             return jsonify({"error": "message is required"}), 400
-
-        is_topology = mode == "topology"
 
         qa_system = (  # noqa: F841
             _AI_TOPO_SYSTEM_PROMPT
@@ -8776,8 +8787,33 @@ Output ONLY the JSON object. No other text."""
             " explanation. Only output JSON when explicitly building a topology."
         )
 
-        # Topology routing and Q&A logic added in subsequent tasks (d3, d4).
-        return jsonify({"ok": True, "is_topology": is_topology}), 200
+        # Topology detection: keyword match with short-message Q&A override
+        desc_lower = description.lower()
+        word_count = len(description.split())
+        keyword_hit = any(kw in desc_lower for kw in _TOPOLOGY_KEYWORDS) or any(
+            kw in desc_lower for kw in _MIGRATION_KEYWORDS
+        )
+        # ≤3 words → too short to be a topology request; treat as Q&A
+        is_topology = (mode == "topology") or (keyword_hit and word_count > 3)
+
+        if is_topology:
+            cookie_header = request.headers.get("Cookie", "")
+            forward_data = {"description": description, "architect_mode": architect_mode}
+            if context_id:
+                forward_data["context_id"] = context_id
+            with current_app.test_client() as tc:
+                resp = tc.post(
+                    "/network/api/ai-generate",
+                    data=json.dumps(forward_data),
+                    content_type="application/json",
+                    headers={"Cookie": cookie_header} if cookie_header else {},
+                )
+            resp_data = json.loads(resp.data)
+            resp_data["mode"] = "topology"
+            return jsonify(resp_data), resp.status_code
+
+        # Q&A mode — implemented in subsequent task (d4)
+        return jsonify({"ok": True, "is_topology": False, "mode": "qa"}), 200
 
     # ══════════════════════════════════════════════════════════════════════
     # API: AI Chat Pre-flight — Grilling / Clarifying Questions
