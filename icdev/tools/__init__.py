@@ -39,7 +39,7 @@ class _ToolsRedirect(types.ModuleType):
             return importlib.import_module(f"icdev.tools.{name}")
         except ModuleNotFoundError:
             # Fall back to normal sub-module resolution
-            return importlib.import_module(f"tools.{name}")
+            return importlib.import_module(f".{name}", package=__name__)
 
 
 _redirect = _ToolsRedirect(__name__, __doc__)
