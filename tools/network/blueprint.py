@@ -8508,9 +8508,6 @@ Output ONLY the JSON object. No other text."""
             s = re.sub(r",(\s*[\]\}])", r"\1", s)
             # Truncated JSON: find last complete top-level object and close it
             if s.count("{") > s.count("}"):
-                # Try closing unclosed arrays and objects gracefully
-                depth_b = s.count("[") - s.count("]")
-                depth_c = s.count("{") - s.count("}")
                 # Strip back to last complete object in nodes/edges
                 last_close = s.rfind("}}")
                 if last_close > 0:
