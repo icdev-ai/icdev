@@ -163,7 +163,14 @@
   if (!window.ICDEV_PIF) window.ICDEV_PIF = {};
   window.ICDEV_PIF._loaded = true;
 
-  var TASK_TIMEOUT_SECS = 900;
+  var TASK_TIMEOUT_SECS = 900;  // reaper baseline; per-task budget varies but 900 is the default
+
+  // Live timer + reaper bar intervals — cleared and rebuilt on each refresh
+  var _pifIntervals = [];
+  function _clearPifIntervals() {
+    _pifIntervals.forEach(function (id) { clearInterval(id); });
+    _pifIntervals = [];
+  }
 
   function esc(s) {
     return String(s || '').replace(/[&<>"']/g, function (c) {
@@ -236,6 +243,7 @@
         + ' &mdash; no agent output in >' + TASK_TIMEOUT_SECS + 's. Stale-reaper will recycle.</div>';
     }
 
+    _clearPifIntervals();
     var nowMs = Date.now();
     tasks.forEach(function (t) {
       var raw = t.updated_at || t.created_at;
@@ -259,13 +267,39 @@
         outputChip = '<span style="color:var(--text-muted);">starting up&hellip;</span>';
       }
 
+      // ── kv-viz: attempt badge + reaper bar + time-in-flight ──────────
+      var attemptBadge = '';
+      var reaperBar = '';
+      var tifLine = '';
+      var ac = t.attempt_count || 0;
+      if (ac >= 2) {
+        var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
+        attemptBadge = '<span style="background:' + abColor + '20;color:' + abColor
+          + ';font-size:10px;padding:1px 5px;border-radius:3px;margin-left:4px;" title="Dispatched '
+          + ac + ' times">Attempt ' + ac + '</span>';
+      }
+      if (t.current_attempt_started_at) {
+        reaperBar = '<div style="margin:4px 0 2px 0;background:var(--bg-code,#1a1a2e);border-radius:2px;height:3px;overflow:hidden;" title="Reaper kills at ' + Math.round(TASK_TIMEOUT_SECS/60) + 'm">'
+          + '<div id="pif-bar-' + esc(t.id) + '" style="height:100%;width:0%;background:#22c55e;transition:width 1s linear;"></div></div>';
+        tifLine = '<div id="pif-tif-' + esc(t.id) + '" style="font-size:11px;color:var(--text-muted,#6b7280);margin-top:1px;">Running 0m 0s</div>';
+      }
+
+      var killedLine = '';
+      if (t.last_reaped_reason) {
+        killedLine = '<div style="font-size:10px;color:#f87171;margin-top:2px;">&#9760; '
+          + esc(t.last_reaped_reason.substring(0, 80)) + (t.last_reaped_reason.length > 80 ? '&hellip;' : '') + '</div>';
+      }
+
       html += '<div class="pif-task-card pif-task-card-' + liv + '">'
         + '<span class="pif-task-dot pif-task-dot-' + liv + '" title="' + esc(liv) + '"></span>'
-        + '<div style="min-width:0;">'
+        + '<div style="min-width:0;flex:1;">'
         + '  <div class="pif-task-title">'
         + '    <span style="font-size:0.7rem;color:var(--text-muted);font-weight:400;margin-right:0.3rem;">' + esc(t.id) + '</span>'
-        + esc(t.title)
+        + esc(t.title) + attemptBadge
         + '  </div>'
+        + reaperBar
+        + tifLine
+        + killedLine
         + '  <div class="pif-task-meta">'
         + '    <span class="pif-tag pif-tag-' + esc(pri) + '">' + esc(pri) + '</span>'
         + '    <span>' + esc(t.task_type || 'task') + '</span>'
@@ -278,6 +312,28 @@
     });
 
     container.innerHTML = html;
+
+    // Start live timers for each in-flight task
+    tasks.forEach(function (t) {
+      if (!t.current_attempt_started_at) return;
+      var startMs = new Date(t.current_attempt_started_at).getTime();
+      var barEl = document.getElementById('pif-bar-' + t.id);
+      var tifEl = document.getElementById('pif-tif-' + t.id);
+      if (!barEl && !tifEl) return;
+      var ivId = setInterval(function () {
+        var secsSinceStart = Math.floor((Date.now() - startMs) / 1000);
+        if (tifEl) {
+          var m = Math.floor(secsSinceStart / 60), s = secsSinceStart % 60;
+          tifEl.textContent = 'Running ' + m + 'm ' + s + 's';
+        }
+        if (barEl) {
+          var pct = Math.min(100, Math.round(secsSinceStart / TASK_TIMEOUT_SECS * 100));
+          barEl.style.width = pct + '%';
+          barEl.style.background = pct >= 85 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
+        }
+      }, 1000);
+      _pifIntervals.push(ivId);
+    });
   }
 
   // ── Project progress cards (unchanged logic) ─────────────────────

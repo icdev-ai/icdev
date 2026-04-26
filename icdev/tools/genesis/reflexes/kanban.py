@@ -106,8 +106,8 @@ MAX_TIMEOUT_RETRIES = 3               # hard-quarantine a task after this many i
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
 _EXTENDED_TIMEOUT_PATTERNS = [
-    (r"pytest|regression|test-suite|full-test", MAX_EXECUTION_SECONDS_PYTEST),
-    (r"codelens|coherence|companion|e2e", MAX_EXECUTION_SECONDS_SCAN),
+    (r"pytest|regression|test-suite|full-test|e2e", MAX_EXECUTION_SECONDS_PYTEST),
+    (r"codelens|coherence|companion", MAX_EXECUTION_SECONDS_SCAN),
 ]
 
 
