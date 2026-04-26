@@ -1043,3 +1043,6 @@ projects:
   - key: vv
     title: V&V Sign-Off
     priority: critical
+  - key: install
+    title: pip install icdev — Greenfield/Brownfield Setup Wizard
+    priority: high
