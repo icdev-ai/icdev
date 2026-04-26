@@ -105,41 +105,54 @@ class TestContentHashDedup:
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
-        entry_id, is_dup = memory_write.write_to_db("test content", "fact", 5)
-        assert entry_id > 0
-        assert is_dup is False
+        result = memory_write.write_to_db("test content", "fact", 5)
+        assert result["id"] > 0
+        assert result["status"] == "inserted"
+        assert len(result["fingerprint"]) == 64
 
     def test_write_with_dedup_duplicate_returns_existing(self, memory_db, monkeypatch):
         from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
-        id1, dup1 = memory_write.write_to_db("same content", "fact", 5)
-        id2, dup2 = memory_write.write_to_db("same content", "fact", 5)
-        assert dup1 is False
-        assert dup2 is True
-        assert id1 == id2
+        r1 = memory_write.write_to_db("same content", "fact", 5)
+        r2 = memory_write.write_to_db("same content", "fact", 5)
+        assert r1["status"] == "inserted"
+        assert r2["status"] == "duplicate_merged"
+        assert r1["id"] == r2["id"]
+        assert r1["fingerprint"] == r2["fingerprint"]
 
     def test_different_users_same_content_no_dedup(self, memory_db, monkeypatch):
         from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
-        id1, dup1 = memory_write.write_to_db("shared fact", "fact", 5, user_id="user-a")
-        id2, dup2 = memory_write.write_to_db("shared fact", "fact", 5, user_id="user-b")
-        assert dup1 is False
-        assert dup2 is False
-        assert id1 != id2
+        r1 = memory_write.write_to_db("shared fact", "fact", 5, user_id="user-a")
+        r2 = memory_write.write_to_db("shared fact", "fact", 5, user_id="user-b")
+        assert r1["status"] == "inserted"
+        assert r2["status"] == "inserted"
+        assert r1["id"] != r2["id"]
 
     def test_null_user_dedup(self, memory_db, monkeypatch):
         from tools.memory import memory_write
 
         monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
 
-        id1, _ = memory_write.write_to_db("no user content", "event", 3)
-        id2, dup2 = memory_write.write_to_db("no user content", "event", 3)
-        assert dup2 is True
-        assert id1 == id2
+        r1 = memory_write.write_to_db("no user content", "event", 3)
+        r2 = memory_write.write_to_db("no user content", "event", 3)
+        assert r2["status"] == "duplicate_merged"
+        assert r1["id"] == r2["id"]
+
+    def test_normalization_dedup(self, memory_db, monkeypatch):
+        """Case/whitespace variants should hit the same fingerprint."""
+        from tools.memory import memory_write
+
+        monkeypatch.setattr(memory_write, "DB_PATH", memory_db)
+
+        r1 = memory_write.write_to_db("Hello World", "fact", 5)
+        r2 = memory_write.write_to_db("  hello   world  ", "fact", 5)
+        assert r2["status"] == "duplicate_merged"
+        assert r1["id"] == r2["id"]
 
 
 # ---------------------------------------------------------------------------
