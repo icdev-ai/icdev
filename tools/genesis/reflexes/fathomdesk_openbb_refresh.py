@@ -1,13 +1,14 @@
 # CUI // SP-CTI
-"""Genesis Reflex — FathomDesk OpenBB Refresh.
+"""Genesis Reflex — FathomDesk OpenBB Performance Refresh.
 
-Periodically refreshes FathomDesk market data via the OpenBB gateway.
-Reads the active ticker universe from ad_universe, fetches fresh price
-snapshots for each ticker, and writes summary rows to ad_openbb_refresh_log.
+Periodically refreshes 1-year return data for FathomDesk tracked tickers.
+Reads the active ticker set from ad_signals (up to 50 distinct tickers),
+fetches 1-year price history for each via the OpenBB gateway, computes the
+1y return, and upserts results into ad_ticker_performance.
 
 Gracefully skips when openbb is not installed (air-gap safe).
 
-GREEN tier (read + append-only writes).  Air-gap safe.
+GREEN tier (read + upsert).  Air-gap safe.  COOLDOWN_HOURS=4.
 """
 
 from __future__ import annotations
@@ -32,14 +33,14 @@ try:
 except Exception:
     _gateway = None  # type: ignore[assignment]
 
-_PERIOD = "7d"
+COOLDOWN_HOURS = 4
 
 
-def _get_universe(conn: Any) -> List[str]:
-    """Return active tickers from ad_universe, or [] if table absent."""
+def _get_tickers(conn: Any) -> List[str]:
+    """Return up to 50 distinct tickers from ad_signals."""
     try:
         rows = conn.execute(
-            "SELECT ticker FROM ad_universe WHERE active = 1 ORDER BY ticker"
+            "SELECT DISTINCT ticker FROM ad_signals LIMIT 50"
         ).fetchall()
         return [
             r["ticker"] if hasattr(r, "keys") else r[0]
@@ -50,50 +51,42 @@ def _get_universe(conn: Any) -> List[str]:
         return []
 
 
-def _ensure_log_table(conn: Any) -> None:
+def _compute_1y_return(data: List[Dict]) -> float | None:
+    """Return percentage 1y return from a list of OHLCV dicts, or None."""
+    if not data or len(data) < 2:
+        return None
     try:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS ad_openbb_refresh_log (
-                id         TEXT PRIMARY KEY,
-                run_id     TEXT NOT NULL,
-                ticker     TEXT NOT NULL,
-                status     TEXT NOT NULL,
-                error      TEXT,
-                created_at TEXT NOT NULL
-            )
-        """)
-        conn.commit()
+        closes = []
+        for row in data:
+            val = row.get("close") or row.get("Close")
+            if val is not None:
+                closes.append(float(val))
+        if len(closes) < 2:
+            return None
+        first, last = closes[0], closes[-1]
+        if first == 0:
+            return None
+        return (last - first) / first * 100.0
     except Exception:
-        pass
-
-
-def _log_row(conn: Any, run_id: str, ticker: str, status: str, error: str | None, now: datetime) -> None:
-    try:
-        conn.execute(
-            "INSERT INTO ad_openbb_refresh_log (id, run_id, ticker, status, error, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (uuid.uuid4().hex, run_id, ticker, status, error, now.isoformat()),
-        )
-        conn.commit()
-    except Exception:
-        pass
+        return None
 
 
 def run(config: Dict[str, Any], session: Any) -> Dict[str, Any]:
-    """Execute one OpenBB refresh cycle.
+    """Execute one performance-refresh cycle.
 
-    Returns a dict with key ``refreshed`` (count of tickers attempted).
+    Returns a dict with keys ``refreshed`` (count upserted) and
+    ``source='openbb_gateway'``.
     """
-    run_id = f"obb-refresh-{uuid.uuid4().hex[:10]}"
+    run_id = f"obb-perf-{uuid.uuid4().hex[:10]}"
     now = datetime.now(timezone.utc)
     print(f"[openbb_refresh] run start  run_id={run_id}")
 
-    # Gateway unavailable — return refreshed=0, not an error
     if _gateway is None or not _gateway.available:
-        print("[openbb_refresh] openbb gateway not available — skipping data fetch")
+        print("[openbb_refresh] openbb gateway not available — skipping")
         return {
             "success": True,
             "refreshed": 0,
+            "source": "openbb_gateway",
             "metric_value": 0.0,
             "details": {
                 "run_id": run_id,
@@ -107,6 +100,7 @@ def run(config: Dict[str, Any], session: Any) -> Dict[str, Any]:
         return {
             "success": False,
             "refreshed": 0,
+            "source": "openbb_gateway",
             "metric_value": 0.0,
             "details": {"error": "get_connection not available", "run_id": run_id},
         }
@@ -118,36 +112,53 @@ def run(config: Dict[str, Any], session: Any) -> Dict[str, Any]:
         return {
             "success": False,
             "refreshed": 0,
+            "source": "openbb_gateway",
             "metric_value": 0.0,
             "details": {"error": f"DB connection failed: {exc}", "run_id": run_id},
         }
 
-    _ensure_log_table(conn)
-    tickers = _get_universe(conn)
+    tickers = _get_tickers(conn)
+    print(f"[openbb_refresh] tickers found: {len(tickers)}")
 
     ok_count = 0
     err_count = 0
     for ticker in tickers:
-        result = _gateway.get_price(ticker, _PERIOD)
+        result = _gateway.get_price(ticker, "1y")
         if result.get("error"):
-            _log_row(conn, run_id, ticker, "error", result["error"], now)
             err_count += 1
             print(f"  [openbb_refresh] {ticker} error: {result['error']}")
-        else:
-            _log_row(conn, run_id, ticker, "ok", None, now)
+            continue
+
+        p1y = _compute_1y_return(result.get("data", []))
+        if p1y is None:
+            err_count += 1
+            print(f"  [openbb_refresh] {ticker} insufficient price data")
+            continue
+
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO ad_ticker_performance "
+                "(ticker, p1y, refreshed_at) VALUES (?, ?, ?)",
+                (ticker, p1y, now.isoformat()),
+            )
+            conn.commit()
             ok_count += 1
-            print(f"  [openbb_refresh] {ticker} ok ({len(result.get('data', []))} rows)")
+            print(f"  [openbb_refresh] {ticker} p1y={p1y:.2f}%")
+        except Exception as exc:
+            err_count += 1
+            print(f"  [openbb_refresh] {ticker} db write error: {exc}")
 
     conn.close()
-    refreshed = ok_count + err_count
+    refreshed = ok_count
     print(f"[openbb_refresh] run complete  refreshed={refreshed} ok={ok_count} err={err_count}")
     return {
         "success": True,
         "refreshed": refreshed,
+        "source": "openbb_gateway",
         "metric_value": float(ok_count),
         "details": {
             "run_id": run_id,
-            "tickers_attempted": refreshed,
+            "tickers_attempted": ok_count + err_count,
             "ok": ok_count,
             "errors": err_count,
             "ran_at": now.isoformat(),
