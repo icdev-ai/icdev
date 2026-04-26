@@ -60,10 +60,10 @@ import json
 import os
 import sys
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import requests as _requests
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -115,27 +115,21 @@ class TestResult:
 
 
 def _post(path: str, payload: dict) -> dict:
-    req = urllib.request.Request(
-        f"{BASE_URL}{path}",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    resp = _requests.post(f"{BASE_URL}{path}", json=payload, timeout=10)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _get(path: str) -> dict:
-    with urllib.request.urlopen(f"{BASE_URL}{path}", timeout=10) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    resp = _requests.get(f"{BASE_URL}{path}", timeout=10)
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _delete(path: str) -> None:
-    req = urllib.request.Request(f"{BASE_URL}{path}", method="DELETE")
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            resp.read()
-    except urllib.error.HTTPError:
+        _requests.delete(f"{BASE_URL}{path}", timeout=10)
+    except _requests.HTTPError:
         pass  # best-effort
 
 
