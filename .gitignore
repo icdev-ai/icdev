@@ -65,12 +65,13 @@ playwright/
 .playwright-mcp/
 
 # Vendored binaries (downloaded via setup, not committed)
-# Use layered rules so vendor/drivers README + .gitkeep files can be tracked
-# while actual binary executables are excluded.
+# Use layered rules so vendor/drivers README + .gitkeep + CHECKSUMS manifest
+# can be tracked while actual binary executables (.exe, bare binaries) are not.
 vendor/*
 !vendor/drivers/
 vendor/drivers/*
 !vendor/drivers/README.md
+!vendor/drivers/CHECKSUMS.md
 !vendor/drivers/msedgedriver/
 vendor/drivers/msedgedriver/*
 !vendor/drivers/msedgedriver/.gitkeep
