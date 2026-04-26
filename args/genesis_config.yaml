@@ -567,6 +567,23 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = no new traps detected (healthy), >0 = events written
 
+  # ── Cost Optimizer (Cluster C fd-cost-01/02) ──────────────────────────────
+
+  cost_optimizer:
+    enabled: true
+    risk_tier: green
+    schedule: "every 168h"
+    interval_seconds: 604800  # 7 days (weekly)
+    cooldown_minutes: 720      # 12h minimum gap — weekly reflex, no rapid re-fire
+    description: "Weekly LLM token spend audit; detect Haiku-eligible tasks; flag bloated prompts. Hard rule: never flags Risk or Execution agents."
+    success_metric:
+      name: recommendations_generated
+      threshold: 0
+      operator: gte  # 0 = no savings found (healthy), >0 = optimization opportunities written
+    excluded_agents:
+      - risk
+      - execution
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:
