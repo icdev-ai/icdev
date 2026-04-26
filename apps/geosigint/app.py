@@ -89,6 +89,11 @@ def graph_page():
     return render_template("graph.html")
 
 
+@app.route("/sea")
+def sea_page():
+    return render_template("sea.html")
+
+
 # ── API ────────────────────────────────────────────────────
 
 @app.route("/api/signals")
@@ -349,6 +354,13 @@ def api_orbat_kg_nodes():
         return jsonify({"nodes": rows})
     finally:
         conn.close()
+
+
+@app.route("/api/orbat/sync", methods=["POST"])
+def api_orbat_sync():
+    """Sync vessel_orbat → vessel_kg_nodes and return counts."""
+    from domains.sea.tracker import build_orbat_kg_nodes
+    return jsonify(build_orbat_kg_nodes())
 
 
 @app.route("/api/weather")
