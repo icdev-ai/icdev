@@ -64,7 +64,7 @@ def bm25_search(query, entries):
             scores.append(float(score))
 
     # Normalize scores to 0-1
-    max_score = max(scores) if scores and max(scores) > 0 else 1.0
+    max_score = float(max(scores)) if len(scores) > 0 and float(max(scores)) > 0 else 1.0
     return [s / max_score for s in scores]
 
 

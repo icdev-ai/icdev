@@ -122,6 +122,22 @@ _RE_CURRENT_TIMESTAMP_DEFAULT = re.compile(
     re.IGNORECASE,
 )
 
+# FTS5 virtual table registry: table_name → list of full-text columns.
+# Used by is_fts5_query() and the translate_sql() FTS5 rules.
+FTS5_TABLES: dict[str, list[str]] = {
+    "memory_fts": ["content", "type", "tags"],
+}
+
+
+def is_fts5_query(sql: str) -> bool:
+    """Return True if SQL contains an FTS5 MATCH clause."""
+    return bool(re.search(r"\bMATCH\b", sql, re.IGNORECASE))
+
+
+def get_fts5_tables() -> dict[str, list[str]]:
+    """Return a copy of the FTS5 table registry."""
+    return dict(FTS5_TABLES)
+
 
 def translate_sql(sql: str, backend: str = "postgresql") -> str:
     """Translate SQLite SQL to PostgreSQL SQL.
@@ -389,6 +405,96 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
 
     # 20. IFNULL(a, b) → COALESCE(a, b) (PG has no IFNULL)
     sql = re.sub(r"\bIFNULL\(", "COALESCE(", sql, flags=re.IGNORECASE)
+
+    # 21. CREATE VIRTUAL TABLE t USING fts5(col1, col2) → PG table with tsvector column
+    if "CREATE VIRTUAL TABLE" in sql.upper():
+        def _fts5_to_pg_table(m):
+            table = m.group(1).strip()
+            cols_raw = m.group(2)
+            col_defs = []
+            for raw_col in cols_raw.split(","):
+                raw_col = raw_col.strip()
+                if "=" in raw_col or raw_col.lower().startswith("tokenize"):
+                    continue  # Skip FTS5 options
+                col_name = re.split(r"\s+", raw_col)[0].strip("\"'")
+                if col_name:
+                    col_defs.append(f"    {col_name} TEXT")
+            col_defs.append("    ts_doc TSVECTOR")
+            return f"CREATE TABLE IF NOT EXISTS {table} (\n{chr(10).join(col_defs)}\n)"
+
+        sql = re.sub(
+            r"CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s+USING\s+fts5\s*\(([^)]+)\)",
+            _fts5_to_pg_table,
+            sql,
+            flags=re.IGNORECASE,
+        )
+
+    # 22. FTS5 MATCH translations
+    if is_fts5_query(sql):
+        # 22a. col MATCH 'term' / col MATCH "term" → table.col <@> BM25Query('term')
+        #      Resolves col to parent table via FTS5_TABLES registry; falls back to col name.
+        def _fts5_bm25_match(m):
+            col = m.group(1)
+            term = m.group(2)
+            table = col
+            for tbl, cols in FTS5_TABLES.items():
+                if col in cols:
+                    table = tbl
+                    break
+            quoted_term = "'" + term.replace("'", "''") + "'"  # nosec B608
+            return table + "." + col + " <@> BM25Query(" + quoted_term + ")"
+
+        sql = re.sub(
+            r'(\w+)\s+MATCH\s+[\'"]([^\'"]+)[\'"]',
+            _fts5_bm25_match,
+            sql,
+            flags=re.IGNORECASE,
+        )
+
+        # 22b. table MATCH 'query' / table MATCH %s → ts_doc @@ plainto_tsquery(...)
+        #      plainto_tsquery is used (not to_tsquery) so embedded literals are safe — B608 nosec
+        def _fts5_match(m):
+            query_part = m.group(1).strip()
+            # nosec B608 — query_part is either %s (parameterized) or a literal
+            # from developer-written SQL; plainto_tsquery treats it as plain text
+            return f"ts_doc @@ plainto_tsquery('english', {query_part})"  # nosec B608
+
+        sql = re.sub(
+            r"\b\w+\s+MATCH\s+(%s|'[^']*'|\"[^\"]*\")",
+            _fts5_match,
+            sql,
+            flags=re.IGNORECASE,
+        )
+
+    # 23. snippet(table, col_idx, start, end, ...) → ts_headline(...)
+    #     highlight(table, col_idx, start, end) → ts_headline(...)
+    if re.search(r"\bsnippet\s*\(", sql, re.IGNORECASE):
+        def _snippet_to_pg(m):
+            parts = [p.strip() for p in m.group(1).split(",")]
+            start_sel = parts[2].strip("'\"") if len(parts) > 2 else "<b>"
+            end_sel = parts[3].strip("'\"") if len(parts) > 3 else "</b>"
+            return f"ts_headline('english', content, query, 'StartSel={start_sel}, StopSel={end_sel}, MaxFragments=1')"
+
+        sql = re.sub(r"\bsnippet\s*\(([^)]+)\)", _snippet_to_pg, sql, flags=re.IGNORECASE)
+
+    if re.search(r"\bhighlight\s*\(", sql, re.IGNORECASE):
+        def _highlight_to_pg(m):
+            parts = [p.strip() for p in m.group(1).split(",")]
+            start_sel = parts[2].strip("'\"") if len(parts) > 2 else "<b>"
+            end_sel = parts[3].strip("'\"") if len(parts) > 3 else "</b>"
+            return f"ts_headline('english', content, query, 'StartSel={start_sel}, StopSel={end_sel}')"
+
+        sql = re.sub(r"\bhighlight\s*\(([^)]+)\)", _highlight_to_pg, sql, flags=re.IGNORECASE)
+
+    # 24. ORDER BY rank (FTS5 BM25, negative = better) → ORDER BY rank DESC after translation
+    #     FTS5 rank is negative; ts_rank() is positive. Flip direction on translated queries.
+    if is_fts5_query(original) and re.search(r"\bORDER\s+BY\s+rank\b", sql, re.IGNORECASE):
+        sql = re.sub(
+            r"\bORDER\s+BY\s+rank\b(?!\s+DESC)(?!\s+ASC)",
+            "ORDER BY rank DESC",
+            sql,
+            flags=re.IGNORECASE,
+        )
 
     return sql
 
