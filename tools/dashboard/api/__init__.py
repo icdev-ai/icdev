@@ -279,6 +279,12 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         logger.debug("rag_eval_api skipped: %s", exc)
 
     try:
+        from tools.knowledge_graph.blueprint import rag_kg_api
+        _mount_inline(rag_kg_api)
+    except ImportError as exc:
+        logger.debug("rag_kg_api skipped: %s", exc)
+
+    try:
         from tools.dashboard.api.sre import sre_api
         _mount(sre_api, v1_prefix="/api/v1/sre")
         logger.info("SRE API registered at /api/v1/sre/")
