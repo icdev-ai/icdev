@@ -436,3 +436,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Fathomdesk Openbb Refresh | tools\genesis\reflexes\fathomdesk_openbb_refresh.py | Auto-registered: reflexes/fathomdesk_openbb_refresh.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Data Gateway | tools\fathomdesk\data_gateway.py | Auto-registered: fathomdesk/data_gateway.py | --json | JSON |
+| Reflex Observer | tools\monitoring\reflex_observer.py | Auto-registered: monitoring/reflex_observer.py | --json | JSON |
