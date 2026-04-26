@@ -116,7 +116,8 @@ def _get_cursor(conn):
     INT offset after first PostgreSQL page)."""
     ph = sql_placeholder(conn)
     row = conn.execute(
-        f"SELECT last_chunk_id FROM rag_kg_backfill_cursor WHERE id = {ph}", (1,)
+        f"SELECT last_chunk_id FROM rag_kg_backfill_cursor WHERE id = {ph}",  # nosec B608 — ph is ? or %s, not user data
+        (1,),
     ).fetchone()
     if row is None:
         _seed_cursor(conn)
@@ -133,7 +134,7 @@ def _update_cursor(conn, cursor_val) -> None:
     ph = sql_placeholder(conn)
     now_expr = sql_now(conn)
     conn.execute(
-        f"UPDATE rag_kg_backfill_cursor "
+        f"UPDATE rag_kg_backfill_cursor "  # nosec B608 — ph/sql_now() only, no user input
         f"SET last_chunk_id = {ph}, updated_at = {now_expr} "
         f"WHERE id = {ph}",
         (cursor_val, 1),
@@ -169,7 +170,7 @@ def _fetch_page(conn, cursor, tier: Optional[str], page_size: int) -> list:
         offset = int(cursor) if isinstance(cursor, int) else 0
         where = f"WHERE {' AND '.join(tier_cond)}" if tier_cond else ""
         return conn.execute(
-            f"SELECT {cols} FROM rag_chunks {where} ORDER BY id "
+            f"SELECT {cols} FROM rag_chunks {where} ORDER BY id "  # nosec B608 — cols/where are constants; ph is placeholder
             f"LIMIT {ph} OFFSET {ph}",
             tier_params + [page_size, offset],
         ).fetchall()
@@ -185,7 +186,7 @@ def _fetch_page(conn, cursor, tier: Optional[str], page_size: int) -> list:
     all_cond = id_cond + tier_cond
     where = f"WHERE {' AND '.join(all_cond)}" if all_cond else ""
     return conn.execute(
-        f"SELECT {cols} FROM rag_chunks {where} ORDER BY id LIMIT {ph}",
+        f"SELECT {cols} FROM rag_chunks {where} ORDER BY id LIMIT {ph}",  # nosec B608 — cols/where are constants; ph is placeholder
         id_params + tier_params + [page_size],
     ).fetchall()
 
@@ -199,10 +200,13 @@ def _delete_stale_nodes(conn, node_ids: list[str]) -> None:
     ph = sql_placeholder(conn)
     for node_id in node_ids:
         conn.execute(
-            f"DELETE FROM kg_edges WHERE source_id = {ph} OR target_id = {ph}",
+            f"DELETE FROM kg_edges WHERE source_id = {ph} OR target_id = {ph}",  # nosec B608 — ph only; node_id bound
             (node_id, node_id),
         )
-        conn.execute(f"DELETE FROM kg_nodes WHERE id = {ph}", (node_id,))
+        conn.execute(
+            f"DELETE FROM kg_nodes WHERE id = {ph}",  # nosec B608 — ph only; node_id bound
+            (node_id,),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +218,7 @@ def _create_graph(conn, chunk_id: str, tenant_id: str, classification: str) -> s
     graph_id = _kg_id()
     now = _now()
     conn.execute(
-        f"INSERT INTO kg_graphs "
+        f"INSERT INTO kg_graphs "  # nosec B608 — only ph placeholders; all values bound
         f"(id, project_id, name, description, metadata, created_at, updated_at) "
         f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
         (
@@ -284,7 +288,7 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
 
     if not entities:
         conn.execute(
-            f"UPDATE rag_chunks SET kg_node_ids = {ph} WHERE id = {ph}",
+            f"UPDATE rag_chunks SET kg_node_ids = {ph} WHERE id = {ph}",  # nosec B608 — ph only; values bound
             ("[]", chunk_id),
         )
         return {"nodes_written": 0, "edges_written": 0, "skipped": False}
@@ -303,7 +307,7 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
             "source": "rag_kg_bridge",
         })
         conn.execute(
-            f"INSERT INTO kg_nodes "
+            f"INSERT INTO kg_nodes "  # nosec B608 — only ph placeholders; all values bound
             f"(id, graph_id, label, entity_type, properties, source_chunk_id, created_at) "
             f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
             (node_id, graph_id, label, entity_type, props, chunk_id, now),
@@ -320,7 +324,7 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
             continue
         edge_id = _kg_id()
         conn.execute(
-            f"INSERT INTO kg_edges "
+            f"INSERT INTO kg_edges "  # nosec B608 — only ph placeholders; all values bound
             f"(id, graph_id, source_id, target_id, relationship, weight, properties, created_at) "
             f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
             (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, "{}", now),
@@ -329,14 +333,14 @@ def _ingest_chunk(conn, chunk: dict, use_llm: bool) -> dict:
 
     # Update graph entity/edge counts
     conn.execute(
-        f"UPDATE kg_graphs SET entity_count = {ph}, edge_count = {ph}, updated_at = {ph} "
+        f"UPDATE kg_graphs SET entity_count = {ph}, edge_count = {ph}, updated_at = {ph} "  # nosec B608 — only ph placeholders; all values bound
         f"WHERE id = {ph}",
         (len(node_ids), edges_written, now, graph_id),
     )
 
     # Write back kg_node_ids to rag_chunks
     conn.execute(
-        f"UPDATE rag_chunks SET kg_node_ids = {ph} WHERE id = {ph}",
+        f"UPDATE rag_chunks SET kg_node_ids = {ph} WHERE id = {ph}",  # nosec B608 — ph only; values bound
         (json.dumps(node_ids), chunk_id),
     )
 
@@ -414,7 +418,7 @@ def run_single(chunk_id: str, as_json: bool = False) -> dict:
 
         ph = sql_placeholder(conn)
         row = conn.execute(
-            f"SELECT id, content, metadata, tier, tenant_id, classification, "
+            f"SELECT id, content, metadata, tier, tenant_id, classification, "  # nosec B608 — ph only; chunk_id bound
             f"COALESCE(kg_node_ids, '[]') AS kg_node_ids "
             f"FROM rag_chunks WHERE id = {ph}",
             (chunk_id,),
