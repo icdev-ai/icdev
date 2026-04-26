@@ -309,6 +309,162 @@ projects:
   - key: twin
     title: TWIN
     priority: medium
+  - key: gap
+    title: Oracle Gap Tasks (orphan_db_table, tool_not_in_manifest, route_no_e2e)
+    priority: medium
+- key: ndchat
+  name: NDC Chat Context Bridge
+  description: 'NDC canvas AI chat context system: backend context/message persistence
+    endpoints, unified Q&A + topology routing in ai-chat, JS context-init + history
+    restore in canvas.html, and V&V lifecycle tests.'
+  task_prefix: ndchat-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: Backend Chat Context API (POST /ai-context, GET messages)
+    priority: high
+  - key: impl02
+    title: Unified /ai-chat Q&A + Topology Routing
+    priority: high
+  - key: impl03
+    title: JS Context Init + History Restore
+    priority: high
+  - key: vv01
+    title: V&V — Syntax, Coherence, Companion, Live Endpoints
+    priority: critical
+- key: osv
+  name: OSV Scanner Integration
+  description: 'OSV-Scanner binary wrapper, integration into health_check.py and
+    secure.py, security_gates.yaml entry, and V&V sign-off.'
+  task_prefix: osv-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: OSV-Scanner Binary Wrapper
+    priority: high
+  - key: impl02
+    title: Integrate into health_check + secure.py
+    priority: high
+  - key: vv01
+    title: V&V — Syntax, Coherence, Companion, Health Check
+    priority: critical
+- key: fdao
+  name: FathomDesk Reflex Observer
+  description: 'FathomDesk reflex observability layer: reflex_observations table,
+    observe() wrapper wired into Genesis scheduler, V&V end-to-end tests.'
+  task_prefix: fdao-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: reflex_observations Table + observe() Function
+    priority: high
+  - key: impl02
+    title: Wire observe() into Genesis Scheduler Dispatch
+    priority: high
+  - key: vv01
+    title: V&V — End-to-End Observer + API Route
+    priority: critical
+- key: fdobb
+  name: FathomDesk OpenBB Gateway
+  description: 'Unified data gateway for FathomDesk: data_gateway.py with yfinance
+    fallback, wired into blueprint + options routes, openbb_refresh Genesis reflex,
+    V&V sign-off.'
+  task_prefix: fdobb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl02
+    title: data_gateway.py Skeleton + Methods
+    priority: high
+  - key: impl03
+    title: Wire data_gateway into blueprint + options + reflex
+    priority: high
+  - key: vv01
+    title: V&V — Import, Fallback, Reflex Dry-Run, Coherence
+    priority: critical
+- key: zbx
+  name: Zerobox Sandbox Coverage
+  description: 'OPT-58 sandbox coverage audit: classify all user-input modules in
+    sandbox-coverage.md, Zerobox credential proxy wrapper, V&V coherence + companion
+    sync gate.'
+  task_prefix: zbx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: OPT-58 Audit — Classify User-Input Modules
+    priority: high
+  - key: impl02
+    title: Zerobox Credential Proxy Wrapper
+    priority: high
+  - key: vv01
+    title: V&V — Coherence Gate + Companion Sync
+    priority: critical
+- key: fdhmd
+  name: FathomDesk Signal Decay
+  description: 'Hippo memory decay for FathomDesk: Migration 017 signal_decay_weight
+    on ad_signals, signal_decay.py Hippo formula, wire decay into trap sweep + signal
+    ranking, V&V unit tests.'
+  task_prefix: fdhmd-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: Signal Decay Implementation (Migration + Formula + Wiring)
+    priority: high
+  - key: vv
+    title: V&V — Unit Tests, Trap Sweep Smoke, Coherence
+    priority: critical
+- key: hmd
+  name: Memory System Hippo Decay
+  description: 'Hippo memory decay for the core memory system: decay_weight column
+    on memory_entries, memory_write.py initial weight, hybrid_search.py decay scoring,
+    V&V tests.'
+  task_prefix: hmd-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: Decay Weight Implementation (Migration + Write + Search)
+    priority: high
+  - key: vv
+    title: V&V — Formula Tests, Coherence, Companion Sync
+    priority: critical
+- key: fdmlt
+  name: FathomDesk Signal Tuner
+  description: 'Multi-asset signal threshold extraction + tuner/backtester in
+    fathomdesk_signal_tuner_reflex.py, weekly Genesis reflex, V&V unit tests + reflex
+    dry-run.'
+  task_prefix: fdmlt-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: Signal Threshold + Tuner + Backtester
+    priority: high
+  - key: vv
+    title: V&V — Unit Tests, Reflex Dry-Run, Coherence
+    priority: critical
+- key: pgt
+  name: PostgreSQL Textsearch
+  description: 'BM25 <@> operator path in storage.py translate_sql(), FTS5-parity
+    hybrid_search.py tests, V&V coherence + companion + query parity smoke test.'
+  task_prefix: pgt-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: BM25 translate_sql() Path
+    priority: high
+  - key: test
+    title: FTS5-Parity Unit Tests
+    priority: high
+  - key: vv
+    title: V&V — Coherence, Companion, Query Parity
+    priority: critical
 - key: task_kb
   name: Task Kb Project
   description: Auto-registered project for tasks with prefix 'task-kb-'. Update name

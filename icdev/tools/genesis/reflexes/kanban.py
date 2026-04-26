@@ -1063,9 +1063,18 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
         parent_type = task.get("task_type") or "chore"
         source_pred = task.get("source_prediction_id")
 
+        _CDH_GAP_RULES = {
+            "tool_not_in_manifest", "orphan_db_table", "route_no_e2e",
+            "missing_test", "missing_e2e", "import_error", "stale_route",
+        }
+        if rule in _CDH_GAP_RULES:
+            _child_prefix = "cdh-gap-"
+        else:
+            _child_prefix = f"{task['id'][:20]}-"
+
         created_children: list = []
         for subj in subjects:
-            child_id = f"task-{_uuid.uuid4().hex[:10]}"
+            child_id = f"{_child_prefix}{_uuid.uuid4().hex[:8]}"
             child_title = f"{rule} gap: {subj}" if rule else f"Batch child: {subj}"
             child_desc = (
                 f"AUTO-DECOMPOSED from batch task {task['id']}\n"
