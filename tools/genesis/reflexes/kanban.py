@@ -105,9 +105,11 @@ MAX_TIMEOUT_RETRIES = 3               # hard-quarantine a task after this many i
 
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
+# e2e tasks get PYTEST-level time — a single E2E step still runs the full
+# Selenium suite under the hood, so 20 min is too tight.
 _EXTENDED_TIMEOUT_PATTERNS = [
-    (r"pytest|regression|test-suite|full-test", MAX_EXECUTION_SECONDS_PYTEST),
-    (r"codelens|coherence|companion|e2e", MAX_EXECUTION_SECONDS_SCAN),
+    (r"pytest|regression|test-suite|full-test|e2e", MAX_EXECUTION_SECONDS_PYTEST),
+    (r"codelens|coherence|companion", MAX_EXECUTION_SECONDS_SCAN),
 ]
 
 
@@ -4622,23 +4624,28 @@ def _reset_to_backlog(task_id: str, reason: str = "") -> None:
 def _complexity_score(task: dict) -> int:
     """Heuristic complexity score — no LLM, no I/O.
 
-    Returns an int 0-10. Score ≥ 4 → decompose upfront before first dispatch.
+    Returns an int 0-10. Score ≥ 7 → decompose upfront before first dispatch.
+    Threshold raised from 4 → 7: the old threshold triggered on virtually any
+    well-described build task (words>120 +2, build+words>80 +2 = 4 already),
+    burning LLM tokens on the decomposer and cascading subtask chains.
 
     Signals:
-      +2  description word count > 120
-      +1  description word count > 60
-      +2  ≥ 3 bullet/numbered items in description
+      +2  description word count > 200  (very long — multiple distinct tasks)
+      +1  description word count > 120
+      +2  ≥ 5 bullet/numbered items    (many distinct steps — not just 3)
+      +1  ≥ 3 bullet/numbered items
       +1  title contains "and" / "&" / "+" (compound scope)
-      +1  ≥ 3 distinct file paths mentioned (*.py / *.html / *.yaml / *.md)
-      +2  task_type is "build" AND word count > 80
-      +1  title or description contains "implement", "refactor", "migrate",
-          "redesign", "overhaul", "integrate" (broad-scope verbs)
+      +2  ≥ 5 distinct file paths mentioned (*.py / *.html / *.yaml / *.md)
+      +1  ≥ 3 distinct file paths mentioned
+      +1  title or description contains "redesign", "overhaul", "full migration",
+          "rewrite" (truly broad-scope verbs; "implement"/"integrate" removed —
+          those are normal single-task verbs)
+    Note: build+words no longer stacks — removed to stop over-triggering.
     """
     import re as _re
 
     title = (task.get("title") or "").lower()
     desc = (task.get("description") or "")
-    task_type = (task.get("task_type") or "").lower()
     failure_count = int(task.get("failure_count") or 0)
 
     # Tasks that already failed once skip pre-dispatch decompose
@@ -4649,27 +4656,28 @@ def _complexity_score(task: dict) -> int:
     words = len(desc.split())
     score = 0
 
-    if words > 120:
+    if words > 200:
         score += 2
-    elif words > 60:
+    elif words > 120:
         score += 1
 
     bullets = len([l for l in desc.splitlines()
                    if _re.match(r"^\s*[-*•]|\s*\d+\.", l)])
-    if bullets >= 3:
+    if bullets >= 5:
         score += 2
+    elif bullets >= 3:
+        score += 1
 
     if any(tok in title for tok in (" and ", " & ", " + ")):
         score += 1
 
     file_refs = _re.findall(r"[\w/\-]+\.(?:py|html|yaml|yml|md|ts|js|go)", desc)
-    if len(file_refs) >= 3:
+    if len(file_refs) >= 5:
+        score += 2
+    elif len(file_refs) >= 3:
         score += 1
 
-    if task_type == "build" and words > 80:
-        score += 2
-
-    broad_verbs = ("implement", "refactor", "migrate", "redesign", "overhaul", "integrate")
+    broad_verbs = ("redesign", "overhaul", "full migration", "rewrite")
     if any(v in title or v in desc.lower() for v in broad_verbs):
         score += 1
 
@@ -5109,12 +5117,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     task = due_tasks[0]
 
     # Pre-dispatch complexity gate: score the task before spending any tokens.
-    # If it looks too big for a single session (score ≥ 4) decompose it now
+    # If it looks too big for a single session (score ≥ 7) decompose it now
     # instead of letting it fail and waste a full 900s agent run.
     _cscore = _complexity_score(task)
-    if _cscore >= 4:
+    if _cscore >= 7:
         logger.info(
-            "pre-dispatch: %s complexity score %d ≥ 4 — decomposing upfront",
+            "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
             task["id"], _cscore,
         )
         print(
