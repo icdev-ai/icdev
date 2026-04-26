@@ -13,10 +13,16 @@ import importlib
 import os
 import sys
 import types
+import warnings
 _tools_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_tools_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
+warnings.warn(
+    "Importing from 'tools' is deprecated. Use 'from icdev.tools' instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class _ToolsRedirect(types.ModuleType):
