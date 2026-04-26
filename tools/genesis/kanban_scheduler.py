@@ -131,15 +131,15 @@ def main():
             ).fetchall()
             if stuck:
                 now_iso = datetime.now(timezone.utc).isoformat()
-                ids = [dict(r)["id"] for r in stuck]
                 stuck_ids = [(dict(r)["id"], dict(r).get("title")) for r in stuck]
-                # Single UPDATE for all interrupted tasks -- no failure penalty.
-                placeholders = ",".join(["%s"] * len(ids))
-                conn.execute(
-                    f"UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "
-                    f"WHERE id IN ({placeholders}) AND status = 'in_progress'",
-                    [now_iso] + ids,
-                )
+                # Individual UPDATE per interrupted task -- no failure penalty.
+                # One query per ID avoids dynamic IN-clause string construction.
+                for tid, _ in stuck_ids:
+                    conn.execute(
+                        "UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "
+                        "WHERE id = %s AND status = 'in_progress'",
+                        [now_iso, tid],
+                    )
                 conn.commit()
                 logger.info(
                     "Startup recovery: reset %d interrupted task(s) to backlog "
