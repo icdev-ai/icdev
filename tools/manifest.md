@@ -5,6 +5,7 @@
 
 ## Index
 
+- [AIS Vessel Data Importer](manifest/ais-importer.md)
 - [Network Design Canvas + IQE (ICDEV Query Engine)](manifest/network-iqe.md)
 - [Memory System](manifest/memory-system.md)
 - [Database](manifest/database.md)

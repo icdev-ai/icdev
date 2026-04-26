@@ -119,6 +119,25 @@ CREATE TABLE IF NOT EXISTS space_weather (
     sunspot_num INTEGER,
     conditions  TEXT       -- quiet, unsettled, active, storm
 );
+
+-- AIS vessel tracks (imported from NMEA AIS files via ais_importer.py)
+CREATE TABLE IF NOT EXISTS sg_tracks (
+    track_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    mmsi        TEXT NOT NULL,
+    lat         REAL NOT NULL,
+    lon         REAL NOT NULL,
+    speed       REAL,           -- speed over ground in knots
+    heading     REAL,           -- true heading in degrees (0-359)
+    timestamp   TEXT NOT NULL,
+    vessel_type TEXT,           -- e.g. "Class A", "Class B", "AtoN", or ITU type name
+    source_file TEXT,           -- originating NMEA file path
+    msg_type    INTEGER,        -- raw AIS message type (1-27)
+    imported_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_sg_tracks_mmsi ON sg_tracks(mmsi);
+CREATE INDEX IF NOT EXISTS idx_sg_tracks_timestamp ON sg_tracks(timestamp);
+CREATE INDEX IF NOT EXISTS idx_sg_tracks_location ON sg_tracks(lat, lon);
 """
 
 
