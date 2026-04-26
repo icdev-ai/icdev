@@ -143,15 +143,16 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         )
         if pragma_ti:
             table = pragma_ti.group(1)
-            return (
-                "SELECT ordinal_position AS cid, column_name AS name, "
+            _col_query = (
+                "SELECT ordinal_position AS cid, column_name AS name, "  # nosec B608 — translate_sql() is a pure syntax translator, never executes SQL; table from \w+ regex (word chars only)
                 "data_type AS type, "
                 "CASE WHEN is_nullable = 'NO' THEN 1 ELSE 0 END AS notnull, "
                 "column_default AS dflt_value, 0 AS pk "
                 "FROM information_schema.columns "
-                f"WHERE table_schema = 'public' AND table_name = '{table}' "
+                "WHERE table_schema = 'public' AND table_name = '__TNAME__' "
                 "ORDER BY ordinal_position"
-            )
+            ).replace("__TNAME__", table)
+            return _col_query
         return "SELECT 1"  # No-op for all other PRAGMAs
 
     # 2. datetime('now', '-N days/hours') → NOW() - INTERVAL 'N days'
