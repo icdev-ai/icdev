@@ -1170,3 +1170,48 @@ projects:
   - key: vv
     title: Wheel Smoke Test + V&V Gate
     priority: critical
+- key: fdmm
+  name: FathomDesk — Machine Momentum (CTA + Buyback + VIX)
+  description: >
+    Three-axis machine momentum engine for FathomDesk: (1) CTA Positioning Estimator
+    (price-only DB weighting model, ADX, Donchian, vol-deleveraging); (2) Buyback
+    Tracker (SEC EDGAR 8-K, blackout window calendar, buyback yield); (3) VIX regime
+    integration (vol-doom-loop detection, regime modifiers); (4) MachineConviction
+    unified 3-axis scorer; (5) CTAMomentumLens (new Oracle lens); (6) 10th confluence
+    pillar; (7) /machine-momentum dashboard heatmap page.
+  task_prefix: fdmm-
+  default_open: true
+  briefs:
+  - 'Core: cta_positioning.py + ADX + Donchian + vol-deleveraging — fdmm-core-01..05'
+  - 'Buyback: DB migration + buyback_tracker.py + blackout wiring — fdmm-buyback-01..04'
+  - 'VIX: regime enum extension + scorer wiring — fdmm-vix-01..02'
+  - 'Scorer: MachineConviction dataclass + machine_momentum_scorer.py — fdmm-scorer-01..03'
+  - 'Lens: CTAMomentumLens + runner.py registration — fdmm-lens-01..03'
+  - 'Pillar: 10th confluence pillar module + confluence_scorer.py wiring — fdmm-pillar-01..02'
+  - 'UI: /machine-momentum dashboard (7-component gate) — fdmm-ui-01..06'
+  - 'V&V: coherence + companion + E2E Selenium — fdmm-vv-01..02'
+  epics:
+  - key: core
+    title: CTA Positioning Engine (price-only score + ADX + Donchian + vol-deleveraging)
+    priority: critical
+  - key: buyback
+    title: Buyback Tracker (SEC EDGAR + blackout window calendar)
+    priority: high
+  - key: vix
+    title: VIX Regime Integration (doom-loop detection + scorer modifiers)
+    priority: high
+  - key: scorer
+    title: MachineConviction Unified 3-Axis Scorer
+    priority: critical
+  - key: lens
+    title: CTAMomentumLens — Oracle Lens (analyze→score→propose)
+    priority: high
+  - key: pillar
+    title: 10th Confluence Pillar — machine_momentum_aligned
+    priority: high
+  - key: ui
+    title: /machine-momentum Dashboard Heatmap Page (7-component gate)
+    priority: high
+  - key: vv
+    title: V&V Sign-Off (coherence + companion + E2E)
+    priority: critical
