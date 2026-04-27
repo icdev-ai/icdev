@@ -498,3 +498,15 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Signal Pricer | tools\intelligence\signal_pricer.py | Auto-registered: intelligence/signal_pricer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ais Connector | tools\databridge\connectors\ais_connector.py | Auto-registered: connectors/ais_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Osint Prestage | tools\strategos\osint_prestage.py | Auto-registered: strategos/osint_prestage.py | --json | JSON |

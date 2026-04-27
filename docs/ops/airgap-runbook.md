@@ -194,7 +194,81 @@ security-scan:
 
 ---
 
-## 10. Escape hatches
+## 10. Strategos OSINT pre-staging (air-gap OSINT ingestion)
+
+When `ICDEV_AIRGAP=true`, the OSINT harvester cannot reach internet RSS feeds
+directly. Use the three-tier fallback chain to feed signals into an air-gapped
+enclave:
+
+### Tier resolution order (first reachable wins)
+
+| Tier | Condition | Data source |
+|---|---|---|
+| `TIER_INTERNET` | `ICDEV_AIRGAP` unset | Live RSS/Atom feeds |
+| `TIER_GITLAB` | `ICDEV_AIRGAP=true` + `GITLAB_URL` reachable + `GITLAB_OSINT_PROJECT_ID` set | GitLab CI artifact |
+| `TIER_FILE_INBOX` | `ICDEV_AIRGAP=true` + JSON files in `data/osint_inbox/` | Pre-staged JSON batches |
+| `TIER_NONE` | All sources unavailable | Audit row written; 0 signals; exit 0 |
+
+### Option A — Pre-stage on the internet-connected side, transfer via removable media
+
+```bash
+# On the internet-connected machine:
+python tools/strategos/osint_prestage.py --output-dir /mnt/transfer/osint_inbox/
+
+# Copy the generated osint_prestage_<timestamp>.json files to removable media,
+# then copy into the enclave's data/osint_inbox/ directory.
+# The harvester will pick them up automatically on the next Genesis reflex cycle.
+```
+
+Dry-run (count without writing):
+```bash
+python tools/strategos/osint_prestage.py --dry-run --json
+```
+
+### Option B — GitLab CI artifact (TIER_GITLAB)
+
+Configure a GitLab pipeline job (`osint_collect`) in the OSINT project that
+runs `tools/strategos/gitlab_osint_collector.py` and uploads `osint_signals.json`
+as a CI artifact. The harvester downloads and processes it automatically:
+
+```bash
+# Required env vars on the air-gapped side:
+export ICDEV_AIRGAP=true
+export GITLAB_URL=https://gitlab.internal.gov
+export GITLAB_TOKEN=<service-account-token>
+export GITLAB_OSINT_PROJECT_ID=<project-id>   # numeric project ID
+export GITLAB_OSINT_REF=main                   # branch/tag (default: main)
+```
+
+### Option C — File inbox (TIER_FILE_INBOX, fallback)
+
+Drop pre-staged JSON files into `data/osint_inbox/` before the reflex fires.
+The harvester accepts any file matching `osint_prestage_*.json` or `*.json`:
+
+```bash
+# Format expected by osint_harvester:
+# {"signals": [{"title": str, "body": str, "source": str, "date": str, "url": str, "geo_hint": null|str}, ...], "count": N, "prestaged_at": "..."}
+ls data/osint_inbox/          # pending files
+ls data/osint_inbox/processed/ # already ingested files (moved here after processing)
+```
+
+### Verifying tier resolution
+
+```bash
+python tools/strategos/tier_resolver.py --json
+# Returns: {"osint_tier": "TIER_FILE_INBOX", "exec_tier": "EXEC_OLLAMA_LOCAL", ...}
+```
+
+### TIER_NONE behaviour
+
+If all tiers are unavailable (inbox empty, GitLab unreachable, internet disabled):
+- The harvester exits 0 (no failure).
+- A diagnostic audit row is written to `sg_raw_signals_audit` with `reason="TIER_NONE: no source available"`.
+- The Kanban task is NOT marked failed — it remains in `in_progress` and retries on the next cycle.
+
+---
+
+## 11. Escape hatches
 
 | Variable | Effect |
 |---|---|
