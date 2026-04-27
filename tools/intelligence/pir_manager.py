@@ -57,7 +57,7 @@ def list_pirs(
             params.append(status)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         sql = (
-            f"SELECT * FROM sg_pir_requirements {where} "
+            f"SELECT * FROM sg_pir_requirements {where} "  # nosec B608 — where clause built from validated allowlist
             "ORDER BY collection_priority ASC, created_at DESC "
             "LIMIT ?"
         )
@@ -176,7 +176,8 @@ def update_pir(pir_id: str, **fields) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
         result = conn.execute(
-            f"UPDATE sg_pir_requirements SET {set_clause} WHERE id = ?", params
+            f"UPDATE sg_pir_requirements SET {set_clause} WHERE id = ?",  # nosec B608 — set_clause from validated allowlist
+            params
         )
         conn.commit()
         if result.rowcount == 0:
