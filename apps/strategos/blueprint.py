@@ -193,7 +193,10 @@ def strategos_index():
         ),
         "supply_nodes":  _safe_count("SELECT COUNT(*) FROM sg_supply_nodes"),
         "cyber_ops":     _safe_count("SELECT COUNT(*) FROM sg_conflict_events WHERE event_type='cyber_op'"),
-        "briefs_total":  _safe_count("SELECT COUNT(*) FROM sg_intelligence_briefs"),
+        "briefs_total":       _safe_count("SELECT COUNT(*) FROM sg_intelligence_briefs"),
+        "prioritized_signals": _safe_count(
+            "SELECT COUNT(*) FROM sg_prioritized_signals WHERE is_read = 0"
+        ),
     }
     return render_template("strategos/index.html", summary=summary)
 
