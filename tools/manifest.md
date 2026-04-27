@@ -510,3 +510,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Osint Prestage | tools\strategos\osint_prestage.py | Auto-registered: strategos/osint_prestage.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Put Call Sentiment | tools\trading\analysis\confluence_pillars\put_call_sentiment.py | Auto-registered: confluence_pillars/put_call_sentiment.py | --json | JSON |
+| Fathomdesk Pc Ratio | tools\genesis\reflexes\fathomdesk_pc_ratio.py | Auto-registered: reflexes/fathomdesk_pc_ratio.py | --json | JSON |

@@ -86,7 +86,7 @@ def add_annotation(
     ph = _ph()
     returning = " RETURNING id" if is_pg() else ""
     sql = (
-        f"INSERT INTO sg_analyst_annotations "
+        f"INSERT INTO sg_analyst_annotations "  # nosec B608 — all values passed as parameterized placeholders
         f"(entity_type, entity_id, annotation_type, content, analyst_id, created_at) "
         f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph}){returning}"
     )
@@ -114,7 +114,7 @@ def get_annotations(entity_type: str, entity_id: str) -> list[dict]:
     """Return all annotations for a specific entity, newest-first."""
     ph = _ph()
     sql = (
-        "SELECT id, entity_type, entity_id, annotation_type, content, analyst_id, created_at "
+        "SELECT id, entity_type, entity_id, annotation_type, content, analyst_id, created_at "  # nosec B608 — parameterized
         "FROM sg_analyst_annotations "
         f"WHERE entity_type={ph} AND entity_id={ph} "
         "ORDER BY created_at DESC"
@@ -141,7 +141,7 @@ def get_annotation_counts(entity_type: str, entity_ids: list[str]) -> dict[str, 
     ph = _ph()
     placeholders = ",".join([ph] * len(entity_ids))
     sql = (
-        "SELECT entity_id, COUNT(*) as cnt "
+        "SELECT entity_id, COUNT(*) as cnt "  # nosec B608 — placeholders built from len(entity_ids), no raw injection
         "FROM sg_analyst_annotations "
         f"WHERE entity_type={ph} AND entity_id IN ({placeholders}) "
         "GROUP BY entity_id"

@@ -2,12 +2,92 @@
 {% set active = "strategos" %}
 {% block title %}IW Effects — Strategos{% endblock %}
 
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <div class="page-header page-header--compact">
-    <h1>Information Warfare <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Effects tracker</span></h1>
+    <h1>Information Warfare <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Effects &amp; PMESII-PT Assessment</span></h1>
     <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
 </div>
 
+<!-- PMESII-PT assessment row -->
+<div style="display:grid;grid-template-columns:200px 1fr 1fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- WRI Gauge -->
+    <div class="card" style="text-align:center">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">WRI</div>
+        <div id="wriScore" style="font-size:3rem;font-weight:700;line-height:1;color:var(--accent-blue)">—</div>
+        <div style="font-size:.8rem;color:var(--text-secondary);margin-top:.2rem">/ 100</div>
+        <div style="margin:.6rem 0">
+            <div style="background:var(--bg-secondary);border-radius:4px;height:8px;overflow:hidden">
+                <div id="wriBar" style="height:100%;width:0%;background:var(--accent-blue);transition:width .6s ease;border-radius:4px"></div>
+            </div>
+        </div>
+        <div id="rungBadge" style="font-size:.75rem;font-weight:600;padding:.25rem .6rem;border-radius:4px;display:inline-block">—</div>
+        <div id="rungLabel" style="font-size:.7rem;color:var(--text-muted);margin-top:.25rem">—</div>
+    </div>
+
+    <!-- Radar chart -->
+    <div class="card">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">PMESII-PT Radar</div>
+        <div style="height:260px">
+            <canvas id="pmesiiRadar"></canvas>
+        </div>
+    </div>
+
+    <!-- Dimension scores + dominant indicators -->
+    <div class="card">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Dimension Scores</div>
+        <div id="dimScores" style="font-size:.8rem">
+            <div style="color:var(--text-muted)">Loading…</div>
+        </div>
+
+        <!-- Manual score submission -->
+        <details style="margin-top:.75rem">
+            <summary style="font-size:.75rem;color:var(--text-secondary);cursor:pointer">Submit scores manually</summary>
+            <form id="wriForm" style="margin-top:.5rem">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .75rem">
+                    {% for dim in ['political','military','economic','social','information','infrastructure','physical_environment','time'] %}
+                    <label style="font-size:.75rem;color:var(--text-secondary)">
+                        {{ dim|replace('_',' ')|title }}
+                        <input type="range" name="{{ dim }}" min="0" max="100" value="0"
+                               style="width:100%;margin-top:.2rem;accent-color:var(--accent-blue)">
+                        <span id="v_{{ dim }}" style="float:right;color:var(--text-muted)">0</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top:.5rem;font-size:.8rem">Run Assessment</button>
+            </form>
+        </details>
+    </div>
+
+</div>
+
+<!-- Escalation Ladder -->
+<div class="card" style="margin-bottom:1rem">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">
+        Escalation Ladder
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem">
+        {% for rung in [
+            (1,'Routine Monitoring','#10b981','WRI 0–20'),
+            (2,'Elevated Watch','#22d3ee','WRI 20–40'),
+            (3,'Heightened Readiness','#f59e0b','WRI 40–60'),
+            (4,'Crisis Response','#f97316','WRI 60–80'),
+            (5,'Imminent Action','#ef4444','WRI 80–100'),
+        ] %}
+        <div id="rung{{ rung[0] }}" style="padding:.5rem .6rem;border-radius:5px;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);text-align:center">
+            <div style="font-size:1.3rem;font-weight:700;color:{{ rung[2] }}">{{ rung[0] }}</div>
+            <div style="font-size:.7rem;font-weight:600;color:{{ rung[2] }};margin:.15rem 0">{{ rung[1] }}</div>
+            <div style="font-size:.65rem;color:var(--text-muted)">{{ rung[3] }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Effects table -->
 <form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
     <div>
         <label style="display:block;font-size:.8rem;color:var(--text-secondary);margin-bottom:.25rem">Effect Type</label>
@@ -66,4 +146,158 @@
     </table>
 </div>
 <div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ effects|length }} effect(s)</div>
+
+<script>
+(function () {
+    const DIMS = [
+        ['political',            'Political'],
+        ['military',             'Military'],
+        ['economic',             'Economic'],
+        ['social',               'Social'],
+        ['information',          'Information'],
+        ['infrastructure',       'Infrastructure'],
+        ['physical_environment', 'Phys. Env.'],
+        ['time',                 'Time'],
+    ];
+
+    let radarChart = null;
+
+    function wriColor(wri) {
+        if (wri >= 80) return '#ef4444';
+        if (wri >= 60) return '#f97316';
+        if (wri >= 40) return '#f59e0b';
+        if (wri >= 20) return '#22d3ee';
+        return '#10b981';
+    }
+
+    function rungFromWri(wri) {
+        if (wri >= 80) return 5;
+        if (wri >= 60) return 4;
+        if (wri >= 40) return 3;
+        if (wri >= 20) return 2;
+        return 1;
+    }
+
+    function initRadar(scores) {
+        const labels = DIMS.map(d => d[1]);
+        const values = DIMS.map(d => Math.round((scores[d[0]] || 0) * 100));
+        const ctx = document.getElementById('pmesiiRadar').getContext('2d');
+        if (radarChart) radarChart.destroy();
+        radarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Score',
+                    data: values,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.15)',
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#3b82f6',
+                    borderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        min: 0, max: 100,
+                        ticks: { stepSize: 20, color: '#9ca3af', backdropColor: 'transparent' },
+                        grid: { color: 'rgba(255,255,255,0.08)' },
+                        pointLabels: { color: '#d1d5db', font: { size: 11 } },
+                        angleLines: { color: 'rgba(255,255,255,0.08)' },
+                    },
+                },
+                plugins: { legend: { display: false } },
+            },
+        });
+    }
+
+    function renderDimScores(data) {
+        const dims = data.dimensions || {};
+        const dominant = data.dominant_indicators || [];
+        let html = '';
+        for (const [key, label] of DIMS) {
+            const val = dims[key] || 0;
+            const pct = Math.round(val * 100);
+            const isDom = dominant.includes(key);
+            const col = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f59e0b' : '#10b981';
+            html += `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+                <span style="width:90px;color:var(--text-secondary);font-size:.75rem">${label}</span>
+                <div style="flex:1;background:var(--bg-secondary);border-radius:3px;height:6px">
+                    <div style="height:100%;width:${pct}%;background:${col};border-radius:3px"></div>
+                </div>
+                <span style="width:32px;text-align:right;font-size:.75rem;color:${col};font-weight:600">${pct}</span>
+                ${isDom ? '<span style="font-size:.65rem;background:rgba(239,68,68,.15);color:#ef4444;padding:.05rem .3rem;border-radius:3px">DOM</span>' : ''}
+            </div>`;
+        }
+        document.getElementById('dimScores').innerHTML = html;
+    }
+
+    function renderWri(data) {
+        const wri = data.wri || 0;
+        const rung = data.escalation_rung || 1;
+        const label = data.rung_label || '';
+        const color = data.rung_color || '#10b981';
+
+        document.getElementById('wriScore').textContent = wri.toFixed(1);
+        document.getElementById('wriScore').style.color = color;
+        document.getElementById('wriBar').style.width = Math.min(100, wri) + '%';
+        document.getElementById('wriBar').style.background = color;
+        document.getElementById('rungBadge').textContent = 'Rung ' + rung;
+        document.getElementById('rungBadge').style.background = color + '22';
+        document.getElementById('rungBadge').style.color = color;
+        document.getElementById('rungLabel').textContent = label;
+
+        // Highlight active rung
+        for (let r = 1; r <= 5; r++) {
+            const el = document.getElementById('rung' + r);
+            if (el) {
+                el.style.opacity = r === rung ? '1' : '0.4';
+                el.style.borderColor = r === rung ? color : 'var(--border-color)';
+            }
+        }
+    }
+
+    function render(data) {
+        renderWri(data);
+        renderDimScores(data);
+        initRadar(data.dimensions || {});
+    }
+
+    function fetchWri() {
+        fetch('/api/strategos/iw/composite')
+            .then(r => r.json())
+            .then(render)
+            .catch(() => {});
+    }
+
+    fetchWri();
+
+    // Slider live update
+    document.querySelectorAll('#wriForm input[type=range]').forEach(inp => {
+        inp.addEventListener('input', () => {
+            const span = document.getElementById('v_' + inp.name);
+            if (span) span.textContent = inp.value;
+        });
+    });
+
+    document.getElementById('wriForm').addEventListener('submit', e => {
+        e.preventDefault();
+        const scores = {};
+        new FormData(e.target).forEach((val, key) => { scores[key] = parseInt(val) / 100; });
+        fetch('/api/strategos/iw/composite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scores, source: 'analyst' }),
+        })
+            .then(r => r.json())
+            .then(render)
+            .catch(() => {});
+    });
+})();
+</script>
 {% endblock %}

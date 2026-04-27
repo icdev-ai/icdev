@@ -39,7 +39,7 @@ class _LenientUndefined(Undefined):
 
 
 def _make_env() -> Environment:
-    env = Environment(
+    env = Environment(  # nosec B701 — templates are .md.j2 Markdown; autoescape=True corrupts output
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),
         undefined=_LenientUndefined,
         trim_blocks=True,

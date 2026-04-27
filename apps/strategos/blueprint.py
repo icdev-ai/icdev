@@ -616,6 +616,46 @@ def strategos_ew():
 # API routes
 # ---------------------------------------------------------------------------
 
+@_api.route("/iw/composite", methods=["GET"])
+def api_iw_composite_get():
+    """GET /api/strategos/iw/composite — Latest PMESII-PT WRI assessment."""
+    try:
+        from tools.strategos.iw_engine import PMESIIPTCompositor  # noqa: PLC0415
+        result = PMESIIPTCompositor().get_latest()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/iw/composite", methods=["POST"])
+def api_iw_composite_post():
+    """POST /api/strategos/iw/composite — Submit per-dimension scores, get WRI.
+
+    Body: { "scores": { "political": 0.6, "military": 0.8, ... }, "source": "analyst" }
+    All 8 PMESII-PT dimensions accepted; missing dimensions default to 0.
+    """
+    data = request.get_json(silent=True) or {}
+    scores = data.get("scores", {})
+    source = (data.get("source") or "analyst").strip()
+    try:
+        from tools.strategos.iw_engine import PMESIIPTCompositor  # noqa: PLC0415
+        result = PMESIIPTCompositor().compute_and_save(scores, source=source)
+        return jsonify(result), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/iw/derive", methods=["POST"])
+def api_iw_derive():
+    """POST /api/strategos/iw/derive — Auto-derive PMESII-PT scores from DB."""
+    try:
+        from tools.strategos.iw_engine import PMESIIPTCompositor  # noqa: PLC0415
+        result = PMESIIPTCompositor().derive_from_db()
+        return jsonify(result), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @_api.route("/ew/data", methods=["GET"])
 def api_ew_data():
     try:
