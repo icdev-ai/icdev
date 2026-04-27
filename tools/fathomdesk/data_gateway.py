@@ -149,3 +149,62 @@ class FathomDeskDataGateway:
                 pass
 
         return {"ticker": ticker, "price": None, "source": "unavailable"}
+
+    def options_chain(self, ticker: str) -> dict:
+        """Return the options chain for *ticker* via OpenBB → fetch_chain() fallback.
+
+        Tries OpenBB derivatives.options.chains first; falls back to
+        tools.trading.options.chain.fetch_chain(). Returns the same shape as
+        fetch_chain() with an extra ``source`` field.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"SPY"``.
+
+        Returns:
+            Dict with keys: ticker, contracts, iv_rank, iv_percentile, source,
+            plus all other keys from fetch_chain(). source is ``'openbb'`` or
+            ``'chain_module'``.
+        """
+        sym = ticker.upper()
+
+        if self._obb.available:
+            try:
+                obb_result = self._obb.get_options_chain(sym)
+                if not obb_result.get("error") and obb_result.get("data"):
+                    contracts = obb_result["data"]
+                    iv_rank: object = None
+                    iv_percentile: object = None
+                    # Try to derive ATM IV and call compute_ivr for proper 52w stats
+                    try:
+                        from tools.trading.options.chain import compute_ivr
+                        iv_vals = [
+                            float(c.get("implied_volatility") or c.get("impliedVolatility") or 0)
+                            for c in contracts
+                            if (c.get("implied_volatility") or c.get("impliedVolatility"))
+                        ]
+                        if iv_vals:
+                            atm_iv = sum(iv_vals) / len(iv_vals)
+                            ivr = compute_ivr(sym, atm_iv)
+                            iv_rank = ivr.get("iv_rank")
+                            iv_percentile = ivr.get("iv_percentile")
+                    except Exception:
+                        pass
+                    return {
+                        "ticker": sym,
+                        "contracts": contracts,
+                        "iv_rank": iv_rank,
+                        "iv_percentile": iv_percentile,
+                        "source": "openbb",
+                    }
+            except Exception:
+                pass
+
+        # Fallback: chain_module (yfinance-backed, works in air-gap when offline)
+        from tools.trading.options.chain import fetch_chain
+        result = fetch_chain(sym)
+        result["ticker"] = sym
+        result.setdefault("contracts", [])
+        result.setdefault("iv_rank", None)
+        result.setdefault("iv_percentile", None)
+        result["source"] = "chain_module"
+        return result
