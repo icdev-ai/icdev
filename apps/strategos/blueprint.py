@@ -656,6 +656,213 @@ def api_iw_derive():
         return jsonify({"error": str(exc)}), 500
 
 
+@_api.route("/iw/signal-matrix", methods=["GET"])
+def api_iw_signal_matrix():
+    """GET /api/strategos/iw/signal-matrix — 14-day x signal-category heatmap counts."""
+    days_back = min(int(request.args.get("days", 14)), 60)
+    ph = "%s" if is_pg() else "?"
+    _CATEGORIES = [
+        "military", "cyber", "information", "economic",
+        "political", "infrastructure", "social", "physical",
+    ]
+    _IW_CAT_MAP = {
+        "kinetic": "military", "electronic": "military", "cyber": "cyber",
+        "deception": "information", "psyop": "information",
+        "disinformation": "information", "influence": "information",
+        "supply": "economic", "sanction": "economic", "blockade": "economic",
+        "protest": "social", "riot": "social", "displacement": "social",
+        "infrastructure": "infrastructure",
+    }
+    _CE_CAT_MAP = {
+        "cyber_op": "cyber", "supply_disruption": "economic",
+        "sanction": "economic", "blockade": "economic",
+        "displacement": "social", "riot": "social", "protest": "social",
+        "military_move": "military", "attack": "military",
+        "infrastructure": "infrastructure",
+    }
+
+    conn = get_connection()
+    try:
+        import math
+        from datetime import date, timedelta  # noqa: PLC0415
+        today = date.today()
+        day_labels = [(today - timedelta(days=days_back - 1 - i)).isoformat() for i in range(days_back)]
+        day_index = {d: i for i, d in enumerate(day_labels)}
+
+        counts: dict[str, dict[str, int]] = {cat: {d: 0 for d in day_labels} for cat in _CATEGORIES}
+
+        # IW effects
+        try:
+            rows = conn.execute(
+                f"SELECT effect_type, DATE(detected_at) AS d, COUNT(*) AS n "
+                f"FROM sg_iw_effects "
+                f"WHERE detected_at >= DATE('now', '-{days_back} days') "
+                f"GROUP BY effect_type, d"
+            ).fetchall()
+            for row in rows:
+                cat = _IW_CAT_MAP.get((row[0] or "").lower(), "information")
+                day = str(row[1] or "")[:10]
+                if day in day_index:
+                    counts[cat][day] = counts[cat].get(day, 0) + int(row[2] or 0)
+        except Exception:
+            pass
+
+        # Conflict events
+        try:
+            rows = conn.execute(
+                f"SELECT event_type, DATE(created_at) AS d, COUNT(*) AS n "
+                f"FROM sg_conflict_events "
+                f"WHERE created_at >= DATE('now', '-{days_back} days') "
+                f"GROUP BY event_type, d"
+            ).fetchall()
+            for row in rows:
+                cat = _CE_CAT_MAP.get((row[0] or "").lower(), "military")
+                day = str(row[1] or "")[:10]
+                if day in day_index:
+                    counts[cat][day] = counts[cat].get(day, 0) + int(row[2] or 0)
+        except Exception:
+            pass
+
+        # Prioritized signals by date
+        try:
+            rows = conn.execute(
+                f"SELECT r.signal_date, COUNT(*) AS n "
+                f"FROM sg_prioritized_signals p "
+                f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
+                f"WHERE r.signal_date >= DATE('now', '-{days_back} days') "
+                f"GROUP BY r.signal_date"
+            ).fetchall()
+            for row in rows:
+                day = str(row[0] or "")[:10]
+                if day in day_index:
+                    counts["information"][day] = counts["information"].get(day, 0) + int(row[1] or 0)
+        except Exception:
+            pass
+
+        matrix = [[counts[cat][d] for d in day_labels] for cat in _CATEGORIES]
+        return jsonify({"days": day_labels, "categories": _CATEGORIES, "matrix": matrix})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@_api.route("/iw/survival", methods=["GET"])
+def api_iw_survival():
+    """GET /api/strategos/iw/survival — Kaplan-Meier-style time-to-crisis survival curve."""
+    threshold = float(request.args.get("threshold", 60.0))
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT wri, created_at FROM sg_wri_assessments ORDER BY created_at ASC LIMIT 500"
+        ).fetchall()
+    except Exception:
+        rows = []
+    finally:
+        conn.close()
+
+    if not rows:
+        # Return synthetic demo curve when no data
+        import math  # noqa: PLC0415
+        times = list(range(0, 31))
+        survival = [round(math.exp(-0.04 * t), 4) for t in times]
+        return jsonify({"times": times, "survival": survival, "n": 0, "threshold": threshold, "demo": True})
+
+    # Compute time-delta in hours from first observation per "run" segment
+    from datetime import datetime as _dt  # noqa: PLC0415
+    segments: list[dict] = []
+    run_start = None
+    for row in rows:
+        wri = float(row[0] or 0)
+        ts_raw = str(row[1] or "")
+        try:
+            ts = _dt.fromisoformat(ts_raw.replace("Z", "+00:00"))
+        except Exception:
+            continue
+        if run_start is None:
+            run_start = ts
+        hours = max(0.0, (ts - run_start).total_seconds() / 3600)
+        crossed = wri >= threshold
+        segments.append({"t": round(hours, 1), "event": crossed})
+        if crossed:
+            run_start = ts  # reset for next run
+
+    if not segments:
+        return jsonify({"times": [], "survival": [], "n": 0, "threshold": threshold})
+
+    max_t = max(s["t"] for s in segments) or 24.0
+    step = max(1.0, max_t / 50)
+    times_float = [round(i * step, 1) for i in range(int(max_t / step) + 2)]
+    n = len(segments)
+    survival = []
+    for t in times_float:
+        events_by = sum(1 for s in segments if s["event"] and s["t"] <= t)
+        surv = round(max(0.0, 1.0 - events_by / n), 4)
+        survival.append(surv)
+
+    return jsonify({"times": times_float, "survival": survival, "n": n, "threshold": threshold})
+
+
+@_api.route("/iw/historical-matches", methods=["GET"])
+def api_iw_historical_matches():
+    """GET /api/strategos/iw/historical-matches — Top-3 past assessments nearest to current WRI dims."""
+    conn = get_connection()
+    try:
+        current_rows = conn.execute(
+            "SELECT * FROM sg_wri_assessments ORDER BY created_at DESC LIMIT 1"
+        ).fetchall()
+        if not current_rows:
+            return jsonify({"matches": [], "note": "no_assessments"})
+        current = dict(current_rows[0])
+        _DIMS = ("political", "military", "economic", "social",
+                 "information", "infrastructure", "physical_environment", "time")
+        cur_vec = [float(current.get(d, 0.0)) for d in _DIMS]
+
+        history = conn.execute(
+            "SELECT * FROM sg_wri_assessments ORDER BY created_at DESC LIMIT 200"
+        ).fetchall()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+    import math  # noqa: PLC0415
+    scored = []
+    current_id = current.get("id")
+    for row in history:
+        row = dict(row)
+        if row.get("id") == current_id:
+            continue
+        vec = [float(row.get(d, 0.0)) for d in _DIMS]
+        dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(cur_vec, vec)))
+        similarity = round(max(0.0, 1.0 - dist / (len(_DIMS) ** 0.5)), 4)
+        scored.append({
+            "id": row.get("id"),
+            "wri": float(row.get("wri", 0)),
+            "escalation_rung": int(row.get("escalation_rung", 1)),
+            "rung_label": row.get("source", ""),
+            "timestamp": str(row.get("created_at", ""))[:16],
+            "source": row.get("source", ""),
+            "similarity": similarity,
+            "dimensions": {d: round(float(row.get(d, 0.0)), 3) for d in _DIMS},
+            "dominant_indicators": row.get("dominant_indicators", "[]"),
+        })
+
+    scored.sort(key=lambda x: x["similarity"], reverse=True)
+    top3 = scored[:3]
+
+    # Enrich rung labels
+    from tools.strategos.iw_engine import PMESIIPTCompositor  # noqa: PLC0415
+    comp = PMESIIPTCompositor()
+    for m in top3:
+        rung, label, color = comp.map_escalation_rung(m["wri"])
+        m["escalation_rung"] = rung
+        m["rung_label"] = label
+        m["rung_color"] = color
+
+    return jsonify({"matches": top3, "current_wri": float(current.get("wri", 0))})
+
+
 @_api.route("/ew/data", methods=["GET"])
 def api_ew_data():
     try:
