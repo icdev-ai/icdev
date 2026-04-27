@@ -98,6 +98,11 @@ def a2ad_page():
     return render_template("a2ad.html")
 
 
+@app.route("/amphibious")
+def amphibious_page():
+    return render_template("amphibious.html")
+
+
 # ── API ────────────────────────────────────────────────────
 
 @app.route("/api/signals")
@@ -305,6 +310,48 @@ def api_a2ad_zones():
         "systems": list(WEAPON_SYSTEMS.values()),
         "zones": get_zones(),
     })
+
+
+@app.route("/api/amphibious/summary")
+def api_amphibious_summary():
+    from amphibious_analyzer import get_summary
+    return jsonify(get_summary())
+
+
+@app.route("/api/amphibious/zones")
+def api_amphibious_zones():
+    from amphibious_analyzer import LANDING_ZONES, slope_viability, slope_color
+    zones = [
+        {**z, "viability": slope_viability(z["slope_deg"]), "color": slope_color(z["slope_deg"])}
+        for z in LANDING_ZONES
+    ]
+    return jsonify({"zones": zones})
+
+
+@app.route("/api/amphibious/lift")
+def api_amphibious_lift():
+    from amphibious_analyzer import calc_lift_capacity, AMPHIBIOUS_FLEET
+    result = calc_lift_capacity()
+    result["fleet"] = AMPHIBIOUS_FLEET
+    return jsonify(result)
+
+
+@app.route("/api/amphibious/weather")
+def api_amphibious_weather():
+    from amphibious_analyzer import get_weather_windows
+    return jsonify({"windows": get_weather_windows()})
+
+
+@app.route("/api/amphibious/crossing")
+def api_amphibious_crossing():
+    from amphibious_analyzer import get_crossing_analysis
+    return jsonify({"corridors": get_crossing_analysis()})
+
+
+@app.route("/api/amphibious/detection")
+def api_amphibious_detection():
+    from amphibious_analyzer import get_detection_curve
+    return jsonify({"curve": get_detection_curve()})
 
 
 @app.route("/api/sea/vessels")
