@@ -12,7 +12,6 @@ from tools.db.storage import get_connection, is_pg
 
 def up() -> None:
     conn = get_connection()
-    ph = "%s" if is_pg() else "?"
 
     conn.execute(
         """
