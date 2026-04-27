@@ -139,11 +139,11 @@ def _ensure_tables() -> None:
 def _is_duplicate(url_hash: str) -> bool:
     try:
         conn = get_connection()
-        ph = "%s" if is_pg() else "?"
-        row = conn.execute(
-            f"SELECT COUNT(*) AS cnt FROM sg_raw_signals WHERE url_hash = {ph}",
-            (url_hash,),
-        ).fetchone()
+        if is_pg():
+            query = "SELECT COUNT(*) AS cnt FROM sg_raw_signals WHERE url_hash = %s"
+        else:
+            query = "SELECT COUNT(*) AS cnt FROM sg_raw_signals WHERE url_hash = ?"
+        row = conn.execute(query, (url_hash,)).fetchone()
         conn.close()
         cnt = row["cnt"] if isinstance(row, dict) else row[0]
         return cnt > 0
@@ -163,17 +163,19 @@ def _insert_signal(
     """Insert a signal row. Returns True if inserted, False if duplicate/error."""
     try:
         conn = get_connection()
-        ph = "%s" if is_pg() else "?"
-        conn.execute(
-            f"INSERT OR IGNORE INTO sg_raw_signals "
-            f"(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
-            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})"
-            if not is_pg()
-            else f"INSERT INTO sg_raw_signals "
-            f"(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
-            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph}) ON CONFLICT (url_hash) DO NOTHING",
-            (url_hash, title[:1000], (body or "")[:4000], source, signal_date, geo_hint, tier, _utcnow_iso()),
-        )
+        if is_pg():
+            query = (
+                "INSERT INTO sg_raw_signals "
+                "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (url_hash) DO NOTHING"
+            )
+        else:
+            query = (
+                "INSERT OR IGNORE INTO sg_raw_signals "
+                "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?)"
+            )
+        conn.execute(query, (url_hash, title[:1000], (body or "")[:4000], source, signal_date, geo_hint, tier, _utcnow_iso()))
         conn.commit()
         conn.close()
         return True
@@ -191,13 +193,19 @@ def _write_audit(
 ) -> None:
     try:
         conn = get_connection()
-        ph = "%s" if is_pg() else "?"
-        conn.execute(
-            f"INSERT INTO sg_raw_signals_audit "
-            f"(run_at, tier, signals_harvested, duplicates_skipped, errors, reason) "
-            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
-            (_utcnow_iso(), tier, signals_harvested, duplicates_skipped, errors, reason),
-        )
+        if is_pg():
+            query = (
+                "INSERT INTO sg_raw_signals_audit "
+                "(run_at, tier, signals_harvested, duplicates_skipped, errors, reason) "
+                "VALUES (%s,%s,%s,%s,%s,%s)"
+            )
+        else:
+            query = (
+                "INSERT INTO sg_raw_signals_audit "
+                "(run_at, tier, signals_harvested, duplicates_skipped, errors, reason) "
+                "VALUES (?,?,?,?,?,?)"
+            )
+        conn.execute(query, (_utcnow_iso(), tier, signals_harvested, duplicates_skipped, errors, reason))
         conn.commit()
         conn.close()
     except Exception as exc:
@@ -207,12 +215,15 @@ def _write_audit(
 # ── fetch helpers ─────────────────────────────────────────────────────────────
 
 def _fetch_url(url: str, timeout: int = 30, headers: Optional[Dict[str, str]] = None) -> Optional[bytes]:
+    if not url.startswith(("http://", "https://")):
+        logger.debug("Rejected non-http URL: %s", url[:100])
+        return None
     try:
         h = {"User-Agent": "ICDEV-Strategos-OSINT/1.0"}
         if headers:
             h.update(headers)
         req = urllib.request.Request(url, headers=h)
-        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
             return resp.read()
     except Exception as exc:
         logger.debug("Fetch failed %s: %s", url, exc)
@@ -222,7 +233,12 @@ def _fetch_url(url: str, timeout: int = 30, headers: Optional[Dict[str, str]] = 
 def _parse_rss(xml_bytes: bytes) -> List[Dict[str, str]]:
     entries: List[Dict[str, str]] = []
     try:
-        root = ET.fromstring(xml_bytes.decode("utf-8", errors="replace"))  # noqa: S314
+        content = xml_bytes.decode("utf-8", errors="replace")
+        try:
+            import defusedxml.ElementTree as _dxml  # type: ignore
+            root = _dxml.fromstring(content)
+        except ImportError:
+            root = ET.fromstring(content)  # nosec B314 — defusedxml not available; content from admin-configured feeds
         for item in root.iter("item"):
             title = (item.findtext("title") or "").strip()
             if not title:
@@ -427,6 +443,10 @@ def _harvest_gitlab(config: Dict[str, Any]) -> Tuple[int, int, int]:
         logger.warning("OSINT GITLAB: GITLAB_URL / GITLAB_TOKEN / GITLAB_OSINT_PROJECT_ID not set")
         return 0, 0, 1
 
+    if not gitlab_url.startswith(("http://", "https://")):
+        logger.warning("OSINT GITLAB: GITLAB_URL must use http/https scheme")
+        return 0, 0, 1
+
     artifact_url = (
         f"{gitlab_url}/api/v4/projects/{project_id}/jobs/artifacts/{ref}"
         f"/download?job={job_name}"
@@ -435,7 +455,7 @@ def _harvest_gitlab(config: Dict[str, Any]) -> Tuple[int, int, int]:
 
     try:
         req = urllib.request.Request(artifact_url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=30) as resp:  # nosec B310
             raw = resp.read()
     except urllib.error.HTTPError as exc:
         logger.warning("OSINT GITLAB: HTTP %s fetching artifact — falling through to FILE_INBOX", exc.code)
@@ -513,7 +533,10 @@ def _queue_kg_enrichment(kg_delta: Any) -> None:
         if not nodes:
             return
         conn = get_connection()
-        ph = "%s" if is_pg() else "?"
+        if is_pg():
+            kg_query = "INSERT INTO kg_nodes (node_type, label, created_at) VALUES (%s,%s,%s) ON CONFLICT DO NOTHING"
+        else:
+            kg_query = "INSERT OR IGNORE INTO kg_nodes (node_type, label, created_at) VALUES (?,?,?)"
         now = _utcnow_iso()
         for node in nodes:
             node_type = (node.get("type") or "osint_signal").strip()
@@ -521,12 +544,7 @@ def _queue_kg_enrichment(kg_delta: Any) -> None:
             if not label:
                 continue
             try:
-                conn.execute(
-                    f"INSERT OR IGNORE INTO kg_nodes (node_type, label, created_at) VALUES ({ph},{ph},{ph})"
-                    if not is_pg()
-                    else f"INSERT INTO kg_nodes (node_type, label, created_at) VALUES ({ph},{ph},{ph}) ON CONFLICT DO NOTHING",
-                    (node_type, label, now),
-                )
+                conn.execute(kg_query, (node_type, label, now))
             except Exception:
                 pass
         conn.commit()
