@@ -46,8 +46,10 @@ projects:
   task_prefix: kv-
   default_open: true
   briefs:
-  - 'API: add attempt_count + current_attempt_started_at + last_reaped_reason to task response — kv-viz-01'
-  - 'UI: attempt badge + time-in-flight + reaper bar + last-killed line on in_progress card — kv-viz-02'
+  - 'API: add attempt_count + current_attempt_started_at + last_reaped_reason to task
+    response — kv-viz-01'
+  - 'UI: attempt badge + time-in-flight + reaper bar + last-killed line on in_progress
+    card — kv-viz-02'
   - 'Fix: increment failure_count on stale-reaper kills — kv-viz-03'
   - 'V&V: Playwright smoke test — kv-viz-04'
   epics:
@@ -58,13 +60,15 @@ projects:
   name: Kanban Maintenance
   description: 'Two-phase Kanban engine hardening: (1) auto-close sweep for decomposed
     parent tasks that get stuck when all children complete — requires manual DB fix
-    today; (2) multi-parent dependency support via junction table, replacing the
-    single depends_on_task_id scalar with a full DAG + DFS cycle detection.'
+    today; (2) multi-parent dependency support via junction table, replacing the single
+    depends_on_task_id scalar with a full DAG + DFS cycle detection.'
   task_prefix: km-
   default_open: true
   briefs:
-  - 'Auto-close sweep: audit stuck parents, implement recursive close + backfill — km-autoclose-01/02'
-  - 'Multi-parent deps: junction table migration, DFS cycle check, scheduler + UI badge — km-multidep-01/02'
+  - 'Auto-close sweep: audit stuck parents, implement recursive close + backfill —
+    km-autoclose-01/02'
+  - 'Multi-parent deps: junction table migration, DFS cycle check, scheduler + UI
+    badge — km-multidep-01/02'
   epics:
   - key: autoclose
     title: Decomposed Parent Auto-Close Sweep
@@ -75,14 +79,16 @@ projects:
 - key: fd
   name: FathomDesk — Backtest Schema + Risk Floors + Cost Optimizer
   description: 'Three paperclip-inspired improvements: (1) canonical BacktestResult
-    dataclass in constants.py so all 13 strategy types emit identical artifacts;
-    (2) per-strategy Sharpe/drawdown floor config wired as Gate 0 in preflight.py;
-    (3) weekly cost_optimizer Genesis reflex auditing LLM token spend across all agents.'
+    dataclass in constants.py so all 13 strategy types emit identical artifacts; (2)
+    per-strategy Sharpe/drawdown floor config wired as Gate 0 in preflight.py; (3)
+    weekly cost_optimizer Genesis reflex auditing LLM token spend across all agents.'
   task_prefix: fd-
   default_open: true
   briefs:
-  - 'Backtest schema: BacktestResult dataclass + STRATEGY_TYPES + institutional memory artifacts — fd-schema-01/02'
-  - 'Risk floor: fathomdesk_strategy_floors.yaml + Gate 0 in preflight.py + tests — fd-floor-01/02/03'
+  - 'Backtest schema: BacktestResult dataclass + STRATEGY_TYPES + institutional memory
+    artifacts — fd-schema-01/02'
+  - 'Risk floor: fathomdesk_strategy_floors.yaml + Gate 0 in preflight.py + tests
+    — fd-floor-01/02/03'
   - 'Cost optimizer: Genesis reflex (weekly, 168h) + daemon registration — fd-cost-01/02'
   - 'Gate: manifest sync + companion sync + coherence + V&V — fd-sync-01, fd-vv-01'
   epics:
@@ -112,16 +118,24 @@ projects:
   task_prefix: sg-
   default_open: true
   briefs:
-  - 'Foundation: theater abstraction + DB migration + war KG schema + Flask blueprint — sg-foundation-01..06'
-  - 'Import: 9 air-gap data importers (ACLED/Oryx/AIS/STIX/FAO/OSM/TLE/GDELT/baselines) — sg-import-01..09'
-  - 'Viz: Leaflet+PMTiles map + frontline animation + domain layer controls + KG explorer — sg-viz-01..04'
-  - 'Land+Sea+Cyber+Space+Info+EW+Econ domain modules (parallel) — sg-land/sea/cyber/space/info/ew/econ'
-  - 'Ghost Track: behavioral profiler + 4 detectors + dead reckoning + classifier + HITL — sg-ghost-01..07'
-  - 'I&W Engine: 6 PMESII-PT scorers + Bayesian updater + GBM classifier + DTW matcher + Weibull — sg-iw-01..10'
+  - 'Foundation: theater abstraction + DB migration + war KG schema + Flask blueprint
+    — sg-foundation-01..06'
+  - 'Import: 9 air-gap data importers (ACLED/Oryx/AIS/STIX/FAO/OSM/TLE/GDELT/baselines)
+    — sg-import-01..09'
+  - 'Viz: Leaflet+PMTiles map + frontline animation + domain layer controls + KG explorer
+    — sg-viz-01..04'
+  - Land+Sea+Cyber+Space+Info+EW+Econ domain modules (parallel) — sg-land/sea/cyber/space/info/ew/econ
+  - 'Ghost Track: behavioral profiler + 4 detectors + dead reckoning + classifier
+    + HITL — sg-ghost-01..07'
+  - 'I&W Engine: 6 PMESII-PT scorers + Bayesian updater + GBM classifier + DTW matcher
+    + Weibull — sg-iw-01..10'
   - 'War Game: Lanchester + Blotto + Nash + Monte Carlo COA + 36 Stratagems — sg-game-01..05'
-  - 'Agents: 7-agent OODA loop (Intel/Pattern/Maritime/Cyber/Space/Info/Strategy) — sg-agent-01..06'
-  - 'RAG (GATED on RAG-KG bridge): doctrine corpus + historical events + upgrade stubs — sg-rag-01..06'
-  - 'Pacific: PLAN ORBAT + A2AD rings + amphibious analyzer + Taiwan Strait + militia classifier — sg-pacific-01..06'
+  - 'Agents: 7-agent OODA loop (Intel/Pattern/Maritime/Cyber/Space/Info/Strategy)
+    — sg-agent-01..06'
+  - 'RAG (GATED on RAG-KG bridge): doctrine corpus + historical events + upgrade stubs
+    — sg-rag-01..06'
+  - 'Pacific: PLAN ORBAT + A2AD rings + amphibious analyzer + Taiwan Strait + militia
+    classifier — sg-pacific-01..06'
   epics:
   - key: foundation
     title: Theater Abstraction + DB + KG Schema + Blueprint
@@ -190,8 +204,9 @@ projects:
   default_open: true
   briefs:
   - 'Migration 048: extend DB CHECK constraints for war_economy + govcon domain types'
-  - 'Scoring profiles: tools/supply_chain/profiles/ — it_scrm.py + war_economy.py + govcon stub'
-  - 'Manifest + MCP + companion sync + coherence gate'
+  - 'Scoring profiles: tools/supply_chain/profiles/ — it_scrm.py + war_economy.py
+    + govcon stub'
+  - Manifest + MCP + companion sync + coherence gate
   epics:
   - key: core
     title: Supply Chain Core — Migration + Profiles + Manifest
@@ -464,8 +479,8 @@ projects:
     priority: critical
 - key: osv
   name: OSV Scanner Integration
-  description: 'OSV-Scanner binary wrapper, integration into health_check.py and
-    secure.py, security_gates.yaml entry, and V&V sign-off.'
+  description: OSV-Scanner binary wrapper, integration into health_check.py and secure.py,
+    security_gates.yaml entry, and V&V sign-off.
   task_prefix: osv-
   default_open: true
   briefs: []
@@ -496,6 +511,9 @@ projects:
   - key: vv01
     title: V&V — End-to-End Observer + API Route
     priority: critical
+  - key: p2
+    title: P2
+    priority: medium
 - key: fdobb
   name: FathomDesk OpenBB Gateway
   description: 'Unified data gateway for FathomDesk: data_gateway.py with yfinance
@@ -514,6 +532,9 @@ projects:
   - key: vv01
     title: V&V — Import, Fallback, Reflex Dry-Run, Coherence
     priority: critical
+  - key: p2
+    title: P2
+    priority: medium
 - key: zbx
   name: Zerobox Sandbox Coverage
   description: 'OPT-58 sandbox coverage audit: classify all user-input modules in
@@ -547,6 +568,9 @@ projects:
   - key: vv
     title: V&V — Unit Tests, Trap Sweep Smoke, Coherence
     priority: critical
+  - key: p2
+    title: P2
+    priority: medium
 - key: hmd
   name: Memory System Hippo Decay
   description: 'Hippo memory decay for the core memory system: decay_weight column
@@ -564,9 +588,8 @@ projects:
     priority: critical
 - key: fdmlt
   name: FathomDesk Signal Tuner
-  description: 'Multi-asset signal threshold extraction + tuner/backtester in
-    fathomdesk_signal_tuner_reflex.py, weekly Genesis reflex, V&V unit tests + reflex
-    dry-run.'
+  description: Multi-asset signal threshold extraction + tuner/backtester in fathomdesk_signal_tuner_reflex.py,
+    weekly Genesis reflex, V&V unit tests + reflex dry-run.
   task_prefix: fdmlt-
   default_open: true
   briefs: []
@@ -577,10 +600,13 @@ projects:
   - key: vv
     title: V&V — Unit Tests, Reflex Dry-Run, Coherence
     priority: critical
+  - key: p2
+    title: P2
+    priority: medium
 - key: pgt
   name: PostgreSQL Textsearch
-  description: 'BM25 <@> operator path in storage.py translate_sql(), FTS5-parity
-    hybrid_search.py tests, V&V coherence + companion + query parity smoke test.'
+  description: BM25 <@> operator path in storage.py translate_sql(), FTS5-parity hybrid_search.py
+    tests, V&V coherence + companion + query parity smoke test.
   task_prefix: pgt-
   default_open: true
   briefs: []
@@ -877,6 +903,9 @@ projects:
   - key: wrap
     title: Registration + docs + E2E
     priority: high
+  - key: p2
+    title: P2
+    priority: medium
 - key: fathomdesk-7-10
   name: FathomDesk 7.10 — Trap Detection
   description: 'Blocked on 7.9. Macro liquidity-trap regime detector feeding Oracle
@@ -1005,6 +1034,9 @@ projects:
   - key: viz
     title: VIZ
     priority: medium
+  - key: p2
+    title: P2
+    priority: medium
 - key: opts-greeks
   name: FathomDesk — Options Greeks Engine
   description: '7-epic expansion: rho completeness, IV Rank/Percentile, Greek-profile
@@ -1065,6 +1097,9 @@ projects:
   - key: xar
     title: XAR
     priority: medium
+  - key: p2
+    title: P2
+    priority: medium
 - key: fdm-macro
   name: FathomDesk — Macro Intelligence Expansion
   description: '8-phase macro signal expansion: credit market foundation (IG/BBB OAS
@@ -1105,22 +1140,29 @@ projects:
   - key: ui
     title: Phase 8 — FathomDesk UI Integration
     priority: critical
+  - key: int
+    title: INT
+    priority: medium
 - key: ragkg
   name: RAG-KG Bridge
-  description: 'Connect the existing RAG pipeline (rag_chunks, hybrid_search.py) to
+  description: Connect the existing RAG pipeline (rag_chunks, hybrid_search.py) to
     the Knowledge Graph (kg_nodes, kg_edges) so retrieved chunks are enriched with
     entity relationships. Supports greenfield (RAG+KG from scratch) and brownfield
     (existing RAG, KG only via resumable backfill). Includes source_chunk_id back-ref
     for stale-node invalidation, tier filter, no-LLM NER fallback, tenant isolation,
     classification boundary enforcement, disambiguation sweep, and unified /api/rag-kg/search
-    endpoint.'
+    endpoint.
   task_prefix: ragkg-
   default_open: true
   briefs:
-  - 'Schema: source_chunk_id on kg_nodes + kg_node_ids on rag_chunks + backfill cursor — ragkg-schema-01'
-  - 'Ingester: rag_to_kg_ingester.py — backfill, tier filter, no-LLM NER, passthrough mode — ragkg-ingester-01/02'
-  - 'Hook: post-ingest trigger + stale-node invalidation in ingestion_manager.py — ragkg-hook-01'
-  - 'API: /api/rag-kg/search unified retrieval (classification-safe, pgvector/SQLite aware) — ragkg-api-01'
+  - 'Schema: source_chunk_id on kg_nodes + kg_node_ids on rag_chunks + backfill cursor
+    — ragkg-schema-01'
+  - 'Ingester: rag_to_kg_ingester.py — backfill, tier filter, no-LLM NER, passthrough
+    mode — ragkg-ingester-01/02'
+  - 'Hook: post-ingest trigger + stale-node invalidation in ingestion_manager.py —
+    ragkg-hook-01'
+  - 'API: /api/rag-kg/search unified retrieval (classification-safe, pgvector/SQLite
+    aware) — ragkg-api-01'
   - 'V&V: greenfield + brownfield smoke tests, coherence, companion — ragkg-vv-01'
   epics:
   - key: schema
@@ -1143,20 +1185,23 @@ projects:
     priority: high
 - key: pkgbuild
   name: pip install icdev — Full Package Audit & Fix
-  description: 'Ensure pip install icdev ships the entire ICDEV framework (all 78+
+  description: Ensure pip install icdev ships the entire ICDEV framework (all 78+
     tools/subsystems) except marketplace modules, untethered child apps, and runtime
     state. Introduce args/package_exclusions.yaml as the single exclusion registry
-    so pyproject.toml, MANIFEST.in, and sync_package_tree.py never drift apart.
-    Fix version mismatch (1.2.23 vs 1.2.21), restore incorrectly excluded core
-    subsystems (pulse, govcon, proposal_genesis, rfx, autoresearch, scout, creative),
-    and wire icdev setup --rag-kg into the post-install flow.'
+    so pyproject.toml, MANIFEST.in, and sync_package_tree.py never drift apart. Fix
+    version mismatch (1.2.23 vs 1.2.21), restore incorrectly excluded core subsystems
+    (pulse, govcon, proposal_genesis, rfx, autoresearch, scout, creative), and wire
+    icdev setup --rag-kg into the post-install flow.
   task_prefix: pkgbuild-
   default_open: true
   briefs:
-  - 'Exclusion registry: args/package_exclusions.yaml — authoritative list (marketplace/child_app/runtime_state) — pkgbuild-registry-01'
-  - 'pyproject.toml + MANIFEST.in + sync_package_tree.py: derive from registry, restore wrongly excluded core modules — pkgbuild-fix-01'
+  - 'Exclusion registry: args/package_exclusions.yaml — authoritative list (marketplace/child_app/runtime_state)
+    — pkgbuild-registry-01'
+  - 'pyproject.toml + MANIFEST.in + sync_package_tree.py: derive from registry, restore
+    wrongly excluded core modules — pkgbuild-fix-01'
   - 'Version sync: _version.py == pyproject.toml == changelog — pkgbuild-version-01'
-  - 'Wheel smoke test: build wheel, inspect contents, confirm core modules present + excluded absent — pkgbuild-vv-01'
+  - 'Wheel smoke test: build wheel, inspect contents, confirm core modules present
+    + excluded absent — pkgbuild-vv-01'
   epics:
   - key: registry
     title: Package Exclusion Registry (args/package_exclusions.yaml)
@@ -1172,13 +1217,14 @@ projects:
     priority: critical
 - key: fdmm
   name: FathomDesk — Machine Momentum (CTA + Buyback + VIX)
-  description: >
-    Three-axis machine momentum engine for FathomDesk: (1) CTA Positioning Estimator
-    (price-only DB weighting model, ADX, Donchian, vol-deleveraging); (2) Buyback
-    Tracker (SEC EDGAR 8-K, blackout window calendar, buyback yield); (3) VIX regime
-    integration (vol-doom-loop detection, regime modifiers); (4) MachineConviction
+  description: 'Three-axis machine momentum engine for FathomDesk: (1) CTA Positioning
+    Estimator (price-only DB weighting model, ADX, Donchian, vol-deleveraging); (2)
+    Buyback Tracker (SEC EDGAR 8-K, blackout window calendar, buyback yield); (3)
+    VIX regime integration (vol-doom-loop detection, regime modifiers); (4) MachineConviction
     unified 3-axis scorer; (5) CTAMomentumLens (new Oracle lens); (6) 10th confluence
     pillar; (7) /machine-momentum dashboard heatmap page.
+
+    '
   task_prefix: fdmm-
   default_open: true
   briefs:
