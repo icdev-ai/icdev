@@ -1445,4 +1445,172 @@ def create_observability_blueprint():
         _audit("sigma_generate", details=tid)
         return jsonify({"technique_id": tid, "sigma_yaml": sigma_yaml})
 
+    # ====================================================================
+    # Kill Chain — force-directed graph page + API
+    # ====================================================================
+
+    @bp.route("/kill-chain")
+    @oc_login_required
+    def oc_kill_chain():
+        """Kill Chain force-directed D3.js graph — war-domain actors (Sandworm/APT28)."""
+        return render_template("observability_canvas/kill_chain.html")
+
+    @bp.route("/api/kill-chain")
+    @oc_login_required
+    def oc_api_kill_chain():
+        """Return KG nodes + edges from the 'sg' canvas for D3.js rendering.
+
+        Query params
+        ------------
+        actor : optional filter — 'sandworm' | 'apt28' (matches label/aliases)
+        limit : max nodes to return (default 300, max 1000)
+
+        Returns
+        -------
+        {nodes: [{id, label, type, technique_ids, tactic, aoi, event_code}],
+         links: [{source, target, relation, delta_hours}]}
+        """
+        actor = request.args.get("actor", "").strip().lower()
+        try:
+            limit = min(int(request.args.get("limit", 300)), 1000)
+        except (ValueError, TypeError):
+            limit = 300
+
+        # Actor alias lookup for label-based filtering
+        actor_aliases: set[str] = set()
+        if actor:
+            try:
+                from tools.observability_canvas.mitre_loader import WAR_DOMAIN_ACTORS
+                profile = WAR_DOMAIN_ACTORS.get(actor)
+                if profile:
+                    actor_aliases = {a.lower() for a in (profile.aliases + (profile.name,))}
+                    actor_aliases.add(actor)
+            except Exception as exc:
+                logger.debug("actor alias lookup failed: %s", exc)
+
+        from tools.db.storage import get_connection as _sg_conn
+
+        conn = _sg_conn()
+        try:
+            # Ensure KG tables exist (created by stix_importer / temporal_correlator)
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS canvas_kg_nodes ("
+                "id TEXT PRIMARY KEY, canvas TEXT NOT NULL, design_id TEXT NOT NULL, "
+                "node_id TEXT NOT NULL, node_type TEXT, label TEXT, "
+                "metadata_json TEXT, updated_at TEXT)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS canvas_kg_edges ("
+                "id TEXT PRIMARY KEY, canvas TEXT NOT NULL, design_id TEXT NOT NULL, "
+                "source_id TEXT NOT NULL, target_id TEXT NOT NULL, edge_type TEXT, "
+                "metadata_json TEXT, updated_at TEXT)"
+            )
+
+            raw_nodes = conn.execute(
+                "SELECT node_id, node_type, label, metadata_json "
+                "FROM canvas_kg_nodes WHERE canvas = 'sg' LIMIT ?",
+                (limit * 3,),
+            ).fetchall()
+
+            raw_edges = conn.execute(
+                "SELECT source_id, target_id, edge_type, metadata_json "
+                "FROM canvas_kg_edges WHERE canvas = 'sg' LIMIT ?",
+                (limit * 5,),
+            ).fetchall()
+        except Exception as exc:
+            logger.warning("kill-chain KG query failed: %s", exc)
+            return jsonify({"nodes": [], "links": [], "error": str(exc)})
+        finally:
+            conn.close()
+
+        # Build node list
+        nodes: list[dict] = []
+        node_id_set: set[str] = set()
+
+        for r in raw_nodes:
+            node_id = r[0] if isinstance(r, (list, tuple)) else r["node_id"]
+            node_type = (r[1] if isinstance(r, (list, tuple)) else r["node_type"]) or "Unknown"
+            label = (r[2] if isinstance(r, (list, tuple)) else r["label"]) or node_id
+            meta_raw = r[3] if isinstance(r, (list, tuple)) else r["metadata_json"]
+
+            meta: dict = {}
+            try:
+                meta = json.loads(meta_raw or "{}")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            # Actor filter: if requested, keep only nodes whose label or aliases match,
+            # plus all Technique/Malware/Tool nodes (context nodes)
+            if actor_aliases and node_type == "ThreatActor":
+                if not any(alias in label.lower() for alias in actor_aliases):
+                    continue
+
+            nodes.append({
+                "id":            node_id,
+                "label":         label,
+                "type":          node_type,
+                "technique_ids": meta.get("technique_ids") or meta.get("technique_ids"),
+                "tactic":        meta.get("tactic_ids"),
+                "aoi":           meta.get("aoi"),
+                "event_code":    meta.get("event_code"),
+            })
+            node_id_set.add(node_id)
+
+        # Build link list — only include edges where both endpoints are in node set
+        links: list[dict] = []
+        for r in raw_edges:
+            src = r[0] if isinstance(r, (list, tuple)) else r["source_id"]
+            tgt = r[1] if isinstance(r, (list, tuple)) else r["target_id"]
+            rel = (r[2] if isinstance(r, (list, tuple)) else r["edge_type"]) or "related-to"
+            meta_raw = r[3] if isinstance(r, (list, tuple)) else r["metadata_json"]
+
+            if src not in node_id_set or tgt not in node_id_set:
+                continue
+
+            meta: dict = {}
+            try:
+                meta = json.loads(meta_raw or "{}")
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+            links.append({
+                "source":      src,
+                "target":      tgt,
+                "relation":    rel,
+                "delta_hours": meta.get("delta_hours"),
+            })
+
+        return jsonify({"nodes": nodes, "links": links})
+
+    # ====================================================================
+    # API — Temporal Correlator trigger
+    # ====================================================================
+
+    @bp.route("/api/correlator/run", methods=["POST"])
+    @oc_login_required
+    def oc_api_correlator_run():
+        """Trigger the temporal correlator (CyberOperation ↔ ConflictEvent, 72 h window).
+
+        Body (optional JSON):
+          window_hours: int — override default 72 h window
+
+        Returns correlate() summary dict.
+        """
+        data = request.get_json(silent=True) or {}
+        try:
+            window_hours = int(data.get("window_hours", 72))
+            window_hours = max(1, min(window_hours, 8760))  # 1 h – 1 year
+        except (ValueError, TypeError):
+            window_hours = 72
+
+        try:
+            from tools.strategos.temporal_correlator import correlate
+            result = correlate(window_hours=window_hours, dry_run=False, as_json=False)
+        except Exception as exc:
+            logger.warning("temporal correlator failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+        _audit("correlator_run", details=f"window={window_hours}h edges={result.get('edges_written',0)}")
+        return jsonify(result)
+
     return bp

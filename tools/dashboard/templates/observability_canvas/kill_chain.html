@@ -1,0 +1,480 @@
+<!-- CUI // SP-CTI — Kill Chain Force-Directed Graph -->
+{% extends "base.html" %}
+{% block title %}Kill Chain Graph — Observability Canvas — ICDEV{% endblock %}
+
+{% block head %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+  /* ── Layout ── */
+  .kc-shell { display: flex; gap: 0; height: calc(100vh - 64px); overflow: hidden; }
+  .kc-sidebar {
+    width: 260px; min-width: 220px; background: #0d1b2a;
+    border-right: 1px solid #1e3a6e; padding: 16px 14px; overflow-y: auto; flex-shrink: 0;
+  }
+  .kc-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .kc-toolbar {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    background: #0d1b2a; border-bottom: 1px solid #1e3a6e; flex-shrink: 0;
+  }
+  .kc-svg-wrap { flex: 1; position: relative; overflow: hidden; }
+  #kc-svg { width: 100%; height: 100%; display: block; background: #060d18; }
+
+  /* ── Sidebar sections ── */
+  .kc-section-title {
+    font-size: 11px; font-weight: 700; color: #7a8cb0; letter-spacing: .08em;
+    text-transform: uppercase; margin: 14px 0 6px;
+  }
+  .kc-section-title:first-child { margin-top: 0; }
+
+  /* ── Legend items ── */
+  .kc-legend-item {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: #b0bec5; margin-bottom: 5px;
+  }
+  .kc-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .kc-line-swatch {
+    width: 24px; height: 3px; border-radius: 2px; flex-shrink: 0;
+    display: inline-block;
+  }
+
+  /* ── Stat badges ── */
+  .kc-stats { display: flex; flex-direction: column; gap: 5px; }
+  .kc-stat {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 12px; color: #7a8cb0;
+  }
+  .kc-stat-val { color: #eaeaea; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ── Controls ── */
+  .kc-select {
+    background: #1a2740; border: 1px solid #1e3a6e; color: #eaeaea;
+    padding: 5px 10px; border-radius: 5px; font-size: 12px; cursor: pointer;
+  }
+  .kc-btn {
+    padding: 5px 14px; border-radius: 5px; font-size: 12px; cursor: pointer;
+    border: 1px solid; font-weight: 600;
+  }
+  .kc-btn--primary { background: #1e3a6e; border-color: #2563eb; color: #93c5fd; }
+  .kc-btn--primary:hover { background: #1d4ed8; color: #fff; }
+  .kc-btn--secondary { background: #0d1b2a; border-color: #1e3a6e; color: #7a8cb0; }
+  .kc-btn--secondary:hover { background: #1a2740; color: #eaeaea; }
+  .kc-btn--correlate { background: #1a1a2e; border-color: #7c3aed; color: #a78bfa; }
+  .kc-btn--correlate:hover { background: #7c3aed; color: #fff; }
+
+  /* ── Tooltip ── */
+  #kc-tooltip {
+    position: absolute; pointer-events: none; z-index: 50;
+    background: rgba(13,27,42,.97); border: 1px solid #1e3a6e; border-radius: 7px;
+    padding: 10px 14px; font-size: 12px; color: #eaeaea;
+    max-width: 280px; box-shadow: 0 4px 20px rgba(0,0,0,.6);
+    display: none;
+  }
+  #kc-tooltip .tt-title { font-weight: 700; color: #93c5fd; margin-bottom: 4px; }
+  #kc-tooltip .tt-type  { color: #7a8cb0; font-size: 11px; margin-bottom: 6px; }
+  #kc-tooltip .tt-row   { display: flex; gap: 6px; margin-bottom: 2px; }
+  #kc-tooltip .tt-key   { color: #7a8cb0; min-width: 80px; }
+  #kc-tooltip .tt-val   { color: #b0bec5; word-break: break-all; }
+
+  /* ── Tactic pill labels on node ── */
+  .kc-tactic-badge {
+    font-size: 9px; font-family: monospace; fill: #94a3b8; pointer-events: none;
+  }
+
+  /* ── Status bar ── */
+  #kc-status {
+    position: absolute; bottom: 10px; right: 14px;
+    font-size: 11px; color: #4b5563; pointer-events: none;
+  }
+
+  /* ── CORRELATES flash overlay ── */
+  #kc-flash {
+    display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    background: rgba(124,58,237,.9); color: #fff; padding: 14px 28px; border-radius: 10px;
+    font-size: 14px; font-weight: 700; pointer-events: none; z-index: 100;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="kc-shell">
+
+  <!-- ── Sidebar ── -->
+  <div class="kc-sidebar">
+    <div class="kc-section-title">Stats</div>
+    <div class="kc-stats" id="kc-stats">
+      <div class="kc-stat"><span>Nodes</span><span class="kc-stat-val" id="stat-nodes">—</span></div>
+      <div class="kc-stat"><span>Edges</span><span class="kc-stat-val" id="stat-edges">—</span></div>
+      <div class="kc-stat"><span>Correlated</span><span class="kc-stat-val" id="stat-corr">—</span></div>
+    </div>
+
+    <div class="kc-section-title">Node Types</div>
+    <div id="kc-node-legend"></div>
+
+    <div class="kc-section-title">Edge Types</div>
+    <div id="kc-edge-legend"></div>
+
+    <div class="kc-section-title">Filter by Technique</div>
+    <input id="kc-tech-filter" type="text" placeholder="e.g. T1078"
+      style="width:100%;padding:5px 8px;background:#1a2740;border:1px solid #1e3a6e;
+             color:#eaeaea;border-radius:5px;font-size:12px;box-sizing:border-box;"
+      oninput="highlightByTechnique(this.value)">
+  </div>
+
+  <!-- ── Main ── -->
+  <div class="kc-main">
+    <div class="kc-toolbar">
+      <a href="/observability/" class="kc-btn kc-btn--secondary">&larr; Observability</a>
+      <select id="kc-actor" class="kc-select" onchange="loadGraph()">
+        <option value="">All Actors</option>
+        <option value="sandworm">Sandworm (G0034)</option>
+        <option value="apt28">APT28 (G0007)</option>
+      </select>
+      <select id="kc-limit" class="kc-select" onchange="loadGraph()">
+        <option value="200" selected>200 nodes</option>
+        <option value="500">500 nodes</option>
+        <option value="1000">1000 nodes</option>
+      </select>
+      <button class="kc-btn kc-btn--primary" onclick="loadGraph()">Refresh</button>
+      <button class="kc-btn kc-btn--correlate" onclick="runCorrelator()">
+        Run Correlator (72 h)
+      </button>
+    </div>
+
+    <div class="kc-svg-wrap">
+      <svg id="kc-svg"></svg>
+      <div id="kc-tooltip"></div>
+      <div id="kc-status">Idle</div>
+      <div id="kc-flash"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+const NODE_COLORS = {
+  ThreatActor:    '#ef4444',
+  CyberOperation: '#f97316',
+  Technique:      '#3b82f6',
+  Malware:        '#a855f7',
+  Tool:           '#ec4899',
+  Indicator:      '#22c55e',
+  ConflictEvent:  '#eab308',
+  Identity:       '#06b6d4',
+  Mitigation:     '#14b8a6',
+  StixObject:     '#6b7280',
+  Unknown:        '#4b5563',
+};
+
+const NODE_RADIUS = {
+  ThreatActor:    14,
+  CyberOperation: 11,
+  Technique:       7,
+  Malware:         8,
+  Tool:            7,
+  Indicator:       5,
+  ConflictEvent:  10,
+  Identity:        8,
+  Mitigation:      7,
+};
+
+const EDGE_COLORS = {
+  'attributed-to':  '#ef4444',
+  uses:             '#f97316',
+  indicates:        '#22c55e',
+  'related-to':     '#475569',
+  targets:          '#f43f5e',
+  exploits:         '#fb923c',
+  'derived-from':   '#818cf8',
+  CORRELATES:       '#7c3aed',
+  'impersonates':   '#e879f9',
+  'mitigates':      '#34d399',
+};
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+let _graphData = { nodes: [], links: [] };
+let _simulation = null;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+function nodeColor(d)  { return NODE_COLORS[d.type]  || '#4b5563'; }
+function nodeRadius(d) { return NODE_RADIUS[d.type]   || 6; }
+function edgeColor(d)  { return EDGE_COLORS[d.relation] || '#334155'; }
+
+function setStatus(msg) {
+  document.getElementById('kc-status').textContent = msg;
+}
+
+function showFlash(msg) {
+  const el = document.getElementById('kc-flash');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 2800);
+}
+
+// ---------------------------------------------------------------------------
+// Load + render
+// ---------------------------------------------------------------------------
+function loadGraph() {
+  const actor = document.getElementById('kc-actor').value;
+  const limit = document.getElementById('kc-limit').value;
+  let url = `/observability/api/kill-chain?limit=${limit}`;
+  if (actor) url += `&actor=${encodeURIComponent(actor)}`;
+
+  setStatus('Loading…');
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      _graphData = data;
+      renderGraph(data);
+      renderLegend(data);
+      updateStats(data);
+      setStatus(`${data.nodes.length} nodes · ${data.links.length} edges`);
+    })
+    .catch(err => {
+      setStatus('Load failed: ' + err.message);
+      console.error(err);
+    });
+}
+
+function renderGraph(data) {
+  const svg = d3.select('#kc-svg');
+  svg.selectAll('*').remove();
+
+  const wrap = svg.node().parentElement;
+  const W = wrap.clientWidth  || 900;
+  const H = wrap.clientHeight || 600;
+  svg.attr('viewBox', `0 0 ${W} ${H}`);
+
+  // Arrowhead marker per edge type
+  const defs = svg.append('defs');
+  Object.entries(EDGE_COLORS).forEach(([rel, col]) => {
+    defs.append('marker')
+      .attr('id', `arrow-${rel.replace(/[^a-z0-9]/gi, '_')}`)
+      .attr('viewBox', '0 -4 8 8')
+      .attr('refX', 14).attr('refY', 0)
+      .attr('markerWidth', 6).attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+        .attr('d', 'M0,-4L8,0L0,4')
+        .attr('fill', col).attr('opacity', .7);
+  });
+
+  const g = svg.append('g');
+
+  // Zoom + pan
+  svg.call(
+    d3.zoom().scaleExtent([0.05, 5])
+      .on('zoom', e => g.attr('transform', e.transform))
+  );
+
+  // Force simulation
+  _simulation = d3.forceSimulation(data.nodes)
+    .force('link',      d3.forceLink(data.links).id(d => d.id).distance(d => {
+      if (d.relation === 'CORRELATES') return 120;
+      if (d.relation === 'attributed-to') return 80;
+      return 60;
+    }))
+    .force('charge',    d3.forceManyBody().strength(-180))
+    .force('center',    d3.forceCenter(W / 2, H / 2))
+    .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 4));
+
+  // Edges
+  const link = g.append('g').attr('class', 'kc-links')
+    .selectAll('line')
+    .data(data.links)
+    .join('line')
+      .attr('stroke', d => edgeColor(d))
+      .attr('stroke-opacity', d => d.relation === 'CORRELATES' ? 0.85 : 0.45)
+      .attr('stroke-width', d => d.relation === 'CORRELATES' ? 2.5 : 1.2)
+      .attr('stroke-dasharray', d => d.relation === 'CORRELATES' ? '6 3' : null)
+      .attr('marker-end', d => {
+        const key = (d.relation || 'related-to').replace(/[^a-z0-9]/gi, '_');
+        return `url(#arrow-${key})`;
+      });
+
+  // Node groups
+  const node = g.append('g').attr('class', 'kc-nodes')
+    .selectAll('g')
+    .data(data.nodes)
+    .join('g')
+      .attr('data-type', d => d.type)
+      .attr('data-techs', d => d.technique_ids || '')
+      .call(
+        d3.drag()
+          .on('start', (e, d) => {
+            if (!e.active) _simulation.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+          })
+          .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+          .on('end',  (e, d) => {
+            if (!e.active) _simulation.alphaTarget(0);
+            d.fx = null; d.fy = null;
+          })
+      )
+      .on('mouseenter', showTooltip)
+      .on('mousemove',  moveTooltip)
+      .on('mouseleave', hideTooltip);
+
+  node.append('circle')
+    .attr('r',      d => nodeRadius(d))
+    .attr('fill',   d => nodeColor(d))
+    .attr('stroke', '#060d18')
+    .attr('stroke-width', 1.5)
+    .attr('opacity', .9);
+
+  // Labels for high-value node types
+  node.filter(d => ['ThreatActor','CyberOperation','ConflictEvent'].includes(d.type))
+    .append('text')
+      .text(d => d.label.length > 20 ? d.label.slice(0, 18) + '…' : d.label)
+      .attr('x', d => nodeRadius(d) + 4)
+      .attr('y', 4)
+      .attr('fill', '#cbd5e1')
+      .attr('font-size', '10px')
+      .attr('font-family', 'monospace')
+      .attr('pointer-events', 'none');
+
+  // Technique ID badge
+  node.filter(d => d.type === 'Technique')
+    .append('text')
+      .text(d => d.id)
+      .attr('x', 0).attr('y', nodeRadius(d => nodeRadius(d)) + 10)
+      .attr('text-anchor', 'middle')
+      .attr('class', 'kc-tactic-badge');
+
+  _simulation.on('tick', () => {
+    link
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node.attr('transform', d => `translate(${d.x},${d.y})`);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Legend
+// ---------------------------------------------------------------------------
+function renderLegend(data) {
+  const typeCounts = {};
+  data.nodes.forEach(n => { typeCounts[n.type] = (typeCounts[n.type] || 0) + 1; });
+
+  const relCounts = {};
+  data.links.forEach(l => { relCounts[l.relation] = (relCounts[l.relation] || 0) + 1; });
+
+  const nLeg = document.getElementById('kc-node-legend');
+  nLeg.innerHTML = Object.entries(typeCounts)
+    .sort((a,b) => b[1] - a[1])
+    .map(([t, c]) => `
+      <div class="kc-legend-item">
+        <span class="kc-dot" style="background:${NODE_COLORS[t]||'#4b5563'}"></span>
+        <span>${t} <span style="color:#4b5563">(${c})</span></span>
+      </div>`)
+    .join('');
+
+  const eLeg = document.getElementById('kc-edge-legend');
+  eLeg.innerHTML = Object.entries(relCounts)
+    .sort((a,b) => b[1] - a[1])
+    .map(([r, c]) => `
+      <div class="kc-legend-item">
+        <span class="kc-line-swatch" style="background:${EDGE_COLORS[r]||'#334155'}"></span>
+        <span>${r} <span style="color:#4b5563">(${c})</span></span>
+      </div>`)
+    .join('');
+}
+
+function updateStats(data) {
+  const corr = data.links.filter(l => l.relation === 'CORRELATES').length;
+  document.getElementById('stat-nodes').textContent = data.nodes.length;
+  document.getElementById('stat-edges').textContent = data.links.length;
+  document.getElementById('stat-corr').textContent  = corr;
+}
+
+// ---------------------------------------------------------------------------
+// Tooltip
+// ---------------------------------------------------------------------------
+const _tt = document.getElementById('kc-tooltip');
+
+function showTooltip(event, d) {
+  const rows = [];
+  if (d.type)          rows.push(['Type',       d.type]);
+  if (d.technique_ids) rows.push(['Techniques', d.technique_ids]);
+  if (d.tactic)        rows.push(['Tactic',     d.tactic]);
+  if (d.aoi)           rows.push(['AoI',        d.aoi]);
+  if (d.event_code)    rows.push(['Event Code', d.event_code]);
+  if (d.delta_hours)   rows.push(['Δ hours',    d.delta_hours]);
+
+  _tt.innerHTML = `
+    <div class="tt-title">${escHtml(d.label || d.id)}</div>
+    <div class="tt-type">${escHtml(d.id)}</div>
+    ${rows.map(([k,v]) => `
+      <div class="tt-row">
+        <span class="tt-key">${escHtml(k)}</span>
+        <span class="tt-val">${escHtml(String(v))}</span>
+      </div>`).join('')}
+  `;
+  _tt.style.display = 'block';
+  moveTooltip(event);
+}
+
+function moveTooltip(event) {
+  const wrap = document.getElementById('kc-svg').parentElement.getBoundingClientRect();
+  let x = event.clientX - wrap.left + 14;
+  let y = event.clientY - wrap.top  - 20;
+  if (x + 300 > wrap.width)  x -= 310;
+  if (y + 160 > wrap.height) y -= 160;
+  _tt.style.left = x + 'px';
+  _tt.style.top  = y + 'px';
+}
+
+function hideTooltip() { _tt.style.display = 'none'; }
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ---------------------------------------------------------------------------
+// Technique highlight filter
+// ---------------------------------------------------------------------------
+function highlightByTechnique(q) {
+  const svg = d3.select('#kc-svg');
+  if (!q) {
+    svg.selectAll('.kc-nodes g').attr('opacity', 1);
+    svg.selectAll('.kc-links line').attr('opacity', null);
+    return;
+  }
+  q = q.trim().toUpperCase();
+  svg.selectAll('.kc-nodes g').attr('opacity', function() {
+    const techs = (this.dataset.techs || '').toUpperCase();
+    return techs.includes(q) ? 1 : 0.15;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Run correlator
+// ---------------------------------------------------------------------------
+function runCorrelator() {
+  setStatus('Running 72h correlator…');
+  fetch('/observability/api/correlator/run', { method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ window_hours: 72 }) })
+    .then(r => r.json())
+    .then(res => {
+      const msg = `CORRELATES: ${res.edges_written} new edges`;
+      showFlash(msg);
+      setStatus(msg + ` (${res.edges_skipped} dupes skipped)`);
+      loadGraph();
+    })
+    .catch(err => setStatus('Correlator failed: ' + err.message));
+}
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+loadGraph();
+</script>
+{% endblock %}
