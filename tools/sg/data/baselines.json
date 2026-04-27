@@ -711,5 +711,136 @@
       "surprise_factor": 0.5,
       "international_recognition": "limited"
     }
+  },
+  {
+    "case_id": "ex_pla_taiwan_1995",
+    "label": "exercise",
+    "conflict_name": "PLA Ballistic Missile Exercises vs Taiwan 1995",
+    "year": 1995,
+    "start_date": "1995-07-21",
+    "aggressor": "China",
+    "defender": "Taiwan",
+    "region": "Western Pacific/Taiwan Strait",
+    "duration_days": 25,
+    "indicators": {
+      "mobilization_level": 6,
+      "reserve_callup": false,
+      "border_concentration": 6,
+      "diplomatic_withdrawal": false,
+      "economic_sanctions": false,
+      "propaganda_intensity": 8,
+      "cyber_activity": 1,
+      "intel_collection": 6,
+      "naval_exercises": true,
+      "air_defense_readiness": 7,
+      "deception_operations": false,
+      "logistics_surge": 5
+    },
+    "metadata": {
+      "notes": "PLA Second Artillery fired DF-15 ballistic missiles into test zones 60–150 nm north of Taiwan; framed as military exercises in response to Lee Teng-hui Cornell visit; first use of DF-15 in coercive context; opened escalation playbook leading to March 1996 crisis; US deployed USS Nimitz in measured response",
+      "signal_lead_days": 21,
+      "surprise_factor": 0.3,
+      "international_recognition": "widespread",
+      "exercise_type": "DONGFENG",
+      "pla_systems": ["DF-15"],
+      "theater": "taiwan_strait"
+    }
+  },
+  {
+    "case_id": "co_scarborough_2012",
+    "label": "coercive",
+    "conflict_name": "Scarborough Shoal Standoff 2012",
+    "year": 2012,
+    "start_date": "2012-04-10",
+    "aggressor": "China",
+    "defender": "Philippines",
+    "region": "South China Sea/Scarborough Shoal",
+    "duration_days": 75,
+    "indicators": {
+      "mobilization_level": 4,
+      "reserve_callup": false,
+      "border_concentration": 5,
+      "diplomatic_withdrawal": false,
+      "economic_sanctions": true,
+      "propaganda_intensity": 7,
+      "cyber_activity": 4,
+      "intel_collection": 6,
+      "naval_exercises": true,
+      "air_defense_readiness": 4,
+      "deception_operations": true,
+      "logistics_surge": 4
+    },
+    "metadata": {
+      "notes": "China Coast Guard and PAFMM fishing vessels surrounded Scarborough Shoal after Philippine Navy BRP Gregorio del Pilar confronted Chinese fishermen; US-brokered dual-withdrawal deal honored only by Philippines; China established de facto year-round control; prototype gray-zone salami-slicing coercion below kinetic threshold",
+      "signal_lead_days": 14,
+      "surprise_factor": 0.4,
+      "international_recognition": "limited",
+      "theater": "south_china_sea"
+    }
+  },
+  {
+    "case_id": "co_senkaku_2012",
+    "label": "coercive",
+    "conflict_name": "Senkaku/Diaoyu Islands Incidents 2010-2012",
+    "year": 2012,
+    "start_date": "2010-09-07",
+    "aggressor": "China",
+    "defender": "Japan",
+    "region": "East China Sea/Senkaku Islands",
+    "duration_days": 730,
+    "indicators": {
+      "mobilization_level": 5,
+      "reserve_callup": false,
+      "border_concentration": 6,
+      "diplomatic_withdrawal": true,
+      "economic_sanctions": true,
+      "propaganda_intensity": 9,
+      "cyber_activity": 6,
+      "intel_collection": 7,
+      "naval_exercises": true,
+      "air_defense_readiness": 6,
+      "deception_operations": false,
+      "logistics_surge": 5
+    },
+    "metadata": {
+      "notes": "Sept 2010 Chinese trawler Minjinyu 5179 collision with Japan Coast Guard vessels near Senkaku; China halted rare-earth exports (economic coercion); Sept 2012 Japanese government nationalization of islands triggered mass protests and recurrent PLAN/JCG standoffs; PLAAF ADIZ violations with H-6 bombers; prototype dual-track coercion (gray-zone maritime + economic lever)",
+      "signal_lead_days": 30,
+      "surprise_factor": 0.2,
+      "international_recognition": "widespread",
+      "theater": "east_china_sea"
+    }
+  },
+  {
+    "case_id": "co_china_asat_2007",
+    "label": "coercive",
+    "conflict_name": "Chinese ASAT Test 2007 (SC-19/DN-1)",
+    "year": 2007,
+    "start_date": "2007-01-11",
+    "aggressor": "China",
+    "defender": "USA/Allies",
+    "region": "Space/Low Earth Orbit",
+    "duration_days": 1,
+    "indicators": {
+      "mobilization_level": 3,
+      "reserve_callup": false,
+      "border_concentration": 1,
+      "diplomatic_withdrawal": false,
+      "economic_sanctions": false,
+      "propaganda_intensity": 6,
+      "cyber_activity": 3,
+      "intel_collection": 8,
+      "naval_exercises": false,
+      "air_defense_readiness": 5,
+      "deception_operations": true,
+      "logistics_surge": 2
+    },
+    "metadata": {
+      "notes": "PLA SC-19/DN-1 kinetic kill vehicle destroyed Fengyun-1C weather satellite at 865 km altitude; created ~3,000 trackable debris objects — largest single debris-generating event in history; unannounced strategic signaling targeting US ISR/GPS satellite constellations; coercive demonstration of counter-space capability below armed-conflict threshold; US and allies formally protested",
+      "signal_lead_days": 7,
+      "surprise_factor": 0.9,
+      "international_recognition": "widespread",
+      "theater": "space_leo",
+      "pla_systems": ["SC-19", "DN-1"]
+    }
   }
 ]
