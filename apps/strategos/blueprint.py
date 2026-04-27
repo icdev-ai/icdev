@@ -45,10 +45,21 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     GET    /simulate/nodes          — Supply chain nodes with lat/lon for map
     POST   /simulate/run            — Run scenario simulation (deterministic or Monte Carlo)
     GET    /ew/data                 — EW sites, supply nodes, chokepoints + EMCON scores (JSON)
+
+  Wargame API (url_prefix="/api/strategos"):
+    GET    /wargame                 — List wargame scenarios
+    POST   /wargame                 — Create a new wargame scenario
+    GET    /wargame/<id>/ooda       — OODA tempo analysis for a scenario
+    GET    /wargame/<id>/lanchester — Lanchester attrition curves
+    POST   /wargame/<id>/blotto     — Colonel Blotto force allocation
+    POST   /wargame/<id>/nash       — Nash equilibrium for a payoff matrix
+    GET    /wargame/<id>/coa        — COA entries for a scenario
+    POST   /wargame/<id>/coa        — Add/update COA entry
 """
 import json
 import math
 import random
+import uuid
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, render_template, request, Response
@@ -76,6 +87,16 @@ from tools.strategos.interdiction_ranker import (
 )
 from tools.strategos.reverse_cascade_inference import NODE_DISRUPTION_PROFILES
 from tools.strategos.ew_monitor import get_ew_data
+from tools.strategos.ooda import (
+    compute_tempo,
+    lanchester_square,
+    lanchester_linear,
+    blotto_expected_payoff,
+    find_nash_2x2,
+    score_coa,
+    DOMAINS as OODA_DOMAINS,
+    COA_CRITERIA,
+)
 
 # ---------------------------------------------------------------------------
 # Signal-queue helpers
@@ -290,8 +311,11 @@ def strategos_iw():
 @_bp.route("/wargame")
 def strategos_wargame():
     selected_state = request.args.get("state", "")
+    selected_id    = request.args.get("id", "")
+    ph = "%s" if is_pg() else "?"
+
     params = [selected_state] if selected_state else []
-    where = "WHERE state = ?" if selected_state else ""
+    where  = f"WHERE state = {ph}" if selected_state else ""
     wargames = _safe_fetch(
         f"SELECT * FROM sg_wargames {where} ORDER BY created_at DESC LIMIT 100",  # nosec B608
         params,
@@ -302,11 +326,61 @@ def strategos_wargame():
             "SELECT DISTINCT state FROM sg_wargames ORDER BY state"
         )
     ]
+
+    # Active scenario — first active, or user-selected, or first in list
+    active_game = None
+    if selected_id:
+        matches = [g for g in wargames if g.get("id") == selected_id]
+        active_game = matches[0] if matches else None
+    if not active_game:
+        actives = [g for g in wargames if (g.get("state") or "") == "active"]
+        active_game = actives[0] if actives else (wargames[0] if wargames else None)
+
+    wargame_id = active_game["id"] if active_game else None
+
+    # OODA tempo (uses baseline data if no DB events)
+    ooda = compute_tempo(wargame_id)
+
+    # COA entries
+    coa_rows = _safe_fetch(
+        f"SELECT * FROM sg_coa_entries WHERE wargame_id = {ph} ORDER BY composite_score DESC",  # nosec B608
+        (wargame_id,),
+    ) if wargame_id else []
+
+    # Latest Nash scenario
+    nash_row = None
+    if wargame_id:
+        nash_rows = _safe_fetch(
+            f"SELECT * FROM sg_nash_scenarios WHERE wargame_id = {ph} ORDER BY created_at DESC LIMIT 1",  # nosec B608
+            (wargame_id,),
+        )
+        nash_row = nash_rows[0] if nash_rows else None
+
+    # Lanchester defaults from wargame attrition_coefficients_json
+    lanchester_data = None
+    if active_game:
+        try:
+            coeffs = json.loads(active_game.get("attrition_coefficients_json") or "{}")
+            b0   = float(coeffs.get("blue_strength", 1000))
+            r0   = float(coeffs.get("red_strength",  800))
+            beta = float(coeffs.get("beta", 0.01))
+            rho  = float(coeffs.get("rho",  0.01))
+            lanchester_data = lanchester_square(b0, r0, beta, rho)
+        except Exception:
+            lanchester_data = lanchester_square(1000, 800)
+
     return render_template(
         "strategos/wargame.html",
         wargames=wargames,
         wargame_states=wargame_states,
         selected_state=selected_state,
+        active_game=active_game,
+        ooda=ooda,
+        coa_rows=coa_rows,
+        nash_row=nash_row,
+        lanchester_data=lanchester_data,
+        coa_criteria=list(COA_CRITERIA),
+        domains=list(OODA_DOMAINS),
     )
 
 
@@ -1177,6 +1251,211 @@ def api_simulate_run():
             "summary":          summary,
             "cascade_effects":  cascade_det,
         })
+
+
+# ---------------------------------------------------------------------------
+# Wargame API routes
+# ---------------------------------------------------------------------------
+
+def _ensure_ooda_tables() -> None:
+    try:
+        import importlib
+        mod = importlib.import_module("tools.db.migrations.062_sg_ooda.up")
+        mod.up()
+    except Exception:
+        pass
+
+
+@_api.route("/wargame", methods=["GET"])
+def api_wargame_list():
+    rows = _safe_fetch("SELECT * FROM sg_wargames ORDER BY created_at DESC LIMIT 100")
+    return jsonify({"wargames": rows, "total": len(rows)})
+
+
+@_api.route("/wargame", methods=["POST"])
+def api_wargame_create():
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    gid = str(uuid.uuid4())
+    ph  = "%s" if is_pg() else "?"
+    coeffs = json.dumps({
+        "blue_strength": float(data.get("blue_strength", 1000)),
+        "red_strength":  float(data.get("red_strength",  800)),
+        "beta": float(data.get("beta", 0.01)),
+        "rho":  float(data.get("rho",  0.01)),
+    })
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"INSERT INTO sg_wargames (id, name, scenario, state, blue_force, red_force, "
+            f"attrition_coefficients_json) VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})",  # nosec B608
+            (
+                gid,
+                name,
+                data.get("scenario", ""),
+                data.get("state", "pending"),
+                data.get("blue_force", ""),
+                data.get("red_force", ""),
+                coeffs,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"id": gid, "name": name}), 201
+
+
+@_api.route("/wargame/<wargame_id>/ooda", methods=["GET"])
+def api_wargame_ooda(wargame_id: str):
+    try:
+        result = compute_tempo(wargame_id)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/wargame/<wargame_id>/lanchester", methods=["GET"])
+def api_wargame_lanchester(wargame_id: str):
+    model  = request.args.get("model", "square")
+    b0     = float(request.args.get("b0",   1000))
+    r0     = float(request.args.get("r0",   800))
+    beta   = float(request.args.get("beta", 0.01))
+    rho    = float(request.args.get("rho",  0.01))
+    # Pull coefficients from DB if available
+    rows = _safe_fetch(
+        "SELECT attrition_coefficients_json FROM sg_wargames WHERE id = ?",
+        (wargame_id,),
+    )
+    if rows and rows[0].get("attrition_coefficients_json"):
+        try:
+            c = json.loads(rows[0]["attrition_coefficients_json"])
+            b0   = float(c.get("blue_strength", b0))
+            r0   = float(c.get("red_strength",  r0))
+            beta = float(c.get("beta", beta))
+            rho  = float(c.get("rho",  rho))
+        except Exception:
+            pass
+
+    try:
+        fn = lanchester_linear if model == "linear" else lanchester_square
+        result = fn(b0, r0, beta, rho)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/wargame/<wargame_id>/blotto", methods=["POST"])
+def api_wargame_blotto(wargame_id: str):
+    data = request.get_json(silent=True) or {}
+    blue_forces = data.get("blue_forces")
+    red_forces  = data.get("red_forces")
+    if not blue_forces or not red_forces:
+        return jsonify({"error": "blue_forces and red_forces arrays required"}), 400
+    try:
+        result = blotto_expected_payoff(
+            [float(x) for x in blue_forces],
+            [float(x) for x in red_forces],
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/wargame/<wargame_id>/nash", methods=["POST"])
+def api_wargame_nash(wargame_id: str):
+    data = request.get_json(silent=True) or {}
+    payoff_blue = data.get("payoff_blue")
+    payoff_red  = data.get("payoff_red")
+    strategy_names = data.get("strategy_names")
+    if not payoff_blue or not payoff_red:
+        return jsonify({"error": "payoff_blue and payoff_red matrices required"}), 400
+    try:
+        result = find_nash_2x2(payoff_blue, payoff_red, strategy_names)
+        # Persist
+        _ensure_ooda_tables()
+        nid = str(uuid.uuid4())
+        ph  = "%s" if is_pg() else "?"
+        conn = get_connection()
+        try:
+            conn.execute(
+                f"INSERT INTO sg_nash_scenarios "
+                f"(id, wargame_id, name, blue_strategies, red_strategies, "
+                f"payoff_blue, payoff_red, pure_equilibria, mixed_equilibrium) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",  # nosec B608
+                (
+                    nid,
+                    wargame_id,
+                    data.get("name", "Nash Scenario"),
+                    json.dumps((strategy_names or [[], []])[0]),
+                    json.dumps((strategy_names or [[], []])[1]),
+                    json.dumps(payoff_blue),
+                    json.dumps(payoff_red),
+                    json.dumps(result.get("pure_equilibria", [])),
+                    json.dumps(result.get("mixed_equilibrium")),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        result["id"] = nid
+        return jsonify(result), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/wargame/<wargame_id>/coa", methods=["GET"])
+def api_wargame_coa_list(wargame_id: str):
+    ph = "%s" if is_pg() else "?"
+    rows = _safe_fetch(
+        f"SELECT * FROM sg_coa_entries WHERE wargame_id = {ph} ORDER BY composite_score DESC",  # nosec B608
+        (wargame_id,),
+    )
+    return jsonify({"coas": rows, "total": len(rows)})
+
+
+@_api.route("/wargame/<wargame_id>/coa", methods=["POST"])
+def api_wargame_coa_create(wargame_id: str):
+    _ensure_ooda_tables()
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    side = (data.get("side") or "blue").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    if side not in ("blue", "red"):
+        return jsonify({"error": "side must be blue or red"}), 400
+
+    criteria_vals = {c: float(data.get(c, 0.5)) for c in COA_CRITERIA}
+    scored = score_coa([{"name": name, **criteria_vals}])
+    composite = scored[0]["composite_score"] if scored else 0.5
+
+    cid = str(uuid.uuid4())
+    ph  = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"INSERT INTO sg_coa_entries "
+            f"(id, wargame_id, side, name, description, speed, surprise, mass, "
+            f"economy_of_force, maneuver, sustainability, composite_score) "
+            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",  # nosec B608
+            (
+                cid, wargame_id, side, name,
+                data.get("description", ""),
+                criteria_vals["speed"],
+                criteria_vals["surprise"],
+                criteria_vals["mass"],
+                criteria_vals["economy_of_force"],
+                criteria_vals["maneuver"],
+                criteria_vals["sustainability"],
+                composite,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"id": cid, "name": name, "composite_score": composite}), 201
 
 
 # ---------------------------------------------------------------------------
