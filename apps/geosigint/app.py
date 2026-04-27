@@ -103,6 +103,16 @@ def amphibious_page():
     return render_template("amphibious.html")
 
 
+@app.route("/strait-crossing")
+def strait_crossing_page():
+    return render_template("strait_crossing.html")
+
+
+@app.route("/island-chain")
+def island_chain_page():
+    return render_template("island_chain.html")
+
+
 # ── API ────────────────────────────────────────────────────
 
 @app.route("/api/signals")
@@ -352,6 +362,62 @@ def api_amphibious_crossing():
 def api_amphibious_detection():
     from amphibious_analyzer import get_detection_curve
     return jsonify({"curve": get_detection_curve()})
+
+
+@app.route("/api/strait-crossing/summary")
+def api_strait_crossing_summary():
+    from strait_crossing import get_summary
+    return jsonify(get_summary())
+
+
+@app.route("/api/strait-crossing/speed-matrix")
+def api_strait_crossing_speed_matrix():
+    from strait_crossing import get_speed_matrix
+    return jsonify({"scenarios": get_speed_matrix()})
+
+
+@app.route("/api/strait-crossing/intercept")
+def api_strait_crossing_intercept():
+    from strait_crossing import get_intercept_table
+    speed_kts = float(request.args.get("speed_kts", 12.0))
+    return jsonify({"table": get_intercept_table(speed_kts), "speed_kts": speed_kts})
+
+
+@app.route("/api/strait-crossing/detection")
+def api_strait_crossing_detection():
+    from strait_crossing import get_detection_curve, RADAR_SYSTEMS, ROCAF_BASES
+    return jsonify({"curve": get_detection_curve(), "radar_systems": RADAR_SYSTEMS,
+                    "rocaf_bases": ROCAF_BASES})
+
+
+@app.route("/api/strait-crossing/corridor")
+def api_strait_crossing_corridor():
+    from strait_crossing import PRIMARY_CORRIDOR
+    return jsonify(PRIMARY_CORRIDOR)
+
+
+@app.route("/api/island-chain/summary")
+def api_island_chain_summary():
+    from island_chain_defense import get_summary
+    return jsonify(get_summary())
+
+
+@app.route("/api/island-chain/bases")
+def api_island_chain_bases():
+    from island_chain_defense import get_all_bases
+    return jsonify({"bases": get_all_bases()})
+
+
+@app.route("/api/island-chain/thaad")
+def api_island_chain_thaad():
+    from island_chain_defense import THAAD_BATTERIES
+    return jsonify({"batteries": THAAD_BATTERIES})
+
+
+@app.route("/api/island-chain/chokepoints")
+def api_island_chain_chokepoints():
+    from island_chain_defense import CHOKEPOINTS
+    return jsonify({"chokepoints": CHOKEPOINTS})
 
 
 @app.route("/api/sea/vessels")
