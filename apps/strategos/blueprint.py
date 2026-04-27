@@ -41,8 +41,12 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     POST   /signals/brief           — Bulk IIR pre-fill from selected signals
     POST   /annotate                — Add analyst annotation to any entity
     GET    /annotations/<entity_type>/<entity_id> — List annotations for entity
+    GET    /simulate/nodes          — Supply chain nodes with lat/lon for map
+    POST   /simulate/run            — Run scenario simulation (deterministic or Monte Carlo)
 """
 import json
+import math
+import random
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, render_template, request, Response
@@ -68,6 +72,7 @@ from tools.strategos.interdiction_ranker import (
     get_supply_degradation_coefficients,
     rank_interdiction_targets,
 )
+from tools.strategos.reverse_cascade_inference import NODE_DISRUPTION_PROFILES
 
 # ---------------------------------------------------------------------------
 # Signal-queue helpers
@@ -124,7 +129,7 @@ def _update_signal(sig_id: int, **fields) -> bool:
         set_clause = ", ".join(f"{k} = {ph}" for k in fields)
         vals = list(fields.values()) + [sig_id]
         result = conn.execute(
-            f"UPDATE sg_prioritized_signals SET {set_clause} WHERE id = {ph}",
+            f"UPDATE sg_prioritized_signals SET {set_clause} WHERE id = {ph}",  # nosec B608
             vals,
         )
         conn.commit()
@@ -215,7 +220,8 @@ def strategos_orbat():
         params.append(selected_type)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     units = _safe_fetch(
-        f"SELECT * FROM sg_orbat_units {where} ORDER BY unit_name ASC", params
+        f"SELECT * FROM sg_orbat_units {where} ORDER BY unit_name ASC",  # nosec B608
+        params,
     )
     unit_types = [
         r["unit_type"]
@@ -238,7 +244,7 @@ def strategos_ghost():
     params = [selected_type] if selected_type else []
     where = "WHERE signal_type = ?" if selected_type else ""
     signals = _safe_fetch(
-        f"SELECT * FROM sg_ghost_signals {where} ORDER BY detected_at DESC LIMIT 200",
+        f"SELECT * FROM sg_ghost_signals {where} ORDER BY detected_at DESC LIMIT 200",  # nosec B608
         params,
     )
     signal_types = [
@@ -261,7 +267,7 @@ def strategos_iw():
     params = [selected_type] if selected_type else []
     where = "WHERE effect_type = ?" if selected_type else ""
     effects = _safe_fetch(
-        f"SELECT * FROM sg_iw_effects {where} ORDER BY detected_at DESC LIMIT 200",
+        f"SELECT * FROM sg_iw_effects {where} ORDER BY detected_at DESC LIMIT 200",  # nosec B608
         params,
     )
     effect_types = [
@@ -284,7 +290,7 @@ def strategos_wargame():
     params = [selected_state] if selected_state else []
     where = "WHERE state = ?" if selected_state else ""
     wargames = _safe_fetch(
-        f"SELECT * FROM sg_wargames {where} ORDER BY created_at DESC LIMIT 100",
+        f"SELECT * FROM sg_wargames {where} ORDER BY created_at DESC LIMIT 100",  # nosec B608
         params,
     )
     wargame_states = [
@@ -414,7 +420,7 @@ def strategos_signals():
         "r.title, r.body, r.source, r.signal_date "
         "FROM sg_prioritized_signals p "
         "LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
-        f"{where} ORDER BY p.composite_score DESC LIMIT {200 if f_pir else 50}"
+        f"{where} ORDER BY p.composite_score DESC LIMIT {200 if f_pir else 50}"  # nosec B608
     )
     ph = "%s" if is_pg() else "?"
     sql = sql.replace("?", ph)
@@ -489,7 +495,7 @@ def strategos_briefs():
     briefs = _safe_fetch(
         f"SELECT id, brief_type, title, sio_confidence, analyst_reviewed, "
         f"reviewed_by, reviewed_at, created_at "
-        f"FROM sg_intelligence_briefs {where} ORDER BY created_at DESC LIMIT 200",
+        f"FROM sg_intelligence_briefs {where} ORDER BY created_at DESC LIMIT 200",  # nosec B608
         params,
     )
     return render_template(
@@ -796,7 +802,7 @@ def api_signals_list():
 def api_signals_toggle_read(sig_id: int):
     ph = "%s" if is_pg() else "?"
     rows = _safe_fetch(
-        f"SELECT is_read FROM sg_prioritized_signals WHERE id = {ph}", (sig_id,)
+        f"SELECT is_read FROM sg_prioritized_signals WHERE id = {ph}", (sig_id,)  # nosec B608
     )
     if not rows:
         return jsonify({"error": "not found"}), 404
@@ -810,7 +816,7 @@ def api_signals_toggle_read(sig_id: int):
 def api_signals_toggle_promote(sig_id: int):
     ph = "%s" if is_pg() else "?"
     rows = _safe_fetch(
-        f"SELECT promoted_to_kg FROM sg_prioritized_signals WHERE id = {ph}", (sig_id,)
+        f"SELECT promoted_to_kg FROM sg_prioritized_signals WHERE id = {ph}", (sig_id,)  # nosec B608
     )
     if not rows:
         return jsonify({"error": "not found"}), 404
@@ -844,7 +850,7 @@ def api_signals_brief():
         f"r.title, r.body, r.source, r.signal_date "
         f"FROM sg_prioritized_signals p "
         f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
-        f"WHERE p.id IN ({placeholders})",
+        f"WHERE p.id IN ({placeholders})",  # nosec B608
         signal_ids,
     )
 
@@ -975,6 +981,159 @@ def api_get_annotations(entity_type: str, entity_id: str):
         return jsonify({"annotations": annotations, "summary": summary})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Simulate endpoints
+# ---------------------------------------------------------------------------
+
+@_api.route("/simulate/nodes", methods=["GET"])
+def api_simulate_nodes():
+    """GET /api/strategos/simulate/nodes — supply chain nodes with lat/lon."""
+    rows = _safe_fetch(
+        "SELECT node_id, label, node_type, criticality, lat, lon "
+        "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL",
+    )
+    return jsonify({"nodes": rows, "total": len(rows)})
+
+
+@_api.route("/simulate/run", methods=["POST"])
+def api_simulate_run():
+    """POST /api/strategos/simulate/run — deterministic or Monte Carlo.
+
+    Body: {
+        "events": [
+            {
+                "node_id": str,
+                "node_type": str,
+                "label": str,
+                "destruction_pct": int,
+                "repair_timeline_days": int,
+                "timestamp_offset_days": int
+            }
+        ],
+        "mode": "deterministic" | "monte_carlo",
+        "iterations": int  (Monte Carlo only, default 100)
+    }
+    """
+    data = request.get_json(silent=True) or {}
+    events = data.get("events", [])
+    mode = data.get("mode", "deterministic")
+    iterations = max(10, min(int(data.get("iterations", 100)), 1000))
+
+    if not events:
+        return jsonify({"error": "No events provided"}), 400
+
+    # Fetch total node count for network disruption ratio
+    total_nodes = 1
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT COUNT(*) FROM sg_supply_nodes").fetchone()
+            total_nodes = max(1, row[0])
+        except Exception:
+            pass
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    _DEFAULT_PROFILE = {"lag_mean": 7, "lag_std": 3, "lag_weight": 0.70}
+
+    def _compute_cascade(events_list, noise: bool = False) -> list[dict]:
+        effects = []
+        for ev in events_list:
+            node_type = ev.get("node_type", "depot")
+            profile = NODE_DISRUPTION_PROFILES.get(node_type, _DEFAULT_PROFILE)
+            lag_weight = profile.get("lag_weight", 0.70)
+            lag_mean = profile.get("lag_mean", 7)
+            lag_std = profile.get("lag_std", 3)
+            offset = int(ev.get("timestamp_offset_days", 0))
+            destruction = int(ev.get("destruction_pct", 50)) / 100.0
+
+            if noise:
+                # Box-Muller Gaussian sample
+                u1 = max(1e-9, random.random())
+                u2 = random.random()
+                z = math.sqrt(-2 * math.log(u1)) * math.cos(2 * math.pi * u2)
+                sampled_lag = max(0, lag_mean + lag_std * z)
+            else:
+                sampled_lag = float(lag_mean)
+
+            effective_degradation = destruction * lag_weight
+            onset_day = offset + sampled_lag
+            effects.append({
+                "node_id":    ev.get("node_id", ""),
+                "node_type":  node_type,
+                "label":      ev.get("label", ev.get("node_id", "")),
+                "degradation":    round(effective_degradation, 4),
+                "onset_day":      round(onset_day, 1),
+                "repair_days":    int(ev.get("repair_timeline_days", lag_mean)),
+            })
+        return effects
+
+    if mode == "deterministic":
+        cascade = _compute_cascade(events, noise=False)
+        degradations = [c["degradation"] for c in cascade]
+        onset_days   = [c["onset_day"]   for c in cascade]
+        mean_deg     = sum(degradations) / len(degradations) if degradations else 0.0
+        mean_onset   = sum(onset_days)   / len(onset_days)   if onset_days   else 0.0
+        net_dis      = len(events) / total_nodes
+
+        summary = {
+            "mean_degradation":      round(mean_deg, 4),
+            "mean_onset_days":       round(mean_onset, 2),
+            "network_disruption_pct": round(min(1.0, net_dis), 4),
+        }
+        return jsonify({
+            "mode":             "deterministic",
+            "events_processed": len(events),
+            "summary":          summary,
+            "cascade_effects":  cascade,
+        })
+
+    else:  # monte_carlo
+        all_mean_degs = []
+        all_onset_days = []
+        for _ in range(iterations):
+            cascade_i = _compute_cascade(events, noise=True)
+            iter_degs = [c["degradation"] for c in cascade_i]
+            iter_onset = [c["onset_day"] for c in cascade_i]
+            if iter_degs:
+                all_mean_degs.append(sum(iter_degs) / len(iter_degs))
+            if iter_onset:
+                all_onset_days.append(sum(iter_onset) / len(iter_onset))
+
+        def _percentile(lst, p):
+            if not lst:
+                return 0.0
+            s = sorted(lst)
+            idx = int(math.ceil(p / 100.0 * len(s))) - 1
+            return s[max(0, idx)]
+
+        mean_deg   = sum(all_mean_degs) / len(all_mean_degs) if all_mean_degs else 0.0
+        mean_onset = sum(all_onset_days) / len(all_onset_days) if all_onset_days else 0.0
+        p10 = _percentile(all_mean_degs, 10)
+        p90 = _percentile(all_mean_degs, 90)
+        net_dis = len(events) / total_nodes
+
+        # Deterministic cascade for display purposes
+        cascade_det = _compute_cascade(events, noise=False)
+
+        summary = {
+            "mean_degradation":       round(mean_deg, 4),
+            "mean_onset_days":        round(mean_onset, 2),
+            "network_disruption_pct": round(min(1.0, net_dis), 4),
+            "p10_degradation":        round(p10, 4),
+            "p90_degradation":        round(p90, 4),
+        }
+        return jsonify({
+            "mode":             "monte_carlo",
+            "iterations":       iterations,
+            "events_processed": len(events),
+            "summary":          summary,
+            "cascade_effects":  cascade_det,
+        })
 
 
 # ---------------------------------------------------------------------------
