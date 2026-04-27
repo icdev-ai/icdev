@@ -169,6 +169,37 @@ When a new `tools/` module ingests user-provided content:
   - `ICDEV_STRICT_SANDBOX=1` routes file-inbox processing through `SandboxExecutor` in IL5.
 - **Revisit if:** Feed summaries are ever rendered as raw HTML in the dashboard, or if file-inbox format expands to executable scripts.
 
+### Gap 11 — GitLab OSINT Collector (`tools/strategos/gitlab_osint_collector.py`)
+
+**Module:** `tools/strategos/gitlab_osint_collector.py`
+
+**Ingress path:** Network egress only — runs on an internet-connected GitLab CI runner to fetch RSS/Atom signals from third-party feeds. Writes `osint_signals.json` and `kg_delta.json` as CI artifacts. No database or file-system ingestion on the air-gapped side; artifacts are consumed by `osint_harvester` via the TIER_GITLAB path.
+
+- **Decision:** **sandboxed-on-demand** (CI runner context — sandboxed by the GitLab CI job sandbox)
+- **Rationale:** Runs exclusively in a GitLab CI job, which provides process isolation and network policy by default. The script itself performs no `exec()`/`eval()` and writes only structured JSON. On the air-gapped side, the artifact JSON is treated as data (keys validated before DB insert by `osint_harvester`).
+- **Guardrails:**
+  - Network egress restricted to allowed RSS feed URLs defined in `args/strategos_osint_sources.yaml` (operator-controlled).
+  - Output artifacts are schema-validated JSON; unexpected keys are dropped by the harvester before DB insert.
+  - No `shell=True`, no `subprocess`, no code execution of feed content.
+  - `ICDEV_STRICT_SANDBOX=1` in CI enables stricter GitLab runner network policies.
+- **Revisit if:** The collector is called from a user-facing HTTP endpoint, or if feed content is ever passed to `eval()`/`exec()`.
+
+### Gap 12 — OSINT Pre-Stager (`tools/strategos/osint_prestage.py`)
+
+**Module:** `tools/strategos/osint_prestage.py`
+
+**Ingress path:** Bulk write — fetches third-party RSS/Atom signals on an internet-connected machine and writes timestamped JSON batch files to `data/osint_inbox/` for offline transfer into an air-gapped enclave.
+
+- **Decision:** **trusted-first-party** for the write path; **sandboxed-on-demand** for the RSS fetch path
+- **Rationale:** The write path produces structured JSON from first-party parsing logic. The RSS fetch path is identical in risk to Gap 10/Gap 11 (untrusted external content, text-only storage). No `exec()`/`eval()` anywhere in the prestage pipeline. Files written to `data/osint_inbox/` are operator-controlled and validated by `osint_harvester` before DB insert.
+- **Guardrails:**
+  - Output format is a fixed JSON schema (`{"signals": [...], "count": N, "prestaged_at": "..."}`); no executable content.
+  - Inbox directory created via `Path.mkdir(parents=True, exist_ok=True)` — no path traversal.
+  - Harvester validates inbox files with schema checks before insert; malformed files are skipped and logged.
+  - `ICDEV_STRICT_SANDBOX=1` routes RSS fetch through `SandboxExecutor` in IL5.
+  - `data/osint_inbox/` must be air-gapped media (rsync/removable) — never internet-accessible.
+- **Revisit if:** The inbox path accepts user input from an HTTP endpoint, or if file content is executed rather than parsed as JSON.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)

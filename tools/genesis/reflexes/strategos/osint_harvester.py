@@ -71,6 +71,26 @@ def _load_config() -> Dict[str, Any]:
 
 def _ensure_tables() -> None:
     """Create sg_raw_signals and sg_raw_signals_audit if they don't exist yet."""
+    # Fast-path: skip migration if tables already exist (avoids PG transaction abort)
+    try:
+        conn = get_connection()
+        if is_pg():
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM information_schema.tables "
+                "WHERE table_name IN ('sg_raw_signals','sg_raw_signals_audit')"
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) AS cnt FROM sqlite_master "
+                "WHERE type='table' AND name IN ('sg_raw_signals','sg_raw_signals_audit')"
+            ).fetchone()
+        conn.close()
+        cnt = row["cnt"] if isinstance(row, dict) else row[0]
+        if cnt >= 2:
+            return
+    except Exception:
+        pass
+
     try:
         from tools.db.migrations.run_migration import run_migration  # type: ignore
 
@@ -85,6 +105,12 @@ def _ensure_tables() -> None:
         try:
             conn = get_connection()
             _pg = is_pg()
+            # Clear any aborted transaction from the failed migration attempt
+            if _pg:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS sg_raw_signals ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -682,7 +708,13 @@ def _process_inbox_json(fpath: Path) -> Tuple[int, int, int]:
     with open(fpath, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    signals = data if isinstance(data, list) else [data]
+    if isinstance(data, list):
+        signals = data
+    elif isinstance(data, dict) and "signals" in data:
+        signals = data["signals"]
+    else:
+        signals = [data]
+
     harvested = dupes = errors = 0
     for sig in signals:
         if not isinstance(sig, dict):
