@@ -32,6 +32,7 @@
 | ACLED Connector | tools/databridge/connectors/acled_connector.py | Armed Conflict Location & Event Data API connector; incremental by event_date; normalizes headline/geo_hint/signal_date | --table events --since DATE --json | Conflict event records |
 | GDELT Connector | tools/databridge/connectors/gdelt_connector.py | GDELT Project API connector (events + GKG); no auth; incremental by SQLDATE; normalizes headline/geo_hint/signal_date | --table events|gkg --query TEXT --since SQLDATE --json | Event/GKG records |
 | SaaS Base Connector | tools/databridge/connectors/saas_base.py | REST/SaaS API base connector class for Connector Forge | (library) | SaaSBaseConnector class |
+| RSS Connector | tools/databridge/connectors/rss_connector.py | RSS 2.0 and Atom feed connector; no auth; normalizes headline/body_excerpt/signal_date/source; max_items default 50 | --url URL --feed-id ID --limit N --json | Feed entry records |
 | Sandbox Adapter | tools/databridge/forge/sandbox_adapter.py | Sandbox environment adapter for connector testing | --json | Adapter status |
 | Sandbox Manager | tools/databridge/forge/sandbox_manager.py | Sandbox lifecycle manager for generated connectors | --json | Sandbox status |
 
