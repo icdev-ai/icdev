@@ -9,7 +9,7 @@ factory, port).  Edges represent supply flows (source supplies target).
 Reverse BFS from a unit node walks edges upstream to identify candidate
 disruption sites.
 """
-from tools.db.storage import get_connection, is_pg
+from tools.db.storage import get_connection
 
 MIGRATION_ID = "057"
 MIGRATION_NAME = "sg_sc_graph"
