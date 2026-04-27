@@ -8,6 +8,24 @@
 .kg-legend { display:flex;flex-wrap:wrap;gap:.75rem;margin-top:.75rem;font-size:.8rem }
 .kg-legend-item { display:flex;align-items:center;gap:.4rem }
 .kg-dot { width:10px;height:10px;border-radius:50%;display:inline-block }
+
+/* Annotation panel */
+#ann-panel { display:none;position:fixed;bottom:1.5rem;right:1.5rem;width:340px;
+             background:var(--bg-secondary);border:1px solid var(--border-color);
+             border-radius:8px;padding:1rem;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.5) }
+#ann-panel h4 { margin:0 0 .5rem;font-size:.9rem;color:var(--text-primary) }
+.ann-badge { display:inline-block;padding:.1rem .45rem;border-radius:3px;font-size:.75rem;
+             font-weight:600;margin:.15rem .15rem 0 0 }
+.ann-assessed    { background:rgba(16,185,129,.2); color:#10b981 }
+.ann-unconfirmed { background:rgba(245,158,11,.2); color:#f59e0b }
+.ann-disputed    { background:rgba(233,69,96,.2);  color:#e94560 }
+.ann-source_tag  { background:rgba(59,130,246,.2); color:#3b82f6 }
+#ann-form select, #ann-form textarea {
+    width:100%;box-sizing:border-box;padding:.4rem .6rem;margin-top:.4rem;
+    background:var(--bg-primary);border:1px solid var(--border-color);
+    color:var(--text-primary);border-radius:4px;font-size:.82rem }
+#ann-form textarea { resize:vertical;min-height:60px }
+.ann-node-icon { position:absolute;font-size:10px;cursor:pointer;pointer-events:all }
 </style>
 {% endblock %}
 
@@ -52,6 +70,28 @@
     </div>
 </div>
 {% endblock %}
+
+<!-- Annotation panel (KG nodes) -->
+<div id="ann-panel">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+    <h4 id="ann-panel-title">Node Annotations</h4>
+    <button onclick="document.getElementById('ann-panel').style.display='none'"
+            style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.1rem">✕</button>
+  </div>
+  <div id="ann-list" style="margin-bottom:.75rem;max-height:140px;overflow-y:auto;font-size:.8rem"></div>
+  <form id="ann-form" onsubmit="submitAnnotation(event)">
+    <select id="ann-type" required>
+      <option value="">— annotation type —</option>
+      <option value="assessed">✔ assessed</option>
+      <option value="unconfirmed">? unconfirmed</option>
+      <option value="disputed">✗ disputed</option>
+      <option value="source_tag">⚑ source_tag</option>
+    </select>
+    <textarea id="ann-content" placeholder="Analyst note…" required maxlength="2000"></textarea>
+    <button type="submit" class="btn btn-primary" style="margin-top:.5rem;font-size:.8rem;width:100%">Add Annotation</button>
+  </form>
+  <div id="ann-msg" style="font-size:.78rem;margin-top:.4rem;color:#10b981"></div>
+</div>
 
 {% block scripts %}
 <script>

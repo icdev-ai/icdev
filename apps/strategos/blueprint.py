@@ -38,6 +38,8 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     POST   /signals/<id>/promote    — Toggle promoted_to_kg flag
     POST   /signals/<id>/annotate   — Set annotation text
     POST   /signals/brief           — Bulk IIR pre-fill from selected signals
+    POST   /annotate                — Add analyst annotation to any entity
+    GET    /annotations/<entity_type>/<entity_id> — List annotations for entity
 """
 import json
 from datetime import datetime, timezone
@@ -51,6 +53,13 @@ from tools.intelligence.pir_manager import (
     create_pir,
     list_pirs,
     update_pir,
+)
+from tools.intelligence.annotations import (
+    ANNOTATION_TYPES,
+    ENTITY_TYPES,
+    add_annotation,
+    get_annotation_summary,
+    get_annotations,
 )
 from tools.strategos.interdiction_ranker import (
     auto_write_interdicts_from_conflict_events,
@@ -401,7 +410,7 @@ def strategos_signals():
         "r.title, r.body, r.source, r.signal_date "
         "FROM sg_prioritized_signals p "
         "LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
-        f"{where} ORDER BY p.composite_score DESC LIMIT 50"
+        f"{where} ORDER BY p.composite_score DESC LIMIT {200 if f_pir else 50}"
     )
     ph = "%s" if is_pg() else "?"
     sql = sql.replace("?", ph)
@@ -432,6 +441,8 @@ def strategos_signals():
         except Exception:
             s["rationale_display"] = s.get("rationale") or ""
         signals_enriched.append(s)
+
+    signals_enriched = signals_enriched[:50]
 
     source_sql = (
         "SELECT DISTINCT r.source FROM sg_prioritized_signals p "
@@ -882,6 +893,79 @@ def api_hitl_resolve(item_id: str):
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Analyst Annotation Layer (sg-analyst-06b)
+# ---------------------------------------------------------------------------
+
+@_api.route("/annotate", methods=["POST"])
+def api_annotate():
+    """POST /api/strategos/annotate — add an analyst annotation to any entity.
+
+    Body (JSON):
+        entity_type     : one of ENTITY_TYPES
+        entity_id       : string ID of the target entity
+        annotation_type : one of ANNOTATION_TYPES
+        content         : annotation text (max 2 000 chars)
+        analyst_id      : optional — defaults to "analyst"
+    """
+    data = request.get_json(silent=True) or {}
+    entity_type = (data.get("entity_type") or "").strip()
+    entity_id = (data.get("entity_id") or "").strip()
+    annotation_type = (data.get("annotation_type") or "").strip()
+    content = (data.get("content") or "").strip()
+    analyst_id = (data.get("analyst_id") or "analyst").strip() or "analyst"
+
+    if not entity_type:
+        return jsonify({"error": f"entity_type required; valid: {ENTITY_TYPES}"}), 400
+    if not entity_id:
+        return jsonify({"error": "entity_id required"}), 400
+    if not annotation_type:
+        return jsonify({"error": f"annotation_type required; valid: {ANNOTATION_TYPES}"}), 400
+    if not content:
+        return jsonify({"error": "content required"}), 400
+
+    try:
+        # Ensure table exists (idempotent — safe to call on every first use)
+        import importlib  # noqa: PLC0415
+        try:
+            mod = importlib.import_module(
+                "tools.db.migrations.060_sg_analyst_annotations.up"
+            )
+            mod.up()
+        except Exception:
+            pass
+
+        row = add_annotation(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            annotation_type=annotation_type,
+            content=content,
+            analyst_id=analyst_id,
+        )
+        return jsonify({"status": "ok", "annotation": row}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/annotations/<entity_type>/<entity_id>", methods=["GET"])
+def api_get_annotations(entity_type: str, entity_id: str):
+    """GET /api/strategos/annotations/<entity_type>/<entity_id>
+
+    Returns all annotations + a per-type summary for the given entity.
+    """
+    if entity_type not in ENTITY_TYPES:
+        return jsonify({"error": f"entity_type must be one of {ENTITY_TYPES}"}), 400
+
+    try:
+        annotations = get_annotations(entity_type, entity_id)
+        summary = get_annotation_summary(entity_type, entity_id)
+        return jsonify({"annotations": annotations, "summary": summary})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 # ---------------------------------------------------------------------------

@@ -153,6 +153,22 @@ When a new `tools/` module ingests user-provided content:
 - **Decision:** **sandboxed-on-demand** for the PMESII-PT vector input path in intent_assessment — the vector is 7 float values bounded 0–1 by the API route, no code execution involved. Cosine similarity is pure arithmetic; no `exec`, `subprocess`, or file mutation.
 - **Revisit if:** Oracle lenses accept free-form text from external sources without classification validation, or if a code-execution step is added to any lens pipeline.
 
+### Gap 10 — Strategos OSINT Harvester (`strategos/osint_harvester.py`)
+
+**Module:** `tools/genesis/reflexes/strategos/osint_harvester.py`
+
+**Ingress path:** Fetches third-party RSS/Atom feeds (Reuters, Kyiv Independent, RFE/RL, ISW, UN OCHA), ACLED conflict API, and optional file inbox (`STRATEGOS_FILE_INBOX` env). Feed titles and summaries are stored in `sg_raw_signals`.
+
+- **Decision:** **sandboxed-on-demand**
+- **Rationale:** RSS/Atom content is untrusted external input. Titles/summaries are stored as plain text with no HTML rendering path. Payload size is bounded by a per-entry cap. No `exec()`/`eval()` in the pipeline. File inbox is configured at deploy time (operator-controlled path); file content is treated as structured JSON — not executed.
+- **Guardrails:**
+  - Content stored as text; no HTML rendering in briefs or dashboard panels.
+  - Append-only `sg_raw_signals` table — ingested data cannot be mutated post-write.
+  - ACLED API responses deserialized with `json.loads` only; keys validated against known schema before insert.
+  - File inbox path must be set by operator; relative traversal is blocked by `Path.resolve()` check.
+  - `ICDEV_STRICT_SANDBOX=1` routes file-inbox processing through `SandboxExecutor` in IL5.
+- **Revisit if:** Feed summaries are ever rendered as raw HTML in the dashboard, or if file-inbox format expands to executable scripts.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)
