@@ -93,6 +93,11 @@ def sea_page():
     return render_template("sea.html")
 
 
+@app.route("/a2ad")
+def a2ad_page():
+    return render_template("a2ad.html")
+
+
 # ── API ────────────────────────────────────────────────────
 
 @app.route("/api/signals")
@@ -290,6 +295,16 @@ def api_bands():
         return jsonify({"bands": _rows(conn.execute("SELECT * FROM frequency_bands ORDER BY min_freq_hz"))})
     finally:
         conn.close()
+
+
+@app.route("/api/a2ad/zones")
+def api_a2ad_zones():
+    """Weapon system deployment sites with range ring metadata."""
+    from a2ad_mapper import WEAPON_SYSTEMS, get_zones
+    return jsonify({
+        "systems": list(WEAPON_SYSTEMS.values()),
+        "zones": get_zones(),
+    })
 
 
 @app.route("/api/sea/vessels")
