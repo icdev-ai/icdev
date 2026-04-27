@@ -21,6 +21,7 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
   Pages (additional):
     GET  /signals           — Signal priority queue (top-50 scored signals)
     GET  /simulate          — Simulation workspace (layout/panels)
+    GET  /ew                — EW jamming zones + economic supply chain overlay
 
   API (url_prefix="/api/strategos"):
     GET    /pir                     — List PIR/CCIR/EEI requirements
@@ -43,6 +44,7 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     GET    /annotations/<entity_type>/<entity_id> — List annotations for entity
     GET    /simulate/nodes          — Supply chain nodes with lat/lon for map
     POST   /simulate/run            — Run scenario simulation (deterministic or Monte Carlo)
+    GET    /ew/data                 — EW sites, supply nodes, chokepoints + EMCON scores (JSON)
 """
 import json
 import math
@@ -73,6 +75,7 @@ from tools.strategos.interdiction_ranker import (
     rank_interdiction_targets,
 )
 from tools.strategos.reverse_cascade_inference import NODE_DISRUPTION_PROFILES
+from tools.strategos.ew_monitor import get_ew_data
 
 # ---------------------------------------------------------------------------
 # Signal-queue helpers
@@ -529,9 +532,23 @@ def strategos_brief_detail(brief_id: str):
     )
 
 
+@_bp.route("/ew")
+def strategos_ew():
+    data = get_ew_data()
+    return render_template("strategos/ew.html", summary=data["summary"])
+
+
 # ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
+
+@_api.route("/ew/data", methods=["GET"])
+def api_ew_data():
+    try:
+        return jsonify(get_ew_data())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
 
 @_api.route("/pir", methods=["GET"])
 def api_pir_list():
