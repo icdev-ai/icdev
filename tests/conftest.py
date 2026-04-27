@@ -1135,6 +1135,10 @@ CREATE TABLE IF NOT EXISTS ad_fundamental_metrics (
     debt_to_equity          REAL,
     accruals_ratio          REAL,
     insider_buy_ratio       REAL,
+    buyback_yield           REAL,
+    buyback_intensity       REAL,
+    window_open             INTEGER DEFAULT 1,
+    days_to_blackout        INTEGER,
     source                  TEXT DEFAULT 'manual',
     classification          TEXT DEFAULT 'CUI // SP-CTI',
     created_at              TEXT DEFAULT (datetime('now')),
@@ -1142,6 +1146,19 @@ CREATE TABLE IF NOT EXISTS ad_fundamental_metrics (
     UNIQUE(ticker, as_of_date)
 );
 CREATE INDEX IF NOT EXISTS idx_ad_fm_ticker_date ON ad_fundamental_metrics(ticker, as_of_date);
+
+-- FathomDesk: buyback announcements (migration 054)
+CREATE TABLE IF NOT EXISTS ad_buyback_announcements (
+    id                  TEXT PRIMARY KEY,
+    ticker              TEXT NOT NULL,
+    announced_at        TEXT NOT NULL,
+    authorized_amount   REAL,
+    authorized_currency TEXT DEFAULT 'USD',
+    source              TEXT DEFAULT '8K',
+    created_at          TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ad_ba_ticker ON ad_buyback_announcements(ticker);
+CREATE INDEX IF NOT EXISTS idx_ad_ba_announced_at ON ad_buyback_announcements(announced_at);
 
 -- FathomDesk: quality scores (migration 011)
 CREATE TABLE IF NOT EXISTS ad_quality_scores (
