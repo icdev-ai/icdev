@@ -227,6 +227,29 @@ class FathomDeskDataGateway:
 
         return []
 
+    def fundamentals(self, ticker: str) -> dict:
+        """Return fundamental overview for *ticker* via OpenBB.
+
+        Calls :meth:`OpenBBGateway.get_fundamentals` and returns the first
+        data record merged with ``ticker`` and ``source``.  Missing fields,
+        including ``sector``, default to ``None``.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+
+        Returns:
+            Dict of fundamental fields with ``ticker`` and ``source`` set.
+            ``sector`` is ``None`` when absent in source data.
+        """
+        sym = ticker.upper()
+        raw = self._obb.get_fundamentals(sym)
+        records = raw.get("data") or []
+        record = dict(records[0]) if records else {}
+        result: dict = {"ticker": sym, "source": raw.get("source", "openbb")}
+        result.update(record)
+        result.setdefault("sector", None)
+        return result
+
     def options_chain(self, ticker: str) -> dict:
         """Return the options chain for *ticker* via OpenBB → fetch_chain() fallback.
 
