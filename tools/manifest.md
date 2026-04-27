@@ -456,3 +456,12 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Setup Wizard | tools\rag\setup_wizard.py | Auto-registered: rag/setup_wizard.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Pir Manager | tools\intelligence\pir_manager.py | Auto-registered: intelligence/pir_manager.py | --json | JSON |
+| Baseline Importer | tools\sg\baseline_importer.py | Auto-registered: sg/baseline_importer.py | --json | JSON |
+| War Endurance | tools\simulation\war_endurance.py | Auto-registered: simulation/war_endurance.py | --json | JSON |
+| Cta Positioning | tools\trading\market_intel\cta_positioning.py | Auto-registered: market_intel/cta_positioning.py | --json | JSON |

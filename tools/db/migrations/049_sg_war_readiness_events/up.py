@@ -4,7 +4,7 @@
 Extends the existing sg_war_readiness_events table with columns needed
 for labeled historical baseline cases (pre_war / exercise / coercive).
 """
-from tools.db.storage import get_connection, is_pg
+from tools.db.storage import get_connection
 
 MIGRATION_ID = "049"
 MIGRATION_NAME = "sg_war_readiness_events"
