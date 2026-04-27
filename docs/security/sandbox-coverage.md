@@ -143,6 +143,16 @@ When a new `tools/` module ingests user-provided content:
 3. Wire either `SandboxExecutor` (sandboxed / sandboxed-on-demand) or a regression test (bypass-documented).
 4. The `sandbox_coverage` coherence check passes.
 
+### Gap 9 — SIO Engine / Oracle Lenses (`intelligence/oracle/`)
+
+**Module:** `intelligence/oracle/sio_engine.py` + `intelligence/oracle/lenses/*.py`
+
+**Ingress path:** The intent_assessment lens accepts an optional externally-supplied 7-element PMESII-PT vector via `run(current_pmesii=[...])` and via the `/api/strategos/oracle` API endpoint. Other lenses read only from internal DB tables (`sg_conflict_events`, `sg_raw_signals`, `sg_sio_assessments`).
+
+- **Decision:** **trusted-first-party** for all lenses that read from internal DB tables only (threat_posture, behavior_pattern, convergence). The DB data originates from validated importers (GDELT, STIX) with deduplication and type constraints.
+- **Decision:** **sandboxed-on-demand** for the PMESII-PT vector input path in intent_assessment — the vector is 7 float values bounded 0–1 by the API route, no code execution involved. Cosine similarity is pure arithmetic; no `exec`, `subprocess`, or file mutation.
+- **Revisit if:** Oracle lenses accept free-form text from external sources without classification validation, or if a code-execution step is added to any lens pipeline.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)

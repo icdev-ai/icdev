@@ -6008,6 +6008,28 @@ TOOL_REGISTRY = {
         "description": "Gate check: verify the Oracle kanban bridge can reach the database. Returns pass/fail.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
+    "sio_run": {
+        "category": "oracle",
+        "module": "intelligence.oracle.sio_engine",
+        "handler": "run_all_json",
+        "description": (
+            "Run the Strategic Intelligence Oracle (SIO) — executes all 4 analytical lenses "
+            "(threat_posture, behavior_pattern, intent_assessment, convergence) and returns "
+            "an OracleAssessment JSON with composite_score, iw_triggered, per-lens scores, "
+            "and top narrative. STANAG 2511 NATO reliability codes included."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pmesii_vector": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "description": "Optional 7-element PMESII-PT override vector (values 0-1). If omitted, derived from live signals.",
+                },
+            },
+            "required": [],
+        },
+    },
     # ── Cross-Canvas Integration (9-canvas suite) ────────────────────────
     "canvas_create_project": {
         "category": "canvas",
