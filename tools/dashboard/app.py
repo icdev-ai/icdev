@@ -1303,6 +1303,7 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
 
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])
