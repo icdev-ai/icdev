@@ -1293,6 +1293,16 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Strategos blueprint failed to register: %s", _exc)
 
+    # ---- TA Patterns Blueprint ----
+    try:
+        from tools.trading.ta.blueprint import create_ta_blueprint
+        _ta_bp = create_ta_blueprint()
+        if _ta_bp:
+            app.register_blueprint(_ta_bp)
+            app.logger.info("TA Patterns blueprint registered at /api/ta/patterns")
+    except Exception as _exc:
+        app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])
