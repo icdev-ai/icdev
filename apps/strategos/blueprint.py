@@ -18,6 +18,9 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     GET  /briefs            — Intelligence products list
     GET  /briefs/<id>       — Rendered brief + Approve/Annotate/Export
 
+  Pages (additional):
+    GET  /signals           — Signal priority queue (top-50 scored signals)
+
   API (url_prefix="/api/strategos"):
     GET    /pir                     — List PIR/CCIR/EEI requirements
     POST   /pir                     — Create a new PIR/CCIR/EEI
@@ -30,19 +33,22 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     POST   /briefs                  — Generate + save a new intelligence brief
     PATCH  /briefs/<id>/approve     — Approve and annotate a brief
     GET    /briefs/<id>/export      — Export brief as PDF (or markdown fallback)
+    GET    /signals                 — Filtered JSON list of prioritized signals
+    POST   /signals/<id>/read       — Toggle is_read flag
+    POST   /signals/<id>/promote    — Toggle promoted_to_kg flag
+    POST   /signals/<id>/annotate   — Set annotation text
+    POST   /signals/brief           — Bulk IIR pre-fill from selected signals
 """
 import json
-import uuid
 from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, render_template, request, Response
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, is_pg
 from tools.intelligence.brief_generator import BRIEF_TYPES, BriefGenerator
 from tools.intelligence.pir_manager import (
     coverage_gap_hours,
     create_pir,
-    get_pir,
     list_pirs,
     update_pir,
 )
@@ -52,6 +58,70 @@ from tools.strategos.interdiction_ranker import (
     get_supply_degradation_coefficients,
     rank_interdiction_targets,
 )
+
+# ---------------------------------------------------------------------------
+# Signal-queue helpers
+# ---------------------------------------------------------------------------
+
+_SOURCE_GRADE: dict = {
+    "reuters world news": "A", "reuters": "A",
+    "bbc world news": "A", "bbc": "A",
+    "ap news": "A", "associated press": "A",
+    "defense one": "B", "bellingcat": "B",
+    "al jazeera": "B", "cisa alerts": "B", "cisa": "B",
+    "twitter": "E", "telegram": "D",
+}
+
+
+def _stanag_grade(source: str) -> str:
+    lower = (source or "").lower().strip()
+    for name, grade in _SOURCE_GRADE.items():
+        if lower.startswith(name) or name in lower:
+            return grade
+    for gov in ("gov", "mil", ".un.", "nato", "interpol"):
+        if gov in lower:
+            return "B"
+    return "F"
+
+
+def _ensure_signals_actions() -> None:
+    """Add analyst-action columns if migration 057 hasn't run yet."""
+    try:
+        import importlib  # noqa: PLC0415
+        mod = importlib.import_module("tools.db.migrations.057_sg_signals_actions.up")
+        mod.up()
+    except Exception:
+        conn = get_connection()
+        for col, defn in [
+            ("is_read",        "INTEGER NOT NULL DEFAULT 0"),
+            ("promoted_to_kg", "INTEGER NOT NULL DEFAULT 0"),
+            ("annotation",     "TEXT"),
+        ]:
+            try:
+                conn.execute(
+                    f"ALTER TABLE sg_prioritized_signals ADD COLUMN {col} {defn}"
+                )
+                conn.commit()
+            except Exception:
+                pass
+        conn.close()
+
+
+def _update_signal(sig_id: int, **fields) -> bool:
+    conn = get_connection()
+    ph = "%s" if is_pg() else "?"
+    try:
+        set_clause = ", ".join(f"{k} = {ph}" for k in fields)
+        vals = list(fields.values()) + [sig_id]
+        result = conn.execute(
+            f"UPDATE sg_prioritized_signals SET {set_clause} WHERE id = {ph}",
+            vals,
+        )
+        conn.commit()
+        return (result.rowcount or 0) > 0
+    finally:
+        conn.close()
+
 
 # ---------------------------------------------------------------------------
 # Blueprint instances
@@ -280,6 +350,106 @@ def strategos_pir():
         selected_status=selected_status,
         pir_types=["PIR", "CCIR", "EEI"],
         statuses=["active", "satisfied", "cancelled"],
+    )
+
+
+@_bp.route("/signals")
+def strategos_signals():
+    _ensure_signals_actions()
+
+    try:
+        active_pirs = list_pirs(status="active")
+    except Exception:
+        active_pirs = []
+
+    f_pir = request.args.get("pir", "")
+    f_source = request.args.get("source", "")
+    f_min_score = request.args.get("min_score", "")
+    f_date_from = request.args.get("date_from", "")
+    f_date_to = request.args.get("date_to", "")
+    f_read = request.args.get("read", "")
+
+    clauses: list = []
+    params: list = []
+    if f_source:
+        clauses.append("r.source = ?")
+        params.append(f_source)
+    if f_min_score:
+        try:
+            clauses.append("p.composite_score >= ?")
+            params.append(float(f_min_score) / 10.0)
+        except ValueError:
+            pass
+    if f_date_from:
+        clauses.append("p.created_at >= ?")
+        params.append(f_date_from)
+    if f_date_to:
+        clauses.append("p.created_at <= ?")
+        params.append(f_date_to + "T23:59:59Z")
+    if f_read == "unread":
+        clauses.append("p.is_read = 0")
+    elif f_read == "read":
+        clauses.append("p.is_read = 1")
+
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    sql = (
+        "SELECT p.id, p.raw_signal_id, p.composite_score, "
+        "p.posterior_shift_score, p.source_discriminability_score, "
+        "p.temporal_recency_score, p.domain_coverage_score, "
+        "p.rationale, p.run_at, p.created_at, "
+        "p.is_read, p.promoted_to_kg, p.annotation, "
+        "r.title, r.body, r.source, r.signal_date "
+        "FROM sg_prioritized_signals p "
+        "LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
+        f"{where} ORDER BY p.composite_score DESC LIMIT 50"
+    )
+    ph = "%s" if is_pg() else "?"
+    sql = sql.replace("?", ph)
+
+    signals_raw = _safe_fetch(sql, params)
+
+    pir_topics = [p.get("topic", "") for p in active_pirs]
+    signals_enriched = []
+    for s in signals_raw:
+        s = dict(s)
+        s["stanag_grade"] = _stanag_grade(s.get("source") or "")
+        s["score_pct"] = min(round((s.get("composite_score") or 0) * 100, 1), 100)
+        s["total"] = round((s.get("composite_score") or 0) * 10, 2)
+        text = ((s.get("title") or "") + " " + (s.get("body") or "")).lower()
+        covered_pirs = [
+            t[:40] for t in pir_topics
+            if any(w in text for w in t.lower().split() if len(w) >= 4)
+        ]
+        s["pir_coverage"] = covered_pirs
+        if f_pir and not any(f_pir.lower() in cp.lower() for cp in covered_pirs):
+            continue
+        try:
+            rat = json.loads(s.get("rationale") or "{}")
+            s["rationale_display"] = "; ".join(
+                f"{k}={v.get('score', 0):.2f}({v.get('note', '')})"
+                for k, v in rat.items() if isinstance(v, dict)
+            )
+        except Exception:
+            s["rationale_display"] = s.get("rationale") or ""
+        signals_enriched.append(s)
+
+    source_sql = (
+        "SELECT DISTINCT r.source FROM sg_prioritized_signals p "
+        "LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
+        "WHERE r.source IS NOT NULL ORDER BY r.source"
+    )
+    source_list = [r.get("source") for r in _safe_fetch(source_sql) if r.get("source")]
+
+    return render_template(
+        "strategos/signals.html",
+        signals=signals_enriched,
+        active_pirs=active_pirs,
+        source_list=source_list,
+        filters={
+            "pir": f_pir, "source": f_source, "min_score": f_min_score,
+            "date_from": f_date_from, "date_to": f_date_to, "read": f_read,
+        },
+        total=len(signals_enriched),
     )
 
 
@@ -587,6 +757,105 @@ def api_oracle():
         "lenses": lenses_out,
         "sparkline": sparkline,
         "timestamp": timestamp,
+    })
+
+
+@_api.route("/signals", methods=["GET"])
+def api_signals_list():
+    rows = _safe_fetch(
+        "SELECT p.id, p.composite_score, p.is_read, p.promoted_to_kg, "
+        "p.annotation, r.title, r.source, p.created_at "
+        "FROM sg_prioritized_signals p "
+        "LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
+        "ORDER BY p.composite_score DESC LIMIT 50",
+    )
+    return jsonify({"signals": rows, "total": len(rows)})
+
+
+@_api.route("/signals/<int:sig_id>/read", methods=["POST"])
+def api_signals_toggle_read(sig_id: int):
+    ph = "%s" if is_pg() else "?"
+    rows = _safe_fetch(
+        f"SELECT is_read FROM sg_prioritized_signals WHERE id = {ph}", (sig_id,)
+    )
+    if not rows:
+        return jsonify({"error": "not found"}), 404
+    current = rows[0].get("is_read", 0)
+    new_val = 0 if current else 1
+    _update_signal(sig_id, is_read=new_val)
+    return jsonify({"id": sig_id, "is_read": bool(new_val)})
+
+
+@_api.route("/signals/<int:sig_id>/promote", methods=["POST"])
+def api_signals_toggle_promote(sig_id: int):
+    ph = "%s" if is_pg() else "?"
+    rows = _safe_fetch(
+        f"SELECT promoted_to_kg FROM sg_prioritized_signals WHERE id = {ph}", (sig_id,)
+    )
+    if not rows:
+        return jsonify({"error": "not found"}), 404
+    current = rows[0].get("promoted_to_kg", 0)
+    new_val = 0 if current else 1
+    _update_signal(sig_id, promoted_to_kg=new_val)
+    return jsonify({"id": sig_id, "promoted_to_kg": bool(new_val)})
+
+
+@_api.route("/signals/<int:sig_id>/annotate", methods=["POST"])
+def api_signals_annotate(sig_id: int):
+    body = request.get_json(silent=True) or {}
+    text = (body.get("annotation") or "").strip()
+    ok = _update_signal(sig_id, annotation=text or None)
+    if not ok:
+        return jsonify({"error": "not found"}), 404
+    return jsonify({"id": sig_id, "annotation": text})
+
+
+@_api.route("/signals/brief", methods=["POST"])
+def api_signals_brief():
+    body = request.get_json(silent=True) or {}
+    signal_ids = body.get("signal_ids") or []
+    if not signal_ids:
+        return jsonify({"error": "signal_ids required"}), 400
+
+    ph = "%s" if is_pg() else "?"
+    placeholders = ",".join(ph for _ in signal_ids)
+    rows = _safe_fetch(
+        f"SELECT p.id, p.composite_score, p.rationale, "
+        f"r.title, r.body, r.source, r.signal_date "
+        f"FROM sg_prioritized_signals p "
+        f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
+        f"WHERE p.id IN ({placeholders})",
+        signal_ids,
+    )
+
+    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%MZ")
+    iir_lines = [
+        "INFORMATION INTELLIGENCE REPORT (IIR) — DRAFT",
+        f"DTG: {now_str}",
+        f"Source Count: {len(rows)}",
+        "",
+        "1. SUMMARY OF REPORTING",
+    ]
+    for i, r in enumerate(rows, 1):
+        iir_lines.append(
+            f"  ({i}) [{r.get('source', '?')}] {r.get('title', '(no title)')}"
+            f" — Score: {round((r.get('composite_score') or 0) * 10, 1)}/10"
+        )
+    iir_lines += [
+        "",
+        "2. ASSESSMENT",
+        "  [ANALYST NOTE — complete before dissemination]",
+        "",
+        "3. COLLECTION GAPS IDENTIFIED",
+        "  [ANALYST NOTE — cross-check PIR coverage]",
+        "",
+        "4. RECOMMENDED ACTION",
+        "  [ANALYST NOTE]",
+    ]
+    return jsonify({
+        "iir_template": "\n".join(iir_lines),
+        "signals": rows,
+        "count": len(rows),
     })
 
 
