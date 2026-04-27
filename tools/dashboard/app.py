@@ -8442,6 +8442,44 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"events": [], "error": str(exc)})
 
+    @app.route("/fathomdesk/api/reflex-observations")
+    def fathomdesk_api_reflex_observations():
+        """Return recent reflex execution records."""
+        from flask import request as _req
+        try:
+            limit = min(int(_req.args.get("limit", 50)), 200)
+        except (ValueError, TypeError):
+            limit = 50
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            ph = "%s" if getattr(conn, "_dialect", "sqlite") == "postgresql" else "?"
+            try:
+                rows = conn.execute(
+                    f"SELECT id, reflex_name, started_at, duration_ms, status "  # nosec B608
+                    f"FROM reflex_observations "
+                    f"ORDER BY started_at DESC LIMIT {ph}",
+                    [limit],
+                ).fetchall()
+            finally:
+                conn.close()
+            observations = []
+            for r in rows:
+                row = dict(r) if hasattr(r, "keys") else {
+                    "id": r[0], "reflex_name": r[1], "started_at": r[2],
+                    "duration_ms": r[3], "status": r[4],
+                }
+                observations.append({
+                    "id": row["id"],
+                    "reflex_name": row["reflex_name"],
+                    "started_at": row["started_at"],
+                    "duration_ms": row["duration_ms"],
+                    "success": row["status"] == "done",
+                })
+            return jsonify({"observations": observations})
+        except Exception as exc:
+            return jsonify({"observations": [], "error": str(exc)})
+
     return app
 
 

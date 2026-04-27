@@ -96,3 +96,38 @@ def list_traps():
         return jsonify({"traps": traps, "count": len(traps)})
     except Exception as exc:
         return jsonify({"traps": [], "count": 0, "error": str(exc)}), 200
+
+
+@fathomdesk_api.route("/fathomdesk/api/reflex-observations", methods=["GET"])
+def list_reflex_observations():
+    """Return recent reflex execution records from reflex_observations."""
+    try:
+        limit = min(int(request.args.get("limit", 50)), _MAX_LIMIT)
+    except (ValueError, TypeError):
+        limit = 50
+
+    try:
+        conn = get_connection()
+        ph = "%s" if getattr(conn, "_dialect", "sqlite") == "postgresql" else "?"
+        try:
+            rows = conn.execute(
+                f"SELECT id, reflex_name, started_at, duration_ms, status "  # nosec B608
+                f"FROM reflex_observations "
+                f"ORDER BY started_at DESC LIMIT {ph}",
+                [limit],
+            ).fetchall()
+            observations = [
+                {
+                    "id": r["id"],
+                    "reflex_name": r["reflex_name"],
+                    "started_at": r["started_at"],
+                    "duration_ms": r["duration_ms"],
+                    "success": r["status"] == "done",
+                }
+                for r in rows
+            ]
+        finally:
+            conn.close()
+        return jsonify({"observations": observations})
+    except Exception as exc:
+        return jsonify({"observations": [], "error": str(exc)}), 200
