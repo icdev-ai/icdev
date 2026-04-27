@@ -1,3 +1,4 @@
+# CUI // SP-CTI
 """ICDEV™ Strategos — strategic planning and environment tier resolution."""
 
 from tools.strategos.tier_resolver import (
