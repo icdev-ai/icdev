@@ -522,7 +522,7 @@ def main() -> None:
         print(json.dumps(result, indent=2))
         return
 
-    print(f"\nReverse Cascade Inference — CUI // SP-CTI")
+    print("\nReverse Cascade Inference — CUI // SP-CTI")
     print(f"Event      : {result['event_type']}")
     print(f"Unit       : {result['unit_id']}")
     print(f"Observed   : {result['observed_date']}")
