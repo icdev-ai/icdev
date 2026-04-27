@@ -567,6 +567,20 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = no new traps detected (healthy), >0 = events written
 
+  # ── FathomDesk P/C Ratio History (fdmm-pcr-04) ────────────────────────────
+
+  fathomdesk_pc_ratio:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 06:00"
+    interval_seconds: 86400  # 24 hours — CBOE data is end-of-day
+    cooldown_minutes: 60     # Minimum gap between consecutive cycles
+    description: "Fetch CBOE equity put/call ratio series and append snapshot to ad_pc_ratio_history; backing store for put_call_sentiment confluence pillar"
+    success_metric:
+      name: rows_written
+      threshold: 0
+      operator: gte  # 0 = no new data today (ok), 1 = snapshot stored
+
   # ── Cost Optimizer (Cluster C fd-cost-01/02) ──────────────────────────────
 
   cost_optimizer:
