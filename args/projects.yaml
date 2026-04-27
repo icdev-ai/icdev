@@ -1215,3 +1215,6 @@ projects:
   - key: vv
     title: V&V Sign-Off (coherence + companion + E2E)
     priority: critical
+  - key: pcr
+    title: Put/Call Ratio — 11th Confluence Pillar
+    priority: high
