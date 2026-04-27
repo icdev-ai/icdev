@@ -150,6 +150,83 @@ class FathomDeskDataGateway:
 
         return {"ticker": ticker, "price": None, "source": "unavailable"}
 
+    def historical_bars(
+        self,
+        ticker: str,
+        period: str = "3mo",
+        interval: str = "1d",
+    ) -> list[dict]:
+        """Return OHLCV bars for *ticker* via OpenBB → yfinance fallback.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"SPY"``.
+            period: Lookback window accepted by yfinance (``"1mo"``, ``"3mo"``,
+                ``"6mo"``, ``"1y"``, etc.).  OpenBB uses a derived start date.
+            interval: Bar interval accepted by yfinance (``"1d"``, ``"1h"``,
+                etc.).  OpenBB uses its own default granularity.
+
+        Returns:
+            List of bar dicts with keys ``date``, ``open``, ``high``, ``low``,
+            ``close``, ``volume``, and ``source``.  Empty list on total failure.
+        """
+        sym = ticker.upper()
+
+        # --- OpenBB path ---
+        if self._obb.available:
+            try:
+                result = self._obb.get_price(sym, period)
+                raw = result.get("data", [])
+                if raw:
+                    bars: list[dict] = []
+                    for row in raw:
+                        # Normalise key names — OpenBB may use Title-case or full names
+                        date_val = (
+                            row.get("date")
+                            or row.get("Date")
+                            or row.get("timestamp")
+                            or ""
+                        )
+                        bars.append(
+                            {
+                                "date": str(date_val),
+                                "open": float(row.get("open") or row.get("Open") or 0),
+                                "high": float(row.get("high") or row.get("High") or 0),
+                                "low": float(row.get("low") or row.get("Low") or 0),
+                                "close": float(row.get("close") or row.get("Close") or row.get("adj_close") or 0),
+                                "volume": int(row.get("volume") or row.get("Volume") or 0),
+                                "source": "openbb",
+                            }
+                        )
+                    if bars:
+                        return bars
+            except Exception:
+                pass
+
+        # --- yfinance fallback ---
+        if _yfinance is not None:
+            try:
+                t = _yfinance.Ticker(sym)
+                hist = t.history(period=period, interval=interval)
+                if not hist.empty:
+                    bars = []
+                    for ts, row in hist.iterrows():
+                        bars.append(
+                            {
+                                "date": str(ts.date() if hasattr(ts, "date") else ts),
+                                "open": float(row.get("Open") or 0),
+                                "high": float(row.get("High") or 0),
+                                "low": float(row.get("Low") or 0),
+                                "close": float(row.get("Close") or 0),
+                                "volume": int(row.get("Volume") or 0),
+                                "source": "yfinance",
+                            }
+                        )
+                    return bars
+            except Exception:
+                pass
+
+        return []
+
     def options_chain(self, ticker: str) -> dict:
         """Return the options chain for *ticker* via OpenBB → fetch_chain() fallback.
 
