@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 _INBOX = BASE_DIR / "data" / "osint_inbox"
 _FILE_INBOX_MAX = 500
+_MAX_SIGNALS_PER_RUN = 200
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -94,7 +95,8 @@ def _ensure_tables() -> None:
                 "signal_date TEXT,"
                 "geo_hint TEXT,"
                 "tier_used TEXT,"
-                "created_at TEXT NOT NULL"
+                "created_at TEXT NOT NULL,"
+                "processed INTEGER NOT NULL DEFAULT 0"
                 ")"
                 if not _pg
                 else "CREATE TABLE IF NOT EXISTS sg_raw_signals ("
@@ -106,9 +108,17 @@ def _ensure_tables() -> None:
                 "signal_date TEXT,"
                 "geo_hint TEXT,"
                 "tier_used TEXT,"
-                "created_at TEXT NOT NULL"
+                "created_at TEXT NOT NULL,"
+                "processed INTEGER NOT NULL DEFAULT 0"
                 ")"
             )
+            # Idempotent: add processed column if table was created by migration 052
+            try:
+                conn.execute(
+                    "ALTER TABLE sg_raw_signals ADD COLUMN processed INTEGER NOT NULL DEFAULT 0"
+                )
+            except Exception:
+                pass
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS sg_raw_signals_audit ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -166,16 +176,16 @@ def _insert_signal(
         if is_pg():
             query = (
                 "INSERT INTO sg_raw_signals "
-                "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (url_hash) DO NOTHING"
+                "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at, processed) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT (url_hash) DO NOTHING"
             )
         else:
             query = (
                 "INSERT OR IGNORE INTO sg_raw_signals "
-                "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)"
+                "(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at, processed) "
+                "VALUES (?,?,?,?,?,?,?,?,?)"
             )
-        conn.execute(query, (url_hash, title[:1000], (body or "")[:4000], source, signal_date, geo_hint, tier, _utcnow_iso()))
+        conn.execute(query, (url_hash, title[:1000], (body or "")[:4000], source, signal_date, geo_hint, tier, _utcnow_iso(), 0))
         conn.commit()
         conn.close()
         return True
@@ -306,7 +316,7 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
                 entry_url = e.get("url", "")
                 date = e.get("date", "")
 
-                url_hash = _sha256(entry_url) if entry_url else _sha256(title + date)
+                url_hash = _sha256((entry_url or "") + title)
 
                 if _is_duplicate(url_hash):
                     dupes += 1
@@ -315,10 +325,27 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
                 inserted = _insert_signal(url_hash, title, body, name, date, None, TIER_INTERNET)
                 if inserted:
                     harvested += 1
+                    if harvested >= _MAX_SIGNALS_PER_RUN:
+                        return harvested, dupes, errors
 
         except Exception as exc:
             logger.warning("OSINT INTERNET: parse error for %s: %s", name, exc)
             errors += 1
+
+    if harvested >= _MAX_SIGNALS_PER_RUN:
+        return harvested, dupes, errors
+
+    # ACLED REST API (optional — graceful if ACLED_API_KEY / ACLED_EMAIL not set)
+    try:
+        h, d, er = _harvest_acled(config)
+        harvested += h
+        dupes += d
+        errors += er
+    except Exception:
+        pass
+
+    if harvested >= _MAX_SIGNALS_PER_RUN:
+        return harvested, dupes, errors
 
     # Telegram via Telethon (optional — graceful if not installed or unconfigured)
     try:
@@ -329,6 +356,9 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
     except Exception:
         pass
 
+    if harvested >= _MAX_SIGNALS_PER_RUN:
+        return harvested, dupes, errors
+
     # Twitter/X via snscrape (optional — graceful if not installed)
     try:
         h, d, er = _harvest_snscrape(config)
@@ -337,6 +367,48 @@ def _harvest_internet(config: Dict[str, Any]) -> Tuple[int, int, int]:
         errors += er
     except Exception:
         pass
+
+    return harvested, dupes, errors
+
+
+def _harvest_acled(config: Dict[str, Any]) -> Tuple[int, int, int]:
+    """Collect from ACLED REST API. Graceful if ACLED_API_KEY / ACLED_EMAIL not set."""
+    api_key = os.getenv("ACLED_API_KEY", "")
+    email = os.getenv("ACLED_EMAIL", "")
+    if not (api_key and email):
+        return 0, 0, 0
+
+    harvested = dupes = errors = 0
+    base = "https://api.acleddata.com/acled/read"
+    params = f"?key={api_key}&email={email}&limit=100&format=json"
+    url = f"{base}{params}"
+
+    raw = _fetch_url(url)
+    if raw is None:
+        return 0, 0, 1
+
+    try:
+        data = json.loads(raw.decode("utf-8"))
+        events = data.get("data", [])
+        for ev in events:
+            title = (ev.get("notes") or "")[:200].strip() or ev.get("event_type", "ACLED event")
+            body = json.dumps({k: ev[k] for k in ("event_type", "actor1", "actor2", "country", "location") if k in ev}, ensure_ascii=False)
+            source = f"ACLED/{ev.get('country', '')}"
+            date = ev.get("event_date", "")
+            geo_hint = ev.get("country") or ev.get("location")
+            event_id = str(ev.get("data_id") or ev.get("event_id_cnty") or "")
+            url_hash = _sha256(event_id + title) if event_id else _sha256("" + title)
+            if _is_duplicate(url_hash):
+                dupes += 1
+                continue
+            ok = _insert_signal(url_hash, title, body, source, date, geo_hint, TIER_INTERNET)
+            if ok:
+                harvested += 1
+                if harvested >= _MAX_SIGNALS_PER_RUN:
+                    break
+    except Exception as exc:
+        logger.warning("ACLED parse error: %s", exc)
+        errors += 1
 
     return harvested, dupes, errors
 
@@ -517,7 +589,7 @@ def _insert_normalized_signal(sig: Dict[str, Any], tier: str) -> Tuple[int, int,
     if not title:
         return 0, 0, 1
 
-    url_hash = _sha256(url) if url else _sha256(title + date)
+    url_hash = _sha256((url or "") + title)
 
     if _is_duplicate(url_hash):
         return 0, 1, 0
@@ -636,7 +708,7 @@ def _process_inbox_txt(fpath: Path) -> Tuple[int, int, int]:
     source = fpath.stem
     date = datetime.fromtimestamp(fpath.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    url_hash = _sha256(title + date)
+    url_hash = _sha256("" + title)
     if _is_duplicate(url_hash):
         return 0, 1, 0
 

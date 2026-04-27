@@ -11,6 +11,13 @@ Formula:
     supply_disruption_score = SCRM aggregate (scrm_assessor war_economy profile)
     substitutability_factor — from DIB mapper table (T-72→T-54 reserve: high, Kalibr→none: 1.5)
 
+Supply-degradation integration (sg-sc-06):
+    get_supply_degradation_coefficients() from interdiction_ranker returns per-unit
+    degradation factors derived from top-N interdiction targets.  For each side,
+    the mean degradation factor across its affected units is converted to a
+    supply_interdiction_factor (≥ 1.0) that amplifies effective_attrition.
+    run_endurance_with_supply_interdiction() applies this automatically.
+
 Outputs:
     endurance_months per side, endurance_delta,
     historical_threshold=3.0 (triggers escalation in 73% of pre-war cases, sg-import-09)
@@ -22,6 +29,7 @@ Downstream consumers:
 CLI:
     python tools/simulation/war_endurance.py --scenario-id <uuid> --json
     python tools/simulation/war_endurance.py --demo --json
+    python tools/simulation/war_endurance.py --demo --with-interdiction --json
 """
 
 import argparse
@@ -64,6 +72,41 @@ DIB_SUBSTITUTABILITY: dict[str, float] = {
     "Stinger": 0.65,
     "NLAW": 0.75,
 }
+
+
+# ---------------------------------------------------------------------------
+# Supply-degradation integration (sg-sc-06)
+# ---------------------------------------------------------------------------
+
+def get_interdiction_supply_factor(unit_ids: list | None = None) -> float:
+    """Return supply-degradation attrition multiplier from interdiction ranker.
+
+    Converts per-unit degradation_factor (capability-remaining, 0–1) into an
+    attrition amplifier (≥ 1.0):
+        supply_interdiction_factor = 2.0 - mean_degradation_factor
+
+    Examples:
+        mean_degradation = 1.0  → factor = 1.0  (no degradation)
+        mean_degradation = 0.7  → factor = 1.3  (30% supply cut → +30% attrition)
+        mean_degradation = 0.0  → factor = 2.0  (fully severed supply lines)
+
+    Gracefully returns 1.0 if interdiction data is unavailable.
+    """
+    try:
+        from tools.strategos.interdiction_ranker import get_supply_degradation_coefficients
+        result = get_supply_degradation_coefficients(top_n=10)
+        coefficients = result.get("coefficients", {})
+        if not coefficients:
+            return 1.0
+        if unit_ids:
+            relevant = [coefficients[uid] for uid in unit_ids if uid in coefficients]
+            values = relevant if relevant else list(coefficients.values())
+        else:
+            values = list(coefficients.values())
+        mean_degradation = sum(values) / len(values)
+        return round(2.0 - mean_degradation, 4)
+    except Exception:
+        return 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -174,21 +217,26 @@ def compute_endurance(side: dict) -> dict:
 
     Args:
         side: dict with keys:
-            name                  str   — side label
-            stockpile             float — current inventory units
-            force_size            float — personnel / combat vehicles
-            opposing_force_size   float — adversary force size
-            lethality_coeff       float — adversary lethality (Lanchester alpha/beta)
-            production_capacity   float — units/month domestic production
-            import_rate           float — units/month from allies/imports
-            sanctions_effectiveness float — 0–1 fraction imports blocked
-            supply_disruption_score float | None — override; None = fetch from SCRM
-            platform_mix          list[str] | None — platform names for DIB lookup
-            scenario_id           str | None — for SCRM DB lookup
+            name                      str   — side label
+            stockpile                 float — current inventory units
+            force_size                float — personnel / combat vehicles
+            opposing_force_size       float — adversary force size
+            lethality_coeff           float — adversary lethality (Lanchester alpha/beta)
+            production_capacity       float — units/month domestic production
+            import_rate               float — units/month from allies/imports
+            sanctions_effectiveness   float — 0–1 fraction imports blocked
+            supply_disruption_score   float | None — override; None = fetch from SCRM
+            platform_mix              list[str] | None — platform names for DIB lookup
+            scenario_id               str | None — for SCRM DB lookup
+            supply_interdiction_factor float | None — attrition amplifier from
+                                         interdiction ranker (1.0 = no degradation;
+                                         >1.0 = supply-line degradation amplifies
+                                         effective attrition). Default: 1.0.
 
     Returns:
         dict with endurance_months, attrition_rate, replenishment_rate,
-        net_drain, substitutability_factor, burn_series.
+        net_drain, substitutability_factor, supply_interdiction_factor,
+        burn_series.
     """
     name = side.get("name", "side")
     stockpile = float(side.get("stockpile", 1000.0))
@@ -200,6 +248,8 @@ def compute_endurance(side: dict) -> dict:
     sanctions = float(side.get("sanctions_effectiveness", 0.0))
     platform_mix = side.get("platform_mix") or []
     scenario_id = side.get("scenario_id")
+    # Supply-degradation-adjusted attrition coefficient from interdiction model (sg-sc-06)
+    interdiction_factor = float(side.get("supply_interdiction_factor", 1.0))
 
     # Supply disruption from SCRM or override
     if side.get("supply_disruption_score") is not None:
@@ -215,7 +265,9 @@ def compute_endurance(side: dict) -> dict:
 
     # Substitutability adjustment on attrition (high sub → attrit more efficiently)
     sub_factor = _substitutability_factor(platform_mix)
-    effective_attrition = attrition * sub_factor
+    # Supply-degradation-adjusted coefficients replace manual attrition scaling:
+    # interdiction_factor amplifies effective attrition when supply lines are severed
+    effective_attrition = attrition * sub_factor * interdiction_factor
 
     # Net drain per month
     net_drain = effective_attrition - replenishment
@@ -244,6 +296,7 @@ def compute_endurance(side: dict) -> dict:
         "net_drain": round(net_drain, 4),
         "supply_disruption_score": round(disruption, 4),
         "substitutability_factor": round(sub_factor, 4),
+        "supply_interdiction_factor": round(interdiction_factor, 4),
         "stockpile_initial": stockpile,
         "burn_series": burn_series,
         "below_threshold": endurance_months < HISTORICAL_THRESHOLD_MONTHS,
@@ -313,6 +366,52 @@ def run_endurance_analysis(params: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# sg-sc-06: supply-interdiction-adjusted endurance (sg-game-03 COA runner)
+# ---------------------------------------------------------------------------
+
+def run_endurance_with_supply_interdiction(params: dict) -> dict:
+    """Run endurance analysis with supply-degradation-adjusted attrition coefficients.
+
+    Fetches interdiction coefficients from the interdiction ranker (sg-sc-06),
+    computes per-side supply_interdiction_factor, injects into params, then
+    delegates to run_endurance_analysis.
+
+    The supply_interdiction_factor replaces the manual DIB_SUBSTITUTABILITY
+    attrition scaling with model-derived supply-chain-degradation amplifiers.
+
+    Args:
+        params: same as run_endurance_analysis.  supply_interdiction_factor in
+                side_a/side_b will be overwritten with live interdiction data.
+
+    Returns:
+        Same as run_endurance_analysis plus 'supply_interdiction_applied': True.
+    """
+    params = dict(params)
+    side_a = dict(params.get("side_a", {}))
+    side_b = dict(params.get("side_b", {}))
+
+    # Fetch supply-degradation factors from interdiction model
+    unit_ids_a = side_a.pop("orbat_unit_ids", None)
+    unit_ids_b = side_b.pop("orbat_unit_ids", None)
+
+    factor_a = get_interdiction_supply_factor(unit_ids_a)
+    factor_b = get_interdiction_supply_factor(unit_ids_b)
+
+    side_a["supply_interdiction_factor"] = factor_a
+    side_b["supply_interdiction_factor"] = factor_b
+    params["side_a"] = side_a
+    params["side_b"] = side_b
+
+    result = run_endurance_analysis(params)
+    result["supply_interdiction_applied"] = True
+    result["supply_interdiction_factors"] = {
+        side_a.get("name", "Side A"): factor_a,
+        side_b.get("name", "Side B"): factor_b,
+    }
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Demo scenario (Ukraine-Russia conflict parameterization)
 # ---------------------------------------------------------------------------
 
@@ -354,6 +453,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scenario-id", help="Scenario UUID to load from DB")
     p.add_argument("--params-file", help="JSON file with side_a/side_b params")
     p.add_argument("--demo", action="store_true", help="Run demo scenario")
+    p.add_argument("--with-interdiction", action="store_true",
+                   help="Apply supply-degradation-adjusted coefficients from interdiction ranker (sg-sc-06)")
     p.add_argument("--json", action="store_true", help="Output JSON")
     return p
 
@@ -361,15 +462,17 @@ def _build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = _build_parser().parse_args()
 
+    run_fn = run_endurance_with_supply_interdiction if args.with_interdiction else run_endurance_analysis
+
     if args.demo:
-        result = run_endurance_analysis(DEMO_PARAMS)
+        result = run_fn(DEMO_PARAMS)
     elif args.params_file:
         with open(args.params_file, encoding="utf-8") as f:
             params = json.load(f)
-        result = run_endurance_analysis(params)
+        result = run_fn(params)
     else:
         # Try to load from DB by scenario_id
-        result = run_endurance_analysis(
+        result = run_fn(
             {"scenario_id": args.scenario_id or str(uuid.uuid4())}
         )
 

@@ -397,6 +397,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
         "ad_fear_greed_snapshots",
         "ad_buffett_snapshots",
+        # Strategos Analyst Annotation Layer (migration 060, NIST AU — append-only annotation store)
+        "sg_analyst_annotations",
     ]
 
     if tool_name == "Bash":

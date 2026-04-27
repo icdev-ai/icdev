@@ -464,7 +464,37 @@
 | Pir Manager | tools\intelligence\pir_manager.py | Auto-registered: intelligence/pir_manager.py | --json | JSON |
 | Baseline Importer | tools\sg\baseline_importer.py | Auto-registered: sg/baseline_importer.py | --json | JSON |
 | War Endurance | tools\simulation\war_endurance.py | Auto-registered: simulation/war_endurance.py | --json | JSON |
-<<<<<<< Updated upstream
 | Cta Positioning | tools\trading\market_intel\cta_positioning.py | Auto-registered: market_intel/cta_positioning.py | --json | JSON |
-=======
->>>>>>> Stashed changes
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Reflex Registry | tools\genesis\reflex_registry.py | Auto-registered: genesis/reflex_registry.py | --json | JSON |
+| Interdiction Ranker | tools\strategos\interdiction_ranker.py | Auto-registered: strategos/interdiction_ranker.py | --json | JSON |
+| Temporal Correlator | tools\strategos\temporal_correlator.py | Auto-registered: strategos/temporal_correlator.py | --json | JSON |
+| OSINT Harvester | tools\genesis\reflexes\strategos\osint_harvester.py | STRATEGOS reflex — background OSINT collection every 4h from RSS/ACLED/Telegram/file-inbox into sg_raw_signals; max 200 signals/run, sha256 dedup | --json | JSON {success, metric_value, details} |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Brief Generator | tools\intelligence\brief_generator.py | Auto-registered: intelligence/brief_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Signal Scout | tools\genesis\reflexes\strategos\signal_scout.py | Auto-registered: strategos/signal_scout.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Reverse Cascade Inference | tools\strategos\reverse_cascade_inference.py | Auto-registered: strategos/reverse_cascade_inference.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Signal Pricer | tools\intelligence\signal_pricer.py | Auto-registered: intelligence/signal_pricer.py | --json | JSON |

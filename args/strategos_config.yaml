@@ -59,6 +59,40 @@ osint:
       type: rss
       internet_required: true
 
+    - name: "Kyiv Independent"
+      url: "https://kyivindependent.com/feed/"
+      type: rss
+      internet_required: true
+
+    - name: "RFE/RL (Radio Free Europe)"
+      url: "https://www.rferl.org/api/ztqmqvbkmue"
+      type: rss
+      internet_required: true
+
+    - name: "ISW (Institute for the Study of War)"
+      url: "https://www.understandingwar.org/feeds/rss.xml"
+      type: rss
+      internet_required: true
+
+    - name: "UN OCHA ReliefWeb"
+      url: "https://reliefweb.int/updates/rss.xml"
+      type: rss
+      internet_required: true
+
+    # Jane's Defence — subscription feed. Set url to your licensed endpoint;
+    # leave empty to skip.
+    - name: "Jane's Defence"
+      url: ""
+      type: rss
+      internet_required: true
+
+    # ACLED — REST API, not RSS. Harvested via _harvest_acled() when
+    # ACLED_API_KEY and ACLED_EMAIL env vars are set.
+    - name: "ACLED"
+      url: ""
+      type: acled_api
+      internet_required: true
+
   # GitLab artifact download settings (TIER_GITLAB).
   gitlab:
     # Env: GITLAB_URL, GITLAB_TOKEN, GITLAB_OSINT_PROJECT_ID, GITLAB_OSINT_REF

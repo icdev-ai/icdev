@@ -276,7 +276,7 @@ def _source_discriminability_score(source: str) -> Tuple[float, str]:
     # Heuristic: HTTPS-published government domains → B
     for gov_token in ("gov", "mil", ".un.", "nato", "interpol"):
         if gov_token in lower:
-            return _STANAG_SCORE["B"], f"stanag=B(gov_domain)"
+            return _STANAG_SCORE["B"], "stanag=B(gov_domain)"
 
     return _STANAG_SCORE["F"], "stanag=F(unknown_source)"
 
@@ -456,12 +456,10 @@ def _mark_processed(signal_ids: List[int]) -> None:
         return
     conn = get_connection()
     try:
-        placeholder = "%s" if is_pg() else "?"
+        placeholder = "%s" if is_pg() else "?"  # nosec B608
+        sql = "UPDATE sg_raw_signals SET processed = 1 WHERE id = " + placeholder  # nosec B608
         for sig_id in signal_ids:
-            conn.execute(
-                f"UPDATE sg_raw_signals SET processed = 1 WHERE id = {placeholder}",
-                (sig_id,),
-            )
+            conn.execute(sql, (sig_id,))
         conn.commit()
     finally:
         conn.close()
