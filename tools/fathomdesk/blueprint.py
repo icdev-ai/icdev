@@ -1,8 +1,15 @@
 # CUI // SP-CTI
-"""FathomDesk API — trap event history endpoint.
+"""FathomDesk API — OHLCV bars and trap event history endpoints.
 
-Inline-route blueprint (routes are hardcoded with /fathomdesk/api/... prefix).
+Inline-route blueprint (routes are hardcoded with /fathomdesk/api/... or /api/... prefix).
 Register via _mount_inline(fathomdesk_api) in tools/dashboard/api/__init__.py.
+
+GET /api/bars
+  ?ticker=SPY        — equity symbol (required)
+  ?period=3mo        — lookback window (default "3mo")
+  ?interval=1d       — bar interval (default "1d")
+
+Returns: {"ticker": "SPY", "period": "3mo", "bars": [...], "count": N}
 
 GET /fathomdesk/api/traps
   ?ticker=AAPL       — filter by ticker (optional)
@@ -28,6 +35,25 @@ from tools.db.storage import get_connection  # noqa: E402
 fathomdesk_api = Blueprint("fathomdesk_api", __name__)
 
 _MAX_LIMIT = 200
+
+
+@fathomdesk_api.route("/api/bars", methods=["GET"])
+def api_bars():
+    """Return OHLCV bars for a ticker via FathomDeskDataGateway (OpenBB → yfinance fallback)."""
+    ticker = request.args.get("ticker", "").strip().upper()
+    if not ticker:
+        return jsonify({"error": "ticker is required"}), 400
+    period = request.args.get("period", "3mo").strip() or "3mo"
+    interval = request.args.get("interval", "1d").strip() or "1d"
+
+    try:
+        from tools.fathomdesk.data_gateway import FathomDeskDataGateway
+        gw = FathomDeskDataGateway()
+        bars = gw.historical_bars(ticker, period=period, interval=interval)
+    except Exception as exc:
+        return jsonify({"ticker": ticker, "period": period, "bars": [], "count": 0, "error": str(exc)}), 200
+
+    return jsonify({"ticker": ticker, "period": period, "bars": bars, "count": len(bars)})
 
 
 @fathomdesk_api.route("/fathomdesk/api/traps", methods=["GET"])
