@@ -101,6 +101,16 @@
             <!-- Genesis (all apps) -->
             <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>
             <li><a href="/oracle" class="{% if '/oracle' in request.path %}active{% endif %}">Oracle</a></li>
+            <!-- FathomDesk — Trading & Market Intelligence -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/fathomdesk', '/news', '/options', '/machine-momentum'] %}active{% endif %}" style="color:#8ab4ff;font-weight:600;">FathomDesk</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/fathomdesk">Trading Desk</a></li>
+                    <li><a href="/news">News</a></li>
+                    <li><a href="/options">Options</a></li>
+                    <li><a href="/machine-momentum">Machine Momentum</a></li>
+                </ul>
+            </li>
             {% endif %}
 
             <!-- Build & Dev -->
@@ -253,6 +263,11 @@
                     <li><a href="/strategos/hitl">HITL Queue</a></li>
                     <li><a href="/strategos/cyber" style="color:#ef4444">&#9670; Cyber Dashboard</a></li>
                     <li><a href="/strategos/simulate">Simulate</a></li>
+                    <li>
+                        <a href="/strategos/briefs" style="color:#a78bfa">&#9670; Intel Briefs
+                            <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
+                        </a>
+                    </li>
                 </ul>
             </li>
 
@@ -362,5 +377,25 @@
     <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
     <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
     {% block scripts %}{% endblock %}
+    <script>
+    (function() {
+        function refreshBriefsBadge() {
+            fetch('/api/strategos/briefs?reviewed=0&limit=1')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    var el = document.getElementById('nav-briefs-pending');
+                    if (!el || !d) return;
+                    if (d.total > 0) {
+                        el.textContent = d.total;
+                        el.style.display = 'inline';
+                    } else {
+                        el.style.display = 'none';
+                    }
+                }).catch(function() {});
+        }
+        refreshBriefsBadge();
+        setInterval(refreshBriefsBadge, 120000);
+    })();
+    </script>
 </body>
 </html>

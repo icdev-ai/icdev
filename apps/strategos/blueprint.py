@@ -625,6 +625,32 @@ def api_interdiction_coefficients():
         return jsonify({"error": str(exc)}), 500
 
 
+@_api.route("/briefs", methods=["GET"])
+def api_briefs_list():
+    brief_type = request.args.get("type", "").strip()
+    reviewed = request.args.get("reviewed", "")
+    limit = min(int(request.args.get("limit", 200)), 500)
+    clauses, params = [], []
+    if brief_type:
+        clauses.append("brief_type = ?")
+        params.append(brief_type)
+    if reviewed == "0":
+        clauses.append("analyst_reviewed = 0")
+    elif reviewed == "1":
+        clauses.append("analyst_reviewed = 1")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    ph = "%s" if is_pg() else "?"
+    sql = (
+        f"SELECT id, brief_type, title, sio_confidence, analyst_reviewed, "
+        f"reviewed_by, reviewed_at, created_at "
+        f"FROM sg_intelligence_briefs {where} ORDER BY created_at DESC LIMIT {limit}"  # nosec B608
+    )
+    sql = sql.replace("?", ph)
+    briefs = _safe_fetch(sql, params)
+    pending = sum(1 for b in briefs if not b.get("analyst_reviewed"))
+    return jsonify({"briefs": briefs, "total": len(briefs), "pending": pending})
+
+
 @_api.route("/briefs", methods=["POST"])
 def api_briefs_create():
     data = request.get_json(silent=True) or {}
