@@ -20,6 +20,7 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
 
   Pages (additional):
     GET  /signals           — Signal priority queue (top-50 scored signals)
+    GET  /simulate          — Simulation workspace (layout/panels)
 
   API (url_prefix="/api/strategos"):
     GET    /pir                     — List PIR/CCIR/EEI requirements
@@ -702,6 +703,11 @@ def api_briefs_export(brief_id: str):
 @_bp.route("/oracle")
 def strategos_oracle():
     return render_template("strategos/oracle.html")
+
+
+@_bp.route("/simulate")
+def strategos_simulate():
+    return render_template("strategos/simulate.html")
 
 
 @_api.route("/oracle", methods=["GET"])
