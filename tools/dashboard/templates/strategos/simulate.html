@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Simulation Workspace — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+.sim-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 1rem;
+}
+.sim-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    min-height: 240px;
+}
+.sim-panel-title {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.sim-panel-title .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    display: inline-block;
+}
+.sim-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: calc(100% - 2rem);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    border: 1px dashed var(--border-color);
+    border-radius: 4px;
+    margin-top: 0.5rem;
+}
+.sim-full-width {
+    grid-column: 1 / -1;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Simulation Workspace
+        <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">
+            Scenario Planning &amp; COA Analysis
+        </span>
+    </h1>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">
+        CUI // SP-CTI &nbsp;|&nbsp; Strategos
+    </div>
+</div>
+
+<div class="sim-grid">
+
+    <!-- Scenario Parameters -->
+    <div class="sim-panel">
+        <div class="sim-panel-title">
+            <span class="dot"></span> Scenario Parameters
+        </div>
+        <div class="sim-placeholder">No scenario loaded</div>
+    </div>
+
+    <!-- COA Matrix -->
+    <div class="sim-panel">
+        <div class="sim-panel-title">
+            <span class="dot" style="background:var(--accent-green)"></span> COA Matrix
+        </div>
+        <div class="sim-placeholder">Courses of action will appear here</div>
+    </div>
+
+    <!-- Outcome Projections -->
+    <div class="sim-panel">
+        <div class="sim-panel-title">
+            <span class="dot" style="background:#f59e0b"></span> Outcome Projections
+        </div>
+        <div class="sim-placeholder">Run a simulation to see projections</div>
+    </div>
+
+    <!-- Red Force Assessment -->
+    <div class="sim-panel">
+        <div class="sim-panel-title">
+            <span class="dot" style="background:#ef4444"></span> Red Force Assessment
+        </div>
+        <div class="sim-placeholder">Adversary model not configured</div>
+    </div>
+
+    <!-- Timeline / Events -->
+    <div class="sim-panel sim-full-width">
+        <div class="sim-panel-title">
+            <span class="dot" style="background:#818cf8"></span> Simulation Timeline
+        </div>
+        <div class="sim-placeholder">Event timeline will render here</div>
+    </div>
+
+</div>
+{% endblock %}

@@ -84,17 +84,18 @@ def add_annotation(
         raise ValueError("content must not be empty")
 
     ph = _ph()
+    returning = " RETURNING id" if is_pg() else ""
     sql = (
         f"INSERT INTO sg_analyst_annotations "
         f"(entity_type, entity_id, annotation_type, content, analyst_id, created_at) "
-        f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})"
+        f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph}){returning}"
     )
     created_at = _now()
     conn = get_connection()
     try:
         cur = conn.execute(sql, (entity_type, entity_id, annotation_type, clean_content, analyst_id, created_at))
         conn.commit()
-        row_id = cur.lastrowid
+        row_id = cur.fetchone()[0] if is_pg() else cur.lastrowid
     finally:
         conn.close()
 
