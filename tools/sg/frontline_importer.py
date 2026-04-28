@@ -44,7 +44,7 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, is_pg  # noqa: E402
 
 _DEFAULT_URL_TEMPLATE = (
     "https://deepstatemap.live/api/history/{date}"
@@ -317,6 +317,165 @@ def run(
                 print(f"  FETCH ERROR {fe['snapshot_date']}: {fe['error']}", file=sys.stderr)
 
     return summary
+
+
+def _build_row(snapshot_date: str, idx: int, feat: dict, now_ts: str) -> tuple:
+    """Return a parameter tuple for a single GeoJSON feature."""
+    geom = feat.get("geometry") or {}
+    props = feat.get("properties") or {}
+    row_id = _feature_id(snapshot_date, idx, feat)
+    geom_type = geom.get("type") or ""
+    name = (
+        props.get("name")
+        or props.get("Name")
+        or props.get("title")
+        or f"{geom_type}:{idx}"
+    )
+    metadata = {
+        "snapshot_date": snapshot_date,
+        "feature_id": str(feat.get("id") or idx),
+        "geometry_type": geom_type,
+    }
+    return (
+        row_id,
+        EVENT_TYPE,
+        "low",
+        name,
+        f"{snapshot_date}T00:00:00+00:00",
+        json.dumps(metadata),
+        now_ts,
+        SOURCE,
+        f"{snapshot_date}:{feat.get('id') or idx}",
+        snapshot_date,
+        json.dumps(geom),
+        json.dumps(props),
+    )
+
+
+def bulk_import(
+    start_date,
+    end_date,
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Batch-import DeepState GeoJSON snapshots for a date range.
+
+    Fetches each date's FeatureCollection, transforms every Feature into an
+    sg_conflict_events row (event_type='frontline_position'), and writes the
+    full batch in a single parameterized executemany call.  Duplicate rows
+    (same deterministic id) are silently skipped via ON CONFLICT / INSERT OR
+    IGNORE, so re-running the same range is always safe.
+
+    Args:
+        start_date: Start date inclusive — YYYY-MM-DD string or date object.
+        end_date:   End date inclusive — YYYY-MM-DD string or date object.
+        force:      Delete existing rows for each date before inserting.
+        dry_run:    Fetch and transform without writing to the database.
+
+    Returns:
+        Summary dict with keys: dates_requested, total_inserted,
+        total_skipped, total_failed, fetch_errors, per_date.
+    """
+    if isinstance(start_date, str):
+        start_date = date.fromisoformat(start_date)
+    if isinstance(end_date, str):
+        end_date = date.fromisoformat(end_date)
+    if end_date < start_date:
+        raise ValueError("end_date must be >= start_date")
+
+    dates = _date_range(start_date, end_date)
+
+    conn = None if dry_run else get_connection()
+    imported_dates: set[str] = set()
+    if conn and not force:
+        imported_dates = _get_imported_dates(conn)
+
+    if is_pg():
+        insert_sql = """
+            INSERT INTO sg_conflict_events
+                (id, event_type, severity, description, event_ts,
+                 metadata_json, created_at, source, external_id,
+                 snapshot_date, geometry_json, properties_json)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (id) DO NOTHING
+        """
+    else:
+        insert_sql = """
+            INSERT OR IGNORE INTO sg_conflict_events
+                (id, event_type, severity, description, event_ts,
+                 metadata_json, created_at, source, external_id,
+                 snapshot_date, geometry_json, properties_json)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        """
+
+    now_ts = datetime.now(timezone.utc).isoformat()
+    per_date: list[dict] = []
+    fetch_errors: list[dict] = []
+    total_inserted = total_skipped = total_failed = 0
+
+    for snapshot_date in dates:
+        if not dry_run and not force and snapshot_date in imported_dates:
+            per_date.append({"snapshot_date": snapshot_date, "action": "skipped_existing"})
+            total_skipped += 1
+            continue
+
+        try:
+            features = fetch_deepstate_geojson(snapshot_date)
+        except Exception as exc:
+            fetch_errors.append({"snapshot_date": snapshot_date, "error": str(exc)})
+            total_failed += 1
+            continue
+
+        if dry_run:
+            per_date.append({
+                "snapshot_date": snapshot_date,
+                "action": "dry_run",
+                "features": len(features),
+            })
+            continue
+
+        if force:
+            _delete_snapshot(conn, snapshot_date)
+
+        rows: list[tuple] = []
+        build_errors: list[dict] = []
+        for idx, feat in enumerate(features):
+            try:
+                rows.append(_build_row(snapshot_date, idx, feat, now_ts))
+            except Exception as exc:
+                build_errors.append({"idx": idx, "error": str(exc)})
+
+        inserted = 0
+        if rows:
+            cursor = conn.cursor()
+            cursor.executemany(insert_sql, rows)
+            inserted = cursor.rowcount if cursor.rowcount >= 0 else len(rows)
+
+        total_inserted += inserted
+        total_failed += len(build_errors)
+        per_date.append({
+            "snapshot_date": snapshot_date,
+            "total_features": len(features),
+            "inserted": inserted,
+            "build_errors": len(build_errors),
+        })
+
+    if conn:
+        conn.commit()
+        conn.close()
+
+    return {
+        "dry_run": dry_run,
+        "force": force,
+        "dates_requested": len(dates),
+        "total_inserted": total_inserted,
+        "total_skipped": total_skipped,
+        "total_failed": total_failed,
+        "fetch_errors": len(fetch_errors),
+        "fetch_error_detail": fetch_errors,
+        "per_date": per_date,
+    }
 
 
 def main() -> None:
