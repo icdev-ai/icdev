@@ -5,9 +5,13 @@ import argparse
 import dataclasses
 import json
 import sys
-import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List, Optional
+
+try:
+    import defusedxml.ElementTree as ET
+except ImportError:
+    import xml.etree.ElementTree as ET  # type: ignore[no-redef]
 
 # Minimum line coverage % per IL tier
 _COVERAGE_MINIMUMS: dict[str, int] = {
@@ -144,7 +148,14 @@ def evaluate(
 
 def main(argv: Optional[List[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="IL-tier quality rigor gates")
-    parser.add_argument("--tier", default="il4", help="IL tier (il2/il4/il5/il6)")
+    parser.add_argument("--tier", default=None, help="IL tier (il2/il4/il5/il6)")
+    parser.add_argument(
+        "--impact-level", default=None, dest="impact_level",
+        help="Alias for --tier (il2/il4/il5/il6)"
+    )
+    parser.add_argument(
+        "--evaluate", action="store_true", help="Run evaluation (default action)"
+    )
     parser.add_argument(
         "--project-dir", type=Path, default=Path("."), help="Project root"
     )
@@ -159,7 +170,8 @@ def main(argv: Optional[List[str]] = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    result = evaluate(args.tier, args.project_dir, args.coverage)
+    tier = args.impact_level or args.tier or "il4"
+    result = evaluate(tier, args.project_dir, args.coverage)
 
     if args.json_output or args.gate:
         print(json.dumps(result.to_dict(), indent=2))
