@@ -8356,6 +8356,31 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("fathomdesk.html", ticker=ticker)
 
+    @app.route("/api/macro/intelligence")
+    def api_macro_intelligence():
+        """Return macro regime badges for the /analysis page panel."""
+        try:
+            from tools.trading.data.macro_data import fetch_macro_context
+            ctx = fetch_macro_context()
+            return jsonify({
+                "qeqt_phase": ctx.get("qeqt_phase", "NEUTRAL"),
+                "credit_stress": ctx.get("credit_impulse", {}).get("label", "NEUTRAL"),
+                "rotation_signal": ctx.get("regime", "UNKNOWN"),
+                "macro_score": ctx.get("macro_score"),
+                "summary": ctx.get("summary", ""),
+                "fetched_at": ctx.get("fetched_at"),
+            })
+        except Exception as exc:
+            return jsonify({
+                "qeqt_phase": "NEUTRAL",
+                "credit_stress": "NEUTRAL",
+                "rotation_signal": "UNKNOWN",
+                "macro_score": None,
+                "summary": "",
+                "fetched_at": None,
+                "error": str(exc),
+            }), 200
+
     @app.route("/api/trading/market")
     def api_trading_market():
         """Return macro context snapshot including qeqt_phase for FathomDesk overlay."""

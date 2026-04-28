@@ -103,11 +103,12 @@
             <li><a href="/oracle" class="{% if '/oracle' in request.path %}active{% endif %}">Oracle</a></li>
             <!-- FathomDesk — Trading & Market Intelligence -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/fathomdesk', '/news', '/options', '/machine-momentum'] %}active{% endif %}" style="color:#8ab4ff;font-weight:600;">FathomDesk</a>
+                <a href="#" class="{% if request.path in ['/fathomdesk', '/news', '/options', '/analysis', '/machine-momentum'] %}active{% endif %}" style="color:#8ab4ff;font-weight:600;">FathomDesk</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/fathomdesk">Trading Desk</a></li>
                     <li><a href="/news">News</a></li>
                     <li><a href="/options">Options</a></li>
+                    <li><a href="/analysis">Market Analysis</a></li>
                     <li><a href="/machine-momentum">Machine Momentum</a></li>
                 </ul>
             </li>
