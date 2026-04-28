@@ -199,6 +199,15 @@ def remediate_stale_baseline(cwd: str, task_id: str) -> Tuple[bool, str]:
         db = default_branch(cwd)
         r = _run(["git", "rebase", db], cwd, timeout=90)
         if r.returncode == 0:
+            out = (r.stdout or "") + (r.stderr or "")
+            if "is up to date" in out:
+                # Branch is already on top of main — rebase was a no-op.
+                # Coherence failure is intrinsic to the task's own changes,
+                # not a stale-baseline divergence. Further rebasing won't help.
+                return False, (
+                    f"{branch} already rebased onto {db} — "
+                    "coherence failure is intrinsic to task changes, not stale baseline"
+                )
             return True, f"rebased {branch} onto {db}"
         # Conflict — abort to leave a clean state
         _run(["git", "rebase", "--abort"], cwd)
