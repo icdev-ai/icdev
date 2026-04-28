@@ -512,6 +512,18 @@ def get_supply_degradation_coefficients(top_n: int = 10) -> dict:
     }
 
 
+def get_degradation_coefficient(unit_id: str, top_n: int = 10) -> float:
+    """Return the supply-degradation attrition coefficient for a single unit.
+
+    Queries the KG for supply disruption affecting *unit_id* and returns the
+    adjusted float coefficient in [0.0, 1.0].  Units not in the blast radius
+    of any top-N interdiction target receive the default coefficient 1.0
+    (no supply degradation).
+    """
+    result = get_supply_degradation_coefficients(top_n=top_n)
+    return result.get("coefficients", {}).get(unit_id, 1.0)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
