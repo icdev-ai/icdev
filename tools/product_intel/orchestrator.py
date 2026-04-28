@@ -88,3 +88,18 @@ class ProductIntelOrchestrator:
                 )
 
         return consolidated
+
+
+if __name__ == "__main__":
+    import argparse
+    import json as _json
+
+    parser = argparse.ArgumentParser(description="Product Intelligence universal orchestrator")
+    parser.add_argument("--dry-run", action="store_true", help="List engines without DB writes")
+    parser.add_argument("--run-all", action="store_true", help="Run all engines and persist result")
+    parser.add_argument("--json", action="store_true", help="Output JSON")
+    args = parser.parse_args()
+
+    orch = ProductIntelOrchestrator()
+    result = orch.run_all(dry_run=args.dry_run)
+    print(_json.dumps(result, indent=2))
