@@ -1587,6 +1587,56 @@ CREATE TABLE IF NOT EXISTS product_intel_runs (
     status              TEXT,
     classification      TEXT DEFAULT 'CUI // SP-CTI'
 );
+
+CREATE TABLE IF NOT EXISTS usage_events (
+    id               TEXT PRIMARY KEY,
+    route            TEXT,
+    method           TEXT,
+    status_code      INTEGER,
+    duration_ms      INTEGER,
+    skill_invoked    TEXT,
+    user_session     TEXT,
+    ip_hash          TEXT,
+    feature_tag      TEXT,
+    occurred_at      TEXT NOT NULL,
+    classification   TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE INDEX IF NOT EXISTS idx_usage_route ON usage_events(route);
+CREATE INDEX IF NOT EXISTS idx_usage_occurred_at ON usage_events(occurred_at);
+
+CREATE TABLE IF NOT EXISTS usage_aggregates (
+    id               TEXT PRIMARY KEY,
+    feature_tag      TEXT,
+    date             TEXT,
+    hit_count        INTEGER,
+    unique_sessions  INTEGER,
+    error_count      INTEGER,
+    avg_duration_ms  REAL,
+    adoption_score   REAL,
+    updated_at       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_agg_feature_date ON usage_aggregates(feature_tag, date);
+
+CREATE TABLE IF NOT EXISTS innovation_signals (
+    id               TEXT PRIMARY KEY,
+    source           TEXT NOT NULL,
+    source_type      TEXT NOT NULL,
+    title            TEXT NOT NULL,
+    description      TEXT,
+    body             TEXT,
+    url              TEXT,
+    metadata         TEXT,
+    community_score  REAL DEFAULT 0.0,
+    composite_score  REAL,
+    content_hash     TEXT NOT NULL,
+    discovered_at    TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'new',
+    category         TEXT,
+    score            REAL,
+    innovation_score REAL,
+    classification   TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_signals_hash ON innovation_signals(content_hash);
 """
 
 # ---------------------------------------------------------------------------
