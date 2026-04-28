@@ -28,6 +28,10 @@ tdd:
   feature_format: "gherkin"
   coverage_threshold: 80
   require_tests_first: true
+  rigor_profile:
+    impact_level: il4
+    enforce_gate: true
+    block_on_violation: false
 
 compliance:
   framework: "NIST 800-53"
