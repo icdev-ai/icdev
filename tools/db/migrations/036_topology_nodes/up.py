@@ -51,7 +51,7 @@ _IDX_TOPOLOGY = "CREATE INDEX IF NOT EXISTS idx_topology_nodes_topology_id ON to
 _IDX_TYPE = "CREATE INDEX IF NOT EXISTS idx_topology_nodes_node_type ON topology_nodes(node_type)"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")

@@ -10,7 +10,7 @@ Adds:
 from tools.db.storage import get_connection
 
 
-def up():
+def up(conn=None):
     conn = get_connection()
     try:
         conn.execute("""

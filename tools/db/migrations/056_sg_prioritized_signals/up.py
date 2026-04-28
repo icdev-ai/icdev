@@ -47,7 +47,7 @@ _INDICES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         conn.execute(_DDL_PG if is_pg() else _DDL_SQLITE)

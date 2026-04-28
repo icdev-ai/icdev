@@ -17,7 +17,7 @@ _STATEMENTS = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         for stmt in _STATEMENTS:

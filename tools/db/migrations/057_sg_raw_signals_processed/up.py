@@ -7,7 +7,7 @@ Marks whether the raw signal has been picked up by downstream enrichment
 from tools.db.storage import get_connection
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         conn.execute(

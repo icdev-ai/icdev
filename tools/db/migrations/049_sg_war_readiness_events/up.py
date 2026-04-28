@@ -25,7 +25,7 @@ _NEW_COLUMNS = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     for col, col_type in _NEW_COLUMNS:
         try:

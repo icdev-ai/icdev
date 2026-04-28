@@ -17,7 +17,7 @@ MIGRATION_NAME = "reflex_observations"
 DESCRIPTION = "Create reflex_observations table for reflex execution telemetry"
 
 
-def up():
+def up(conn=None):
     conn = get_connection()
     try:
         conn.execute("""

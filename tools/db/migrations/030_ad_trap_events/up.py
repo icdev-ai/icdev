@@ -49,16 +49,20 @@ CREATE TABLE IF NOT EXISTS ad_trap_events (
 """
 
 
-def up() -> None:
-    conn = get_connection()
+def up(conn=None) -> None:
+    _own_conn = conn is None
+    if _own_conn:
+        conn = get_connection()
     try:
         dialect = getattr(conn, "_dialect", "sqlite")
         ddl = _DDL if dialect == "postgresql" else _DDL_SQLITE
         conn.execute(ddl)
-        conn.commit()
+        if _own_conn:
+            conn.commit()
         print("[030_ad_trap_events] up: ad_trap_events created (or already exists)")
     finally:
-        conn.close()
+        if _own_conn:
+            conn.close()
 
 
 if __name__ == "__main__":

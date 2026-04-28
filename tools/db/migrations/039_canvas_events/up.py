@@ -42,7 +42,7 @@ _IDX_TYPE = "CREATE INDEX IF NOT EXISTS idx_canvas_events_type ON canvas_events(
 _IDX_CONSUMED = "CREATE INDEX IF NOT EXISTS idx_canvas_events_consumed ON canvas_events(consumed_at)"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")

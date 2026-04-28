@@ -15,7 +15,7 @@ _ANNOTATION_TYPES = ("assessed", "unconfirmed", "disputed", "source_tag")
 _ENTITY_TYPES = ("kg_node", "conflict_event", "orbat_unit", "supply_node", "signal")
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     annotation_check = "', '".join(_ANNOTATION_TYPES)
     entity_check = "', '".join(_ENTITY_TYPES)

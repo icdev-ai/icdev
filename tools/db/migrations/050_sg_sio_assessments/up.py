@@ -34,7 +34,7 @@ _INDICES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     conn.execute(_DDL)
     for idx in _INDICES:

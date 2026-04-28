@@ -56,7 +56,7 @@ _IDX_SOURCE = "CREATE INDEX IF NOT EXISTS idx_topology_edges_source ON topology_
 _IDX_TARGET = "CREATE INDEX IF NOT EXISTS idx_topology_edges_target ON topology_edges(target)"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")

@@ -15,7 +15,7 @@ based on criticality, proximity, and targeting history.
 from tools.db.storage import get_connection
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         conn.execute(

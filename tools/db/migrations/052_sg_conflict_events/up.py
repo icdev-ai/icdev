@@ -53,7 +53,7 @@ _INDEXES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         event_check = "', '".join(_EVENT_TYPES)

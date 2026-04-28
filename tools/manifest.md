@@ -147,6 +147,7 @@
 - [Dashboard UX Enhancements (OPT-68, 2026-04-12)](manifest/dashboard-ux-enhancements.md)
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
+- [Kanban System](manifest/kanban.md)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -526,3 +527,12 @@
 | Ew Monitor | tools\strategos\ew_monitor.py | Auto-registered: strategos/ew_monitor.py | --json | JSON |
 | Iw Engine | tools\strategos\iw_engine.py | Auto-registered: strategos/iw_engine.py | --json | JSON |
 | Ooda | tools\strategos\ooda.py | Auto-registered: strategos/ooda.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Dib Mapper | tools\strategos\dib_mapper.py | Auto-registered: strategos/dib_mapper.py | --json | JSON |
+| Information Scorer | tools\intelligence\war_readiness\information_scorer.py | Auto-registered: war_readiness/information_scorer.py | --json | JSON |
+| Pattern Learner | tools\genesis\reflexes\strategos\pattern_learner.py | Auto-registered: strategos/pattern_learner.py | --json | JSON |
+| Red Cell | tools\genesis\reflexes\strategos\red_cell.py | Auto-registered: strategos/red_cell.py | --json | JSON |

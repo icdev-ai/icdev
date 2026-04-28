@@ -11,7 +11,7 @@ sg_information_scores: append-only audit trail for computed scores
 from tools.db.storage import get_connection, is_pg
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
 
     if is_pg():

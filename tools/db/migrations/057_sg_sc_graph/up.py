@@ -51,7 +51,7 @@ _INDICES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         conn.execute(_DDL_NODES)

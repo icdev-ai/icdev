@@ -15,7 +15,7 @@ from tools.db.storage import get_connection
 _REL_TYPES = ("supports", "contradicts", "supersedes", "related")
 
 
-def up():
+def up(conn=None):
     conn = get_connection()
     try:
         conn.execute(f"""

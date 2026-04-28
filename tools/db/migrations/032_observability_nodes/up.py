@@ -53,7 +53,7 @@ _IDX_DESIGN = "CREATE INDEX IF NOT EXISTS idx_obs_nodes_design_id ON observabili
 _IDX_TYPE = "CREATE INDEX IF NOT EXISTS idx_obs_nodes_node_type ON observability_nodes(node_type)"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")

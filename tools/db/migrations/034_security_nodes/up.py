@@ -53,7 +53,7 @@ _IDX_DESIGN = "CREATE INDEX IF NOT EXISTS idx_sec_nodes_design_id ON security_no
 _IDX_TYPE = "CREATE INDEX IF NOT EXISTS idx_sec_nodes_node_type ON security_nodes(node_type)"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")
