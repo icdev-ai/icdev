@@ -537,3 +537,9 @@
 | Information Scorer | tools\intelligence\war_readiness\information_scorer.py | Auto-registered: war_readiness/information_scorer.py | --json | JSON |
 | Pattern Learner | tools\genesis\reflexes\strategos\pattern_learner.py | Auto-registered: strategos/pattern_learner.py | --json | JSON |
 | Red Cell | tools\genesis\reflexes\strategos\red_cell.py | Auto-registered: strategos/red_cell.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Engine Registry | tools\product_intel\engine_registry.py | Auto-registered: product_intel/engine_registry.py | --json | JSON |
