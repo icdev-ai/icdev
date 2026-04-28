@@ -150,6 +150,7 @@
 - [Kanban System](manifest/kanban.md)
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
+- [Strategos — DIB Supply Chain & Strategy Intelligence](manifest/strategos.md)
 
 
 ## Auto-Registered (Coherence Fix)
