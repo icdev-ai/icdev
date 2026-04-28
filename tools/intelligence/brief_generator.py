@@ -25,7 +25,7 @@ from tools.db.storage import get_connection
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
-BRIEF_TYPES = ("sitrep", "iir", "warnord", "assessment")
+BRIEF_TYPES = ("sitrep", "iir", "warnord", "assessment", "war_council")
 
 
 class _LenientUndefined(Undefined):
