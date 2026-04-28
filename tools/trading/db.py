@@ -730,6 +730,7 @@ def _ensure_schema(conn: StorageConnection) -> None:
     _safe_migrations = [
         ("ad_signals", "price_at_add", "REAL"),
         ("ad_signals", "current_price", "REAL"),
+        ("ad_signals", "signal_decay_weight", "REAL NOT NULL DEFAULT 1.0"),
         ("ad_strategy_holdings", "macro_alignment", "REAL"),
         ("ad_option_chain_snapshots", "ivr_pct", "REAL"),
         ("ad_option_chain_snapshots", "iv_percentile", "REAL"),
@@ -981,18 +982,23 @@ def refresh_signal_prices(conn: StorageConnection | None = None) -> int:
 def get_signals(
     status: str | None = None,
     limit: int = 50,
+    ranked: bool = False,
     conn: StorageConnection | None = None,
 ) -> list[dict]:
-    """Get signals, optionally filtered by status."""
+    """Get signals, optionally filtered by status.
+
+    ranked=True sorts by (composite_score * signal_decay_weight) DESC.
+    """
     c = conn or get_conn()
+    order = "(composite_score * signal_decay_weight) DESC" if ranked else "created_at DESC"
     if status:
         rows = c.execute(
-            "SELECT * FROM ad_signals WHERE status=? ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM ad_signals WHERE status=? ORDER BY {order} LIMIT ?",
             (status, limit),
         ).fetchall()
     else:
         rows = c.execute(
-            "SELECT * FROM ad_signals ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM ad_signals ORDER BY {order} LIMIT ?",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
