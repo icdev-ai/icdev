@@ -55,6 +55,9 @@ Registers page routes (mounted at /strategos) and a separate API blueprint
     POST   /wargame/<id>/nash       — Nash equilibrium for a payoff matrix
     GET    /wargame/<id>/coa        — COA entries for a scenario
     POST   /wargame/<id>/coa        — Add/update COA entry
+
+  Info API (url_prefix="/api/strategos"):
+    GET    /info/network-data       — Narrative cluster nodes + amplification edges (JSON)
 """
 import json
 import math
@@ -1726,6 +1729,33 @@ def api_wargame_coa_create(wargame_id: str):
     finally:
         conn.close()
     return jsonify({"id": cid, "name": name, "composite_score": composite}), 201
+
+
+# ---------------------------------------------------------------------------
+# Info endpoints
+# ---------------------------------------------------------------------------
+
+@_api.route("/info/network-data", methods=["GET"])
+def get_info_network_data():
+    """Return narrative cluster nodes and amplification link edges for network viz."""
+    nodes = [
+        {"id": "nc-1", "label": "State-Sponsored Disinformation", "size": 42},
+        {"id": "nc-2", "label": "Domestic Radicalization Narrative", "size": 35},
+        {"id": "nc-3", "label": "Economic Grievance Amplification", "size": 28},
+        {"id": "nc-4", "label": "Anti-Alliance Messaging", "size": 31},
+        {"id": "nc-5", "label": "Election Integrity Doubt", "size": 39},
+        {"id": "nc-6", "label": "Military Casualty Inflation", "size": 22},
+    ]
+    links = [
+        {"source": "nc-1", "target": "nc-2", "strength": 0.82},
+        {"source": "nc-1", "target": "nc-5", "strength": 0.74},
+        {"source": "nc-2", "target": "nc-3", "strength": 0.61},
+        {"source": "nc-3", "target": "nc-4", "strength": 0.55},
+        {"source": "nc-4", "target": "nc-5", "strength": 0.68},
+        {"source": "nc-1", "target": "nc-6", "strength": 0.47},
+        {"source": "nc-5", "target": "nc-6", "strength": 0.53},
+    ]
+    return jsonify({"nodes": nodes, "links": links})
 
 
 # ---------------------------------------------------------------------------
