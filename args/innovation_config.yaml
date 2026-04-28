@@ -429,6 +429,10 @@ competitive_intel:
     - name: hermes_agent
       repo: nousresearch/hermes-agent
       category: ai_agent_framework
+    - name: nwave
+      repo: nWave-ai/nWave
+      website: https://nwave.ai
+      category: agentic_sdlc
     - name: forward_networks
       website: https://www.forwardnetworks.com
       category: digital_twin_platform
