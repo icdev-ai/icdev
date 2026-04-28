@@ -230,17 +230,20 @@ def _seed_default_coa() -> None:
     """Insert a sample active COA on a fresh DB so the reflex has data to work with."""
     try:
         conn = get_connection()
-        ph = _ph()
         count = conn.execute(
-            f"SELECT COUNT(*) FROM sg_coa_options WHERE status = {ph}", ("active",)
+            "SELECT COUNT(*) FROM sg_coa_options WHERE status = %s" if is_pg() else
+            "SELECT COUNT(*) FROM sg_coa_options WHERE status = ?",
+            ("active",)
         ).fetchone()[0]
         if count > 0:
             conn.close()
             return
         now = _utcnow_iso()
         conn.execute(
-            f"INSERT INTO sg_coa_options (id, title, description, resource_allocation, status, created_at) "
-            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
+            "INSERT INTO sg_coa_options (id, title, description, resource_allocation, status, created_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s)" if is_pg() else
+            "INSERT INTO sg_coa_options (id, title, description, resource_allocation, status, created_at) "
+            "VALUES (?,?,?,?,?,?)",
             (
                 "coa-seed-01",
                 "COA Alpha — Force Projection",
@@ -268,27 +271,36 @@ def _write_assessments(assessments: List[Dict[str, Any]]) -> int:
         return 0
     try:
         conn = get_connection()
-        ph = _ph()
+        _pg = is_pg()
         written = 0
         for a in assessments:
             rid = a["id"]
             exists = conn.execute(
-                f"SELECT 1 FROM sg_red_cell_assessments WHERE id = {ph}", (rid,)
+                "SELECT 1 FROM sg_red_cell_assessments WHERE id = %s" if _pg else
+                "SELECT 1 FROM sg_red_cell_assessments WHERE id = ?",
+                (rid,)
             ).fetchone()
             if exists:
                 conn.execute(
-                    f"UPDATE sg_red_cell_assessments "
-                    f"SET counter_coa_description={ph}, vulnerability_score={ph}, "
-                    f"counter_probability={ph}, generated_at={ph} WHERE id={ph}",
+                    "UPDATE sg_red_cell_assessments "
+                    "SET counter_coa_description=%s, vulnerability_score=%s, "
+                    "counter_probability=%s, generated_at=%s WHERE id=%s" if _pg else
+                    "UPDATE sg_red_cell_assessments "
+                    "SET counter_coa_description=?, vulnerability_score=?, "
+                    "counter_probability=?, generated_at=? WHERE id=?",
                     (a["counter_coa_description"], a["vulnerability_score"],
                      a["counter_probability"], a["generated_at"], rid),
                 )
             else:
                 conn.execute(
-                    f"INSERT INTO sg_red_cell_assessments "
-                    f"(id, coa_id, counter_coa_description, vulnerability_score, "
-                    f"counter_probability, generated_at) "
-                    f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
+                    "INSERT INTO sg_red_cell_assessments "
+                    "(id, coa_id, counter_coa_description, vulnerability_score, "
+                    "counter_probability, generated_at) "
+                    "VALUES (%s,%s,%s,%s,%s,%s)" if _pg else
+                    "INSERT INTO sg_red_cell_assessments "
+                    "(id, coa_id, counter_coa_description, vulnerability_score, "
+                    "counter_probability, generated_at) "
+                    "VALUES (?,?,?,?,?,?)",
                     (rid, a["coa_id"], a["counter_coa_description"],
                      a["vulnerability_score"], a["counter_probability"], a["generated_at"]),
                 )
@@ -317,21 +329,27 @@ CREATE TABLE IF NOT EXISTS sg_sio_assessments (
     score REAL, narrative TEXT, evidence_json TEXT,
     created_at TEXT NOT NULL
 )""")
-        ph = _ph()
+        _pg = is_pg()
         now = _utcnow_iso()
         written = 0
         for a in high:
             sid = "rc-" + _sha256_short(a["coa_id"] + now)
             exists = conn.execute(
-                f"SELECT 1 FROM sg_sio_assessments WHERE id = {ph}", (sid,)
+                "SELECT 1 FROM sg_sio_assessments WHERE id = %s" if _pg else
+                "SELECT 1 FROM sg_sio_assessments WHERE id = ?",
+                (sid,)
             ).fetchone()
             if exists:
                 continue
             conn.execute(
-                f"INSERT INTO sg_sio_assessments "
-                f"(id, confidence, nato_reliability, recommendation, lens_source, "
-                f"timestamp, score, narrative, evidence_json, created_at) "
-                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+                "INSERT INTO sg_sio_assessments "
+                "(id, confidence, nato_reliability, recommendation, lens_source, "
+                "timestamp, score, narrative, evidence_json, created_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)" if _pg else
+                "INSERT INTO sg_sio_assessments "
+                "(id, confidence, nato_reliability, recommendation, lens_source, "
+                "timestamp, score, narrative, evidence_json, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (
                     sid,
                     round(a["vulnerability_score"] / 10.0, 3),
