@@ -211,7 +211,7 @@ def propagate_impact_sg(node_id: str, severity: str = "critical") -> dict:
             placeholders = ",".join("?" * len(all_degraded_supply_ids))
             unit_rows = conn.execute(
                 f"SELECT DISTINCT source_id FROM sg_kg_edges "
-                f"WHERE relation='SUPPLIED_BY' AND target_id IN ({placeholders})",
+                f"WHERE relation='SUPPLIED_BY' AND target_id IN ({placeholders})",  # nosec B608
                 all_degraded_supply_ids,
             ).fetchall()
             for r in unit_rows:
