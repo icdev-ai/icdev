@@ -8356,6 +8356,11 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("fathomdesk.html", ticker=ticker)
 
+    @app.route("/analysis")
+    def analysis_page():
+        """Market Analysis — Macro Intelligence, IV Skew & Term Structure."""
+        return render_template("analysis.html")
+
     @app.route("/api/macro/intelligence")
     def api_macro_intelligence():
         """Return macro regime badges for the /analysis page panel."""
