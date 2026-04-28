@@ -11,3 +11,4 @@
 | Auto-added sr.py | tools/trading/ta/sr.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added package_registry.py | tools/installer/package_registry.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added package_registry.py | tools/installer/package_registry.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added frontline_importer.py | tools/frontline_importer.py | (auto-added by remediation; update description) | --json | stdout |

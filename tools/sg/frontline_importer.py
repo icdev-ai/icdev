@@ -478,6 +478,64 @@ def bulk_import(
     }
 
 
+def incremental_import(
+    *,
+    force: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Import only dates not yet in sg_conflict_events (source='deepstate').
+
+    Queries max(snapshot_date) for source='deepstate', then fetches GeoJSON
+    from the next day through yesterday via bulk_import().  Returns an empty
+    summary with 'no_baseline' when the table has no deepstate rows yet, or
+    'already_current' when max(snapshot_date) is already yesterday.
+
+    Args:
+        force:   Delete existing rows before re-importing.
+        dry_run: Fetch and transform without writing to the database.
+
+    Returns:
+        Summary dict (same shape as bulk_import) plus optional diagnostic keys.
+    """
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT max(snapshot_date) FROM sg_conflict_events WHERE source = ?",
+        (SOURCE,),
+    ).fetchone()
+    conn.close()
+
+    max_date_str = row[0] if row else None
+    if not max_date_str:
+        return {
+            "dry_run": dry_run,
+            "no_baseline": True,
+            "dates_requested": 0,
+            "total_inserted": 0,
+            "total_skipped": 0,
+            "total_failed": 0,
+            "fetch_errors": 0,
+            "per_date": [],
+        }
+
+    start_date = date.fromisoformat(max_date_str) + timedelta(days=1)
+    yesterday = date.today() - timedelta(days=1)
+
+    if start_date > yesterday:
+        return {
+            "dry_run": dry_run,
+            "already_current": True,
+            "last_date": max_date_str,
+            "dates_requested": 0,
+            "total_inserted": 0,
+            "total_skipped": 0,
+            "total_failed": 0,
+            "fetch_errors": 0,
+            "per_date": [],
+        }
+
+    return bulk_import(start_date, yesterday, force=force, dry_run=dry_run)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Import DeepState GeoJSON frontline snapshots into sg_conflict_events"
@@ -494,6 +552,17 @@ def main() -> None:
         metavar="YYYY-MM-DD",
         help="Import all dates from SINCE to yesterday (incremental delta)",
     )
+    mode.add_argument(
+        "--bulk",
+        nargs=2,
+        metavar=("START", "END"),
+        help="Bulk import date range START..END inclusive (YYYY-MM-DD YYYY-MM-DD)",
+    )
+    mode.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Import only dates after max(snapshot_date) in DB through yesterday",
+    )
     parser.add_argument(
         "--end-date",
         metavar="YYYY-MM-DD",
@@ -509,6 +578,47 @@ def main() -> None:
     args = parser.parse_args()
 
     today = date.today()
+
+    if args.bulk:
+        start = date.fromisoformat(args.bulk[0])
+        end = date.fromisoformat(args.bulk[1])
+        if end < start:
+            parser.error("--bulk END must be >= START")
+        result = bulk_import(start, end, force=args.force, dry_run=args.dry_run)
+        if args.as_json:
+            print(json.dumps(result, indent=2))
+        else:
+            tag = "[DRY RUN] " if args.dry_run else ""
+            print(
+                f"{tag}bulk {args.bulk[0]}..{args.bulk[1]}: "
+                f"inserted={result.get('total_inserted', 0)} "
+                f"skipped={result.get('total_skipped', 0)} "
+                f"failed={result.get('total_failed', 0)}"
+            )
+        if result.get("total_failed", 0) > 0 or result.get("fetch_errors", 0) > 0:
+            sys.exit(1)
+        return
+
+    if args.incremental:
+        result = incremental_import(force=args.force, dry_run=args.dry_run)
+        if args.as_json:
+            print(json.dumps(result, indent=2))
+        else:
+            if result.get("no_baseline"):
+                print("--incremental: no deepstate rows in DB yet; nothing to delta from.")
+            elif result.get("already_current"):
+                print(f"--incremental: already current through {result['last_date']}.")
+            else:
+                tag = "[DRY RUN] " if args.dry_run else ""
+                print(
+                    f"{tag}incremental: "
+                    f"inserted={result.get('total_inserted', 0)} "
+                    f"skipped={result.get('total_skipped', 0)} "
+                    f"failed={result.get('total_failed', 0)}"
+                )
+        if result.get("total_failed", 0) > 0 or result.get("fetch_errors", 0) > 0:
+            sys.exit(1)
+        return
 
     if args.date:
         dates = [args.date]
