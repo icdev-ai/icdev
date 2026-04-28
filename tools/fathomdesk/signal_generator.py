@@ -53,9 +53,9 @@ def generate(
 ) -> list[dict[str, Any]]:
     """Return signals that pass confidence and score gates."""
     t = thresholds if thresholds is not None else _THRESHOLDS
-    min_conf = float(t.get("min_confidence", _DEFAULTS["min_confidence"]))
-    min_score = float(t.get("min_score", _DEFAULTS["min_score"]))
-    max_n = int(t.get("max_signals", _DEFAULTS["max_signals"]))
+    min_conf = float(t.get("min_confidence", _THRESHOLDS["min_confidence"]))
+    min_score = float(t.get("min_score", _THRESHOLDS["min_score"]))
+    max_n = int(t.get("max_signals", _THRESHOLDS["max_signals"]))
 
     filtered = [
         s for s in signals
