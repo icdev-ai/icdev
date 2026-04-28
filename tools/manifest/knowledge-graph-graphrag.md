@@ -14,4 +14,5 @@
 | Disambiguator | tools/knowledge_graph/disambiguator.py | Entity disambiguation — find duplicates, merge entities, add aliases, resolve ambiguous labels | --find-duplicates, --merge, --add-alias, --resolve, --json | Disambiguation results |
 | Federation | tools/knowledge_graph/federation.py | Cross-project graph federation — federated search, shared entities, federated views, cross-project coverage | --search, --shared, --create-view, --coverage, --json | Federation results |
 | Temporal | tools/knowledge_graph/temporal.py | Temporal reasoning — time range queries, graph evolution, recent changes, stale entities, temporal diffs | --range, --evolution, --recent, --stale, --diff, --json | Temporal results |
+| RAG-KG Search API | tools/knowledge_graph/blueprint.py | Flask blueprint — hybrid RAG + Knowledge Graph search endpoint with classification filtering (CUI // SP-CTI); combines RAGRetriever + GraphRAGRetriever results | GET /api/rag-kg/search?q=&tenant_id=&classification=il2&top_k=10&include_kg=true&min_tier=warm | JSON {rag_results, kg_nodes, total, classification} |
 
