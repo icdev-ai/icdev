@@ -2645,33 +2645,42 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     instruction = _build_instruction(task_id, title, prompt_text, prompt_path)
     task_log = PROMPT_DIR / f"{task_id}.log"
 
-    exec_tier = tier_resolver.resolve_tiers().exec_tier
-    if exec_tier == tier_resolver.EXEC_GITLAB:
-        ok = _dispatch_gitlab(
-            task_id,
-            task.get("description", task.get("title", "")),
-            task.get("task_type", "chore"),
+    try:
+        import yaml as _yaml  # noqa: PLC0415
+        _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
+        with open(_cfg_path, encoding="utf-8") as _f:
+            _sc = _yaml.safe_load(_f) or {}
+        _fallback_chain = _sc.get("executor", {}).get(
+            "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
         )
-        if ok:
-            _dispatch_times[task_id] = datetime.now(timezone.utc)
-            print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
-        else:
-            print(f"  Kanban: GitLab dispatch failed for {task_id}, falling back to LLMRouter")
-            _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
-    elif exec_tier == tier_resolver.EXEC_OLLAMA_LOCAL:
-        ok = _dispatch_ollama_local(
-            task_id,
-            task.get("description", task.get("title", "")),
-            task.get("task_type", "chore"),
-        )
-        if ok:
-            print(f"  Kanban: dispatched {task_id} via Ollama local")
-        else:
-            print(f"  Kanban: Ollama local dispatch failed for {task_id}, falling back to LLMRouter")
-            _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
-    elif _claude_code_available():
-        _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
-    else:
+    except Exception:
+        _fallback_chain = ["claude_cli", "gitlab", "ollama_local"]
+
+    task_desc = task.get("description", task.get("title", ""))
+    task_type = task.get("task_type", "chore")
+
+    dispatched = False
+    for tier in _fallback_chain:
+        if tier == "claude_cli":
+            if _claude_code_available():
+                _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
+                dispatched = True
+                break
+        elif tier == "gitlab":
+            ok = _dispatch_gitlab(task_id, task_desc, task_type)
+            if ok:
+                _dispatch_times[task_id] = datetime.now(timezone.utc)
+                print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
+                dispatched = True
+                break
+        elif tier == "ollama_local":
+            ok = _dispatch_ollama_local(task_id, task_desc, task_type)
+            if ok:
+                print(f"  Kanban: dispatched {task_id} via Ollama local")
+                dispatched = True
+                break
+
+    if not dispatched:
         _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
 
 
