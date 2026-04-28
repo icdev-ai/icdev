@@ -65,7 +65,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, render_template, request, Response
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, Response, url_for
 
 from tools.db.storage import get_connection, is_pg
 from tools.intelligence.brief_generator import BRIEF_TYPES, BriefGenerator
@@ -421,6 +421,30 @@ def strategos_hitl():
         decision_types=decision_types,
         selected_status=selected_status,
     )
+
+
+@_bp.route("/hitl/action/<int:action_id>", methods=["POST"])
+def strategos_hitl_action(action_id: int):
+    decision = (request.form.get("decision") or "").strip().upper()
+    if decision not in ("APPROVE", "REJECT"):
+        flash("Invalid decision. Must be APPROVE or REJECT.", "danger")
+        return redirect(url_for("strategos.strategos_hitl"))
+    conn = get_connection()
+    try:
+        result = conn.execute(
+            "UPDATE sg_hitl_items SET status = ?, resolved_at = ? WHERE id = ?",
+            (decision.lower(), _now(), action_id),
+        )
+        conn.commit()
+        if result.rowcount == 0:
+            flash(f"Item {action_id} not found.", "warning")
+        else:
+            flash(f"Decision recorded: {decision}", "success")
+    except Exception as exc:
+        flash(f"Error updating item: {exc}", "danger")
+    finally:
+        conn.close()
+    return redirect(url_for("strategos.strategos_hitl"))
 
 
 @_bp.route("/pir")
