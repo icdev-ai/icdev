@@ -1637,6 +1637,49 @@ CREATE TABLE IF NOT EXISTS innovation_signals (
     classification   TEXT DEFAULT 'CUI'
 );
 CREATE INDEX IF NOT EXISTS idx_innovation_signals_hash ON innovation_signals(content_hash);
+CREATE TABLE IF NOT EXISTS pg_win_loss_records (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    outcome TEXT NOT NULL CHECK(outcome IN ('won', 'lost', 'no_award', 'cancelled')),
+    our_strengths TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS win_loss_analysis_runs (
+    id TEXT PRIMARY KEY,
+    run_at TEXT,
+    outcomes_analyzed INTEGER,
+    patterns_found INTEGER,
+    top_win_features TEXT,
+    top_loss_features TEXT,
+    result_json TEXT,
+    classification TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS win_loss_feature_impacts (
+    id TEXT PRIMARY KEY,
+    run_id TEXT,
+    feature_tag TEXT,
+    win_count INTEGER,
+    loss_count INTEGER,
+    win_rate REAL,
+    impact_score REAL,
+    innovation_signal_id TEXT,
+    analyzed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS creative_feature_gaps (
+    id TEXT PRIMARY KEY,
+    pain_point_id TEXT,
+    feature_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    requested_by_count INTEGER DEFAULT 0,
+    competitor_coverage TEXT DEFAULT '{}',
+    gap_score REAL DEFAULT 0.0,
+    market_demand REAL DEFAULT 0.0,
+    signal_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'identified',
+    metadata TEXT DEFAULT '{}',
+    discovered_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
 """
 
 # ---------------------------------------------------------------------------
