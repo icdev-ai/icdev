@@ -43,12 +43,16 @@ def load_thresholds(path: Path | None = None) -> dict[str, Any]:
         return dict(_DEFAULTS)
 
 
+# Loaded once at module initialization; callers may override per-call via generate(thresholds=…).
+_THRESHOLDS: dict[str, Any] = load_thresholds()
+
+
 def generate(
     signals: list[dict[str, Any]],
     thresholds: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Return signals that pass confidence and score gates."""
-    t = thresholds if thresholds is not None else load_thresholds()
+    t = thresholds if thresholds is not None else _THRESHOLDS
     min_conf = float(t.get("min_confidence", _DEFAULTS["min_confidence"]))
     min_score = float(t.get("min_score", _DEFAULTS["min_score"]))
     max_n = int(t.get("max_signals", _DEFAULTS["max_signals"]))
