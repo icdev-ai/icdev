@@ -990,17 +990,28 @@ def get_signals(
     ranked=True sorts by (composite_score * signal_decay_weight) DESC.
     """
     c = conn or get_conn()
-    order = "(composite_score * signal_decay_weight) DESC" if ranked else "created_at DESC"
-    if status:
-        rows = c.execute(
-            f"SELECT * FROM ad_signals WHERE status=? ORDER BY {order} LIMIT ?",
-            (status, limit),
-        ).fetchall()
+    if ranked:
+        if status:
+            rows = c.execute(
+                "SELECT * FROM ad_signals WHERE status=? ORDER BY (composite_score * signal_decay_weight) DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM ad_signals ORDER BY (composite_score * signal_decay_weight) DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     else:
-        rows = c.execute(
-            f"SELECT * FROM ad_signals ORDER BY {order} LIMIT ?",
-            (limit,),
-        ).fetchall()
+        if status:
+            rows = c.execute(
+                "SELECT * FROM ad_signals WHERE status=? ORDER BY created_at DESC LIMIT ?",
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = c.execute(
+                "SELECT * FROM ad_signals ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
