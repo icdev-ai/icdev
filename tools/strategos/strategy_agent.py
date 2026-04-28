@@ -528,6 +528,96 @@ class StrategyAgent:
             ))
         return coas
 
+    # ── Parallel RAG dispatcher ────────────────────────────────────────────
+
+    def _retrieve_rag_context(
+        self,
+        query: str,
+        theater: str = "unspecified",
+        top_k: int = _RAG_TOP_K,
+    ) -> dict[str, list[dict]]:
+        """Run doctrine corpus + historical event queries in parallel.
+
+        Fires two retrieval workers concurrently via ThreadPoolExecutor:
+          1. Doctrine worker — rag_vector + graphrag strategies via corrective_rag
+          2. Events worker  — source_scan strategy via corrective_rag, filtered
+             to sg_conflict_events rows
+
+        Returns {'doctrine_results': [...], 'event_results': [...]}.
+        Each list contains {content, source, id, score, metadata} dicts from
+        corrective_rag.parallel_retrieve merged_documents.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
+        full_query = (
+            f"{theater} {query}".strip()
+            if theater and theater != "unspecified"
+            else query
+        )[:500]
+
+        def _fetch_doctrine() -> list[dict]:
+            try:
+                from tools.rag.corrective_rag import parallel_retrieve
+
+                result = parallel_retrieve(
+                    query=full_query,
+                    top_k=top_k,
+                    profile=_RAG_PROFILE,
+                    aggregate=False,
+                    sources=["rag_vector", "graphrag"],
+                )
+                return result.get("merged_documents", [])
+            except Exception as exc:
+                logger.debug("Doctrine worker failed: %s", exc)
+                return []
+
+        def _fetch_events() -> list[dict]:
+            try:
+                from tools.rag.corrective_rag import parallel_retrieve
+
+                result = parallel_retrieve(
+                    query=full_query,
+                    top_k=top_k,
+                    profile=_RAG_PROFILE,
+                    aggregate=False,
+                    sources=["source_scan"],
+                )
+                return [
+                    d for d in result.get("merged_documents", [])
+                    if "sg_conflict_events" in d.get("source", "")
+                    or "conflict" in d.get("source", "").lower()
+                ]
+            except Exception as exc:
+                logger.debug("Events worker failed: %s", exc)
+                return []
+
+        from concurrent.futures import wait as _futures_wait
+
+        doctrine_results: list[dict] = []
+        event_results: list[dict] = []
+
+        # shutdown(wait=False) so the executor exit doesn't block until threads finish;
+        # futures_wait caps the combined wall-clock window to 3 seconds.
+        executor = ThreadPoolExecutor(max_workers=2)
+        try:
+            f_doctrine = executor.submit(_fetch_doctrine)
+            f_events = executor.submit(_fetch_events)
+            done, _ = _futures_wait([f_doctrine, f_events], timeout=2.9)
+            if f_doctrine in done:
+                try:
+                    doctrine_results = f_doctrine.result()
+                except Exception as exc:
+                    logger.debug("Doctrine result error: %s", exc)
+            if f_events in done:
+                try:
+                    event_results = f_events.result()
+                except Exception as exc:
+                    logger.debug("Events result error: %s", exc)
+        finally:
+            executor.shutdown(wait=False)
+
+        return {"doctrine_results": doctrine_results, "event_results": event_results}
+
 
 # ── Deterministic stub COAs (Ollama unavailable) ──────────────────────────────
 
@@ -641,7 +731,7 @@ def _main() -> None:
     if args.json:
         print(result.to_json())
     else:
-        print(f"\n── Strategy Agent — COA Report ─────────────────────────────────")
+        print("\n── Strategy Agent — COA Report ─────────────────────────────────")
         print(f"Theater  : {result.theater}")
         print(f"Model    : {result.model_used}  RAG={'ON (' + str(result.rag_doc_count) + ' docs)' if result.rag_active else 'STUB'}")
         print(f"Latency  : {result.latency_ms}ms")
