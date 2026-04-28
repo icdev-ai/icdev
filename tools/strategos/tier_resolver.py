@@ -25,7 +25,7 @@ import json
 import logging
 import os
 import time
-import urllib.request
+import requests
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -77,9 +77,8 @@ def gitlab_reachable() -> bool:
         if not gitlab_url:
             return False
         url = f"{gitlab_url}/api/v4/version"
-        req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-TierResolver/1.0"})
-        with urllib.request.urlopen(req, timeout=3) as resp:  # noqa: S310
-            return resp.status == 200
+        resp = requests.get(url, headers={"User-Agent": "ICDEV-TierResolver/1.0"}, timeout=3)
+        return resp.status_code == 200
     except Exception:
         return False
 
@@ -97,8 +96,8 @@ def file_inbox_has_data() -> int:
 def _ollama_reachable() -> bool:
     try:
         base = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434").rstrip("/")
-        with urllib.request.urlopen(f"{base}/api/tags", timeout=3) as resp:  # noqa: S310
-            return resp.status == 200
+        resp = requests.get(f"{base}/api/tags", timeout=3)
+        return resp.status_code == 200
     except Exception:
         return False
 
