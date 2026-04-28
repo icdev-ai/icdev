@@ -61,6 +61,10 @@ from tools.dashboard.findings_aggregator import (  # noqa: E402
 )
 # P1.1: Centralized API blueprint registration (replaces 50+ individual imports)
 from tools.dashboard.api import register_api_blueprints  # noqa: E402
+try:
+    from tools.usage_analytics.event_collector import track_request as _track_request
+except ImportError:
+    _track_request = None
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
@@ -8480,6 +8484,9 @@ def create_app() -> Flask:
             return jsonify({"observations": observations})
         except Exception as exc:
             return jsonify({"observations": [], "error": str(exc)})
+
+    if _track_request is not None:
+        _track_request(app)
 
     return app
 
