@@ -42,6 +42,11 @@ def test_load_profile_il4_returns_correct_thresholds():
 # ---------------------------------------------------------------------------
 # Test 2 — load_profile('invalid') raises ValueError
 # ---------------------------------------------------------------------------
+def test_load_profile_invalid_raises_valueerror():
+    with pytest.raises(ValueError, match="Unknown IL tier"):
+        load_profile("invalid_tier")
+
+
 def test_load_profile_invalid_tier_raises_value_error():
     with pytest.raises(ValueError, match="Unknown IL tier"):
         load_profile("invalid")

@@ -56,6 +56,11 @@ For each COA provide:
 - acceptability: 0.0-1.0 (is the cost justified by the expected gain)
 - suitability: 0.0-1.0 (does it accomplish the mission)
 - distinguishing_factor: what makes this COA unique vs the others
+- doctrine_basis: cite one applicable doctrine reference (FM 3-0, JP 3-0, Clausewitz, etc.)
+- historical_analogy: name one historical case with similar conditions and what lesson it provides
+
+If DOCTRINE CONTEXT or HISTORICAL EVENTS are present in the intelligence context, ground
+your doctrine_basis and historical_analogy citations in those retrieved passages.
 
 Return ONLY a valid JSON object with key "courses_of_action" containing a list of COA objects.
 Do not include markdown fences or commentary outside the JSON.
@@ -106,6 +111,8 @@ class CourseOfAction:
     acceptability: float = 0.5          # 0.0–1.0
     suitability: float = 0.5             # 0.0–1.0
     distinguishing_factor: str = ""
+    doctrine_basis: str = ""             # FM/JP/Clausewitz citation grounding this COA
+    historical_analogy: str = ""         # historical case with parallel conditions
 
     @property
     def composite_score(self) -> float:
@@ -516,6 +523,8 @@ class StrategyAgent:
                 acceptability=float(item.get("acceptability", 0.5)),
                 suitability=float(item.get("suitability", 0.5)),
                 distinguishing_factor=str(item.get("distinguishing_factor", "")),
+                doctrine_basis=str(item.get("doctrine_basis", "")),
+                historical_analogy=str(item.get("historical_analogy", "")),
             ))
         return coas
 
