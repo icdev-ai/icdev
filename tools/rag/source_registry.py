@@ -583,6 +583,28 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "filter": "graph_id = 'kg-icdev-self-awareness' AND entity_type = 'tool_category'",
         "description": "ICDEV tool category groupings (manifest.md section headers)",
     },
+
+    # --- Strategos Conflict Intelligence ---
+    "sg_corpus_documents": {
+        "table": "sg_corpus_documents",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["title", "content"],
+        "metadata_cols": ["source_type", "published_at", "url"],
+        "priority": 1,
+        "mode": "realtime",
+        "description": "Strategos doctrine corpus — military doctrine and historical documents",
+    },
+    "sg_conflict_events": {
+        "table": "sg_conflict_events",
+        "db": "icdev",
+        "pk": "id",
+        "content_cols": ["description", "event_type", "actor1", "actor2"],
+        "metadata_cols": ["theater_id", "severity", "event_ts", "source"],
+        "priority": 1,
+        "mode": "realtime",
+        "description": "Strategos historical conflict events (GDELT, STIX, ACLED, frontlines)",
+    },
 }
 
 
