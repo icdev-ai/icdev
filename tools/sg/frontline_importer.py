@@ -58,6 +58,58 @@ def _url_template() -> str:
     return os.environ.get("DEEPSTATE_URL_TEMPLATE", _DEFAULT_URL_TEMPLATE)
 
 
+def fetch_deepstate_geojson(snapshot_date: str) -> list:
+    """Download and validate DeepState GeoJSON for *snapshot_date* (YYYY-MM-DD).
+
+    Enforces https:// scheme, validates GeoJSON FeatureCollection structure,
+    and returns the features list.
+
+    Args:
+        snapshot_date: Date string in YYYY-MM-DD format.
+
+    Returns:
+        List of GeoJSON Feature dicts.
+
+    Raises:
+        ValueError: If the URL template does not use https:// or the response
+                    is not a valid GeoJSON FeatureCollection.
+        requests.HTTPError: On non-2xx HTTP response.
+        requests.RequestException: On network-level failure.
+        json.JSONDecodeError: If the response body is not valid JSON.
+    """
+    url = _url_template().format(date=snapshot_date)
+    if not url.startswith("https://"):
+        raise ValueError(f"URL must use https:// scheme; got: {url!r}")
+
+    resp = requests.get(
+        url,
+        headers={"Accept": "application/geo+json,application/json,*/*"},
+        timeout=30,
+    )
+    resp.raise_for_status()
+
+    try:
+        fc = resp.json()
+    except ValueError as exc:
+        raise json.JSONDecodeError(
+            f"Response body is not valid JSON: {exc}", doc="", pos=0
+        ) from exc
+
+    if not isinstance(fc, dict):
+        raise ValueError(f"Expected a JSON object; got {type(fc).__name__}")
+    if fc.get("type") != "FeatureCollection":
+        raise ValueError(
+            f"Expected GeoJSON type 'FeatureCollection'; got {fc.get('type')!r}"
+        )
+    features = fc.get("features")
+    if not isinstance(features, list):
+        raise ValueError(
+            f"Expected 'features' to be a list; got {type(features).__name__}"
+        )
+
+    return features
+
+
 def _fetch_geojson(snapshot_date: str) -> dict:
     """Download GeoJSON for a snapshot date. Returns parsed dict."""
     url = _url_template().format(date=snapshot_date)
