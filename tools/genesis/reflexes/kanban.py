@@ -2072,6 +2072,9 @@ def _claude_code_available() -> bool:
 # can treat them uniformly.
 _running: Dict[str, Any] = {}
 
+# Semaphore counter for EXEC_OLLAMA_LOCAL concurrent dispatch limit.
+_ollama_running_count: int = 0
+
 
 class _LLMTaskHandle:
     """Popen-compatible handle around a threaded LLMRouter.invoke() call.
@@ -2459,6 +2462,62 @@ def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
     return False
 
 
+def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:
+    """Run an Ollama-backed anvil script directly for the EXEC_OLLAMA_LOCAL tier.
+
+    Executes tools/anvil/{task_type}.py synchronously with LLM_PROVIDER=ollama.
+    A module-level semaphore (_ollama_running_count) limits concurrent Ollama
+    dispatches to OLLAMA_MAX_CONCURRENT (default 1) to avoid VRAM contention.
+    Returns True on success (returncode==0), False on semaphore limit, timeout,
+    or subprocess failure.
+    """
+    import os as _os
+
+    global _ollama_running_count
+
+    _max_concurrent = int(_os.getenv("OLLAMA_MAX_CONCURRENT", "1"))
+    if _ollama_running_count >= _max_concurrent:
+        logger.warning(
+            "kanban: Ollama concurrency limit %d reached, skipping %s",
+            _max_concurrent,
+            task_id,
+        )
+        return False
+
+    anvil_script = f"tools/anvil/{task_type}.py"
+    env = {**_os.environ, "LLM_PROVIDER": "ollama"}
+
+    _ollama_running_count += 1
+    try:
+        result = subprocess.run(
+            [sys.executable, anvil_script, "--json", "--", task_desc],
+            env=env,
+            capture_output=True,
+            timeout=600,
+            cwd=str(BASE_DIR),
+        )
+        if result.returncode != 0:
+            stderr_snippet = result.stderr.decode("utf-8", errors="replace")[:500]
+            logger.warning(
+                "kanban: Ollama local dispatch failed for %s (exit %d): %s",
+                task_id,
+                result.returncode,
+                stderr_snippet,
+            )
+            return False
+        _dispatch_times[task_id] = datetime.now(timezone.utc)
+        logger.info("kanban: dispatched %s via Ollama local anvil (%s)", task_id, anvil_script)
+        return True
+    except subprocess.TimeoutExpired:
+        logger.warning("kanban: Ollama local dispatch timed out for %s", task_id)
+        return False
+    except Exception as exc:
+        logger.warning("kanban: Ollama local dispatch error for %s: %s", task_id, exc)
+        return False
+    finally:
+        _ollama_running_count -= 1
+
+
 def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     """Check if a gap task is already resolved BEFORE dispatching Claude.
 
@@ -2598,6 +2657,17 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
         else:
             print(f"  Kanban: GitLab dispatch failed for {task_id}, falling back to LLMRouter")
+            _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
+    elif exec_tier == tier_resolver.EXEC_OLLAMA_LOCAL:
+        ok = _dispatch_ollama_local(
+            task_id,
+            task.get("description", task.get("title", "")),
+            task.get("task_type", "chore"),
+        )
+        if ok:
+            print(f"  Kanban: dispatched {task_id} via Ollama local")
+        else:
+            print(f"  Kanban: Ollama local dispatch failed for {task_id}, falling back to LLMRouter")
             _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
     elif _claude_code_available():
         _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
