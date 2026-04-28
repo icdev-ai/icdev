@@ -10,6 +10,31 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from pathlib import Path
+
+import yaml
+
+_TARGETS_PATH = Path(__file__).parents[3] / "args" / "greek_targets.yaml"
+
+_DEFAULTS: dict = {
+    "delta_target": 0.0,
+    "delta_tolerance": 0.10,
+    "vega_max_per_10k": 0.05,
+    "theta_floor": -0.02,
+}
+
+
+def load_greek_targets(path: Path | None = None) -> dict:
+    """Load greek target thresholds from YAML, falling back to _DEFAULTS."""
+    p = path if path is not None else _TARGETS_PATH
+    try:
+        with open(p, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        if not isinstance(data, dict):
+            return dict(_DEFAULTS)
+        return {**_DEFAULTS, **data}
+    except (FileNotFoundError, yaml.YAMLError, OSError):
+        return dict(_DEFAULTS)
 
 
 def compute_portfolio_greeks(
