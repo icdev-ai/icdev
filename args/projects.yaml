@@ -1291,3 +1291,45 @@ projects:
   - key: des
     title: DES Execution Audit Trail (migration 065 → kanban scheduler)
     priority: critical
+- key: pint
+  name: Product Intelligence — 5 New Engines + Universal Orchestrator
+  description: >-
+    Build five new product-discovery engines and one universal orchestrator that
+    calls all eight. New engines: (1) Regulatory Foresight — scans proposed legislation
+    (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub, DoD DARS) before
+    mandates land; (2) Usage Analytics — instruments dashboard routes and CLI invocations
+    to reveal actual feature adoption; (3) Win/Loss Intelligence — correlates GovCon
+    proposal outcomes with ICDEV feature presence to surface roadmap priorities; (4) Voice
+    of Customer (VOC) — JTBD synthesis from first-party support tickets, NPS verbatims,
+    and debrief documents; (5) Technology Radar — tracks adopt/trial/assess/hold ring
+    movements for frameworks and tools. Universal Orchestrator (tools/product_intel/
+    orchestrator.py) invokes all eight engines in sequence, runs the federation router,
+    stores a consolidated run record, and exposes --run-all and --daemon modes.
+  task_prefix: pint-
+  default_open: true
+  briefs:
+  - 'Regulatory Foresight: config + migration 066 + source_scanner + foresight_engine + cross-register + tests — pint-regfore-01..09'
+  - 'Usage Analytics: config + migration 067 + event_collector + analytics_engine + dashboard wire + tests — pint-usage-01..08'
+  - 'Win/Loss Intelligence: config + migration 068 + pattern_analyzer + win_loss_engine + cross-register + tests — pint-winloss-01..08'
+  - 'VOC Engine: config + migration 069 + transcript_ingestor + voc_engine + cross-register + tests — pint-voc-01..08'
+  - 'Tech Radar: config + migration 070 + source_scanner + radar_engine + cross-register + tests — pint-techrad-01..08'
+  - 'Universal Orchestrator: config + migration 071 + engine_registry + orchestrator + federation wire + hook + conftest + tests — pint-univ-01..10'
+  epics:
+  - key: regfore
+    title: Regulatory Foresight Engine (proposed legislation scanner)
+    priority: critical
+  - key: usage
+    title: Usage Analytics Engine (feature adoption telemetry)
+    priority: high
+  - key: winloss
+    title: Win/Loss Intelligence Engine (GovCon outcome correlation)
+    priority: high
+  - key: voc
+    title: Voice of Customer Engine (JTBD first-party synthesis)
+    priority: high
+  - key: techrad
+    title: Technology Radar Engine (adopt/trial/assess/hold tracker)
+    priority: medium
+  - key: univ
+    title: Universal Product Intelligence Orchestrator (all 8 engines)
+    priority: critical
