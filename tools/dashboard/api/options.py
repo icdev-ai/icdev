@@ -225,10 +225,6 @@ def iv_skew_query():
         import yfinance as yf
 
         ticker_obj = yf.Ticker(ticker)
-        try:
-            spot = float(ticker_obj.fast_info.last_price)
-        except Exception:
-            spot = 0.0
 
         expirations = list(ticker_obj.options or [])
         if not expirations:
