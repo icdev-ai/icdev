@@ -29,6 +29,7 @@ class ReflexEntry(NamedTuple):
     tier: str
     interval_h: float
     description: str
+    on_demand: bool = False
 
 
 REGISTRY: List[ReflexEntry] = [
@@ -47,6 +48,9 @@ REGISTRY: List[ReflexEntry] = [
                 "Background OSINT collection from RSS, ACLED, Telegram, and file inbox"),
     ReflexEntry("strategos.signal_scout",    STRATEGOS, 2.0,
                 "Score and prioritize raw signals into sg_prioritized_signals"),
+    ReflexEntry("strategos.pattern_learner", STRATEGOS, 24.0,
+                "RL weight-adjustment loop: aggregate annotations and update signal-scoring deltas",
+                on_demand=True),
 
     # ── DOMAIN ────────────────────────────────────────────────────────────────
     ReflexEntry("market",                     DOMAIN, 1.0,  "Market data refresh and signal detection"),
