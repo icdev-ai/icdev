@@ -8374,6 +8374,32 @@ CREATE TABLE IF NOT EXISTS pg_win_loss_lessons (
     created_at      TEXT NOT NULL
 );
 
+-- Win/loss analysis runs (win_loss_engine.py — Phase B)
+CREATE TABLE IF NOT EXISTS win_loss_analysis_runs (
+    id                  TEXT PRIMARY KEY,
+    run_at              TEXT,
+    outcomes_analyzed   INTEGER,
+    patterns_found      INTEGER,
+    top_win_features    TEXT,
+    top_loss_features   TEXT,
+    result_json         TEXT,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
+
+-- Win/loss feature impact scores per run (win_loss_engine.py — Phase B)
+CREATE TABLE IF NOT EXISTS win_loss_feature_impacts (
+    id                      TEXT PRIMARY KEY,
+    run_id                  TEXT,
+    feature_tag             TEXT,
+    win_count               INTEGER,
+    loss_count              INTEGER,
+    win_rate                REAL,
+    impact_score            REAL,
+    innovation_signal_id    TEXT,
+    analyzed_at             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_wl_feature_impacts_run ON win_loss_feature_impacts(run_id);
+
 -- CRM accounts (R4 Engage — Phase C)
 CREATE TABLE IF NOT EXISTS pg_crm_accounts (
     id              TEXT PRIMARY KEY,
