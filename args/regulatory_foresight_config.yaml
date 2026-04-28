@@ -1,0 +1,131 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ Regulatory Foresight Configuration
+# Tracks legislative and regulatory signals across Gov/DoD domains:
+# cybersecurity, AI, federal IT, CMMC, FedRAMP, zero-trust, supply chain
+
+# =========================================================================
+# Data Sources
+# =========================================================================
+sources:
+
+  congress_gov:
+    enabled: true
+    description: "Congress.gov bill search API — tracks pending legislation"
+    api: "https://api.congress.gov/v3"
+    keywords:
+      - cybersecurity
+      - artificial intelligence
+      - federal IT
+      - CMMC
+      - FedRAMP
+      - zero-trust
+      - supply chain
+    max_results_per_keyword: 50
+    bill_statuses:
+      - introduced
+      - passed_house
+      - passed_senate
+      - enacted
+    rate_limit:
+      requests_per_hour: 60
+      burst: 10
+      delay_between_requests_seconds: 2
+
+  regulations_gov:
+    enabled: true
+    description: "Regulations.gov docket search — open comment periods and final rules"
+    api: "https://api.regulations.gov/v4"
+    agencies:
+      - DoD
+      - DHS
+      - NIST
+      - OMB
+      - GSA
+    document_types:
+      - Proposed Rule
+      - Final Rule
+      - Notice
+      - Request for Information
+    max_results_per_agency: 50
+    rate_limit:
+      requests_per_hour: 30
+      burst: 5
+      delay_between_requests_seconds: 3
+
+  nist_csrc:
+    enabled: true
+    description: "NIST CSRC draft Special Publications endpoint"
+    api: "https://csrc.nist.gov/publications/search"
+    tags:
+      - 800-53
+      - 800-171
+      - 800-218
+      - AI RMF
+    statuses:
+      - draft
+      - final
+      - withdrawn
+    max_results: 50
+    rate_limit:
+      requests_per_hour: 20
+      burst: 5
+      delay_between_requests_seconds: 5
+
+  fedramp_github:
+    enabled: true
+    description: "FedRAMP GitHub repo — tracks issues and releases for policy changes"
+    api: "https://api.github.com"
+    repo: "FedRAMP/fedramp-gov"
+    track:
+      - issues
+      - releases
+    max_issues: 100
+    max_releases: 50
+    labels_of_interest:
+      - policy
+      - guidance
+      - baseline
+      - rev5
+    rate_limit:
+      requests_per_hour: 60
+      burst: 10
+      delay_between_requests_seconds: 1
+
+  dod_dars:
+    enabled: true
+    description: "Defense Acquisition Regulations System — open comment periods on DFARS/PGI"
+    api: "https://www.acquisition.gov/dfars"
+    track:
+      - open_comment_periods
+      - interim_rules
+      - final_rules
+      - deviations
+    max_results: 50
+    rate_limit:
+      requests_per_hour: 20
+      burst: 5
+      delay_between_requests_seconds: 3
+
+# =========================================================================
+# Signal Scoring Weights
+# =========================================================================
+score_weights:
+  time_to_mandate: 0.40      # urgency: how soon this becomes mandatory
+  icdev_impact: 0.35         # how directly this affects ICDEV™ deliverables
+  blast_radius: 0.25         # breadth: number of programs/agencies affected
+
+# =========================================================================
+# Signal Thresholds
+# =========================================================================
+auto_signal_threshold: 0.70  # composite score >= 0.70 triggers auto-signal to kanban
+
+# =========================================================================
+# Scheduling
+# =========================================================================
+scan_interval_hours: 24
+
+quiet_hours:
+  enabled: true
+  start: "22:00"
+  end: "06:00"
+  timezone: "US/Eastern"
