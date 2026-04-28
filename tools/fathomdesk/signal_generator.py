@@ -22,6 +22,9 @@ _DEFAULTS: dict[str, Any] = {
     "max_signals": 20,
     "long_bias": 0.55,
     "short_bias": 0.45,
+    "sentiment": 0.6,
+    "macro": 0.65,
+    "technical": 0.55,
 }
 
 
@@ -32,6 +35,9 @@ def load_thresholds(path: Path | None = None) -> dict[str, Any]:
         with target.open("r", encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh) or {}
         return {**_DEFAULTS, **cfg.get("thresholds", {})}
+    except FileNotFoundError:
+        logger.warning("signal_thresholds.yaml not found — using defaults")
+        return dict(_DEFAULTS)
     except Exception as exc:
         logger.warning("signal_thresholds.yaml unreadable (%s) — using defaults", exc)
         return dict(_DEFAULTS)
