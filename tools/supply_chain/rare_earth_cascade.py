@@ -577,6 +577,134 @@ def run_scenario(
 
 
 # ---------------------------------------------------------------------------
+# Dual-cascade scenario (RE + semiconductor combined)
+# ---------------------------------------------------------------------------
+
+# Map DEFENSE_PROGRAMS category → system type used by semiconductor_chain
+_CATEGORY_TO_SYSTEM_TYPE: dict[str, str] = {
+    "aircraft": "aviation",
+    "rotary": "aviation",
+    "tiltrotor": "aviation",
+    "uas": "uas",
+    "ground": "ground",
+    "naval": "naval",
+    "missile": "missile_defense",
+    "sensor": "sensor",
+    "munition": "munition",
+}
+
+_DAYS_PER_MONTH: float = 30.44
+
+
+def dual_cascade_scenario(
+    re_severity: str = "critical",
+    semi_severity: str = "critical",
+    stockpile: dict[str, dict[str, Any]] | None = None,
+    programs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Combine rare-earth and semiconductor disruption cascades.
+
+    Runs both supply-chain disruption models independently, then merges
+    results to compute US military endurance by system type.  Endurance is
+    the minimum of the two constraints — whichever supply chain fails first
+    limits operational capability.
+
+    Args:
+        re_severity:   Severity for the RE embargo ('low'/'moderate'/'high'/'critical').
+        semi_severity: Severity for the semiconductor disruption (same scale).
+        stockpile:     Override RE stockpile data (testing).
+        programs:      Override defense program catalog (testing).
+
+    Returns:
+        {
+            'scenario': 'dual_cascade_re_semiconductor',
+            're_severity': str,
+            'semi_severity': str,
+            'endurance_days': {                  # combined worst-case per type
+                '<system_type>': int,
+                ...                              # 7 types: aviation, naval,
+            },                                   # missile_defense, ground,
+            'system_detail': {                   # uas, sensor, munition
+                '<system_type>': {
+                    'endurance_days': int,
+                    're_endurance_days': int,
+                    'semi_endurance_days': int,
+                    'limiting_factor': 'rare_earth' | 'semiconductor',
+                },
+            },
+            'blast_radius': {
+                're': int,
+                'semiconductor': int,
+            },
+            're_result': dict,       # full run_scenario() output
+            'semi_result': dict,     # full semiconductor_chain.run_scenario() output
+        }
+
+    Raises:
+        ValueError: unknown severity for either model.
+    """
+    from tools.supply_chain import semiconductor_chain  # local import avoids circular dep
+
+    # Run both disruption models
+    re_result = run_scenario(
+        impact="China RE embargo",
+        severity=re_severity,
+        stockpile=stockpile,
+        programs=programs,
+    )
+    semi_result = semiconductor_chain.run_scenario(
+        scenario="Taiwan strait contingency",
+        severity=semi_severity,
+    )
+
+    prog_list = programs or DEFENSE_PROGRAMS
+
+    # RE worst-case depletion per system type (minimum months across all programs)
+    re_by_type: dict[str, float] = {}
+    for prog in prog_list:
+        stype = _CATEGORY_TO_SYSTEM_TYPE.get(prog["category"], prog["category"])
+        months = re_result["depletion_times"].get(prog["id"], float("inf"))
+        if stype not in re_by_type or months < re_by_type[stype]:
+            re_by_type[stype] = months
+
+    # Semiconductor worst-case depletion per system type (already per-type)
+    semi_by_type: dict[str, float] = semi_result["depletion_months_by_system"]
+
+    # Merge: combined endurance = min(RE, semi) per type
+    all_types = sorted(set(re_by_type) | set(semi_by_type))
+    system_detail: dict[str, dict[str, Any]] = {}
+    for stype in all_types:
+        re_mo = re_by_type.get(stype, float("inf"))
+        semi_mo = semi_by_type.get(stype, float("inf"))
+        combined_mo = min(re_mo, semi_mo)
+        limiting = "rare_earth" if re_mo <= semi_mo else "semiconductor"
+        system_detail[stype] = {
+            "endurance_days": round(combined_mo * _DAYS_PER_MONTH),
+            "re_endurance_days": (
+                round(re_mo * _DAYS_PER_MONTH) if re_mo < float("inf") else None
+            ),
+            "semi_endurance_days": (
+                round(semi_mo * _DAYS_PER_MONTH) if semi_mo < float("inf") else None
+            ),
+            "limiting_factor": limiting,
+        }
+
+    return {
+        "scenario": "dual_cascade_re_semiconductor",
+        "re_severity": re_severity.lower().strip(),
+        "semi_severity": semi_severity.lower().strip(),
+        "endurance_days": {k: v["endurance_days"] for k, v in system_detail.items()},
+        "system_detail": system_detail,
+        "blast_radius": {
+            "re": re_result["blast_radius"],
+            "semiconductor": semi_result["blast_radius"],
+        },
+        "re_result": re_result,
+        "semi_result": semi_result,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
