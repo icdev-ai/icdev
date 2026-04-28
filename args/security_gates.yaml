@@ -1310,3 +1310,17 @@ osv_scanner:
   warn_on_high: true
   target: "requirements.txt"
   binary_required: false  # graceful degradation when binary absent (air-gap)
+
+# Theater Detector Gate (SA-11, SI-3)
+# Detects security theater — measures that appear protective but lack substance.
+# Maps to NIST SA-11 (Developer Testing) and SI-3 (Malicious Code Protection).
+theater_detector:
+  description: "Detects security theater — nominal controls with no substantive enforcement"
+  blocking:
+    - block_severity
+  warning:
+    - warn_severity
+  thresholds:
+    max_blocking_files: 0
+    max_warn_files: 5
+    min_clean_pct: 80
