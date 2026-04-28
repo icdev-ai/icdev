@@ -11,6 +11,12 @@ from tools.awareness.value_scorer import annotate_tasks_with_value
 from tools.db.storage import get_connection
 from tools.dashboard.sse_manager import sse_manager
 
+try:
+    from tools.kanban.des_audit_logger import DESAuditLogger as _DESAuditLogger
+    _des_logger = _DESAuditLogger()
+except Exception:
+    _des_logger = None
+
 kanban_api = Blueprint("kanban_api", __name__, url_prefix="/api/kanban")
 
 
@@ -906,9 +912,15 @@ def move_task(task_id):
                         ),
                     }), 400
                 _log_verification_bypass(conn, task_id, bypass_reason)
+                try:
+                    if _des_logger:
+                        _des_logger.log_gate_override(task_id, reason=bypass_reason, operator="operator")
+                except Exception:
+                    pass
             else:
                 latest = _latest_verification(conn, task_id)
-                if not _verification_passed(latest):
+                passed = _verification_passed(latest)
+                if not passed:
                     reason = (latest or {}).get("reason") or "no verification row"
                     return jsonify({
                         "error": "verification_required",
@@ -922,6 +934,16 @@ def move_task(task_id):
                         "last_verification": latest,
                         "last_reason": reason,
                     }), 409
+                try:
+                    if _des_logger:
+                        _des_logger.log_verification(task_id, signals={
+                            "codelens": (latest or {}).get("codelens_passed"),
+                            "coherence": (latest or {}).get("coherence_passed"),
+                            "e2e": (latest or {}).get("e2e_passed"),
+                            "passed": passed,
+                        })
+                except Exception:
+                    pass
 
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
