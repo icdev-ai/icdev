@@ -211,8 +211,8 @@ def _query_sg_knowledge(
         # Query sg_corpus_documents
         col_expr = "COALESCE(title, '') || ' ' || COALESCE(content, '')"
         where_sql, params = _or_like(col_expr, key_terms)
-        sql = (  # nosec B608 — table/column names are internal constants
-            f"SELECT id, title, content FROM sg_corpus_documents "
+        sql = (
+            f"SELECT id, title, content FROM sg_corpus_documents "  # nosec B608
             f"WHERE {where_sql} LIMIT ?"
         )
         doctrine_docs: list[dict] = []
@@ -235,8 +235,8 @@ def _query_sg_knowledge(
         # Query sg_conflict_events — description is most populated column
         col_expr2 = "COALESCE(description, '') || ' ' || COALESCE(event_type, '')"
         where_sql2, params2 = _or_like(col_expr2, key_terms)
-        sql2 = (  # nosec B608 — table/column names are internal constants
-            f"SELECT id, description, event_type, severity, event_ts FROM sg_conflict_events "
+        sql2 = (
+            f"SELECT id, description, event_type, severity, event_ts FROM sg_conflict_events "  # nosec B608
             f"WHERE {where_sql2} ORDER BY event_ts DESC NULLS LAST LIMIT ?"
         )
         event_docs: list[dict] = []
