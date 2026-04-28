@@ -159,67 +159,16 @@
   .macro-loading { color: var(--text-dim, #4a4a60); font-size: 0.78rem; padding: 8px 0; }
   .macro-error   { color: #f06375; font-size: 0.78rem; padding: 8px 0; }
 
-  /* IV Skew & Term Structure panel */
-  .iv-panel-section { margin-top: 8px; }
-  .iv-panel-heading {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--text-secondary, #a0a0b8);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    margin-bottom: 14px;
-  }
-  .iv-ticker-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 14px;
-  }
-  .iv-ticker-input {
-    background: var(--bg-input, #0f1829);
-    border: 1px solid var(--border-color, #2a2a40);
-    color: var(--text-primary, #e0e0f0);
-    padding: 5px 10px;
-    border-radius: 5px;
-    font-size: 13px;
-    font-weight: 600;
-    text-transform: uppercase;
-    width: 80px;
-  }
-  .iv-ticker-input:focus { outline: 2px solid #58a6ff; }
-  .iv-load-btn {
-    background: #238636;
-    color: #fff;
-    border: none;
-    padding: 5px 12px;
-    border-radius: 5px;
-    font-size: 12px;
-    cursor: pointer;
-  }
-  .iv-load-btn:hover { background: #2ea043; }
-  .iv-charts-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-  }
-  @media (max-width: 768px) { .iv-charts-row { grid-template-columns: 1fr; } }
-  .iv-chart-card {
+  /* Placeholder content below the panel */
+  .an-placeholder {
     background: var(--bg-card, #16213e);
     border: 1px solid var(--border-color, #2a2a40);
     border-radius: 8px;
-    padding: 14px;
+    padding: 40px;
+    text-align: center;
+    color: var(--text-dim, #4a4a60);
+    font-size: 0.85rem;
   }
-  .iv-chart-card h3 {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted, #6c6c80);
-    margin: 0 0 10px 0;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .iv-chart-wrap { position: relative; height: 200px; }
-  .iv-chart-status { color: var(--text-dim, #4a4a60); font-size: 11px; margin-top: 6px; min-height: 14px; }
-  .iv-chart-status.err { color: #f06375; }
 </style>
 {% endblock %}
 
@@ -241,117 +190,14 @@
     </div>
   </div>
 
-  <!-- IV Skew & Term Structure -->
-  <div class="iv-panel-section">
-    <div class="iv-panel-heading">Options — IV Skew &amp; Term Structure</div>
-    <div class="iv-ticker-bar">
-      <input id="ivTickerInput" class="iv-ticker-input" type="text" value="SPY" placeholder="AAPL" maxlength="10" />
-      <button class="iv-load-btn" onclick="loadIVPanel()">Load</button>
-      <span id="ivSpotLabel" style="color:var(--text-muted,#6c6c80);font-size:12px;"></span>
-    </div>
-    <div class="iv-charts-row">
-      <div class="iv-chart-card">
-        <h3>IV Skew — Nearest Expiry</h3>
-        <div class="iv-chart-wrap"><canvas id="skewCanvas"></canvas></div>
-        <div id="skewStatus" class="iv-chart-status">Loading…</div>
-      </div>
-      <div class="iv-chart-card">
-        <h3>IV Term Structure</h3>
-        <div class="iv-chart-wrap"><canvas id="termCanvas"></canvas></div>
-        <div id="termStatus" class="iv-chart-status">Loading…</div>
-      </div>
-    </div>
+  <!-- Placeholder for future analysis modules -->
+  <div class="an-placeholder">
+    Additional analysis modules will appear here.
   </div>
 </div>
 {% endblock %}
 
-{% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
-<script>
-// ── IV Skew & Term Structure ──────────────────────────────────────────────────
-(function () {
-  var skewChart = null;
-  var termChart = null;
-  var CHART_OPTS = {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { labels: { color: '#8b949e', font: { size: 11 } } } },
-    scales: {
-      x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
-      y: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
-    },
-  };
-
-  function ivTicker() {
-    return (document.getElementById('ivTickerInput').value || 'SPY').trim().toUpperCase();
-  }
-
-  async function loadSkew(ticker) {
-    var st = document.getElementById('skewStatus');
-    st.textContent = 'Loading…'; st.className = 'iv-chart-status';
-    try {
-      var r = await fetch('/api/options/iv-skew?ticker=' + encodeURIComponent(ticker));
-      var data = await r.json();
-      if (data.error) throw new Error(data.error);
-      if (!data.length) { st.textContent = 'No skew data.'; return; }
-      var calls = data.filter(function(d){ return d.call_iv > 0; });
-      var puts  = data.filter(function(d){ return d.put_iv  > 0; });
-      if (skewChart) skewChart.destroy();
-      skewChart = new Chart(document.getElementById('skewCanvas').getContext('2d'), {
-        type: 'line',
-        data: { datasets: [
-          { label: 'Call IV %', data: calls.map(function(d){ return {x:d.strike,y:d.call_iv}; }),
-            borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.08)', tension: 0.3, pointRadius: 3, fill: false },
-          { label: 'Put IV %', data: puts.map(function(d){ return {x:d.strike,y:d.put_iv}; }),
-            borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.08)', tension: 0.3, pointRadius: 3, fill: false },
-        ]},
-        options: Object.assign({}, CHART_OPTS, { scales: {
-          x: { type: 'linear', title: {display:true,text:'Strike',color:'#8b949e',font:{size:10}},
-               ticks:{color:'#8b949e',font:{size:10}}, grid:{color:'#21262d'} },
-          y: { title: {display:true,text:'IV %',color:'#8b949e',font:{size:10}},
-               ticks:{color:'#8b949e',font:{size:10}}, grid:{color:'#21262d'} },
-        }}),
-      });
-      st.textContent = data.length + ' strikes';
-    } catch (e) { st.textContent = e.message; st.className = 'iv-chart-status err'; }
-  }
-
-  async function loadTerm(ticker) {
-    var st = document.getElementById('termStatus');
-    st.textContent = 'Loading…'; st.className = 'iv-chart-status';
-    try {
-      var r = await fetch('/api/options/iv-term?ticker=' + encodeURIComponent(ticker));
-      var data = await r.json();
-      if (data.error) throw new Error(data.error);
-      if (!data.length) { st.textContent = 'No term data.'; return; }
-      if (termChart) termChart.destroy();
-      termChart = new Chart(document.getElementById('termCanvas').getContext('2d'), {
-        type: 'line',
-        data: { labels: data.map(function(d){ return d.dte+'d'; }),
-          datasets: [{ label: 'ATM IV %', data: data.map(function(d){ return d.atm_iv; }),
-            borderColor: '#58a6ff', backgroundColor: 'rgba(88,166,255,0.1)', tension: 0.3, pointRadius: 4, fill: true }]},
-        options: Object.assign({}, CHART_OPTS, { scales: {
-          x: { title: {display:true,text:'DTE',color:'#8b949e',font:{size:10}},
-               ticks:{color:'#8b949e',font:{size:10}}, grid:{color:'#21262d'} },
-          y: { title: {display:true,text:'ATM IV %',color:'#8b949e',font:{size:10}},
-               ticks:{color:'#8b949e',font:{size:10}}, grid:{color:'#21262d'} },
-        }}),
-      });
-      st.textContent = data.length + ' expirations';
-    } catch (e) { st.textContent = e.message; st.className = 'iv-chart-status err'; }
-  }
-
-  window.loadIVPanel = function() {
-    var t = ivTicker();
-    loadSkew(t); loadTerm(t);
-  };
-
-  document.getElementById('ivTickerInput').addEventListener('keydown', function(e){
-    if (e.key === 'Enter') window.loadIVPanel();
-  });
-
-  window.loadIVPanel();
-})();
-</script>
+{% block scripts %}
 <script>
 (function () {
   "use strict";
@@ -496,4 +342,4 @@
   refreshTimer = setInterval(fetchIntelligence, REFRESH_MS);
 })();
 </script>
-{% endblock %}
+{% endblock scripts %}
