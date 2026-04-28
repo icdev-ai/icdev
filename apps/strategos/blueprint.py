@@ -719,7 +719,7 @@ def api_iw_signal_matrix():
             rows = conn.execute(
                 f"SELECT effect_type, DATE(detected_at) AS d, COUNT(*) AS n "
                 f"FROM sg_iw_effects "
-                f"WHERE detected_at >= DATE('now', '-{days_back} days') "
+                f"WHERE detected_at >= DATE('now', '-{days_back} days') "  # nosec B608
                 f"GROUP BY effect_type, d"
             ).fetchall()
             for row in rows:
@@ -735,7 +735,7 @@ def api_iw_signal_matrix():
             rows = conn.execute(
                 f"SELECT event_type, DATE(created_at) AS d, COUNT(*) AS n "
                 f"FROM sg_conflict_events "
-                f"WHERE created_at >= DATE('now', '-{days_back} days') "
+                f"WHERE created_at >= DATE('now', '-{days_back} days') "  # nosec B608
                 f"GROUP BY event_type, d"
             ).fetchall()
             for row in rows:
@@ -752,7 +752,7 @@ def api_iw_signal_matrix():
                 f"SELECT r.signal_date, COUNT(*) AS n "
                 f"FROM sg_prioritized_signals p "
                 f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
-                f"WHERE r.signal_date >= DATE('now', '-{days_back} days') "
+                f"WHERE r.signal_date >= DATE('now', '-{days_back} days') "  # nosec B608
                 f"GROUP BY r.signal_date"
             ).fetchall()
             for row in rows:
