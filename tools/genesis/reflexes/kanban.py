@@ -31,6 +31,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.strategos import tier_resolver  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
 WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
@@ -3849,6 +3850,9 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
 # Track when each task was dispatched: {task_id: datetime}
 _dispatch_times: Dict[str, datetime] = {}
 
+# Current executor tier — updated once per scheduler cycle
+_current_exec_tier: Optional[str] = None
+
 def _reap_stale_in_progress() -> None:
     """Periodic reaper: reset in_progress tasks not tracked in _running.
 
@@ -4871,6 +4875,12 @@ def _decompose_one_task(task: dict) -> None:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
+    global _current_exec_tier
+    tier = tier_resolver.resolve_tiers().exec_tier
+    if tier != _current_exec_tier:
+        logger.info("Executor tier changed to %s", tier)
+        _current_exec_tier = tier
+
     # 0a. Orphan-done sweep — roll back any done task whose parent isn't done.
     # Defense-in-depth against manual SQL / spurious automation that marked
     # a row done while its prerequisite work hadn't completed. See memory
