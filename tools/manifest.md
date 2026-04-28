@@ -543,3 +543,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Engine Registry | tools\product_intel\engine_registry.py | Auto-registered: product_intel/engine_registry.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Transcript Ingestor | tools\voc\transcript_ingestor.py | Auto-registered: voc/transcript_ingestor.py | --json | JSON |
+| Voc Engine | tools\voc\voc_engine.py | Auto-registered: voc/voc_engine.py | --json | JSON |
+| Win Loss Engine | tools\win_loss\win_loss_engine.py | Auto-registered: win_loss/win_loss_engine.py | --json | JSON |
