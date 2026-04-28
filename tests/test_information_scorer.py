@@ -1,11 +1,7 @@
 """Tests for tools.intelligence.war_readiness.information_scorer."""
 
-import pytest
-
 from tools.intelligence.war_readiness.information_scorer import (
     COMPOSITE_WEIGHTS,
-    DEHUM_SATURATION,
-    SURGE_Z_MAX,
     compute_information_score,
     score_cyber_recon,
     score_dehumanization,

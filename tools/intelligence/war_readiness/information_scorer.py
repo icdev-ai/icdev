@@ -646,10 +646,9 @@ class InformationScoreResult:
 
 def _persist_score(result: dict) -> None:
     try:
-        from tools.db.storage import get_connection, is_pg  # noqa: PLC0415
+        from tools.db.storage import get_connection  # noqa: PLC0415
 
         conn = get_connection()
-        pk_col = "id" if not is_pg() else "id"
         now = result.get("computed_at", datetime.now(timezone.utc).isoformat())
         conn.execute(
             """
