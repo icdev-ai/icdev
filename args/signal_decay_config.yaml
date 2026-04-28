@@ -1,17 +1,3 @@
-# CUI // SP-CTI
-# FathomDesk Signal Decay — Hippo memory decay parameters.
-#
-# Consumed by tools/fathomdesk/signal_decay.py. All values are
-# operator-tunable. Falls back to module defaults if this file is missing.
-
-_schema_version: 1
-
-# Exponential decay rate (lambda in w(t) = e^{-lambda * age_days}).
-# Higher values decay faster; 0.05 ≈ half-life of ~14 days.
 lambda: 0.05
-
-# Minimum weight floor — no signal decays below this value regardless of age.
 weight_floor: 0.01
-
-# How often the batch decay job runs (hours).
 batch_cadence_hours: 24
