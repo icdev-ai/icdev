@@ -552,3 +552,13 @@
 | Transcript Ingestor | tools\voc\transcript_ingestor.py | Auto-registered: voc/transcript_ingestor.py | --json | JSON |
 | Voc Engine | tools\voc\voc_engine.py | Auto-registered: voc/voc_engine.py | --json | JSON |
 | Win Loss Engine | tools\win_loss\win_loss_engine.py | Auto-registered: win_loss/win_loss_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Doctrine Corpus | tools\strategos\doctrine_corpus.py | Auto-registered: strategos/doctrine_corpus.py | --json | JSON |
+| War Council | tools\strategos\war_council.py | Auto-registered: strategos/war_council.py | --json | JSON |
+| War Council Generator | tools\strategos\war_council_generator.py | Auto-registered: strategos/war_council_generator.py | --json | JSON |
+| Rare Earth Cascade | tools\supply_chain\rare_earth_cascade.py | Auto-registered: supply_chain/rare_earth_cascade.py | --json | JSON |
+| Semiconductor Chain | tools\supply_chain\semiconductor_chain.py | Auto-registered: supply_chain/semiconductor_chain.py | --json | JSON |
