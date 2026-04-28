@@ -37,30 +37,11 @@ Parse test output for:
 ```
 Check coverage against threshold (default 80%). Warn if below.
 
-### 5. Theater Detection
-```bash
-python -m tools.testing.theater_detector --scan tests/ --json
-```
-Scans for tests that pass but provide no real coverage or signal. Severity levels:
-- **none** — no anti-patterns found; proceed normally
-- **warn** — anti-patterns present but gate passes; surface findings in output summary
-- **block** — critical anti-patterns found; **fails the gate** (do not proceed to compliance mapping)
-
-The 8 anti-patterns detected:
-1. **Empty test body** — test function contains only `pass` or a docstring with no assertions
-2. **Assert True/False literal** — `assert True` or `assert False` hardcoded (never exercises real logic)
-3. **Missing assertions** — test runs code but has zero `assert` / `assertEqual` / `expect` calls
-4. **Mocked return always passes** — mock return value set to make the test unconditionally succeed regardless of implementation
-5. **Test copies implementation** — assertion value duplicates the exact expression under test rather than an independent expected value
-6. **Skipped test without reason** — `@pytest.mark.skip` or `unittest.skip` with no justification string
-7. **Broad exception swallow** — bare `except Exception: pass` inside a test hides failures silently
-8. **Fixture with no teardown** — stateful fixture (DB, file, network) that never cleans up, causing cross-test pollution
-
-### 6. Compliance Mapping
+### 5. Compliance Mapping
 Run the CLI command or use MCP tool `control_map` MCP tool from icdev-compliance:
 - Map `test.execute` activity to NIST controls
 
-### 7. Output Summary
+### 6. Output Summary
 Display:
 - Unit tests: X passed, Y failed, Z skipped
 - BDD tests: X scenarios passed, Y failed
