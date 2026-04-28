@@ -196,7 +196,6 @@ def _build_counter_description(
 def _fetch_active_coas() -> List[Dict[str, Any]]:
     try:
         conn = get_connection()
-        ph = _ph()
         query = (
             "SELECT id, title, description, resource_allocation "
             "FROM sg_coa_options WHERE status = %s"
