@@ -669,6 +669,23 @@ def strategos_maritime():
     return render_template("strategos/maritime.html")
 
 
+@_bp.route("/maritime/api/vessels")
+def strategos_maritime_vessels():
+    vessels = {
+        "vessels": [
+            {
+                "id": 1,
+                "name": "Vessel-A",
+                "positions": [
+                    {"lat": 43.2, "lon": 32.5, "ts": "2025-01-01T12:00:00Z"},
+                    {"lat": 43.3, "lon": 32.6, "ts": "2025-01-01T13:00:00Z"},
+                ],
+            }
+        ]
+    }
+    return jsonify(vessels)
+
+
 # ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
