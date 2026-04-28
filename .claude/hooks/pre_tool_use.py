@@ -399,6 +399,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_buffett_snapshots",
         # Strategos Analyst Annotation Layer (migration 060, NIST AU — append-only annotation store)
         "sg_analyst_annotations",
+        # DES execution audit log (NIST AU — append-only)
+        "des_execution_events",
     ]
 
     if tool_name == "Bash":
