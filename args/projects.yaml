@@ -1264,3 +1264,30 @@ projects:
   - key: pcr
     title: Put/Call Ratio — 11th Confluence Pillar
     priority: high
+- key: nwa
+  name: nWave Methodology Adaptation — Theater Detector + Rigor Profiles + DES Audit
+  description: >-
+    Three nWave-inspired quality improvements for ICDEV: (1) Testing Theater Detector
+    — 8 anti-pattern checks (tautological assertions, mock-dominated, fixture theater,
+    assertion-free, hardcoded oracles, smoke-masquerade, always-green, spec drift)
+    wired into icdev-test; (2) Rigor Gate Profiles — IL2/IL4/IL5/IL6 quality tiers
+    mapped to adjustable gate thresholds in args/il_tier_profiles.yaml, evaluator in
+    tools/quality/rigor_gates.py, wired into icdev-build; (3) DES Execution Audit Trail
+    — migration 065 + tools/kanban/des_audit_logger.py logging every kanban dispatch,
+    completion, and verification gate decision (NIST AU-2/AU-3 compliance).
+  task_prefix: nwa-
+  default_open: true
+  briefs:
+  - 'Theater Detector: TheaterDetectionResult dataclass + theater_detector.py (8 checks) + test_orchestrator wire + security_gates + skill update — nwa-ttd-01..08'
+  - 'Rigor Profiles: il_tier_profiles.yaml + tools/quality/rigor_gates.py + icdev-build wire + security_gates + project_defaults — nwa-rgp-01..08'
+  - 'DES Audit Trail: migration 065 + tools/kanban/des_audit_logger.py + pre_tool_use + conftest + kanban reflex wire + kanban API wire — nwa-des-01..09'
+  epics:
+  - key: ttd
+    title: Testing Theater Detector (8 anti-patterns → icdev-test)
+    priority: high
+  - key: rgp
+    title: Rigor Gate Profiles (IL2/IL4/IL5/IL6 → icdev-build)
+    priority: high
+  - key: des
+    title: DES Execution Audit Trail (migration 065 → kanban scheduler)
+    priority: critical
