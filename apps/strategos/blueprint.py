@@ -685,7 +685,6 @@ def api_iw_derive():
 def api_iw_signal_matrix():
     """GET /api/strategos/iw/signal-matrix — 14-day x signal-category heatmap counts."""
     days_back = min(int(request.args.get("days", 14)), 60)
-    ph = "%s" if is_pg() else "?"
     _CATEGORIES = [
         "military", "cyber", "information", "economic",
         "political", "infrastructure", "social", "physical",
@@ -708,7 +707,6 @@ def api_iw_signal_matrix():
 
     conn = get_connection()
     try:
-        import math
         from datetime import date, timedelta  # noqa: PLC0415
         today = date.today()
         day_labels = [(today - timedelta(days=days_back - 1 - i)).isoformat() for i in range(days_back)]
