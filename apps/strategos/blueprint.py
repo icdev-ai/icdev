@@ -564,9 +564,34 @@ def strategos_interdiction():
     )
 
 
-@_bp.route("/briefs")
+@_bp.route("/briefs", methods=["GET"])
 def strategos_briefs():
     selected_type = request.args.get("type", "")
+    reviewed = request.args.get("reviewed", "")
+    limit_param = request.args.get("limit", "")
+
+    if reviewed != "" or limit_param != "":
+        limit = min(int(limit_param) if limit_param else 200, 500)
+        clauses, params = [], []
+        if selected_type:
+            clauses.append("brief_type = ?")
+            params.append(selected_type)
+        if reviewed == "0":
+            clauses.append("analyst_reviewed = 0")
+        elif reviewed == "1":
+            clauses.append("analyst_reviewed = 1")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        ph = "%s" if is_pg() else "?"
+        sql = (
+            f"SELECT id, brief_type, title, sio_confidence, analyst_reviewed, "
+            f"reviewed_by, reviewed_at, created_at "
+            f"FROM sg_intelligence_briefs {where} ORDER BY created_at DESC LIMIT {limit}"  # nosec B608
+        )
+        sql = sql.replace("?", ph)
+        briefs = _safe_fetch(sql, params)
+        pending = sum(1 for b in briefs if not b.get("analyst_reviewed"))
+        return jsonify({"briefs": briefs, "total": len(briefs), "pending": pending})
+
     params = [selected_type] if selected_type else []
     where = "WHERE brief_type = ?" if selected_type else ""
     briefs = _safe_fetch(
