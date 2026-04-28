@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS network_twin_snapshots (
 _IDX = "CREATE INDEX IF NOT EXISTS idx_nts_project_id ON network_twin_snapshots(project_id)"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")

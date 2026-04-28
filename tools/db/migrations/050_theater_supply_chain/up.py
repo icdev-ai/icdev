@@ -51,7 +51,7 @@ FROM supply_chain_vendors
 """
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         backend = getattr(conn, "_backend", "sqlite")

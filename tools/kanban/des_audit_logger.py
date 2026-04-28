@@ -107,26 +107,23 @@ class DESAuditLogger:
                      dispatch_source, task_status, duration_ms,
                      verification_signals, queued_at, occurred_at)
                 VALUES
-                    (:id, :task_id, :event_type, :skill_invoked,
-                     :inputs_json, :outputs_json, :executor,
-                     :dispatch_source, :task_status, :duration_ms,
-                     :verification_signals, :queued_at, :occurred_at)
+                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                {
-                    "id": event_id,
-                    "task_id": kwargs.get("task_id", ""),
-                    "event_type": kwargs.get("event_type"),
-                    "skill_invoked": kwargs.get("skill_invoked"),
-                    "inputs_json": kwargs.get("inputs_json"),
-                    "outputs_json": kwargs.get("outputs_json"),
-                    "executor": kwargs.get("executor"),
-                    "dispatch_source": kwargs.get("dispatch_source"),
-                    "task_status": kwargs.get("task_status"),
-                    "duration_ms": kwargs.get("duration_ms"),
-                    "verification_signals": kwargs.get("verification_signals"),
-                    "queued_at": kwargs.get("queued_at"),
-                    "occurred_at": occurred_at,
-                },
+                (
+                    event_id,
+                    kwargs.get("task_id", ""),
+                    kwargs.get("event_type"),
+                    kwargs.get("skill_invoked"),
+                    kwargs.get("inputs_json"),
+                    kwargs.get("outputs_json"),
+                    kwargs.get("executor"),
+                    kwargs.get("dispatch_source"),
+                    kwargs.get("task_status"),
+                    kwargs.get("duration_ms"),
+                    kwargs.get("verification_signals"),
+                    kwargs.get("queued_at"),
+                    occurred_at,
+                ),
             )
             conn.commit()
         except Exception:

@@ -34,7 +34,7 @@ def _sha256_hex(text: str) -> str:
     return hashlib.sha256((text or "").encode("utf-8")).hexdigest()
 
 
-def up():
+def up(conn=None):
     conn = get_connection()
     try:
         actions = []

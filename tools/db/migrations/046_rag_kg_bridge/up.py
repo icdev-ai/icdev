@@ -30,7 +30,7 @@ def _column_exists_sqlite(conn, table: str, column: str) -> bool:
     return any(row[1] == column for row in rows)
 
 
-def up():
+def up(conn=None):
     conn = get_connection()
     try:
         actions = []

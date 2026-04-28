@@ -12,7 +12,7 @@ MIGRATION_NAME = "ad_value_snapshots"
 DESCRIPTION = "Add ad_fear_greed_snapshots and ad_buffett_snapshots tables"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ad_fear_greed_snapshots (

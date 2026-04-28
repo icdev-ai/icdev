@@ -131,7 +131,7 @@ STALE_DIAG = [
 ]
 
 
-def up():
+def up(conn=None):
     conn = get_connection()
     renamed = 0
     skipped = 0

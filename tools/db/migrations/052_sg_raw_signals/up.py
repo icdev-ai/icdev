@@ -10,7 +10,7 @@ sg_raw_signals_audit: append-only run log recording tier used, counts,
 from tools.db.storage import get_connection, is_pg
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
 
     conn.execute(

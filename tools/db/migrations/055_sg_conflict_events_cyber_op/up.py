@@ -94,7 +94,7 @@ _INDEXES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
 
     conn.execute(_CREATE_TABLE)

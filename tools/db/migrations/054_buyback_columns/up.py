@@ -48,7 +48,7 @@ _INDEXES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
 
     for col, col_type in _NEW_FM_COLUMNS:

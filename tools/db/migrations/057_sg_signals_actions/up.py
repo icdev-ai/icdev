@@ -36,7 +36,7 @@ def _col_exists(conn, col: str) -> bool:
         return any((r[1] if isinstance(r, tuple) else r["name"]) == col for r in rows)
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         for col, defn in _ALTER_COLS:

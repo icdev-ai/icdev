@@ -11,7 +11,7 @@ MIGRATION_NAME = "ad_breadth_snapshots"
 DESCRIPTION = "Add ad_breadth_snapshots table for 200-EMA and 52W high/low breadth metrics"
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS ad_breadth_snapshots (

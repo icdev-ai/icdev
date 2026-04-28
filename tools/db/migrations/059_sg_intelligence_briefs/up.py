@@ -35,7 +35,7 @@ _INDICES = [
 ]
 
 
-def up() -> None:
+def up(conn=None) -> None:
     conn = get_connection()
     try:
         for ddl in _DDL:
