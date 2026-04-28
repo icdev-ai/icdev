@@ -26,7 +26,6 @@ import argparse
 import json
 import logging
 import sys
-import uuid
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Any
@@ -305,7 +304,6 @@ class DoctrineEntry:
 
 def get_cog_passage(theater: str = "all") -> DoctrineEntry:
     """Return the most relevant Clausewitz CoG passage for a theater."""
-    theater_lower = theater.lower()
     # Always return the primary CoG definition for all theaters
     primary = _CORPUS_BY_ID["clausewitz-cog-001"]
     return DoctrineEntry(
