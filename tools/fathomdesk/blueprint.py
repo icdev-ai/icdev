@@ -98,6 +98,41 @@ def list_traps():
         return jsonify({"traps": [], "count": 0, "error": str(exc)}), 200
 
 
+@fathomdesk_api.route("/api/macro/intelligence", methods=["GET"])
+def api_macro_intelligence():
+    """Return macro regime badges for the /analysis page panel.
+
+    Returns:
+        qeqt_phase: EXPANDING | NEUTRAL | CONTRACTING
+        credit_stress: ACCELERATING | NEUTRAL | CONTRACTING
+        rotation_signal: regime label (e.g. EXPANSION, STAGFLATION, GREEN, etc.)
+        macro_score: 0-100 composite score
+        summary: human-readable summary string
+        fetched_at: ISO timestamp
+    """
+    try:
+        from tools.trading.data.macro_data import fetch_macro_context
+        ctx = fetch_macro_context()
+        return jsonify({
+            "qeqt_phase": ctx.get("qeqt_phase", "NEUTRAL"),
+            "credit_stress": ctx.get("credit_impulse", {}).get("label", "NEUTRAL"),
+            "rotation_signal": ctx.get("regime", "UNKNOWN"),
+            "macro_score": ctx.get("macro_score"),
+            "summary": ctx.get("summary", ""),
+            "fetched_at": ctx.get("fetched_at"),
+        })
+    except Exception as exc:
+        return jsonify({
+            "qeqt_phase": "NEUTRAL",
+            "credit_stress": "NEUTRAL",
+            "rotation_signal": "UNKNOWN",
+            "macro_score": None,
+            "summary": "",
+            "fetched_at": None,
+            "error": str(exc),
+        }), 200
+
+
 @fathomdesk_api.route("/fathomdesk/api/reflex-observations", methods=["GET"])
 def list_reflex_observations():
     """Return recent reflex execution records from reflex_observations."""
