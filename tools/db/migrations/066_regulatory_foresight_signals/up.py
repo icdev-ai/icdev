@@ -3,7 +3,7 @@
 """Migration 066: Create regulatory_foresight_signals table.
 
 Rationale (Regulatory Foresight, 2026-04-28): stores scored regulatory signals
-derived from proposed rulemakings, comment periods, and mandate estimates.
+sourced from proposed rulemakings, comment periods, and mandate estimates.
 Feeds the Regulatory Foresight dashboard with impact scores, blast radius, and
 time-to-mandate pressure metrics.
 

@@ -148,6 +148,7 @@
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
 - [Kanban System](manifest/kanban.md)
+- [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 
 
 ## Auto-Registered (Coherence Fix)
