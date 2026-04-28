@@ -527,6 +527,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Signal Tuner | tools\fathomdesk\signal_tuner.py | Auto-registered: fathomdesk/signal_tuner.py | --json | JSON |
+| Signal Generator | tools\fathomdesk\signal_generator.py | FathomDesk threshold-gated signal filter — loads `args/signal_thresholds.yaml` (min_confidence, min_score, max_signals, per-category biases) and returns only signals that pass all gates. Public API: `generate(signals, thresholds=None) -> list[dict]`, `load_thresholds(path=None) -> dict`. | `generate(signals=[...])` | filtered signal list |
 | Ew Monitor | tools\strategos\ew_monitor.py | Auto-registered: strategos/ew_monitor.py | --json | JSON |
 | Iw Engine | tools\strategos\iw_engine.py | Auto-registered: strategos/iw_engine.py | --json | JSON |
 | Ooda | tools\strategos\ooda.py | Auto-registered: strategos/ooda.py | --json | JSON |
