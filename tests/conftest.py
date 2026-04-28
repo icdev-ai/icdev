@@ -1530,6 +1530,28 @@ CREATE TABLE IF NOT EXISTS ad_cta_scores (
 );
 CREATE INDEX IF NOT EXISTS idx_ad_cta_scores_ticker_computed ON ad_cta_scores(ticker, computed_at DESC);
 
+-- DES Execution Audit (migration 065)
+CREATE TABLE IF NOT EXISTS des_execution_events (
+    id               TEXT PRIMARY KEY,
+    task_id          TEXT NOT NULL,
+    event_type       TEXT CHECK(event_type IN (
+                         'dispatch', 'completion',
+                         'verification', 'gate_override')),
+    skill_invoked    TEXT,
+    inputs_json      TEXT,
+    outputs_json     TEXT,
+    executor         TEXT,
+    dispatch_source  TEXT,
+    task_status      TEXT,
+    duration_ms      INTEGER,
+    verification_signals TEXT,
+    queued_at        TEXT,
+    occurred_at      TEXT NOT NULL,
+    classification   TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE INDEX IF NOT EXISTS idx_des_task_id ON des_execution_events(task_id);
+CREATE INDEX IF NOT EXISTS idx_des_occurred_at ON des_execution_events(occurred_at);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, type, tags);
 """
 
