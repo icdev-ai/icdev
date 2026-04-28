@@ -664,6 +664,11 @@ def strategos_ew():
     return render_template("strategos/ew.html", summary=data["summary"])
 
 
+@_bp.route("/maritime")
+def strategos_maritime():
+    return render_template("strategos/maritime.html")
+
+
 # ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
