@@ -992,12 +992,12 @@ def get_signals(
     c = conn or get_conn()
     if ranked:
         if status:
-            rows = c.execute(
+            rows = c.execute(  # nosec B608 — column names hardcoded, status/limit parameterized
                 "SELECT * FROM ad_signals WHERE status=? ORDER BY (composite_score * signal_decay_weight) DESC LIMIT ?",
                 (status, limit),
             ).fetchall()
         else:
-            rows = c.execute(
+            rows = c.execute(  # nosec B608 — column names hardcoded, limit parameterized
                 "SELECT * FROM ad_signals ORDER BY (composite_score * signal_decay_weight) DESC LIMIT ?",
                 (limit,),
             ).fetchall()
