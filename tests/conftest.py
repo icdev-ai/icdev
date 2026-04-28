@@ -1572,6 +1572,21 @@ CREATE TABLE IF NOT EXISTS des_execution_events (
     occurred_at          TEXT NOT NULL,
     classification       TEXT DEFAULT 'CUI // SP-CTI'
 );
+
+CREATE TABLE IF NOT EXISTS product_intel_runs (
+    id                  TEXT PRIMARY KEY,
+    started_at          TEXT,
+    completed_at        TEXT,
+    engines_run         TEXT,
+    engines_failed      TEXT,
+    total_signals       INTEGER,
+    total_gaps          INTEGER,
+    total_dossiers      INTEGER,
+    federation_routes   INTEGER,
+    result_json         TEXT,
+    status              TEXT,
+    classification      TEXT DEFAULT 'CUI // SP-CTI'
+);
 """
 
 # ---------------------------------------------------------------------------
