@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -2395,6 +2396,69 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     print(f"  Kanban: dispatched {task_id} via LLMRouter (no Claude CLI)")
 
 
+def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
+    """Trigger a GitLab CI pipeline for the given task (EXEC_GITLAB tier).
+
+    POSTs to the pipeline trigger endpoint with TASK_ID, TASK_DESCRIPTION,
+    TASK_TYPE, and LLM_PROVIDER=ollama. Stores the returned pipeline_id in
+    the task row. Returns True on HTTP 201, False on any error.
+    """
+    import os as _os
+    try:
+        import requests as _requests
+    except ImportError:
+        logger.warning("kanban: requests library not available — cannot dispatch via GitLab")
+        return False
+
+    gitlab_url = _os.getenv("GITLAB_URL", "").rstrip("/")
+    project_id = _os.getenv("GITLAB_PROJECT_ID", "")
+    trigger_token = _os.getenv("GITLAB_TRIGGER_TOKEN", "")
+
+    if not gitlab_url or not project_id or not trigger_token:
+        logger.warning(
+            "kanban: GITLAB_URL / GITLAB_PROJECT_ID / GITLAB_TRIGGER_TOKEN not set"
+        )
+        return False
+
+    path = f"/api/v4/projects/{project_id}/trigger/pipeline"
+    url = urllib.parse.urljoin(gitlab_url + "/", path.lstrip("/"))
+
+    payload = {
+        "token": trigger_token,
+        "ref": "main",
+        "variables[TASK_ID]": task_id,
+        "variables[TASK_DESCRIPTION]": task_desc,
+        "variables[TASK_TYPE]": task_type,
+        "variables[LLM_PROVIDER]": "ollama",
+    }
+
+    try:
+        resp = _requests.post(url, data=payload, timeout=10)
+    except _requests.RequestException as exc:
+        logger.warning("kanban: GitLab pipeline trigger failed for %s: %s", task_id, exc)
+        return False
+
+    if resp.status_code == 201:
+        pipeline_id = str(resp.json().get("id", ""))
+        pipeline_web_url = resp.json().get("web_url", "")
+        try:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
+            )
+            conn.commit()
+        except Exception as _db_exc:
+            logger.warning("kanban: failed to store pipeline_id for %s: %s", task_id, _db_exc)
+        logger.info("kanban: GitLab pipeline %s triggered for task %s", pipeline_id, task_id)
+        return True
+
+    logger.warning(
+        "kanban: GitLab pipeline trigger returned %d for %s", resp.status_code, task_id
+    )
+    return False
+
+
 def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     """Check if a gap task is already resolved BEFORE dispatching Claude.
 
@@ -2522,7 +2586,20 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     instruction = _build_instruction(task_id, title, prompt_text, prompt_path)
     task_log = PROMPT_DIR / f"{task_id}.log"
 
-    if _claude_code_available():
+    exec_tier = tier_resolver.resolve_tiers().exec_tier
+    if exec_tier == tier_resolver.EXEC_GITLAB:
+        ok = _dispatch_gitlab(
+            task_id,
+            task.get("description", task.get("title", "")),
+            task.get("task_type", "chore"),
+        )
+        if ok:
+            _dispatch_times[task_id] = datetime.now(timezone.utc)
+            print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
+        else:
+            print(f"  Kanban: GitLab dispatch failed for {task_id}, falling back to LLMRouter")
+            _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
+    elif _claude_code_available():
         _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
     else:
         _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
