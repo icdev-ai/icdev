@@ -149,6 +149,7 @@
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
 - [Kanban System](manifest/kanban.md)
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
+- [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
 
 
 ## Auto-Registered (Coherence Fix)

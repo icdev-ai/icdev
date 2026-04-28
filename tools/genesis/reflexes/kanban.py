@@ -2681,7 +2681,32 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 break
 
     if not dispatched:
-        _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
+        if _fallback_chain and _fallback_chain[-1] == "ollama_local":
+            _no_exec_reason = (
+                "no executor available: internet=False, "
+                "gitlab=unreachable, ollama=unreachable"
+            )
+            try:
+                _conn = get_connection()
+                _conn.execute(
+                    "UPDATE kanban_tasks SET last_failure_reason = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (_no_exec_reason, _utcnow_iso(), task_id),
+                )
+                _conn.commit()
+                _conn.close()
+            except Exception as _lfr_exc:
+                logger.warning(
+                    "kanban: failed to set last_failure_reason for %s: %s",
+                    task_id, _lfr_exc,
+                )
+            _move_task(task_id, "suggested", actor="scheduler", reason=_no_exec_reason)
+            print(
+                f"  Kanban: {task_id} NO EXECUTOR — "
+                "moved to suggested (no internet, gitlab, or ollama available)"
+            )
+        else:
+            _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
 
 
 # OPT-76 — phantom-completion guard. Regex matches plausible repo-relative
