@@ -347,3 +347,59 @@ def api_stats():
             "quality_labels": {}, "quadrant_counts": {},
             "error": str(exc),
         }), 200
+
+
+# ---------------------------------------------------------------------------
+# Durable Compounders scanner
+# ---------------------------------------------------------------------------
+
+@quality_scores_api.route("/api/quality-scores/durable-compounders", methods=["GET"])
+def api_durable_compounders():
+    """Run the Durable Compounders scan (cached, hash-gated).
+
+    ?force=1       — bypass cache, recompute all
+    ?min_score=N   — minimum durable score (0-100)
+    ?tier=fortress|solid|watchlist
+    ?limit=N       (default 200, max 500)
+    """
+    force = request.args.get("force", "0") in ("1", "true", "yes")
+    tier_filter = request.args.get("tier", "").strip().lower() or None
+    try:
+        min_score = float(request.args.get("min_score", 0))
+    except (ValueError, TypeError):
+        min_score = 0.0
+    try:
+        limit = min(int(request.args.get("limit", 200)), 500)
+    except (ValueError, TypeError):
+        limit = 200
+
+    try:
+        from tools.trading.analysts.durable_compounders import scan
+        result = scan(limit=limit, min_score=min_score, tier_filter=tier_filter, force=force)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({
+            "results": [], "count": 0,
+            "cache_hits": 0, "recomputed": 0, "drifted": 0,
+            "scan_time_ms": 0,
+            "error": str(exc),
+        }), 200
+
+
+@quality_scores_api.route("/api/quality-scores/durable-compounders/drift", methods=["GET"])
+def api_durable_drift():
+    """Return tickers with recently detected fundamental drift.
+
+    ?limit=N  (default 50)
+    """
+    try:
+        limit = min(int(request.args.get("limit", 50)), 200)
+    except (ValueError, TypeError):
+        limit = 50
+
+    try:
+        from tools.trading.analysts.durable_compounders import get_drift_events
+        events = get_drift_events(limit=limit)
+        return jsonify({"drift_events": events, "count": len(events)})
+    except Exception as exc:
+        return jsonify({"drift_events": [], "count": 0, "error": str(exc)}), 200

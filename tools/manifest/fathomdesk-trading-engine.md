@@ -5,6 +5,8 @@
 ## FathomDesk Trading Engine
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Durable Compounders Scanner | tools/trading/analysts/durable_compounders.py | 3-pillar scanner (Balance Sheet 35%, Customer Loyalty 35%, Cycle Resilience 30%) with SHA-256 hash-gated cache (7-day TTL in ad_durable_compounders_cache) and drift detection (per-field threshold alerts). CLI: `--scan --limit 20 --min-score 65 --tier fortress --json`; `--drift --json`. API: GET /api/quality-scores/durable-compounders + /drift. Dashboard: "Durable Compounders" tab on /quality-scores. | --scan [--force] [--limit N] [--min-score N] [--tier fortress\|solid\|watchlist] [--json] | Scored companies with cache_hits/recomputed/drifted telemetry |
+| Durable Compounders Migration | tools/db/migrate_durable_compounders.py | Creates ad_durable_compounders_cache (ticker PK, 3-pillar scores, fundamentals_hash, computed_at, drift_flagged, drift_reason). Idempotent. | python tools/db/migrate_durable_compounders.py | Migration result JSON |
 | Fundamental Analyst | tools/trading/analysts/fundamental.py | Fundamental analysis agent (SMA, valuation, trends) | --json | Analysis results |
 | Sentiment Analyst | tools/trading/analysts/sentiment.py | Keyword-based sentiment analysis agent | --json | Sentiment scores |
 | News Analyst | tools/trading/analysts/news.py | News analysis agent that categorizes market news into earnings, macro, sector, regulatory, and corporate action keywords | --json | Categorized news signals |
