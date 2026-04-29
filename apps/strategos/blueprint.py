@@ -1805,6 +1805,198 @@ def get_info_network_data():
 
 
 # ---------------------------------------------------------------------------
+# Missing page routes
+# ---------------------------------------------------------------------------
+
+@_bp.route("/cyber")
+def strategos_cyber():
+    return render_template("strategos/cyber.html")
+
+
+@_bp.route("/map")
+def strategos_map():
+    return render_template("strategos/map.html")
+
+
+# ---------------------------------------------------------------------------
+# KG proxy — template fetches /strategos/api/kg (not /api/strategos/kg)
+# ---------------------------------------------------------------------------
+
+@_bp.route("/api/kg")
+def strategos_api_kg_proxy():
+    nodes = _safe_fetch(
+        "SELECT node_id, node_type, label FROM sg_kg_nodes ORDER BY node_type LIMIT 500"
+    )
+    edges = _safe_fetch(
+        "SELECT source_id, target_id, relation FROM sg_kg_edges LIMIT 1000"
+    )
+    return jsonify({"nodes": nodes, "edges": edges})
+
+
+# ---------------------------------------------------------------------------
+# Cyber sub-APIs — template fetches /strategos/api/cyber/*
+# ---------------------------------------------------------------------------
+
+@_bp.route("/api/cyber/infra-nodes")
+def strategos_api_cyber_infra():
+    aoi = request.args.get("aoi", "")
+    # Infrastructure nodes: supply nodes + cyber-targeted conflict events
+    nodes = _safe_fetch(
+        "SELECT node_id AS id, label, node_type AS type, criticality, lat, lon "
+        "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    )
+    # Overlay cyber_op events as targeted nodes
+    clauses, params = ["event_type = 'cyber_op'", "lat IS NOT NULL"], []
+    ph = "%s" if is_pg() else "?"
+    if aoi:
+        clauses.append(f"aoi = {ph}")
+        params.append(aoi)
+    cyber_events = _safe_fetch(
+        "SELECT id, target_name AS label, target_type AS type, lat, lon, "
+        "attack_vector, threat_actor, malware_family, confidence, event_ts AS detected_at "
+        f"FROM sg_conflict_events WHERE {' AND '.join(clauses)} LIMIT 200",
+        params,
+    )
+    for ev in cyber_events:
+        ev.setdefault("criticality", "high")
+        ev["source"] = "conflict_event"
+    for n in nodes:
+        n["source"] = "supply_node"
+    return jsonify({"nodes": nodes + cyber_events})
+
+
+@_bp.route("/api/cyber/attack-heatmap")
+def strategos_api_cyber_heatmap():
+    # MITRE ATT&CK heatmap derived from conflict events
+    _TACTICS = [
+        {"id": "TA0001", "label": "Initial Access",      "techniques": [("T1190", "Exploit Public-Facing App"), ("T1133", "External Remote Services"), ("T1566", "Phishing")]},
+        {"id": "TA0002", "label": "Execution",           "techniques": [("T1059", "Command Scripting Interpreter"), ("T1203", "Exploitation for Client Execution")]},
+        {"id": "TA0003", "label": "Persistence",         "techniques": [("T1098", "Account Manipulation"), ("T1543", "Create/Modify System Process")]},
+        {"id": "TA0005", "label": "Defense Evasion",     "techniques": [("T1070", "Indicator Removal"), ("T1036", "Masquerading")]},
+        {"id": "TA0006", "label": "Credential Access",   "techniques": [("T1110", "Brute Force"), ("T1555", "Credentials from Password Stores")]},
+        {"id": "TA0007", "label": "Discovery",           "techniques": [("T1046", "Network Service Scan"), ("T1083", "File & Directory Discovery")]},
+        {"id": "TA0010", "label": "Exfiltration",        "techniques": [("T1041", "Exfil Over C2"), ("T1048", "Exfil Over Alt Protocol")]},
+        {"id": "TA0040", "label": "Impact",              "techniques": [("T1486", "Data Encrypted for Impact"), ("T1499", "Endpoint DoS"), ("T1491", "Defacement")]},
+    ]
+
+    # Count observed techniques from DB
+    raw_ids = _safe_fetch(
+        "SELECT technique_ids FROM sg_conflict_events "
+        "WHERE event_type = 'cyber_op' AND technique_ids IS NOT NULL"
+    )
+    observed: dict = {}
+    for row in raw_ids:
+        for tid in (row.get("technique_ids") or "").split(","):
+            tid = tid.strip()
+            if tid:
+                observed[tid] = observed.get(tid, 0) + 1
+
+    result = []
+    for tactic in _TACTICS:
+        cells = []
+        for tid, name in tactic["techniques"]:
+            cells.append({"technique_id": tid, "name": name, "count": observed.get(tid, 0)})
+        result.append({"id": tactic["id"], "label": tactic["label"], "cells": cells})
+    return jsonify({"tactics": result})
+
+
+@_bp.route("/api/cyber/timeline")
+def strategos_api_cyber_timeline():
+    aoi = request.args.get("aoi", "")
+    ph = "%s" if is_pg() else "?"
+
+    base_clauses = ["lat IS NOT NULL"]
+    if aoi:
+        base_clauses.append(f"aoi = {ph}")
+
+    cyber_params = ["cyber_op"] + ([aoi] if aoi else [])
+    cyber_events = _safe_fetch(
+        "SELECT id, event_ts, description, actor1, actor2, goldstein_scale, attack_vector, "
+        "threat_actor, target_name, confidence "
+        f"FROM sg_conflict_events WHERE event_type = {ph} "
+        + (f"AND aoi = {ph}" if aoi else "")
+        + " ORDER BY event_ts DESC LIMIT 100",
+        cyber_params,
+    )
+
+    kinetic_params = (["usv_strike", "attack", "military_move"] + ([aoi] if aoi else []))
+    ph_list = ",".join(ph for _ in ["usv_strike", "attack", "military_move"])
+    kinetic_events = _safe_fetch(
+        f"SELECT id, event_ts, description, actor1, actor2, goldstein_scale, event_type "
+        f"FROM sg_conflict_events WHERE event_type IN ({ph_list}) "
+        + (f"AND aoi = {ph}" if aoi else "")
+        + " ORDER BY event_ts DESC LIMIT 100",
+        kinetic_params,
+    )
+
+    # Simple temporal correlation: pair cyber events near kinetic events (±12h)
+    correlations = []
+    for c in cyber_events[:20]:
+        for k in kinetic_events[:20]:
+            try:
+                from datetime import datetime as _dt  # noqa: PLC0415
+                ct = _dt.fromisoformat(str(c.get("event_ts", "")).replace("Z", "+00:00"))
+                kt = _dt.fromisoformat(str(k.get("event_ts", "")).replace("Z", "+00:00"))
+                delta_h = abs((ct - kt).total_seconds()) / 3600
+                if delta_h <= 12:
+                    correlations.append({
+                        "cyber_id": c["id"],
+                        "kinetic_id": k["id"],
+                        "strength": round(max(0.1, 1.0 - delta_h / 12), 2),
+                    })
+            except Exception:
+                pass
+
+    return jsonify({
+        "cyber_events": cyber_events,
+        "kinetic_events": kinetic_events,
+        "correlations": correlations[:50],
+    })
+
+
+# ---------------------------------------------------------------------------
+# Map sub-APIs — template fetches /strategos/api/map/*
+# ---------------------------------------------------------------------------
+
+@_bp.route("/api/map/orbat")
+def strategos_api_map_orbat():
+    rows = _safe_fetch(
+        "SELECT id, unit_name, unit_type, nation, strength, location, lat, lon, status "
+        "FROM sg_orbat_units WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    )
+    return jsonify({"units": rows})
+
+
+@_bp.route("/api/map/ghost")
+def strategos_api_map_ghost():
+    rows = _safe_fetch(
+        "SELECT id, signal_type, mmsi, lat, lon, confidence, source, detected_at "
+        "FROM sg_ghost_signals WHERE lat IS NOT NULL AND lon IS NOT NULL "
+        "ORDER BY detected_at DESC LIMIT 200"
+    )
+    return jsonify({"signals": rows})
+
+
+@_bp.route("/api/map/events")
+def strategos_api_map_events():
+    rows = _safe_fetch(
+        "SELECT id, event_type, actor1, actor2, lat, lon, description, event_ts "
+        "FROM sg_conflict_events WHERE lat IS NOT NULL AND lon IS NOT NULL "
+        "ORDER BY event_ts DESC LIMIT 300"
+    )
+    return jsonify({"events": rows})
+
+
+@_bp.route("/api/map/supply")
+def strategos_api_map_supply():
+    rows = _safe_fetch(
+        "SELECT node_id AS id, label, node_type, criticality, lat, lon "
+        "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    )
+    return jsonify({"nodes": rows})
+
+
+# ---------------------------------------------------------------------------
 # Factory functions called from tools/dashboard/app.py
 # ---------------------------------------------------------------------------
 
