@@ -83,8 +83,8 @@ def update_connection(
     try:
         conn = _get_conn(db)
         conn.execute(
-            f"UPDATE db_connections SET {set_clause} WHERE id = ?",
-            values,  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE db_connections SET {set_clause} WHERE id = ?",  # nosec B608 -- column names validated against allowlist above
+            values,
         )
         conn.commit()
         conn.close()
