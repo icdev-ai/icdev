@@ -544,19 +544,8 @@ def seed_conflict_events(conn) -> int:
          attack_vector, target_name, target_type, damage_level,
          technique_ids, threat_actor, malware_family, confidence) = row
 
-        # theater_id / entity_id are FK-constrained to reference tables that may
-        # be empty in a dev DB.  Store the logical IDs in metadata_json and pass
-        # NULL for the FK columns so the insert succeeds unconditionally.
-        meta = json.dumps({
-            "theater_id": theater_id,
-            "entity_id": entity_id,
-            "severity": severity,
-            "attack_vector": attack_vector,
-            "target_name": target_name,
-            "target_type": target_type,
-            "damage_level": damage_level,
-        })
-
+        # theater_id / entity_id FK columns left NULL (see metadata_json in schema);
+        # reference tables may be empty in a dev DB.
         conn.execute(sql, (
             _id(),                            # id
             None,                             # theater_id (FK — see metadata_json)
@@ -598,15 +587,6 @@ def seed_conflict_events(conn) -> int:
          avg_tone, num_mentions, source_url,
          event_code, goldstein_scale,
          target_name, target_type, damage_level, confidence) = row
-
-        meta = json.dumps({
-            "theater_id": theater_id,
-            "entity_id": entity_id,
-            "severity": severity,
-            "target_name": target_name,
-            "target_type": target_type,
-            "damage_level": damage_level,
-        })
 
         conn.execute(sql, (
             _id(),                            # id
