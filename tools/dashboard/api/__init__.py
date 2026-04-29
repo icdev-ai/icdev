@@ -263,6 +263,12 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("options_api skipped: %s", exc)
 
+    try:
+        from tools.dashboard.api.quality_scores import quality_scores_api
+        _mount_inline(quality_scores_api)   # inline routes: /api/quality-scores/*
+    except Exception as exc:
+        logger.warning("quality_scores_api skipped: %s", exc)
+
     # ------------------------------------------------------------------ #
     #  Optional blueprints — graceful skip on ImportError                 #
     # ------------------------------------------------------------------ #

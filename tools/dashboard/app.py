@@ -8361,6 +8361,11 @@ def create_app() -> Flask:
         """Market Analysis — Macro Intelligence, IV Skew & Term Structure."""
         return render_template("analysis.html")
 
+    @app.route("/quality-scores")
+    def quality_scores_page():
+        """Quality Scores — PE/NAV mispricing dashboard."""
+        return render_template("quality_scores.html")
+
     @app.route("/api/macro/intelligence")
     def api_macro_intelligence():
         """Return macro regime badges for the /analysis page panel."""
