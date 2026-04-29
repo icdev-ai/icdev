@@ -12,9 +12,29 @@ import logging
 import os
 import sqlite3
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger("databridge.connection_manager")
+
+# ---------------------------------------------------------------------------
+# Secret resolver registry
+# ---------------------------------------------------------------------------
+
+try:
+    from tools.databridge.resolvers.vault_resolver import (
+        SecretResolverError,
+        resolve as _vault_resolve,
+    )
+
+    SECRET_RESOLVERS: Dict[str, Callable[[str], str]] = {
+        "vault": _vault_resolve,
+    }
+except ImportError:
+    # hvac / cachetools not installed; vault backend unavailable
+    class SecretResolverError(Exception):  # type: ignore[no-redef]
+        """Raised when a secret reference cannot be resolved."""
+
+    SECRET_RESOLVERS: Dict[str, Callable[[str], str]] = {}  # type: ignore[no-redef]
 
 DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 
@@ -78,8 +98,13 @@ def resolve_secret(auth_secret_ref: str) -> Optional[str]:
     """Resolve a secret reference to its plaintext value.
 
     Supports:
-      - ``env:VAR_NAME``  -- reads from environment variable
-      - plain string      -- returned as-is (for dev/testing only)
+      - ``env:VAR_NAME``         -- reads from environment variable
+      - ``vault:path#field``     -- HashiCorp Vault KV lookup (secret_backend=vault)
+      - plain string             -- returned as-is (for dev/testing only)
+
+    Raises:
+        SecretResolverError: when a backend-specific resolver fails hard
+                             (e.g. Vault connection error, missing field).
     """
     if not auth_secret_ref:
         return None
@@ -90,6 +115,11 @@ def resolve_secret(auth_secret_ref: str) -> Optional[str]:
         if value is None:
             logger.warning("Secret env var '%s' not set", var_name)
         return value
+
+    # Dispatch to registered backend resolvers (e.g. secret_backend=vault)
+    for prefix, resolver in SECRET_RESOLVERS.items():
+        if auth_secret_ref.startswith(f"{prefix}:"):
+            return resolver(auth_secret_ref)
 
     # Fallback: treat the ref as a literal value (dev only)
     return auth_secret_ref
