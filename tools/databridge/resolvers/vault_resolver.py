@@ -11,36 +11,38 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from threading import Lock
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger("databridge.resolvers.vault")
 
 # ---------------------------------------------------------------------------
-# In-process TTL cache (keyed by secret_ref)
+# In-process TTL cache (keyed by secret_ref) — cachetools.TTLCache
 # ---------------------------------------------------------------------------
 
-_cache: Dict[str, Tuple[str, float]] = {}
+try:
+    from cachetools import TTLCache as _TTLCache  # type: ignore[import-untyped]
+    _cache: Any = _TTLCache(maxsize=256, ttl=300)
+except ImportError:
+    _cache = {}  # fallback: no expiry, but never crashes
+
 _cache_lock = Lock()
 _CACHE_TTL = 300  # 5 minutes
 
 
-def _cache_get(key: str) -> Tuple[bool, Optional[str]]:
+def _cache_get(key: str) -> tuple[bool, Optional[str]]:
     """Return (hit, value). hit=False when missing or expired."""
     with _cache_lock:
-        entry = _cache.get(key)
-        if entry and time.monotonic() < entry[1]:
-            return True, entry[0]
-        if entry:
-            del _cache[key]
+        value = _cache.get(key)
+        if value is not None:
+            return True, value
         return False, None
 
 
 def _cache_set(key: str, value: str) -> None:
-    """Store value with a 5-minute TTL."""
+    """Store value; TTLCache handles expiry automatically."""
     with _cache_lock:
-        _cache[key] = (value, time.monotonic() + _CACHE_TTL)
+        _cache[key] = value
 
 
 # ---------------------------------------------------------------------------
