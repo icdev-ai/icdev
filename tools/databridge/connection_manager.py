@@ -31,35 +31,96 @@ class SecretNotFoundError(Exception):
 # Each entry: prefix → callable(secret_ref: str) -> str
 # A SecretResolverError from any resolver triggers the env fallback.
 
-SECRET_RESOLVERS: Dict[str, Callable[[str], str]] = {}
+class SecretResolverError(Exception):
+    """Raised when a backend-specific resolver fails."""
 
-# --- Vault resolver (hvac) ---
-try:
-    from tools.databridge.resolvers.vault_resolver import (
-        SecretResolverError,
-        resolve as _vault_resolve,
-    )
 
-    SECRET_RESOLVERS["vault"] = _vault_resolve
-except ImportError:
-    class SecretResolverError(Exception):  # type: ignore[no-redef]
-        """Raised when a backend-specific resolver fails."""
+# ---------------------------------------------------------------------------
+# Secret resolver classes
+# ---------------------------------------------------------------------------
 
-# --- AWS Secrets Manager resolver (boto3) ---
-try:
-    from tools.databridge.resolvers.aws_resolver import (
-        resolve as _aws_resolve,
-    )
 
-    SECRET_RESOLVERS["aws"] = _aws_resolve
-except ImportError:
-    pass
+class VaultResolver:
+    """HashiCorp Vault KV resolver.
+
+    Resolves ``vault:path/to/secret#field`` refs via the hvac client.
+    Reads VAULT_ADDR and VAULT_TOKEN from the environment.  Resolved secrets
+    are cached in-process for 5 minutes (cache lives in the resolver module).
+    """
+
+    def resolve(self, secret_id: str) -> str:
+        """Resolve a ``vault:`` prefixed secret reference.
+
+        Args:
+            secret_id: Full reference, e.g. ``vault:secret/db/prod#password``.
+
+        Returns:
+            Plaintext secret value (never empty).
+
+        Raises:
+            SecretResolverError: on misconfiguration, network error, or
+                missing field.
+        """
+        try:
+            from tools.databridge.resolvers.vault_resolver import (
+                resolve as _vault_resolve,
+            )
+        except ImportError as exc:
+            raise SecretResolverError(
+                "hvac package is not installed — cannot use vault resolver. "
+                "Install it: pip install hvac"
+            ) from exc
+        return _vault_resolve(secret_id)
+
+
+class AWSSecretsResolver:
+    """AWS Secrets Manager resolver.
+
+    Resolves ``aws:secret-name[#json-key]`` refs via boto3.  Uses the
+    GovCloud endpoint (us-gov-west-1) by default.  Credentials are sourced
+    from environment variables (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+    or the EC2/ECS instance profile — never hardcoded.
+    """
+
+    def resolve(self, secret_id: str) -> str:
+        """Resolve an ``aws:`` prefixed secret reference.
+
+        Args:
+            secret_id: Full reference, e.g. ``aws:prod/db/password`` or
+                ``aws:prod/db/creds#password``.
+
+        Returns:
+            Plaintext secret value.
+
+        Raises:
+            SecretResolverError: on misconfiguration, network error, or
+                missing key.
+        """
+        try:
+            from tools.databridge.resolvers.aws_resolver import (
+                resolve as _aws_resolve,
+            )
+        except ImportError as exc:
+            raise SecretResolverError(
+                "boto3 is not installed — cannot use aws resolver. "
+                "Install it: pip install boto3"
+            ) from exc
+        return _aws_resolve(secret_id)
+
+
+# ---------------------------------------------------------------------------
+# Secret resolver registry
+# ---------------------------------------------------------------------------
+# Each entry: prefix → callable(secret_ref: str) -> str
+
+SECRET_RESOLVERS: Dict[str, Callable[[str], str]] = {
+    "vault": VaultResolver().resolve,
+    "aws": AWSSecretsResolver().resolve,
+}
 
 # --- File resolver (air-gap fallback) ---
 try:
-    from tools.databridge.resolvers.file_resolver import (
-        resolve as _file_resolve,
-    )
+    from tools.databridge.resolvers.file_resolver import resolve as _file_resolve
 
     SECRET_RESOLVERS["file"] = _file_resolve
 except ImportError:
