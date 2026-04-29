@@ -359,11 +359,16 @@ def strategos_wargame():
         )
         nash_row = nash_rows[0] if nash_rows else None
 
-    # Lanchester defaults from wargame attrition_coefficients_json
+    # Lanchester defaults — try attrition_coefficients_json first, fall back to outcome JSON
     lanchester_data = None
     if active_game:
         try:
-            coeffs = json.loads(active_game.get("attrition_coefficients_json") or "{}")
+            raw = (
+                active_game.get("attrition_coefficients_json")
+                or active_game.get("outcome")
+                or "{}"
+            )
+            coeffs = json.loads(raw) if isinstance(raw, str) else (raw or {})
             b0   = float(coeffs.get("blue_strength", 1000))
             r0   = float(coeffs.get("red_strength",  800))
             beta = float(coeffs.get("beta", 0.01))
