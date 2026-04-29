@@ -1123,7 +1123,7 @@ def seed_raw_and_prioritized(conn) -> tuple[int, int]:
 
         # Retrieve the id of the just-inserted (or pre-existing) raw signal
         row = conn.execute(
-            f"SELECT id FROM sg_raw_signals WHERE url_hash = {ph}",
+            f"SELECT id FROM sg_raw_signals WHERE url_hash = {ph}",  # nosec B608
             (url_hash,),
         ).fetchone()
         if row is None:
