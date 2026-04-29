@@ -250,6 +250,44 @@ class FathomDeskDataGateway:
         result.setdefault("sector", None)
         return result
 
+    def fundamentals_with_nav(self, ticker: str) -> dict:
+        """Return fundamentals augmented with explicit NAV data for Tier 1 sectors.
+
+        For REITs, banks, and insurers (Tier 1), attempts to fetch NAV per share
+        via yfinance ``info`` fields (``bookValue``, ``navPerShare``).  For all
+        other sectors the result is identical to :meth:`fundamentals` with
+        ``nav_per_share=None`` and ``sector_tier`` computed from the sector name.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"O"`` (Realty Income REIT).
+
+        Returns:
+            Fundamentals dict augmented with:
+            - ``nav_per_share`` (float | None)
+            - ``sector_tier`` (int: 1, 2, or 3)
+        """
+        from tools.trading.analysts.quality import nav_tier_for_sector
+
+        result = self.fundamentals(ticker)
+        sector = result.get("sector") or ""
+        tier   = nav_tier_for_sector(sector)
+
+        result["sector_tier"] = tier
+        result["nav_per_share"] = None
+
+        if tier == 1 and _yfinance is not None:
+            try:
+                t    = _yfinance.Ticker(ticker.upper())
+                info = t.info or {}
+                # yfinance exposes navPerShare for ETFs/CEFs; bookValue for stocks
+                nav = info.get("navPerShare") or info.get("bookValue")
+                if nav is not None:
+                    result["nav_per_share"] = float(nav)
+            except Exception:
+                pass
+
+        return result
+
     def options_chain(self, ticker: str) -> dict:
         """Return the options chain for *ticker* via OpenBB → fetch_chain() fallback.
 

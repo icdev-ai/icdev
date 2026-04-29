@@ -1,27 +1,41 @@
 # CUI // SP-CTI
-"""FathomDesk Quality Analyst — 6-dimension fundamental quality scorer.
+"""FathomDesk Quality Analyst — 7-dimension fundamental quality scorer.
 
-Scores stocks on six quality dimensions using fundamental metrics from
+Scores stocks on seven quality dimensions using fundamental metrics from
 ``ad_fundamental_metrics``, produces a Piotroski F-Score (0-9), and
 combines everything into a composite quality score (0-100).
 
-Six Dimensions
---------------
+Seven Dimensions
+----------------
 1. Valuation          — PE ratio, PB ratio, FCF yield
 2. Profitability      — ROE, ROIC, gross / operating / net margins
 3. Growth             — EPS and revenue growth consistency (3-year)
 4. Balance Sheet      — debt-to-equity, accruals (earnings quality)
 5. Capital Allocation — dividend vs FCF, payout ratio, insider buy ratio
 6. Moat Durability    — composite of margin stability, capital efficiency, insider activity
+7. PE/NAV Mispricing  — implied ROE gap (actual ROE − P/B÷PE), sector-tier-weighted
 
-Composite Formula (Novy-Marx / Piotroski inspired)
----------------------------------------------------
-Q = 0.25·z(ROE)
-  + 0.20·z(GrossMargin)          # proxy for GrossProfit / Assets
-  + 0.15·z(-D/E)                 # lower leverage → higher z
-  + 0.15·z(-Accruals)            # lower accruals → higher z (cleaner earnings)
-  + 0.10·z(-EarningsVar)         # lower variance (proxied by |eps_growth| deviation)
+PE/NAV Framework
+----------------
+From the identity  P/B = PE × ROE  →  implied_ROE = P/B / PE
+  roe_gap = actual_ROE − implied_ROE
+  positive gap → earning more than market's NAV premium implies (undervalued)
+  negative gap → market pricing in future ROE expansion not yet realized (overvalued)
+
+Signal is sector-tier-weighted:
+  Tier 1 (REITs, banks, insurers) — full weight; NAV is audited/explicit
+  Tier 2 (utilities, energy, industrials) — 70% weight; estimable from balance sheet
+  Tier 3 (software, biotech, services) — 40% weight; goodwill dominates, PB is noisy
+
+Composite Formula (Novy-Marx / Piotroski inspired, v2)
+------------------------------------------------------
+Q = 0.23·z(ROE)
+  + 0.18·z(GrossMargin)          # proxy for GrossProfit / Assets
+  + 0.13·z(-D/E)                 # lower leverage → higher z
+  + 0.13·z(-Accruals)            # lower accruals → higher z (cleaner earnings)
+  + 0.08·z(-EarningsVar)         # lower variance (proxied by |eps_growth| deviation)
   + 0.15·z(FCFYield)
+  + 0.10·z(ROE_Gap)              # PE/NAV mispricing signal
 
 Z-scores are computed cross-sectionally when a population is provided;
 otherwise reference market-wide statistics are used (mu / sigma constants below).
@@ -81,9 +95,31 @@ _ROOT = Path(__file__).resolve().parents[3]
 _ICDEV_DB = _ROOT / "data" / "icdev.db"
 
 # ---------------------------------------------------------------------------
+# PE/NAV sector tier classification
+# ---------------------------------------------------------------------------
+# Tier 1: audited/explicit NAV — highest PE/NAV signal fidelity
+# Tier 2: NAV estimable from balance sheet — moderate fidelity
+# Tier 3: goodwill/intangibles dominate book value — lowest fidelity
+NAV_SECTOR_TIERS: dict[str, int] = {
+    "real_estate": 1, "reit": 1,
+    "financials": 1, "banks": 1, "banking": 1, "insurance": 1,
+    "closed_end_fund": 1, "bdc": 1,
+    "utilities": 2, "energy": 2, "materials": 2,
+    "industrials": 2, "consumer_staples": 2,
+    "consumer_discretionary": 2, "healthcare": 2,
+    "information_technology": 3, "technology": 3,
+    "communication_services": 3, "software": 3,
+    "biotech": 3, "services": 3,
+}
+
+# PE/NAV quadrant thresholds (market-wide reference)
+_PE_HIGH_THRESHOLD = 20.0   # above → high PE
+_PB_HIGH_THRESHOLD = 2.5    # above → premium to NAV
+
+# ---------------------------------------------------------------------------
 # Model version
 # ---------------------------------------------------------------------------
-MODEL_VERSION = "v1"
+MODEL_VERSION = "v2"
 
 # ---------------------------------------------------------------------------
 # Reference statistics for z-score normalization
@@ -96,16 +132,18 @@ _REF_STATS: dict[str, dict[str, float]] = {
     "neg_accruals":   {"mu": -0.05, "sigma": 0.10},   # stored as -accruals_ratio
     "neg_earn_var":   {"mu": -0.15, "sigma": 0.20},   # stored as -|eps_growth - 0.10|
     "fcf_yield":      {"mu": 0.03,  "sigma": 0.04},
+    "roe_gap":        {"mu": 0.00,  "sigma": 0.08},   # actual_ROE − implied_ROE
 }
 
 # Composite weights (must sum to 1.0)
 _COMPOSITE_WEIGHTS: dict[str, float] = {
-    "roe":            0.25,
-    "gross_margin":   0.20,
-    "neg_debt_equity":0.15,
-    "neg_accruals":   0.15,
-    "neg_earn_var":   0.10,
-    "fcf_yield":      0.15,
+    "roe":             0.23,
+    "gross_margin":    0.18,
+    "neg_debt_equity": 0.13,
+    "neg_accruals":    0.13,
+    "neg_earn_var":    0.08,
+    "fcf_yield":       0.15,
+    "roe_gap":         0.10,   # PE/NAV mispricing signal
 }
 
 # ---------------------------------------------------------------------------
@@ -152,6 +190,93 @@ def _population_stats(values: list[float]) -> tuple[float, float]:
     variance = sum((v - mu) ** 2 for v in values) / n
     sigma = math.sqrt(variance) if variance > 0 else 1.0
     return mu, sigma
+
+
+# ---------------------------------------------------------------------------
+# PE/NAV helpers
+# ---------------------------------------------------------------------------
+
+def nav_tier_for_sector(sector: str | None) -> int:
+    """Return sector tier (1/2/3) for PE/NAV signal reliability."""
+    if not sector:
+        return 2
+    key = sector.lower().replace(" ", "_").replace("-", "_")
+    return NAV_SECTOR_TIERS.get(key, 2)
+
+
+def compute_pe_nav_metrics(f: dict[str, Any]) -> dict[str, Any]:
+    """Compute PE/NAV framework metrics from a fundamentals dict.
+
+    Uses the identity  P/B = PE × ROE  →  implied_ROE = P/B / PE.
+    The roe_gap (actual − implied) is the primary mispricing signal.
+
+    Returns:
+        implied_roe  — float or None when PE/PB unavailable
+        roe_gap      — float or None (positive = undervalued)
+        nav_quadrant — one of four string labels
+        pe_nav_score — 0-100 (50 = neutral; higher = better value)
+        sector_tier  — 1, 2, or 3
+    """
+    pe  = _safe(f.get("pe_ratio"),  default=0.0)
+    pb  = _safe(f.get("pb_ratio"),  default=0.0)
+    roe = _safe(f.get("roe"),       default=0.0)
+
+    # implied_ROE from P/B = PE × ROE identity
+    if pe > 0 and pb > 0:
+        implied_roe: float | None = pb / pe
+        roe_gap: float | None     = roe - implied_roe
+    else:
+        implied_roe = None
+        roe_gap     = None
+
+    # Four-quadrant classification
+    if pe > 0 and pb > 0:
+        high_pe = pe > _PE_HIGH_THRESHOLD
+        high_pb = pb > _PB_HIGH_THRESHOLD
+        if not high_pe and not high_pb:
+            nav_quadrant = "deep_value"
+        elif not high_pe and high_pb:
+            nav_quadrant = "efficient_compounder"
+        elif high_pe and not high_pb:
+            nav_quadrant = "asset_rich_earnings_poor"
+        else:
+            nav_quadrant = "fully_priced"
+    else:
+        nav_quadrant = "unknown"
+
+    # PE/NAV score: centered on 50, ±5% roe_gap → ±30 pts
+    if roe_gap is not None:
+        pe_nav_score = _clamp(50.0 + roe_gap * 600.0)
+    else:
+        pe_nav_score = 50.0  # neutral when inputs missing
+
+    tier = nav_tier_for_sector(f.get("sector"))
+
+    return {
+        "implied_roe":  round(implied_roe, 4) if implied_roe is not None else None,
+        "roe_gap":      round(roe_gap, 4)     if roe_gap is not None     else None,
+        "nav_quadrant": nav_quadrant,
+        "pe_nav_score": round(pe_nav_score, 2),
+        "sector_tier":  tier,
+    }
+
+
+def _score_pe_nav(f: dict[str, Any]) -> float:
+    """Score PE/NAV mispricing dimension (0-100), tier-weighted.
+
+    Tier 1 (REITs, banks)     — full signal weight
+    Tier 2 (industrials, etc) — 70% signal + 30% neutral blend
+    Tier 3 (software, biotech) — 40% signal + 60% neutral blend
+    """
+    pnm   = compute_pe_nav_metrics(f)
+    score = pnm["pe_nav_score"]
+    tier  = pnm["sector_tier"]
+    if tier == 1:
+        return round(score, 2)
+    elif tier == 2:
+        return round(score * 0.70 + 50.0 * 0.30, 2)
+    else:
+        return round(score * 0.40 + 50.0 * 0.60, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -369,8 +494,9 @@ def _composite_quality(
 ) -> float:
     """Compute composite quality score (0-100) via z-score formula.
 
-    Q = 0.25·z(ROE) + 0.20·z(GrossMargin) + 0.15·z(-D/E)
-      + 0.15·z(-Accruals) + 0.10·z(-EarningsVar) + 0.15·z(FCFYield)
+    Q = 0.23·z(ROE) + 0.18·z(GrossMargin) + 0.13·z(-D/E)
+      + 0.13·z(-Accruals) + 0.08·z(-EarningsVar) + 0.15·z(FCFYield)
+      + 0.10·z(ROE_Gap)   ← PE/NAV mispricing signal
 
     If ``population`` is provided (list of fundamentals dicts), cross-sectional
     mu / sigma are used.  Otherwise, market-wide reference stats apply.
@@ -383,10 +509,20 @@ def _composite_quality(
     fcfy  = _safe(f.get("fcf_yield"),        0.0)
 
     # Negated values for "lower is better" dimensions
-    neg_de   = -de
-    neg_acc  = -acc
+    neg_de  = -de
+    neg_acc = -acc
     # EarningsVar proxy: deviation from expected 10% growth, negated
-    neg_ev   = -(abs(eps_g - 0.10))
+    neg_ev  = -(abs(eps_g - 0.10))
+
+    # PE/NAV roe_gap — tier-downweighted for intangibles-heavy sectors
+    pnm     = compute_pe_nav_metrics(f)
+    roe_gap = pnm["roe_gap"] if pnm["roe_gap"] is not None else 0.0
+    # For Tier 3 the signal is unreliable — blend toward zero (neutral)
+    tier    = pnm["sector_tier"]
+    if tier == 3:
+        roe_gap = roe_gap * 0.4
+    elif tier == 2:
+        roe_gap = roe_gap * 0.7
 
     if population:
         def _pop_z(key: str, raw_values: list[float], val: float) -> float:
@@ -394,34 +530,44 @@ def _composite_quality(
             mu, sigma = _population_stats(finite) if finite else (0.0, 1.0)
             return _z_score(val, mu, sigma)
 
-        roe_vals   = [_safe(p.get("roe"),              0.0) for p in population]
-        gm_vals    = [_safe(p.get("gross_margin"),     0.0) for p in population]
-        de_vals    = [-_safe(p.get("debt_to_equity"),  0.0) for p in population]
-        acc_vals   = [-_safe(p.get("accruals_ratio"),  0.0) for p in population]
-        ev_vals    = [-(abs(_safe(p.get("eps_growth_3y"), 0.0) - 0.10)) for p in population]
-        fcfy_vals  = [_safe(p.get("fcf_yield"),        0.0) for p in population]
+        roe_vals    = [_safe(p.get("roe"),              0.0) for p in population]
+        gm_vals     = [_safe(p.get("gross_margin"),     0.0) for p in population]
+        de_vals     = [-_safe(p.get("debt_to_equity"),  0.0) for p in population]
+        acc_vals    = [-_safe(p.get("accruals_ratio"),  0.0) for p in population]
+        ev_vals     = [-(abs(_safe(p.get("eps_growth_3y"), 0.0) - 0.10)) for p in population]
+        fcfy_vals   = [_safe(p.get("fcf_yield"),        0.0) for p in population]
+        # roe_gap cross-section: compute on-the-fly per population member
+        gap_vals    = []
+        for p in population:
+            pm = compute_pe_nav_metrics(p)
+            g  = pm["roe_gap"] if pm["roe_gap"] is not None else 0.0
+            t  = pm["sector_tier"]
+            gap_vals.append(g * (0.4 if t == 3 else 0.7 if t == 2 else 1.0))
 
-        z_roe   = _pop_z("roe",    roe_vals,  roe)
-        z_gm    = _pop_z("gm",     gm_vals,   gm)
-        z_de    = _pop_z("de",     de_vals,   neg_de)
-        z_acc   = _pop_z("acc",    acc_vals,  neg_acc)
-        z_ev    = _pop_z("ev",     ev_vals,   neg_ev)
-        z_fcfy  = _pop_z("fcfy",   fcfy_vals, fcfy)
+        z_roe    = _pop_z("roe",     roe_vals,  roe)
+        z_gm     = _pop_z("gm",      gm_vals,   gm)
+        z_de     = _pop_z("de",      de_vals,   neg_de)
+        z_acc    = _pop_z("acc",     acc_vals,  neg_acc)
+        z_ev     = _pop_z("ev",      ev_vals,   neg_ev)
+        z_fcfy   = _pop_z("fcfy",    fcfy_vals, fcfy)
+        z_roegap = _pop_z("roe_gap", gap_vals,  roe_gap)
     else:
-        z_roe  = _z_score(roe,    **_REF_STATS["roe"])
-        z_gm   = _z_score(gm,     **_REF_STATS["gross_margin"])
-        z_de   = _z_score(neg_de, **_REF_STATS["neg_debt_equity"])
-        z_acc  = _z_score(neg_acc,**_REF_STATS["neg_accruals"])
-        z_ev   = _z_score(neg_ev, **_REF_STATS["neg_earn_var"])
-        z_fcfy = _z_score(fcfy,   **_REF_STATS["fcf_yield"])
+        z_roe    = _z_score(roe,     **_REF_STATS["roe"])
+        z_gm     = _z_score(gm,      **_REF_STATS["gross_margin"])
+        z_de     = _z_score(neg_de,  **_REF_STATS["neg_debt_equity"])
+        z_acc    = _z_score(neg_acc, **_REF_STATS["neg_accruals"])
+        z_ev     = _z_score(neg_ev,  **_REF_STATS["neg_earn_var"])
+        z_fcfy   = _z_score(fcfy,    **_REF_STATS["fcf_yield"])
+        z_roegap = _z_score(roe_gap, **_REF_STATS["roe_gap"])
 
     q_z = (
-        _COMPOSITE_WEIGHTS["roe"]             * z_roe
-        + _COMPOSITE_WEIGHTS["gross_margin"]  * z_gm
-        + _COMPOSITE_WEIGHTS["neg_debt_equity"]* z_de
-        + _COMPOSITE_WEIGHTS["neg_accruals"]  * z_acc
-        + _COMPOSITE_WEIGHTS["neg_earn_var"]  * z_ev
-        + _COMPOSITE_WEIGHTS["fcf_yield"]     * z_fcfy
+        _COMPOSITE_WEIGHTS["roe"]              * z_roe
+        + _COMPOSITE_WEIGHTS["gross_margin"]   * z_gm
+        + _COMPOSITE_WEIGHTS["neg_debt_equity"] * z_de
+        + _COMPOSITE_WEIGHTS["neg_accruals"]   * z_acc
+        + _COMPOSITE_WEIGHTS["neg_earn_var"]   * z_ev
+        + _COMPOSITE_WEIGHTS["fcf_yield"]      * z_fcfy
+        + _COMPOSITE_WEIGHTS["roe_gap"]        * z_roegap
     )
 
     # q_z is in roughly [-3, +3]; map to [0, 100]
@@ -471,6 +617,9 @@ def score_quality(
     """
     f = fundamentals or {}
 
+    # PE/NAV analysis (computed once, reused by dim scorer and result)
+    pe_nav_analysis = compute_pe_nav_metrics(f)
+
     dims = {
         "valuation":          _score_valuation(f),
         "profitability":      _score_profitability(f),
@@ -478,12 +627,13 @@ def score_quality(
         "balance_sheet":      _score_balance_sheet(f),
         "capital_allocation": _score_capital_allocation(f),
         "moat":               _score_moat(f),
+        "pe_nav":             _score_pe_nav(f),
     }
 
-    # Equal-weight composite of the 6 dimensions
+    # Equal-weight composite of the 7 dimensions
     eq_score = round(sum(dims.values()) / len(dims), 2)
 
-    # Z-score composite
+    # Z-score composite (includes roe_gap factor)
     z_composite = _composite_quality(f, population)
 
     # Piotroski
@@ -502,12 +652,16 @@ def score_quality(
         quality_label = "LOW"
 
     # Human-readable summary
-    top_dims = sorted(dims.items(), key=lambda x: x[1], reverse=True)[:2]
+    top_dims  = sorted(dims.items(), key=lambda x: x[1], reverse=True)[:2]
     weak_dims = sorted(dims.items(), key=lambda x: x[1])[:2]
+    roe_gap   = pe_nav_analysis.get("roe_gap")
+    gap_str   = f", ROE gap {roe_gap:+.1%}" if roe_gap is not None else ""
     summary = (
         f"{ticker} quality: {quality_label} (score {eq_score:.0f}/100, "
-        f"composite z-score {z_composite:.0f}/100). "
+        f"composite z-score {z_composite:.0f}/100{gap_str}). "
         f"Piotroski F={piotroski['score']}/9 ({piotroski['label']}). "
+        f"NAV quadrant: {pe_nav_analysis['nav_quadrant']} "
+        f"[tier {pe_nav_analysis['sector_tier']}]. "
         f"Strengths: {top_dims[0][0]} ({top_dims[0][1]:.0f}), "
         f"{top_dims[1][0]} ({top_dims[1][1]:.0f}). "
         f"Weaknesses: {weak_dims[0][0]} ({weak_dims[0][1]:.0f}), "
@@ -517,15 +671,16 @@ def score_quality(
     as_of_date = str(f.get("as_of_date", datetime.now(timezone.utc).date().isoformat()))
 
     return {
-        "ticker": ticker,
-        "analyst": "quality",
-        "as_of_date": as_of_date,
-        "dimensions": dims,
-        "piotroski": piotroski,
+        "ticker":          ticker,
+        "analyst":         "quality",
+        "as_of_date":      as_of_date,
+        "dimensions":      dims,
+        "pe_nav_analysis": pe_nav_analysis,
+        "piotroski":       piotroski,
         "composite_score": z_composite,
-        "score": eq_score,
-        "quality_label": quality_label,
-        "summary": summary,
+        "score":           eq_score,
+        "quality_label":   quality_label,
+        "summary":         summary,
     }
 
 
@@ -619,8 +774,9 @@ def save_quality_scores(
     """
     conn = _get_db(db_path)
     try:
-        dims = result.get("dimensions", {})
-        now = _utcnow()
+        dims    = result.get("dimensions", {})
+        pnm     = result.get("pe_nav_analysis", {})
+        now     = _utcnow()
         conn.execute(
             """
             INSERT INTO ad_quality_scores (
@@ -628,8 +784,9 @@ def save_quality_scores(
                 value_quality, growth_quality, profitability_quality,
                 balance_sheet_quality, capital_allocation_quality, moat_score,
                 composite_quality_score, model_version,
-                classification, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI // SP-CTI', ?, ?)
+                classification, created_at, updated_at,
+                pe_nav_score, implied_roe, roe_gap, nav_quadrant
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI // SP-CTI', ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ticker, as_of_date) DO UPDATE SET
                 value_quality              = excluded.value_quality,
                 growth_quality             = excluded.growth_quality,
@@ -639,7 +796,11 @@ def save_quality_scores(
                 moat_score                 = excluded.moat_score,
                 composite_quality_score    = excluded.composite_quality_score,
                 model_version              = excluded.model_version,
-                updated_at                 = excluded.updated_at
+                updated_at                 = excluded.updated_at,
+                pe_nav_score               = excluded.pe_nav_score,
+                implied_roe                = excluded.implied_roe,
+                roe_gap                    = excluded.roe_gap,
+                nav_quadrant               = excluded.nav_quadrant
             """,
             (
                 str(uuid.uuid4()),
@@ -655,6 +816,10 @@ def save_quality_scores(
                 MODEL_VERSION,
                 now,
                 now,
+                dims.get("pe_nav"),
+                pnm.get("implied_roe"),
+                pnm.get("roe_gap"),
+                pnm.get("nav_quadrant"),
             ),
         )
         conn.commit()
@@ -672,25 +837,29 @@ def save_quality_scores(
 def _build_sample_fundamentals(ticker: str) -> dict[str, Any]:
     """Build a sample/demo fundamentals dict for testing purposes."""
     return {
-        "ticker": ticker,
-        "as_of_date": datetime.now(timezone.utc).date().isoformat(),
-        "pe_ratio": 28.5,
-        "pb_ratio": 8.2,
-        "fcf_yield": 0.032,
-        "roe": 0.42,
-        "roa": 0.18,
-        "roic": 0.35,
-        "gross_margin": 0.56,
-        "operating_margin": 0.26,
-        "net_margin": 0.22,
-        "eps_ttm": 12.40,
-        "eps_growth_3y": 0.18,
-        "dividend_yield": 0.01,
-        "payout_ratio": 0.08,
-        "dividend_growth_5y": 0.05,
-        "debt_to_equity": 0.52,
-        "accruals_ratio": -0.03,
+        "ticker":            ticker,
+        "as_of_date":        datetime.now(timezone.utc).date().isoformat(),
+        "sector":            "information_technology",
+        "pe_ratio":          28.5,
+        "pb_ratio":          8.2,
+        "ps_ratio":          7.1,
+        "ev_ebitda":         22.0,
+        "fcf_yield":         0.032,
+        "roe":               0.42,
+        "roa":               0.18,
+        "roic":              0.35,
+        "gross_margin":      0.56,
+        "operating_margin":  0.26,
+        "net_margin":        0.22,
+        "eps_ttm":           12.40,
+        "eps_growth_3y":     0.18,
+        "dividend_yield":    0.01,
+        "payout_ratio":      0.08,
+        "dividend_growth_5y":0.05,
+        "debt_to_equity":    0.52,
+        "accruals_ratio":   -0.03,
         "insider_buy_ratio": 0.15,
+        "nav_per_share":     None,  # N/A for tech sector (Tier 3)
     }
 
 
@@ -761,22 +930,32 @@ def main() -> None:
     else:
         dims = result["dimensions"]
         piot = result["piotroski"]
-        print(f"\n{'='*60}")
+        pnm  = result.get("pe_nav_analysis", {})
+        print(f"\n{'='*64}")
         print(f"  FathomDesk Quality Score — {ticker}")
-        print(f"{'='*60}")
+        print(f"{'='*64}")
         print(f"  Overall: {result['score']:.1f}/100  [{result['quality_label']}]")
         print(f"  Composite (z-score formula): {result['composite_score']:.1f}/100")
         print(f"  Piotroski F-Score: {piot['score']}/9  [{piot['label']}]")
-        print("\n  Dimension Scores:")
+        print("\n  Dimension Scores (7):")
         for dim, val in sorted(dims.items(), key=lambda x: x[1], reverse=True):
             bar = "#" * int(val / 5)
-            print(f"    {dim:<22} {val:5.1f}  {bar}")
+            print(f"    {dim:<24} {val:5.1f}  {bar}")
+        print("\n  PE/NAV Analysis:")
+        print(f"    Quadrant:     {pnm.get('nav_quadrant', 'N/A')}")
+        print(f"    Sector Tier:  {pnm.get('sector_tier', 'N/A')}")
+        if pnm.get("implied_roe") is not None:
+            print(f"    Implied ROE:  {pnm['implied_roe']:.1%}")
+        if pnm.get("roe_gap") is not None:
+            gap = pnm["roe_gap"]
+            direction = "undervalued ▲" if gap > 0 else "overvalued ▼" if gap < 0 else "fair"
+            print(f"    ROE Gap:      {gap:+.1%}  ({direction})")
         print("\n  Piotroski Criteria:")
         for crit, flag in piot["criteria"].items():
             mark = "✓" if flag else "✗"
             print(f"    {mark} {crit}")
         print(f"\n  {result['summary']}")
-        print(f"{'='*60}\n")
+        print(f"{'='*64}\n")
 
 
 if __name__ == "__main__":
