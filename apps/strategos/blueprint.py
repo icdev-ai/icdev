@@ -341,8 +341,88 @@ def strategos_wargame():
 
     wargame_id = active_game["id"] if active_game else None
 
-    # OODA tempo (uses baseline data if no DB events)
+    # Extract scenario coefficients — used for both Lanchester and OODA scaling
+    scenario_coeffs: dict = {}
+    if active_game:
+        try:
+            raw = (
+                active_game.get("attrition_coefficients_json")
+                or active_game.get("outcome")
+                or "{}"
+            )
+            scenario_coeffs = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except Exception:
+            scenario_coeffs = {}
+
+    b0   = float(scenario_coeffs.get("blue_strength", 1000))
+    r0   = float(scenario_coeffs.get("red_strength",  800))
+    beta = float(scenario_coeffs.get("beta", 0.01))
+    rho  = float(scenario_coeffs.get("rho",  0.01))
+
+    # OODA tempo — scale baselines per scenario force levels so each scenario differs
     ooda = compute_tempo(wargame_id)
+    if active_game and scenario_coeffs:
+        try:
+            # More forces → more C2 complexity → slower cycles (power-law, mild)
+            blue_ooda_scale = (b0 / 1000.0) ** 0.2
+            red_ooda_scale  = (r0 / 800.0)  ** 0.2
+            # Higher attrition coeff → better targeting intel → faster cyber/EW observe+orient
+            cyber_scale_blue = max(0.7, 1.0 / (beta / 0.01) ** 0.15) if beta > 0 else 1.0
+            cyber_scale_red  = max(0.7, 1.0 / (rho  / 0.01) ** 0.15) if rho  > 0 else 1.0
+
+            phase_keys = (
+                "observe_latency_s", "orient_latency_s",
+                "decide_latency_s",  "act_latency_s",
+            )
+            for domain, ddata in ooda["blue"].items():
+                scale = blue_ooda_scale * (
+                    cyber_scale_blue if domain in ("cyber", "ew") else 1.0
+                )
+                for pk in phase_keys:
+                    ddata[pk] = round(ddata[pk] * scale, 1)
+                ddata["cycle_time_s"] = round(sum(ddata[pk] for pk in phase_keys), 1)
+                ddata["command_interval_s"] = round(ddata["cycle_time_s"] * 1.5, 1)
+
+            for domain, ddata in ooda["red"].items():
+                scale = red_ooda_scale * (
+                    cyber_scale_red if domain in ("cyber", "ew") else 1.0
+                )
+                for pk in phase_keys:
+                    ddata[pk] = round(ddata[pk] * scale, 1)
+                ddata["cycle_time_s"] = round(sum(ddata[pk] for pk in phase_keys), 1)
+                ddata["command_interval_s"] = round(ddata["cycle_time_s"] * 1.5, 1)
+
+            # Recompute tempo scores and radar after scaling
+            all_cycles = (
+                [d["cycle_time_s"] for d in ooda["blue"].values()]
+                + [d["cycle_time_s"] for d in ooda["red"].values()]
+            )
+            max_cycle = max(all_cycles) if all_cycles else 1.0
+            advantage: dict = {}
+            for domain in ooda["domains"]:
+                for side in ("blue", "red"):
+                    c = ooda[side][domain]["cycle_time_s"]
+                    ooda[side][domain]["tempo_score"] = (
+                        round(1.0 - min(c / max_cycle, 1.0), 4)
+                        if max_cycle > 0 else 0.5
+                    )
+                b_s = ooda["blue"][domain]["tempo_score"]
+                r_s = ooda["red"][domain]["tempo_score"]
+                if abs(b_s - r_s) < 0.05:
+                    advantage[domain] = "parity"
+                elif b_s > r_s:
+                    advantage[domain] = "blue"
+                else:
+                    advantage[domain] = "red"
+            ooda["advantage"] = advantage
+            ooda["radar_data"]["blue"] = [
+                round(ooda["blue"][d]["tempo_score"] * 100, 1) for d in ooda["domains"]
+            ]
+            ooda["radar_data"]["red"] = [
+                round(ooda["red"][d]["tempo_score"] * 100, 1) for d in ooda["domains"]
+            ]
+        except Exception:
+            pass  # fall back to unscaled baseline
 
     # COA entries
     coa_rows = _safe_fetch(
@@ -359,23 +439,11 @@ def strategos_wargame():
         )
         nash_row = nash_rows[0] if nash_rows else None
 
-    # Lanchester defaults — try attrition_coefficients_json first, fall back to outcome JSON
-    lanchester_data = None
-    if active_game:
-        try:
-            raw = (
-                active_game.get("attrition_coefficients_json")
-                or active_game.get("outcome")
-                or "{}"
-            )
-            coeffs = json.loads(raw) if isinstance(raw, str) else (raw or {})
-            b0   = float(coeffs.get("blue_strength", 1000))
-            r0   = float(coeffs.get("red_strength",  800))
-            beta = float(coeffs.get("beta", 0.01))
-            rho  = float(coeffs.get("rho",  0.01))
-            lanchester_data = lanchester_square(b0, r0, beta, rho)
-        except Exception:
-            lanchester_data = lanchester_square(1000, 800)
+    # Lanchester attrition curves
+    try:
+        lanchester_data = lanchester_square(b0, r0, beta, rho)
+    except Exception:
+        lanchester_data = lanchester_square(1000, 800)
 
     return render_template(
         "strategos/wargame.html",
