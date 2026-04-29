@@ -370,7 +370,9 @@
 
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 <script>
 /* ── NODE_DISRUPTION_PROFILES (mirrored from Python) ───────────────────────── */
 const DISRUPTION_PROFILES = {
@@ -623,19 +625,12 @@ function renderError(msg) {
 function pct(v) { return v != null ? (v * 100).toFixed(1) + '%' : '—'; }
 function fmt(v) { return v != null ? parseFloat(v).toFixed(1) : '—'; }
 
-/* ── Leaflet CDN load ──────────────────────────────────────────────────────── */
-(function loadLeaflet() {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-    document.head.appendChild(link);
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = initMap;
-    script.onerror = () => {
-        document.getElementById('map-placeholder').textContent = 'Map unavailable (offline)';
-    };
-    document.head.appendChild(script);
-})();
+document.addEventListener('DOMContentLoaded', function () {
+    if (typeof L !== 'undefined') {
+        initMap();
+    } else {
+        document.getElementById('map-placeholder').textContent = 'Map unavailable';
+    }
+});
 </script>
 {% endblock %}

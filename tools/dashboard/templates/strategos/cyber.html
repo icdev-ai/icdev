@@ -181,6 +181,9 @@
   display: none;
   line-height: 1.5;
 }
+/* Keep nav dropdowns above Leaflet map panes (leaflet-top/bottom = 1000) */
+.nav-dropdown-menu { z-index: 1100 !important; }
+.navbar, .sub-nav  { z-index: 1050 !important; }
 </style>
 {% endblock %}
 

@@ -95,85 +95,267 @@
 
 {% block scripts %}
 <script>
-(function() {
-    const NODE_COLORS = { unit:'#38bdf8', signal:'#f59e0b', threat:'#e94560', actor:'#10b981', location:'#9b59b6', event:'#6b7280', unknown:'#94a3b8' };
-    const canvas = document.getElementById('sg-kg-canvas');
-    const ctx = canvas.getContext('2d');
+(function () {
+'use strict';
+const NODE_COLORS = {
+    unit:'#38bdf8', signal:'#f59e0b', threat:'#e94560',
+    actor:'#10b981', location:'#9b59b6', event:'#6b7280', unknown:'#94a3b8'
+};
+const canvas = document.getElementById('sg-kg-canvas');
+const ctx    = canvas.getContext('2d');
 
-    fetch('/strategos/api/kg').then(r=>r.json()).then(data => {
-        const nodes = data.nodes || [];
-        const edges = data.edges || [];
-        if (!nodes.length) {
-            ctx.fillStyle = 'var(--text-muted)';
+let _nodes = [], _edges = [], _pos = {};
+let _alpha  = 1.0;
+let _animId = null;
+
+// Viewport transform (zoom + pan)
+let _tx = 0, _ty = 0, _scale = 1;
+
+// Interaction state
+let _drag = null;   // {nodeId}
+let _pan  = null;   // {cx0, cy0, tx0, ty0}
+
+// ── Resize canvas to container width ────────────────────────────────────────
+function resize() {
+    const W = canvas.parentElement.clientWidth || 800;
+    canvas.width  = W;
+    canvas.height = 520;
+}
+
+// ── Convert canvas pixel → world coordinates ─────────────────────────────────
+function toWorld(cx, cy) {
+    return { x: (cx - _tx) / _scale, y: (cy - _ty) / _scale };
+}
+
+// ── Hit-test a world-space point against nodes ────────────────────────────────
+function hitNode(wx, wy) {
+    const r2 = (12 / _scale) * (12 / _scale);
+    return _nodes.find(n => {
+        const p = _pos[n.node_id];
+        if (!p) return false;
+        const dx = p.x - wx, dy = p.y - wy;
+        return dx * dx + dy * dy < r2;
+    }) || null;
+}
+
+// ── Initialise positions around a circle so layout starts clean ───────────────
+function initPositions() {
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2, cy = H / 2;
+    const r  = Math.min(W, H) * 0.32;
+    _nodes.forEach((n, i) => {
+        const angle = (i / _nodes.length) * Math.PI * 2;
+        _pos[n.node_id] = {
+            x: cx + Math.cos(angle) * r + (Math.random() - 0.5) * 30,
+            y: cy + Math.sin(angle) * r + (Math.random() - 0.5) * 30,
+            vx: 0, vy: 0, pinned: false,
+        };
+    });
+}
+
+// ── One force-simulation step ─────────────────────────────────────────────────
+function stepForce() {
+    if (_alpha < 0.005) return;
+    _alpha *= 0.975;
+
+    const W = canvas.width, H = canvas.height;
+
+    // Repulsion (Barnes-Hut simplified: O(n²) but fine for ≤500 nodes)
+    for (let i = 0; i < _nodes.length; i++) {
+        const pa = _pos[_nodes[i].node_id];
+        for (let j = i + 1; j < _nodes.length; j++) {
+            const pb = _pos[_nodes[j].node_id];
+            const dx = pa.x - pb.x, dy = pa.y - pb.y;
+            const d2 = Math.max(dx * dx + dy * dy, 1);
+            const f  = 1600 / d2 * _alpha;
+            pa.vx += dx * f; pa.vy += dy * f;
+            pb.vx -= dx * f; pb.vy -= dy * f;
+        }
+    }
+
+    // Spring attraction along edges
+    _edges.forEach(e => {
+        const ps = _pos[e.source_id], pt = _pos[e.target_id];
+        if (!ps || !pt) return;
+        const dx = pt.x - ps.x, dy = pt.y - ps.y;
+        const d  = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const f  = (d - 90) * 0.028 * _alpha;
+        ps.vx += dx / d * f; ps.vy += dy / d * f;
+        pt.vx -= dx / d * f; pt.vy -= dy / d * f;
+    });
+
+    // Weak gravity toward canvas centre
+    const cx = W / 2, cy = H / 2;
+    _nodes.forEach(n => {
+        const p = _pos[n.node_id];
+        p.vx += (cx - p.x) * 0.003 * _alpha;
+        p.vy += (cy - p.y) * 0.003 * _alpha;
+    });
+
+    // Integrate
+    _nodes.forEach(n => {
+        const p = _pos[n.node_id];
+        if (p.pinned) { p.vx = 0; p.vy = 0; return; }
+        p.vx *= 0.62; p.vy *= 0.62;
+        p.x = Math.max(12, Math.min(W - 12, p.x + p.vx));
+        p.y = Math.max(12, Math.min(H - 12, p.y + p.vy));
+    });
+}
+
+// ── Draw a frame ──────────────────────────────────────────────────────────────
+function draw() {
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.translate(_tx, _ty);
+    ctx.scale(_scale, _scale);
+
+    const lw = 1 / _scale;
+
+    // Edges
+    ctx.strokeStyle = 'rgba(148,163,184,.22)';
+    ctx.lineWidth   = lw;
+    _edges.forEach(e => {
+        const ps = _pos[e.source_id], pt = _pos[e.target_id];
+        if (!ps || !pt) return;
+        ctx.beginPath();
+        ctx.moveTo(ps.x, ps.y);
+        ctx.lineTo(pt.x, pt.y);
+        ctx.stroke();
+    });
+
+    // Nodes + labels
+    const nr = 8 / _scale;
+    _nodes.forEach(n => {
+        const p = _pos[n.node_id];
+        if (!p) return;
+        const color = NODE_COLORS[n.node_type] || '#94a3b8';
+        // Glow ring for pinned nodes
+        if (p.pinned) {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, nr + 3 / _scale, 0, Math.PI * 2);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth   = 1.5 / _scale;
+            ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, nr, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+
+        const fs = Math.max(9 / _scale, 9);
+        ctx.fillStyle = 'rgba(200,220,255,.8)';
+        ctx.font      = `${fs}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillText(
+            (n.label || n.node_id).slice(0, 16),
+            p.x, p.y + nr + 11 / _scale
+        );
+    });
+
+    ctx.restore();
+}
+
+// ── Animation loop ─────────────────────────────────────────────────────────────
+function loop() {
+    stepForce();
+    draw();
+    _animId = requestAnimationFrame(loop);
+}
+
+// ── Canvas event coords ───────────────────────────────────────────────────────
+function evXY(evt) {
+    const r = canvas.getBoundingClientRect();
+    return { cx: evt.clientX - r.left, cy: evt.clientY - r.top };
+}
+
+// ── Mouse events ──────────────────────────────────────────────────────────────
+canvas.style.cursor = 'grab';
+
+canvas.addEventListener('mousedown', evt => {
+    const { cx, cy } = evXY(evt);
+    const w   = toWorld(cx, cy);
+    const hit = hitNode(w.x, w.y);
+    if (hit) {
+        _drag = { nodeId: hit.node_id };
+        _pos[hit.node_id].pinned = true;
+        _alpha = Math.max(_alpha, 0.35);
+        canvas.style.cursor = 'grabbing';
+    } else {
+        _pan = { cx0: cx, cy0: cy, tx0: _tx, ty0: _ty };
+        canvas.style.cursor = 'grabbing';
+    }
+    evt.preventDefault();
+});
+
+canvas.addEventListener('mousemove', evt => {
+    const { cx, cy } = evXY(evt);
+    if (_drag) {
+        const w = toWorld(cx, cy);
+        const p = _pos[_drag.nodeId];
+        p.x  = w.x; p.y  = w.y;
+        p.vx = 0;   p.vy = 0;
+    } else if (_pan) {
+        _tx = _pan.tx0 + (cx - _pan.cx0);
+        _ty = _pan.ty0 + (cy - _pan.cy0);
+    } else {
+        const w   = toWorld(cx, cy);
+        const hit = hitNode(w.x, w.y);
+        canvas.style.cursor = hit ? 'grab' : 'default';
+    }
+});
+
+canvas.addEventListener('mouseup', () => {
+    _drag = null; _pan = null;
+    canvas.style.cursor = 'grab';
+});
+canvas.addEventListener('mouseleave', () => { _drag = null; _pan = null; });
+
+// Double-click to unpin a node
+canvas.addEventListener('dblclick', evt => {
+    const { cx, cy } = evXY(evt);
+    const hit = hitNode(toWorld(cx, cy).x, toWorld(cx, cy).y);
+    if (hit) { _pos[hit.node_id].pinned = false; _alpha = Math.max(_alpha, 0.3); }
+});
+
+// Scroll to zoom (toward cursor)
+canvas.addEventListener('wheel', evt => {
+    evt.preventDefault();
+    const { cx, cy } = evXY(evt);
+    const factor   = evt.deltaY < 0 ? 1.15 : 0.87;
+    const newScale = Math.max(0.08, Math.min(6, _scale * factor));
+    _tx = cx - (cx - _tx) * (newScale / _scale);
+    _ty = cy - (cy - _ty) * (newScale / _scale);
+    _scale = newScale;
+}, { passive: false });
+
+// ── Kick off ──────────────────────────────────────────────────────────────────
+resize();
+window.addEventListener('resize', () => { resize(); });
+
+fetch('/strategos/api/kg')
+    .then(r => r.json())
+    .then(data => {
+        _nodes = data.nodes || [];
+        _edges = data.edges || [];
+        if (!_nodes.length) {
+            ctx.fillStyle = '#6b7280';
             ctx.font = '14px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('No knowledge graph data.', canvas.width/2, canvas.height/2);
+            ctx.fillText('No knowledge graph data.', canvas.width / 2, canvas.height / 2);
             return;
         }
-        // Simple force layout (spring)
-        const W = canvas.offsetWidth, H = canvas.height;
-        canvas.width = W;
-        const pos = {};
-        nodes.forEach(n => {
-            pos[n.node_id] = { x: Math.random()*W, y: Math.random()*H, vx:0, vy:0 };
-        });
-        const edgeMap = {};
-        nodes.forEach(n => { edgeMap[n.node_id] = []; });
-        edges.forEach(e => {
-            if(edgeMap[e.source_id]) edgeMap[e.source_id].push(e.target_id);
-        });
-        for(let i=0;i<120;i++){
-            // Repulse
-            nodes.forEach(a => {
-                nodes.forEach(b => {
-                    if(a.node_id===b.node_id) return;
-                    const dx=pos[a.node_id].x-pos[b.node_id].x, dy=pos[a.node_id].y-pos[b.node_id].y;
-                    const d=Math.max(Math.sqrt(dx*dx+dy*dy),1);
-                    const f=600/(d*d);
-                    pos[a.node_id].vx+=dx/d*f; pos[a.node_id].vy+=dy/d*f;
-                });
-            });
-            // Attract
-            edges.forEach(e => {
-                if(!pos[e.source_id]||!pos[e.target_id]) return;
-                const dx=pos[e.target_id].x-pos[e.source_id].x, dy=pos[e.target_id].y-pos[e.source_id].y;
-                const d=Math.max(Math.sqrt(dx*dx+dy*dy),1);
-                const f=(d-80)*0.04;
-                pos[e.source_id].vx+=dx/d*f; pos[e.source_id].vy+=dy/d*f;
-                pos[e.target_id].vx-=dx/d*f; pos[e.target_id].vy-=dy/d*f;
-            });
-            nodes.forEach(n => {
-                pos[n.node_id].vx*=0.7; pos[n.node_id].vy*=0.7;
-                pos[n.node_id].x=Math.max(20,Math.min(W-20,pos[n.node_id].x+pos[n.node_id].vx));
-                pos[n.node_id].y=Math.max(20,Math.min(H-20,pos[n.node_id].y+pos[n.node_id].vy));
-            });
-        }
-        ctx.clearRect(0,0,W,H);
-        // Draw edges
-        ctx.strokeStyle='rgba(148,163,184,.3)'; ctx.lineWidth=1;
-        edges.forEach(e => {
-            if(!pos[e.source_id]||!pos[e.target_id]) return;
-            ctx.beginPath();
-            ctx.moveTo(pos[e.source_id].x,pos[e.source_id].y);
-            ctx.lineTo(pos[e.target_id].x,pos[e.target_id].y);
-            ctx.stroke();
-        });
-        // Draw nodes
-        nodes.forEach(n => {
-            const p=pos[n.node_id];
-            ctx.beginPath();
-            ctx.arc(p.x,p.y,7,0,Math.PI*2);
-            ctx.fillStyle=NODE_COLORS[n.node_type]||'#94a3b8';
-            ctx.fill();
-            ctx.fillStyle='var(--text-secondary)';
-            ctx.font='10px sans-serif';
-            ctx.textAlign='center';
-            ctx.fillText((n.label||n.node_id).slice(0,12),p.x,p.y+18);
-        });
-    }).catch(()=>{
-        ctx.fillStyle='#6b7280'; ctx.font='13px sans-serif'; ctx.textAlign='center';
-        ctx.fillText('Graph unavailable', canvas.width/2, canvas.height/2);
+        initPositions();
+        loop();
+    })
+    .catch(() => {
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '13px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Graph unavailable', canvas.width / 2, canvas.height / 2);
     });
+
 })();
 </script>
 {% endblock %}
