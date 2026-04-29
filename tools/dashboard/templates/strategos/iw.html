@@ -3,9 +3,7 @@
 {% block title %}I&amp;W Signal Matrix — Strategos{% endblock %}
 
 {% block head %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-<script src="https://cdn.plot.ly/plotly-2.27.0.min.js" crossorigin="anonymous"></script>
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
 {% endblock %}
 
 {% block content %}
@@ -116,7 +114,7 @@
                 <option value="80">Threshold WRI 80</option>
             </select>
         </div>
-        <div id="survivalPlot" style="height:240px"></div>
+        <div style="height:240px;position:relative"><canvas id="survivalCanvas"></canvas></div>
     </div>
 
 </div>
@@ -345,100 +343,94 @@
             .catch(() => {});
     }
 
-    // ── Signal Matrix Heatmap (D3) ─────────────────────────────────────────
+    // ── Signal Matrix Heatmap (plain canvas — no D3 dependency) ──────────────
     function buildHeatmap(days, categories, matrix) {
         const container = document.getElementById('signalMatrix');
         container.innerHTML = '';
 
         const marginTop = 20, marginLeft = 98, marginRight = 8, marginBottom = 44;
-        const cellH = 22, cellW = Math.max(18, Math.floor((container.clientWidth - marginLeft - marginRight) / days.length));
+        const cellH = 22;
+        const cW = container.clientWidth || 480;
+        const cellW = Math.max(18, Math.floor((cW - marginLeft - marginRight) / days.length));
         const W = marginLeft + days.length * cellW + marginRight;
         const H = marginTop + categories.length * cellH + marginBottom;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        canvas.style.cssText = 'display:block;width:100%;height:auto;';
+        container.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
 
         const allVals = matrix.flat();
         const maxVal = Math.max(1, ...allVals);
 
-        const colorScale = d3.scaleSequential()
-            .domain([0, maxVal])
-            .interpolator(d3.interpolateRgbBasis(['#0f172a', '#1e3a5f', '#1d4ed8', '#f59e0b', '#ef4444']));
-
-        const svg = d3.select(container)
-            .append('svg')
-            .attr('width', W)
-            .attr('height', H)
-            .style('display', 'block');
+        function heatColor(v) {
+            if (v === 0) return 'rgba(255,255,255,0.04)';
+            const t = v / maxVal;
+            if (t < 0.33) return `rgba(29,78,216,${(0.35 + t * 1.5).toFixed(2)})`;
+            if (t < 0.66) return `rgba(245,158,11,${(0.55 + t * 0.7).toFixed(2)})`;
+            return `rgba(239,68,68,${(0.65 + t * 0.35).toFixed(2)})`;
+        }
 
         // Category labels (y-axis)
-        svg.selectAll('.cat-label')
-            .data(categories)
-            .enter().append('text')
-            .attr('class', 'cat-label')
-            .attr('x', marginLeft - 6)
-            .attr('y', (_, i) => marginTop + i * cellH + cellH * 0.65)
-            .attr('text-anchor', 'end')
-            .attr('font-size', '11px')
-            .attr('fill', '#9ca3af')
-            .text(d => d.charAt(0).toUpperCase() + d.slice(1));
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'right';
+        ctx.font = '11px system-ui,sans-serif';
+        categories.forEach((cat, ci) => {
+            ctx.fillStyle = '#9ca3af';
+            ctx.fillText(cat.charAt(0).toUpperCase() + cat.slice(1), marginLeft - 6, marginTop + ci * cellH + cellH / 2);
+        });
 
-        // Day labels (x-axis) — show every other to avoid clutter
-        const step = Math.ceil(days.length / 10);
-        svg.selectAll('.day-label')
-            .data(days)
-            .enter().append('text')
-            .attr('class', 'day-label')
-            .attr('x', (_, i) => marginLeft + i * cellW + cellW / 2)
-            .attr('y', H - marginBottom + 14)
-            .attr('text-anchor', 'middle')
-            .attr('font-size', '9px')
-            .attr('fill', (_, i) => i % step === 0 ? '#6b7280' : 'transparent')
-            .attr('transform', (_, i) => `rotate(-35,${marginLeft + i * cellW + cellW / 2},${H - marginBottom + 14})`)
-            .text(d => d.slice(5));  // MM-DD
-
-        // Heatmap cells
+        // Cells
         categories.forEach((cat, ci) => {
             days.forEach((day, di) => {
                 const v = matrix[ci][di];
-                const grp = svg.append('g');
-                grp.append('rect')
-                    .attr('x', marginLeft + di * cellW + 1)
-                    .attr('y', marginTop + ci * cellH + 1)
-                    .attr('width', cellW - 2)
-                    .attr('height', cellH - 2)
-                    .attr('rx', 2)
-                    .attr('fill', v === 0 ? 'rgba(255,255,255,0.03)' : colorScale(v))
-                    .attr('stroke', 'rgba(255,255,255,0.04)')
-                    .attr('stroke-width', 0.5);
-
+                const x = marginLeft + di * cellW + 1;
+                const y = marginTop + ci * cellH + 1;
+                const w = cellW - 2, h = cellH - 2;
+                ctx.fillStyle = heatColor(v);
+                ctx.beginPath();
+                ctx.roundRect(x, y, w, h, 2);
+                ctx.fill();
                 if (v > 0 && cellW >= 22) {
-                    grp.append('text')
-                        .attr('x', marginLeft + di * cellW + cellW / 2)
-                        .attr('y', marginTop + ci * cellH + cellH * 0.67)
-                        .attr('text-anchor', 'middle')
-                        .attr('font-size', '9px')
-                        .attr('fill', v > maxVal * 0.5 ? '#fff' : '#d1d5db')
-                        .text(v);
+                    ctx.fillStyle = v > maxVal * 0.5 ? '#fff' : '#d1d5db';
+                    ctx.font = '9px system-ui,sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(v, x + w / 2, y + h / 2);
                 }
-
-                // Tooltip via title
-                grp.append('title').text(`${cat} · ${day}: ${v} signal${v !== 1 ? 's' : ''}`);
             });
         });
 
-        // Color legend
-        const legendW = Math.min(160, W - marginLeft - marginRight);
-        const lgX = marginLeft;
-        const lgY = H - marginBottom + 28;
-        const defs = svg.append('defs');
-        const grad = defs.append('linearGradient').attr('id', 'hm-grad');
-        for (let i = 0; i <= 5; i++) {
-            grad.append('stop')
-                .attr('offset', `${i * 20}%`)
-                .attr('stop-color', colorScale(maxVal * i / 5));
-        }
-        svg.append('rect').attr('x', lgX).attr('y', lgY).attr('width', legendW).attr('height', 6)
-            .attr('rx', 3).attr('fill', 'url(#hm-grad)');
-        svg.append('text').attr('x', lgX).attr('y', lgY + 16).attr('font-size', '9px').attr('fill', '#6b7280').text('0');
-        svg.append('text').attr('x', lgX + legendW).attr('y', lgY + 16).attr('font-size', '9px').attr('fill', '#6b7280').attr('text-anchor', 'end').text(maxVal);
+        // Day labels (x-axis, rotated)
+        const step = Math.ceil(days.length / 10);
+        ctx.font = '9px system-ui,sans-serif';
+        ctx.fillStyle = '#6b7280';
+        days.forEach((day, di) => {
+            if (di % step !== 0) return;
+            const x = marginLeft + di * cellW + cellW / 2;
+            const y = H - marginBottom + 14;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(-35 * Math.PI / 180);
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(day.slice(5), 0, 0);
+            ctx.restore();
+        });
+
+        // Legend
+        const lgX = marginLeft, lgY = H - marginBottom + 28;
+        const lgW = Math.min(160, W - marginLeft - marginRight);
+        const grad = ctx.createLinearGradient(lgX, 0, lgX + lgW, 0);
+        grad.addColorStop(0,   'rgba(29,78,216,0.5)');
+        grad.addColorStop(0.5, 'rgba(245,158,11,0.9)');
+        grad.addColorStop(1,   'rgba(239,68,68,1)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.roundRect(lgX, lgY, lgW, 6, 3); ctx.fill();
+        ctx.fillStyle = '#6b7280'; ctx.font = '9px system-ui,sans-serif';
+        ctx.textAlign = 'left';   ctx.textBaseline = 'top'; ctx.fillText('0', lgX, lgY + 9);
+        ctx.textAlign = 'right';  ctx.fillText(maxVal, lgX + lgW, lgY + 9);
     }
 
     function fetchMatrix(days) {
@@ -459,64 +451,79 @@
         fetchMatrix(this.value);
     });
 
-    // ── Survival Curve (Plotly) ────────────────────────────────────────────
+    // ── Survival Curve (Chart.js — no Plotly dependency) ──────────────────
+    let survChart = null;
+
     function renderSurvival(data) {
-        const times = data.times || [];
-        const surv = data.survival || [];
-        const isDemoLabel = data.demo ? ' (demo)' : '';
+        const times  = data.times    || [];
+        const surv   = data.survival || [];
+        const isDemo = !!data.demo;
 
-        const trace = {
-            x: times,
-            y: surv,
-            type: 'scatter',
-            mode: 'lines',
-            name: `Survival${isDemoLabel}`,
-            line: { color: '#3b82f6', width: 2, shape: 'hv' },
-            fill: 'tozeroy',
-            fillcolor: 'rgba(59,130,246,0.10)',
-        };
+        const canvas = document.getElementById('survivalCanvas');
+        if (survChart) { survChart.destroy(); survChart = null; }
 
-        const layout = {
-            paper_bgcolor: 'transparent',
-            plot_bgcolor: 'transparent',
-            font: { color: '#9ca3af', size: 11, family: 'inherit' },
-            margin: { t: 10, r: 16, b: 46, l: 42 },
-            xaxis: {
-                title: { text: 'Hours from first observation', font: { size: 10 } },
-                gridcolor: 'rgba(255,255,255,0.06)',
-                tickcolor: '#4b5563',
-                linecolor: '#374151',
-                tickfont: { size: 10 },
+        // S=0.5 reference line as a dataset
+        const maxT = times.length ? times[times.length - 1] : 24;
+        const halfLine = times.map(() => 0.5);
+
+        survChart = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: times,
+                datasets: [
+                    {
+                        label: isDemo ? 'Survival (demo)' : 'Survival probability',
+                        data: surv,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59,130,246,0.10)',
+                        borderWidth: 2,
+                        fill: true,
+                        stepped: 'before',
+                        pointRadius: times.length > 20 ? 0 : 3,
+                        pointBackgroundColor: '#3b82f6',
+                    },
+                    {
+                        label: 'S = 0.5',
+                        data: halfLine,
+                        borderColor: 'rgba(239,68,68,0.45)',
+                        borderWidth: 1,
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                ],
             },
-            yaxis: {
-                title: { text: 'Survival probability', font: { size: 10 } },
-                range: [0, 1.05],
-                gridcolor: 'rgba(255,255,255,0.06)',
-                tickcolor: '#4b5563',
-                linecolor: '#374151',
-                tickfont: { size: 10 },
-                tickformat: '.0%',
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Hours from first observation', font: { size: 10 }, color: '#9ca3af' },
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: { color: '#9ca3af', font: { size: 10 }, maxTicksLimit: 8 },
+                    },
+                    y: {
+                        title: { display: true, text: 'Survival probability', font: { size: 10 }, color: '#9ca3af' },
+                        min: 0, max: 1.05,
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: {
+                            color: '#9ca3af', font: { size: 10 },
+                            callback: v => Math.round(v * 100) + '%',
+                        },
+                    },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.datasetIndex === 0
+                                ? `S(t) = ${(ctx.parsed.y * 100).toFixed(1)}%`
+                                : 'S = 50%',
+                        },
+                    },
+                },
             },
-            shapes: [{
-                type: 'line',
-                x0: Math.min(...times) || 0,
-                x1: Math.max(...times) || 1,
-                y0: 0.5, y1: 0.5,
-                line: { color: 'rgba(239,68,68,0.4)', width: 1, dash: 'dot' },
-            }],
-            annotations: [{
-                x: (Math.max(...times) || 24) * 0.02,
-                y: 0.5,
-                xanchor: 'left',
-                yanchor: 'bottom',
-                text: 'S=0.5',
-                showarrow: false,
-                font: { size: 9, color: '#ef4444' },
-            }],
-            showlegend: false,
-        };
-
-        Plotly.react('survivalPlot', [trace], layout, { responsive: true, displayModeBar: false });
+        });
     }
 
     function fetchSurvival(threshold) {

@@ -905,16 +905,21 @@ def api_iw_signal_matrix():
         today = date.today()
         day_labels = [(today - timedelta(days=days_back - 1 - i)).isoformat() for i in range(days_back)]
         day_index = {d: i for i, d in enumerate(day_labels)}
+        cutoff = day_labels[0]  # earliest date in range (YYYY-MM-DD string)
+        ph = "%s" if is_pg() else "?"
+        # Cross-DB timestamp→date cast
+        dt_cast = "created_at::date" if is_pg() else "DATE(created_at)"
 
         counts: dict[str, dict[str, int]] = {cat: {d: 0 for d in day_labels} for cat in _CATEGORIES}
 
         # IW effects
+        iw_dt = "detected_at::date" if is_pg() else "DATE(detected_at)"
         try:
             rows = conn.execute(
-                f"SELECT effect_type, DATE(detected_at) AS d, COUNT(*) AS n "
-                f"FROM sg_iw_effects "
-                f"WHERE detected_at >= DATE('now', '-{days_back} days') "  # nosec B608
-                f"GROUP BY effect_type, d"
+                f"SELECT effect_type, {iw_dt} AS d, COUNT(*) AS n "  # nosec B608
+                f"FROM sg_iw_effects WHERE {iw_dt} >= {ph} "
+                f"GROUP BY effect_type, {iw_dt}",
+                (cutoff,),
             ).fetchall()
             for row in rows:
                 cat = _IW_CAT_MAP.get((row[0] or "").lower(), "information")
@@ -927,10 +932,10 @@ def api_iw_signal_matrix():
         # Conflict events
         try:
             rows = conn.execute(
-                f"SELECT event_type, DATE(created_at) AS d, COUNT(*) AS n "
-                f"FROM sg_conflict_events "
-                f"WHERE created_at >= DATE('now', '-{days_back} days') "  # nosec B608
-                f"GROUP BY event_type, d"
+                f"SELECT event_type, {dt_cast} AS d, COUNT(*) AS n "  # nosec B608
+                f"FROM sg_conflict_events WHERE {dt_cast} >= {ph} "
+                f"GROUP BY event_type, {dt_cast}",
+                (cutoff,),
             ).fetchall()
             for row in rows:
                 cat = _CE_CAT_MAP.get((row[0] or "").lower(), "military")
@@ -940,14 +945,15 @@ def api_iw_signal_matrix():
         except Exception:
             pass
 
-        # Prioritized signals by date
+        # Prioritized signals by date (signal_date is a plain DATE column)
         try:
             rows = conn.execute(
                 f"SELECT r.signal_date, COUNT(*) AS n "
                 f"FROM sg_prioritized_signals p "
                 f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
-                f"WHERE r.signal_date >= DATE('now', '-{days_back} days') "  # nosec B608
-                f"GROUP BY r.signal_date"
+                f"WHERE r.signal_date >= {ph} "
+                f"GROUP BY r.signal_date",
+                (cutoff,),
             ).fetchall()
             for row in rows:
                 day = str(row[0] or "")[:10]
@@ -978,12 +984,14 @@ def api_iw_survival():
     finally:
         conn.close()
 
-    if not rows:
-        # Return synthetic demo curve when no data
+    def _demo_curve(n_rows: int) -> dict:
         import math  # noqa: PLC0415
         times = list(range(0, 31))
         survival = [round(math.exp(-0.04 * t), 4) for t in times]
-        return jsonify({"times": times, "survival": survival, "n": 0, "threshold": threshold, "demo": True})
+        return {"times": times, "survival": survival, "n": n_rows, "threshold": threshold, "demo": True}
+
+    if not rows:
+        return jsonify(_demo_curve(0))
 
     # Compute time-delta in hours from first observation per "run" segment
     from datetime import datetime as _dt  # noqa: PLC0415
@@ -1005,9 +1013,13 @@ def api_iw_survival():
             run_start = ts  # reset for next run
 
     if not segments:
-        return jsonify({"times": [], "survival": [], "n": 0, "threshold": threshold})
+        return jsonify(_demo_curve(0))
 
     max_t = max(s["t"] for s in segments) or 24.0
+    # Fall back to demo curve when data is too sparse for a meaningful plot
+    if len(segments) < 10 or max_t < 2.0:
+        return jsonify(_demo_curve(len(rows)))
+
     step = max(1.0, max_t / 50)
     times_float = [round(i * step, 1) for i in range(int(max_t / step) + 2)]
     n = len(segments)
