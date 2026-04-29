@@ -35,3 +35,4 @@
 | Seed NWA Plan | tools/db/seeds/seed_nwa_plan.py | Seeds kanban_tasks with 25 tasks across 3 epics (Theater Detector, Rigor Gate, DES Audit Trail) for the nWave Methodology initiative | (no args) | Inserted task rows |
 | Seed PINT Plan | tools/db/seeds/seed_pint_plan.py | Seeds kanban_tasks with 50 tasks across 6 epics for Product Intelligence: Regulatory Foresight, Usage Analytics, Win/Loss, Voice of Customer, Tech Radar, Universal Orchestrator | (no args) | Inserted task rows |
 | Seed Oracle Fix Plan | tools/db/seeds/seed_oracle_fix_plan.py | Seeds 3 kanban tasks for Oracle-gap fixes: /analysis route listing, signal_decay.py creation, war_council read path | (no args) | Inserted task rows |
+| Seed Strategos Demo | tools/db/seeds/seed_strategos_demo.py | Seeds realistic military demo data for all Strategos pages: 15 ORBAT units, 20 ghost signals, 15 IW effects, 20 supply nodes, 24 KG nodes, 30 KG edges, 5 wargames | (no args) | Rows inserted into sg_* tables |
