@@ -570,3 +570,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Verify Manifest | tools\verify_manifest.py | Auto-registered: tools/verify_manifest.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Check Manifest Coverage | tools\check_manifest_coverage.py | Auto-registered: tools/check_manifest_coverage.py | --json | JSON |
