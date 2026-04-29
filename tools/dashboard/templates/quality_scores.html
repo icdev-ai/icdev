@@ -266,7 +266,57 @@ table.qs-table tr:last-child td { border-bottom: none; }
   .qs-stats { grid-template-columns: 1fr 1fr; }
   .qs-grid  { grid-template-columns: 1fr; }
   .qs-drawer { width: 100vw; }
+  .dc-stats { grid-template-columns: 1fr 1fr; }
 }
+
+/* ─── Tab system ───────────────────────────────────────────────────────────── */
+.qs-tabs { display:flex; gap:0; border-bottom:2px solid var(--border-color,#2a2a40); margin-bottom:20px; }
+.qs-tab { padding:10px 18px; font-size:0.78rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.07em; cursor:pointer; color:var(--text-muted,#6c6c80);
+  border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.15s, border-color 0.15s; }
+.qs-tab:hover { color:var(--text-secondary,#a0a0b8); }
+.qs-tab.active { color:#64b5f6; border-bottom-color:#64b5f6; }
+.qs-tab-panel { display:none; }
+.qs-tab-panel.active { display:block; }
+
+/* ─── Durable Compounders panel ─────────────────────────────────────────────── */
+.dc-meta { display:flex; align-items:center; gap:14px; margin-bottom:16px; flex-wrap:wrap; }
+.dc-meta-item { font-size:0.72rem; color:var(--text-muted,#6c6c80); }
+.dc-meta-item strong { color:var(--text-secondary,#a0a0b8); }
+.dc-refresh { padding:5px 12px; font-size:0.72rem; font-weight:600; border:1px solid #64b5f6;
+  color:#64b5f6; background:transparent; border-radius:4px; cursor:pointer; transition:background 0.15s; }
+.dc-refresh:hover { background:rgba(100,181,246,0.12); }
+.dc-refresh:disabled { opacity:0.5; cursor:not-allowed; }
+.dc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:16px; }
+.dc-stat { background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a40);
+  border-radius:6px; padding:12px 16px; text-align:center; }
+.dc-stat-val { font-size:1.5rem; font-weight:700; }
+.dc-stat-label { font-size:0.68rem; font-weight:600; text-transform:uppercase;
+  letter-spacing:0.07em; color:var(--text-muted,#6c6c80); margin-top:2px; }
+.dc-stat-val.fortress { color:#4cda7a; }
+.dc-stat-val.solid    { color:#64b5f6; }
+.dc-stat-val.watchlist{ color:#f0b429; }
+.dc-stat-val.drifted  { color:#f06375; }
+.dc-table-wrap { overflow-x:auto; }
+.dc-table { width:100%; border-collapse:collapse; font-size:0.76rem; }
+.dc-table th { padding:8px 10px; text-align:left; font-size:0.68rem; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.07em; color:var(--text-muted,#6c6c80);
+  border-bottom:1px solid var(--border-color,#2a2a40); cursor:pointer; white-space:nowrap; }
+.dc-table th:hover { color:var(--text-secondary,#a0a0b8); }
+.dc-table td { padding:8px 10px; border-bottom:1px solid rgba(255,255,255,0.04);
+  color:var(--text-secondary,#a0a0b8); vertical-align:middle; }
+.dc-table tr:hover td { background:rgba(255,255,255,0.03); }
+.dc-tier-badge { display:inline-block; padding:2px 7px; border-radius:3px;
+  font-size:0.64rem; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; }
+.dc-tier-badge.fortress { background:rgba(76,218,122,0.15); color:#4cda7a; border:1px solid rgba(76,218,122,0.3); }
+.dc-tier-badge.solid    { background:rgba(100,181,246,0.15); color:#64b5f6; border:1px solid rgba(100,181,246,0.3); }
+.dc-tier-badge.watchlist{ background:rgba(240,180,41,0.15); color:#f0b429; border:1px solid rgba(240,180,41,0.3); }
+.dc-pillar-bars { display:flex; gap:4px; min-width:110px; }
+.dc-pillar-seg { height:6px; border-radius:2px; flex:none; }
+.dc-drift-badge { font-size:0.64rem; color:#f06375; font-weight:700; cursor:help; }
+.dc-ticker-link { cursor:pointer; color:#64b5f6; font-weight:700; }
+.dc-ticker-link:hover { text-decoration:underline; }
+.dc-empty { text-align:center; padding:40px; color:var(--text-muted,#6c6c80); font-size:0.8rem; }
 </style>
 {% endblock %}
 
@@ -298,6 +348,13 @@ table.qs-table tr:last-child td { border-bottom: none; }
     </div>
   </div>
 
+  <!-- ── Tab navigation ───────────────────────────────────────────────────── -->
+  <div class="qs-tabs">
+    <div class="qs-tab active" id="tab-penav-btn" onclick="switchTab('penav',this)">PE/NAV Universe</div>
+    <div class="qs-tab" id="tab-dc-btn" onclick="switchTab('dc',this)">Durable Compounders</div>
+  </div>
+
+  <div id="tab-penav" class="qs-tab-panel active">
   <!-- ── Two-column: quadrant + mispricing ──────────────────────────────── -->
   <div class="qs-grid">
 
@@ -393,7 +450,73 @@ table.qs-table tr:last-child td { border-bottom: none; }
       </table>
     </div>
   </div>
-</div>
+  </div><!-- /tab-penav -->
+
+  <!-- ── Durable Compounders tab ──────────────────────────────────────────── -->
+  <div id="tab-dc" class="qs-tab-panel">
+
+    <!-- Meta bar: cache status + refresh -->
+    <div class="dc-meta">
+      <span class="dc-meta-item">Last scanned: <strong id="dc-last-scan">—</strong></span>
+      <span class="dc-meta-item">Cache hits: <strong id="dc-cache-hits">—</strong></span>
+      <span class="dc-meta-item">Recomputed: <strong id="dc-recomputed">—</strong></span>
+      <span class="dc-meta-item" id="dc-drift-meta" style="display:none;">Drifted: <strong id="dc-drifted" style="color:#f06375;">—</strong></span>
+      <span class="dc-meta-item">Scan time: <strong id="dc-scan-time">—</strong></span>
+      <button class="dc-refresh" id="dc-refresh-btn" onclick="loadDurableCompounders(true)">↻ Refresh</button>
+    </div>
+
+    <!-- Tier summary stats -->
+    <div class="dc-stats">
+      <div class="dc-stat">
+        <div class="dc-stat-val fortress" id="dc-stat-fortress">—</div>
+        <div class="dc-stat-label">Fortress</div>
+      </div>
+      <div class="dc-stat">
+        <div class="dc-stat-val solid" id="dc-stat-solid">—</div>
+        <div class="dc-stat-label">Solid</div>
+      </div>
+      <div class="dc-stat">
+        <div class="dc-stat-val watchlist" id="dc-stat-watchlist">—</div>
+        <div class="dc-stat-label">Watchlist</div>
+      </div>
+      <div class="dc-stat">
+        <div class="dc-stat-val drifted" id="dc-stat-drift">—</div>
+        <div class="dc-stat-label">Drifted</div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
+      <input class="qs-search" type="text" id="dc-search" placeholder="Filter ticker…" oninput="dcFilter()" style="width:160px;">
+      <button class="qs-filter-btn" id="dc-btn-fortress" onclick="dcToggleTier('fortress')">Fortress</button>
+      <button class="qs-filter-btn" id="dc-btn-solid" onclick="dcToggleTier('solid')">Solid</button>
+      <button class="qs-filter-btn" id="dc-btn-watchlist" onclick="dcToggleTier('watchlist')">Watchlist</button>
+      <button class="qs-filter-btn" id="dc-btn-drift" onclick="dcToggleTier('drift')">Drifted</button>
+      <span class="qs-count-label" id="dc-count"></span>
+    </div>
+
+    <!-- Results table -->
+    <div class="dc-table-wrap">
+      <table class="dc-table" id="dc-table">
+        <thead><tr>
+          <th onclick="dcSort('ticker')">Ticker</th>
+          <th onclick="dcSort('durable_score')">Durable Score ↕</th>
+          <th onclick="dcSort('tier')">Tier</th>
+          <th onclick="dcSort('balance_sheet_score')">Balance Sheet ↕</th>
+          <th onclick="dcSort('customer_loyalty_score')">Customer Loyalty ↕</th>
+          <th onclick="dcSort('cycle_resilience_score')">Cycle Resilience ↕</th>
+          <th>Pillars</th>
+          <th onclick="dcSort('drift_flagged')">Drift</th>
+          <th>As Of</th>
+        </tr></thead>
+        <tbody id="dc-tbody">
+          <tr><td colspan="9" class="dc-empty">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div><!-- /tab-dc -->
+
+</div><!-- /qs-page -->
 
 <!-- ── Ticker Drawer ─────────────────────────────────────────────────────── -->
 <div class="qs-drawer-backdrop" id="drawer-backdrop" onclick="closeDrawer()"></div>
@@ -746,6 +869,181 @@ function renderDrawer(ticker, r) {
 
       ${r.summary ? `<div style="margin-top:16px;padding:12px;background:rgba(255,255,255,0.03);border-radius:6px;font-size:0.73rem;color:var(--text-secondary,#a0a0b8);line-height:1.5;">${r.summary}</div>` : ''}
     </div>`;
+}
+
+/* ─── Tab switching ──────────────────────────────────────────────────────── */
+function switchTab(id, el) {
+  document.querySelectorAll('.qs-tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.qs-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  el.classList.add('active');
+  if (id === 'dc' && !_dcLoaded) loadDurableCompounders(false);
+}
+
+/* ─── Durable Compounders ────────────────────────────────────────────────── */
+let _dcData     = [];
+let _dcFiltered = [];
+let _dcSortKey  = 'durable_score';
+let _dcSortAsc  = false;
+let _dcTierFilter = null;
+let _dcLoaded   = false;
+
+function loadDurableCompounders(force) {
+  const btn = document.getElementById('dc-refresh-btn');
+  btn.disabled = true;
+  btn.textContent = '↻ Scanning…';
+  document.getElementById('dc-tbody').innerHTML =
+    '<tr><td colspan="9" class="dc-empty"><div class="qs-spinner" style="width:18px;height:18px;margin:0 auto;"></div></td></tr>';
+
+  const url = '/api/quality-scores/durable-compounders?limit=500' + (force ? '&force=1' : '');
+  fetch(url)
+    .then(r => r.json())
+    .then(d => {
+      _dcData   = d.results || [];
+      _dcLoaded = true;
+
+      // Meta bar
+      document.getElementById('dc-cache-hits').textContent = d.cache_hits ?? '—';
+      document.getElementById('dc-recomputed').textContent = d.recomputed ?? '—';
+      document.getElementById('dc-scan-time').textContent  = (d.scan_time_ms ?? 0).toFixed(0) + 'ms';
+      document.getElementById('dc-last-scan').textContent  = new Date().toLocaleTimeString();
+      if ((d.drifted || 0) > 0) {
+        document.getElementById('dc-drift-meta').style.display = '';
+        document.getElementById('dc-drifted').textContent = d.drifted;
+      }
+
+      // Tier stats
+      const counts = {fortress:0, solid:0, watchlist:0, drift:0};
+      _dcData.forEach(r => {
+        counts[r.tier] = (counts[r.tier] || 0) + 1;
+        if (r.drift_flagged) counts.drift++;
+      });
+      document.getElementById('dc-stat-fortress').textContent  = counts.fortress;
+      document.getElementById('dc-stat-solid').textContent     = counts.solid;
+      document.getElementById('dc-stat-watchlist').textContent = counts.watchlist;
+      document.getElementById('dc-stat-drift').textContent     = counts.drift;
+
+      dcApplyFilters();
+    })
+    .catch(() => {
+      document.getElementById('dc-tbody').innerHTML =
+        '<tr><td colspan="9" class="dc-empty">Scan failed — run the quality scorer to populate fundamental data.</td></tr>';
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.textContent = '↻ Refresh';
+    });
+}
+
+function dcToggleTier(tier) {
+  _dcTierFilter = _dcTierFilter === tier ? null : tier;
+  ['fortress','solid','watchlist','drift'].forEach(t => {
+    const b = document.getElementById('dc-btn-' + t);
+    if (b) b.classList.toggle('active', t === _dcTierFilter);
+  });
+  dcApplyFilters();
+}
+
+function dcFilter() { dcApplyFilters(); }
+
+function dcApplyFilters() {
+  const q = (document.getElementById('dc-search')?.value || '').toUpperCase();
+  let rows = [..._dcData];
+
+  if (_dcTierFilter === 'drift') {
+    rows = rows.filter(r => r.drift_flagged);
+  } else if (_dcTierFilter) {
+    rows = rows.filter(r => r.tier === _dcTierFilter);
+  }
+  if (q) rows = rows.filter(r => (r.ticker || '').includes(q));
+
+  rows.sort((a, b) => {
+    let va = a[_dcSortKey] ?? (_dcSortKey === 'tier' ? '' : -Infinity);
+    let vb = b[_dcSortKey] ?? (_dcSortKey === 'tier' ? '' : -Infinity);
+    if (typeof va === 'string') return _dcSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    return _dcSortAsc ? va - vb : vb - va;
+  });
+
+  _dcFiltered = rows;
+  document.getElementById('dc-count').textContent = rows.length + ' companies';
+  dcRenderTable(rows);
+}
+
+function dcSort(key) {
+  if (_dcSortKey === key) _dcSortAsc = !_dcSortAsc;
+  else { _dcSortKey = key; _dcSortAsc = false; }
+  dcApplyFilters();
+}
+
+function dcRenderTable(rows) {
+  if (!rows.length) {
+    document.getElementById('dc-tbody').innerHTML =
+      '<tr><td colspan="9" class="dc-empty">No companies match current filters.</td></tr>';
+    return;
+  }
+  const tierColor = { fortress:'#4cda7a', solid:'#64b5f6', watchlist:'#f0b429' };
+  const html = rows.map(r => {
+    const ds  = r.durable_score != null ? r.durable_score.toFixed(1) : '—';
+    const bs  = r.balance_sheet_score != null ? r.balance_sheet_score.toFixed(0) : 0;
+    const cl  = r.customer_loyalty_score != null ? r.customer_loyalty_score.toFixed(0) : 0;
+    const cr  = r.cycle_resilience_score != null ? r.cycle_resilience_score.toFixed(0) : 0;
+    const tier = r.tier || 'watchlist';
+    const tc   = tierColor[tier] || '#808090';
+    const scoreColor = r.durable_score >= 72 ? '#4cda7a' : r.durable_score >= 52 ? '#64b5f6' : '#f0b429';
+    const drift = r.drift_flagged
+      ? `<span class="dc-drift-badge" title="${r.drift_reason || 'drift detected'}">⚠ DRIFT</span>`
+      : '<span style="color:var(--text-muted,#6c6c80);font-size:0.7rem;">—</span>';
+    const asOf = r.as_of_date ? r.as_of_date.slice(0,10) : '—';
+    const cacheIcon = r.cache_hit
+      ? '<span title="cache hit" style="color:var(--text-muted,#6c6c80);font-size:0.65rem;">⚡</span>'
+      : '';
+    return `<tr>
+      <td><span class="dc-ticker-link" onclick="openDrawer('${r.ticker}')">${r.ticker}</span> ${cacheIcon}</td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:80px;">
+            <div style="width:${r.durable_score||0}%;height:100%;background:${scoreColor};border-radius:2px;"></div>
+          </div>
+          <span style="color:${scoreColor};font-weight:700;min-width:30px;">${ds}</span>
+        </div>
+      </td>
+      <td><span class="dc-tier-badge ${tier}">${tier}</span></td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:60px;">
+            <div style="width:${bs}%;height:100%;background:#4cda7a;border-radius:2px;"></div>
+          </div>
+          <span style="color:#4cda7a;font-weight:600;min-width:24px;">${bs}</span>
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:60px;">
+            <div style="width:${cl}%;height:100%;background:#64b5f6;border-radius:2px;"></div>
+          </div>
+          <span style="color:#64b5f6;font-weight:600;min-width:24px;">${cl}</span>
+        </div>
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div style="flex:1;height:5px;background:var(--border-color,#2a2a40);border-radius:2px;min-width:60px;">
+            <div style="width:${cr}%;height:100%;background:#f0b429;border-radius:2px;"></div>
+          </div>
+          <span style="color:#f0b429;font-weight:600;min-width:24px;">${cr}</span>
+        </div>
+      </td>
+      <td>
+        <div class="dc-pillar-bars">
+          <div class="dc-pillar-seg" style="width:${bs*0.6}px;background:#4cda7a;" title="Balance Sheet: ${bs}"></div>
+          <div class="dc-pillar-seg" style="width:${cl*0.6}px;background:#64b5f6;" title="Loyalty: ${cl}"></div>
+          <div class="dc-pillar-seg" style="width:${cr*0.6}px;background:#f0b429;" title="Resilience: ${cr}"></div>
+        </div>
+      </td>
+      <td>${drift}</td>
+      <td style="color:var(--text-muted,#6c6c80);font-size:0.7rem;">${asOf}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('dc-tbody').innerHTML = html;
 }
 </script>
 {% endblock %}
