@@ -254,6 +254,9 @@
     border-left: 2px solid var(--accent-blue);
     padding-left: 0.5rem;
 }
+/* Keep nav dropdowns above Leaflet map panes */
+.nav-dropdown-menu { z-index: 1100 !important; }
+.navbar, .sub-nav  { z-index: 1050 !important; }
 </style>
 {% endblock %}
 
