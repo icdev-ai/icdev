@@ -41,6 +41,7 @@ FAILURE_MISSING_MANIFEST = "missing_manifest"
 FAILURE_BANDIT_SECURITY = "bandit_security"
 FAILURE_E2E_REGRESSION = "e2e_regression"
 FAILURE_COHERENCE_BROKEN = "coherence_broken"
+FAILURE_WORKTREE_MISSING = "worktree_missing"
 FAILURE_UNKNOWN = "unknown"
 
 REMEDIABLE = {
@@ -48,6 +49,7 @@ REMEDIABLE = {
     FAILURE_RUFF_ISSUES,
     FAILURE_MISSING_MANIFEST,
     FAILURE_COHERENCE_BROKEN,  # only if due to ruff or manifest
+    FAILURE_WORKTREE_MISSING,  # prune + branch-delete so next dispatch rebuilds clean
 }
 
 UNREMEDIABLE = {
@@ -79,6 +81,12 @@ def classify_failure(reason: str, metrics: Optional[Dict[str, Any]] = None) -> s
         r = r.split("| REMEDIATION=")[0]
     r = r.lower()
     m = metrics or {}
+
+    # "Worktree missing on disk" — directory was deleted before/during validation.
+    # Must be first: subprocess calls inside the missing cwd would all silently
+    # swallow FileNotFoundError, producing misleading pass/fail results.
+    if "worktree missing on disk" in r:
+        return FAILURE_WORKTREE_MISSING
 
     # "No commits" wins — can't fix work that wasn't done
     if "no git commits" in r or "no commits" in r:
@@ -250,6 +258,21 @@ def remediate_ruff_issues(cwd: str, modified_py: List[str]) -> Tuple[bool, str]:
         return False, "ruff fixed but amend failed"
     except Exception as exc:
         return False, f"ruff remediation error: {exc}"
+
+
+def remediate_missing_worktree(cwd: str, task_id: str) -> Tuple[bool, str]:
+    """Prune git worktree state and delete the task branch so the next dispatch
+    rebuilds a fresh worktree from current main HEAD.
+
+    Called when the worktree directory is gone before validation even starts —
+    either because a prior reset's rmtree failed silently (Windows file locks)
+    or because a concurrent cleanup removed it.  Running `_reset_broken_worktree`
+    here is safe even when the directory doesn't exist: rmtree is a no-op,
+    but `git worktree prune` + `git branch -D` still clean up stale git state
+    so `_create_worktree` can succeed on next dispatch.
+    """
+    _reset_broken_worktree(cwd)
+    return True, f"pruned stale worktree state for {task_id} — next dispatch rebuilds from HEAD"
 
 
 def _reset_broken_worktree(cwd: str) -> None:
@@ -441,7 +464,12 @@ def attempt_remediation(
         if f.endswith(".py") and (Path(cwd) / f).exists()
     ]
 
-    if failure_type == FAILURE_STALE_BASELINE:
+    if failure_type == FAILURE_WORKTREE_MISSING:
+        # Directory is already gone — all other remediations would fail with
+        # FileNotFoundError.  Just prune git state so _create_worktree
+        # can succeed on next dispatch without hitting "branch already exists".
+        ok, msg = remediate_missing_worktree(cwd, task_id)
+    elif failure_type == FAILURE_STALE_BASELINE:
         ok, msg = remediate_stale_baseline(cwd, task_id)
     elif failure_type == FAILURE_RUFF_ISSUES:
         ok, msg = remediate_ruff_issues(cwd, modified_py)
