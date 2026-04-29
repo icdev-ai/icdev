@@ -252,6 +252,7 @@
             {% endif %}
 
             <!-- Strategos — Strategic Intelligence Operations -->
+            {% if strategos_enabled %}
             <li class="nav-dropdown">
                 <a href="#" class="{% if '/strategos' in request.path %}active{% endif %}" style="color:#f59e0b;font-weight:600;">Strategos</a>
                 <ul class="nav-dropdown-menu">
@@ -275,6 +276,7 @@
                     </li>
                 </ul>
             </li>
+            {% endif %}
 
             <!-- Canvas Compliance (Cross-Canvas Integration) -->
             <li>

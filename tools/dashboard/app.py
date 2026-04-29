@@ -85,6 +85,7 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
     }
 )
 # Legacy canvas feature flags (derived from env — registration handled by _CANVAS_DEFS loop below)
+_HAS_STRATEGOS = os.environ.get("ICDEV_STRATEGOS_ENABLED", "true").lower() in ("true", "1", "yes")
 _HAS_NETWORK = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
 _HAS_PIPELINE = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
 _HAS_SECURITY_CANVAS = os.environ.get("ICDEV_SECURITY_ENABLED", "false").lower() in ("true", "1", "yes")
@@ -1146,6 +1147,7 @@ def create_app() -> Flask:
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
+            "strategos_enabled": _HAS_STRATEGOS,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
             "network_enabled": _HAS_NETWORK,
             "pipeline_enabled": _HAS_PIPELINE,
@@ -1281,21 +1283,24 @@ def create_app() -> Flask:
         app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
 
     # ---- Strategos Blueprint ----
-    try:
-        from apps.strategos.blueprint import (
-            create_strategos_blueprint,
-            create_strategos_api_blueprint,
-        )
-        _sg_bp = create_strategos_blueprint()
-        if _sg_bp:
-            app.register_blueprint(_sg_bp, url_prefix="/strategos")
-            app.logger.info("Strategos blueprint registered at /strategos")
-        _sg_api_bp = create_strategos_api_blueprint()
-        if _sg_api_bp:
-            app.register_blueprint(_sg_api_bp, url_prefix="/api/strategos")
-            app.logger.info("Strategos API blueprint registered at /api/strategos")
-    except Exception as _exc:
-        app.logger.warning("Strategos blueprint failed to register: %s", _exc)
+    if _HAS_STRATEGOS:
+        try:
+            from apps.strategos.blueprint import (
+                create_strategos_blueprint,
+                create_strategos_api_blueprint,
+            )
+            _sg_bp = create_strategos_blueprint()
+            if _sg_bp:
+                app.register_blueprint(_sg_bp, url_prefix="/strategos")
+                app.logger.info("Strategos blueprint registered at /strategos")
+            _sg_api_bp = create_strategos_api_blueprint()
+            if _sg_api_bp:
+                app.register_blueprint(_sg_api_bp, url_prefix="/api/strategos")
+                app.logger.info("Strategos API blueprint registered at /api/strategos")
+        except Exception as _exc:
+            app.logger.warning("Strategos blueprint failed to register: %s", _exc)
+    else:
+        app.logger.info("Strategos disabled (ICDEV_STRATEGOS_ENABLED=false)")
 
     # ---- TA Patterns Blueprint ----
     try:
