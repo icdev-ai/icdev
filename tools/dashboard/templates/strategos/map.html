@@ -24,6 +24,10 @@
   --sg-blue:    #3b82f6;
 }
 
+/* ── Nav z-index fix (Leaflet panes reach z-index 1000) ── */
+.nav-dropdown-menu { z-index: 1100 !important; }
+.navbar, .sub-nav  { z-index: 1050 !important; }
+
 /* ── Full viewport layout ── */
 .sg-map-page {
   background: var(--sg-void);
