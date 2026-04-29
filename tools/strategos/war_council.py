@@ -362,6 +362,35 @@ def _save_brief(
         logger.warning("Failed to save brief to DB: %s", exc)
 
 
+# ── Read path ─────────────────────────────────────────────────────────────────
+
+def get_war_council_briefs(
+    theater: str | None = None,
+    limit: int = 20,
+    conn=None,
+) -> list[dict]:
+    """Return recent war council briefs, optionally filtered by theater."""
+    from tools.db.storage import get_connection as _gc
+
+    _conn = conn or _gc()
+    try:
+        sql = "SELECT * FROM sg_intelligence_briefs_war_council"
+        params: list = []
+        if theater:
+            sql += " WHERE theater = ?"
+            params.append(theater)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        cur = _conn.execute(sql, params)
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        if conn is None:
+            _conn.close()
+
+
 # ── Convenience wrapper ────────────────────────────────────────────────────────
 
 def generate_war_council_brief(
