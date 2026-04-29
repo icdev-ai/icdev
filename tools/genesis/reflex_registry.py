@@ -55,8 +55,9 @@ REGISTRY: List[ReflexEntry] = [
     # ── DOMAIN ────────────────────────────────────────────────────────────────
     ReflexEntry("market",                     DOMAIN, 1.0,  "Market data refresh and signal detection"),
     ReflexEntry("alphadesk_trap_scenarios",   DOMAIN, 4.0,  "AlphaDesk trap scenario analysis"),
-    ReflexEntry("fathomdesk_trap_sweep",      DOMAIN, 4.0,  "FathomDesk trap detection sweep"),
-    ReflexEntry("fathomdesk_openbb_refresh",  DOMAIN, 6.0,  "Refresh OpenBB market data cache"),
+    ReflexEntry("fathomdesk_trap_sweep",          DOMAIN, 4.0,  "FathomDesk trap detection sweep"),
+    ReflexEntry("fathomdesk_openbb_refresh",      DOMAIN, 6.0,  "Refresh OpenBB market data cache"),
+    ReflexEntry("fathomdesk_fundamentals_sweep",  DOMAIN, 23.0, "Daily PE/P/B/ROE fundamentals refresh from yfinance"),
     ReflexEntry("govcon_scan",                DOMAIN, 6.0,  "GovCon/SAM.gov opportunity scan"),
     ReflexEntry("migration_intel",            DOMAIN, 6.0,  "Migration intelligence signal harvester"),
 
