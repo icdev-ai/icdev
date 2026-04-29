@@ -2126,6 +2126,106 @@ def strategos_api_cyber_timeline():
 
 
 # ---------------------------------------------------------------------------
+# Info page
+# ---------------------------------------------------------------------------
+
+@_bp.route("/info")
+def strategos_info():
+    return render_template("strategos/info.html")
+
+
+# ---------------------------------------------------------------------------
+# War Council page + API
+# ---------------------------------------------------------------------------
+
+@_bp.route("/war-council")
+def strategos_war_council():
+    theaters = [
+        "ukraine", "taiwan", "korean_peninsula", "black_sea",
+        "middle_east", "arctic", "south_china_sea", "unspecified",
+    ]
+    return render_template("strategos/war_council.html", theaters=theaters)
+
+
+@_api.route("/war-council/generate", methods=["POST"])
+def api_war_council_generate():
+    data = request.get_json(silent=True) or {}
+    scenario = (data.get("scenario") or "").strip()
+    if not scenario:
+        return jsonify({"error": "scenario is required"}), 400
+    try:
+        from tools.strategos.war_council import WarCouncilEngine, WarCouncilRequest  # noqa: PLC0415
+        req = WarCouncilRequest(
+            scenario=scenario,
+            theater=data.get("theater", "unspecified"),
+            commander_intent=data.get("commander_intent", ""),
+            constraints=data.get("constraints", []),
+            friendly_cog=data.get("friendly_cog", ""),
+            friendly_cc=data.get("friendly_cc", ""),
+            friendly_cv=data.get("friendly_cv", ""),
+            adversary_cog=data.get("adversary_cog", ""),
+            adversary_cc=data.get("adversary_cc", ""),
+            adversary_cv=data.get("adversary_cv", ""),
+            save_to_db=True,
+        )
+        engine = WarCouncilEngine()
+        brief = engine.generate(req)
+        return jsonify(brief.to_dict())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# OSINT Ingestion Panel page + APIs
+# ---------------------------------------------------------------------------
+
+@_bp.route("/osint")
+def strategos_osint():
+    return render_template("strategos/osint.html")
+
+
+@_api.route("/osint/stats", methods=["GET"])
+def api_osint_stats():
+    raw = _safe_count("SELECT COUNT(*) FROM sg_raw_signals")
+    prioritized = _safe_count("SELECT COUNT(*) FROM sg_prioritized_signals")
+    cyber = _safe_count("SELECT COUNT(*) FROM sg_conflict_events WHERE event_type = 'cyber_op'")
+    kinetic = _safe_count("SELECT COUNT(*) FROM sg_conflict_events WHERE event_type != 'cyber_op'")
+    last_row = _safe_fetch(
+        "SELECT created_at FROM sg_raw_signals ORDER BY created_at DESC LIMIT 1"
+    )
+    last_run = last_row[0]["created_at"] if last_row else None
+    return jsonify({
+        "raw_signals": raw,
+        "prioritized_signals": prioritized,
+        "cyber_events": cyber,
+        "kinetic_events": kinetic,
+        "last_run": last_run,
+    })
+
+
+@_api.route("/osint/run-gdelt", methods=["POST"])
+def api_osint_run_gdelt():
+    try:
+        from tools.strategos.gdelt_importer import run as gdelt_run  # noqa: PLC0415
+        result = gdelt_run()
+        return jsonify({"status": "ok", "inserted": result.get("inserted", 0), "detail": result})
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+@_api.route("/osint/run-prestage", methods=["POST"])
+def api_osint_run_prestage():
+    try:
+        from pathlib import Path as _Path  # noqa: PLC0415
+        from tools.strategos.osint_prestage import prestage  # noqa: PLC0415
+        _inbox = _Path(__file__).resolve().parents[2] / "data" / "osint_inbox"
+        result = prestage(output_dir=_inbox)
+        return jsonify({"status": "ok", "count": result.get("signals", 0), "detail": result})
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Map sub-APIs — template fetches /strategos/api/map/*
 # ---------------------------------------------------------------------------
 

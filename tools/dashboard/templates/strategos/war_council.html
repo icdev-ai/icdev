@@ -1,0 +1,692 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}War Council — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Layout ───────────────────────────────────────────────────────────────── */
+.wc-grid {
+  display: grid;
+  grid-template-columns: 40% 60%;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 860px) { .wc-grid { grid-template-columns: 1fr; } }
+
+/* ── Classification banner ────────────────────────────────────────────────── */
+.wc-banner {
+  background: #0a1628;
+  border: 1px solid #1e3a5f;
+  border-left: 4px solid #3b82f6;
+  border-radius: 6px;
+  padding: .55rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: 1rem;
+  letter-spacing: .06em;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.wc-banner .wc-cls-pill {
+  background: #1e3a5f;
+  color: #60a5fa;
+  padding: .2rem .65rem;
+  border-radius: 3px;
+  font-family: monospace;
+  font-size: .75rem;
+}
+.wc-banner .wc-session {
+  color: var(--text-muted);
+  font-weight: 400;
+  font-size: .72rem;
+  margin-left: auto;
+}
+
+/* ── Form labels & inputs ─────────────────────────────────────────────────── */
+.wc-form-label {
+  display: block;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  margin-bottom: .3rem;
+}
+.wc-input, .wc-select, .wc-textarea {
+  width: 100%;
+  padding: .4rem .65rem;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 4px;
+  font-size: .85rem;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: border-color .15s;
+}
+.wc-input:focus, .wc-select:focus, .wc-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+.wc-textarea { resize: vertical; }
+
+/* ── COG collapsible ──────────────────────────────────────────────────────── */
+.cog-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: .8rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  padding: 0;
+  font-family: inherit;
+}
+.cog-toggle:hover { color: var(--text-primary); }
+.cog-toggle .cog-arrow { transition: transform .2s; display: inline-block; }
+.cog-toggle.open .cog-arrow { transform: rotate(90deg); }
+#cog-section {
+  display: none;
+  margin-top: .75rem;
+  padding-top: .75rem;
+  border-top: 1px solid var(--border-color);
+}
+#cog-section.visible { display: block; }
+.cog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .6rem;
+}
+@media (max-width: 500px) { .cog-grid { grid-template-columns: 1fr; } }
+.cog-side-label {
+  font-size: .67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: .15rem .5rem;
+  border-radius: 3px;
+  margin-bottom: .5rem;
+  display: inline-block;
+}
+.cog-side-blue { background: rgba(59,130,246,.15); color: #3b82f6; }
+.cog-side-red  { background: rgba(239,68,68,.15);  color: #ef4444; }
+
+/* ── Generate button ─────────────────────────────────────────────────────── */
+.btn-generate {
+  width: 100%;
+  padding: .55rem;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: .9rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  letter-spacing: .04em;
+  transition: background .15s, opacity .15s;
+}
+.btn-generate:hover   { background: #2563eb; }
+.btn-generate:disabled { opacity: .6; cursor: not-allowed; }
+
+/* ── Right panel placeholder / brief ─────────────────────────────────────── */
+.wc-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  color: var(--text-muted);
+  gap: .75rem;
+}
+.wc-placeholder-icon {
+  font-size: 2.8rem;
+  opacity: .35;
+}
+
+/* ── Brief output ────────────────────────────────────────────────────────── */
+#brief-output { display: none; }
+
+.brief-header-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  margin-bottom: .75rem;
+}
+.brief-id-pill {
+  font-family: monospace;
+  font-size: .72rem;
+  padding: .18rem .55rem;
+  border-radius: 3px;
+  background: rgba(59,130,246,.12);
+  color: #60a5fa;
+  border: 1px solid rgba(59,130,246,.25);
+}
+.brief-cls-pill {
+  font-size: .7rem;
+  font-weight: 700;
+  padding: .18rem .55rem;
+  border-radius: 3px;
+  background: rgba(245,158,11,.12);
+  color: #f59e0b;
+  border: 1px solid rgba(245,158,11,.3);
+  letter-spacing: .06em;
+}
+.brief-theater-pill {
+  font-size: .72rem;
+  padding: .18rem .55rem;
+  border-radius: 3px;
+  background: rgba(16,185,129,.1);
+  color: #10b981;
+  border: 1px solid rgba(16,185,129,.25);
+  font-weight: 600;
+}
+.brief-meta {
+  font-size: .72rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Section headings inside brief ───────────────────────────────────────── */
+.brief-section-hdr {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--text-muted);
+  margin: 1rem 0 .5rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.brief-section-hdr::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+/* ── Doctrine / precedent / COA cards ─────────────────────────────────────── */
+.brief-card-row {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+.brief-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: .65rem .85rem;
+}
+.brief-card .bc-ref {
+  font-family: monospace;
+  font-size: .72rem;
+  color: #60a5fa;
+  margin-bottom: .25rem;
+}
+.brief-card .bc-excerpt {
+  font-size: .82rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.brief-card .bc-title {
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: .2rem;
+}
+.coa-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(59,130,246,.2);
+  color: #60a5fa;
+  font-size: .72rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-right: .5rem;
+}
+
+/* ── Markdown prose output ────────────────────────────────────────────────── */
+.brief-prose {
+  font-size: .85rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+.brief-prose h1, .brief-prose h2, .brief-prose h3 {
+  color: var(--text-primary);
+  font-size: 1rem;
+  margin: .75rem 0 .35rem;
+}
+.brief-prose p  { margin: .4rem 0; }
+.brief-prose ul { padding-left: 1.25rem; }
+.brief-prose li { margin: .2rem 0; }
+.brief-prose pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: .65rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  font-size: .8rem;
+}
+
+/* ── Save button ─────────────────────────────────────────────────────────── */
+.btn-save-brief {
+  padding: .4rem 1rem;
+  background: rgba(16,185,129,.15);
+  color: #10b981;
+  border: 1px solid rgba(16,185,129,.3);
+  border-radius: 4px;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-save-brief:hover { background: rgba(16,185,129,.25); }
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Error state ─────────────────────────────────────────────────────────── */
+.wc-error {
+  background: rgba(239,68,68,.08);
+  border: 1px solid rgba(239,68,68,.3);
+  border-radius: 5px;
+  padding: .65rem 1rem;
+  color: #f87171;
+  font-size: .85rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Classification-style banner -->
+<div class="wc-banner">
+  <span style="color:#3b82f6;font-size:1rem">&#9733;</span>
+  <span style="color:var(--text-secondary)">WAR COUNCIL</span>
+  <span class="wc-cls-pill">CUI // SP-CTI</span>
+  <span style="color:var(--text-muted);font-size:.75rem">Adversary Modeling &amp; Doctrine Synthesis Workspace</span>
+  <span class="wc-session" id="wc-session-ts">—</span>
+</div>
+
+<!-- Page header -->
+<div class="page-header page-header--compact">
+  <h1>War Council
+    <span style="font-size:.65em;color:var(--text-secondary);font-weight:400">
+      Commander&#8217;s Estimate &amp; COG Analysis
+    </span>
+  </h1>
+  <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<!-- Two-column workspace -->
+<div class="wc-grid">
+
+  <!-- ── LEFT: Input form ── -->
+  <div class="card" style="padding:1rem;display:flex;flex-direction:column;gap:.85rem">
+
+    <!-- Theater -->
+    <div>
+      <label class="wc-form-label" for="wc-theater">Theater of Operations</label>
+      <select id="wc-theater" class="wc-select">
+        <option value="indo-pacific">Indo-Pacific</option>
+        <option value="eastern-europe">Eastern Europe</option>
+        <option value="middle-east">Middle East</option>
+        <option value="arctic">Arctic</option>
+        <option value="cyber-domain">Cyber Domain</option>
+      </select>
+    </div>
+
+    <!-- Scenario -->
+    <div>
+      <label class="wc-form-label" for="wc-scenario">
+        Operational Scenario <span style="color:#ef4444">*</span>
+      </label>
+      <textarea id="wc-scenario" class="wc-textarea" rows="3"
+                placeholder="Describe the operational scenario — threat actor, geography, timeline, triggering event…"
+                required></textarea>
+    </div>
+
+    <!-- Commander's Intent -->
+    <div>
+      <label class="wc-form-label" for="wc-intent">Commander&#8217;s Intent</label>
+      <textarea id="wc-intent" class="wc-textarea" rows="2"
+                placeholder="End state, purpose, and key tasks…"></textarea>
+    </div>
+
+    <!-- COG Analysis (collapsible) -->
+    <div>
+      <button class="cog-toggle" id="cog-toggle-btn" onclick="toggleCOG()" type="button">
+        <span class="cog-arrow">&#9658;</span>
+        COG Analysis (Friendly &amp; Adversary)
+      </button>
+
+      <div id="cog-section">
+        <div class="cog-grid">
+          <!-- Friendly -->
+          <div>
+            <span class="cog-side-label cog-side-blue">Friendly</span>
+            <div style="display:flex;flex-direction:column;gap:.5rem">
+              <div>
+                <label class="wc-form-label" for="wc-fcog">Center of Gravity</label>
+                <input id="wc-fcog" class="wc-input" type="text" placeholder="e.g. Maritime supremacy">
+              </div>
+              <div>
+                <label class="wc-form-label" for="wc-fcc">Critical Capability</label>
+                <input id="wc-fcc" class="wc-input" type="text" placeholder="e.g. Forward basing">
+              </div>
+              <div>
+                <label class="wc-form-label" for="wc-fcv">Critical Vulnerability</label>
+                <input id="wc-fcv" class="wc-input" type="text" placeholder="e.g. Extended LOC">
+              </div>
+            </div>
+          </div>
+          <!-- Adversary -->
+          <div>
+            <span class="cog-side-label cog-side-red">Adversary</span>
+            <div style="display:flex;flex-direction:column;gap:.5rem">
+              <div>
+                <label class="wc-form-label" for="wc-acog">Center of Gravity</label>
+                <input id="wc-acog" class="wc-input" type="text" placeholder="e.g. A2/AD network">
+              </div>
+              <div>
+                <label class="wc-form-label" for="wc-acc">Critical Capability</label>
+                <input id="wc-acc" class="wc-input" type="text" placeholder="e.g. Long-range missiles">
+              </div>
+              <div>
+                <label class="wc-form-label" for="wc-acv">Critical Vulnerability</label>
+                <input id="wc-acv" class="wc-input" type="text" placeholder="e.g. C2 nodes">
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Constraints -->
+    <div>
+      <label class="wc-form-label" for="wc-constraints">Constraints (comma-separated)</label>
+      <input id="wc-constraints" class="wc-input" type="text"
+             placeholder="e.g. ROE restrictions, Escalation limits, Host-nation approval">
+    </div>
+
+    <!-- Generate button -->
+    <button class="btn-generate" id="wc-generate-btn" onclick="generateBrief()">
+      <span id="wc-btn-icon">&#9733;</span>
+      <span id="wc-btn-label">Generate Brief</span>
+    </button>
+
+    <!-- Error message -->
+    <div id="wc-error" class="wc-error" style="display:none"></div>
+  </div>
+
+  <!-- ── RIGHT: Brief display ── -->
+  <div class="card" style="padding:1rem">
+
+    <!-- Placeholder -->
+    <div id="wc-placeholder" class="wc-placeholder">
+      <div class="wc-placeholder-icon">&#9737;</div>
+      <div style="font-size:.9rem;font-weight:600;color:var(--text-secondary)">
+        Awaiting scenario input&hellip;
+      </div>
+      <div style="font-size:.8rem;text-align:center;max-width:280px">
+        Configure the theater, describe the operational scenario, and press
+        <strong>Generate Brief</strong> to produce a doctrine-anchored estimate.
+      </div>
+    </div>
+
+    <!-- Brief output (hidden until generated) -->
+    <div id="brief-output">
+
+      <!-- Brief metadata row -->
+      <div class="brief-header-row">
+        <span class="brief-id-pill" id="brief-id-badge">—</span>
+        <span class="brief-cls-pill">CUI // SP-CTI</span>
+        <span class="brief-theater-pill" id="brief-theater-badge">—</span>
+        <span class="brief-meta" id="brief-generated-at">—</span>
+        <button class="btn-save-brief" onclick="saveBrief()">&#9654; Save to Intel Briefs</button>
+      </div>
+
+      <!-- Main body prose -->
+      <div class="brief-section-hdr">Commander&#8217;s Estimate</div>
+      <div id="brief-prose" class="brief-prose"></div>
+
+      <!-- Doctrine Citations -->
+      <div class="brief-section-hdr">Doctrine Citations</div>
+      <div id="brief-doctrine" class="brief-card-row"></div>
+
+      <!-- Historical Precedents -->
+      <div class="brief-section-hdr">Historical Precedents</div>
+      <div id="brief-precedents" class="brief-card-row"></div>
+
+      <!-- Courses of Action -->
+      <div class="brief-section-hdr">Courses of Action (COA)</div>
+      <div id="brief-coas" class="brief-card-row"></div>
+
+    </div><!-- /#brief-output -->
+  </div>
+
+</div><!-- /.wc-grid -->
+
+<script src="/static/vendor/marked/marked.min.js"></script>
+<script>
+// ── Globals ────────────────────────────────────────────────────────────────
+let _lastBrief = null;
+
+// ── Session timestamp ──────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('wc-session-ts');
+  if (el) {
+    const now = new Date();
+    el.textContent = 'Session: ' + now.toISOString().replace('T', ' ').slice(0, 16) + 'Z';
+  }
+})();
+
+// ── COG collapsible ────────────────────────────────────────────────────────
+function toggleCOG() {
+  const btn = document.getElementById('cog-toggle-btn');
+  const sec = document.getElementById('cog-section');
+  const open = sec.classList.toggle('visible');
+  btn.classList.toggle('open', open);
+}
+
+// ── Generate brief ─────────────────────────────────────────────────────────
+function generateBrief() {
+  const scenario = document.getElementById('wc-scenario').value.trim();
+  if (!scenario) {
+    showError('Operational scenario is required.');
+    return;
+  }
+
+  const constraints = document.getElementById('wc-constraints').value
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const payload = {
+    theater:           document.getElementById('wc-theater').value,
+    scenario:          scenario,
+    commander_intent:  document.getElementById('wc-intent').value.trim(),
+    constraints:       constraints,
+    friendly_cog:      document.getElementById('wc-fcog').value.trim(),
+    friendly_cc:       document.getElementById('wc-fcc').value.trim(),
+    friendly_cv:       document.getElementById('wc-fcv').value.trim(),
+    adversary_cog:     document.getElementById('wc-acog').value.trim(),
+    adversary_cc:      document.getElementById('wc-acc').value.trim(),
+    adversary_cv:      document.getElementById('wc-acv').value.trim(),
+  };
+
+  setLoading(true);
+  clearError();
+
+  fetch('/api/strategos/war-council/generate', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify(payload),
+  })
+    .then(r => {
+      if (!r.ok) return r.json().then(d => { throw new Error(d.error || d.detail || r.statusText); });
+      return r.json();
+    })
+    .then(data => {
+      _lastBrief = data;
+      renderBrief(data);
+    })
+    .catch(err => {
+      showError('Generation failed: ' + err.message);
+    })
+    .finally(() => setLoading(false));
+}
+
+// ── Render brief into right panel ──────────────────────────────────────────
+function renderBrief(data) {
+  document.getElementById('wc-placeholder').style.display = 'none';
+  document.getElementById('brief-output').style.display   = 'block';
+
+  // Header row
+  document.getElementById('brief-id-badge').textContent =
+    data.brief_id ? 'ID: ' + data.brief_id : 'DRAFT';
+  document.getElementById('brief-theater-badge').textContent =
+    theaterLabel(data.theater || '');
+  document.getElementById('brief-generated-at').textContent =
+    data.generated_at ? 'Generated: ' + data.generated_at.replace('T', ' ').slice(0, 16) + 'Z' : '';
+
+  // Main prose (markdown → HTML)
+  const proseEl = document.getElementById('brief-prose');
+  const body = data.content || data.brief || data.body || '';
+  if (typeof marked !== 'undefined' && body) {
+    proseEl.innerHTML = marked.parse(body);
+  } else if (body) {
+    proseEl.innerHTML = '<pre style="white-space:pre-wrap">' + escHtml(body) + '</pre>';
+  } else {
+    proseEl.innerHTML = '<p style="color:var(--text-muted)">No narrative returned.</p>';
+  }
+
+  // Doctrine citations
+  const docEl = document.getElementById('brief-doctrine');
+  const citations = data.doctrine_citations || [];
+  docEl.innerHTML = citations.length
+    ? citations.map(c => `
+        <div class="brief-card">
+          <div class="bc-ref">${escHtml(c.reference || c.ref || '')}</div>
+          <div class="bc-excerpt">${escHtml(c.excerpt || c.text || '')}</div>
+        </div>`).join('')
+    : '<p style="color:var(--text-muted);font-size:.83rem">No doctrine citations returned.</p>';
+
+  // Historical precedents
+  const precEl = document.getElementById('brief-precedents');
+  const prec   = data.historical_precedents || data.precedents || [];
+  precEl.innerHTML = prec.length
+    ? prec.map(p => `
+        <div class="brief-card">
+          <div class="bc-title">${escHtml(p.title || p.name || '')}</div>
+          <div class="bc-excerpt">${escHtml(p.summary || p.description || '')}</div>
+        </div>`).join('')
+    : '<p style="color:var(--text-muted);font-size:.83rem">No historical precedents returned.</p>';
+
+  // COAs
+  const coaEl = document.getElementById('brief-coas');
+  const coas   = data.courses_of_action || data.coas || [];
+  coaEl.innerHTML = coas.length
+    ? coas.map((c, i) => `
+        <div class="brief-card" style="display:flex;gap:.5rem;align-items:flex-start">
+          <span class="coa-number">${i + 1}</span>
+          <div>
+            <div class="bc-title">${escHtml(c.title || c.name || 'COA ' + (i + 1))}</div>
+            <div class="bc-excerpt">${escHtml(c.description || c.summary || '')}</div>
+          </div>
+        </div>`).join('')
+    : '<p style="color:var(--text-muted);font-size:.83rem">No COAs returned.</p>';
+}
+
+// ── Save brief ────────────────────────────────────────────────────────────
+function saveBrief() {
+  if (!_lastBrief) { showError('No brief to save.'); return; }
+  fetch('/api/strategos/briefs', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({
+      brief_type: 'war_council',
+      title:      'War Council — ' + theaterLabel(_lastBrief.theater || ''),
+      content:    _lastBrief.content || _lastBrief.brief || '',
+      theater:    _lastBrief.theater || '',
+      brief_id:   _lastBrief.brief_id || null,
+    }),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { showError('Save failed: ' + d.error); return; }
+      const btn = document.querySelector('.btn-save-brief');
+      if (btn) { btn.textContent = '&#10003; Saved'; btn.disabled = true; }
+    })
+    .catch(err => showError('Save failed: ' + err.message));
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function setLoading(on) {
+  const btn   = document.getElementById('wc-generate-btn');
+  const icon  = document.getElementById('wc-btn-icon');
+  const label = document.getElementById('wc-btn-label');
+  btn.disabled = on;
+  if (on) {
+    icon.className  = 'spinner';
+    icon.textContent = '';
+    label.textContent = 'Generating…';
+  } else {
+    icon.className  = '';
+    icon.textContent = '&#9733;';
+    label.textContent = 'Generate Brief';
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('wc-error');
+  el.style.display = 'block';
+  el.textContent   = msg;
+}
+function clearError() {
+  const el = document.getElementById('wc-error');
+  el.style.display = 'none';
+  el.textContent   = '';
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function theaterLabel(key) {
+  const map = {
+    'indo-pacific':   'Indo-Pacific',
+    'eastern-europe': 'Eastern Europe',
+    'middle-east':    'Middle East',
+    'arctic':         'Arctic',
+    'cyber-domain':   'Cyber Domain',
+  };
+  return map[key] || key;
+}
+</script>
+{% endblock %}

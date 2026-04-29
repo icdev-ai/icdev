@@ -81,7 +81,7 @@ class SmokeReport:
     def ok(self)      -> bool: return self.failed == 0
 
 
-# ── API Contracts ─────────────────────────────────────────────────────────────
+# -- API Contracts -------------------------------------------──────────────────
 # Each contract: {required, data_key, data_required, data_min, warn_empty}
 # required       — top-level keys that MUST exist in every response
 # data_key       — dotted path to the data object/array (e.g. "latest" or "results")
@@ -93,25 +93,28 @@ class SmokeReport:
 
 CONTRACTS: dict[str, dict[str, Any]] = {
     # ── Auth ──
+    # /api/auth/me returns {"authenticated": true, "user": {"id": ..., "email": ...}}
     "GET /api/auth/me": {
-        "required": ["id", "email"],
+        "required": ["authenticated", "user"],
+        "data_key": "user",
+        "data_required": ["id", "email"],
     },
 
     # ── Value / Fear & Greed ──
+    # Returns {"latest": {...}, "history": [...]} — no top-level "status" key
     "GET /api/value/fear-greed": {
-        "required":      ["status"],
+        "required":      ["latest", "history"],
         "data_key":      "latest",
         "data_required": ["composite_score", "label", "components", "entry_exit_signal"],
-        "history_key":   "history",
-        "warn_empty":    True,   # warn (not fail) if no sweeps have run yet
+        "warn_empty":    True,
     },
 
     # ── Value / Buffett ──
+    # Returns {"latest": {...}, "history": [...]} — no top-level "status" key
     "GET /api/value/buffett-indicator": {
-        "required":      ["status"],
+        "required":      ["latest", "history"],
         "data_key":      "latest",
         "data_required": ["ratio_pct", "signal", "wilshire_trn", "gdp_trn"],
-        "history_key":   "history",
         "warn_empty":    True,
     },
 
@@ -130,15 +133,13 @@ CONTRACTS: dict[str, dict[str, Any]] = {
 
     # ── Market ──
     "GET /api/market/latest": {
-        "required": [],   # structure varies; just assert 200 + valid JSON
+        "required": [],
     },
 
-    # ── Breadth ──
-    "GET /api/breadth/advance-decline": {
-        "required": [],
-    },
-    "GET /api/breadth/sector-rotation": {
-        "required": [],
+    # ── Breadth (actual route: /api/market/breadth) ──
+    "GET /api/market/breadth": {
+        "required": ["latest", "history"],
+        "warn_empty": True,
     },
 
     # ── Regime ──
@@ -147,8 +148,9 @@ CONTRACTS: dict[str, dict[str, Any]] = {
     },
 
     # ── Alerts ──
+    # /api/alerts/badge returns {"unack_count": N}
     "GET /api/alerts/badge": {
-        "required": ["count"],
+        "required": ["unack_count"],
     },
     "GET /api/alerts/rules": {
         "required": ["rules"],
@@ -159,29 +161,31 @@ CONTRACTS: dict[str, dict[str, Any]] = {
         "required": [],
     },
 
-    # ── Signals ──
-    "GET /api/signals/list": {
+    # ── Signals (actual route: /api/signals) ──
+    "GET /api/signals": {
+        "required": ["signals"],
+        "data_key": "signals",
+        "warn_empty": True,
+    },
+
+    # ── News (actual route: /api/news/reading) ──
+    "GET /api/news/reading": {
         "required": [],
     },
 
-    # ── News ──
-    "GET /api/news/list": {
+    # ── Oracle (actual route: /api/oracle/reading) ──
+    "GET /api/oracle/reading": {
         "required": [],
     },
 
-    # ── Oracle ──
-    "GET /api/oracle/latest": {
+    # ── Risk (actual route: /api/risk) ──
+    "GET /api/risk": {
         "required": [],
     },
 
-    # ── Risk ──
-    "GET /api/risk/summary": {
-        "required": [],
-    },
-
-    # ── Watchlist ──
-    "GET /api/watchlist/list": {
-        "required": [],
+    # ── Watchlist (actual route: /api/watchlist) ──
+    "GET /api/watchlist": {
+        "required": ["count", "items"],
     },
 
     # ── Radar ──
@@ -341,7 +345,7 @@ def check_pages(base: str, session: requests.Session, report: SmokeReport) -> No
 def check_api(base: str, session: requests.Session, report: SmokeReport,
               record: bool = False, recorded: dict | None = None) -> dict:
     """Run API contract checks. Returns recorded responses when record=True."""
-    print(f"\n{BOLD('── API Contracts ───────────────────────────────────────────')}")
+    print(f"\n{BOLD('-- API Contracts -------------------------------------------')}")
     recordings: dict = {}
 
     for route, contract in CONTRACTS.items():
@@ -435,7 +439,7 @@ def check_api(base: str, session: requests.Session, report: SmokeReport,
 
 
 def check_db_schema(report: SmokeReport) -> None:
-    print(f"\n{BOLD('── DB Schema ───────────────────────────────────────────────')}")
+    print(f"\n{BOLD('-- DB Schema -----------------------------------------------')}")
     try:
         from tools.trading.db import get_conn
         conn = get_conn()
@@ -481,7 +485,7 @@ def check_db_schema(report: SmokeReport) -> None:
             print(f"  {FAIL}  {table:<45} {RED(str(exc)[:70])}")
 
     # Data presence checks
-    print(f"\n{BOLD('── Data Presence ───────────────────────────────────────────')}")
+    print(f"\n{BOLD('-- Data Presence -------------------------------------------')}")
     for table, min_rows in DATA_PRESENCE.items():
         t0 = time.time()
         try:
@@ -544,7 +548,7 @@ def run(args: argparse.Namespace) -> SmokeReport:
         check_db_schema(report)
 
     # ── Summary ──
-    print(f"\n{BOLD('── Summary ─────────────────────────────────────────────────')}")
+    print(f"\n{BOLD('-- Summary -------------------------------------------------')}")
     total = len(report.results)
     if report.ok:
         verdict = GREEN(f"ALL {report.passed}/{total} PASSED")
