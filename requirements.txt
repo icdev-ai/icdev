@@ -84,7 +84,7 @@ pyais>=2.0               # AIS (Automatic Identification System) NMEA decoder â€
 # Only needed when ICDEV_SECRET_BACKEND=vault. Delegates per-user credential
 # storage to an external Vault via KV v2 HTTP API. Defaults (ICDEV_SECRET_
 # BACKEND=local) keep credentials encrypted inside the FathomDesk DB.
-# hvac>=2.0
+hvac>=2.0                    # HashiCorp Vault KV client (vault_resolver.py)
 cachetools>=5.3              # TTLCache for vault_resolver 5-min secret cache
 
 # === Billing (FathomDesk Phase 5B) â€” OPTIONAL ===

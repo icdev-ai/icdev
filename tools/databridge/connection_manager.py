@@ -127,6 +127,7 @@ def resolve_secret(auth_secret_ref: str) -> Optional[str]:
 
 def _get_conn(db_path: str) -> sqlite3.Connection:
     """Open a SQLite connection with WAL and row_factory."""
-    conn = get_connection(db_path=str(db_path))
+    conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
