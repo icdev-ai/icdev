@@ -62,6 +62,7 @@ try:
 
     _HVAC_AVAILABLE = True
 except ImportError:
+    _hvac = None  # type: ignore[assignment]
     _HVAC_AVAILABLE = False
 
 
