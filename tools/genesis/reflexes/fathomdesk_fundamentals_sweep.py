@@ -10,7 +10,6 @@ COOLDOWN_HOURS = 23  (daily cadence, guards against rapid re-fire).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from typing import Any
