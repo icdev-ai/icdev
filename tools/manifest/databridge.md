@@ -28,14 +28,35 @@
 ## DataBridge Secret Resolvers
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Vault Resolver | tools/databridge/resolvers/vault_resolver.py | HashiCorp Vault KV secret resolver; resolves `vault:path#field` refs; 5-min TTL cache; reads VAULT_ADDR + VAULT_TOKEN from env | vault:path#field ref | Plaintext secret |
-| AWS Resolver | tools/databridge/resolvers/aws_resolver.py | AWS Secrets Manager resolver; resolves `aws:name[#key]` refs; GovCloud endpoint (us-gov-west-1); creds from env or instance profile | aws:name[#key] ref | Plaintext secret |
-| File Resolver | tools/databridge/resolvers/file_resolver.py | Air-gap file resolver; reads `{secret_files_root}/{secret_id}`; path-traversal blocked; root from args/databridge_config.yaml or DATABRIDGE_SECRET_FILES_ROOT | file:secret_id ref | Plaintext secret |
+| Env Resolver | *(built-in)* | Direct environment-variable lookup; no external dependency; default backend when `secret_backend: env`; also serves as universal fallback for all other backends | ENV_VAR_NAME | Plaintext secret |
+| Vault Resolver | tools/databridge/resolvers/vault_resolver.py | HashiCorp Vault KV secret resolver; resolves `vault:path/to/secret#field` refs; 5-min TTL in-process cache (thread-safe); reads VAULT_ADDR + VAULT_TOKEN from env; KV v1 and v2 supported | vault:path/to/secret#field | Plaintext secret |
+| AWS Resolver | tools/databridge/resolvers/aws_resolver.py | AWS Secrets Manager resolver; resolves `aws:secret-name[#json-key]` refs; GovCloud endpoint (us-gov-west-1 default); creds from env vars or EC2/ECS instance profile; JSON secrets support key extraction | aws:secret-name[#json-key] | Plaintext secret |
+| File Resolver | tools/databridge/resolvers/file_resolver.py | Air-gap file resolver; reads plaintext from `{secret_files_root}/{secret_id}`; path-traversal blocked (resolved path must be under root); root from DATABRIDGE_SECRET_FILES_ROOT env or args/databridge_config.yaml | file:secret_id | Plaintext secret |
 
-**Resolver chain** (configured via `args/databridge_config.yaml` key `secret_backend`):
-1. Primary backend (env / vault / aws / file) — selected by prefix in secret ref or `secret_backend` config
-2. Env fallback — if primary backend raises, tries env var derived from the ref key (uppercase, normalized)
-3. `SecretNotFoundError` — raised if both primary and env fallback fail; never silently returns empty string
+### Resolver Chain
+
+Configured via `args/databridge_config.yaml` key **`secret_backend`** (default: `env`).
+
+**Step 1 — Primary backend** (selected by `secret_backend` value or ref prefix):
+
+| Backend | Config value | Ref prefix | Behavior |
+|---------|-------------|------------|----------|
+| `env` | `env` | *(no prefix)* | Reads the key directly as an environment variable name |
+| `vault` | `vault` | `vault:` | Calls HashiCorp Vault KV API via `hvac`; requires `VAULT_ADDR` + `VAULT_TOKEN` in env |
+| `aws` | `aws` | `aws:` | Calls AWS Secrets Manager via `boto3`; GovCloud region by default; creds from env or instance profile |
+| `file` | `file` | `file:` | Reads a plaintext file from `{secret_files_root}/{secret_id}`; path-traversal blocked; air-gap safe |
+
+**Step 2 — Env fallback**: If the primary backend raises any error, the chain retries by looking up the normalized key as an environment variable (uppercase, non-alphanumeric characters replaced with underscores).
+
+**Step 3 — `SecretNotFoundError`**: Raised if both the primary backend and the env fallback fail. Never silently returns an empty string.
+
+**Config reference** (`args/databridge_config.yaml`):
+```yaml
+secret_backend: env           # env | vault | aws | file  (default: env)
+vault_addr: ""                # convenience ref; resolver reads VAULT_ADDR env var
+aws_region: us-gov-west-1     # GovCloud default; override with AWS_REGION env var
+secret_files_root: /etc/strategos/secrets  # override with DATABRIDGE_SECRET_FILES_ROOT env var
+```
 
 ## DataBridge (Additional)
 | Tool | File | Description | Input | Output |
