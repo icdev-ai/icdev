@@ -1,18 +1,19 @@
 # CUI // SP-CTI
-"""File-based secret resolver for DataBridge (air-gap fallback).
+"""File-based secret resolver — air-gap fallback.
 
-Resolves secret refs of the form  file:secret_id
-by reading plaintext from {secret_files_root}/{secret_id}.
-
-Root path is operator-configured via args/databridge_config.yaml
-(key: secret_files_root) or DATABRIDGE_SECRET_FILES_ROOT env var.
-Default: /etc/strategos/secrets
+Resolves ``file:secret_id`` refs by reading plaintext from
+``{secret_files_root}/{secret_id}``.  The root is set by the operator
+via ``args/databridge_config.yaml:secret_files_root`` or the
+``DATABRIDGE_SECRET_FILES_ROOT`` environment variable.  Path traversal
+is blocked: the resolved path must start with the resolved root.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger("databridge.resolvers.file")
 
@@ -20,77 +21,87 @@ _DEFAULT_ROOT = "/etc/strategos/secrets"
 
 
 class SecretResolverError(Exception):
-    """Raised when a secret reference cannot be resolved."""
-
-
-def _get_root() -> Path:
-    """Return the configured secret files root directory."""
-    env_root = os.environ.get("DATABRIDGE_SECRET_FILES_ROOT")
-    if env_root:
-        return Path(env_root)
-
-    try:
-        import yaml  # type: ignore[import-untyped]
-
-        config_path = (
-            Path(__file__).resolve().parents[4] / "args" / "databridge_config.yaml"
-        )
-        if config_path.exists():
-            with open(config_path, encoding="utf-8") as fh:
-                cfg = yaml.safe_load(fh) or {}
-            root = cfg.get("secret_files_root")
-            if root:
-                return Path(root)
-    except Exception:
-        pass
-
-    return Path(_DEFAULT_ROOT)
+    """Raised when the file resolver cannot return a value."""
 
 
 def resolve(secret_ref: str) -> str:
-    """Resolve a ``file:secret_id`` reference to plaintext.
-
-    Reads ``{secret_files_root}/{secret_id}``.  Path traversal is blocked
-    by resolving to an absolute path and asserting it stays within root.
+    """Resolve a ``file:secret_id`` reference.
 
     Args:
-        secret_ref: Reference of the form ``file:db_password``.
+        secret_ref: Full reference including ``file:`` prefix,
+            e.g. ``file:db_password`` or ``file:prod/api_key``.
 
     Returns:
-        Stripped plaintext content of the secret file (never empty).
+        Stripped plaintext content of the secret file.
 
     Raises:
-        SecretResolverError: if traversal detected, file missing, unreadable,
-                             or empty.
+        SecretResolverError: if the root is not configured, the path
+            fails the traversal check, or the file is missing/empty.
     """
-    if not secret_ref.startswith("file:"):
-        raise SecretResolverError(f"Not a file ref: {secret_ref!r}")
-
-    secret_id = secret_ref[5:]
+    secret_id = secret_ref[len("file:"):]
     if not secret_id:
-        raise SecretResolverError(f"Empty secret_id in file ref: {secret_ref!r}")
+        raise SecretResolverError("Empty secret_id in file: reference")
 
-    root = _get_root()
-    secret_path = (root / secret_id).resolve()
-    root_resolved = root.resolve()
+    root = _get_secret_files_root()
+    root_path = Path(root).resolve()
 
-    # Block path traversal (e.g. file:../../../etc/passwd)
-    if not str(secret_path).startswith(str(root_resolved)):
+    # Block path traversal: resolved target must be under root
+    target_path = (root_path / secret_id).resolve()
+    try:
+        target_path.relative_to(root_path)
+    except ValueError:
         raise SecretResolverError(
-            f"Path traversal detected in file ref: {secret_ref!r}"
+            f"Path traversal detected: {secret_id!r} escapes root {str(root_path)!r}"
         )
 
-    if not secret_path.exists():
-        raise SecretResolverError(f"Secret file not found: {secret_path}")
+    if not target_path.exists():
+        raise SecretResolverError(
+            f"Secret file not found: {str(target_path)!r} (secret_id={secret_id!r})"
+        )
+
+    if not target_path.is_file():
+        raise SecretResolverError(
+            f"Secret path is not a regular file: {str(target_path)!r}"
+        )
 
     try:
-        value = secret_path.read_text(encoding="utf-8").strip()
+        value = target_path.read_text(encoding="utf-8").strip()
     except OSError as exc:
         raise SecretResolverError(
-            f"Cannot read secret file {secret_path}: {exc}"
+            f"Cannot read secret file {str(target_path)!r}: {exc}"
         ) from exc
 
     if not value:
-        raise SecretResolverError(f"Secret file {secret_path} is empty")
+        raise SecretResolverError(
+            f"Secret file is empty: {str(target_path)!r} (secret_id={secret_id!r})"
+        )
 
     return value
+
+
+def _get_secret_files_root() -> str:
+    """Return the secret files root from env or config; raise if not configured."""
+    # Environment variable takes precedence
+    env_root: Optional[str] = os.environ.get("DATABRIDGE_SECRET_FILES_ROOT")
+    if env_root:
+        return env_root
+
+    # Fall back to args/databridge_config.yaml
+    try:
+        import yaml  # type: ignore[import-untyped]
+
+        config_path = Path(__file__).resolve().parents[3] / "args" / "databridge_config.yaml"
+        if config_path.exists():
+            with open(config_path, encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh) or {}
+                root = cfg.get("secret_files_root", "").strip()
+                if root:
+                    return root
+    except Exception:
+        pass
+
+    # No config found — use the default (standard air-gap path)
+    logger.debug(
+        "secret_files_root not configured; using default %r", _DEFAULT_ROOT
+    )
+    return _DEFAULT_ROOT
