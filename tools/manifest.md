@@ -564,3 +564,9 @@
 | War Council Generator | tools\strategos\war_council_generator.py | Auto-registered: strategos/war_council_generator.py | --json | JSON |
 | Rare Earth Cascade | tools\supply_chain\rare_earth_cascade.py | Auto-registered: supply_chain/rare_earth_cascade.py | --json | JSON |
 | Semiconductor Chain | tools\supply_chain\semiconductor_chain.py | Auto-registered: supply_chain/semiconductor_chain.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Verify Manifest | tools\verify_manifest.py | Auto-registered: tools/verify_manifest.py | --json | JSON |
