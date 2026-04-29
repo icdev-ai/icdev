@@ -4024,6 +4024,10 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
     """
     verified, reason = _run_verify_checks(task_id, claude_output)
     metrics: Dict[str, Any] = {}
+    # Bypass completions made no code changes — post-task validation (coherence/E2E)
+    # would run against the unmodified base codebase and any pre-existing issue
+    # would incorrectly block the task. Skip it entirely for bypass tasks.
+    _is_bypass = "bypass" in reason.lower()
     if verified:
         specific_ok, specific_reason = _verify_task_specific(task_id)
         if not specific_ok:
@@ -4031,7 +4035,7 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
             reason = f"{reason} | {specific_reason}"
         else:
             reason = f"{reason} | {specific_reason}"
-    if verified:
+    if verified and not _is_bypass:
         validation_ok, validation_reason, metrics = _run_post_task_validation(task_id)
         if not validation_ok:
             verified = False

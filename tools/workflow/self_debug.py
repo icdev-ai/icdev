@@ -234,6 +234,33 @@ def diagnose(snap: Dict[str, Any]) -> Dict[str, Any]:
 def _heuristic_diagnosis(snap: Dict[str, Any]) -> Dict[str, Any]:
     """Rule-based fallback when no LLM is available."""
     reason = (snap.get("reason") or "").lower()
+
+    # Highest-confidence case: the worktree directory was deleted before or
+    # during validation.  All subprocess calls inside the missing path silently
+    # swallow FileNotFoundError and return misleading pass/skip results.
+    # Immediately recommend rebuild so the next dispatch starts clean.
+    if snap.get("is_worktree_path") and snap.get("cwd_exists") is False:
+        return {
+            "root_cause": (
+                "Worktree directory does not exist on disk (cwd_exists=false). "
+                "A prior reset's rmtree likely failed on Windows file locks, "
+                "leaving git state stale. Validation subprocess calls swallow "
+                "FileNotFoundError, causing repeated coherence failures."
+            ),
+            "suspect_files": [
+                "tools/workflow/validated_commit.py:validate_working_tree",
+                "tools/workflow/auto_remediate.py:_reset_broken_worktree",
+            ],
+            "recommendation": "rebuild_worktree",
+            "patch_hint": (
+                "Check cwd_exists before any git/file ops; if false and is_worktree, "
+                "return FAILURE_WORKTREE_MISSING immediately so remediate() can "
+                "prune git state and let the next dispatch create a clean worktree."
+            ),
+            "confidence": 0.92,
+            "_source": "heuristic",
+        }
+
     if snap.get("is_worktree_path") and not snap.get("worktree_registered"):
         return {
             "root_cause": "Worktree dir exists but is not registered with git — orphan left by a failed `git worktree remove`.",
