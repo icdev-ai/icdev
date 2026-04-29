@@ -438,14 +438,25 @@ def check_api(base: str, session: requests.Session, report: SmokeReport,
     return recordings
 
 
+def _get_smoke_conn():
+    """Get a DB connection that skips _ensure_schema() to avoid DDL lock contention."""
+    try:
+        from tools.db.storage import get_connection
+        return get_connection()
+    except Exception:
+        from tools.trading.db import get_conn
+        return get_conn()
+
+
 def check_db_schema(report: SmokeReport) -> None:
     print(f"\n{BOLD('-- DB Schema -----------------------------------------------')}")
+    sys.stdout.flush()
     try:
-        from tools.trading.db import get_conn
-        conn = get_conn()
-    except Exception as exc:
+        conn = _get_smoke_conn()
+    except BaseException as exc:
         report.add(CheckResult("DB connection", "fail", str(exc)))
         print(f"  {FAIL}  DB connection: {exc}")
+        sys.stdout.flush()
         return
 
     for table, required_cols in DB_SCHEMA.items():
@@ -480,9 +491,10 @@ def check_db_schema(report: SmokeReport) -> None:
                 report.add(CheckResult(f"SCHEMA {table}", "pass", "", elapsed))
                 print(f"  {PASS}  {table:<45} {DIM(f'{len(actual_cols)} cols')} {DIM(f'{elapsed*1000:.0f}ms')}")
 
-        except Exception as exc:
+        except BaseException as exc:
             report.add(CheckResult(f"SCHEMA {table}", "fail", str(exc)[:100], time.time() - t0))
             print(f"  {FAIL}  {table:<45} {RED(str(exc)[:70])}")
+            sys.stdout.flush()
 
     # Data presence checks
     print(f"\n{BOLD('-- Data Presence -------------------------------------------')}")
