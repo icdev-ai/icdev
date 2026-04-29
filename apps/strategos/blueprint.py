@@ -664,6 +664,78 @@ def strategos_interdiction():
     )
 
 
+@_bp.route("/supply")
+def strategos_supply():
+    import json as _supply_json
+
+    rows = _safe_fetch(
+        "SELECT node_id, label, node_type, criticality, substitutability, "
+        "controlled_by, lat, lon, metadata_json FROM sg_supply_nodes "
+        "WHERE lat IS NOT NULL AND lon IS NOT NULL ORDER BY substitutability LIMIT 300"
+    )
+
+    _CRIT_BASE = {"critical": 0.92, "high": 0.78, "medium": 0.55, "low": 0.32}
+
+    def _to_side(cb: str) -> str:
+        s = (cb or "").lower()
+        if any(x in s for x in ("russia", " rf", "soviet")): return "russia"
+        if any(x in s for x in ("ukraine", "ukr")):          return "ukraine"
+        if "iran" in s:                                        return "iran"
+        return "nato_partner"
+
+    nodes = []
+    for r in rows:
+        sub  = float(r.get("substitutability") or 0.5)
+        crit = (r.get("criticality") or "medium").lower()
+        blast = round(_CRIT_BASE.get(crit, 0.55) * (1.0 - sub * 0.3), 3)
+        meta  = {}
+        try:
+            meta = _supply_json.loads(r.get("metadata_json") or "{}")
+        except Exception:
+            pass
+        nodes.append({
+            "id":               r["node_id"],
+            "node_name":        r["label"],
+            "node_type":        r["node_type"],
+            "criticality":      crit,
+            "blast_radius":     blast,
+            "side":             _to_side(r.get("controlled_by") or ""),
+            "country":          r.get("controlled_by") or "",
+            "lat":              r["lat"],
+            "lon":              r["lon"],
+            "systems_produced": meta.get("systems_produced", []),
+            "notes":            meta.get("notes", ""),
+        })
+
+    critical_path = sorted(nodes, key=lambda n: n["blast_radius"], reverse=True)
+    for i, n in enumerate(critical_path, 1):
+        n["rank"] = i
+
+    edge_rows = _safe_fetch(
+        "SELECT source_id, target_id, relation FROM sg_kg_edges "
+        "WHERE relation IN ('PRODUCES', 'DEPENDS_ON_SUPPLY') LIMIT 500"
+    )
+    edges = [
+        {
+            "source_node_id": e["source_id"],
+            "target_node_id": e["target_id"],
+            "edge_type":      e["relation"],
+            "system":         "",
+            "throughput_pct": 0.8,
+        }
+        for e in edge_rows
+    ]
+
+    return render_template(
+        "strategos/supply.html",
+        nodes=nodes,
+        edges=edges,
+        nodes_json=_supply_json.dumps(nodes),
+        edges_json=_supply_json.dumps(edges),
+        critical_path=critical_path[:25],
+    )
+
+
 @_bp.route("/briefs", methods=["GET"])
 def strategos_briefs():
     selected_type = request.args.get("type", "")
@@ -1073,6 +1145,32 @@ def api_kg():
         "SELECT source_id, target_id, relation FROM sg_kg_edges LIMIT 1000"
     )
     return jsonify({"nodes": nodes, "edges": edges})
+
+
+@_api.route("/supply/sync", methods=["POST"])
+def api_supply_sync():
+    """Write sg_supply_nodes into sg_kg_nodes so the KG page includes them."""
+    ph   = "%s" if is_pg() else "?"
+    rows = _safe_fetch(
+        "SELECT node_id, label, node_type FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    )
+    conn = get_connection()
+    written = 0
+    try:
+        for r in rows:
+            try:
+                conn.execute(
+                    f"INSERT INTO sg_kg_nodes (node_id, node_type, label) "  # nosec B608
+                    f"VALUES ({ph},{ph},{ph}) ON CONFLICT (node_id) DO NOTHING",
+                    (r["node_id"], r["node_type"], r["label"]),
+                )
+                written += 1
+            except Exception:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"graph": {"nodes_written": written}, "kg": {"kg_edges": 0}})
 
 
 @_api.route("/interdiction", methods=["GET"])
