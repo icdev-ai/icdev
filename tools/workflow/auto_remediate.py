@@ -361,6 +361,47 @@ def remediate_missing_manifest(
         return False, f"manifest remediation error: {exc}"
 
 
+def remediate_uncommitted_changes(cwd: str, task_id: str) -> Tuple[bool, str]:
+    """Stage and commit all uncommitted changes when branch has no commits ahead of main.
+
+    This breaks the infinite coherence loop that occurs when:
+      - Coherence fails in the worktree (main passes, cwd fails)
+      - The branch has 0 commits ahead of main (agent wrote files but never committed)
+      - All other remediations (rebase, ruff, manifest) cannot help
+
+    After this commit exists, _run_full_verification re-runs on the committed state.
+    If coherence still fails on the committed code, the task goes to backlog with a
+    real reason — but the loop terminates because branch_commits_ahead > 0 on retry.
+    """
+    branch = f"kanban/{task_id}"
+    try:
+        db = default_branch(cwd)
+        ahead = _run(
+            ["git", "rev-list", "--count", f"{db}..{branch}"],
+            cwd, timeout=10,
+        )
+        commits_ahead = int((ahead.stdout or "0").strip())
+        if commits_ahead > 0:
+            return False, f"branch already has {commits_ahead} commit(s) — skipping initial commit"
+
+        status = _run(["git", "status", "--porcelain"], cwd, timeout=10)
+        uncommitted = [ln for ln in (status.stdout or "").splitlines() if ln.strip()]
+        if not uncommitted:
+            return False, "no uncommitted changes to commit"
+
+        _run(["git", "add", "-A"], cwd, timeout=30)
+        r = _run(
+            ["git", "commit", "--no-verify",
+             "-m", f"wip: auto-stage {len(uncommitted)} change(s) (coherence-loop escape)"],
+            cwd, timeout=30,
+        )
+        if r.returncode == 0:
+            return True, f"committed {len(uncommitted)} uncommitted change(s) for coherence retry"
+        return False, f"initial commit failed: {r.stderr[:200]}"
+    except Exception as exc:
+        return False, f"uncommitted-changes remediation error: {exc}"
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -419,6 +460,12 @@ def attempt_remediation(
         if not ok:
             # Then try manifest
             ok, msg = remediate_missing_manifest(cwd, reason, modified_py)
+        if not ok:
+            # Last resort: agent wrote files but never committed (0 commits ahead).
+            # Stage+commit so coherence re-runs on committed state instead of
+            # uncommitted filesystem state. Breaks the infinite loop where
+            # rebase=no-op + ruff=clean + manifest=covered → same failure forever.
+            ok, msg = remediate_uncommitted_changes(cwd, task_id)
     else:
         return False, f"no handler for {failure_type}", info
 
