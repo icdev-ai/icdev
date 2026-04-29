@@ -31,6 +31,10 @@ python tools/db/storage.py --health --json
 python tools/testing/health_check.py --json
 python tools/testing/test_orchestrator.py --project-dir /path/to/project
 python tools/testing/e2e_runner.py --run-all
+# FathomDesk authenticated smoke test (MANDATORY after any FathomDesk change)
+python tools/testing/fathomdesk_smoke.py                            # reads .env for credentials
+python tools/testing/fathomdesk_smoke.py --fast                     # skip DB schema checks
+python tools/testing/fathomdesk_smoke.py --json                     # machine-readable
 
 # Companion sync (ALWAYS after code changes)
 python tools/dx/companion.py --sync --write --json
