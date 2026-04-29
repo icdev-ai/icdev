@@ -529,7 +529,7 @@ def seed_conflict_events(conn) -> int:
     placeholders = ",".join([ph] * len(_CE_INSERT_COLS))
     col_list = ",".join(_CE_INSERT_COLS)
     sql = (
-        f"INSERT INTO sg_conflict_events ({col_list}) VALUES ({placeholders}) "
+        f"INSERT INTO sg_conflict_events ({col_list}) VALUES ({placeholders}) "  # nosec B608
         f"ON CONFLICT DO NOTHING"
     )
 
@@ -801,7 +801,7 @@ def seed_hitl_items(conn) -> int:
     placeholders = ",".join([ph] * len(cols))
     col_list = ",".join(cols)
     sql = (
-        f"INSERT INTO sg_hitl_items ({col_list}) VALUES ({placeholders}) "
+        f"INSERT INTO sg_hitl_items ({col_list}) VALUES ({placeholders}) "  # nosec B608
         f"ON CONFLICT (id) DO NOTHING"
     )
 
@@ -920,7 +920,7 @@ def seed_pir_requirements(conn) -> int:
     placeholders = ",".join([ph] * len(cols))
     col_list = ",".join(cols)
     sql = (
-        f"INSERT INTO sg_pir_requirements ({col_list}) VALUES ({placeholders}) "
+        f"INSERT INTO sg_pir_requirements ({col_list}) VALUES ({placeholders}) "  # nosec B608
         f"ON CONFLICT (id) DO NOTHING"
     )
 
@@ -1080,12 +1080,12 @@ def seed_raw_and_prioritized(conn) -> tuple[int, int]:
 
     # sg_raw_signals — INSERT OR IGNORE on url_hash uniqueness
     raw_sql = (
-        f"INSERT OR IGNORE INTO sg_raw_signals "
+        f"INSERT OR IGNORE INTO sg_raw_signals "  # nosec B608
         f"(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at, processed) "
         f"VALUES ({','.join([ph]*9)})"
         if not is_pg(conn)
         else
-        f"INSERT INTO sg_raw_signals "
+        f"INSERT INTO sg_raw_signals "  # nosec B608
         f"(url_hash, title, body, source, signal_date, geo_hint, tier_used, created_at, processed) "
         f"VALUES ({','.join([ph]*9)}) ON CONFLICT (url_hash) DO NOTHING"
     )
@@ -1098,7 +1098,7 @@ def seed_raw_and_prioritized(conn) -> tuple[int, int]:
         "is_read", "promoted_to_kg", "annotation",
     )
     pri_sql = (
-        f"INSERT INTO sg_prioritized_signals ({','.join(pri_cols)}) "
+        f"INSERT INTO sg_prioritized_signals ({','.join(pri_cols)}) "  # nosec B608
         f"VALUES ({','.join([ph]*len(pri_cols))})"
     )
 
