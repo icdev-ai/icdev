@@ -283,6 +283,44 @@ def _run_codelens(
     return True, "CodeLens passed", metrics
 
 
+def _parse_coherence_failures(stdout: str) -> str:
+    """Parse coherence checker JSON output and return a compact failure summary.
+
+    Extracts the failing check IDs, their messages, and up to 3 missing items
+    so the agent can target the exact rule without re-running the checker.
+    Falls back to raw stdout snippet if JSON is unparseable.
+    """
+    if not stdout:
+        return ""
+    try:
+        data = json.loads(stdout)
+        checks = data.get("checks", [])
+        failed = [c for c in checks if c.get("status") == "fail"]
+        if not failed:
+            return ""
+        parts = []
+        for c in failed[:5]:
+            summary = f"[{c.get('check_id', '?')}] {c.get('message', '')}"
+            missing = c.get("missing", [])
+            if missing:
+                shown = missing[:3]
+                summary += " — missing: " + ", ".join(str(m) for m in shown)
+                if len(missing) > 3:
+                    summary += f" (+{len(missing) - 3} more)"
+            extra = c.get("extra", [])
+            if extra and not missing:
+                shown = extra[:3]
+                summary += " — extra: " + ", ".join(str(e) for e in shown)
+            parts.append(summary)
+        if len(failed) > 5:
+            parts.append(f"... and {len(failed) - 5} more failing checks")
+        return "; ".join(parts)
+    except (json.JSONDecodeError, AttributeError):
+        # Fall back to raw last 300 chars of output
+        raw = stdout.strip()[-300:]
+        return f"raw: {raw}" if raw else ""
+
+
 def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
     """Run coherence checker. If compare_to_main, only fail when cwd introduces
     a NEW coherence violation (not pre-existing in main).
@@ -301,9 +339,14 @@ def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
     if cwd_ok:
         return True, "coherence passed"
 
+    detail = _parse_coherence_failures(r.stdout)
+
     if not compare_to_main or str(Path(cwd).resolve()) == str(BASE_DIR.resolve()):
         # cwd IS main, or baseline comparison disabled → fail
-        return False, f"coherence gate failed (exit {r.returncode})"
+        reason = f"coherence gate failed (exit {r.returncode})"
+        if detail:
+            reason += f" — {detail}"
+        return False, reason
 
     # Compare to main — if main also fails, this is pre-existing
     try:
@@ -317,7 +360,10 @@ def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
         main_ok = True  # Assume main is OK if we can't check
 
     if main_ok:
-        return False, "coherence broken by cwd changes (main passes, cwd fails)"
+        reason = "coherence broken by cwd changes (main passes, cwd fails)"
+        if detail:
+            reason += f" — {detail}"
+        return False, reason
     return True, "coherence fails in both main and cwd — pre-existing"
 
 

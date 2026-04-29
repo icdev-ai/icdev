@@ -93,7 +93,9 @@ def classify_failure(reason: str, metrics: Optional[Dict[str, Any]] = None) -> s
     # Coherence / stale-baseline BEFORE bandit/ruff: a "coherence broken"
     # message may mention ruff/bandit in its details, but the root cause
     # is coherence. Rebasing onto main fixes most of these.
-    if "coherence" in r and ("broke" in r or "broken" in r):
+    # Also match "coherence gate failed" — the _run_coherence path that fires
+    # when compare_to_main is False or cwd IS main.
+    if "coherence" in r and ("broke" in r or "broken" in r or "gate failed" in r):
         return FAILURE_COHERENCE_BROKEN
     if "stale" in r or "diverg" in r or "not possible to fast-forward" in r:
         return FAILURE_STALE_BASELINE
