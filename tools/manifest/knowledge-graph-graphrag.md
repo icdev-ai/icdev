@@ -15,4 +15,5 @@
 | Federation | tools/knowledge_graph/federation.py | Cross-project graph federation — federated search, shared entities, federated views, cross-project coverage | --search, --shared, --create-view, --coverage, --json | Federation results |
 | Temporal | tools/knowledge_graph/temporal.py | Temporal reasoning — time range queries, graph evolution, recent changes, stale entities, temporal diffs | --range, --evolution, --recent, --stale, --diff, --json | Temporal results |
 | RAG-KG Search API | tools/knowledge_graph/blueprint.py | Flask blueprint — hybrid RAG + Knowledge Graph search endpoint with classification filtering (CUI // SP-CTI); combines RAGRetriever + GraphRAGRetriever results | GET /api/rag-kg/search?q=&tenant_id=&classification=il2&top_k=10&include_kg=true&min_tier=warm | JSON {rag_results, kg_nodes, total, classification} |
+| Canvas Indexer | tools/knowledge_graph/canvas_indexer.py | Indexes canvas design topologies from sidecar databases into main KG (kg_nodes, kg_edges, kg_graphs); supports all 5 canvases (pdc/bdc/ddc/odc/idc) and both SQLite/PostgreSQL backends | --canvas [pdc|bdc|ddc|odc|idc|all] --json | JSON {indexed, errors, duration_ms} |
 

@@ -11,4 +11,5 @@
 | CVE Triager | tools/supply_chain/cve_triager.py | CVE triage with upstream/downstream blast radius and SLA tracking | --project-id, --triage, --sla-check, --propagate, --json | Triage + blast radius |
 | CVE Passive Watcher | tools/supply_chain/cve_passive_watcher.py | Passive ATO continuous monitoring — streams immutable audit_trail for CVE signals, auto-triages new discoveries, feeds dependency_graph blast-radius propagation (NIST SI-4, CA-7) | --project-id, --scan, --since-id, --status, --watch, --interval, --no-triage, --json | Scan results + triage IDs |
 | MCP Supply Chain Server | tools/mcp/supply_chain_server.py | MCP server for boundary + supply chain tools (9 tools) | stdio | JSON-RPC responses |
+| Rare Earth Cascade Analyzer | tools/supply_chain/rare_earth_cascade.py | Models REE embargo scenarios for US defense programs — calculates blast radius (affected program count) and time-to-depletion per system from stockpile data | --impact, --severity, --list-programs, --json | Cascade impact report + affected programs |
 

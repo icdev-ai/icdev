@@ -3589,12 +3589,20 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         manifest_text = "\n".join(chunks)
                 except Exception:
                     pass
-                if not manifest_text:
-                    parts = [
-                        (BASE_DIR / "tools" / "manifest.md").read_text(
-                            encoding="utf-8"
+                if not manifest_text or tool_path not in manifest_text:
+                    # Fallback to working-tree shards when the kanban branch
+                    # either has no manifest files or is missing the specific
+                    # entry (entry may have been committed to main, not the
+                    # feature branch, which is the typical case post-merge).
+                    parts = []
+                    try:
+                        parts.append(
+                            (BASE_DIR / "tools" / "manifest.md").read_text(
+                                encoding="utf-8"
+                            )
                         )
-                    ]
+                    except Exception:
+                        pass
                     shard_dir = BASE_DIR / "tools" / "manifest"
                     if shard_dir.is_dir():
                         for shard in shard_dir.glob("*.md"):

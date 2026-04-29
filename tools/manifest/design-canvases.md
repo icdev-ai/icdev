@@ -74,3 +74,9 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Pre-Apply Gate | tools/infra_canvas/pre_apply_gate.py | Compliance gate for `terraform plan -json` — converts plan to IDC graph, runs all 13 IDC compliance rules, returns pass/fail + violations list. Blocks on CAT1 violations. NIST: CM-3, SA-11. | `check_plan(plan_data)` — parsed JSON dict | `{"snapshot_id", "assessed_at", "graph", "passed", "violations", "score"}` |
 | Snapshot Writer | tools/infra_canvas/snapshot_writer.py | Persist IDC twin graph snapshots (`idc_twin_snapshots` table) and compliance violations (`idc_twin_violations` table). Append-only; supports both SQLite (tests) and PostgreSQL (prod). NIST: AU-9, CM-8. | `write_snapshot(graph, db_path, source, classification)` / `write_violations(snapshot_id, violations, db_path)` | snapshot_id str / row count int |
 
+## Canvas Digital Twins
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| ODC Digital Twin | tools/observability_canvas/twin.py | Observability digital twin: OTel collector snapshots, coverage simulation for instrumentation gaps, SLO burn-rate projection from collector config deltas | `take_snapshot()`, `simulate_delta()`, `slo_projection()` (library) | Snapshot/delta/projection dicts |
+| SDC Security Twin | tools/security_canvas/twin.py | Security digital twin: attack graph snapshots, attack path enumeration via topology delta simulation, STRIDE coverage assessment with heuristic risk scoring | `take_snapshot()`, `simulate_delta()` (library) | Snapshot/attack-path/risk dicts |
+

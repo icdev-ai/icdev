@@ -97,3 +97,11 @@ Import baseline conflict datasets (ACLED, UCDP, etc.) into `sg_conflict_events`.
 ## tools/sg/supply_chain_bridge.py
 
 Bridge supply-chain disruption signals into the conflict event store.
+
+---
+
+## SG Tools — Quick Reference
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Frontline Importer | tools/sg/frontline_importer.py | Imports DeepState daily GeoJSON frontline snapshots into sg_conflict_events; supports single-date, range, bulk, incremental, and dry-run modes with https:// enforcement | --date, --start-date/--end-date, --since, --bulk, --incremental, --force, --dry-run, --json | Imported row counts; JSON summary |
+| Supply Chain Bridge | tools/sg/supply_chain_bridge.py | Bridges STRATEGOS theater supply chain (Ukraine) from geosigint.db (sg_entities/kg_nodes) to ICDEV (supply_chain_vendors/dependencies); seeds 12 logistics nodes and 10 NATO contractors | --init, --seed, --sync, --kg, --all, --json | Sync results; JSON summary |
