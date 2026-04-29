@@ -25,6 +25,18 @@
 | Scale Chunked Pipeline | tools/databridge/scale/chunked_pipeline.py | Chunked data pipeline for large sync operations | (library) | Pipeline results |
 
 
+## DataBridge Secret Resolvers
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Vault Resolver | tools/databridge/resolvers/vault_resolver.py | HashiCorp Vault KV secret resolver; resolves `vault:path#field` refs; 5-min TTL cache; reads VAULT_ADDR + VAULT_TOKEN from env | vault:path#field ref | Plaintext secret |
+| AWS Resolver | tools/databridge/resolvers/aws_resolver.py | AWS Secrets Manager resolver; resolves `aws:name[#key]` refs; GovCloud endpoint (us-gov-west-1); creds from env or instance profile | aws:name[#key] ref | Plaintext secret |
+| File Resolver | tools/databridge/resolvers/file_resolver.py | Air-gap file resolver; reads `{secret_files_root}/{secret_id}`; path-traversal blocked; root from args/databridge_config.yaml or DATABRIDGE_SECRET_FILES_ROOT | file:secret_id ref | Plaintext secret |
+
+**Resolver chain** (configured via `args/databridge_config.yaml` key `secret_backend`):
+1. Primary backend (env / vault / aws / file) — selected by prefix in secret ref or `secret_backend` config
+2. Env fallback — if primary backend raises, tries env var derived from the ref key (uppercase, normalized)
+3. `SecretNotFoundError` — raised if both primary and env fallback fail; never silently returns empty string
+
 ## DataBridge (Additional)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|

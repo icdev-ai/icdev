@@ -200,6 +200,28 @@ When a new `tools/` module ingests user-provided content:
   - `data/osint_inbox/` must be air-gapped media (rsync/removable) — never internet-accessible.
 - **Revisit if:** The inbox path accepts user input from an HTTP endpoint, or if file content is executed rather than parsed as JSON.
 
+### Gap 13 — DataBridge Secret Resolvers
+
+**Modules:**
+- `tools/databridge/resolvers/vault_resolver.py` — HashiCorp Vault (hvac)
+- `tools/databridge/resolvers/aws_resolver.py` — AWS Secrets Manager (boto3)
+- `tools/databridge/resolvers/file_resolver.py` — plaintext file (air-gap)
+
+**Ingress path:** `connection_manager.resolve_secret()` dispatches to one of the three resolvers based on the secret ref prefix (`vault:`, `aws:`, `file:`) or the `secret_backend` config key. Secrets are resolved at connection-open time and returned as in-memory strings — never logged, never written to disk by the resolver itself.
+
+- **FileResolver — Decision: trusted-first-party**
+  - Rationale: Reads from an operator-configured path (`secret_files_root` in `args/databridge_config.yaml` or `DATABRIDGE_SECRET_FILES_ROOT` env var). No user-supplied content reaches this resolver; the caller supplies a `secret_id` string that is validated against the configured root via `Path.resolve()` traversal check. Content is treated as an opaque plaintext credential — not parsed, not executed.
+  - Guardrails: Path traversal blocked (resolved path must start with resolved root). File must exist and be non-empty or `SecretResolverError` is raised. Root path is operator-controlled at deploy time.
+
+- **VaultResolver — Decision: sandboxed-on-demand**
+  - Rationale: Makes outbound HTTPS to a HashiCorp Vault server (`VAULT_ADDR`). The target URL is operator-configured; no user-supplied URL. Response is deserialized with `client.read()` (hvac) — no `eval()`/`exec()`. Result cached 5 min in memory only.
+  - Guardrails: `VAULT_ADDR` and `VAULT_TOKEN` must be set or resolver raises `SecretResolverError`. `ICDEV_STRICT_SANDBOX=1` routes all network-egress calls through `SandboxExecutor` in IL5.
+
+- **AWSSecretsResolver — Decision: sandboxed-on-demand**
+  - Rationale: Makes outbound HTTPS to AWS Secrets Manager (GovCloud endpoint `us-gov-west-1` by default). Target endpoint is operator-configured via `aws_region` config or `AWS_REGION` env var. Response deserialized with `json.loads` only — no `eval()`/`exec()`.
+  - Guardrails: Credentials from env vars or instance profile only — never hardcoded. `ICDEV_STRICT_SANDBOX=1` routes through `SandboxExecutor` in IL5. Endpoint override (`AWS_SECRETS_ENDPOINT_URL`) is for testing only and must not be user-supplied.
+- **Revisit if:** resolver accepts a caller-supplied endpoint URL from a user-facing HTTP API, or if secret content is ever executed rather than passed as a credential string.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)
