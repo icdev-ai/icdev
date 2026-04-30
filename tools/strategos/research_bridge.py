@@ -373,7 +373,8 @@ def bridge(session_id: str, dry_run: bool = False) -> dict:
 
 def _run_new_session() -> str:
     """Create and run a new vert-strategos research session, return session_id."""
-    import subprocess, sys
+    import subprocess
+    import sys
     # Load the vertical first
     subprocess.run(
         [sys.executable, "-m", "tools.research.vertical_loader",
@@ -468,7 +469,7 @@ def main(argv=None):
         brief = result.get('intelligence_brief')
         print(f"  Intelligence brief: {'✓ ' + brief['title'][:50] if brief else '—'}")
         if result["errors"]:
-            print(f"  Errors:")
+            print("  Errors:")
             for e in result["errors"]:
                 print(f"    ! {e}")
 
