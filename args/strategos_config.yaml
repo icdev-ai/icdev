@@ -100,6 +100,14 @@ osint:
     signals_file: "osint_signals.json"
     kg_delta_file: "kg_delta.json"
 
+opencti:
+  enabled: false          # set true + configure .env to activate
+  url: ''                 # OPENCTI_URL env var override
+  api_key: ''             # OPENCTI_API_KEY env var override
+  sync_interval_h: 6
+  min_confidence: 70
+  indicator_limit: 200
+
 executor:
   # Ordered list of execution backends tried in sequence.
   # Supported values: 'claude_cli', 'gitlab', 'ollama_local'
