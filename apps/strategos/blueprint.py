@@ -1529,6 +1529,46 @@ def api_hitl_resolve(item_id: str):
         conn.close()
 
 
+@_api.route("/hitl/bulk", methods=["POST"])
+def api_hitl_bulk():
+    """Resolve all pending HITL items with a single decision."""
+    data = request.get_json(silent=True) or {}
+    decision = data.get("decision", "").strip()
+    if not decision:
+        return jsonify({"error": "decision required"}), 400
+    conn = get_connection()
+    try:
+        result = conn.execute(
+            "UPDATE sg_hitl_items SET status='resolved', decision=?, "
+            "resolved_at=?, resolved_by='analyst' WHERE status='pending'",
+            (decision, _now()),
+        )
+        conn.commit()
+        return jsonify({"status": "ok", "decision": decision, "updated": result.rowcount})
+    except Exception as exc:
+        if "no such table" in str(exc).lower():
+            return jsonify({"error": "HITL module not initialised"}), 503
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@_api.route("/hitl/delete", methods=["POST"])
+def api_hitl_delete():
+    """Delete all pending HITL items."""
+    conn = get_connection()
+    try:
+        result = conn.execute("DELETE FROM sg_hitl_items WHERE status='pending'")
+        conn.commit()
+        return jsonify({"status": "ok", "deleted": result.rowcount})
+    except Exception as exc:
+        if "no such table" in str(exc).lower():
+            return jsonify({"error": "HITL module not initialised"}), 503
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Analyst Annotation Layer (sg-analyst-06b)
 # ---------------------------------------------------------------------------

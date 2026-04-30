@@ -23,11 +23,14 @@ logger = logging.getLogger("databridge.resolvers.vault")
 try:
     from cachetools import TTLCache as _TTLCache  # type: ignore[import-untyped]
     _cache: Any = _TTLCache(maxsize=256, ttl=300)
+    _negative_cache: Any = _TTLCache(maxsize=256, ttl=30)  # 30s back-off for failures
 except ImportError:
     _cache = {}  # fallback: no expiry, but never crashes
+    _negative_cache = {}
 
 _cache_lock = Lock()
 _CACHE_TTL = 300  # 5 minutes
+_NEGATIVE_CACHE_TTL = 30  # 30 seconds — prevents hammering Vault on repeated failures
 
 
 def _cache_get(key: str) -> tuple[bool, Optional[str]]:
@@ -43,6 +46,28 @@ def _cache_set(key: str, value: str) -> None:
     """Store value; TTLCache handles expiry automatically."""
     with _cache_lock:
         _cache[key] = value
+
+
+def _negative_cache_get(key: str) -> tuple[bool, Optional[str]]:
+    """Return (hit, error_reason). hit=True when a recent failure is cached."""
+    with _cache_lock:
+        reason = _negative_cache.get(key)
+        if reason is not None:
+            return True, reason
+        return False, None
+
+
+def _negative_cache_set(key: str, reason: str) -> None:
+    """Cache a failure reason for 30 s to suppress repeated Vault hammering."""
+    with _cache_lock:
+        _negative_cache[key] = reason or "unknown error"
+
+
+def _clear_caches() -> None:
+    """Clear both positive and negative caches. Intended for tests only."""
+    with _cache_lock:
+        _cache.clear()
+        _negative_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -90,12 +115,22 @@ def resolve(secret_ref: str) -> str:
             f"Empty path or field in vault ref {secret_ref!r}"
         )
 
+    neg_hit, neg_reason = _negative_cache_get(secret_ref)
+    if neg_hit:
+        raise SecretResolverError(
+            f"Vault fetch suppressed (back-off 30s — previous error: {neg_reason})"
+        )
+
     hit, cached_val = _cache_get(secret_ref)
     if hit:
         logger.debug("Vault cache hit for %r", secret_ref)
         return cached_val  # type: ignore[return-value]
 
-    value = _fetch(secret_path, field, secret_ref)
+    try:
+        value = _fetch(secret_path, field, secret_ref)
+    except SecretResolverError as exc:
+        _negative_cache_set(secret_ref, str(exc))
+        raise
     _cache_set(secret_ref, value)
     return value
 

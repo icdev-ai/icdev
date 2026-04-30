@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sqlite3
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -318,9 +317,24 @@ def _resolve_with_fallback(prefix: str, secret_ref: str) -> str:
     )
 
 
-def _get_conn(db_path: str) -> sqlite3.Connection:
-    """Open a SQLite connection with WAL and row_factory."""
-    conn = sqlite3.connect(str(db_path))
-    conn.row_factory = sqlite3.Row
+def _get_conn(db_path: str):  # noqa: ANN201
+    """Return a DB connection (PostgreSQL or SQLite) with row_factory.
+
+    Prefers get_connection() from storage so PostgreSQL is used in prod.
+    Falls back to direct SQLite when storage layer is unavailable.
+    """
+    import sqlite3 as _sqlite3
+
+    if db_path == str(DB_PATH):
+        try:
+            from tools.db.storage import get_connection as _gc
+            conn = _gc()
+            conn.row_factory = _sqlite3.Row
+            return conn
+        except Exception:
+            pass  # storage unavailable — fall through to direct SQLite
+
+    conn = _sqlite3.connect(str(db_path))
+    conn.row_factory = _sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
