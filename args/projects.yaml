@@ -1,8 +1,3 @@
-# CUI // SP-CTI
-#
-# Auto-managed by tools/project/kanban_project_sync.py
-# Human edits to name/description/briefs are preserved.
-
 projects:
 - key: sgx
   name: Sgx Project
