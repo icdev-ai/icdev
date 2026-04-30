@@ -280,11 +280,11 @@ def _write_intelligence_brief(conn, dossier: dict, session: dict, dry_run: bool)
     score = float(dossier.get("overall_opportunity_score") or 0.5)
     entry = {
         "id":               str(uuid.uuid4()),
-        "brief_type":       "strategic_assessment",
+        "brief_type":       "assessment",
         "title":            title[:300],
         "content_md":       content_md,
         "sio_confidence":   min(score, 1.0),
-        "analyst_reviewed": False,
+        "analyst_reviewed": 0,
         "created_at":       _now(),
     }
     if not dry_run:
