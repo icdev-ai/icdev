@@ -464,25 +464,25 @@ def validate_working_tree(
     # on Windows when a prior reset's rmtree failed with file-lock errors), all
     # subprocess calls inside would raise FileNotFoundError and be swallowed by
     # their except-blocks — producing misleading pass/skip results instead of a
-    # clean failure that triggers a rebuild.  Detect and short-circuit early.
+    # clean failure that triggers a rebuild.  Detect and short-circuit early
+    # before any git status, file checks, or coherence validation.
     cwd_path = Path(cwd)
     if not cwd_path.exists():
-        _parts = cwd_path.parts
-        if ".tmp" in _parts and "worktrees" in _parts:
-            _empty: Dict[str, Any] = {
-                "codelens_passed": None,
-                "ruff_issues": 0,
-                "bandit_issues": 0,
-                "coherence_passed": None,
-                "e2e_ran": False,
-                "e2e_passed": None,
-                "companion_synced": False,
-                "modified_files": 0,
-                "modified_py": 0,
-                "budget_sec": _verify_budget_sec(),
-                "elapsed_sec": 0,
-            }
-            return False, "worktree missing on disk — rebuild required", _empty
+        _empty: Dict[str, Any] = {
+            "codelens_passed": None,
+            "ruff_issues": 0,
+            "bandit_issues": 0,
+            "coherence_passed": None,
+            "e2e_ran": False,
+            "e2e_passed": None,
+            "companion_synced": False,
+            "modified_files": 0,
+            "modified_py": 0,
+            "budget_sec": _verify_budget_sec(),
+            "elapsed_sec": 0,
+            "remediation": "rebuild_worktree",
+        }
+        return False, "worktree missing on disk — rebuild required", _empty
 
     if modified_files is None:
         modified_files = _list_modified_files(cwd)
