@@ -1,0 +1,581 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Maritime Tracking — Strategos{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<style>
+:root {
+  --sg-void:    #060d0d;
+  --sg-bg:      #0a1410;
+  --sg-surface: #111e18;
+  --sg-card:    #172418;
+  --sg-border:  #253428;
+  --sg-amber:   #f59e0b;
+  --sg-green:   #22c55e;
+  --sg-red:     #ef4444;
+  --sg-cyan:    #22d3ee;
+  --sg-blue:    #3b82f6;
+  --sg-purple:  #a855f7;
+  --sg-grey:    #6b7280;
+  --sg-text:    #d1fae5;
+  --sg-dim:     #6b9e7a;
+}
+
+.nav-dropdown-menu { z-index: 1100 !important; }
+.navbar, .sub-nav  { z-index: 1050 !important; }
+
+.mt-page {
+  background: var(--sg-void);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+/* ── Toolbar ── */
+#mt-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--sg-bg);
+  border-bottom: 1px solid var(--sg-border);
+  font-size: 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.mt-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sg-cyan);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+.mt-badge {
+  background: #0a4a6e;
+  color: var(--sg-cyan);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--sg-cyan);
+  letter-spacing: .05em;
+}
+.mt-btn {
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-text);
+  padding: 4px 12px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: .04em;
+  transition: background .15s, border-color .15s;
+}
+.mt-btn:hover  { background: #1e3a2e; border-color: var(--sg-dim); }
+.mt-btn.active { background: #0a3a2a; border-color: var(--sg-green); color: var(--sg-green); }
+.mt-btn.danger { border-color: var(--sg-red); color: var(--sg-red); }
+.mt-sep { width: 1px; height: 20px; background: var(--sg-border); flex-shrink: 0; }
+#mt-clock {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--sg-amber);
+  min-width: 160px;
+}
+#mt-speed-label { font-size: 11px; color: var(--sg-dim); }
+select.mt-select {
+  background: var(--sg-surface);
+  border: 1px solid var(--sg-border);
+  color: var(--sg-text);
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+/* ── Body split: sidebar + map ── */
+#mt-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ── */
+#mt-sidebar {
+  width: 240px;
+  min-width: 240px;
+  background: var(--sg-bg);
+  border-right: 1px solid var(--sg-border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#mt-sidebar-header {
+  padding: 8px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--sg-dim);
+  border-bottom: 1px solid var(--sg-border);
+  flex-shrink: 0;
+}
+#mt-vessel-list {
+  overflow-y: auto;
+  flex: 1;
+}
+.mt-vessel-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sg-border);
+  cursor: pointer;
+  transition: background .1s;
+}
+.mt-vessel-item:hover   { background: var(--sg-surface); }
+.mt-vessel-item.focused { background: #0d2a1e; border-left: 3px solid var(--sg-cyan); }
+.mt-vessel-name   { font-size: 12px; font-weight: 600; color: var(--sg-text); }
+.mt-vessel-meta   { font-size: 10px; color: var(--sg-dim); margin-top: 2px; }
+.mt-vessel-status {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-top: 3px;
+}
+
+/* ── Map ── */
+#mt-map {
+  flex: 1;
+  background: #071010;
+}
+
+/* ── Leaflet dark overrides ── */
+.leaflet-container { background: #071010; }
+.leaflet-control-zoom a {
+  background: var(--sg-surface) !important;
+  color: var(--sg-text) !important;
+  border-color: var(--sg-border) !important;
+}
+.leaflet-control-attribution {
+  background: rgba(6,13,13,.75) !important;
+  color: var(--sg-dim) !important;
+  font-size: 9px !important;
+}
+.leaflet-tile { filter: brightness(0.5) saturate(0.4) hue-rotate(160deg); }
+
+/* ── Ship icon ── */
+.mt-ship-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+}
+.mt-ship-svg { display: block; }
+
+/* ── Tooltip ── */
+.mt-tooltip {
+  background: var(--sg-card) !important;
+  border: 1px solid var(--sg-border) !important;
+  color: var(--sg-text) !important;
+  font-size: 11px !important;
+  padding: 6px 10px !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,.6) !important;
+}
+.mt-tooltip::before { display: none !important; }
+
+/* ── Progress bar ── */
+#mt-progress-wrap {
+  padding: 0 14px 4px;
+  background: var(--sg-bg);
+  border-bottom: 1px solid var(--sg-border);
+  flex-shrink: 0;
+}
+#mt-progress {
+  width: 100%;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--sg-surface);
+  border-radius: 2px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+#mt-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--sg-cyan);
+  cursor: pointer;
+  margin-top: -3px;
+}
+#mt-progress::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--sg-surface);
+  border-radius: 2px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mt-page">
+
+  <!-- ── Toolbar ── -->
+  <div id="mt-toolbar">
+    <span class="mt-title">&#9830; Maritime Tracking</span>
+    <span class="mt-badge">AIS / DARK VESSEL</span>
+    <div class="mt-sep"></div>
+
+    <button id="btn-play"  class="mt-btn active" onclick="togglePlay()">&#9646;&#9646; Pause</button>
+    <button id="btn-reset" class="mt-btn danger"  onclick="resetAnim()">&#9632; Reset</button>
+
+    <div class="mt-sep"></div>
+    <span class="mt-sep"></span>
+    <label for="mt-speed" class="mt-speed-label" style="font-size:11px;color:var(--sg-dim)">Speed</label>
+    <select id="mt-speed" class="mt-select" onchange="setSpeed(+this.value)">
+      <option value="1">1×</option>
+      <option value="5">5×</option>
+      <option value="20" selected>20×</option>
+      <option value="60">60×</option>
+      <option value="120">120×</option>
+    </select>
+
+    <div class="mt-sep"></div>
+    <label for="mt-filter" style="font-size:11px;color:var(--sg-dim)">Type</label>
+    <select id="mt-filter" class="mt-select" onchange="applyFilter(this.value)">
+      <option value="">All</option>
+      <option value="warship">Warship</option>
+      <option value="cargo">Cargo</option>
+      <option value="tanker">Tanker</option>
+      <option value="fishing">Fishing</option>
+      <option value="unknown">Unknown</option>
+    </select>
+
+    <div class="mt-sep"></div>
+    <span id="mt-clock">Loading…</span>
+
+    <div style="margin-left:auto">
+      <a href="/strategos" style="font-size:11px;color:var(--sg-dim);text-decoration:none">&larr; Strategos</a>
+    </div>
+  </div>
+
+  <!-- ── Timeline scrubber ── -->
+  <div id="mt-progress-wrap">
+    <input type="range" id="mt-progress" min="0" max="1000" value="0"
+           oninput="scrub(+this.value)">
+  </div>
+
+  <!-- ── Main body ── -->
+  <div id="mt-body">
+
+    <!-- Sidebar -->
+    <div id="mt-sidebar">
+      <div id="mt-sidebar-header">Vessels <span id="mt-vessel-count" style="color:var(--sg-cyan)"></span></div>
+      <div id="mt-vessel-list"></div>
+    </div>
+
+    <!-- Map -->
+    <div id="mt-map"></div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const TYPE_COLORS = {
+  warship: '#ef4444',
+  cargo:   '#22c55e',
+  tanker:  '#f59e0b',
+  fishing: '#22d3ee',
+  unknown: '#a855f7',
+};
+const TYPE_LABELS = {
+  warship: 'WARSHIP',
+  cargo:   'CARGO',
+  tanker:  'TANKER',
+  fishing: 'FISHING',
+  unknown: 'UNKNOWN',
+};
+const WAKE_LENGTH = 18;   // number of past positions to draw in trail
+
+// ── State ──────────────────────────────────────────────────────────────────
+let allVessels = [];
+let activeVessels = [];  // filtered subset
+let playing = true;
+let speedMultiplier = 20;
+let simMs = 0;           // current simulation time in ms from epoch
+let simStart = 0;
+let simEnd = 0;
+let lastRaf = null;
+let lastWallMs = null;
+let filterType = '';
+let focusedMmsi = null;
+
+// ── Per-vessel runtime objects ─────────────────────────────────────────────
+// { mmsi → { marker, wakeLine, wake: [{lat,lon}], lastIdx, color } }
+const vesselState = {};
+
+// ── Leaflet map ────────────────────────────────────────────────────────────
+const map = L.map('mt-map', {
+  center: [30, 100],
+  zoom: 4,
+  zoomControl: true,
+  attributionControl: true,
+});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap',
+  maxZoom: 18,
+}).addTo(map);
+
+// ── Ship icon SVG ──────────────────────────────────────────────────────────
+function shipIcon(color, heading) {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="28" viewBox="0 0 22 28">
+    <polygon points="11,2 20,24 11,20 2,24" fill="${color}" stroke="#000" stroke-width="1.5" opacity="0.95"/>
+    <circle cx="11" cy="20" r="2.5" fill="#fff" opacity="0.7"/>
+  </svg>`;
+  return L.divIcon({
+    html: `<div class="mt-ship-icon" style="transform:rotate(${heading}deg);width:22px;height:28px">${svg}</div>`,
+    className: '',
+    iconSize: [22, 28],
+    iconAnchor: [11, 20],
+  });
+}
+
+// ── Interpolate position between two waypoints ─────────────────────────────
+function interpolate(p1, p2, t) {
+  const f = (t - p1.ms) / (p2.ms - p1.ms);
+  return {
+    lat:     p1.lat     + (p2.lat     - p1.lat)     * f,
+    lon:     p1.lon     + (p2.lon     - p1.lon)     * f,
+    heading: p2.heading,  // snap heading
+    speed:   p1.speed   + (p2.speed   - p1.speed)   * f,
+  };
+}
+
+function posAtTime(track, t) {
+  if (t <= track[0].ms) return { ...track[0] };
+  if (t >= track[track.length - 1].ms) return { ...track[track.length - 1] };
+  for (let i = 1; i < track.length; i++) {
+    if (track[i].ms >= t) return interpolate(track[i-1], track[i], t);
+  }
+  return { ...track[track.length - 1] };
+}
+
+// ── Build sidebar ──────────────────────────────────────────────────────────
+function buildSidebar() {
+  const list = document.getElementById('mt-vessel-list');
+  list.innerHTML = '';
+  document.getElementById('mt-vessel-count').textContent = `(${activeVessels.length})`;
+  activeVessels.forEach(v => {
+    const color = TYPE_COLORS[v.vessel_type] || '#fff';
+    const div = document.createElement('div');
+    div.className = 'mt-vessel-item';
+    div.id = 'vitem-' + v.mmsi;
+    div.innerHTML = `
+      <div class="mt-vessel-name" style="color:${color}">${v.name}</div>
+      <div class="mt-vessel-meta">${v.mmsi} &nbsp;|&nbsp; ${v.flag}</div>
+      <span class="mt-vessel-status" style="background:${color}22;color:${color};border:1px solid ${color}44">
+        ${TYPE_LABELS[v.vessel_type] || 'UNKNOWN'}
+      </span>
+      <div class="mt-vessel-meta" id="vpos-${v.mmsi}">—</div>`;
+    div.onclick = () => focusVessel(v.mmsi);
+    list.appendChild(div);
+  });
+}
+
+function focusVessel(mmsi) {
+  focusedMmsi = mmsi;
+  document.querySelectorAll('.mt-vessel-item').forEach(el => el.classList.remove('focused'));
+  const el = document.getElementById('vitem-' + mmsi);
+  if (el) el.classList.add('focused');
+  const vs = vesselState[mmsi];
+  if (vs && vs.marker) map.setView(vs.marker.getLatLng(), 7);
+}
+
+// ── Wake trail ─────────────────────────────────────────────────────────────
+function pushWake(vs, lat, lon) {
+  vs.wake.push({ lat, lon });
+  if (vs.wake.length > WAKE_LENGTH) vs.wake.shift();
+  const pts = vs.wake.map(p => [p.lat, p.lon]);
+  vs.wakeLine.setLatLngs(pts);
+}
+
+// ── Init map objects for active vessels ────────────────────────────────────
+function initMapObjects() {
+  // Remove old objects
+  Object.values(vesselState).forEach(vs => {
+    if (vs.marker)   map.removeLayer(vs.marker);
+    if (vs.wakeLine) map.removeLayer(vs.wakeLine);
+  });
+  for (const k in vesselState) delete vesselState[k];
+
+  activeVessels.forEach(v => {
+    const color = TYPE_COLORS[v.vessel_type] || '#fff';
+    const firstPt = v.track[0];
+    const marker = L.marker([firstPt.lat, firstPt.lon], {
+      icon: shipIcon(color, firstPt.heading),
+      zIndexOffset: 1000,
+    }).addTo(map);
+
+    marker.bindTooltip('', {
+      className: 'mt-tooltip',
+      permanent: false,
+      direction: 'right',
+      offset: [12, 0],
+    });
+
+    const wakeLine = L.polyline([], {
+      color: color,
+      weight: 2,
+      opacity: 0.55,
+      dashArray: '4 4',
+    }).addTo(map);
+
+    vesselState[v.mmsi] = { marker, wakeLine, wake: [], color };
+  });
+}
+
+// ── Tick: update all vessel positions ─────────────────────────────────────
+function tick() {
+  const progress = (simEnd > simStart)
+    ? Math.min((simMs - simStart) / (simEnd - simStart), 1)
+    : 0;
+  document.getElementById('mt-progress').value = Math.round(progress * 1000);
+
+  const dt = new Date(simMs);
+  document.getElementById('mt-clock').textContent =
+    dt.toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+
+  activeVessels.forEach(v => {
+    const vs = vesselState[v.mmsi];
+    if (!vs) return;
+    const pos = posAtTime(v.track, simMs);
+    const ll = L.latLng(pos.lat, pos.lon);
+    vs.marker.setLatLng(ll);
+    vs.marker.setIcon(shipIcon(vs.color, pos.heading));
+    pushWake(vs, pos.lat, pos.lon);
+
+    // Update tooltip content on hover (always update data)
+    vs.marker.setTooltipContent(
+      `<b style="color:${vs.color}">${v.name}</b><br>` +
+      `MMSI: ${v.mmsi}<br>` +
+      `${pos.lat.toFixed(4)}°N, ${pos.lon.toFixed(4)}°E<br>` +
+      `Speed: ${pos.speed.toFixed(1)} kt &nbsp; Hdg: ${Math.round(pos.heading)}°<br>` +
+      `${v.flag} — ${TYPE_LABELS[v.vessel_type] || '?'}`
+    );
+
+    // Sidebar position update
+    const posEl = document.getElementById('vpos-' + v.mmsi);
+    if (posEl) posEl.textContent = `${pos.lat.toFixed(3)}, ${pos.lon.toFixed(3)} | ${pos.speed.toFixed(1)}kt`;
+  });
+
+  // Pan to focused vessel
+  if (focusedMmsi && vesselState[focusedMmsi]) {
+    // Don't auto-pan — user already panned there
+  }
+}
+
+// ── Animation loop ─────────────────────────────────────────────────────────
+function animLoop(wallMs) {
+  if (!playing) { lastWallMs = null; return; }
+  if (lastWallMs !== null) {
+    const delta = wallMs - lastWallMs;
+    simMs = Math.min(simMs + delta * speedMultiplier, simEnd);
+  }
+  lastWallMs = wallMs;
+  tick();
+  if (simMs >= simEnd) {
+    playing = false;
+    updatePlayBtn();
+    lastWallMs = null;
+    return;
+  }
+  lastRaf = requestAnimationFrame(animLoop);
+}
+
+function startAnim() {
+  if (lastRaf) cancelAnimationFrame(lastRaf);
+  lastWallMs = null;
+  lastRaf = requestAnimationFrame(animLoop);
+}
+
+function togglePlay() {
+  playing = !playing;
+  updatePlayBtn();
+  if (playing) startAnim();
+}
+
+function updatePlayBtn() {
+  const btn = document.getElementById('btn-play');
+  btn.textContent = playing ? '⏸ Pause' : '▶ Play';
+  btn.classList.toggle('active', playing);
+}
+
+function resetAnim() {
+  playing = true;
+  simMs = simStart;
+  Object.values(vesselState).forEach(vs => {
+    vs.wake = [];
+    vs.wakeLine.setLatLngs([]);
+  });
+  updatePlayBtn();
+  startAnim();
+}
+
+function setSpeed(v) { speedMultiplier = v; }
+
+function scrub(val) {
+  simMs = simStart + (simEnd - simStart) * (val / 1000);
+  tick();
+}
+
+function applyFilter(type) {
+  filterType = type;
+  activeVessels = filterType
+    ? allVessels.filter(v => v.vessel_type === filterType)
+    : allVessels.slice();
+  buildSidebar();
+  initMapObjects();
+  resetAnim();
+}
+
+// ── Load data ──────────────────────────────────────────────────────────────
+fetch('/api/strategos/maritime/tracks')
+  .then(r => r.json())
+  .then(data => {
+    // Parse timestamps → ms
+    allVessels = data.vessels.map(v => ({
+      ...v,
+      track: v.track.map(p => ({ ...p, ms: new Date(p.ts).getTime() })),
+    }));
+
+    // Compute global time bounds
+    allVessels.forEach(v => {
+      if (v.track.length === 0) return;
+      const first = v.track[0].ms;
+      const last  = v.track[v.track.length - 1].ms;
+      if (!simStart || first < simStart) simStart = first;
+      if (!simEnd   || last  > simEnd)   simEnd   = last;
+    });
+    simMs = simStart;
+
+    activeVessels = allVessels.slice();
+    buildSidebar();
+    initMapObjects();
+
+    // Auto-fit map to all tracks
+    const allPts = allVessels.flatMap(v => v.track.map(p => [p.lat, p.lon]));
+    if (allPts.length) map.fitBounds(allPts, { padding: [40, 40] });
+
+    startAnim();
+  })
+  .catch(err => {
+    document.getElementById('mt-clock').textContent = 'Load error: ' + err;
+  });
+</script>
+{% endblock %}

@@ -467,6 +467,26 @@ def _create_worktree(task_id: str) -> Optional[str]:
                 capture_output=True, text=True, timeout=10)
         _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
                 capture_output=True, text=True, timeout=10)
+    else:
+        # worktree_path doesn't exist but branch may still exist from a prior
+        # _reset_broken_worktree whose `git branch -D` failed silently (e.g.
+        # Windows file-lock left the ref in a bad state, or another worktree
+        # held it). Without this cleanup, `git worktree add -b` fails with
+        # "already exists" and _create_worktree returns None, forcing every
+        # subsequent dispatch into BASE_DIR — causing the coherence loop.
+        _stale = _sp.run(
+            ["git", "rev-parse", "--verify", branch_name],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        if _stale.returncode == 0:
+            logger.warning(
+                "Stale branch %s found without worktree dir — pruning before recreate",
+                branch_name,
+            )
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
 
     try:
         # Create a new branch from HEAD for this task
