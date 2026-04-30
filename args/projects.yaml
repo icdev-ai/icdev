@@ -4,6 +4,17 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: oracle
+  name: Oracle Project
+  description: Auto-registered project for tasks with prefix 'oracle-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: oracle-
+  default_open: true
+  briefs: []
+  epics:
+  - key: fix
+    title: FIX
+    priority: medium
 - key: ob1
   name: OB1 Memory Enhancements
   description: 'Five patterns adapted from OB1 (Open Brain): (1) SHA-256 content_fingerprint
@@ -107,6 +118,63 @@ projects:
   - key: vv
     title: V&V Sign-Off
     priority: high
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
 - key: sg
   name: STRATEGOS — Geospatial War Intelligence & Simulation Platform
   description: 'Conflict-agnostic geospatial war intelligence child app: 8-domain
@@ -194,6 +262,9 @@ projects:
   - key: analyst
     title: Analyst Workbench — PIR/CCIR, Brief Generator, Signal Engine, ORBAT
     priority: high
+  - key: core
+    title: CORE
+    priority: medium
 - key: sc-core
   name: Supply Chain Core Promotion
   description: 'Promote tools/supply_chain/ to true ICDEV core: domain-agnostic DB
@@ -603,6 +674,9 @@ projects:
   - key: p2
     title: P2
     priority: medium
+  - key: test
+    title: TEST
+    priority: medium
 - key: pgt
   name: PostgreSQL Textsearch
   description: BM25 <@> operator path in storage.py translate_sql(), FTS5-parity hybrid_search.py
@@ -620,6 +694,9 @@ projects:
   - key: vv
     title: V&V — Coherence, Companion, Query Parity
     priority: critical
+  - key: guard
+    title: GUARD
+    priority: medium
 - key: task_kb
   name: Task Kb Project
   description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
@@ -1143,6 +1220,24 @@ projects:
   - key: int
     title: INT
     priority: medium
+  - key: api
+    title: API
+    priority: medium
+  - key: hook
+    title: HOOK
+    priority: medium
+  - key: ingester
+    title: INGESTER
+    priority: medium
+  - key: install
+    title: INSTALL
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: ragkg
   name: RAG-KG Bridge
   description: Connect the existing RAG pipeline (rag_chunks, hybrid_search.py) to
@@ -1183,6 +1278,15 @@ projects:
   - key: install
     title: pip install icdev — Greenfield/Brownfield Setup Wizard
     priority: high
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: registry
+    title: REGISTRY
+    priority: medium
+  - key: version
+    title: VERSION
+    priority: medium
 - key: pkgbuild
   name: pip install icdev — Full Package Audit & Fix
   description: Ensure pip install icdev ships the entire ICDEV framework (all 78+
@@ -1266,21 +1370,23 @@ projects:
     priority: high
 - key: nwa
   name: nWave Methodology Adaptation — Theater Detector + Rigor Profiles + DES Audit
-  description: >-
-    Three nWave-inspired quality improvements for ICDEV: (1) Testing Theater Detector
-    — 8 anti-pattern checks (tautological assertions, mock-dominated, fixture theater,
-    assertion-free, hardcoded oracles, smoke-masquerade, always-green, spec drift)
-    wired into icdev-test; (2) Rigor Gate Profiles — IL2/IL4/IL5/IL6 quality tiers
-    mapped to adjustable gate thresholds in args/il_tier_profiles.yaml, evaluator in
-    tools/quality/rigor_gates.py, wired into icdev-build; (3) DES Execution Audit Trail
-    — migration 065 + tools/kanban/des_audit_logger.py logging every kanban dispatch,
-    completion, and verification gate decision (NIST AU-2/AU-3 compliance).
+  description: 'Three nWave-inspired quality improvements for ICDEV: (1) Testing Theater
+    Detector — 8 anti-pattern checks (tautological assertions, mock-dominated, fixture
+    theater, assertion-free, hardcoded oracles, smoke-masquerade, always-green, spec
+    drift) wired into icdev-test; (2) Rigor Gate Profiles — IL2/IL4/IL5/IL6 quality
+    tiers mapped to adjustable gate thresholds in args/il_tier_profiles.yaml, evaluator
+    in tools/quality/rigor_gates.py, wired into icdev-build; (3) DES Execution Audit
+    Trail — migration 065 + tools/kanban/des_audit_logger.py logging every kanban
+    dispatch, completion, and verification gate decision (NIST AU-2/AU-3 compliance).'
   task_prefix: nwa-
   default_open: true
   briefs:
-  - 'Theater Detector: TheaterDetectionResult dataclass + theater_detector.py (8 checks) + test_orchestrator wire + security_gates + skill update — nwa-ttd-01..08'
-  - 'Rigor Profiles: il_tier_profiles.yaml + tools/quality/rigor_gates.py + icdev-build wire + security_gates + project_defaults — nwa-rgp-01..08'
-  - 'DES Audit Trail: migration 065 + tools/kanban/des_audit_logger.py + pre_tool_use + conftest + kanban reflex wire + kanban API wire — nwa-des-01..09'
+  - 'Theater Detector: TheaterDetectionResult dataclass + theater_detector.py (8 checks)
+    + test_orchestrator wire + security_gates + skill update — nwa-ttd-01..08'
+  - 'Rigor Profiles: il_tier_profiles.yaml + tools/quality/rigor_gates.py + icdev-build
+    wire + security_gates + project_defaults — nwa-rgp-01..08'
+  - 'DES Audit Trail: migration 065 + tools/kanban/des_audit_logger.py + pre_tool_use
+    + conftest + kanban reflex wire + kanban API wire — nwa-des-01..09'
   epics:
   - key: ttd
     title: Testing Theater Detector (8 anti-patterns → icdev-test)
@@ -1291,29 +1397,52 @@ projects:
   - key: des
     title: DES Execution Audit Trail (migration 065 → kanban scheduler)
     priority: critical
+  - key: regfore
+    title: REGFORE
+    priority: medium
+  - key: techrad
+    title: TECHRAD
+    priority: medium
+  - key: univ
+    title: UNIV
+    priority: medium
+  - key: usage
+    title: USAGE
+    priority: medium
+  - key: voc
+    title: VOC
+    priority: medium
+  - key: winloss
+    title: WINLOSS
+    priority: medium
 - key: pint
   name: Product Intelligence — 5 New Engines + Universal Orchestrator
-  description: >-
-    Build five new product-discovery engines and one universal orchestrator that
-    calls all eight. New engines: (1) Regulatory Foresight — scans proposed legislation
+  description: 'Build five new product-discovery engines and one universal orchestrator
+    that calls all eight. New engines: (1) Regulatory Foresight — scans proposed legislation
     (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub, DoD DARS) before
     mandates land; (2) Usage Analytics — instruments dashboard routes and CLI invocations
     to reveal actual feature adoption; (3) Win/Loss Intelligence — correlates GovCon
-    proposal outcomes with ICDEV feature presence to surface roadmap priorities; (4) Voice
-    of Customer (VOC) — JTBD synthesis from first-party support tickets, NPS verbatims,
-    and debrief documents; (5) Technology Radar — tracks adopt/trial/assess/hold ring
-    movements for frameworks and tools. Universal Orchestrator (tools/product_intel/
+    proposal outcomes with ICDEV feature presence to surface roadmap priorities; (4)
+    Voice of Customer (VOC) — JTBD synthesis from first-party support tickets, NPS
+    verbatims, and debrief documents; (5) Technology Radar — tracks adopt/trial/assess/hold
+    ring movements for frameworks and tools. Universal Orchestrator (tools/product_intel/
     orchestrator.py) invokes all eight engines in sequence, runs the federation router,
-    stores a consolidated run record, and exposes --run-all and --daemon modes.
+    stores a consolidated run record, and exposes --run-all and --daemon modes.'
   task_prefix: pint-
   default_open: true
   briefs:
-  - 'Regulatory Foresight: config + migration 066 + source_scanner + foresight_engine + cross-register + tests — pint-regfore-01..09'
-  - 'Usage Analytics: config + migration 067 + event_collector + analytics_engine + dashboard wire + tests — pint-usage-01..08'
-  - 'Win/Loss Intelligence: config + migration 068 + pattern_analyzer + win_loss_engine + cross-register + tests — pint-winloss-01..08'
-  - 'VOC Engine: config + migration 069 + transcript_ingestor + voc_engine + cross-register + tests — pint-voc-01..08'
-  - 'Tech Radar: config + migration 070 + source_scanner + radar_engine + cross-register + tests — pint-techrad-01..08'
-  - 'Universal Orchestrator: config + migration 071 + engine_registry + orchestrator + federation wire + hook + conftest + tests — pint-univ-01..10'
+  - 'Regulatory Foresight: config + migration 066 + source_scanner + foresight_engine
+    + cross-register + tests — pint-regfore-01..09'
+  - 'Usage Analytics: config + migration 067 + event_collector + analytics_engine
+    + dashboard wire + tests — pint-usage-01..08'
+  - 'Win/Loss Intelligence: config + migration 068 + pattern_analyzer + win_loss_engine
+    + cross-register + tests — pint-winloss-01..08'
+  - 'VOC Engine: config + migration 069 + transcript_ingestor + voc_engine + cross-register
+    + tests — pint-voc-01..08'
+  - 'Tech Radar: config + migration 070 + source_scanner + radar_engine + cross-register
+    + tests — pint-techrad-01..08'
+  - 'Universal Orchestrator: config + migration 071 + engine_registry + orchestrator
+    + federation wire + hook + conftest + tests — pint-univ-01..10'
   epics:
   - key: regfore
     title: Regulatory Foresight Engine (proposed legislation scanner)
