@@ -678,9 +678,12 @@ def strategos_supply():
 
     def _to_side(cb: str) -> str:
         s = (cb or "").lower()
-        if any(x in s for x in ("russia", " rf", "soviet")): return "russia"
-        if any(x in s for x in ("ukraine", "ukr")):          return "ukraine"
-        if "iran" in s:                                        return "iran"
+        if any(x in s for x in ("russia", " rf", "soviet")):
+            return "russia"
+        if any(x in s for x in ("ukraine", "ukr")):
+            return "ukraine"
+        if "iran" in s:
+            return "iran"
         return "nato_partner"
 
     nodes = []
