@@ -1202,13 +1202,30 @@ def api_kg():
 
 @_api.route("/supply/sync", methods=["POST"])
 def api_supply_sync():
-    """Write sg_supply_nodes into sg_kg_nodes so the KG page includes them."""
-    ph   = "%s" if is_pg() else "?"
+    """Write sg_supply_nodes into sg_kg_nodes and re-apply supply edges to sg_kg_edges."""
+    ph = "%s" if is_pg() else "?"
     rows = _safe_fetch(
         "SELECT node_id, label, node_type FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
     )
+    # Static logistics topology — mirrors seed_supply_kg_edges.py
+    _SUPPLY_EDGES = [
+        ("depot-sasebo",      "port-yokosuka",    "PRODUCES"),
+        ("port-yokosuka",     "depot-camp-zama",  "DEPENDS_ON_SUPPLY"),
+        ("depot-camp-zama",   "airfield-kadena",  "PRODUCES"),
+        ("port-okinawa",      "airfield-kadena",  "DEPENDS_ON_SUPPLY"),
+        ("port-guam",         "airfield-andersen","DEPENDS_ON_SUPPLY"),
+        ("depot-red-hill",    "airfield-andersen","PRODUCES"),
+        ("port-busan",        "airfield-osan",    "DEPENDS_ON_SUPPLY"),
+        ("airfield-misawa",   "port-yokosuka",    "DEPENDS_ON_SUPPLY"),
+        ("port-keelung",      "port-kaohsiung",   "DEPENDS_ON_SUPPLY"),
+        ("port-novorossiysk", "depot-crimea",     "PRODUCES"),
+        ("depot-crimea",      "airfield-saki",    "PRODUCES"),
+        ("port-qingdao",      "port-zhoushan",    "PRODUCES"),
+        ("port-zhoushan",     "airfield-longhua", "DEPENDS_ON_SUPPLY"),
+    ]
     conn = get_connection()
-    written = 0
+    nodes_written = 0
+    edges_written = 0
     try:
         for r in rows:
             try:
@@ -1217,13 +1234,27 @@ def api_supply_sync():
                     f"VALUES ({ph},{ph},{ph}) ON CONFLICT (node_id) DO NOTHING",
                     (r["node_id"], r["node_type"], r["label"]),
                 )
-                written += 1
+                nodes_written += 1
             except Exception:
                 pass
+        for src, tgt, rel in _SUPPLY_EDGES:
+            existing = conn.execute(
+                f"SELECT 1 FROM sg_kg_edges WHERE source_id={ph} AND target_id={ph} AND relation={ph}",  # nosec B608
+                (src, tgt, rel),
+            ).fetchone()
+            if not existing:
+                try:
+                    conn.execute(
+                        f"INSERT INTO sg_kg_edges (source_id, target_id, relation, weight) VALUES ({ph},{ph},{ph},{ph})",  # nosec B608
+                        (src, tgt, rel, 1.0),
+                    )
+                    edges_written += 1
+                except Exception:
+                    pass
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"graph": {"nodes_written": written}, "kg": {"kg_edges": 0}})
+    return jsonify({"graph": {"nodes_written": nodes_written}, "kg": {"kg_edges": edges_written}})
 
 
 @_api.route("/interdiction", methods=["GET"])
