@@ -2193,9 +2193,11 @@ _FAILURE_COACHING = {
         "not hallucinate paths. Use Read to confirm before mentioning a file."
     ),
     "ruff_issues": (
-        "Previous run left ruff lint errors (F401 unused imports, etc). "
-        "Before finishing, run: python -m ruff check --fix <modified_files> "
-        "and remove any remaining unused imports/variables."
+        "Previous run left ruff lint errors that ruff --fix could not auto-resolve. "
+        "The SPECIFIC errors are listed in the 'Reason' field above. "
+        "For each file:line:col:code listed, open the file and manually fix that issue. "
+        "After fixing, verify with: python -m ruff check <modified_files>. "
+        "Do NOT just run ruff --fix again — those were already tried and did not help."
     ),
     "bandit_security": (
         "Previous run introduced a medium+ security issue (bandit). Avoid: "
