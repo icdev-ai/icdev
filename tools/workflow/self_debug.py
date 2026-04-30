@@ -38,6 +38,10 @@ SIG_HISTORY_MAX = 20       # cap per-task history size
 
 _NORMALIZE_PATTERNS = [
     (re.compile(r"\| REMEDIATION=.*$"), ""),          # strip retry annotations
+    # Strip AUTO-REMEDIATED prefix so the underlying failure keeps the same
+    # signature across remediation attempts — prevents inflating the recurrence
+    # count with what is really the same root cause.
+    (re.compile(r"^auto-remediated \([^)]+\):[^|]*\|\s*", re.IGNORECASE), ""),
     (re.compile(r"\d{4}-\d{2}-\d{2}T[\d:.+-]+"), "<TS>"),  # timestamps
     (re.compile(r"\b\d{3,}\b"), "<N>"),               # counts, PIDs, sizes
     (re.compile(r"\s+"), " "),
