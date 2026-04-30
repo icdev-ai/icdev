@@ -276,7 +276,7 @@ def remediate_missing_worktree(cwd: str, task_id: str) -> Tuple[bool, str]:
 
 
 def _reset_broken_worktree(cwd: str) -> None:
-    """Tear down a structurally broken worktree so the next dispatch rebuilds.
+    """Tear down a structurally broken worktree and recreate it from HEAD.
 
     A worktree is "broken" when its cwd is under `.tmp/worktrees/` but
     essential files (e.g. tools/manifest.md) are missing — usually because
@@ -284,23 +284,65 @@ def _reset_broken_worktree(cwd: str) -> None:
     left an empty orphan dir. Without this reset, `_create_worktree`
     would short-circuit on the existing path and Claude would run in the
     empty dir again, looping forever.
+
+    After cleanup, a fresh worktree is created from current HEAD so that the
+    re-verification pass (triggered when the caller returns True) runs in a
+    clean state rather than waiting for the next full dispatch cycle.
     """
     import shutil
     p = Path(cwd).resolve()
     if ".tmp" not in p.parts or "worktrees" not in p.parts:
         return  # not a worktree — nothing to do
     task_id = p.name
+    branch_name = f"kanban/{task_id}"
     logger.warning("Resetting broken worktree %s (empty/orphan)", p)
+    # Force-remove via git before filesystem removal — releases git's internal
+    # file locks on Windows so shutil.rmtree can fully delete the directory.
+    try:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(p)],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=15,
+        )
+    except Exception:
+        pass
     shutil.rmtree(p, ignore_errors=True)
     for cmd in (
         ["git", "worktree", "prune"],
-        ["git", "branch", "-D", f"kanban/{task_id}"],
+        ["git", "branch", "-D", branch_name],
     ):
         try:
             subprocess.run(cmd, cwd=str(BASE_DIR), capture_output=True,
                            text=True, timeout=10)
         except Exception:
             pass
+    # Recreate from current HEAD so re-verification runs in a clean worktree.
+    # Without this, if `git branch -D` above failed silently (Windows file
+    # lock left the ref stale), `git worktree add -b` will fail with "branch
+    # already exists", `_create_worktree` falls back to BASE_DIR, and the
+    # coherence failure repeats every dispatch.
+    result = subprocess.run(
+        ["git", "worktree", "add", "-b", branch_name, str(p)],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode != 0:
+        # Branch delete may have failed silently — retry delete then recreate.
+        subprocess.run(
+            ["git", "branch", "-D", branch_name],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        retry = subprocess.run(
+            ["git", "worktree", "add", "-b", branch_name, str(p)],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if retry.returncode != 0:
+            logger.warning(
+                "_reset_broken_worktree: recreate failed for %s: %s",
+                task_id, retry.stderr.strip(),
+            )
+        else:
+            logger.info("_reset_broken_worktree: recreated clean worktree at %s (retry)", p)
+    else:
+        logger.info("_reset_broken_worktree: recreated clean worktree at %s", p)
 
 
 def remediate_missing_manifest(
@@ -318,10 +360,11 @@ def remediate_missing_manifest(
     shard_path = Path(cwd) / "tools" / "manifest" / "unclassified.md"
     if not index_path.exists():
         # Structural break: worktree is empty/orphan (not a task-level bug).
-        # Actively reset it so the next dispatch rebuilds from a clean HEAD
-        # instead of reusing the broken dir and looping forever.
+        # Reset + recreate from HEAD so the re-verification pass (triggered
+        # by returning True) runs in a clean worktree immediately, instead of
+        # going to backlog and repeating the same broken dispatch cycle.
         _reset_broken_worktree(cwd)
-        return False, "worktree structurally broken (no tools/manifest.md) — reset; next dispatch will rebuild"
+        return True, "worktree structurally broken (no tools/manifest.md) — reset and recreated from HEAD"
 
     # Find tool paths that need adding
     missing: List[str] = []
