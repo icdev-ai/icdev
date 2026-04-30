@@ -360,11 +360,13 @@ def remediate_missing_manifest(
     shard_path = Path(cwd) / "tools" / "manifest" / "unclassified.md"
     if not index_path.exists():
         # Structural break: worktree is empty/orphan (not a task-level bug).
-        # Reset + recreate from HEAD so the re-verification pass (triggered
-        # by returning True) runs in a clean worktree immediately, instead of
-        # going to backlog and repeating the same broken dispatch cycle.
+        # Reset from HEAD and return False so the task goes to backlog for
+        # proper re-dispatch to the agent.  Returning True here triggers
+        # immediate re-verification of the just-reset empty worktree, which
+        # finds 781 CRLF-modified files on Windows, fails coherence, and
+        # creates the infinite loop this fix resolves.
         _reset_broken_worktree(cwd)
-        return True, "worktree structurally broken (no tools/manifest.md) — reset and recreated from HEAD"
+        return False, "worktree structurally broken (no tools/manifest.md) — reset for re-dispatch"
 
     # Find tool paths that need adding
     missing: List[str] = []
@@ -521,22 +523,26 @@ def attempt_remediation(
     elif failure_type == FAILURE_PHANTOM_PATHS:
         ok, msg = remediate_phantom_paths(cwd, task_id)
     elif failure_type == FAILURE_COHERENCE_BROKEN:
-        # Most common case: stale baseline — worktree branched from older
-        # main and is missing files added to main since (e.g., new docs,
-        # new manifests). Rebase first to pull those in.
-        ok, msg = remediate_stale_baseline(cwd, task_id)
-        if not ok:
-            # Try ruff next — second most common coherence break
-            ok, msg = remediate_ruff_issues(cwd, modified_py)
-        if not ok:
-            # Then try manifest
-            ok, msg = remediate_missing_manifest(cwd, reason, modified_py)
-        if not ok:
-            # Last resort: agent wrote files but never committed (0 commits ahead).
-            # Stage+commit so coherence re-runs on committed state instead of
-            # uncommitted filesystem state. Breaks the infinite loop where
-            # rebase=no-op + ruff=clean + manifest=covered → same failure forever.
-            ok, msg = remediate_uncommitted_changes(cwd, task_id)
+        if not Path(cwd).exists():
+            # cwd is gone — all filesystem-dependent handlers (rebase, ruff,
+            # manifest) would raise FileNotFoundError or silently no-op.
+            # Delegate directly to the worktree-missing handler so git state
+            # is pruned cleanly before the next dispatch.
+            ok, msg = remediate_missing_worktree(cwd, task_id)
+        else:
+            ok, msg = remediate_stale_baseline(cwd, task_id)
+            if not ok:
+                # Try ruff next — second most common coherence break
+                ok, msg = remediate_ruff_issues(cwd, modified_py)
+            if not ok:
+                # Then try manifest
+                ok, msg = remediate_missing_manifest(cwd, reason, modified_py)
+            if not ok:
+                # Last resort: agent wrote files but never committed (0 commits ahead).
+                # Stage+commit so coherence re-runs on committed state instead of
+                # uncommitted filesystem state. Breaks the infinite loop where
+                # rebase=no-op + ruff=clean + manifest=covered → same failure forever.
+                ok, msg = remediate_uncommitted_changes(cwd, task_id)
     else:
         return False, f"no handler for {failure_type}", info
 

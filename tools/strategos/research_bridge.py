@@ -87,14 +87,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _score_to_priority(score: float) -> str:
+def _score_to_priority(score: float) -> int:
+    """Map composite score to integer priority (1=critical, 2=high, 3=medium, 4=low)."""
     if score >= 0.75:
-        return "critical"
+        return 1
     if score >= 0.6:
-        return "high"
+        return 2
     if score >= 0.5:
-        return "medium"
-    return "low"
+        return 3
+    return 4
 
 
 def _is_maritime_signal(title: str, body: str, keywords: Optional[str]) -> bool:
@@ -379,15 +380,20 @@ def _run_new_session() -> str:
          "--load", "--slug", "strategos"],
         check=False, capture_output=True,
     )
-    # Create session
+    # Create session — session_manager looks up by slug, not id
     r = subprocess.run(
         [sys.executable, "-m", "tools.research.session_manager",
-         "--create", "--vertical", "vert-strategos",
+         "--create", "--vertical", "strategos",
          "--name", "Strategos Intelligence Research",
          "--json"],
         capture_output=True, text=True,
     )
-    sess = json.loads(r.stdout)
+    try:
+        sess = json.loads(r.stdout)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"session_manager returned non-JSON: {r.stdout!r}\nstderr: {r.stderr!r}")
+    if "error" in sess:
+        raise RuntimeError(f"session_manager error: {sess['error']}\nstdout: {r.stdout!r}")
     session_id = sess.get("id") or sess.get("session_id")
     # Run the full pipeline
     subprocess.run(
