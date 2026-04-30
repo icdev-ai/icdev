@@ -2414,6 +2414,14 @@ def api_osint_scan():
         results["harvest_status"] = harvested.get("status", "unknown")
     except Exception as exc:
         results["harvest_error"] = str(exc)
+    # populate sg_raw_signals from GDELT geo-tagged events
+    try:
+        from tools.strategos.gdelt_importer import run as _gdelt_run  # noqa: PLC0415
+        gdelt_result = _gdelt_run()
+        results["gdelt_inserted"] = gdelt_result.get("inserted", 0)
+        results["gdelt_status"] = gdelt_result.get("status", "unknown")
+    except Exception as exc:
+        results["gdelt_error"] = str(exc)
     return jsonify(results)
 
 
