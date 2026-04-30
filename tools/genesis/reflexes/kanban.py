@@ -4494,6 +4494,40 @@ def _check_completed():
                             del _worktrees[task_id]
                         continue
 
+                # guard-cwd: if the worktree was deleted between dispatch and
+                # verification (Windows file-lock cleanup, concurrent sweep,
+                # etc.), rebuild it now so validation runs in the right dir.
+                # Acceptance criterion: cwd_exists=false + is_worktree_path=true
+                # → trigger rebuild immediately before the verification gate.
+                _wt_path = _worktrees.get(task_id)
+                if _wt_path:
+                    _wt = Path(_wt_path)
+                    _is_wt = ".tmp" in _wt.parts and "worktrees" in _wt.parts
+                    if _is_wt and not _wt.exists():
+                        logger.warning(
+                            "guard-cwd: worktree missing for %s (%s) "
+                            "— rebuilding before verification",
+                            task_id, _wt_path,
+                        )
+                        print(
+                            f"  Kanban: {task_id} worktree missing "
+                            f"— rebuilding before verification"
+                        )
+                        _rebuilt = _create_worktree(task_id)
+                        if _rebuilt:
+                            _worktrees[task_id] = _rebuilt
+                            logger.info(
+                                "guard-cwd: worktree rebuilt at %s for %s",
+                                _rebuilt, task_id,
+                            )
+                        else:
+                            logger.warning(
+                                "guard-cwd: worktree rebuild failed for %s "
+                                "— verification will use BASE_DIR",
+                                task_id,
+                            )
+                            del _worktrees[task_id]
+
                 # VERIFICATION GATE — prevent false positives.
                 # Batch 4 atomic-ish wrap (2026-04-15): verify first, then
                 # state-change. If _move_task raises, we DO NOT swallow the
