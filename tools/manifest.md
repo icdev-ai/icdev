@@ -582,3 +582,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Research Bridge | tools\strategos\research_bridge.py | Auto-registered: strategos/research_bridge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Darkweb | tools\strategos\darkweb.py | Auto-registered: strategos/darkweb.py | --json | JSON |
+| Darkweb Monitor | tools\strategos\darkweb_monitor.py | Auto-registered: strategos/darkweb_monitor.py | --json | JSON |
