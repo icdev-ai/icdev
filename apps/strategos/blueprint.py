@@ -814,11 +814,36 @@ def strategos_maritime():
     return render_template("strategos/maritime.html")
 
 
+@_api.route("/maritime/feed/status")
+def api_maritime_feed_status():
+    """Return live feed status: {live: bool, mode: str, vessel_count: int}."""
+    import os
+    have_sdr = os.getenv("HAVE_SDR_HARDWARE", "false").lower() in ("1", "true", "yes")
+    mode = "sdr" if have_sdr else "aishub"
+    # live if any vessel track recorded in last 24 hours
+    # ts column is TEXT; PG needs explicit cast to compare with interval expression
+    _ts_expr = "ts::timestamptz >= NOW() - INTERVAL '24 hours'" if is_pg() else "ts >= datetime('now','-24 hours')"
+    row = _safe_fetch(
+        f"SELECT COUNT(*) AS cnt FROM sg_vessel_tracks WHERE {_ts_expr}",
+        default=[],
+    )
+    recent_count = row[0]["cnt"] if row else 0
+    total_row = _safe_fetch("SELECT COUNT(*) AS cnt FROM sg_vessel_tracks", default=[])
+    total_count = total_row[0]["cnt"] if total_row else 0
+    return jsonify({
+        "live": recent_count > 0 or have_sdr,
+        "mode": mode,
+        "vessel_count": total_count,
+        "recent_24h": recent_count,
+    })
+
+
 @_api.route("/maritime/tracks")
 def api_maritime_tracks():
     """Return all vessel tracks grouped by MMSI for animation."""
     rows = _safe_fetch(
-        "SELECT mmsi, vessel_name, vessel_type, flag, lat, lon, speed, heading, ts "
+        "SELECT mmsi, vessel_name, vessel_type, flag, lat, lon, speed, heading, ts, "
+        "COALESCE(source, 'aishub') AS source "
         "FROM sg_vessel_tracks ORDER BY mmsi, ts ASC"
     )
     vessels: dict = {}
@@ -826,11 +851,12 @@ def api_maritime_tracks():
         m = r["mmsi"]
         if m not in vessels:
             vessels[m] = {
-                "mmsi": m,
-                "name": r["vessel_name"],
-                "type": r["vessel_type"],
-                "flag": r["flag"] or "??",
-                "track": [],
+                "mmsi":        m,
+                "name":        r["vessel_name"],
+                "vessel_type": r["vessel_type"],
+                "flag":        r["flag"] or "??",
+                "source":      r["source"],
+                "track":       [],
             }
         vessels[m]["track"].append({
             "lat":     r["lat"],
@@ -2343,21 +2369,6 @@ def strategos_api_map_supply():
         "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
     )
     return jsonify({"nodes": rows})
-
-
-@_api.route("/darkweb/signals")
-def api_darkweb_signals():
-    status = request.args.get("status")
-    min_score = float(request.args.get("min_score", 0))
-    limit = int(request.args.get("limit", 50))
-    rows = _safe_fetch(
-        "SELECT * FROM sg_darkweb_signals "
-        "WHERE relevance_score >= %s "
-        "AND (%s::text IS NULL OR status=%s) "
-        "ORDER BY relevance_score DESC LIMIT %s",
-        (min_score, status, status, limit),
-    )
-    return jsonify({"signals": rows, "total": len(rows)})
 
 
 # ---------------------------------------------------------------------------
