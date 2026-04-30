@@ -814,21 +814,32 @@ def strategos_maritime():
     return render_template("strategos/maritime.html")
 
 
-@_bp.route("/maritime/api/vessels")
-def strategos_maritime_vessels():
-    vessels = {
-        "vessels": [
-            {
-                "id": 1,
-                "name": "Vessel-A",
-                "positions": [
-                    {"lat": 43.2, "lon": 32.5, "ts": "2025-01-01T12:00:00Z"},
-                    {"lat": 43.3, "lon": 32.6, "ts": "2025-01-01T13:00:00Z"},
-                ],
+@_api.route("/maritime/tracks")
+def api_maritime_tracks():
+    """Return all vessel tracks grouped by MMSI for animation."""
+    rows = _safe_fetch(
+        "SELECT mmsi, vessel_name, vessel_type, flag, lat, lon, speed, heading, ts "
+        "FROM sg_vessel_tracks ORDER BY mmsi, ts ASC"
+    )
+    vessels: dict = {}
+    for r in rows:
+        m = r["mmsi"]
+        if m not in vessels:
+            vessels[m] = {
+                "mmsi": m,
+                "name": r["vessel_name"],
+                "type": r["vessel_type"],
+                "flag": r["flag"] or "??",
+                "track": [],
             }
-        ]
-    }
-    return jsonify(vessels)
+        vessels[m]["track"].append({
+            "lat":     r["lat"],
+            "lon":     r["lon"],
+            "speed":   r["speed"],
+            "heading": r["heading"],
+            "ts":      r["ts"],
+        })
+    return jsonify({"vessels": list(vessels.values())})
 
 
 # ---------------------------------------------------------------------------
