@@ -137,7 +137,8 @@
   background: rgba(6,13,13,.75) !important;
   color: var(--sg-dim) !important; font-size: 9px !important;
 }
-.leaflet-tile { filter: brightness(0.45) saturate(0.3) hue-rotate(160deg); }
+/* Only dim OSM/Carto tiles; ESRI Ocean is used as-is */
+.leaflet-tile { filter: brightness(0.85); }
 
 .mt-tooltip {
   background: var(--sg-card) !important;
@@ -246,9 +247,30 @@ let focusedMmsi = null;
 
 // ── Map ────────────────────────────────────────────────────────────────────
 const map = L.map('mt-map', { center: [25, 90], zoom: 4, zoomControl: true });
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap', maxZoom: 18,
-}).addTo(map);
+
+const baseLayers = {
+  'Ocean (ESRI)': L.tileLayer(
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}',
+    { attribution: 'Tiles © Esri — GEBCO, NOAA, NGA, others', maxZoom: 13 }
+  ),
+  'Street (OSM)': L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { attribution: '© OpenStreetMap', maxZoom: 19 }
+  ),
+  'Dark': L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    { attribution: '© OpenStreetMap © CARTO', maxZoom: 19 }
+  ),
+};
+const overlayLayers = {
+  'Nautical Charts (OpenSeaMap)': L.tileLayer(
+    'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png',
+    { attribution: '© OpenSeaMap', maxZoom: 18, opacity: 0.8 }
+  ),
+};
+
+baseLayers['Ocean (ESRI)'].addTo(map);
+L.control.layers(baseLayers, overlayLayers, { position: 'topright', collapsed: false }).addTo(map);
 
 // ── Ship SVG icon (rotated by heading) ────────────────────────────────────
 function shipIcon(color, heading) {
