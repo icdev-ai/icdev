@@ -502,6 +502,21 @@ def _create_worktree(task_id: str) -> Optional[str]:
             _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
                     capture_output=True, text=True, timeout=10)
             return None
+        # Verify structural completeness: tools/manifest.md must exist in the
+        # worktree. A partial Windows checkout (rmtree file-lock failures) can
+        # leave an empty dir with only .git; coherence then fails on every
+        # dispatch with "no tools/manifest.md", looping until self_debug fires.
+        if not (worktree_path / "tools" / "manifest.md").exists():
+            logger.warning(
+                "Worktree dir created for %s but tools/manifest.md is missing "
+                "(partial checkout) — cleaning up so next dispatch rebuilds clean",
+                task_id,
+            )
+            import shutil as _shutil
+            _shutil.rmtree(worktree_path, ignore_errors=True)
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            return None
         logger.info("Created worktree for %s at %s", task_id, worktree_path)
         # Guard: scrub any accidentally-tracked pyc/pycache files from the new
         # worktree's index before the agent runs. These are build artifacts that
@@ -3852,6 +3867,19 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     work_dir = _worktrees.get(task_id)
     if work_dir and Path(work_dir).exists():
         cwd = str(work_dir)
+    elif work_dir:
+        # Worktree path recorded but directory is gone (deleted by a prior
+        # _reset_broken_worktree or Windows rmtree). Falling back to BASE_DIR
+        # would validate the wrong directory and could incorrectly mark the
+        # task done. Return the worktree-missing signal so auto_remediate
+        # can prune git state and let the next dispatch rebuild from HEAD.
+        _empty: Dict[str, Any] = {
+            "codelens_passed": None, "ruff_issues": 0, "bandit_issues": 0,
+            "coherence_passed": None, "e2e_ran": False, "e2e_passed": None,
+            "companion_synced": False, "modified_files": 0, "modified_py": 0,
+            "budget_sec": 0, "elapsed_sec": 0,
+        }
+        return False, "worktree missing on disk — rebuild required", _empty
     else:
         cwd = str(BASE_DIR)
 

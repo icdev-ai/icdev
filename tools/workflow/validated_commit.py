@@ -325,6 +325,17 @@ def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
     """Run coherence checker. If compare_to_main, only fail when cwd introduces
     a NEW coherence violation (not pre-existing in main).
     """
+    # If cwd is a worktree path that no longer exists, subprocess would raise
+    # FileNotFoundError which the except-branch currently returns as True
+    # (coherence skipped = pass). That's wrong for a missing worktree: the
+    # task should be classified as FAILURE_WORKTREE_MISSING so auto_remediate
+    # prunes git state and lets the next dispatch rebuild from HEAD instead of
+    # silently passing and marking the task done without real verification.
+    cwd_path = Path(cwd)
+    if not cwd_path.exists():
+        _parts = cwd_path.parts
+        if ".tmp" in _parts and "worktrees" in _parts:
+            return False, "worktree missing on disk — rebuild required"
     try:
         r = subprocess.run(
             ["python", "tools/workflow/coherence_checker.py", "--all", "--gate"],
