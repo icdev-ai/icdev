@@ -16,8 +16,17 @@ from tools.databridge.resolvers.vault_resolver import (
     SecretResolverError,
     _cache_get,
     _cache_set,
+    _clear_caches,
     resolve,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_resolver_caches():
+    """Clear positive and negative caches before every test for isolation."""
+    _clear_caches()
+    yield
+    _clear_caches()
 
 
 # ---------------------------------------------------------------------------
