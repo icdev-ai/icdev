@@ -107,13 +107,16 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
     except Exception as exc:
         result["errors"].append(f"pattern_detection: {exc}")
         result["completed_at"] = _utcnow_iso()
+        result["success"] = False
+        result["metric_value"] = 0.0
         return result
 
     if not patterns:
         result["message"] = "No recurring patterns found"
         result["completed_at"] = _utcnow_iso()
-        # Return success metric >= 0 (healthy — no patterns is ok)
         result["patterns_detected"] = 0
+        result["success"] = True
+        result["metric_value"] = 0.0
         return result
 
     # Step 2: Generate goal drafts
@@ -134,6 +137,8 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
     except Exception as exc:
         result["errors"].append(f"goal_generation: {exc}")
         result["completed_at"] = _utcnow_iso()
+        result["success"] = False
+        result["metric_value"] = 0.0
         return result
 
     # Step 3: Create GKP artifacts
@@ -199,6 +204,8 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
         conn.close()
 
     result["completed_at"] = _utcnow_iso()
+    result["success"] = len(result.get("errors", [])) == 0
+    result["metric_value"] = float(result.get("patterns_detected", 0))
     return result
 
 

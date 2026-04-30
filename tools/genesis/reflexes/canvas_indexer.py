@@ -90,6 +90,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "errors": errors,
         "elapsed_ms": elapsed_ms,
         "per_canvas": per_canvas,
+        "success": errors == 0,
+        "metric_value": float(errors),
     }
 
 
