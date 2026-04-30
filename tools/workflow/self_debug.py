@@ -58,6 +58,32 @@ def failure_signature(reason: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# DB helpers
+# ---------------------------------------------------------------------------
+
+def _task_is_done(task_id: str) -> bool:
+    """Return True if the task already has status='done' in the kanban DB.
+
+    Called before recording a failure signature so we never quarantine or
+    create diagnostic cards for tasks that self-reported completion — the
+    worktree may have been cleaned up by the completion path, which leaves
+    cwd_exists=false and triggers false coherence failures through the
+    verification gate even though the work is finished.
+    """
+    try:
+        from tools.db.storage import get_connection
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        if row and dict(row).get("status") == "done":
+            return True
+    except Exception as exc:
+        logger.warning("self_debug: DB status check failed for %s: %s", task_id, exc)
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Signature history (file-backed)
 # ---------------------------------------------------------------------------
 
@@ -458,6 +484,16 @@ def check_and_diagnose(task_id: str, reason: str, cwd: str,
     Returns the diagnosis dict if triggered (and side-effects fired),
     or None if below threshold.
     """
+    # Guard: if the task already self-reported done, the worktree was cleaned up
+    # by the completion path and any subsequent coherence/verification failure is
+    # a false positive.  Never quarantine or create diagnostic cards for a done task.
+    if _task_is_done(task_id):
+        logger.info(
+            "self_debug: %s is already done — skipping failure recording and diagnosis",
+            task_id,
+        )
+        return None
+
     count = record_failure(task_id, reason)
     if count < threshold:
         logger.debug("self_debug: %s sig count=%d < %d, no action",
