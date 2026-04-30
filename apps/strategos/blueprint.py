@@ -2481,18 +2481,21 @@ def strategos_api_map_supply():
 
 @_api.route("/opencti/indicators", methods=["GET"])
 def api_opencti_indicators():
+    itype = request.args.get("type")
+    limit = int(request.args.get("limit", 50))
+    ph = "%s" if is_pg() else "?"
+    clauses = [f"status = {ph}"]
+    params: list = ["active"]
+    if itype:
+        clauses.append(f"indicator_type = {ph}")
+        params.append(itype)
+    where = "WHERE " + " AND ".join(clauses)
+    params.append(limit)
     rows = _safe_fetch(
-        "SELECT id, opencti_id, name, indicator_type, confidence, tlp, "
-        "valid_from, valid_until, status, created_at "
-        "FROM sg_opencti_indicators ORDER BY confidence DESC LIMIT 200"
+        f"SELECT * FROM sg_opencti_indicators {where} ORDER BY confidence DESC LIMIT {ph}",  # nosec B608
+        params,
     )
-    from tools.strategos.opencti_client import OpenCTIClient
-    client = OpenCTIClient()
-    return jsonify({
-        "configured": client.is_configured(),
-        "indicators": rows,
-        "total": len(rows),
-    })
+    return jsonify({"indicators": rows, "total": len(rows)})
 
 
 # ---------------------------------------------------------------------------
