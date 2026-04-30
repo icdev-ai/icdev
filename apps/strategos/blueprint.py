@@ -2317,6 +2317,14 @@ def api_osint_run_prestage():
         return jsonify({"status": "error", "error": str(exc)}), 500
 
 
+@_api.route("/osint/results", methods=["GET"])
+def api_osint_results():
+    rows = _safe_fetch(
+        "SELECT * FROM sg_prioritized_signals ORDER BY created_at DESC LIMIT 100"
+    )
+    return jsonify(rows if rows else [])
+
+
 @_api.route("/darkweb/signals")
 def api_darkweb_signals():
     status = request.args.get("status")
