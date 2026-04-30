@@ -2354,8 +2354,36 @@ def api_osint_run_prestage():
 @_api.route("/osint/scan", methods=["POST"])
 def api_osint_scan():
     import uuid as _uuid  # noqa: PLC0415
+    from pathlib import Path as _Path  # noqa: PLC0415
     scan_id = str(_uuid.uuid4())
-    return jsonify({"status": "ok", "scan_id": scan_id})
+    body = request.get_json(silent=True) or {}
+    target = (body.get("target") or "").strip()
+    if not target:
+        # derive a default target from the highest-priority active PIR topic
+        top = _safe_fetch(
+            "SELECT topic FROM sg_pir_requirements "
+            "WHERE status='active' ORDER BY collection_priority ASC LIMIT 1"
+        )
+        target = top[0]["topic"] if top else "strategos-default"
+    results: dict = {"scan_id": scan_id, "status": "ok", "target": target}
+    # stage current RSS/OSINT signals into the inbox
+    try:
+        from tools.strategos.osint_prestage import prestage  # noqa: PLC0415
+        _inbox = _Path(__file__).resolve().parents[2] / "data" / "osint_inbox"
+        staged = prestage(output_dir=_inbox)
+        results["staged"] = staged.get("signals", 0)
+    except Exception as exc:
+        results["stage_error"] = str(exc)
+    # ingest staged signals for this target
+    try:
+        from tools.strategos.osint_harvester import harvest  # noqa: PLC0415
+        _inbox = _Path(__file__).resolve().parents[2] / "data" / "osint_inbox"
+        harvested = harvest(target=target, inbox_dir=_inbox)
+        results["ingested"] = harvested.get("inserted", 0)
+        results["harvest_status"] = harvested.get("status", "unknown")
+    except Exception as exc:
+        results["harvest_error"] = str(exc)
+    return jsonify(results)
 
 
 @_api.route("/osint/results", methods=["GET"])
