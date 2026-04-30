@@ -438,9 +438,9 @@ reflexes:
   # ── Phase 67 — Bayesian Autoresearch (D-AR-9) ──────────────────────────────
 
   experiment:
-    enabled: false  # Opt-in (requires ICDEV_AUTORESEARCH_ENABLED=true)
+    enabled: true
     risk_tier: orange
-    schedule: "daily 21:00"
+    schedule: "daily 15:00"
     description: "Bayesian Autoresearch — Karpathy-loop autonomous experiments"
     success_metric:
       name: experiments_accepted_pct
