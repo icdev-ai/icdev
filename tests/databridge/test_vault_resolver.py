@@ -219,6 +219,113 @@ class TestCacheBehaviour:
 
 
 # ---------------------------------------------------------------------------
+# Negative cache — regression tests for "over 100 attempts" bug
+# ---------------------------------------------------------------------------
+
+class TestNegativeCacheBehaviour:
+    """Verify that failed Vault fetches are back-off cached for 30 s.
+
+    Without negative caching a single unreachable/misconfigured Vault ref
+    creates a new hvac.Client on every resolve() call, which allowed 100+
+    connection attempts in a single health-check cycle.
+    """
+
+    def _patch_failing_hvac(self, monkeypatch, side_effect=ConnectionError("refused")):
+        monkeypatch.setenv("VAULT_ADDR", "http://vault:8200")
+        monkeypatch.setenv("VAULT_TOKEN", "s.test")
+        import tools.databridge.resolvers.vault_resolver as mod
+        monkeypatch.setattr(mod, "_HVAC_AVAILABLE", True)
+        mock_client = MagicMock()
+        mock_client.read.side_effect = side_effect
+        mock_hvac = MagicMock()
+        mock_hvac.Client.return_value = mock_client
+        monkeypatch.setattr(mod, "_hvac", mock_hvac)
+        return mock_hvac, mock_client
+
+    def test_second_call_does_not_hit_vault(self, monkeypatch) -> None:
+        """Regression: repeated calls on a failing ref must NOT create a new client each time."""
+        mock_hvac, mock_client = self._patch_failing_hvac(monkeypatch)
+        ref = f"vault:secret/broken_{time.monotonic_ns()}#pw"
+
+        with pytest.raises(SecretResolverError):
+            resolve(ref)
+        with pytest.raises(SecretResolverError):
+            resolve(ref)
+
+        # hvac.Client should have been instantiated exactly once — second call
+        # was absorbed by the negative cache without touching Vault.
+        assert mock_hvac.Client.call_count == 1
+
+    def test_negative_cache_raises_with_backoff_message(self, monkeypatch) -> None:
+        """Second failure within 30 s must mention back-off in the error."""
+        self._patch_failing_hvac(monkeypatch)
+        ref = f"vault:secret/backoff_{time.monotonic_ns()}#pw"
+
+        with pytest.raises(SecretResolverError):
+            resolve(ref)
+        with pytest.raises(SecretResolverError, match="back-off"):
+            resolve(ref)
+
+    def test_clear_caches_resets_negative_cache(self, monkeypatch) -> None:
+        """After _clear_caches() the resolver retries Vault instead of short-circuiting."""
+        mock_hvac, mock_client = self._patch_failing_hvac(monkeypatch)
+        ref = f"vault:secret/clear_{time.monotonic_ns()}#pw"
+
+        with pytest.raises(SecretResolverError):
+            resolve(ref)
+        assert mock_hvac.Client.call_count == 1
+
+        from tools.databridge.resolvers.vault_resolver import _clear_caches
+        _clear_caches()
+
+        with pytest.raises(SecretResolverError):
+            resolve(ref)
+        # After clearing the cache, Vault was hit a second time.
+        assert mock_hvac.Client.call_count == 2
+
+    def test_validation_errors_are_not_cached(self, monkeypatch) -> None:
+        """Format errors (bad prefix / missing #) must not populate the negative cache.
+
+        These are raised before any Vault I/O, so negative-caching them would
+        incorrectly suppress later calls with a *valid* ref that shares no key.
+        (Each ref is independent, but this guards against accidental key reuse.)
+        """
+        mock_hvac, mock_client = self._patch_failing_hvac(monkeypatch)
+
+        # Bad format — should raise but NOT call Vault at all
+        with pytest.raises(SecretResolverError, match="missing #field"):
+            resolve("vault:secret/no-field-sep")
+        assert mock_hvac.Client.call_count == 0
+
+        # A subsequent well-formed ref for the same path must still reach Vault
+        mock_client.read.side_effect = None
+        mock_client.read.return_value = {"data": {"pw": "ok"}}
+        result = resolve("vault:secret/no-field-sep#pw")
+        assert result == "ok"
+        assert mock_hvac.Client.call_count == 1
+
+    def test_multiple_callers_on_failing_ref_hit_vault_once(self, monkeypatch) -> None:
+        """Simulates concurrent health-check workers: only the first call reaches Vault."""
+        mock_hvac, mock_client = self._patch_failing_hvac(monkeypatch)
+        ref = f"vault:secret/concurrent_{time.monotonic_ns()}#pw"
+
+        errors = []
+        for _ in range(10):
+            try:
+                resolve(ref)
+            except SecretResolverError as exc:
+                errors.append(str(exc))
+
+        assert len(errors) == 10, "all 10 calls must raise"
+        assert mock_hvac.Client.call_count == 1, (
+            "Vault was contacted more than once — negative cache is not working"
+        )
+        # Exactly one real error; the rest are back-off messages
+        backoff = sum(1 for e in errors if "back-off" in e)
+        assert backoff == 9
+
+
+# ---------------------------------------------------------------------------
 # SECRET_RESOLVERS registration
 # ---------------------------------------------------------------------------
 
