@@ -468,6 +468,22 @@ def validate_working_tree(
     # before any git status, file checks, or coherence validation.
     cwd_path = Path(cwd)
     if not cwd_path.exists():
+        # Prune the stale worktree registration so the next dispatch can
+        # allocate a fresh one without hitting "already registered" errors.
+        try:
+            subprocess.run(
+                ["git", "worktree", "remove", "--force", str(cwd_path)],
+                capture_output=True, cwd=str(BASE_DIR), timeout=15,
+            )
+        except Exception:
+            pass
+        try:
+            subprocess.run(
+                ["git", "worktree", "prune"],
+                capture_output=True, cwd=str(BASE_DIR), timeout=15,
+            )
+        except Exception:
+            pass
         _empty: Dict[str, Any] = {
             "codelens_passed": None,
             "ruff_issues": 0,
@@ -482,7 +498,7 @@ def validate_working_tree(
             "elapsed_sec": 0,
             "remediation": "rebuild_worktree",
         }
-        return False, "worktree missing on disk — rebuild required", _empty
+        return False, "worktree missing on disk — pruned stale registration, rebuild required", _empty
 
     if modified_files is None:
         modified_files = _list_modified_files(cwd)
