@@ -293,7 +293,7 @@ function vulnColor(score) {
 
 // ── Leaflet Map ──────────────────────────────────────────────────────────────
 let map;
-let infraLayer = L.layerGroup();
+const infraLayer = L.layerGroup();
 
 function initMap() {
   map = L.map('sg-infra-map', { center: [49, 32], zoom: 5, zoomControl: true });
@@ -421,7 +421,8 @@ function renderTimeline(data) {
 
   // Parse timestamps
   const parse = t => {
-    try { return new Date(t); } catch { return null; }
+    const d = new Date(t);
+    return isNaN(d.getTime()) ? null : d;
   };
   const allDates = [
     ...cyber.map(e => parse(e.event_ts)),
