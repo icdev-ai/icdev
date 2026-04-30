@@ -8,7 +8,7 @@
     <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
 </div>
 
-<div style="display:flex;gap:.5rem;margin-bottom:1rem">
+<div style="display:flex;align-items:center;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem">
     {% for s in ['pending','resolved'] %}
     <a href="/strategos/hitl?status={{ s }}"
        style="padding:.35rem .9rem;border-radius:4px;font-size:.875rem;text-decoration:none;
@@ -18,6 +18,31 @@
         {{ s|title }}
     </a>
     {% endfor %}
+
+    {% if selected_status == 'pending' and items %}
+    <div style="margin-left:auto;display:flex;gap:.5rem">
+        <button onclick="bulkResolve('approve')"
+                style="padding:.3rem .75rem;border-radius:4px;font-size:.8rem;cursor:pointer;
+                       border:1px solid var(--border-color);background:rgba(16,185,129,.15);color:#10b981">
+            Approve All
+        </button>
+        <button onclick="bulkResolve('reject')"
+                style="padding:.3rem .75rem;border-radius:4px;font-size:.8rem;cursor:pointer;
+                       border:1px solid var(--border-color);background:rgba(233,69,96,.15);color:#e94560">
+            Reject All
+        </button>
+        <button onclick="bulkResolve('escalate')"
+                style="padding:.3rem .75rem;border-radius:4px;font-size:.8rem;cursor:pointer;
+                       border:1px solid var(--border-color);background:rgba(245,158,11,.15);color:#f59e0b">
+            Escalate All
+        </button>
+        <button onclick="bulkDelete()"
+                style="padding:.3rem .75rem;border-radius:4px;font-size:.8rem;cursor:pointer;
+                       border:1px solid var(--border-color);background:rgba(156,163,175,.15);color:var(--text-secondary)">
+            Delete All
+        </button>
+    </div>
+    {% endif %}
 </div>
 
 <div style="display:flex;flex-direction:column;gap:.75rem">
@@ -66,10 +91,33 @@
 <script>
 function resolveHITL(id, decision) {
     if(!confirm('Apply decision "' + decision + '" to item ' + id.slice(0,8) + '?')) return;
-    fetch('/strategos/api/hitl/' + id + '/resolve', {
+    fetch('/api/strategos/hitl/' + id + '/resolve', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({decision: decision})
+    }).then(r=>r.json()).then(d => {
+        if(d.status === 'ok') { location.reload(); }
+        else { alert('Error: ' + (d.error || 'unknown')); }
+    }).catch(e => alert('Request failed: ' + e));
+}
+
+function bulkResolve(decision) {
+    if(!confirm('Apply "' + decision + '" to ALL pending items?')) return;
+    fetch('/api/strategos/hitl/bulk', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({decision: decision})
+    }).then(r=>r.json()).then(d => {
+        if(d.status === 'ok') { location.reload(); }
+        else { alert('Error: ' + (d.error || 'unknown')); }
+    }).catch(e => alert('Request failed: ' + e));
+}
+
+function bulkDelete() {
+    if(!confirm('Permanently delete ALL pending items? This cannot be undone.')) return;
+    fetch('/api/strategos/hitl/delete', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
     }).then(r=>r.json()).then(d => {
         if(d.status === 'ok') { location.reload(); }
         else { alert('Error: ' + (d.error || 'unknown')); }
