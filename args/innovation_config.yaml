@@ -442,6 +442,9 @@ competitive_intel:
     - name: netbrain
       website: https://www.netbraintech.com
       category: digital_twin_platform
+    - name: tradingagents
+      repo: tauricresearch/tradingagents
+      category: ai_trading_framework
 
 # =========================================================================
 # Standards Body Monitoring
