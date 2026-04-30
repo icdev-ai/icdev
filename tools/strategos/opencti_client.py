@@ -3,10 +3,23 @@
 """Thin GraphQL client for the OpenCTI threat intelligence platform."""
 
 import os
+from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
 load_dotenv()
+
+_BASE_DIR = Path(__file__).resolve().parents[2]
+
+
+def _load_opencti_config() -> dict:
+    try:
+        import yaml
+        cfg_path = _BASE_DIR / "args" / "strategos_config.yaml"
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            return (yaml.safe_load(f) or {}).get("opencti", {})
+    except Exception:
+        return {}
 
 
 class OpenCTIError(Exception):
@@ -15,11 +28,16 @@ class OpenCTIError(Exception):
 
 class OpenCTIClient:
     def __init__(self, url: str = "", api_key: str = ""):
-        self._url = url or os.getenv("OPENCTI_URL", "")
-        self._api_key = api_key or os.getenv("OPENCTI_API_KEY", "")
+        cfg = _load_opencti_config()
+        self._url = url or os.getenv("OPENCTI_URL", "") or cfg.get("url", "")
+        self._api_key = api_key or os.getenv("OPENCTI_API_KEY", "") or cfg.get("api_key", "")
+        self._enabled: bool = cfg.get("enabled", False)
+        self.sync_interval_h: int = int(cfg.get("sync_interval_h", 6))
+        self.min_confidence: int = int(cfg.get("min_confidence", 70))
+        self.indicator_limit: int = int(cfg.get("indicator_limit", 200))
 
     def is_configured(self) -> bool:
-        return bool(self._url and self._api_key)
+        return self._enabled and bool(self._url and self._api_key)
 
     def _query(self, query: str, variables: dict | None = None) -> dict:
         headers = {
