@@ -19,7 +19,6 @@ Usage:
 
 import argparse
 import csv
-import io
 import json
 import math
 import os
@@ -214,7 +213,7 @@ def download_noaa(date_str: str, dest_dir: str = ".tmp") -> str:
                     print(f"\r  {pct}% ({downloaded:,} / {total:,} bytes)", end="", flush=True)
     print()
 
-    print(f"[ais_importer] Extracting …")
+    print("[ais_importer] Extracting …")
     with zipfile.ZipFile(zip_path) as zf:
         csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
         if not csv_names:
