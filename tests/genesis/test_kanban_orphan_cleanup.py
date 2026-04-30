@@ -12,7 +12,6 @@ The stem is always used as the task ID regardless of any prefix.
 from __future__ import annotations
 
 import sqlite3
-import types as _types
 
 import pytest
 
