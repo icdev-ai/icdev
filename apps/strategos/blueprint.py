@@ -827,7 +827,7 @@ def api_maritime_feed_status():
     # ts column is TEXT; PG needs explicit cast to compare with interval expression
     _ts_expr = "ts::timestamptz >= NOW() - INTERVAL '24 hours'" if is_pg() else "ts >= datetime('now','-24 hours')"
     row = _safe_fetch(
-        f"SELECT COUNT(*) AS cnt FROM sg_vessel_tracks WHERE {_ts_expr}",
+        f"SELECT COUNT(*) AS cnt FROM sg_vessel_tracks WHERE {_ts_expr}",  # nosec: B608
         default=[],
     )
     recent_count = row[0]["cnt"] if row else 0
@@ -988,7 +988,7 @@ def api_iw_signal_matrix():
         # Prioritized signals by date (signal_date is a plain DATE column)
         try:
             rows = conn.execute(
-                f"SELECT r.signal_date, COUNT(*) AS n "
+                f"SELECT r.signal_date, COUNT(*) AS n "  # nosec: B608
                 f"FROM sg_prioritized_signals p "
                 f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
                 f"WHERE r.signal_date >= {ph} "
@@ -2117,7 +2117,7 @@ def strategos_api_cyber_infra():
     cyber_events = _safe_fetch(
         "SELECT id, target_name AS label, target_type AS type, lat, lon, "
         "attack_vector, threat_actor, malware_family, confidence, event_ts AS detected_at "
-        f"FROM sg_conflict_events WHERE {' AND '.join(clauses)} LIMIT 200",
+        f"FROM sg_conflict_events WHERE {' AND '.join(clauses)} LIMIT 200",  # nosec: B608
         params,
     )
     for ev in cyber_events:
@@ -2176,7 +2176,7 @@ def strategos_api_cyber_timeline():
     cyber_events = _safe_fetch(
         "SELECT id, event_ts, description, actor1, actor2, goldstein_scale, attack_vector, "
         "threat_actor, target_name, confidence "
-        f"FROM sg_conflict_events WHERE event_type = {ph} "
+        f"FROM sg_conflict_events WHERE event_type = {ph} "  # nosec: B608
         + (f"AND aoi = {ph}" if aoi else "")
         + " ORDER BY event_ts DESC LIMIT 100",
         cyber_params,
@@ -2185,7 +2185,7 @@ def strategos_api_cyber_timeline():
     kinetic_params = (["usv_strike", "attack", "military_move"] + ([aoi] if aoi else []))
     ph_list = ",".join(ph for _ in ["usv_strike", "attack", "military_move"])
     kinetic_events = _safe_fetch(
-        f"SELECT id, event_ts, description, actor1, actor2, goldstein_scale, event_type "
+        f"SELECT id, event_ts, description, actor1, actor2, goldstein_scale, event_type "  # nosec: B608
         f"FROM sg_conflict_events WHERE event_type IN ({ph_list}) "
         + (f"AND aoi = {ph}" if aoi else "")
         + " ORDER BY event_ts DESC LIMIT 100",
