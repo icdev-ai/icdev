@@ -236,21 +236,32 @@ def remediate_ruff_issues(cwd: str, modified_py: List[str]) -> Tuple[bool, str]:
         return False, "no modified .py files to fix"
 
     try:
-        # Apply safe fixes
+        # Apply safe fixes first, then unsafe fixes for broader coverage.
+        # --unsafe-fixes handles additional patterns (e.g. implicit string concat)
+        # that --fix alone skips. Both passes are idempotent.
         _run(
             ["python", "-m", "ruff", "check", "--fix"] + modified_py,
             cwd, timeout=60,
         )
-        # ruff returns non-zero if UNSAFE fixes remain — that's fine, we
-        # care about what it DID fix
+        _run(
+            ["python", "-m", "ruff", "check", "--fix", "--unsafe-fixes"] + modified_py,
+            cwd, timeout=60,
+        )
+        # Check what remains after both fix passes
         check = _run(
             ["python", "-m", "ruff", "check"] + modified_py,
             cwd, timeout=30,
         )
         still_broken = check.returncode != 0
         if still_broken:
-            remaining = len([ln for ln in check.stdout.splitlines() if ": " in ln])
-            return False, f"ruff --fix left {remaining} issues needing manual fix"
+            issue_lines = [ln for ln in check.stdout.splitlines() if ": " in ln]
+            remaining = len(issue_lines)
+            # Include first 5 specific errors so the next dispatch prompt shows
+            # exactly which file:line:col:code errors need manual fixes.
+            sample = " | ".join(issue_lines[:5])
+            return False, (
+                f"ruff --fix left {remaining} issues needing manual fix: {sample}"
+            )
 
         # Amend the kanban branch's last commit with the fixes
         if _git_commit_amend(cwd, modified_py):
