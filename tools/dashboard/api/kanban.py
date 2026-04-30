@@ -116,45 +116,50 @@ def _annotate_in_progress_tasks(conn, tasks: list) -> None:
 
     ph = ",".join(["?" for _ in ip_ids])
 
-    # attempt_count + current_attempt_started_at from in_progress arrivals
-    for row in conn.execute(
-        f"SELECT task_id, COUNT(*) AS cnt, MAX(recorded_at) AS latest "  # nosec B608
-        f"FROM kanban_status_transitions "
-        f"WHERE task_id IN ({ph}) AND to_status = 'in_progress' "
-        f"GROUP BY task_id",
-        ip_ids,
-    ).fetchall():
-        d = dict(row)
-        tid = d["task_id"]
-        for t in tasks:
-            if t.get("id") == tid:
-                t["attempt_count"] = d.get("cnt") or 0
-                sa = d.get("latest")
-                t["current_attempt_started_at"] = (
-                    sa.isoformat() if hasattr(sa, "isoformat") else (str(sa) if sa else None)
-                )
-                break
+    try:
+        # attempt_count + current_attempt_started_at from in_progress arrivals
+        for row in conn.execute(
+            f"SELECT task_id, COUNT(*) AS cnt, MAX(recorded_at) AS latest "  # nosec B608
+            f"FROM kanban_status_transitions "
+            f"WHERE task_id IN ({ph}) AND to_status = 'in_progress' "
+            f"GROUP BY task_id",
+            ip_ids,
+        ).fetchall():
+            d = dict(row)
+            tid = d["task_id"]
+            for t in tasks:
+                if t.get("id") == tid:
+                    t["attempt_count"] = d.get("cnt") or 0
+                    sa = d.get("latest")
+                    t["current_attempt_started_at"] = (
+                        sa.isoformat() if hasattr(sa, "isoformat") else (str(sa) if sa else None)
+                    )
+                    break
 
-    # last_reaped_reason — most recent demotion out of in_progress (not to done)
-    seen: set = set()
-    for row in conn.execute(
-        f"SELECT task_id, reason, recorded_at "  # nosec B608
-        f"FROM kanban_status_transitions "
-        f"WHERE task_id IN ({ph}) "
-        f"  AND from_status = 'in_progress' "
-        f"  AND to_status NOT IN ('done', 'in_progress') "
-        f"ORDER BY recorded_at DESC",
-        ip_ids,
-    ).fetchall():
-        d = dict(row)
-        tid = d["task_id"]
-        if tid in seen:
-            continue
-        seen.add(tid)
-        for t in tasks:
-            if t.get("id") == tid:
-                t["last_reaped_reason"] = d.get("reason")
-                break
+        # last_reaped_reason — most recent demotion out of in_progress (not to done)
+        seen: set = set()
+        for row in conn.execute(
+            f"SELECT task_id, reason, recorded_at "  # nosec B608
+            f"FROM kanban_status_transitions "
+            f"WHERE task_id IN ({ph}) "
+            f"  AND from_status = 'in_progress' "
+            f"  AND to_status NOT IN ('done', 'in_progress') "
+            f"ORDER BY recorded_at DESC",
+            ip_ids,
+        ).fetchall():
+            d = dict(row)
+            tid = d["task_id"]
+            if tid in seen:
+                continue
+            seen.add(tid)
+            for t in tasks:
+                if t.get("id") == tid:
+                    t["last_reaped_reason"] = d.get("reason")
+                    break
+    except Exception:
+        # Migration 025 not yet applied — degrade gracefully.
+        # Tasks are still returned; attempt_count / reaper fields stay None.
+        pass
 
 
 @kanban_api.route("/tasks", methods=["GET"])
