@@ -61,10 +61,14 @@ def _count_pending_prompts() -> int:
 
     Previously counted all .md files, which blocked queue promotion when
     stale prompt files lingered from crashed/completed tasks.
+
+    Globs all *.md files (not just task-*.md) because the scheduler may
+    write prompt files named by task ID directly (e.g. sg-import-ds-vault.md).
+    The stem is always the task ID regardless of any prefix.
     """
     if not PROMPT_DIR.exists():
         return 0
-    prompt_files = list(PROMPT_DIR.glob("task-*.md"))
+    prompt_files = list(PROMPT_DIR.glob("*.md"))
     if not prompt_files:
         return 0
     # Only count prompts whose task is still in_progress
@@ -72,7 +76,7 @@ def _count_pending_prompts() -> int:
     try:
         count = 0
         for pf in prompt_files:
-            task_id = pf.stem  # e.g. "task-abc123"
+            task_id = pf.stem  # stem IS the task ID (e.g. "sg-import-ds-vault" or "task-abc123")
             row = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
             if row and dict(row)["status"] == "in_progress":
                 count += 1
