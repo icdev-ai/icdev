@@ -1005,7 +1005,6 @@ def _get_due_tasks() -> list:
         # 'decomposed' counts as unblocking: a decomposed parent was split into
         # child tasks and will never be dispatched directly, so its dependents
         # must not wait for it to reach 'done'.
-        _done_states = "('done', 'decomposed')"
         dep_clause = (
             "("
             "  NOT EXISTS (SELECT 1 FROM kanban_task_deps d "
@@ -1013,13 +1012,13 @@ def _get_due_tasks() -> list:
             "  AND (kt.depends_on_task_id IS NULL "
             "       OR EXISTS (SELECT 1 FROM kanban_tasks dep "
             "                  WHERE dep.id = kt.depends_on_task_id "
-            f"                   AND dep.status IN {_done_states}))"
+            "                   AND dep.status IN ('done', 'decomposed')))"
             "  OR ("
             "  EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
             "  AND NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
             "                  JOIN kanban_tasks p ON p.id = d2.depends_on_id "
             "                  WHERE d2.task_id = kt.id "
-            f"                   AND p.status NOT IN {_done_states})"
+            "                   AND p.status NOT IN ('done', 'decomposed'))"
             "  )"
             ")"
         )
