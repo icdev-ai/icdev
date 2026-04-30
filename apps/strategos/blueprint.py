@@ -2288,6 +2288,21 @@ def api_osint_run_prestage():
         return jsonify({"status": "error", "error": str(exc)}), 500
 
 
+@_api.route("/darkweb/signals")
+def api_darkweb_signals():
+    status = request.args.get("status")
+    min_score = float(request.args.get("min_score", 0))
+    limit = int(request.args.get("limit", 50))
+    rows = _safe_fetch(
+        "SELECT * FROM sg_darkweb_signals "
+        "WHERE relevance_score >= %s "
+        "AND (%s::text IS NULL OR status=%s) "
+        "ORDER BY relevance_score DESC LIMIT %s",
+        (min_score, status, status, limit),
+    )
+    return jsonify({"signals": rows, "total": len(rows)})
+
+
 # ---------------------------------------------------------------------------
 # Map sub-APIs — template fetches /strategos/api/map/*
 # ---------------------------------------------------------------------------
@@ -2328,6 +2343,21 @@ def strategos_api_map_supply():
         "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
     )
     return jsonify({"nodes": rows})
+
+
+@_api.route("/darkweb/signals")
+def api_darkweb_signals():
+    status = request.args.get("status")
+    min_score = float(request.args.get("min_score", 0))
+    limit = int(request.args.get("limit", 50))
+    rows = _safe_fetch(
+        "SELECT * FROM sg_darkweb_signals "
+        "WHERE relevance_score >= %s "
+        "AND (%s::text IS NULL OR status=%s) "
+        "ORDER BY relevance_score DESC LIMIT %s",
+        (min_score, status, status, limit),
+    )
+    return jsonify({"signals": rows, "total": len(rows)})
 
 
 # ---------------------------------------------------------------------------
