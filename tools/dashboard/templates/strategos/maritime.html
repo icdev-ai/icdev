@@ -188,6 +188,8 @@
     <div class="mt-sep"></div>
 
     <span id="mt-clock">—</span>
+    <div class="mt-sep"></div>
+    <span id="feed-status-pill" style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;border:1px solid var(--sg-grey);color:var(--sg-grey)">&#9679; FEED …</span>
     <div style="margin-left:auto">
       <a href="/strategos" style="font-size:11px;color:var(--sg-dim);text-decoration:none">&larr; Strategos</a>
     </div>
@@ -459,9 +461,14 @@ function buildSidebar() {
     const div = document.createElement('div');
     div.className = 'mt-vessel-item';
     div.id = 'vitem-' + v.mmsi;
+    const srcDot = v.source === 'sdr'
+      ? `<span title="SDR hardware" style="color:#22d3ee;font-size:9px;margin-left:4px">&#9679; SDR</span>`
+      : v.source === 'aishub'
+        ? `<span title="AISHub UDP" style="color:#22c55e;font-size:9px;margin-left:4px">&#9679; HUB</span>`
+        : `<span title="Unknown source" style="color:#6b7280;font-size:9px;margin-left:4px">&#9679;</span>`;
     div.innerHTML = `
       <div class="mt-vessel-name" style="color:${c}">${v.name}</div>
-      <div class="mt-vessel-meta">${v.mmsi} · ${v.flag}</div>
+      <div class="mt-vessel-meta">${v.mmsi} · ${v.flag}${srcDot}</div>
       <span class="mt-vessel-badge"
             style="background:${c}22;color:${c};border:1px solid ${c}44">
         ${TYPE_LABELS[v.vessel_type] || '?'}
@@ -503,6 +510,27 @@ function initMapObjects() {
     vesselState[v.mmsi] = { marker, wakeLine, wake: [], color: c };
   });
 }
+
+// ── Feed status pill ──────────────────────────────────────────────────────
+function refreshFeedStatus() {
+  fetch('/api/strategos/maritime/feed/status')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      const pill = document.getElementById('feed-status-pill');
+      if (!pill || !d) return;
+      if (d.live) {
+        pill.style.borderColor = '#22c55e';
+        pill.style.color = '#22c55e';
+        pill.textContent = '● LIVE · ' + d.mode.toUpperCase();
+      } else {
+        pill.style.borderColor = '#f59e0b';
+        pill.style.color = '#f59e0b';
+        pill.textContent = '● REPLAY · ' + d.mode.toUpperCase();
+      }
+    }).catch(() => {});
+}
+refreshFeedStatus();
+setInterval(refreshFeedStatus, 30000);
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────
 fetch('/api/strategos/maritime/tracks')
