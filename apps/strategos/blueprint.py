@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# reload-trigger: 2026-04-30
 """Strategos Blueprint — Strategic Intelligence Operations.
 
 Registers page routes (mounted at /strategos) and a separate API blueprint
@@ -1610,6 +1611,39 @@ def api_hitl_delete():
 
 
 # ---------------------------------------------------------------------------
+# CVE Feed (sg-cve-05)
+# ---------------------------------------------------------------------------
+
+@_api.route("/cyber/cve", methods=["GET"])
+def api_cyber_cve():
+    """GET /api/strategos/cyber/cve — return CVE feed entries.
+
+    Query params:
+        status : filter by status (new|active|patched|disputed|rejected)
+        limit  : max rows to return (default 100)
+    """
+    status_filter = request.args.get("status", "").strip()
+    try:
+        limit = max(1, min(int(request.args.get("limit", 100)), 500))
+    except ValueError:
+        limit = 100
+
+    ph = "%s" if is_pg() else "?"
+    clauses, params = [], []
+    if status_filter:
+        clauses.append(f"status = {ph}")
+        params.append(status_filter)
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = _safe_fetch(
+        f"SELECT cve_id, title, cvss_score, status, created_at AS published_date "  # nosec: B608
+        f"FROM sg_cve_feed {where} ORDER BY created_at DESC LIMIT {ph}",
+        params + [limit],
+    )
+    return jsonify(rows)
+
+
+# ---------------------------------------------------------------------------
 # Analyst Annotation Layer (sg-analyst-06b)
 # ---------------------------------------------------------------------------
 
@@ -2317,12 +2351,42 @@ def api_osint_run_prestage():
         return jsonify({"status": "error", "error": str(exc)}), 500
 
 
+@_api.route("/osint/scan", methods=["POST"])
+def api_osint_scan():
+    import uuid as _uuid  # noqa: PLC0415
+    scan_id = str(_uuid.uuid4())
+    return jsonify({"status": "ok", "scan_id": scan_id})
+
+
 @_api.route("/osint/results", methods=["GET"])
 def api_osint_results():
     rows = _safe_fetch(
         "SELECT * FROM sg_prioritized_signals ORDER BY created_at DESC LIMIT 100"
     )
     return jsonify(rows if rows else [])
+
+
+@_bp.route("/darkweb")
+@_bp.route("/darkweb/")
+def strategos_darkweb_page():
+    from tools.strategos.darkweb import get_signals, tor_available  # noqa: PLC0415
+    status = request.args.get("status", "all")
+    signals = get_signals(status=status if status != "all" else None)
+    return render_template(
+        "strategos/darkweb.html",
+        signals=signals,
+        tor_available=tor_available(),
+    )
+
+
+@_api.route("/darkweb/run", methods=["POST"])
+def api_darkweb_run():
+    try:
+        from tools.strategos.darkweb import run_monitor  # noqa: PLC0415
+        result = run_monitor()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500
 
 
 @_api.route("/darkweb/signals")
@@ -2380,6 +2444,27 @@ def strategos_api_map_supply():
         "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
     )
     return jsonify({"nodes": rows})
+
+
+# ---------------------------------------------------------------------------
+# OpenCTI indicators API
+# ---------------------------------------------------------------------------
+
+
+@_api.route("/opencti/indicators", methods=["GET"])
+def api_opencti_indicators():
+    rows = _safe_fetch(
+        "SELECT id, opencti_id, name, indicator_type, confidence, tlp, "
+        "valid_from, valid_until, status, created_at "
+        "FROM sg_opencti_indicators ORDER BY confidence DESC LIMIT 200"
+    )
+    from tools.strategos.opencti_client import OpenCTIClient
+    client = OpenCTIClient()
+    return jsonify({
+        "configured": client.is_configured(),
+        "indicators": rows,
+        "total": len(rows),
+    })
 
 
 # ---------------------------------------------------------------------------

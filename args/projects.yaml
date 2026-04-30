@@ -4,6 +4,29 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: sgx
+  name: Sgx Project
+  description: Auto-registered project for tasks with prefix 'sgx-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: sgx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ais
+    title: AIS
+    priority: medium
+  - key: bbot
+    title: BBOT
+    priority: medium
+  - key: cve
+    title: CVE
+    priority: medium
+  - key: dw
+    title: DW
+    priority: medium
+  - key: octi
+    title: OCTI
+    priority: medium
 - key: oracle
   name: Oracle Project
   description: Auto-registered project for tasks with prefix 'oracle-'. Update name

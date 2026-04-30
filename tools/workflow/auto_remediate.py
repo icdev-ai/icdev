@@ -272,7 +272,16 @@ def remediate_missing_worktree(cwd: str, task_id: str) -> Tuple[bool, str]:
     so `_create_worktree` can succeed on next dispatch.
     """
     _reset_broken_worktree(cwd)
-    return True, f"pruned stale worktree state for {task_id} — next dispatch rebuilds from HEAD"
+    # Only trigger immediate re-verification (return True) if the worktree was
+    # actually recreated. Returning True when the directory is still missing
+    # causes _run_full_verification to re-run with the same missing-worktree
+    # condition, producing an infinite single-cycle validation loop.
+    if Path(cwd).resolve().exists():
+        return True, f"rebuilt worktree for {task_id} from HEAD — re-verifying"
+    return False, (
+        f"pruned stale git state for {task_id}; "
+        "worktree rebuild failed (Windows branch lock?) — next dispatch will retry"
+    )
 
 
 def _reset_broken_worktree(cwd: str) -> None:
@@ -335,10 +344,28 @@ def _reset_broken_worktree(cwd: str) -> None:
             cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
         )
         if retry.returncode != 0:
-            logger.warning(
-                "_reset_broken_worktree: recreate failed for %s: %s",
-                task_id, retry.stderr.strip(),
+            # Both -b attempts failed — branch ref is locked on Windows.
+            # Force-reset the existing branch ref to current HEAD via
+            # `git branch -f` (moves the pointer without touching the lock),
+            # then use `git worktree add` without -b to check out that branch.
+            subprocess.run(
+                ["git", "branch", "-f", branch_name, "HEAD"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
             )
+            fallback = subprocess.run(
+                ["git", "worktree", "add", str(p), branch_name],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+            )
+            if fallback.returncode != 0:
+                logger.warning(
+                    "_reset_broken_worktree: all recreate attempts failed for %s: %s",
+                    task_id, fallback.stderr.strip(),
+                )
+            else:
+                logger.info(
+                    "_reset_broken_worktree: recreated worktree at %s via branch-force fallback",
+                    p,
+                )
         else:
             logger.info("_reset_broken_worktree: recreated clean worktree at %s (retry)", p)
     else:
