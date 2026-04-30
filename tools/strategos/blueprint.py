@@ -8,6 +8,9 @@ Routes:
   GET  /api/strategos/supply/edges           → All supply edges (JSON)
   GET  /api/strategos/supply/critical-path   → Targeting priority list (JSON)
   POST /api/strategos/supply/sync            → Rebuild graph + KG edges
+
+  GET  /strategos/darkweb                    → Dark Web Monitor dashboard
+  POST /api/strategos/darkweb/run            → Trigger monitor scan (async)
 """
 
 from __future__ import annotations
@@ -92,6 +95,36 @@ def api_strategos_sync():
     graph_result = build_dib_graph()
     kg_result = write_kg_edges()
     return jsonify({"status": "ok", "graph": graph_result, "kg": kg_result})
+
+
+# ---------------------------------------------------------------------------
+# Dark Web Monitor — page + API
+# ---------------------------------------------------------------------------
+
+
+def _darkweb():
+    from tools.strategos.darkweb import get_signals, tor_available, run_monitor
+    return get_signals, tor_available, run_monitor
+
+
+@bp.route("/strategos/darkweb")
+@bp.route("/strategos/darkweb/")
+def strategos_darkweb_page():
+    get_signals, tor_available_fn, _ = _darkweb()
+    status = request.args.get("status", "all")
+    signals = get_signals(status=status if status != "all" else None)
+    return render_template(
+        "strategos/darkweb.html",
+        signals=signals,
+        tor_available=tor_available_fn(),
+    )
+
+
+@bp.route("/api/strategos/darkweb/run", methods=["POST"])
+def api_strategos_darkweb_run():
+    _, _, run_monitor = _darkweb()
+    result = run_monitor()
+    return jsonify(result)
 
 
 def create_strategos_blueprint() -> Blueprint:
