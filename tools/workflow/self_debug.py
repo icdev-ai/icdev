@@ -233,13 +233,10 @@ def diagnose(snap: Dict[str, Any]) -> Dict[str, Any]:
 
 def _heuristic_diagnosis(snap: Dict[str, Any]) -> Dict[str, Any]:
     """Rule-based fallback when no LLM is available."""
-    reason = (snap.get("reason") or "").lower()
-
-    # Highest-confidence case: the worktree directory was deleted before or
-    # during validation.  All subprocess calls inside the missing path silently
-    # swallow FileNotFoundError and return misleading pass/skip results.
-    # Immediately recommend rebuild so the next dispatch starts clean.
-    if snap.get("is_worktree_path") and snap.get("cwd_exists") is False:
+    # cwd_exists=false fires before any reason-string parsing — the directory
+    # is gone so subprocess calls swallow FileNotFoundError and return
+    # misleading pass/skip results.  Skip all string checks and rebuild.
+    if snap.get("cwd_exists") is False:
         return {
             "root_cause": (
                 "Worktree directory does not exist on disk (cwd_exists=false). "
@@ -253,13 +250,15 @@ def _heuristic_diagnosis(snap: Dict[str, Any]) -> Dict[str, Any]:
             ],
             "recommendation": "rebuild_worktree",
             "patch_hint": (
-                "Check cwd_exists before any git/file ops; if false and is_worktree, "
+                "Check cwd_exists before any git/file ops; if false, "
                 "return FAILURE_WORKTREE_MISSING immediately so remediate() can "
                 "prune git state and let the next dispatch create a clean worktree."
             ),
             "confidence": 0.92,
             "_source": "heuristic",
         }
+
+    reason = (snap.get("reason") or "").lower()
 
     if snap.get("is_worktree_path") and not snap.get("worktree_registered"):
         return {
