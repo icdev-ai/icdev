@@ -24,6 +24,10 @@ def _now() -> str:
 def _indicator_type(pattern: str) -> str:
     if "[ipv4-addr" in pattern:
         return "rf_anomaly"
+    if "[domain-name" in pattern:
+        return "intelligence_signal"
+    if "[file:hashes" in pattern:
+        return "intelligence_signal"
     return "intelligence_signal"
 
 
