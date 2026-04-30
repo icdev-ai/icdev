@@ -460,38 +460,33 @@ class StrategyAgent:
     # ── Ollama call ────────────────────────────────────────────────────────
 
     def _call_ollama(self, context: ScenarioContext) -> str:
-        """POST to Ollama /api/chat and return the assistant message content."""
+        """Call Ollama chat() and return the assistant message content."""
         try:
-            import requests as _req
+            import ollama as _ollama
         except ImportError as exc:
-            raise ImportError("requests library required: pip install requests") from exc
+            raise ImportError("ollama library required: pip install ollama") from exc
 
-        payload = {
-            "model": self._model,
-            "messages": [
+        client = _ollama.Client(host=self._base_url, timeout=self._timeout)
+
+        # Disable thinking tokens for reasoning models (qwen3+, gemma4) — without
+        # this, thinking tokens consume the entire budget and content comes back empty.
+        _model_lower = self._model.lower()
+        think: bool | None = (
+            False if any(x in _model_lower for x in ("qwen3", "gemma4")) else None
+        )
+
+        resp = client.chat(
+            model=self._model,
+            messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
                 {"role": "user", "content": context.to_prompt()},
             ],
-            "stream": False,
-            "format": "json",
-            "options": {
-                "temperature": 0.3,
-                "num_predict": 2048,
-            },
-        }
-
-        # Disable thinking for qwen3+ to avoid token burn
-        if "qwen3" in self._model.lower():
-            payload["think"] = False
-
-        resp = _req.post(
-            f"{self._base_url}/api/chat",
-            json=payload,
-            timeout=self._timeout,
+            format="json",
+            options={"temperature": 0.3, "num_predict": 1024},
+            think=think,
+            stream=False,
         )
-        resp.raise_for_status()
-        data = resp.json()
-        return data.get("message", {}).get("content", "")
+        return resp.message.content
 
     # ── Parse COAs from LLM output ─────────────────────────────────────────
 
