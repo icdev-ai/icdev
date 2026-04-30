@@ -1034,7 +1034,7 @@ def _get_due_tasks() -> list:
             "WHERE kt.status = 'scheduled' "
             "  AND kt.scheduled_at IS NOT NULL "
             "  AND kt.scheduled_at <= datetime('now') "
-            f"  AND {dep_clause} "  # nosec B608 -- internal constant
+            f"  AND {dep_clause} "  # nosec B608
             "ORDER BY "
             "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
             "CASE kt.priority "
@@ -1102,7 +1102,7 @@ def _get_due_tasks() -> list:
             "       OR kt.updated_at <= datetime('now', '-10 minutes')) "
             "  AND (kt.last_failure_reason IS NULL "
             "       OR kt.last_failure_reason NOT LIKE ?) "
-            f"  AND {dep_clause} "  # nosec B608 -- internal constant
+            f"  AND {dep_clause} "  # nosec B608
             "ORDER BY "
             "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
             "CASE kt.priority "
@@ -1751,11 +1751,11 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             if rolled_back:
                 placeholders = ",".join("?" * len(rolled_back))
                 conn.execute(
-                    f"UPDATE kanban_tasks SET status='backlog', "  # nosec B608
-                    f"scheduled_at=NULL, "
-                    f"updated_at=?, failure_count=0, "
-                    f"last_failure_reason=?, last_failure_at=NULL "
-                    f"WHERE id IN ({placeholders})",
+                    "UPDATE kanban_tasks SET status='backlog', "
+                    "scheduled_at=NULL, "
+                    "updated_at=?, failure_count=0, "
+                    "last_failure_reason=?, last_failure_at=NULL "
+                    f"WHERE id IN ({placeholders})",  # nosec B608
                     (now, f"cascade: parent {task_id} demoted from done", *rolled_back),
                 )
                 conn.commit()
