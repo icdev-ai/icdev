@@ -576,3 +576,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Check Manifest Coverage | tools\check_manifest_coverage.py | Auto-registered: tools/check_manifest_coverage.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Research Bridge | tools\strategos\research_bridge.py | Auto-registered: strategos/research_bridge.py | --json | JSON |
