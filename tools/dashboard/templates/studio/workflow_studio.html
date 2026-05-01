@@ -77,7 +77,11 @@
 
       <!-- Tool Palette -->
       <div class="wf-studio__palette" id="wf-palette">
-        <div class="wf-studio__palette-header">Tool Palette</div>
+        <div class="wf-studio__palette-header">
+          <span class="wf-palette-title">Tool Palette</span>
+          <button id="wf-palette-toggle" class="wf-palette-toggle-btn"
+                  onclick="StudioWF.togglePalette()" title="Toggle palette">«</button>
+        </div>
         <div class="wf-studio__palette-search">
           <input type="text" class="studio-input studio-input"
                  placeholder="Search tools..." id="wf-tool-search"

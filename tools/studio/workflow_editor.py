@@ -1646,6 +1646,25 @@ def list_builtin_templates() -> list[dict]:
     return results
 
 
+def get_builtin_template(template_id: str) -> dict | None:
+    """Return full template data (including steps) for a given template stem ID."""
+    templates_dir = _ROOT / "args" / "workflow_templates"
+    f = templates_dir / f"{template_id}.yaml"
+    if not f.exists():
+        return None
+    try:
+        data = yaml.safe_load(f.read_text(encoding="utf-8"))
+        return {
+            "id": f.stem,
+            "name": data.get("description", f.stem),
+            "category": data.get("category", "general"),
+            "steps": data.get("steps", []),
+            "source": "builtin",
+        }
+    except Exception:
+        return None
+
+
 # ── CLI ────────────────────────────────────────────────────
 
 
