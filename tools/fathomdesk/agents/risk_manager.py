@@ -20,6 +20,7 @@ Return shape::
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -108,6 +109,56 @@ def _count_wash_sale_flags(ticker: str, window_days: int = _WASH_SALE_WINDOW_DAY
     return 0
 
 
+def _write_decision_audit(
+    ticker: str,
+    as_of_date: str,
+    debate_result: "DebateResult",
+    rec: dict[str, Any],
+) -> None:
+    """Append one row to ad_decision_audit (fail-open, SEC Rule 17a-4 immutable)."""
+    # Venue from ticker exchange suffix: CNC.TO → "TO", AAPL → "US"
+    venue = ticker.rsplit(".", 1)[1] if "." in ticker else "US"
+    mifid_ts = datetime.now(timezone.utc).isoformat()
+    audit_id = f"ada-{uuid.uuid4().hex[:12]}"
+    reports = debate_result.analyst_reports or {}
+    try:
+        conn = get_connection()
+        ph = "%s" if getattr(conn, "_dialect", "sqlite") == "postgresql" else "?"
+        try:
+            conn.execute(
+                f"INSERT INTO ad_decision_audit "  # nosec B608
+                f"(id, ticker, as_of_date, "
+                f"fundamentals_score, technical_score, sentiment_score, macro_score, "
+                f"bull_confidence, bear_confidence, "
+                f"final_direction, final_confidence, reasoning, "
+                f"venue, instrument_type, mifid_timestamp) "
+                f"VALUES ({','.join([ph] * 15)})",
+                [
+                    audit_id,
+                    ticker,
+                    as_of_date,
+                    float(reports.get("fundamentals", {}).get("score", 0.0)),
+                    float(reports.get("technical", {}).get("score", 0.0)),
+                    float(reports.get("sentiment", {}).get("score", 0.0)),
+                    float(reports.get("macro", {}).get("score", 0.0)),
+                    float(debate_result.bull_score),
+                    float(debate_result.bear_score),
+                    rec["direction"],
+                    float(rec["confidence"]),
+                    rec.get("reasoning", ""),
+                    venue,
+                    "equity",
+                    mifid_ts,
+                ],
+            )
+            conn.commit()
+            logger.debug("RiskManager: ad_decision_audit row written [%s]", audit_id)
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("RiskManager: ad_decision_audit write failed: %s", exc)
+
+
 # ---------------------------------------------------------------------------
 # RiskManager
 # ---------------------------------------------------------------------------
@@ -153,10 +204,10 @@ class RiskManager:
                 f"Gate A: confidence {confidence:.2f} below threshold "
                 f"{min_conf:.2f} — verdict overridden to HOLD."
             )
-            return self._rec("HOLD", confidence, 0.0, reasons)
+            direction, size_modifier = "HOLD", 0.0
 
         # ---- Gate B: liquidity trap — hard-blocks SELL -------------------
-        if direction == "SELL":
+        elif direction == "SELL":
             trap_active, trap_conf = _fetch_active_liquidity_trap()
             ticker_trap = _fetch_ticker_trap_pattern(self.ticker)
             if trap_active or ticker_trap:
@@ -169,7 +220,7 @@ class RiskManager:
                     f"Gate B: liquidity trap active [{', '.join(sources)}] — "
                     "SELL hard-blocked; direction overridden to HOLD."
                 )
-                return self._rec("HOLD", confidence, 0.0, reasons)
+                direction, size_modifier = "HOLD", 0.0
 
         # ---- Gate C: wash-sale sizing penalty for SELL -------------------
         if direction == "SELL":
@@ -190,7 +241,9 @@ class RiskManager:
                     )
                     direction = "HOLD"
 
-        return self._rec(direction, confidence, size_modifier, reasons)
+        rec = self._rec(direction, confidence, size_modifier, reasons)
+        _write_decision_audit(self.ticker, self.as_of_date, debate_result, rec)
+        return rec
 
     # ------------------------------------------------------------------
     # Helpers
