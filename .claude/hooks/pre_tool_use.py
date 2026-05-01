@@ -403,6 +403,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "des_execution_events",
         # Strategos SOCMINT signals (migration 023, NIST AU — append-only ingestion log)
         "sg_socmint_signals",
+        # FathomDesk analyst panel decision audit (migration 078, SEC Rule 17a-4 / NIST AU)
+        "ad_decision_audit",
     ]
 
     if tool_name == "Bash":
