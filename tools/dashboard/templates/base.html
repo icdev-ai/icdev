@@ -97,6 +97,15 @@
                 </ul>
             </li>
 
+            <!-- HITL Workflow Management -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if request.path in ['/workflow-hitl', '/workflow-teams'] %}active{% endif %}">Workflow</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/workflow-hitl">HITL Queue</a></li>
+                    <li><a href="/workflow-teams">Teams &amp; Assignments</a></li>
+                </ul>
+            </li>
+
             {% if not airgap_mode %}
             <!-- Genesis (all apps) -->
             <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>

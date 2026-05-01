@@ -407,6 +407,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_decision_audit",
         # FathomDesk backtest result store (migration 057, NIST AU — append-only)
         "ad_backtest_runs",
+        # HITL Workflow Management (migration 079, NIST AU — feedback, submissions, citations append-only)
+        "wf_feedback",
+        "wf_document_submissions",
+        "wf_citations",
     ]
 
     if tool_name == "Bash":

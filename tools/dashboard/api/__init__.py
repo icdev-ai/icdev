@@ -327,6 +327,15 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         except ImportError as exc:
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
+    # HITL Workflow — opt-in via ICDEV_HITL_ENABLED=true
+    try:
+        from tools.workflow_hitl.blueprint import create_wf_blueprint
+        wf_bp = create_wf_blueprint()
+        _mount(wf_bp, v1_prefix="/api/v1/wf")
+        logger.info("HITL Workflow API registered at /api/v1/wf/")
+    except Exception as exc:
+        logger.warning("HITL Workflow API skipped: %s", exc)
+
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook

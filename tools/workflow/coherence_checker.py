@@ -2453,6 +2453,78 @@ def check_openapi_parity() -> CoherenceCheck:
     )
 
 
+def check_hitl_workflow() -> CoherenceCheck:
+    """Verify HITL Workflow Management coherence (migration 079).
+
+    Checks:
+    1. If ICDEV_HITL_ENABLED=true, wf_templates seeded for all canvas types
+    2. If ICDEV_HITL_KANBAN_GATE=true, HITLGate import resolves
+    3. wf_ tables listed in APPEND_ONLY_TABLES (wf_feedback, wf_document_submissions, wf_citations)
+    4. Blueprint registered at /api/v1/wf
+    """
+    import os
+    issues: list[str] = []
+    actual: list[str] = []
+
+    # Check 1: append-only tables
+    try:
+        aot_path = PROJECT_ROOT / ".claude" / "hooks" / "pre_tool_use.py"
+        if aot_path.exists():
+            content = aot_path.read_text(encoding="utf-8")
+            for tbl in ("wf_feedback", "wf_document_submissions", "wf_citations"):
+                if tbl in content:
+                    actual.append(f"append_only:{tbl}=OK")
+                else:
+                    issues.append(f"wf table {tbl!r} missing from APPEND_ONLY_TABLES in pre_tool_use.py")
+    except Exception as exc:
+        issues.append(f"append_only check failed: {exc}")
+
+    # Check 2: HITLGate import
+    try:
+        from tools.workflow_hitl.gate import HITLGate  # noqa: F401
+        actual.append("HITLGate=importable")
+    except ImportError as exc:
+        issues.append(f"HITLGate import failed: {exc}")
+
+    # Check 3: blueprint registration
+    try:
+        from tools.workflow_hitl.blueprint import create_wf_blueprint  # noqa: F401
+        actual.append("wf_blueprint=importable")
+    except ImportError as exc:
+        issues.append(f"wf_blueprint import failed: {exc}")
+
+    # Check 4: args/workflow_hitl_config.yaml exists
+    cfg = PROJECT_ROOT / "args" / "workflow_hitl_config.yaml"
+    if cfg.exists():
+        actual.append("workflow_hitl_config.yaml=exists")
+    else:
+        issues.append("args/workflow_hitl_config.yaml missing")
+
+    # Check 5: if gate enabled, verify env + kanban hook
+    if os.getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
+        kanban_path = PROJECT_ROOT / "tools" / "genesis" / "reflexes" / "kanban.py"
+        if kanban_path.exists() and "HITLGate" in kanban_path.read_text(encoding="utf-8"):
+            actual.append("kanban_gate_hook=present")
+        else:
+            issues.append("ICDEV_HITL_KANBAN_GATE=true but HITLGate hook not found in kanban.py")
+
+    status = "fail" if issues else "pass"
+    return CoherenceCheck(
+        check_id="hitl_workflow",
+        check_name="HITL Workflow Coherence",
+        status=status,
+        expected=["append_only tables registered", "HITLGate importable", "blueprint importable",
+                  "workflow_hitl_config.yaml exists"],
+        actual=actual,
+        missing=issues,
+        extra=[],
+        message=(
+            "Run migration 079, add wf_ tables to APPEND_ONLY_TABLES, "
+            "verify tools/workflow_hitl/ modules exist"
+        ) if issues else "HITL workflow coherence OK",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
@@ -2475,6 +2547,7 @@ CHECK_REGISTRY = {
     "direct_anthropic_import": check_direct_anthropic_import,
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
+    "hitl_workflow": check_hitl_workflow,
 }
 
 

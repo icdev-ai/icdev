@@ -80,7 +80,11 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("alphadesk_correlation_monitor", SUPPORT, 4.0, "AlphaDesk cross-asset correlation"),
     ReflexEntry("bdc_isa_expiry",     SUPPORT, 24.0, "BDC ISA expiry tracking"),
     ReflexEntry("cato_monitor",       SUPPORT, 6.0,  "cATO compliance monitoring"),
-    ReflexEntry("cato_twin",          SUPPORT, 6.0,  "cATO digital twin sync"),
+    ReflexEntry("cato_twin",               SUPPORT, 6.0,  "cATO digital twin sync"),
+    ReflexEntry("wf_feedback_aggregation", SUPPORT, 6.0,
+                "HITL feedback aggregation → wf_feedback_insights per canvas/template/type"),
+    ReflexEntry("wf_ext_poller",           SUPPORT, 0.25,
+                "HITL external step poller — checks Jira/SNOW/GitHub/Confluence/SharePoint status"),
 ]
 
 # Quick lookup: name → entry
