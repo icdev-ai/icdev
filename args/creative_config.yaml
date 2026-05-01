@@ -234,6 +234,7 @@ knowledge_graph:
 # Trading / FathomDesk domain — market intelligence, algo trading, fintech
 trading:
   name: "trading platforms"
+  aliases: [trading]
   g2_category_url: "https://www.g2.com/categories/trading-platforms"
   capterra_category_url: "https://www.capterra.com/trading-software/"
   trustradius_category_url: "https://www.trustradius.com/trading-platforms"
