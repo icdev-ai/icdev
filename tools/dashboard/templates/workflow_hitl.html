@@ -537,7 +537,7 @@
 
     // ── Coverage / stats ───────────────────────────────────────────────
     function loadCoverage() {
-        fetch('/api/v1/wf/coverage')
+        fetch('/api/wf/coverage')
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 if (!d) return;
@@ -546,7 +546,7 @@
             })
             .catch(function (e) { console.warn('coverage load failed:', e); });
 
-        fetch('/api/v1/wf/feedback?limit=500')
+        fetch('/api/wf/feedback?limit=500')
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 if (!d || !d.feedback || d.feedback.length === 0) {
@@ -571,7 +571,7 @@
         var tbody = document.getElementById('gates-body');
         tbody.innerHTML = '<tr><td colspan="6" class="wf-empty">Loading...</td></tr>';
 
-        fetch('/api/v1/wf/instances?status=active')
+        fetch('/api/wf/instances?status=active')
             .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
             .then(function (d) {
                 allInstances = d.instances || [];
@@ -634,7 +634,7 @@
         flashHide();
 
         // Load full instance detail
-        fetch('/api/v1/wf/instances/' + instanceId)
+        fetch('/api/wf/instances/' + instanceId)
             .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
             .then(function (d) {
                 document.getElementById('panel-title').textContent =
@@ -722,7 +722,7 @@
 
     // ── Required docs ──────────────────────────────────────────────────
     function loadRequiredDocs(approvalId, stage) {
-        fetch('/api/v1/wf/approvals/' + approvalId + '/documents')
+        fetch('/api/wf/approvals/' + approvalId + '/documents')
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 var list = document.getElementById('doc-list');
@@ -750,7 +750,7 @@
 
     // ── Citations ──────────────────────────────────────────────────────
     function loadCitations(instanceId) {
-        fetch('/api/v1/wf/instances/' + instanceId + '/citations')
+        fetch('/api/wf/instances/' + instanceId + '/citations')
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 var el = document.getElementById('citations-list');
@@ -776,7 +776,7 @@
 
     // ── External steps ─────────────────────────────────────────────────
     function loadExternalSteps(instanceId) {
-        fetch('/api/v1/wf/external')
+        fetch('/api/wf/external')
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 var tbody = document.getElementById('ext-steps-body');
@@ -810,7 +810,7 @@
     }
 
     window.markStepDone = function (stepId) {
-        fetch('/api/v1/wf/external/' + stepId + '/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        fetch('/api/wf/external/' + stepId + '/complete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (d.completed) { loadExternalSteps(selectedInstanceId); }
@@ -863,7 +863,7 @@
         btn.textContent = 'Submitting...';
         flashHide();
 
-        var endpoint = '/api/v1/wf/instances/' + instanceId + '/' + (decision === 'kickback' ? 'kickback' : 'approve');
+        var endpoint = '/api/wf/instances/' + instanceId + '/' + (decision === 'kickback' ? 'kickback' : 'approve');
         var body = {
             decision: decision,
             rating: selectedRating || null,
@@ -892,7 +892,7 @@
     // ── Quick action buttons ───────────────────────────────────────────
     window.quickApprove = function (instanceId) {
         if (!confirm('Approve instance ' + instanceId.substring(0, 8) + '?')) return;
-        fetch('/api/v1/wf/instances/' + instanceId + '/approve', {
+        fetch('/api/wf/instances/' + instanceId + '/approve', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ decision: 'approve' })
         })
@@ -908,7 +908,7 @@
         var reason = prompt('Kickback reason:');
         if (reason === null) return;
         if (!reason.trim()) { alert('Reason is required.'); return; }
-        fetch('/api/v1/wf/instances/' + instanceId + '/kickback', {
+        fetch('/api/wf/instances/' + instanceId + '/kickback', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ kickback_reason: reason })
         })
@@ -924,7 +924,7 @@
     window.openDocModal = function (approvalId, docTemplateId) {
         var json = prompt('Enter submission JSON (or leave blank for empty):') || '{}';
         var body = { doc_template_id: docTemplateId, submission_json: json };
-        fetch('/api/v1/wf/approvals/' + approvalId + '/documents', {
+        fetch('/api/wf/approvals/' + approvalId + '/documents', {
             method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
         })
             .then(function (r) { return r.json(); })
@@ -986,7 +986,7 @@
         var reportType = document.getElementById('report-type-select').value;
         var statusEl = document.getElementById('report-gen-status');
         statusEl.textContent = '⏳ Generating ' + reportType.replace(/_/g,' ') + ' report…';
-        fetch('/api/v1/wf/instances/' + selectedInstanceId + '/generate-report', {
+        fetch('/api/wf/instances/' + selectedInstanceId + '/generate-report', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({report_type: reportType})
@@ -1007,7 +1007,7 @@
     };
 
     function loadReportList(instanceId) {
-        fetch('/api/v1/wf/reports?instance_id=' + instanceId)
+        fetch('/api/wf/reports?instance_id=' + instanceId)
             .then(function(r){ return r.ok ? r.json() : null; })
             .then(function(d) {
                 var el = document.getElementById('report-list');
@@ -1019,7 +1019,7 @@
                 el.innerHTML = d.reports.slice(0,5).map(function(r) {
                     var sc = statusColors[r.status] || '#8b949e';
                     var viewLink = r.status === 'completed'
-                        ? ' <a href="/api/v1/wf/reports/' + r.id + '?format=html" target="_blank" style="color:#58a6ff;font-size:10px;text-decoration:none;">View ↗</a>'
+                        ? ' <a href="/api/wf/reports/' + r.id + '?format=html" target="_blank" style="color:#58a6ff;font-size:10px;text-decoration:none;">View ↗</a>'
                         : '';
                     return '<div style="padding:6px 0;border-bottom:1px solid #21262d;font-size:11px;">' +
                         '<span style="color:' + sc + ';margin-right:6px;">●</span>' +

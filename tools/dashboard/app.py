@@ -1312,6 +1312,18 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
 
+    # ---- HITL Workflow Blueprint ----
+    try:
+        from tools.workflow_hitl.blueprint import create_wf_blueprint
+        _wf_bp = create_wf_blueprint()
+        # Mount at /api/wf (legacy session-cookie path) so dashboard Jinja pages
+        # can call it without a JWT Bearer token — same pattern as all other
+        # dashboard-internal blueprints.
+        app.register_blueprint(_wf_bp, url_prefix="/api/wf")
+        app.logger.info("HITL Workflow blueprint registered at /api/wf")
+    except Exception as _exc:
+        app.logger.warning("HITL Workflow blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 

@@ -5,6 +5,7 @@
       "args": [
         "tools/mcp/unified_server.py"
       ],
+      "cwd": "C:/Users/schuo/Downloads/ICDev",
       "env": {
         "ICDEV_DB_PATH": "data/icdev.db",
         "ICDEV_PROJECT_ROOT": "."
