@@ -1,0 +1,65 @@
+# FathomDesk — Ticker Universe
+#
+# Canonical source for all tickers tracked by the FathomDesk KG and scanner.
+# Add new tickers here; the KG coverage report reads this file to compute coverage.
+#
+# Schema per entry:
+#   symbol    — ticker as used by the data provider (e.g. yfinance, OpenBB)
+#   name      — human-readable company name
+#   exchange  — exchange code (TSX, TSE, HKEX, NYSE, NASDAQ, etc.)
+#   currency  — ISO 4217 trading currency
+#   timezone  — IANA timezone for market hours
+#   sector    — GICS sector label (optional, aids sector-rotation KG edges)
+
+international_tickers:
+
+  tsx:
+    exchange: TSX
+    currency: CAD
+    timezone: America/Toronto
+    tickers:
+      - symbol: CNC.TO
+        name: Canfor Corporation
+        sector: Materials
+
+      - symbol: SU.TO
+        name: Suncor Energy Inc.
+        sector: Energy
+
+      - symbol: RY.TO
+        name: Royal Bank of Canada
+        sector: Financials
+
+  tokyo:
+    exchange: TSE
+    currency: JPY
+    timezone: Asia/Tokyo
+    tickers:
+      - symbol: 7203.T
+        name: Toyota Motor Corporation
+        sector: Consumer Discretionary
+
+      - symbol: 6758.T
+        name: Sony Group Corporation
+        sector: Communication Services
+
+      - symbol: 9984.T
+        name: SoftBank Group Corp.
+        sector: Communication Services
+
+  hong_kong:
+    exchange: HKEX
+    currency: HKD
+    timezone: Asia/Hong_Kong
+    tickers:
+      - symbol: 0700.HK
+        name: Tencent Holdings Limited
+        sector: Communication Services
+
+      - symbol: 9988.HK
+        name: Alibaba Group Holding Limited
+        sector: Consumer Discretionary
+
+      - symbol: 0005.HK
+        name: HSBC Holdings plc
+        sector: Financials
