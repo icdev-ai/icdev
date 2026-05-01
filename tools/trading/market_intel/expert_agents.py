@@ -107,8 +107,10 @@ def _ensure_tables() -> None:
             conn.execute("ALTER TABLE ad_risk_profiles ADD COLUMN IF NOT EXISTS max_daily_orders INTEGER DEFAULT 10")
             conn.commit()
         except Exception:
-            try: conn.rollback()
-            except Exception: pass
+            try:
+                conn.rollback()
+            except Exception:  # noqa: BLE001
+                pass
         # Seed default profiles if the table is empty
         existing = conn.execute("SELECT COUNT(*) FROM ad_risk_profiles").fetchone()
         if (existing[0] if existing else 0) == 0:
@@ -270,9 +272,12 @@ def _fetch_geopolitical_danger() -> dict:
 # =========================================================================
 
 def _dir_from_score(score: float) -> str:
-    if score >= 65: return "BUY"
-    if score >= 55: return "HOLD"
-    if score <= 35: return "SELL"
+    if score >= 65:
+        return "BUY"
+    if score >= 55:
+        return "HOLD"
+    if score <= 35:
+        return "SELL"
     return "HOLD"
 
 
@@ -329,8 +334,10 @@ def _score_sentiment(ticker: str, sig: dict | None, run: dict | None, macro: dic
     else:
         score = float(raw) if raw is not None else comps.get("sentiment", 50)
     # Howard's contrarian twist: extreme consensus direction gets inverted
-    if score > 80: score = 40 + (score - 80) * 0.5  # froth → fade
-    elif score < 20: score = 60 - (20 - score) * 0.5  # despair → bid
+    if score > 80:
+        score = 40 + (score - 80) * 0.5  # froth → fade
+    elif score < 20:
+        score = 60 - (20 - score) * 0.5  # despair → bid
 
     # News-driven supply-chain impact nudge. Howard's contrarian streak still
     # applies: if news impact is strongly positive but sentiment is already
@@ -343,8 +350,10 @@ def _score_sentiment(ticker: str, sig: dict | None, run: dict | None, macro: dic
     if abs(ni) >= 1.0:
         base_nudge = max(-10.0, min(10.0, ni * 3.0))
         # Contrarian inversion when at extremes
-        if score > 70 and base_nudge > 0: base_nudge *= -0.5
-        elif score < 30 and base_nudge < 0: base_nudge *= -0.5
+        if score > 70 and base_nudge > 0:
+            base_nudge *= -0.5
+        elif score < 30 and base_nudge < 0:
+            base_nudge *= -0.5
         news_nudge = base_nudge
         news_note = (f" News nudge {base_nudge:+.1f} "
                      f"(Σ={ni:+.2f} across {news.get('trace_count', 0)} traces).")
@@ -396,10 +405,14 @@ def _score_macro(ticker: str, sig: dict | None, run: dict | None, macro: dict) -
 
     score = max(0, min(100, score))
     notes = []
-    if sf_flags: notes.append(f"Stagflation {sf_flags}/4")
-    if df_flags: notes.append(f"Deflation {df_flags}/4")
-    if geo_danger >= 30: notes.append(f"Geo-news danger {geo_danger}/100")
-    if abs(ni) >= 1.0: notes.append(f"news impact {ni:+.2f}")
+    if sf_flags:
+        notes.append(f"Stagflation {sf_flags}/4")
+    if df_flags:
+        notes.append(f"Deflation {df_flags}/4")
+    if geo_danger >= 30:
+        notes.append(f"Geo-news danger {geo_danger}/100")
+    if abs(ni) >= 1.0:
+        notes.append(f"news impact {ni:+.2f}")
     return {
         "direction": _dir_from_score(score),
         "conviction": _conviction(score),
