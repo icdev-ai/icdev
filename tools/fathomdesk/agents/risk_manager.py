@@ -29,6 +29,13 @@ import yaml
 
 from tools.db.storage import get_connection
 from tools.fathomdesk.constants import STRATEGY_TYPES
+from tools.fathomdesk.decision_memory import (
+    compute_return_from_ohlcv,
+    get_past_context,
+    get_pending,
+    store_decision,
+    update_with_return,
+)
 from tools.fathomdesk.signal_generator import load_thresholds
 
 if TYPE_CHECKING:
@@ -218,6 +225,23 @@ class RiskManager:
     # Public entry point
     # ------------------------------------------------------------------
 
+    def _resolve_pending_decisions(self) -> None:
+        """Resolve any pending same-ticker decisions from prior runs (fail-open).
+
+        For each pending entry, fetches OHLCV to compute the holding-period
+        return since the decision date, then persists the outcome + LLM
+        reflection via update_with_return().
+        """
+        try:
+            pending = get_pending(self.ticker)
+            for entry in pending:
+                raw, alpha = compute_return_from_ohlcv(
+                    self.ticker, entry["date"], self.as_of_date
+                )
+                update_with_return(self.ticker, entry["date"], raw, alpha)
+        except Exception as exc:
+            logger.debug("RiskManager: pending resolution failed: %s", exc)
+
     def arbitrate(self, debate_result: "DebateResult") -> dict[str, Any]:
         """Apply all risk gates and return the final recommendation.
 
@@ -230,10 +254,19 @@ class RiskManager:
         Returns:
             ``{"direction", "confidence", "size_modifier", "reasoning"}``
         """
+        # Resolve outcomes for prior same-ticker decisions before gating
+        self._resolve_pending_decisions()
+
         direction: str = debate_result.verdict      # "BUY" | "SELL" | "HOLD"
         confidence: float = debate_result.confidence
         size_modifier: float = 0.0 if direction == "HOLD" else 1.0
         reasons: list[str] = []
+
+        # Inject past decision context into reasoning for downstream PM visibility
+        past_ctx = get_past_context(self.ticker)
+        if past_ctx:
+            reasons.append(past_ctx)
+
         if debate_result.reasoning:
             reasons.append(debate_result.reasoning)
 
@@ -283,6 +316,10 @@ class RiskManager:
 
         rec = self._rec(direction, confidence, size_modifier, reasons)
         _write_decision_audit(self.ticker, self.as_of_date, debate_result, rec)
+        try:
+            store_decision(self.ticker, self.as_of_date, rec)
+        except Exception as exc:
+            logger.debug("RiskManager: decision_memory store failed: %s", exc)
         return rec
 
     # ------------------------------------------------------------------
