@@ -2525,6 +2525,36 @@ def strategos_api_map_supply():
 
 
 # ---------------------------------------------------------------------------
+# GEOINT EO scenes API
+# ---------------------------------------------------------------------------
+
+
+@_api.route("/geoint/scenes", methods=["GET"])
+def strategos_api_geoint_scenes():
+    aoi  = request.args.get("aoi")
+    status_filter = request.args.get("status")
+    limit = min(int(request.args.get("limit", 200)), 500)
+    ph = "%s" if is_pg() else "?"
+    clauses = ["bbox_wkt IS NOT NULL"]
+    params: list = []
+    if aoi:
+        clauses.append(f"aoi_tag = {ph}")
+        params.append(aoi)
+    if status_filter:
+        clauses.append(f"status = {ph}")
+        params.append(status_filter)
+    where = "WHERE " + " AND ".join(clauses)
+    params.append(limit)
+    rows = _safe_fetch(
+        f"SELECT id, scene_id, satellite, bbox_wkt, cloud_pct, sensing_date, "  # nosec B608
+        f"thumbnail_url, relevance_score, aoi_tag, status "
+        f"FROM sg_eo_signals {where} ORDER BY sensing_date DESC, relevance_score DESC LIMIT {ph}",
+        params,
+    )
+    return jsonify({"scenes": rows, "total": len(rows)})
+
+
+# ---------------------------------------------------------------------------
 # OpenCTI indicators API
 # ---------------------------------------------------------------------------
 

@@ -324,6 +324,11 @@
         <span class="layer-dot" style="background: var(--sg-cyan)"></span>
         Supply Nodes
       </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-satellite">
+        <span class="layer-dot" style="background: #a3e635; border-radius: 2px;"></span>
+        Satellite
+      </label>
     </div>
 
     <button id="sg-refresh-btn">&#8635; Refresh</button>
@@ -352,11 +357,12 @@
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const STATUS     = document.getElementById('sg-map-status');
 const TIP        = document.getElementById('sg-map-tooltip');
-const TOGGLE_ORBAT  = document.getElementById('toggle-orbat');
-const TOGGLE_GHOST  = document.getElementById('toggle-ghost');
-const TOGGLE_EVENTS = document.getElementById('toggle-events');
-const TOGGLE_SUPPLY = document.getElementById('toggle-supply');
-const REFRESH_BTN   = document.getElementById('sg-refresh-btn');
+const TOGGLE_ORBAT     = document.getElementById('toggle-orbat');
+const TOGGLE_GHOST     = document.getElementById('toggle-ghost');
+const TOGGLE_EVENTS    = document.getElementById('toggle-events');
+const TOGGLE_SUPPLY    = document.getElementById('toggle-supply');
+const TOGGLE_SATELLITE = document.getElementById('toggle-satellite');
+const REFRESH_BTN      = document.getElementById('sg-refresh-btn');
 
 // ── Tooltip helpers ───────────────────────────────────────────────────────────
 function tipShow(html, evt) {
@@ -406,10 +412,11 @@ function eventColor(eventType) {
 // ── Leaflet map ───────────────────────────────────────────────────────────────
 let map;
 const layers = {
-  orbat:  L.layerGroup(),
-  ghost:  L.layerGroup(),
-  events: L.layerGroup(),
-  supply: L.layerGroup(),
+  orbat:     L.layerGroup(),
+  ghost:     L.layerGroup(),
+  events:    L.layerGroup(),
+  supply:    L.layerGroup(),
+  satellite: L.layerGroup(),
 };
 
 function initMap() {
@@ -426,8 +433,8 @@ function initMap() {
     maxZoom: 19,
   }).addTo(map);
 
-  // Add all layers to map
-  Object.values(layers).forEach(function (lg) { lg.addTo(map); });
+  // Add all layers except satellite (off by default for performance)
+  ['orbat', 'ghost', 'events', 'supply'].forEach(function (k) { layers[k].addTo(map); });
 
   // Legend (bottom-right, above attribution)
   const legendCtrl = L.control({ position: 'bottomright' });
@@ -450,7 +457,9 @@ function initMap() {
       '<div class="leg-row"><span class="leg-dot" style="background:#6b7280"></span>Other Event</div>' +
 
       '<div class="leg-section-title">Supply Nodes</div>' +
-      '<div class="leg-row"><span class="leg-square" style="background:#22d3ee"></span>Supply Node (Cyan)</div>';
+      '<div class="leg-row"><span class="leg-square" style="background:#22d3ee"></span>Supply Node (Cyan)</div>' +
+      '<div class="leg-section-title">Satellite (EO)</div>' +
+      '<div class="leg-row"><span class="leg-square" style="background:#a3e635;border-radius:2px;transform:none"></span>EO Scene Footprint</div>';
     return div;
   };
   legendCtrl.addTo(map);
@@ -471,6 +480,23 @@ applyToggle(TOGGLE_ORBAT,  'orbat');
 applyToggle(TOGGLE_GHOST,  'ghost');
 applyToggle(TOGGLE_EVENTS, 'events');
 applyToggle(TOGGLE_SUPPLY, 'supply');
+
+// Satellite toggle uses lazy loading — fetch only on first enable
+var _satelliteLoaded = false;
+TOGGLE_SATELLITE.addEventListener('change', function () {
+  if (this.checked) {
+    layers.satellite.addTo(map);
+    if (!_satelliteLoaded) {
+      _satelliteLoaded = true;
+      fetch('/api/strategos/geoint/scenes')
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { scenes: [] }; })
+        .then(function (data) { renderSatellite(data.scenes || []); });
+    }
+  } else {
+    map.removeLayer(layers.satellite);
+  }
+});
 
 // ── ORBAT layer ───────────────────────────────────────────────────────────────
 function renderOrbat(units) {
@@ -613,6 +639,52 @@ function renderSupply(nodes) {
     });
     marker.on('mousemove', function (e) { tipMove(e.originalEvent); });
     marker.on('mouseout', tipHide);
+  });
+}
+
+// ── Satellite (EO) layer ──────────────────────────────────────────────────────
+function parseBboxWkt(wkt) {
+  if (!wkt) return null;
+  const m = wkt.match(/POLYGON\s*\(\(([^)]+)\)\)/i);
+  if (!m) return null;
+  return m[1].split(',').map(function (pair) {
+    const p = pair.trim().split(/\s+/);
+    // WKT stores lon lat; Leaflet needs [lat, lon]
+    return [parseFloat(p[1]), parseFloat(p[0])];
+  });
+}
+
+function renderSatellite(scenes) {
+  layers.satellite.clearLayers();
+  if (!Array.isArray(scenes) || !scenes.length) return;
+
+  scenes.forEach(function (sc) {
+    const coords = parseBboxWkt(sc.bbox_wkt);
+    if (!coords || coords.length < 3) return;
+
+    const poly = L.polygon(coords, {
+      color: '#a3e635',
+      fillColor: '#a3e635',
+      fillOpacity: 0.12,
+      weight: 1.5,
+      dashArray: '5 4',
+    }).addTo(layers.satellite);
+
+    poly.on('mouseover', function (e) {
+      const score = sc.relevance_score != null ? (sc.relevance_score * 100).toFixed(0) + '%' : '—';
+      const cloud = sc.cloud_pct != null ? sc.cloud_pct.toFixed(1) + '%' : '—';
+      tipShow(
+        '<b style="color:#a3e635">' + (sc.scene_id || sc.id || 'EO Scene') + '</b><br>' +
+        '<span class="tip-label">Satellite:</span> ' + (sc.satellite || '—') + '<br>' +
+        '<span class="tip-label">Date:</span> ' + (sc.sensing_date || '—') + '<br>' +
+        '<span class="tip-label">Cloud cover:</span> ' + cloud + '<br>' +
+        '<span class="tip-label">Relevance:</span> ' + score + '<br>' +
+        '<span class="tip-label">AOI:</span> ' + (sc.aoi_tag || '—'),
+        e.originalEvent
+      );
+    });
+    poly.on('mousemove', function (e) { tipMove(e.originalEvent); });
+    poly.on('mouseout', tipHide);
   });
 }
 
