@@ -1727,6 +1727,25 @@ CREATE TABLE IF NOT EXISTS ad_decision_audit (
 CREATE INDEX IF NOT EXISTS idx_ad_decision_audit_ticker ON ad_decision_audit(ticker);
 CREATE INDEX IF NOT EXISTS idx_ad_decision_audit_date   ON ad_decision_audit(as_of_date);
 CREATE INDEX IF NOT EXISTS idx_ad_decision_audit_dir    ON ad_decision_audit(final_direction);
+
+-- FathomDesk backtest result store (migration 057, NIST AU — append-only)
+CREATE TABLE IF NOT EXISTS ad_backtest_runs (
+    id                TEXT PRIMARY KEY,
+    ticker            TEXT NOT NULL,
+    strategy_id       TEXT NOT NULL,
+    backtest_start    TEXT NOT NULL,
+    backtest_end      TEXT NOT NULL,
+    sharpe_ratio      REAL,
+    calmar_ratio      REAL,
+    max_drawdown_pct  REAL,
+    win_rate          REAL,
+    trade_count       INT,
+    triggered_by      TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_ticker      ON ad_backtest_runs(ticker);
+CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_strategy    ON ad_backtest_runs(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_created_at  ON ad_backtest_runs(created_at);
 """
 
 # ---------------------------------------------------------------------------
