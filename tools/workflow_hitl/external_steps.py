@@ -161,7 +161,7 @@ def check_all_pending() -> int:
     for step in steps:
         # Check timeout
         try:
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime, timezone
             created = datetime.fromisoformat(step["created_at"].replace("Z", "+00:00"))
             age_hours = (datetime.now(timezone.utc) - created).total_seconds() / 3600
             if age_hours > max_wait_hours:

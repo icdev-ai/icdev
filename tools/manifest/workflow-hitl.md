@@ -26,7 +26,11 @@ per-stage document conformance, AI citation/sourcing, and external step integrat
 | `tools/workflow_hitl/external_steps.py` | External step lifecycle: `create()`, `send()`, `mark_complete()`, `check_all_pending()`, `verify_webhook_token()` |
 | `tools/workflow_hitl/canvas_hooks.py` | `CANVAS_DEFAULT_TEMPLATES`; `auto_create_instance_if_assigned()` |
 | `tools/workflow_hitl/childapp_hooks.py` | `get_inherited_template(canvas_type, childapp_key)` — child app inherits parent canvas default |
-| `tools/workflow_hitl/blueprint.py` | Flask blueprint factory `create_wf_blueprint()`; 34 routes at `/api/v1/wf/` |
+| `tools/workflow_hitl/blueprint.py` | Flask blueprint factory `create_wf_blueprint()`; 42 routes at `/api/v1/wf/` |
+| `tools/workflow_hitl/report_schema.py` | `ReportSection` dataclass; `get_sections(report_type)`, `list_report_types()`, `create_custom_report_type()` |
+| `tools/workflow_hitl/document_ingestion.py` | `ingest_file()` (PDF/DOCX/HTML/MD/TXT → rag_chunks); SHA-256 dedup; `get_ingested_files()`, `delete_ingested_file()` |
+| `tools/workflow_hitl/section_router.py` | `SectionRouter.route()` — per-section RAG/text-search; greedy cross-section deduplication; `RoutedChunk`, `SectionRouteResult` |
+| `tools/workflow_hitl/report_generator.py` | `generate_report()` — LLM synthesis + no-LLM fallback; Jinja2 HTML render; citation auto-population; `get_report()`, `list_reports()` |
 
 ### External Step Adapters
 
@@ -42,6 +46,21 @@ per-stage document conformance, AI citation/sourcing, and external step integrat
 | `tools/workflow_hitl/adapters/strategies/github.py` | GitHub Issues REST API |
 | `tools/workflow_hitl/adapters/strategies/confluence.py` | Confluence REST API v2 |
 | `tools/workflow_hitl/adapters/strategies/sharepoint.py` | SharePoint via MS Graph OAuth2 |
+
+---
+
+## Database Tables (Migration 080 — Report Ingestion)
+
+| Table | Purpose |
+|-------|---------|
+| `wf_ingested_files` | Tracks ingested documents (PDF/DOCX/HTML/MD/TXT) with status, hash, chunk counts |
+| `wf_report_section_defs` | Per-report-type section definitions (key, name, description, sort_order, chunk limits) |
+| `wf_generated_reports` | Generated report records (HTML + JSON content, word/section/citation counts) |
+| `wf_report_section_chunks` | Maps report sections to the rag_chunks used to generate them |
+
+**Seeded report types:** `standard_audit` (6 sections), `compliance_assessment` (5 sections), `security_review` (6 sections).
+
+**Report HTML templates** in `context/workflow_report_templates/`: `standard_audit.html`, `compliance_assessment.html`, `security_review.html`.
 
 ---
 
@@ -139,6 +158,16 @@ POST      /doc-submissions                     Submit filled checklist/form
 
 GET       /citations/<instance_id>             Citations for an instance
 POST      /citations                           Add citation
+
+POST      /doc-templates/<id>/ingest           Ingest file (PDF/DOCX/HTML/MD/TXT) → rag_chunks
+GET       /doc-templates/<id>/ingested-files   List ingested files for a template
+DELETE    /doc-templates/<id>/ingested-files/<ingest_id>  Remove ingested file + chunks
+
+GET       /report-types                        List all report types with section counts
+GET       /report-types/<type>/sections        Section definitions for a report type
+POST      /instances/<id>/generate-report      Generate report (async 202, polls GET /reports/<id>)
+GET       /reports                             List reports (?instance_id= filter)
+GET       /reports/<id>                        Get report (?format=html for raw HTML)
 ```
 
 ---
@@ -146,11 +175,15 @@ POST      /citations                           Add citation
 ## CLI
 
 ```bash
-# Run migration 079
+# Run migrations 079+080
 python tools/db/migrate.py --up
 
 # Seed system templates
 python -c "from tools.workflow_hitl.template_manager import seed_system_templates; seed_system_templates()"
+
+# Ingest a document via CLI
+# (use POST /api/v1/wf/doc-templates/<id>/ingest or call ingest_file() directly)
+python -c "from tools.workflow_hitl.document_ingestion import ingest_file; print(ingest_file('dt-001', 'path/to/sop.pdf', ingested_by='user'))"
 
 # Coherence check
 python tools/workflow/coherence_checker.py --check hitl_workflow

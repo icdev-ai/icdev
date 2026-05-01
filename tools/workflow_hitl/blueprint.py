@@ -8,7 +8,7 @@ parent Flask app.
 """
 from __future__ import annotations
 
-import json
+import dataclasses
 import logging
 import os
 
@@ -21,8 +21,10 @@ from tools.workflow_hitl import (
     external_steps,
     document_manager,
     citation_manager,
+    document_ingestion,
 )
 from tools.workflow_hitl.engine import WorkflowEngine
+from tools.workflow_hitl import report_generator
 from tools.db.storage import get_connection
 
 logger = logging.getLogger(__name__)
@@ -838,6 +840,145 @@ def create_wf_blueprint() -> Blueprint:
             })
         except Exception as exc:
             logger.exception("coverage failed")
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Document Ingestion routes ─────────────────────────────────────────────
+
+    @bp.route("/doc-templates/<doc_template_id>/ingest", methods=["POST"])
+    def ingest_document_route(doc_template_id: str):
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            if "file" not in request.files:
+                return jsonify({"error": "No file provided"}), 400
+            f = request.files["file"]
+            if not f.filename:
+                return jsonify({"error": "Empty filename"}), 400
+            current_user = _get_current_user() or "anonymous"
+            import tempfile, pathlib
+            suffix = pathlib.Path(f.filename).suffix
+            with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+                f.save(tmp.name)
+                tmp_path = tmp.name
+            try:
+                ingest_id = document_ingestion.ingest_file(
+                    doc_template_id=doc_template_id,
+                    file_path=tmp_path,
+                    filename=f.filename,
+                    ingested_by=current_user,
+                )
+            finally:
+                pathlib.Path(tmp_path).unlink(missing_ok=True)
+            return jsonify({"ingest_id": ingest_id, "filename": f.filename}), 201
+        except FileNotFoundError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            logger.exception("ingest_document_route failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/doc-templates/<doc_template_id>/ingested-files", methods=["GET"])
+    def list_ingested_files_route(doc_template_id: str):
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            files = document_ingestion.get_ingested_files(doc_template_id)
+            return jsonify({"files": files, "count": len(files)})
+        except Exception as exc:
+            logger.exception("list_ingested_files failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/doc-templates/<doc_template_id>/ingested-files/<ingest_id>", methods=["DELETE"])
+    def delete_ingested_file_route(doc_template_id: str, ingest_id: str):
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            ok = document_ingestion.delete_ingested_file(ingest_id)
+            if not ok:
+                return jsonify({"error": "Not found"}), 404
+            return jsonify({"deleted": True})
+        except Exception as exc:
+            logger.exception("delete_ingested_file failed")
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Report Generation routes ──────────────────────────────────────────────
+
+    @bp.route("/report-types", methods=["GET"])
+    def list_report_types_route():
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            from tools.workflow_hitl.report_schema import list_report_types
+            types = list_report_types()
+            return jsonify({"report_types": types})
+        except Exception as exc:
+            logger.exception("list_report_types failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/report-types/<report_type>/sections", methods=["GET"])
+    def get_report_sections_route(report_type: str):
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            from tools.workflow_hitl.report_schema import get_sections
+            sections = get_sections(report_type)
+            return jsonify({"sections": [dataclasses.asdict(s) for s in sections]})
+        except Exception as exc:
+            logger.exception("get_report_sections failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/instances/<instance_id>/generate-report", methods=["POST"])
+    def generate_report_route(instance_id: str):
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        current_user = _get_current_user()
+        if not current_user:
+            return jsonify({"error": "Unauthorized"}), 401
+        try:
+            data = request.get_json(silent=True) or {}
+            report_type = data.get("report_type", "standard_audit")
+            style_guide_id = data.get("style_guide_id")
+            report_id = report_generator.generate_report(
+                instance_id=instance_id,
+                report_type=report_type,
+                style_guide_id=style_guide_id,
+                generated_by=current_user,
+            )
+            return jsonify({"report_id": report_id}), 202
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            logger.exception("generate_report_route failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/reports", methods=["GET"])
+    def list_reports_route():
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            instance_id = request.args.get("instance_id")
+            reports = report_generator.list_reports(instance_id=instance_id)
+            return jsonify({"reports": reports, "count": len(reports)})
+        except Exception as exc:
+            logger.exception("list_reports failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/reports/<report_id>", methods=["GET"])
+    def get_report_route(report_id: str):
+        if not _hitl_enabled():
+            return jsonify({"error": "HITL not enabled"}), 503
+        try:
+            report = report_generator.get_report(report_id)
+            if not report:
+                return jsonify({"error": "Report not found"}), 404
+            fmt = request.args.get("format", "json")
+            if fmt == "html" and report.get("content_html"):
+                from flask import Response
+                return Response(report["content_html"], mimetype="text/html")
+            return jsonify(report)
+        except Exception as exc:
+            logger.exception("get_report failed")
             return jsonify({"error": str(exc)}), 500
 
     return bp
