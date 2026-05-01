@@ -7,6 +7,7 @@ BacktestSession.run() — bar-by-bar replay with FIFO lot accounting.
 """
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,71 @@ from typing import Any
 BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+
+# ---------------------------------------------------------------------------
+# Config helpers
+# ---------------------------------------------------------------------------
+
+def _load_risk_free_rate() -> float:
+    """Load annual risk-free rate from fathomdesk_config.yaml; default 0.04."""
+    try:
+        import yaml
+        config_path = BASE_DIR / "args" / "fathomdesk_config.yaml"
+        with open(config_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return float(cfg.get("risk_free_rate", 0.04))
+    except Exception:
+        return 0.04
+
+
+def _compute_backtest_metrics(
+    equity_curve: list[float],
+    base_capital: float,
+    risk_free_rate: float,
+) -> tuple[float, float, float]:
+    """Return (sharpe_ratio, calmar_ratio, max_drawdown_pct).
+
+    equity_curve: per-bar cumulative realized + unrealized P&L.
+    base_capital: normalisation denominator (first bar close × qty_per_trade).
+    risk_free_rate: annual rate, e.g. 0.04 for 4%.
+    """
+    n = len(equity_curve)
+    if n < 2 or base_capital <= 0:
+        return 0.0, 0.0, 0.0
+
+    # Fractional daily returns relative to initial capital
+    daily_returns = [
+        (equity_curve[i] - equity_curve[i - 1]) / base_capital
+        for i in range(1, n)
+    ]
+
+    nr = len(daily_returns)
+    mean_r = sum(daily_returns) / nr
+    variance = sum((r - mean_r) ** 2 for r in daily_returns) / nr
+    std_r = math.sqrt(variance) if variance > 0 else 0.0
+
+    # Annualized Sharpe (252 trading days)
+    daily_rf = risk_free_rate / 252.0
+    sharpe = (mean_r - daily_rf) / std_r * math.sqrt(252.0) if std_r > 0 else 0.0
+
+    # Max drawdown: peak-to-trough on equity curve, expressed as % of peak
+    peak = equity_curve[0]
+    max_dd_pct = 0.0
+    for v in equity_curve:
+        if v > peak:
+            peak = v
+        if peak > 0:
+            dd = (peak - v) / peak * 100.0
+            if dd > max_dd_pct:
+                max_dd_pct = dd
+
+    # Calmar: annualized return (decimal) / max drawdown (decimal)
+    total_return = (equity_curve[-1] - equity_curve[0]) / base_capital
+    ann_return = total_return * (252.0 / n)
+    calmar = ann_return / (max_dd_pct / 100.0) if max_dd_pct > 0 else 0.0
+
+    return round(sharpe, 4), round(calmar, 4), round(max_dd_pct, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +199,8 @@ class BacktestSession:
         lots: list[_Lot] = []
         trades: list[dict[str, Any]] = []
         closes = [b["close"] for b in bars]
+        cum_realized_pnl = 0.0
+        equity_curve: list[float] = []
 
         for i, bar in enumerate(bars):
             date = bar["date"][:10]
@@ -148,6 +216,7 @@ class BacktestSession:
             elif direction == "short" and lots:
                 pnl, closed_qty = _close_fifo(lots, qty_per_trade, close)
                 if closed_qty > 0.0:
+                    cum_realized_pnl += pnl
                     trades.append(
                         {
                             "date": date,
@@ -159,11 +228,20 @@ class BacktestSession:
                         }
                     )
 
-        realized_pnl = round(sum(t["realized_pnl"] for t in trades), 6)
+            unrealized = sum((close - l.cost_basis) * l.qty for l in lots)
+            equity_curve.append(cum_realized_pnl + unrealized)
+
+        realized_pnl = round(cum_realized_pnl, 6)
         open_lots_out = [
             {"qty": l.qty, "cost_basis": l.cost_basis, "opened_at": l.opened_at}
             for l in lots
         ]
+
+        base_capital = max(bars[0]["close"] * qty_per_trade, 1e-9)
+        risk_free_rate = _load_risk_free_rate()
+        sharpe, calmar, max_dd_pct = _compute_backtest_metrics(
+            equity_curve, base_capital, risk_free_rate
+        )
 
         return {
             "ticker": ticker,
@@ -174,6 +252,9 @@ class BacktestSession:
             "realized_pnl": realized_pnl,
             "trade_count": len(trades),
             "open_lots": open_lots_out,
+            "sharpe_ratio": sharpe,
+            "calmar_ratio": calmar,
+            "max_drawdown_pct": max_dd_pct,
         }
 
     def _empty_result(
@@ -188,6 +269,9 @@ class BacktestSession:
             "realized_pnl": 0.0,
             "trade_count": 0,
             "open_lots": [],
+            "sharpe_ratio": 0.0,
+            "calmar_ratio": 0.0,
+            "max_drawdown_pct": 0.0,
         }
 
 
