@@ -12,6 +12,7 @@ const StudioWF = (() => {
   let connectState = null; // {fromId, fromPort}
   let zoom = 1;
   let nextNodeY = 60;
+  let _nodeSeq = 0;
   const GRID = 24;
 
   // ── DOM refs ──
@@ -156,7 +157,7 @@ const StudioWF = (() => {
 
   // ── Node Management ──
   function addNode(toolData, x, y) {
-    const id = 'node-' + Date.now().toString(36);
+    const id = 'node-' + Date.now().toString(36) + '-' + (++_nodeSeq).toString(36);
     const node = {
       id,
       toolId: toolData.toolId,

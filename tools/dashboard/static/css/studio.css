@@ -1242,11 +1242,11 @@
 .wf-canvas {
   position: relative;
   overflow: auto;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(99,102,241,0.03) 0%, transparent 70%),
-    linear-gradient(var(--studio-border-subtle) 1px, transparent 1px),
-    linear-gradient(90deg, var(--studio-border-subtle) 1px, transparent 1px);
-  background-size: 100% 100%, 24px 24px, 24px 24px;
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(rgba(0,0,0,0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,0.07) 1px, transparent 1px);
+  background-size: 24px 24px;
   cursor: crosshair;
 }
 
