@@ -1,13 +1,199 @@
 # CUI // SP-CTI
-"""FathomDesk backtester — signal scoring (precision / recall / F1).
+"""FathomDesk backtester — signal scoring (precision / recall / F1) +
+event-driven OHLCV replay with FIFO position tracking and realized P&L.
 
-score(signals) treats 'long' as the positive class and uses p1y > 0
-as the ground-truth outcome to compute classification metrics.
+score(signals) — unchanged classification metrics helper.
+BacktestSession.run() — bar-by-bar replay with FIFO lot accounting.
 """
 from __future__ import annotations
 
+import sys
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
+BASE_DIR = Path(__file__).resolve().parents[2]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+
+# ---------------------------------------------------------------------------
+# FIFO lot helpers
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _Lot:
+    qty: float
+    cost_basis: float  # per-unit entry price
+    opened_at: str     # ISO date string
+
+
+def _close_fifo(
+    lots: list[_Lot],
+    qty: float,
+    exit_price: float,
+) -> tuple[float, float]:
+    """Consume lots FIFO; return (realized_pnl, qty_actually_closed)."""
+    remaining = qty
+    pnl = 0.0
+    while remaining > 0.0 and lots:
+        lot = lots[0]
+        take = min(lot.qty, remaining)
+        pnl += take * (exit_price - lot.cost_basis)
+        lot.qty -= take
+        remaining -= take
+        if lot.qty == 0.0:
+            lots.pop(0)
+    return round(pnl, 6), qty - remaining
+
+
+def _sma_signal(closes: list[float], i: int, period: int = 20) -> str | None:
+    """Return 'long' on golden cross, 'short' on death cross, else None.
+
+    Golden cross: close moves from below SMA to at-or-above.
+    Death cross:  close moves from at-or-above SMA to below.
+    Requires at least period+1 bars of history.
+    """
+    if i < period:
+        return None
+    sma_now = sum(closes[i - period : i]) / period
+    if i == period:
+        return None  # no prior SMA to compare
+    sma_prev = sum(closes[i - period - 1 : i - 1]) / period
+    prev_close = closes[i - 1]
+    curr_close = closes[i]
+    if prev_close < sma_prev and curr_close >= sma_now:
+        return "long"
+    if prev_close >= sma_prev and curr_close < sma_now:
+        return "short"
+    return None
+
+
+# ---------------------------------------------------------------------------
+# BacktestSession
+# ---------------------------------------------------------------------------
+
+class BacktestSession:
+    """Event-driven OHLCV replay with FIFO position tracking and realized P&L.
+
+    Usage::
+
+        session = BacktestSession()
+        result = session.run("AAPL", "covered_call", "2023-01-01", "2023-12-31")
+        print(result["realized_pnl"])
+    """
+
+    def __init__(self) -> None:
+        from tools.fathomdesk.data_gateway import FathomDeskDataGateway
+        self._gw = FathomDeskDataGateway()
+
+    def run(
+        self,
+        ticker: str,
+        strategy_id: str,
+        start: str,
+        end: str,
+        signals: list[dict[str, Any]] | None = None,
+        qty_per_trade: float = 1.0,
+    ) -> dict[str, Any]:
+        """Replay OHLCV bars bar-by-bar and compute realized P&L.
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+            strategy_id: Strategy tag (metadata; see ``STRATEGY_TYPES``).
+            start: Window start date ``"YYYY-MM-DD"``.
+            end: Window end date ``"YYYY-MM-DD"`` (passed as ``as_of_date``).
+            signals: Optional pre-computed signal dicts.  Each must have
+                ``date`` (``"YYYY-MM-DD"``) and ``direction``
+                (``"long"``/``"short"``).  When omitted, an SMA-20 crossover
+                rule is applied bar-by-bar.
+            qty_per_trade: Units opened or closed per signal.
+
+        Returns:
+            Dict with keys: ``ticker``, ``strategy_id``, ``start``, ``end``,
+            ``trades``, ``realized_pnl``, ``trade_count``, ``open_lots``.
+            Each trade has ``date``, ``ticker``, ``direction``, ``qty``,
+            ``exit_price``, and ``realized_pnl``.
+        """
+        bars = self._gw.historical_bars(ticker, period="max", as_of_date=end)
+        bars = [b for b in bars if start <= b["date"][:10] <= end]
+        bars.sort(key=lambda b: b["date"])
+
+        if not bars:
+            return self._empty_result(ticker, strategy_id, start, end)
+
+        # Build date → direction lookup from caller-supplied signals
+        sig_by_date: dict[str, str] = {}
+        if signals:
+            for s in signals:
+                date = str(s.get("date") or s.get("signal_date") or "")[:10]
+                if date:
+                    sig_by_date[date] = str(s.get("direction", "long")).lower()
+
+        lots: list[_Lot] = []
+        trades: list[dict[str, Any]] = []
+        closes = [b["close"] for b in bars]
+
+        for i, bar in enumerate(bars):
+            date = bar["date"][:10]
+            close = bar["close"]
+
+            if signals is not None:
+                direction = sig_by_date.get(date)
+            else:
+                direction = _sma_signal(closes, i)
+
+            if direction == "long":
+                lots.append(_Lot(qty=qty_per_trade, cost_basis=close, opened_at=date))
+            elif direction == "short" and lots:
+                pnl, closed_qty = _close_fifo(lots, qty_per_trade, close)
+                if closed_qty > 0.0:
+                    trades.append(
+                        {
+                            "date": date,
+                            "ticker": ticker,
+                            "direction": "close_long",
+                            "qty": closed_qty,
+                            "exit_price": close,
+                            "realized_pnl": pnl,
+                        }
+                    )
+
+        realized_pnl = round(sum(t["realized_pnl"] for t in trades), 6)
+        open_lots_out = [
+            {"qty": l.qty, "cost_basis": l.cost_basis, "opened_at": l.opened_at}
+            for l in lots
+        ]
+
+        return {
+            "ticker": ticker,
+            "strategy_id": strategy_id,
+            "start": start,
+            "end": end,
+            "trades": trades,
+            "realized_pnl": realized_pnl,
+            "trade_count": len(trades),
+            "open_lots": open_lots_out,
+        }
+
+    def _empty_result(
+        self, ticker: str, strategy_id: str, start: str, end: str
+    ) -> dict[str, Any]:
+        return {
+            "ticker": ticker,
+            "strategy_id": strategy_id,
+            "start": start,
+            "end": end,
+            "trades": [],
+            "realized_pnl": 0.0,
+            "trade_count": 0,
+            "open_lots": [],
+        }
+
+
+# ---------------------------------------------------------------------------
+# Original signal-scoring helper — UNCHANGED
+# ---------------------------------------------------------------------------
 
 def score(signals: list[dict[str, Any]]) -> dict[str, float]:
     """Return precision, recall, and F1 for a list of directional signals.
