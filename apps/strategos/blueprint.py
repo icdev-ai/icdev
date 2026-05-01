@@ -1141,6 +1141,17 @@ def api_ew_data():
         return jsonify({"error": str(exc)}), 500
 
 
+@_api.route("/sigint/events", methods=["GET"])
+def api_sigint_events():
+    try:
+        rows = _safe_fetch(
+            "SELECT * FROM sg_sigint_events ORDER BY detected_at DESC LIMIT 200"
+        )
+        return jsonify(rows)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @_api.route("/pir", methods=["GET"])
 def api_pir_list():
     pir_type = request.args.get("type")
