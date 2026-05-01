@@ -202,7 +202,7 @@ models:
 
   qwen3-local:
     provider: ollama
-    model_id: "qwen3.5:latest"
+    model_id: "qwen3.5:9b"
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -622,11 +622,13 @@ two_tier:
     - child_app
     - saas_proxy
 
-  # Worker tier emptied — functions fall through to normal chain routing,
-  # which starts with claude-sonnet (Anthropic direct). No qwen3 draft step.
-  # Reason: qwen3.5 thinking-mode timeouts + Sonnet reliability preferred.
-  # To restore draft → review behavior, move functions back into this list.
-  worker_functions: []
+  # Worker tier: qwen3 drafts → Claude reviews/corrects (two-step build pattern).
+  # Restored 2026-04-30: thinking-mode timeouts resolved (think=False in provider;
+  # GPU now active on RTX 4060 Ti with qwen3.5:9b — ~53s latency acceptable).
+  worker_functions:
+    - code_generation        # qwen3 drafts code → Claude reviews for correctness
+    - bdd_preview            # qwen3 drafts BDD specs → Claude tightens acceptance criteria
+    - narrative_generation   # qwen3 drafts narrative → Claude refines voice/structure
 
   scanner_functions:
     - agent_monitor
@@ -637,12 +639,13 @@ two_tier:
     - pulse_draft          # Drafting uses gemma3 (no thinking mode issues)
     - pulse_rewrite        # Rewriting uses qwen3.5 (think:false via provider)
     - codebase_query       # Phase 69: codebase assistant widget (D-CA-5)
+    - wg_rewrite           # Claude override via function_model_overrides below
 
   # Per-function model overrides (scanner tier)
   # Override tier1_model for specific functions
   function_model_overrides:
     pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
-    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting
+    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
     pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
 
 # -----------------------------------------------------------------------
