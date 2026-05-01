@@ -14,6 +14,7 @@ Usage:
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -30,6 +31,7 @@ except ImportError:
 
 from tools.fathomdesk.openbb_gateway import gateway as _obb_singleton, OpenBBGateway  # noqa: E402
 from tools.fathomdesk.broker_adapter import BrokerAdapter  # noqa: E402
+from tools.fathomdesk.constants import RATE_LIMIT_RETRY_MAX  # noqa: E402
 
 _ALPACA_DATA_BASE = "https://data.alpaca.markets"
 _REQUEST_TIMEOUT = 10
@@ -346,3 +348,33 @@ class FathomDeskDataGateway:
         result.setdefault("iv_percentile", None)
         result["source"] = "chain_module"
         return result
+
+    def fetch_news(self, ticker: str) -> list[dict]:
+        """Return recent news articles for *ticker* via yfinance with retry/backoff.
+
+        Retries up to ``RATE_LIMIT_RETRY_MAX`` times on transient errors (e.g.
+        HTTP 429 rate-limit) using exponential backoff (2^attempt seconds).
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+
+        Returns:
+            List of news article dicts from yfinance; empty list when yfinance
+            is unavailable or all retry attempts are exhausted.
+        """
+        if _yfinance is None:
+            return []
+
+        sym = ticker.upper()
+        last_exc: Exception | None = None
+        for attempt in range(RATE_LIMIT_RETRY_MAX):
+            try:
+                t = _yfinance.Ticker(sym)
+                articles = t.news or []
+                return list(articles)
+            except Exception as exc:
+                last_exc = exc
+                if attempt < RATE_LIMIT_RETRY_MAX - 1:
+                    time.sleep(2 ** attempt)
+
+        return []
