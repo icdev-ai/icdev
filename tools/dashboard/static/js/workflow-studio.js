@@ -53,8 +53,12 @@ const StudioWF = (() => {
     const container = $('wf-palette-groups');
     let html = '';
     for (const [catId, cat] of Object.entries(catalog)) {
-      html += `<div class="wf-studio__palette-group" data-category="${catId}">`;
-      html += `<div class="wf-studio__palette-group-title">${cat.label}</div>`;
+      html += `<div class="wf-studio__palette-group wf-palette-group--collapsed" data-category="${catId}">`;
+      html += `<div class="wf-studio__palette-group-title" onclick="StudioWF.toggleGroup(this)">
+        <span>${cat.label}</span>
+        <span class="wf-group-chevron">&#9656;</span>
+      </div>`;
+      html += `<div class="wf-palette-group__items">`;
       for (const tool of cat.tools) {
         html += `
           <div class="wf-studio__tool-item"
@@ -71,9 +75,15 @@ const StudioWF = (() => {
             <span>${tool.name}</span>
           </div>`;
       }
+      html += `</div>`;
       html += '</div>';
     }
     container.innerHTML = html;
+  }
+
+  function toggleGroup(titleEl) {
+    const group = titleEl.closest('.wf-studio__palette-group');
+    group.classList.toggle('wf-palette-group--collapsed');
   }
 
   function renderPaletteFallback() {
@@ -106,10 +116,16 @@ const StudioWF = (() => {
       const desc = el.dataset.toolDesc.toLowerCase();
       el.style.display = (!q || name.includes(q) || desc.includes(q)) ? '' : 'none';
     });
-    // Hide empty groups
     document.querySelectorAll('.wf-studio__palette-group').forEach(group => {
-      const visible = group.querySelectorAll('.wf-studio__tool-item[style=""], .wf-studio__tool-item:not([style])');
-      group.style.display = visible.length ? '' : 'none';
+      const visible = group.querySelectorAll('.wf-studio__tool-item:not([style="display: none;"])');
+      const hasMatch = visible.length > 0;
+      group.style.display = hasMatch ? '' : 'none';
+      // Auto-expand when searching, collapse back when cleared
+      if (q && hasMatch) {
+        group.classList.remove('wf-palette-group--collapsed');
+      } else if (!q) {
+        group.classList.add('wf-palette-group--collapsed');
+      }
     });
   }
 
@@ -893,6 +909,6 @@ const StudioWF = (() => {
     switchTab, save, exportYAML, importYAML, doImportYAML,
     validate, createNew, loadTemplate, loadWorkflow, useTemplate,
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode,
-    zoomIn, zoomOut, fitView, undo, redo, togglePalette,
+    zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
   };
 })();
