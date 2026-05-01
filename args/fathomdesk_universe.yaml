@@ -63,3 +63,39 @@ international_tickers:
       - symbol: 0005.HK
         name: HSBC Holdings plc
         sector: Financials
+
+defi_protocols:
+  # DeFi protocol universe — config only, no Python changes required.
+  # Fields: protocol_id, chain, coingecko_id, defillama_pool_id, category, liquidity_risk
+
+  - protocol_id: aave-v3
+    name: Aave V3
+    chain: ethereum
+    coingecko_id: aave
+    defillama_pool_id: aave-v3-ethereum
+    category: lending
+    liquidity_risk: high
+
+  - protocol_id: compound-v3
+    name: Compound V3
+    chain: ethereum
+    coingecko_id: compound-governance-token
+    defillama_pool_id: compound-v3-ethereum
+    category: lending
+    liquidity_risk: high
+
+  - protocol_id: uniswap-v3
+    name: Uniswap V3
+    chain: ethereum
+    coingecko_id: uniswap
+    defillama_pool_id: uniswap-v3-ethereum
+    category: dex
+    liquidity_risk: high
+
+  - protocol_id: jupiter
+    name: Jupiter
+    chain: solana
+    coingecko_id: jupiter-exchange-solana
+    defillama_pool_id: jupiter-solana
+    category: dex
+    liquidity_risk: high
