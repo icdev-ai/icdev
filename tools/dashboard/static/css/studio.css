@@ -1144,6 +1144,43 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   padding: var(--studio-space-2) var(--studio-space-4);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  user-select: none;
+  transition: color var(--studio-duration-fast) var(--studio-ease);
+}
+
+.wf-studio__palette-group-title:hover {
+  color: var(--studio-text-primary);
+}
+
+.wf-group-chevron {
+  font-size: 0.625rem;
+  transition: transform 0.15s ease;
+  display: inline-block;
+}
+
+.wf-palette-group__items {
+  overflow: hidden;
+  max-height: 600px;
+  transition: max-height 0.2s ease, opacity 0.15s ease;
+  opacity: 1;
+}
+
+.wf-palette-group--collapsed .wf-palette-group__items {
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.wf-palette-group--collapsed .wf-group-chevron {
+  transform: rotate(0deg);
+}
+
+.wf-studio__palette-group:not(.wf-palette-group--collapsed) .wf-group-chevron {
+  transform: rotate(90deg);
 }
 
 .wf-studio__tool-item {
