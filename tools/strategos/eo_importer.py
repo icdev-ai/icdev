@@ -27,6 +27,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -239,11 +240,19 @@ def _load_theaters(conn, theater_code: str | None = None) -> list[dict]:
 # ---------------------------------------------------------------------------
 # DB write
 # ---------------------------------------------------------------------------
+OSINT_RELEVANCE_GATE = 0.5
+
 _INSERT_SQL = (
     "INSERT OR IGNORE INTO sg_eo_signals "
     "(id, scene_id, satellite, bbox_wkt, cloud_pct, sensing_date, "
     "thumbnail_url, relevance_score, aoi_tag, status) "
     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+)
+
+_FINDINGS_INSERT_SQL = (
+    "INSERT OR IGNORE INTO sg_osint_results "
+    "(id, scan_id, target, source, finding_type, title, data_json, status) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
 )
 
 
@@ -266,6 +275,38 @@ def _write_signals(conn, signals: list[dict]) -> tuple[int, int]:
     return inserted, skipped
 
 
+def _write_osint_findings(conn, scan_id: str, signals: list[dict]) -> int:
+    """Promote EO signals with relevance_score >= OSINT_RELEVANCE_GATE into sg_osint_results."""
+    inserted = 0
+    for sig in signals:
+        if (sig.get("relevance_score") or 0.0) < OSINT_RELEVANCE_GATE:
+            continue
+        data_json = json.dumps({
+            "bbox_wkt": sig.get("bbox_wkt"),
+            "sensing_date": sig.get("sensing_date"),
+            "thumbnail_url": sig.get("thumbnail_url"),
+        })
+        finding_id = f"{scan_id}-{sig['id']}"
+        try:
+            conn.execute(
+                _FINDINGS_INSERT_SQL,
+                (
+                    finding_id,
+                    scan_id,
+                    sig.get("aoi_tag"),
+                    "copernicus",
+                    "geo_intelligence",
+                    sig.get("scene_id"),
+                    data_json,
+                    "new",
+                ),
+            )
+            inserted += 1
+        except Exception as exc:
+            logger.debug("Skipped osint finding for %s: %s", sig.get("scene_id"), exc)
+    return inserted
+
+
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
@@ -280,17 +321,20 @@ def fetch_for_theaters(
     Fetch Sentinel-2 EO scenes for all active theaters (or one by code).
 
     Returns a dict with keys:
-      status          — 'ok', 'api_unavailable', 'dry_run', or 'no_theaters'
-      theaters        — number of theaters queried
-      scenes_fetched  — total scenes passing cloud/date filters
-      inserted        — rows inserted into sg_eo_signals
-      skipped         — rows skipped (duplicates or errors)
-      signals         — list of row dicts (dry_run only)
+      status            — 'ok', 'api_unavailable', 'dry_run', or 'no_theaters'
+      theaters          — number of theaters queried
+      scenes_fetched    — total scenes passing cloud/date filters
+      inserted          — rows inserted into sg_eo_signals
+      skipped           — rows skipped (duplicates or errors)
+      findings_inserted — rows promoted to sg_osint_results (relevance >= 0.5)
+      scan_id           — unique identifier for this import run
+      signals           — list of row dicts (dry_run only)
 
     On network failure with no partial results: status='api_unavailable', signals=[].
     """
     end_dt = datetime.now(timezone.utc)
     start_dt = end_dt - timedelta(days=days)
+    scan_id = f"eo-{uuid.uuid4().hex[:16]}"
 
     _conn = conn or get_connection()
     try:
@@ -302,6 +346,8 @@ def fetch_for_theaters(
                 "scenes_fetched": 0,
                 "inserted": 0,
                 "skipped": 0,
+                "findings_inserted": 0,
+                "scan_id": scan_id,
                 "signals": [],
             }
 
@@ -347,6 +393,8 @@ def fetch_for_theaters(
                 "scenes_fetched": 0,
                 "inserted": 0,
                 "skipped": 0,
+                "findings_inserted": 0,
+                "scan_id": scan_id,
                 "signals": [],
             }
 
@@ -357,10 +405,13 @@ def fetch_for_theaters(
                 "scenes_fetched": len(all_signals),
                 "inserted": 0,
                 "skipped": 0,
+                "findings_inserted": 0,
+                "scan_id": scan_id,
                 "signals": all_signals,
             }
 
         inserted, skipped = _write_signals(_conn, all_signals)
+        findings_inserted = _write_osint_findings(_conn, scan_id, all_signals)
         _conn.commit()
 
         return {
@@ -369,6 +420,8 @@ def fetch_for_theaters(
             "scenes_fetched": len(all_signals),
             "inserted": inserted,
             "skipped": skipped,
+            "findings_inserted": findings_inserted,
+            "scan_id": scan_id,
         }
     finally:
         if conn is None:
@@ -445,11 +498,12 @@ def main(argv=None) -> None:
         print(json.dumps(out, indent=2, default=str))
     else:
         status = result.get("status", "unknown")
-        print(f"[eo_importer] status={status}")
-        print(f"  theaters      : {result.get('theaters', 0)}")
-        print(f"  scenes_fetched: {result.get('scenes_fetched', 0)}")
-        print(f"  inserted      : {result.get('inserted', 0)}")
-        print(f"  skipped       : {result.get('skipped', 0)}")
+        print(f"[eo_importer] status={status}  scan_id={result.get('scan_id', '')}")
+        print(f"  theaters         : {result.get('theaters', 0)}")
+        print(f"  scenes_fetched   : {result.get('scenes_fetched', 0)}")
+        print(f"  inserted         : {result.get('inserted', 0)}")
+        print(f"  skipped          : {result.get('skipped', 0)}")
+        print(f"  findings_inserted: {result.get('findings_inserted', 0)}")
         if args.dry_run and result.get("signals"):
             print(f"  (dry-run: {len(result['signals'])} signals would be written)")
 
