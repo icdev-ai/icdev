@@ -115,3 +115,73 @@ CREATE INDEX IF NOT EXISTS idx_wf_ext_token             ON wf_external_steps(web
 CREATE INDEX IF NOT EXISTS idx_wf_feedback_instance     ON wf_feedback(instance_id);
 CREATE INDEX IF NOT EXISTS idx_wf_feedback_canvas       ON wf_feedback(canvas_type, submitted_at);
 CREATE INDEX IF NOT EXISTS idx_wf_team_assignments_scope ON wf_team_assignments(scope_type, scope_id);
+
+-- ── Document Templates ────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wf_document_templates (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    doc_type          TEXT NOT NULL
+        CHECK(doc_type IN ('checklist','form','sop_reference','standard')),
+    schema_json       TEXT NOT NULL DEFAULT '{}',
+    canvas_type       TEXT,
+    stage_scope       TEXT,
+    is_ai_reference   INTEGER NOT NULL DEFAULT 0,
+    is_human_required INTEGER NOT NULL DEFAULT 0,
+    version           TEXT NOT NULL DEFAULT '1.0',
+    is_system         INTEGER NOT NULL DEFAULT 0,
+    created_by        TEXT,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Seed: 3 system-level document templates
+INSERT OR IGNORE INTO wf_document_templates
+    (id, name, doc_type, schema_json, canvas_type, stage_scope, is_ai_reference, is_human_required, version, is_system, created_by)
+VALUES
+    ('tpl-ndc-naming-standard',
+     'NDC Naming Standard',
+     'standard',
+     '{"fields":[{"key":"artifact_name","label":"Artifact Name","type":"text","required":true},{"key":"prefix","label":"Prefix Code","type":"text","required":true},{"key":"version","label":"Version","type":"text","required":true},{"key":"classification","label":"Classification Marking","type":"text","required":true}]}',
+     'NDC', 'design', 1, 0, '1.0', 1, 'system'),
+    ('tpl-peer-review-checklist',
+     'Peer Review Checklist',
+     'checklist',
+     '{"fields":[{"key":"requirements_coverage","label":"Requirements Coverage","type":"bool","required":true},{"key":"security_controls","label":"Security Controls Verified","type":"bool","required":true},{"key":"test_coverage","label":"Test Coverage ≥ 80%","type":"bool","required":true},{"key":"comments","label":"Reviewer Comments","type":"textarea","required":false}]}',
+     NULL, 'review', 1, 1, '1.0', 1, 'system'),
+    ('tpl-security-sign-off-form',
+     'Security Sign-Off Form',
+     'form',
+     '{"fields":[{"key":"control_ids","label":"NIST 800-53 Controls Verified","type":"text","required":true},{"key":"stig_findings","label":"Open STIG Findings","type":"textarea","required":true},{"key":"risk_acceptance","label":"Residual Risk Accepted By","type":"text","required":true},{"key":"ao_signature","label":"AO Signature Block","type":"text","required":true}]}',
+     NULL, 'approval', 0, 1, '1.0', 1, 'system');
+
+-- ── Document Submissions (append-only, NIST AU) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS wf_document_submissions (
+    id              TEXT PRIMARY KEY,
+    approval_id     TEXT NOT NULL REFERENCES wf_approvals(id),
+    instance_id     TEXT NOT NULL REFERENCES wf_instances(id),
+    doc_template_id TEXT NOT NULL REFERENCES wf_document_templates(id),
+    stage           TEXT NOT NULL,
+    submitted_by    TEXT NOT NULL,
+    submission_json TEXT NOT NULL DEFAULT '{}',
+    submitted_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── Citations ─────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wf_citations (
+    id            TEXT PRIMARY KEY,
+    instance_id   TEXT NOT NULL REFERENCES wf_instances(id),
+    stage         TEXT,
+    source_doc    TEXT NOT NULL,
+    source_type   TEXT NOT NULL,
+    doc_version   TEXT,
+    section       TEXT,
+    page_number   TEXT,
+    excerpt       TEXT,
+    cited_by      TEXT NOT NULL,
+    cited_in_type TEXT NOT NULL,
+    cited_in_id   TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── Additional Indexes ────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_wf_docsub_approval  ON wf_document_submissions(approval_id);
+CREATE INDEX IF NOT EXISTS idx_wf_citations_instance ON wf_citations(instance_id);
