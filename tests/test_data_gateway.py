@@ -112,3 +112,67 @@ def test_fundamentals_missing_sector_returns_none():
         result = gw.fundamentals("AAPL")
 
     assert result["sector"] is None
+
+
+def test_fetch_news_retries_on_transient_error_and_returns_on_success():
+    """fetch_news retries on transient exceptions and returns articles on final success."""
+    import tools.fathomdesk.data_gateway as dgm
+    from tools.fathomdesk.data_gateway import FathomDeskDataGateway
+    from tools.fathomdesk.constants import RATE_LIMIT_RETRY_MAX
+
+    gw = FathomDeskDataGateway()
+    articles_payload = [{"title": "Market Update", "link": "http://example.com"}]
+    attempt_tracker = {"count": 0}
+
+    def make_ticker(sym):
+        attempt_tracker["count"] += 1
+        t = mock.MagicMock()
+        if attempt_tracker["count"] < RATE_LIMIT_RETRY_MAX:
+            type(t).news = mock.PropertyMock(side_effect=RuntimeError("429 rate limited"))
+        else:
+            type(t).news = mock.PropertyMock(return_value=articles_payload)
+        return t
+
+    mock_yf = mock.MagicMock()
+    mock_yf.Ticker.side_effect = make_ticker
+
+    with mock.patch.object(dgm, "_yfinance", mock_yf):
+        with mock.patch("tools.fathomdesk.data_gateway.time") as mock_time:
+            result = gw.fetch_news("SPY")
+
+    assert result == articles_payload
+    assert attempt_tracker["count"] == RATE_LIMIT_RETRY_MAX
+    assert mock_time.sleep.call_count == RATE_LIMIT_RETRY_MAX - 1
+
+
+def test_historical_bars_passes_as_of_date_to_yfinance():
+    """historical_bars passes as_of_date as end= kwarg to yfinance history()."""
+    import tools.fathomdesk.data_gateway as dgm
+    from tools.fathomdesk.data_gateway import FathomDeskDataGateway
+
+    gw = FathomDeskDataGateway()
+
+    mock_ts = mock.MagicMock()
+    mock_ts.date.return_value = "2024-01-31"
+    mock_row = {"Open": 100.0, "High": 105.0, "Low": 99.0, "Close": 102.0, "Volume": 500_000}
+
+    mock_hist = mock.MagicMock()
+    mock_hist.empty = False
+    mock_hist.iterrows.return_value = [(mock_ts, mock_row)]
+
+    mock_ticker_obj = mock.MagicMock()
+    mock_ticker_obj.history.return_value = mock_hist
+
+    mock_yf = mock.MagicMock()
+    mock_yf.Ticker.return_value = mock_ticker_obj
+
+    with mock.patch.object(
+        type(gw._obb), "available", new_callable=mock.PropertyMock, return_value=False
+    ):
+        with mock.patch.object(dgm, "_yfinance", mock_yf):
+            bars = gw.historical_bars("AAPL", period="1mo", as_of_date="2024-01-31")
+
+    _, called_kwargs = mock_ticker_obj.history.call_args
+    assert called_kwargs.get("end") == "2024-01-31"
+    assert isinstance(bars, list)
+    assert len(bars) >= 1
