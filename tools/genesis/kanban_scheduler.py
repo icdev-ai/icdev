@@ -29,10 +29,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# Force UTF-8 on the stream so emoji/Unicode in task titles never silently
+# kill the logger on Windows (cp1252 streams swallow UnicodeEncodeError and
+# then stop writing entirely for the rest of the process lifetime).
+_stream = open(sys.stderr.fileno(), mode="w", encoding="utf-8", errors="replace", closefd=False)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [kanban] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    stream=_stream,
 )
 logger = logging.getLogger(__name__)
 
@@ -247,8 +252,10 @@ def main():
                     len(completed),
                     len(running),
                 )
-            elif cycle % 10 == 0:
-                # Heartbeat every 10 cycles
+            else:
+                # Always log every cycle so a silent hang is immediately visible.
+                # Previously only logged every 10 idle cycles — that 9-cycle gap
+                # masked scheduler death for up to 9 minutes.
                 logger.info("Cycle %d: idle (no due tasks)", cycle)
         except Exception as exc:
             # guard-6: log FULL traceback, never exit on transient errors

@@ -4153,15 +4153,32 @@ _dispatch_times: Dict[str, datetime] = {}
 # Current executor tier — updated once per scheduler cycle
 _current_exec_tier: Optional[str] = None
 
+_SILENT_DISPATCH_THRESHOLD = 5 * 60  # 5 min — no log file content yet = never dispatched
+
+
+def _task_log_is_empty(tid: str) -> bool:
+    """Return True if the task's .tmp/kanban/<id>.log is absent or has no content."""
+    log_path = Path(__file__).resolve().parent.parent.parent / ".tmp" / "kanban" / f"{tid}.log"
+    try:
+        return not log_path.exists() or log_path.stat().st_size == 0
+    except Exception:
+        return False
+
+
 def _reap_stale_in_progress() -> None:
     """Periodic reaper: reset in_progress tasks not tracked in _running.
 
-    Catches two failure modes that survive past startup-recovery:
+    Catches three failure modes that survive past startup-recovery:
       1. Process died mid-run after dispatch (PID gone, DB still in_progress).
       2. Verification gate left the task in_progress with 'human review needed'
          instead of resetting to backlog.
+      3. Silent dispatch failure — task promoted to in_progress but subprocess
+         never started (execution_id still NULL, log file empty). Fast-reaped
+         after _SILENT_DISPATCH_THRESHOLD (5 min) so the board never shows a
+         ghost in_progress for more than one scheduler cycle window.
 
-    Threshold: updated_at older than 2× the task's normal timeout (≥30 min).
+    Normal threshold: 2× task timeout (30–80 min).
+    Silent-dispatch threshold: 5 min (log empty + not in _running).
     Only resets tasks NOT currently in _running to avoid killing live agents.
     """
     try:
@@ -4205,7 +4222,17 @@ def _reap_stale_in_progress() -> None:
                 continue
 
             age_seconds = (now - updated_at).total_seconds()
-            threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
+
+            # Fast-reap silent dispatch: task is not in _running AND log file
+            # is still empty — subprocess never wrote a single byte, so it
+            # never actually started. Use a short 5-min window instead of the
+            # normal 2× budget to catch these within the next cycle or two.
+            if _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
+                threshold = _SILENT_DISPATCH_THRESHOLD
+                reap_label = "silent-dispatch (no log output)"
+            else:
+                threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
+                reap_label = "no live subprocess"
 
             if age_seconds < threshold:
                 continue  # task is recent enough — let it run
@@ -4213,7 +4240,7 @@ def _reap_stale_in_progress() -> None:
             now_iso = now.isoformat()
             reason = (
                 f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
-                f"with no live subprocess (threshold={threshold / 60:.0f} min). "
+                f"with {reap_label} (threshold={threshold / 60:.0f} min). "
                 "Automatically reset to backlog for re-dispatch."
             )
             conn.execute(
@@ -4229,7 +4256,7 @@ def _reap_stale_in_progress() -> None:
             reaped.append(tid)
             print(
                 f"  Kanban: stale-reaper reset {tid} "
-                f"(in_progress {age_seconds / 60:.0f} min, no subprocess)"
+                f"(in_progress {age_seconds / 60:.0f} min, {reap_label})"
             )
 
         if reaped:
