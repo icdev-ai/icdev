@@ -9868,6 +9868,166 @@ CREATE INDEX IF NOT EXISTS idx_reflex_obs_name
     ON reflex_observations(reflex_name);
 CREATE INDEX IF NOT EXISTS idx_reflex_obs_started
     ON reflex_observations(started_at);
+
+-- Migration 079: HITL Workflow Management
+CREATE TABLE IF NOT EXISTS wf_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    canvas_type TEXT,
+    stages_json TEXT NOT NULL,
+    roles_json TEXT NOT NULL,
+    approval_policy TEXT NOT NULL DEFAULT 'any_one',
+    kickback_limit INTEGER NOT NULL DEFAULT 3,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    is_system INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_teams (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    canvas_type TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_team_members (
+    id TEXT PRIMARY KEY,
+    team_id TEXT NOT NULL REFERENCES wf_teams(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    role_label TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(team_id, user_id)
+);
+CREATE TABLE IF NOT EXISTS wf_team_assignments (
+    id TEXT PRIMARY KEY,
+    team_id TEXT NOT NULL REFERENCES wf_teams(id) ON DELETE CASCADE,
+    template_id TEXT REFERENCES wf_templates(id),
+    scope_type TEXT NOT NULL,
+    scope_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(team_id, scope_type, scope_id)
+);
+CREATE TABLE IF NOT EXISTS wf_instances (
+    id TEXT PRIMARY KEY,
+    template_id TEXT NOT NULL REFERENCES wf_templates(id),
+    task_id TEXT,
+    project_id TEXT,
+    canvas_type TEXT,
+    current_stage TEXT NOT NULL DEFAULT 'build',
+    kickback_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_approvals (
+    id TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    stage TEXT NOT NULL,
+    team_id TEXT REFERENCES wf_teams(id),
+    assigned_to TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    due_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_feedback (
+    id TEXT PRIMARY KEY,
+    approval_id TEXT NOT NULL REFERENCES wf_approvals(id),
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    task_id TEXT,
+    canvas_type TEXT,
+    template_id TEXT REFERENCES wf_templates(id),
+    stage TEXT NOT NULL,
+    decision TEXT NOT NULL,
+    feedback_types TEXT,
+    rating INTEGER,
+    comments TEXT,
+    improvement_tags TEXT,
+    kickback_reason TEXT,
+    citations_json TEXT,
+    submitted_by TEXT NOT NULL,
+    submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_feedback_insights (
+    id TEXT PRIMARY KEY,
+    canvas_type TEXT,
+    template_id TEXT,
+    feedback_type TEXT,
+    avg_rating REAL,
+    issue_count INTEGER,
+    top_tags TEXT,
+    kickback_rate REAL,
+    period_start TEXT NOT NULL,
+    period_end TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_external_steps (
+    id TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    stage_name TEXT NOT NULL,
+    step_type TEXT NOT NULL,
+    external_system TEXT,
+    external_ref TEXT,
+    webhook_token TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    notified_at TEXT,
+    completed_at TEXT,
+    completed_by TEXT,
+    payload_json TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_document_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    doc_type TEXT NOT NULL,
+    schema_json TEXT NOT NULL,
+    canvas_type TEXT,
+    stage_scope TEXT,
+    is_ai_reference INTEGER NOT NULL DEFAULT 0,
+    is_human_required INTEGER NOT NULL DEFAULT 0,
+    version TEXT NOT NULL DEFAULT '1',
+    is_system INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_document_submissions (
+    id TEXT PRIMARY KEY,
+    approval_id TEXT NOT NULL REFERENCES wf_approvals(id),
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    doc_template_id TEXT NOT NULL REFERENCES wf_document_templates(id),
+    stage TEXT NOT NULL,
+    submitted_by TEXT NOT NULL,
+    submission_json TEXT NOT NULL,
+    submitted_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wf_citations (
+    id TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    stage TEXT NOT NULL,
+    source_doc TEXT NOT NULL,
+    source_type TEXT,
+    doc_version TEXT,
+    section TEXT,
+    page_number INTEGER,
+    excerpt TEXT,
+    cited_by TEXT NOT NULL,
+    cited_in_type TEXT NOT NULL,
+    cited_in_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wf_instances_task ON wf_instances(task_id);
+CREATE INDEX IF NOT EXISTS idx_wf_instances_project ON wf_instances(project_id);
+CREATE INDEX IF NOT EXISTS idx_wf_approvals_instance ON wf_approvals(instance_id, status);
+CREATE INDEX IF NOT EXISTS idx_wf_feedback_instance ON wf_feedback(instance_id);
+CREATE INDEX IF NOT EXISTS idx_wf_feedback_canvas ON wf_feedback(canvas_type, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_wf_team_assignments_scope ON wf_team_assignments(scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_wf_ext_instance ON wf_external_steps(instance_id, status);
+CREATE INDEX IF NOT EXISTS idx_wf_ext_token ON wf_external_steps(webhook_token);
+CREATE INDEX IF NOT EXISTS idx_wf_docsub_approval ON wf_document_submissions(approval_id);
+CREATE INDEX IF NOT EXISTS idx_wf_citations_instance ON wf_citations(instance_id, stage);
 """
 
 

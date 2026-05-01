@@ -1696,6 +1696,26 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 )
                 return
 
+        # HITL gate: block in_progress→done when a HITL approval is pending
+        if new_status == "done" and os.getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
+            try:
+                from tools.workflow_hitl.gate import HITLGate
+                pending = HITLGate().get_pending(task_id)
+                if pending:
+                    logger.info(
+                        "_move_task: HITL gate active for %s — not advancing to done (approval: %s)",
+                        task_id, pending["id"],
+                    )
+                    conn.close()
+                    _record_status_transition(
+                        task_id, prior_status, "HITL_PENDING",
+                        actor=actor,
+                        reason=f"HITL gate: approval {pending['id']} stage={pending.get('stage')} pending",
+                    )
+                    return
+            except ImportError:
+                pass  # HITL module not installed — gate is no-op
+
         now = _utcnow_iso()
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]

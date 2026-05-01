@@ -1499,6 +1499,59 @@ projects:
   - key: winloss
     title: WINLOSS
     priority: medium
+- key: wf
+  name: HITL Workflow Management
+  task_prefix: wf-
+  default_open: true
+  description: >
+    Unified HITL (Human-In-The-Loop) approval layer for all ICDEV canvases, modules, and child apps.
+    Policy-driven workflow templates, team management (2+ members, customizable roles),
+    structured feedback with kickback cycles, per-stage document conformance (checklist/form/SOP),
+    citation/sourcing for all AI-generated outputs (source, section, page, excerpt),
+    external steps (email/Jira/SNOW/GitHub/Confluence/SharePoint), and a Genesis reflex
+    to aggregate feedback into improvement signals.
+  briefs:
+    - "Epic db: DB migration 078 + seed templates — wf-db-01..05"
+    - "Epic core: WorkflowEngine + HITLGate + team/template managers — wf-core-01..05"
+    - "Epic fb: Feedback capture + Genesis aggregation reflex — wf-fb-01..02"
+    - "Epic team: Notification layer (review request, kickback, approval) — wf-team-01"
+    - "Epic doc: Per-stage document conformance (checklist/form/SOP) + citation/sourcing — wf-doc-01..04"
+    - "Epic ext: External steps (email/Jira/SNOW/GitHub/Confluence/SharePoint) + polling reflex — wf-ext-01..07"
+    - "Epic api: Flask blueprint (all routes incl. webhook callback) + .env flags — wf-api-01..02"
+    - "Epic ui: HITL queue page + Team management page + external step status + nav — wf-ui-01..03"
+    - "Epic intg: Canvas hooks + child app inheritance + coherence check — wf-intg-01..03"
+    - "Epic vv: Unit tests + API tests + manifest + companion + feature doc — wf-vv-01..04"
+  epics:
+    - key: db
+      title: DB Foundation — Migration 078 + Seed Templates
+      priority: critical
+    - key: core
+      title: Core Engine — WorkflowEngine, HITLGate, Team & Template Managers
+      priority: critical
+    - key: fb
+      title: Feedback System — Capture + Genesis Aggregation Reflex
+      priority: high
+    - key: team
+      title: Notification Layer (Internal)
+      priority: high
+    - key: doc
+      title: Document Conformance + Citation/Sourcing
+      priority: high
+    - key: ext
+      title: External Steps — Email, Jira/SNOW/GitHub Tickets, Confluence/SharePoint Wiki
+      priority: high
+    - key: api
+      title: Flask Blueprint — All API Routes + Webhook Callback
+      priority: high
+    - key: ui
+      title: Dashboard UI — HITL Queue + Team Management + External Step Status
+      priority: medium
+    - key: intg
+      title: Canvas & Child App Integration Hooks
+      priority: medium
+    - key: vv
+      title: V&V — Tests, Manifest, Companion Sync, Feature Doc
+      priority: medium
 - key: pint
   name: Product Intelligence — 5 New Engines + Universal Orchestrator
   description: 'Build five new product-discovery engines and one universal orchestrator

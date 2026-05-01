@@ -7139,6 +7139,16 @@ def create_app() -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     # ---- Phase 67: Engineering Review Board ----
+    @app.route("/workflow-hitl")
+    def workflow_hitl_page():
+        """HITL Workflow Queue — pending approval gates and feedback submission."""
+        return render_template("workflow_hitl.html")
+
+    @app.route("/workflow-teams")
+    def workflow_teams_page():
+        """HITL Workflow Teams — team creation, member management, and assignments."""
+        return render_template("workflow_teams.html")
+
     @app.route("/review-board")
     def review_board_page():
         """Engineering Review Board — multi-persona analysis dashboard."""
