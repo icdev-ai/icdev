@@ -60,6 +60,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("fathomdesk_fundamentals_sweep",  DOMAIN, 23.0, "Daily PE/P/B/ROE fundamentals refresh from yfinance"),
     ReflexEntry("govcon_scan",                DOMAIN, 6.0,  "GovCon/SAM.gov opportunity scan"),
     ReflexEntry("migration_intel",            DOMAIN, 6.0,  "Migration intelligence signal harvester"),
+    ReflexEntry("socmint",                    DOMAIN, 6.0,  "SOCMINT harvester — Telegram milblog → sg_socmint_signals"),
 
     # ── SUPPORT ───────────────────────────────────────────────────────────────
     ReflexEntry("audit",       SUPPORT, 6.0,  "Compliance and security audit sweep"),
