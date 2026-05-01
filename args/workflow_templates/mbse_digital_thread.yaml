@@ -17,7 +17,7 @@ steps:
   - id: trace
     name: "Digital Thread"
     tool: "tools/mbse/digital_thread.py"
-    depends_on: [import_sysml]
+    depends_on: [import_sysml, import_doors]
     description: "Build end-to-end traceability (req→model→code→test)"
 
   - id: generate
