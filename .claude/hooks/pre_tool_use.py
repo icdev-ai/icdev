@@ -401,6 +401,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "sg_analyst_annotations",
         # DES execution audit log (NIST AU — append-only)
         "des_execution_events",
+        # Strategos SOCMINT signals (migration 023, NIST AU — append-only ingestion log)
+        "sg_socmint_signals",
     ]
 
     if tool_name == "Bash":
