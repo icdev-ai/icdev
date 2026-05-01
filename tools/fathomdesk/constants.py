@@ -15,6 +15,7 @@ class BacktestResult:
     strategy_id: str
     strategy_type: str
     sharpe_ratio: float
+    calmar_ratio: float
     max_drawdown_pct: float
     win_rate: float
     ev_per_trade: float
