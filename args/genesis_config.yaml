@@ -252,6 +252,17 @@ reflexes:
       - demand_signals
       - pulse_articles
 
+  socmint:
+    enabled: true
+    risk_tier: green
+    interval_seconds: 21600
+    description: "Telegram milblog SOCMINT harvester → sg_socmint_signals"
+    success_metric:
+      name: socmint_signals_inserted
+      target: 0
+    outputs:
+      - sg_socmint_signals
+
   # ── YELLOW tier (reversible writes, sandbox + rollback) ──────────────────
 
   publish:
