@@ -366,14 +366,12 @@ class FathomDeskDataGateway:
             return []
 
         sym = ticker.upper()
-        last_exc: Exception | None = None
         for attempt in range(RATE_LIMIT_RETRY_MAX):
             try:
                 t = _yfinance.Ticker(sym)
                 articles = t.news or []
                 return list(articles)
-            except Exception as exc:
-                last_exc = exc
+            except Exception:
                 if attempt < RATE_LIMIT_RETRY_MAX - 1:
                     time.sleep(2 ** attempt)
 
