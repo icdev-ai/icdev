@@ -19,6 +19,7 @@ if str(_ROOT) not in sys.path:
 from tools.studio.workflow_editor import (  # noqa: E402
     create_workflow,
     delete_workflow,
+    get_builtin_template,
     get_tool_catalog,
     get_workflow,
     list_builtin_templates,
@@ -113,6 +114,14 @@ def api_tool_catalog():
 @studio_api.route("/templates", methods=["GET"])
 def api_builtin_templates():
     return jsonify({"templates": list_builtin_templates()})
+
+
+@studio_api.route("/templates/<template_id>", methods=["GET"])
+def api_get_builtin_template(template_id: str):
+    tpl = get_builtin_template(template_id)
+    if not tpl:
+        return jsonify({"error": "Template not found"}), 404
+    return jsonify(tpl)
 
 
 # ── Marketplace (read-only wrapper) ───────────────────────

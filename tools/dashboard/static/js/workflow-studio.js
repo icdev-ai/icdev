@@ -799,11 +799,84 @@ const StudioWF = (() => {
   function undo() { toast('Undo not yet implemented', 'info'); }
   function redo() { toast('Redo not yet implemented', 'info'); }
   function loadWorkflow(id) { toast('Loading workflow...', 'info'); }
-  function useTemplate(id) { toast('Loading template...', 'info'); }
+
+  async function useTemplate(id) {
+    try {
+      toast('Loading template...', 'info');
+      const resp = await fetch('/api/studio/templates/' + encodeURIComponent(id));
+      if (!resp.ok) { toast('Template not found', 'error'); return; }
+      const data = await resp.json();
+      const steps = data.steps || [];
+      if (!steps.length) { toast('Template has no steps', 'warning'); return; }
+
+      // Clear canvas
+      nodes = []; edges = []; selectedNode = null; nextNodeY = 60;
+      nodesEl().innerHTML = '';
+      edgesSvg().innerHTML = '';
+      $('wf-name').value = data.name || 'Untitled Workflow';
+      updateCounts();
+      showEmptyState();
+
+      // Create nodes, track YAML step-id → canvas node-id mapping
+      const idMap = {};
+      let y = 60;
+      for (const s of steps) {
+        const node = addNode({
+          toolId: s.id,
+          toolName: s.name || s.id,
+          toolPath: s.tool || '',
+          toolDesc: s.description || '',
+          toolColor: guessColor(s.tool || ''),
+        }, 120, y);
+        idMap[s.id] = node.id;
+        y += 100;
+      }
+
+      // Add edges from depends_on
+      for (const s of steps) {
+        if (!s.depends_on) continue;
+        const deps = Array.isArray(s.depends_on) ? s.depends_on : [s.depends_on];
+        for (const dep of deps) {
+          const fromId = idMap[dep];
+          const toId = idMap[s.id];
+          if (fromId && toId) {
+            edges.push({ from: fromId, to: toId });
+            const target = nodes.find(n => n.id === toId);
+            if (target && !target.dependsOn.includes(fromId)) target.dependsOn.push(fromId);
+          }
+        }
+      }
+      renderEdges();
+
+      const editorTab = document.querySelector('[data-tab="editor"]');
+      if (editorTab) switchTab(editorTab);
+      toast(`Template "${data.name}" loaded — ${steps.length} steps`, 'success');
+    } catch (e) {
+      toast('Failed to load template: ' + e.message, 'error');
+    }
+  }
+
+  // ── Palette collapse ──
+  let paletteCollapsed = false;
+
+  function togglePalette() {
+    paletteCollapsed = !paletteCollapsed;
+    const studio = document.querySelector('.wf-studio');
+    const btn = $('wf-palette-toggle');
+    if (paletteCollapsed) {
+      studio.classList.add('wf-studio--palette-collapsed');
+      if (btn) btn.textContent = '»';
+    } else {
+      studio.classList.remove('wf-studio--palette-collapsed');
+      if (btn) btn.textContent = '«';
+    }
+  }
 
   // ── Init ──
   function init() {
     loadCatalog();
+    // Auto-collapse palette on load
+    togglePalette();
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Delete' && selectedNode) deleteNode(selectedNode);
@@ -820,6 +893,6 @@ const StudioWF = (() => {
     switchTab, save, exportYAML, importYAML, doImportYAML,
     validate, createNew, loadTemplate, loadWorkflow, useTemplate,
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode,
-    zoomIn, zoomOut, fitView, undo, redo,
+    zoomIn, zoomOut, fitView, undo, redo, togglePalette,
   };
 })();

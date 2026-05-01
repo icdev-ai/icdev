@@ -264,7 +264,66 @@ const FormBuilder = (() => {
     if (tab) switchTab(tab);
   }
 
-  function preview() { toast('Preview opens the form in a new tab (coming soon)', 'info'); }
+  function preview() {
+    if (!fields.length) { toast('Add fields before previewing', 'warning'); return; }
+    const formName = $('fb-form-name')?.value || 'Form Preview';
+
+    const inputStyle = 'width:100%;padding:8px 10px;border:1px solid #374151;border-radius:6px;background:#1f2937;color:#f3f4f6;font-size:0.875rem;box-sizing:border-box;';
+
+    const fieldHtml = fields.map(f => {
+      const reqMark = f.required ? ' <span style="color:#ef4444;">*</span>' : '';
+      const label = `<label style="display:block;margin-bottom:6px;font-size:0.8125rem;font-weight:500;color:#d1d5db;">${esc(f.label)}${reqMark}</label>`;
+      let input;
+      switch (f.type) {
+        case 'textarea':
+          input = `<textarea style="${inputStyle}" placeholder="${esc(f.placeholder||'')}" rows="3" ${f.required?'required':''}></textarea>`;
+          break;
+        case 'select':
+        case 'multiselect': {
+          const opts = (f.options||[]).map(o=>`<option>${esc(o)}</option>`).join('');
+          input = `<select style="${inputStyle}" ${f.type==='multiselect'?'multiple':''}>${opts}</select>`;
+          break;
+        }
+        case 'checkbox':
+          return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;"><input type="checkbox" ${f.required?'required':''}><label style="font-size:0.875rem;color:#d1d5db;">${esc(f.label)}</label></div>`;
+        case 'date':
+          input = `<input type="date" style="${inputStyle}" ${f.required?'required':''}>`;
+          break;
+        case 'number':
+          input = `<input type="number" style="${inputStyle}" placeholder="${esc(f.placeholder||'')}" ${f.required?'required':''}>`;
+          break;
+        case 'email':
+          input = `<input type="email" style="${inputStyle}" placeholder="${esc(f.placeholder||f.label)}" ${f.required?'required':''}>`;
+          break;
+        case 'file':
+          input = `<input type="file" style="${inputStyle}" ${f.required?'required':''}>`;
+          break;
+        default:
+          input = `<input type="text" style="${inputStyle}" placeholder="${esc(f.placeholder||'')}" ${f.required?'required':''}>`;
+      }
+      return `<div style="margin-bottom:14px;">${label}${input}</div>`;
+    }).join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'fb-preview-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+      <div style="background:#111827;border:1px solid #374151;border-radius:12px;padding:32px;max-width:540px;width:92%;max-height:82vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,0.5);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+          <h2 style="color:#f9fafb;font-size:1.125rem;font-weight:700;margin:0;">${esc(formName)}</h2>
+          <button onclick="this.closest('.fb-preview-overlay').remove()" style="background:transparent;border:none;color:#9ca3af;font-size:1.5rem;cursor:pointer;line-height:1;">&times;</button>
+        </div>
+        <form onsubmit="event.preventDefault();this.closest('.fb-preview-overlay').remove();return false;">
+          ${fieldHtml}
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid #374151;">
+            <button type="submit" style="background:#6366f1;color:#fff;border:none;padding:10px 28px;border-radius:6px;font-size:0.875rem;font-weight:600;cursor:pointer;">Submit</button>
+            <button type="button" onclick="this.closest('.fb-preview-overlay').remove()" style="margin-left:8px;background:transparent;color:#9ca3af;border:1px solid #374151;padding:10px 20px;border-radius:6px;font-size:0.875rem;cursor:pointer;">Close</button>
+          </div>
+        </form>
+      </div>`;
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  }
 
   // ── Init ──
   document.addEventListener('DOMContentLoaded', loadFieldTypes);
