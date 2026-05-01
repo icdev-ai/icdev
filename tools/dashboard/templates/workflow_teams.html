@@ -630,11 +630,6 @@ select.wt-select { background: var(--wt-input-bg); }
     var allTemplates = [];
     var activeTeamId = null;
 
-    // ── Boot ───────────────────────────────────────────────────────────
-    loadTeams();
-    loadTemplates();
-    loadDocTemplates();
-
     // ══════════════════════════════════════════════════════════════════
     //  TEAMS
     // ══════════════════════════════════════════════════════════════════
@@ -1216,6 +1211,11 @@ select.wt-select { background: var(--wt-input-bg); }
         if (str == null) return '';
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+
+    // ── Boot (after all functions are defined) ─────────────────────────
+    loadTeams();
+    loadTemplates();
+    loadDocTemplates();
 
 })();
 </script>
