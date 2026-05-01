@@ -639,7 +639,7 @@ select.wt-select { background: var(--wt-input-bg); }
     //  TEAMS
     // ══════════════════════════════════════════════════════════════════
     window.loadTeams = function () {
-        fetch('/api/v1/wf/teams')
+        fetch('/api/wf/teams')
             .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
             .then(function (d) {
                 allTeams = d.teams || [];
@@ -703,7 +703,7 @@ select.wt-select { background: var(--wt-input-bg); }
     // ── Members ────────────────────────────────────────────────────────
     function loadMembers(teamId) {
         document.getElementById('members-body').innerHTML = '<tr><td colspan="4" class="wt-empty">Loading...</td></tr>';
-        fetch('/api/v1/wf/teams/' + teamId)
+        fetch('/api/wf/teams/' + teamId)
             .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
             .then(function (d) {
                 var tbody = document.getElementById('members-body');
@@ -732,7 +732,7 @@ select.wt-select { background: var(--wt-input-bg); }
         var role    = document.getElementById('add-role').value.trim();
         if (!userId || !role) { gFlashError('User ID and role are required.'); return; }
 
-        fetch('/api/v1/wf/teams/' + teamId + '/members', {
+        fetch('/api/wf/teams/' + teamId + '/members', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ user_id: userId, role_label: role })
@@ -754,7 +754,7 @@ select.wt-select { background: var(--wt-input-bg); }
 
     window.removeMember = function (teamId, userId) {
         if (!confirm('Remove ' + userId + ' from team?')) return;
-        fetch('/api/v1/wf/teams/' + teamId + '/members/' + encodeURIComponent(userId), { method: 'DELETE' })
+        fetch('/api/wf/teams/' + teamId + '/members/' + encodeURIComponent(userId), { method: 'DELETE' })
             .then(function (r) { return r.json(); })
             .then(function (d) {
                 if (d.removed) { gFlashSuccess('Member removed.'); loadMembers(teamId); loadTeams(); }
@@ -767,7 +767,7 @@ select.wt-select { background: var(--wt-input-bg); }
     function loadAssignments(teamId) {
         var el = document.getElementById('assignments-list');
         el.innerHTML = '<p style="color:var(--wt-muted);font-size:0.82rem;">Loading...</p>';
-        fetch('/api/v1/wf/teams/' + teamId + '/assignments')
+        fetch('/api/wf/teams/' + teamId + '/assignments')
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (d) {
                 var assignments = (d && d.assignments) ? d.assignments : [];
@@ -809,7 +809,7 @@ select.wt-select { background: var(--wt-input-bg); }
 
         if (!scopeId) { gFlashError('Scope ID is required.'); return; }
 
-        fetch('/api/v1/wf/teams/' + teamId + '/assignments', {
+        fetch('/api/wf/teams/' + teamId + '/assignments', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ scope_type: scopeType, scope_id: scopeId, template_id: templateId || null })
@@ -842,7 +842,7 @@ select.wt-select { background: var(--wt-input-bg); }
         var canvas = document.getElementById('t-canvas').value;
         if (!name) { showModalErr('team-modal-err', 'Name is required.'); return; }
 
-        fetch('/api/v1/wf/teams', {
+        fetch('/api/wf/teams', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: name, description: desc || null, canvas_type: canvas || null })
@@ -864,7 +864,7 @@ select.wt-select { background: var(--wt-input-bg); }
     //  WORKFLOW TEMPLATES
     // ══════════════════════════════════════════════════════════════════
     window.loadTemplates = function () {
-        fetch('/api/v1/wf/templates')
+        fetch('/api/wf/templates')
             .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
             .then(function (d) {
                 allTemplates = d.templates || [];
@@ -931,7 +931,7 @@ select.wt-select { background: var(--wt-input-bg); }
         try { JSON.parse(stagesRaw); } catch(e) { showModalErr('tmpl-modal-err', 'Stages JSON is invalid: ' + e.message); return; }
         if (rolesRaw) { try { JSON.parse(rolesRaw); } catch(e) { showModalErr('tmpl-modal-err', 'Roles JSON is invalid: ' + e.message); return; } }
 
-        fetch('/api/v1/wf/templates', {
+        fetch('/api/wf/templates', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -964,7 +964,7 @@ select.wt-select { background: var(--wt-input-bg); }
         var newName  = document.getElementById('fork-name').value.trim();
         if (!newName) { showModalErr('fork-modal-err', 'New name is required.'); return; }
 
-        fetch('/api/v1/wf/templates/' + sourceId + '/fork', {
+        fetch('/api/wf/templates/' + sourceId + '/fork', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: newName })
@@ -981,7 +981,7 @@ select.wt-select { background: var(--wt-input-bg); }
     //  DOCUMENT TEMPLATES
     // ══════════════════════════════════════════════════════════════════
     window.loadDocTemplates = function () {
-        fetch('/api/v1/wf/doc-templates')
+        fetch('/api/wf/doc-templates')
             .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
             .then(function (d) {
                 renderDocTemplatesTable(d.doc_templates || []);
@@ -1022,7 +1022,7 @@ select.wt-select { background: var(--wt-input-bg); }
     }
 
     function loadFileCount(templateId) {
-        fetch('/api/v1/wf/doc-templates/' + templateId + '/ingested-files')
+        fetch('/api/wf/doc-templates/' + templateId + '/ingested-files')
             .then(function(r){ return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;
@@ -1061,7 +1061,7 @@ select.wt-select { background: var(--wt-input-bg); }
         msg.textContent = 'Uploading ' + file.name + '…';
         var fd = new FormData();
         fd.append('file', file);
-        fetch('/api/v1/wf/doc-templates/' + _currentIngestTemplateId + '/ingest', {
+        fetch('/api/wf/doc-templates/' + _currentIngestTemplateId + '/ingest', {
             method: 'POST', body: fd
         }).then(function(r) {
             bar.style.width = '60%';
@@ -1086,7 +1086,7 @@ select.wt-select { background: var(--wt-input-bg); }
 
     window.loadIngestedFiles = function() {
         if (!_currentIngestTemplateId) return;
-        fetch('/api/v1/wf/doc-templates/' + _currentIngestTemplateId + '/ingested-files')
+        fetch('/api/wf/doc-templates/' + _currentIngestTemplateId + '/ingested-files')
             .then(function(r){ return r.json(); })
             .then(function(d) {
                 var list = document.getElementById('ingested-files-list');
@@ -1116,7 +1116,7 @@ select.wt-select { background: var(--wt-input-bg); }
 
     window.deleteIngestedFile = function(ingestId) {
         if (!_currentIngestTemplateId || !confirm('Delete this ingested file and its chunks?')) return;
-        fetch('/api/v1/wf/doc-templates/' + _currentIngestTemplateId + '/ingested-files/' + ingestId, {method:'DELETE'})
+        fetch('/api/wf/doc-templates/' + _currentIngestTemplateId + '/ingested-files/' + ingestId, {method:'DELETE'})
             .then(function(r){ if(r.ok) { loadIngestedFiles(); loadFileCount(_currentIngestTemplateId); } })
             .catch(function(e){ console.error('deleteIngestedFile:', e); });
     };
@@ -1144,7 +1144,7 @@ select.wt-select { background: var(--wt-input-bg); }
         if (!schema) { showModalErr('doc-modal-err', 'Schema JSON is required.'); return; }
         try { JSON.parse(schema); } catch(e) { showModalErr('doc-modal-err', 'Schema JSON is invalid: ' + e.message); return; }
 
-        fetch('/api/v1/wf/doc-templates', {
+        fetch('/api/wf/doc-templates', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

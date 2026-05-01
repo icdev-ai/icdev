@@ -32,6 +32,13 @@ logger = logging.getLogger(__name__)
 # ── Feature-flag guard ────────────────────────────────────────────────────────
 
 def _hitl_enabled() -> bool:
+    # Force re-read from .env so toggling the flag takes effect without a full restart.
+    try:
+        from dotenv import load_dotenv as _ld
+        from pathlib import Path as _P
+        _ld(_P(__file__).resolve().parents[2] / ".env", override=True)
+    except Exception:
+        pass
     return os.getenv("ICDEV_HITL_ENABLED", "false").lower() in ("true", "1", "yes")
 
 
