@@ -47,6 +47,15 @@ def _load_env() -> None:
         pass
 
 
+def _is_intl_ticker(symbol: str) -> bool:
+    """Return True if *symbol* is exchange-qualified (e.g. CNC.TO, 7203.T, 0700.HK).
+
+    Alpaca covers US equities only; exchange-qualified tickers must be routed
+    to yfinance, which natively understands the TICKER.EXCHANGE suffix format.
+    """
+    return "." in symbol
+
+
 class FathomDeskDataGateway:
     """Unified data facade over OpenBB, Alpaca, and yfinance.
 
@@ -176,8 +185,8 @@ class FathomDeskDataGateway:
         """
         sym = ticker.upper()
 
-        # --- OpenBB path ---
-        if self._obb.available:
+        # --- OpenBB path (US equities only; skip for exchange-qualified intl tickers) ---
+        if not _is_intl_ticker(sym) and self._obb.available:
             try:
                 result = self._obb.get_price(sym, period)
                 raw = result.get("data", [])
@@ -378,6 +387,9 @@ class FathomDeskDataGateway:
         if _yfinance is None:
             return []
 
+        # Exchange-qualified tickers (CNC.TO, 7203.T, 0700.HK) route directly to
+        # yfinance — Alpaca covers US equities only. yfinance accepts the full
+        # TICKER.EXCHANGE suffix as-is, so no symbol transformation is needed.
         sym = ticker.upper()
         for attempt in range(RATE_LIMIT_RETRY_MAX):
             try:
