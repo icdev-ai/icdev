@@ -401,3 +401,86 @@ class FathomDeskDataGateway:
                     time.sleep(2 ** attempt)
 
         return []
+
+    def fetch_defi_yield(self, protocol: str) -> dict:
+        """Return DeFi yield and TVL data for *protocol* via public APIs.
+
+        Sources:
+        - DefiLlama APY API (https://yields.llama.fi/pools) for pool TVL and APY
+        - Coingecko free tier for governance/native token price
+
+        Target protocols: Aave, Compound, Uniswap, Jupiter.  Unknown protocols
+        are attempted with a lowercase slug match against DefiLlama project names.
+
+        Args:
+            protocol: Protocol name, e.g. ``"aave"``, ``"compound"``,
+                ``"uniswap"``, or ``"jupiter"``.
+
+        Returns:
+            Dict with keys: ``protocol``, ``tvl_usd``, ``apy_mean``,
+            ``pool_count``, ``token_price_usd``, ``source``.
+            Empty dict on any network or parse failure (graceful degradation).
+        """
+        _PROTOCOL_META: dict[str, dict] = {
+            "aave":     {"llama_slug": "aave-v3",   "coingecko_id": "aave"},
+            "compound": {"llama_slug": "compound-v3", "coingecko_id": "compound-governance-token"},
+            "uniswap":  {"llama_slug": "uniswap-v3",  "coingecko_id": "uniswap"},
+            "jupiter":  {"llama_slug": "jupiter",      "coingecko_id": "jupiter-exchange-solana"},
+        }
+        key = protocol.lower().strip()
+        meta = _PROTOCOL_META.get(key, {"llama_slug": key, "coingecko_id": key})
+        llama_slug = meta["llama_slug"]
+        coingecko_id = meta["coingecko_id"]
+
+        # --- DefiLlama pools ---
+        tvl_usd = 0.0
+        apy_mean = 0.0
+        pool_count = 0
+        try:
+            req = Request(
+                "https://yields.llama.fi/pools",
+                headers={"User-Agent": "ICDEV-FathomDesk/1.0", "Accept": "application/json"},
+            )
+            with urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:  # nosec B310
+                payload = json.loads(resp.read().decode("utf-8"))
+            pools = [
+                p for p in (payload.get("data") or [])
+                if (p.get("project") or "").lower() == llama_slug
+            ]
+            if pools:
+                pool_count = len(pools)
+                tvl_usd = sum(float(p.get("tvlUsd") or 0) for p in pools)
+                weighted = sum(
+                    float(p.get("apy") or 0) * float(p.get("tvlUsd") or 0)
+                    for p in pools
+                )
+                apy_mean = weighted / tvl_usd if tvl_usd else 0.0
+        except Exception:
+            return {}
+
+        # --- Coingecko token price (optional; failure doesn't abort result) ---
+        token_price: float | None = None
+        try:
+            cg_url = (
+                f"https://api.coingecko.com/api/v3/simple/price"
+                f"?ids={coingecko_id}&vs_currencies=usd"
+            )
+            req = Request(
+                cg_url,
+                headers={"User-Agent": "ICDEV-FathomDesk/1.0", "Accept": "application/json"},
+            )
+            with urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:  # nosec B310
+                cg_data = json.loads(resp.read().decode("utf-8"))
+            raw_price = (cg_data.get(coingecko_id) or {}).get("usd")
+            token_price = float(raw_price) if raw_price else None
+        except Exception:
+            pass
+
+        return {
+            "protocol": key,
+            "tvl_usd": tvl_usd,
+            "apy_mean": round(apy_mean, 4),
+            "pool_count": pool_count,
+            "token_price_usd": token_price,
+            "source": "defillama+coingecko",
+        }
