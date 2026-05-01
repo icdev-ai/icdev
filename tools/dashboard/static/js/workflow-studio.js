@@ -811,6 +811,64 @@ const StudioWF = (() => {
     if (tplTab) switchTab(tplTab);
   }
 
+  // ── DAG layout — assign (x, y) positions via rank + column ──
+  function computeDagLayout(steps) {
+    const NODE_W = 190;
+    const NODE_H = 72;
+    const GAP_X  = 80;
+    const GAP_Y  = 28;
+    const PAD_X  = 60;
+    const PAD_Y  = 60;
+
+    // Build dep/successor maps
+    const deps = {};   // id → [dep-id, ...]
+    const succs = {};  // id → [successor-id, ...]
+    steps.forEach(s => {
+      deps[s.id]  = s.depends_on
+        ? (Array.isArray(s.depends_on) ? s.depends_on : [s.depends_on])
+        : [];
+      succs[s.id] = [];
+    });
+    steps.forEach(s => deps[s.id].forEach(d => { if (succs[d]) succs[d].push(s.id); }));
+
+    // Assign rank = longest path from any root
+    const rank = {};
+    steps.forEach(s => { rank[s.id] = 0; });
+    const inDeg = {};
+    steps.forEach(s => { inDeg[s.id] = deps[s.id].length; });
+    const queue = steps.filter(s => inDeg[s.id] === 0).map(s => s.id);
+    while (queue.length) {
+      const id = queue.shift();
+      succs[id].forEach(sid => {
+        rank[sid] = Math.max(rank[sid], rank[id] + 1);
+        inDeg[sid]--;
+        if (inDeg[sid] === 0) queue.push(sid);
+      });
+    }
+
+    // Group by rank
+    const byRank = {};
+    steps.forEach(s => {
+      const r = rank[s.id];
+      (byRank[r] = byRank[r] || []).push(s.id);
+    });
+
+    // Assign positions: rank → x column, position-in-rank → y row
+    const maxPerCol = Math.max(...Object.values(byRank).map(a => a.length));
+    const positions = {};
+    Object.entries(byRank).forEach(([r, ids]) => {
+      const x = PAD_X + parseInt(r) * (NODE_W + GAP_X);
+      const colH = ids.length * (NODE_H + GAP_Y) - GAP_Y;
+      const gridH = maxPerCol * (NODE_H + GAP_Y) - GAP_Y;
+      const startY = PAD_Y + (gridH - colH) / 2;
+      ids.forEach((id, i) => {
+        positions[id] = { x, y: startY + i * (NODE_H + GAP_Y) };
+      });
+    });
+
+    return positions;
+  }
+
   // Stubs for future features
   function undo() { toast('Undo not yet implemented', 'info'); }
   function redo() { toast('Redo not yet implemented', 'info'); }
@@ -833,28 +891,30 @@ const StudioWF = (() => {
       updateCounts();
       showEmptyState();
 
+      // Compute DAG layout positions
+      const positions = computeDagLayout(steps);
+
       // Create nodes, track YAML step-id → canvas node-id mapping
       const idMap = {};
-      let y = 60;
       for (const s of steps) {
+        const pos = positions[s.id] || { x: 60, y: 60 };
         const node = addNode({
           toolId: s.id,
           toolName: s.name || s.id,
           toolPath: s.tool || '',
           toolDesc: s.description || '',
           toolColor: guessColor(s.tool || ''),
-        }, 120, y);
+        }, pos.x, pos.y);
         idMap[s.id] = node.id;
-        y += 100;
       }
 
-      // Add edges from depends_on
+      // Build edges from depends_on
       for (const s of steps) {
         if (!s.depends_on) continue;
-        const deps = Array.isArray(s.depends_on) ? s.depends_on : [s.depends_on];
-        for (const dep of deps) {
+        const depList = Array.isArray(s.depends_on) ? s.depends_on : [s.depends_on];
+        for (const dep of depList) {
           const fromId = idMap[dep];
-          const toId = idMap[s.id];
+          const toId   = idMap[s.id];
           if (fromId && toId) {
             edges.push({ from: fromId, to: toId });
             const target = nodes.find(n => n.id === toId);
@@ -862,10 +922,12 @@ const StudioWF = (() => {
           }
         }
       }
-      renderEdges();
 
+      // Switch to editor first so nodes are visible, then render edges after paint
       const editorTab = document.querySelector('[data-tab="editor"]');
       if (editorTab) switchTab(editorTab);
+      requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+
       toast(`Template "${data.name}" loaded — ${steps.length} steps`, 'success');
     } catch (e) {
       toast('Failed to load template: ' + e.message, 'error');
