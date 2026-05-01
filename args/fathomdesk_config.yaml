@@ -4,7 +4,7 @@
 # Opus agents are reserved for high-stakes reasoning where accuracy > cost.
 
 # Feature flag: set to false to bypass DebateEngine+RiskManager and use heuristic signal scoring.
-analyst_panel_enabled: true
+ANALYST_PANEL_ENABLED: false
 
 agent_llm_overrides:
   # Fundamental analysis — structured valuation; Sonnet balances cost and depth
