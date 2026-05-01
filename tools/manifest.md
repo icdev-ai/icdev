@@ -599,3 +599,11 @@
 | Eo Importer | tools\strategos\eo_importer.py | Auto-registered: strategos/eo_importer.py | --json | JSON |
 | Rf Attribution | tools\strategos\rf_attribution.py | Auto-registered: strategos/rf_attribution.py | --json | JSON |
 | Socmint | tools\genesis\reflexes\socmint.py | Auto-registered: reflexes/socmint.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Analyst Panel | tools\fathomdesk\analyst_panel.py | Auto-registered: fathomdesk/analyst_panel.py | --json | JSON |
+| Base Analyst | tools\fathomdesk\agents\base_analyst.py | Auto-registered: agents/base_analyst.py | --json | JSON |
+| Research Manager | tools\fathomdesk\agents\research_manager.py | Auto-registered: agents/research_manager.py | --json | JSON |
