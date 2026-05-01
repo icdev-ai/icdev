@@ -487,6 +487,13 @@ def run_full_pipeline(domain=None, db_path=None):
     # Use domain from config if not provided
     if not domain:
         domain = config.get("domain", {}).get("name")
+    elif domain:
+        for _key, _sec in config.items():
+            if not isinstance(_sec, dict):
+                continue
+            if _key == domain or domain in _sec.get("aliases", []):
+                domain = _sec.get("name", domain)
+                break
 
     # Stage 1: Discover competitors + scan sources (scan honors --domain via
     # per-platform keyword_filter_by_domain entries in args/creative_config.yaml)

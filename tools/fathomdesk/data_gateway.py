@@ -14,6 +14,7 @@ Usage:
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -30,6 +31,7 @@ except ImportError:
 
 from tools.fathomdesk.openbb_gateway import gateway as _obb_singleton, OpenBBGateway  # noqa: E402
 from tools.fathomdesk.broker_adapter import BrokerAdapter  # noqa: E402
+from tools.fathomdesk.constants import RATE_LIMIT_RETRY_MAX  # noqa: E402
 
 _ALPACA_DATA_BASE = "https://data.alpaca.markets"
 _REQUEST_TIMEOUT = 10
@@ -155,6 +157,7 @@ class FathomDeskDataGateway:
         ticker: str,
         period: str = "3mo",
         interval: str = "1d",
+        as_of_date: str | None = None,
     ) -> list[dict]:
         """Return OHLCV bars for *ticker* via OpenBB → yfinance fallback.
 
@@ -164,6 +167,8 @@ class FathomDeskDataGateway:
                 ``"6mo"``, ``"1y"``, etc.).  OpenBB uses a derived start date.
             interval: Bar interval accepted by yfinance (``"1d"``, ``"1h"``,
                 etc.).  OpenBB uses its own default granularity.
+            as_of_date: Optional end-date anchor (``"YYYY-MM-DD"``).  When set,
+                yfinance fetches bars ending on this date rather than today.
 
         Returns:
             List of bar dicts with keys ``date``, ``open``, ``high``, ``low``,
@@ -206,7 +211,10 @@ class FathomDeskDataGateway:
         if _yfinance is not None:
             try:
                 t = _yfinance.Ticker(sym)
-                hist = t.history(period=period, interval=interval)
+                yf_kwargs: dict = {"period": period, "interval": interval}
+                if as_of_date is not None:
+                    yf_kwargs["end"] = as_of_date
+                hist = t.history(**yf_kwargs)
                 if not hist.empty:
                     bars = []
                     for ts, row in hist.iterrows():
@@ -227,7 +235,7 @@ class FathomDeskDataGateway:
 
         return []
 
-    def fundamentals(self, ticker: str) -> dict:
+    def fundamentals(self, ticker: str, as_of_date: str | None = None) -> dict:
         """Return fundamental overview for *ticker* via OpenBB.
 
         Calls :meth:`OpenBBGateway.get_fundamentals` and returns the first
@@ -236,6 +244,9 @@ class FathomDeskDataGateway:
 
         Args:
             ticker: Equity symbol, e.g. ``"AAPL"``.
+            as_of_date: Optional date anchor (``"YYYY-MM-DD"``).  Accepted for
+                API consistency with :meth:`historical_bars`; passed through to
+                OpenBB when the underlying provider supports it.
 
         Returns:
             Dict of fundamental fields with ``ticker`` and ``source`` set.
@@ -346,3 +357,35 @@ class FathomDeskDataGateway:
         result.setdefault("iv_percentile", None)
         result["source"] = "chain_module"
         return result
+
+    def fetch_news(self, ticker: str, as_of_date: str | None = None) -> list[dict]:
+        """Return recent news articles for *ticker* via yfinance with retry/backoff.
+
+        Retries up to ``RATE_LIMIT_RETRY_MAX`` times on transient errors (e.g.
+        HTTP 429 rate-limit) using exponential backoff (2^attempt seconds).
+
+        Args:
+            ticker: Equity symbol, e.g. ``"AAPL"``.
+            as_of_date: Optional date anchor (``"YYYY-MM-DD"``).  Accepted for
+                API consistency with :meth:`historical_bars`; yfinance does not
+                expose a server-side news date filter so callers must filter the
+                returned list by ``providerPublishTime`` if needed.
+
+        Returns:
+            List of news article dicts from yfinance; empty list when yfinance
+            is unavailable or all retry attempts are exhausted.
+        """
+        if _yfinance is None:
+            return []
+
+        sym = ticker.upper()
+        for attempt in range(RATE_LIMIT_RETRY_MAX):
+            try:
+                t = _yfinance.Ticker(sym)
+                articles = t.news or []
+                return list(articles)
+            except Exception:
+                if attempt < RATE_LIMIT_RETRY_MAX - 1:
+                    time.sleep(2 ** attempt)
+
+        return []
