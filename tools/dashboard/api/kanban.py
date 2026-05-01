@@ -903,9 +903,36 @@ def move_task(task_id):
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
+        # guard-dep: block done transition if depends_on_task_id parent is not done.
+        # Mirrors the _parent_is_done check in kanban.py _move_task so the HTTP
+        # path (used by Claude CLI subprocess) enforces the same dependency gate.
+        moving_to_done = new_status == "done" and existing["status"] != "done"
+        if moving_to_done:
+            dep_row = conn.execute(
+                "SELECT t.depends_on_task_id, p.status AS parent_status "
+                "FROM kanban_tasks t "
+                "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
+                "WHERE t.id = ?",
+                (task_id,),
+            ).fetchone()
+            if dep_row:
+                dep_row = dict(dep_row)
+                parent_id = dep_row.get("depends_on_task_id")
+                parent_status = dep_row.get("parent_status")
+                if parent_id and parent_status not in ("done", "decomposed", None):
+                    return jsonify({
+                        "error": "dependency_not_done",
+                        "detail": (
+                            f"Cannot mark task done: dependency {parent_id!r} "
+                            f"is still {parent_status!r}. Complete the parent task first."
+                        ),
+                        "depends_on_task_id": parent_id,
+                        "parent_status": parent_status,
+                    }), 409
+
         # guard-22: block direct transitions to "done" unless verification
         # passed (or operator explicitly bypasses with a reason).
-        moving_to_done = new_status == "done" and existing["status"] != "done"
+        if moving_to_done and _verification_gate_enabled():
         if moving_to_done and _verification_gate_enabled():
             if bypass:
                 if not bypass_reason:

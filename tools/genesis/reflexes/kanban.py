@@ -999,29 +999,28 @@ def _get_due_tasks() -> list:
     conn = get_connection()
     try:
         # Native task dependency gating — a task is blocked if ANY of its
-        # declared dependencies (scalar OR junction table) are not yet done.
-        # Junction table (kanban_task_deps) is authoritative for multi-parent;
-        # scalar depends_on_task_id is checked as fallback for compat.
-        # 'decomposed' counts as unblocking: a decomposed parent was split into
-        # child tasks and will never be dispatched directly, so its dependents
-        # must not wait for it to reach 'done'.
-        dep_clause = (
-            "("
-            "  NOT EXISTS (SELECT 1 FROM kanban_task_deps d "
-            "              WHERE d.task_id = kt.id) "
-            "  AND (kt.depends_on_task_id IS NULL "
-            "       OR EXISTS (SELECT 1 FROM kanban_tasks dep "
-            "                  WHERE dep.id = kt.depends_on_task_id "
-            "                   AND dep.status IN ('done', 'decomposed')))"
-            "  OR ("
-            "  EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
-            "  AND NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
-            "                  JOIN kanban_tasks p ON p.id = d2.depends_on_id "
-            "                  WHERE d2.task_id = kt.id "
-            "                   AND p.status NOT IN ('done', 'decomposed'))"
-            "  )"
-            ")"
+        # declared dependencies (scalar AND/OR junction table) are not yet done.
+        # A task may have BOTH a scalar depends_on_task_id AND junction rows.
+        # Both must be satisfied. 'decomposed' counts as done (parent was split;
+        # it will never reach 'done' directly so dependents must not wait for it).
+        #
+        # Scalar dep check: always applied when depends_on_task_id is set.
+        # Junction dep check: when kanban_task_deps rows exist, ALL must be done.
+        # A task without either dependency is always eligible.
+        _scalar_dep_ok = (
+            "(kt.depends_on_task_id IS NULL "
+            " OR EXISTS (SELECT 1 FROM kanban_tasks dep "
+            "            WHERE dep.id = kt.depends_on_task_id "
+            "             AND dep.status IN ('done', 'decomposed')))"
         )
+        _junction_dep_ok = (
+            "(NOT EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
+            " OR NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
+            "                JOIN kanban_tasks p ON p.id = d2.depends_on_id "
+            "                WHERE d2.task_id = kt.id "
+            "                 AND p.status NOT IN ('done', 'decomposed')))"
+        )
+        dep_clause = f"({_scalar_dep_ok} AND {_junction_dep_ok})"
 
         # Always pick up scheduled-and-due tasks.
         # Chain-priority (2026-04-15): tasks with depends_on_task_id IS NOT NULL
@@ -1518,19 +1517,36 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
             "WHERE t.id = ?",
             (task_id,),
         ).fetchone()
+        if not row:
+            conn.close()
+            return True, None
+        row = dict(row)
+
+        # Check scalar dep
+        parent_id = row.get("depends_on_task_id")
+        if parent_id:
+            parent_status = row.get("parent_status")
+            if parent_status not in ("done", "decomposed"):
+                conn.close()
+                return False, f"parent {parent_id} status={parent_status!r}"
+
+        # Check junction deps — any undone junction parent blocks
+        unmet = conn.execute(
+            "SELECT d.depends_on_id, p.status "
+            "FROM kanban_task_deps d "
+            "JOIN kanban_tasks p ON p.id = d.depends_on_id "
+            "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
+            (task_id,),
+        ).fetchone()
         conn.close()
+        if unmet:
+            unmet = dict(unmet)
+            return False, (
+                f"junction dep {unmet['depends_on_id']!r} status={unmet['status']!r}"
+            )
     except Exception:
         return True, None  # fail-open on DB error
-    if not row:
-        return True, None
-    row = dict(row)
-    parent_id = row.get("depends_on_task_id")
-    if not parent_id:
-        return True, None
-    parent_status = row.get("parent_status")
-    if parent_status == "done":
-        return True, None
-    return False, f"parent {parent_id} status={parent_status!r}"
+    return True, None
 
 
 def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") -> Optional[str]:
@@ -1836,12 +1852,22 @@ def _detect_orphan_done_tasks() -> list[dict]:
     try:
         conn = get_connection()
         try:
-            rows = conn.execute(
+            # Scalar dep orphans: done task whose depends_on_task_id parent isn't done
+            scalar_rows = conn.execute(
                 "SELECT t.id AS id, t.depends_on_task_id AS parent_id, "
                 "       p.status AS parent_status "
                 "FROM kanban_tasks t "
                 "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.status = 'done' AND p.status != 'done'"
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
+            ).fetchall()
+            # Junction dep orphans: done task with at least one unfinished junction parent
+            junction_rows = conn.execute(
+                "SELECT DISTINCT t.id AS id, d.depends_on_id AS parent_id, "
+                "       p.status AS parent_status "
+                "FROM kanban_tasks t "
+                "JOIN kanban_task_deps d ON d.task_id = t.id "
+                "JOIN kanban_tasks p ON p.id = d.depends_on_id "
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
             ).fetchall()
         finally:
             conn.close()
@@ -1849,14 +1875,17 @@ def _detect_orphan_done_tasks() -> list[dict]:
         logger.warning("orphan-done sweep: DB error %s", exc)
         return []
 
+    seen: set[str] = set()
     orphans: list[dict] = []
-    for r in rows:
+    for r in list(scalar_rows) + list(junction_rows):
         d = dict(r)
-        orphans.append({
-            "id": d["id"],
-            "parent_id": d["parent_id"],
-            "parent_status": d.get("parent_status"),
-        })
+        if d["id"] not in seen:
+            seen.add(d["id"])
+            orphans.append({
+                "id": d["id"],
+                "parent_id": d["parent_id"],
+                "parent_status": d.get("parent_status"),
+            })
 
     for o in orphans:
         logger.warning(
