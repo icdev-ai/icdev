@@ -27,6 +27,7 @@ class TradingPrediction:
     title: str = ""
     description: str = ""
     confidence: float = 0.0  # 0.0-1.0
+    sentiment_weight: float = 0.5  # 0.0-1.0; 0=bearish-dominant, 1=bullish-dominant, 0.5=neutral
     severity: str = "medium"  # info, medium, high, critical
     horizon_days: int = 7
     direction: str = ""  # bullish, bearish, neutral
