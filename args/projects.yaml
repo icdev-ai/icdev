@@ -1,4 +1,54 @@
 projects:
+- key: fdt
+  name: FathomDesk — TradingAgents Adaptation
+  description: >-
+    Five-phase adaptation of tauricresearch/tradingagents patterns into FathomDesk.
+    Phase A: quick fixes (yfinance retry, date-aware fetch, creative domain alias).
+    Phase B: LLM factory + international tickers (TSX/Tokyo/HK via yfinance fallback).
+    Phase C: multi-agent analyst panel (4 agents + Bull/Bear debate + Risk Manager)
+    + SEC 17a-4 / CFTC / MiFID II decision audit trail.
+    Phase D: event-driven backtesting engine (FIFO P&L, Sharpe, Calmar)
+    + news sentiment → Oracle confidence weighting.
+    Phase E: Fama-French factor model + DeFi/on-chain asset coverage.
+    All phases reuse existing data_gateway.py, signal_generator.py, backtester.py,
+    broker_adapter.py, constants.py, INTaaS reasoner, trap detector, tax-lot FIFO,
+    and ICDEV LLM router.
+  task_prefix: fdt-
+  default_open: true
+  briefs:
+  - 'Phase A: yfinance rate-limit retry + date-aware fetch audit + creative domain alias — fdt-qfix-01..04'
+  - 'Phase B: LLM factory (per-agent provider override) + international tickers — fdt-llmfac-01..04, fdt-intltick-01..02'
+  - 'Phase C: 4 analyst agents + Bull/Bear debate + Risk Manager + decision audit trail — fdt-magent-01..10, fdt-decaudit-01..03'
+  - 'Phase D: event-driven backtester (Sharpe/Calmar/drawdown) + news sentiment signal — fdt-bte-01..06, fdt-newssig-01..03'
+  - 'Phase E: Fama-French 3-factor + momentum/mean-reversion + DeFi coverage — fdt-factor-01..05, fdt-defi-01..02'
+  epics:
+  - key: qfix
+    title: Phase A — Quick Fixes (yfinance retry, date anchor, creative alias)
+    priority: high
+  - key: llmfac
+    title: Phase B — LLM Provider Factory (per-agent override)
+    priority: high
+  - key: intltick
+    title: Phase B — International Ticker Support (TSX/Tokyo/HK)
+    priority: medium
+  - key: magent
+    title: Phase C — Multi-Agent Analyst Panel (4 agents + debate + risk manager)
+    priority: critical
+  - key: decaudit
+    title: Phase C — Decision Audit Trail (SEC 17a-4 / CFTC / MiFID II)
+    priority: high
+  - key: bte
+    title: Phase D — Backtesting Engine (event-driven, FIFO P&L, Sharpe/Calmar)
+    priority: high
+  - key: newssig
+    title: Phase D — News Sentiment Signal (Oracle confidence weighting)
+    priority: medium
+  - key: factor
+    title: Phase E — Fama-French Factor Model + Momentum/Mean-Reversion
+    priority: medium
+  - key: defi
+    title: Phase E — DeFi/On-Chain Asset Coverage
+    priority: low
 - key: sgx
   name: Sgx Project
   description: Auto-registered project for tasks with prefix 'sgx-'. Update name and
