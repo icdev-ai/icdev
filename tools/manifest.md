@@ -596,5 +596,6 @@
 |------|------|-------------|-------|--------|
 | Seed Fdt Amendment | tools\kanban\seed_fdt_amendment.py | Auto-registered: kanban/seed_fdt_amendment.py | --json | JSON |
 | Seed Fdt Tradingagents | tools\kanban\seed_fdt_tradingagents.py | Auto-registered: kanban/seed_fdt_tradingagents.py | --json | JSON |
+| Eo Importer | tools\strategos\eo_importer.py | Auto-registered: strategos/eo_importer.py | --json | JSON |
 | Rf Attribution | tools\strategos\rf_attribution.py | Auto-registered: strategos/rf_attribution.py | --json | JSON |
 | Socmint | tools\genesis\reflexes\socmint.py | Auto-registered: reflexes/socmint.py | --json | JSON |
