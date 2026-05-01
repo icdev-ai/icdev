@@ -172,14 +172,23 @@ GET       /reports/<id>                        Get report (?format=html for raw 
 
 ---
 
+## Seeds
+
+| File | Purpose |
+|------|---------|
+| `tools/db/seeds/seed_workflow_templates.py` | Idempotent seed: 8 system `wf_templates` (NDC/SDC/PDC/BDC/DDC/ODC/IDC + global) + 3 `wf_document_templates` (peer-review checklist, security sign-off, NDC naming standard). Called automatically by `init_icdev_db.py`. |
+
+---
+
 ## CLI
 
 ```bash
 # Run migrations 079+080
 python tools/db/migrate.py --up
 
-# Seed system templates
-python -c "from tools.workflow_hitl.template_manager import seed_system_templates; seed_system_templates()"
+# Seed system templates (idempotent — safe to re-run)
+python tools/db/seeds/seed_workflow_templates.py
+python tools/db/seeds/seed_workflow_templates.py --json
 
 # Ingest a document via CLI
 # (use POST /api/v1/wf/doc-templates/<id>/ingest or call ingest_file() directly)

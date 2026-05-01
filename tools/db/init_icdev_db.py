@@ -10431,6 +10431,13 @@ def init_db(db_path=None):
     conn.close()
     print(f"ICDEV™ database initialized at {path}")
 
+    # Seed system workflow templates (idempotent — INSERT OR IGNORE)
+    try:
+        from tools.db.seeds.seed_workflow_templates import run as _seed_wf
+        _seed_wf(verbose=True)
+    except Exception as _exc:
+        print(f"Warning: workflow template seed skipped — {_exc}")
+
     # Verify tables
     conn = sqlite3.connect(str(path))
     c = conn.cursor()
