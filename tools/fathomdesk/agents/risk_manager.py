@@ -22,15 +22,55 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import yaml
+
 from tools.db.storage import get_connection
+from tools.fathomdesk.constants import STRATEGY_TYPES
 from tools.fathomdesk.signal_generator import load_thresholds
 
 if TYPE_CHECKING:
     from tools.fathomdesk.agents.debate_engine import DebateResult
 
 logger = logging.getLogger(__name__)
+
+_UNIVERSE_YAML = Path(__file__).parent.parent.parent.parent / "args" / "fathomdesk_universe.yaml"
+
+
+def _load_venue_map() -> dict[str, str]:
+    """Build symbol→exchange-code map from fathomdesk_universe.yaml (fail-open)."""
+    try:
+        with _UNIVERSE_YAML.open(encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        result: dict[str, str] = {}
+        for market in (cfg.get("international_tickers") or {}).values():
+            exchange = market.get("exchange", "")
+            for entry in market.get("tickers") or []:
+                sym = (entry.get("symbol") or "").upper()
+                if sym and exchange:
+                    result[sym] = exchange
+        return result
+    except Exception:
+        return {}
+
+
+_VENUE_MAP: dict[str, str] = _load_venue_map()
+
+
+def _resolve_venue(ticker: str) -> str:
+    """Return exchange code for *ticker* using intl ticker config (e.g. TSX, TSE, HKEX, US)."""
+    upper = ticker.upper()
+    if upper in _VENUE_MAP:
+        return _VENUE_MAP[upper]
+    return ticker.rsplit(".", 1)[1] if "." in ticker else "US"
+
+
+def _resolve_instrument_type(rec: dict[str, Any]) -> str:
+    """Return 'option' if rec strategy is in STRATEGY_TYPES, else 'equity'."""
+    return "option" if rec.get("strategy", "") in STRATEGY_TYPES else "equity"
+
 
 _WASH_SALE_WINDOW_DAYS = 30
 _LIQUIDITY_TRAP_REGIME = "liquidity_trap"
@@ -116,8 +156,8 @@ def _write_decision_audit(
     rec: dict[str, Any],
 ) -> None:
     """Append one row to ad_decision_audit (fail-open, SEC Rule 17a-4 immutable)."""
-    # Venue from ticker exchange suffix: CNC.TO → "TO", AAPL → "US"
-    venue = ticker.rsplit(".", 1)[1] if "." in ticker else "US"
+    venue = _resolve_venue(ticker)
+    instrument_type = _resolve_instrument_type(rec)
     mifid_ts = datetime.now(timezone.utc).isoformat()
     audit_id = f"ada-{uuid.uuid4().hex[:12]}"
     reports = debate_result.analyst_reports or {}
@@ -147,7 +187,7 @@ def _write_decision_audit(
                     float(rec["confidence"]),
                     rec.get("reasoning", ""),
                     venue,
-                    "equity",
+                    instrument_type,
                     mifid_ts,
                 ],
             )
