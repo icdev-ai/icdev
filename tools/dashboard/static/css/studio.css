@@ -1252,29 +1252,52 @@
 
 .wf-canvas__svg {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: 0;
   pointer-events: none;
   z-index: 1;
+  overflow: visible;
 }
 
-.wf-canvas__svg path {
-  stroke: var(--studio-text-muted);
-  stroke-width: 2;
+/* Edge paths */
+.wf-canvas__svg .wf-edge {
+  stroke: #818cf8;
+  stroke-width: 2px;
   fill: none;
-  opacity: 0.5;
-  transition: opacity var(--studio-duration-fast);
+  opacity: 0.85;
+  transition: opacity var(--studio-duration-fast), stroke var(--studio-duration-fast);
+  pointer-events: stroke;
+  cursor: pointer;
 }
 
-.wf-canvas__svg path:hover {
+.wf-canvas__svg .wf-edge:hover {
   opacity: 1;
-  stroke: var(--studio-accent-light);
+  stroke: #a5b4fc;
+  stroke-width: 2.5px;
 }
 
-.wf-canvas__svg path.wf-edge--active {
-  stroke: var(--studio-accent);
-  opacity: 0.8;
+.wf-canvas__svg .wf-edge.wf-edge--active {
+  stroke: #6366f1;
+  opacity: 1;
   stroke-dasharray: 6 3;
   animation: studioDash 1s linear infinite;
+}
+
+/* Arrowhead fill colours */
+.wf-arrow-head {
+  fill: #818cf8;
+}
+
+.wf-arrow-head--active {
+  fill: #6366f1;
+}
+
+/* Legacy path selector kept for drag-drawn edges */
+.wf-canvas__svg path:not(.wf-edge):not(.wf-arrow-head) {
+  stroke: #818cf8;
+  stroke-width: 2px;
+  fill: none;
+  opacity: 0.85;
 }
 
 /* Nodes */
@@ -1647,4 +1670,89 @@
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   border: 0;
+}
+
+
+/* ============================================================
+   PRINT — light background, visible edges & nodes
+   ============================================================ */
+
+@media print {
+  /* Force white background everywhere */
+  body,
+  .studio-layout,
+  .studio-main,
+  .wf-studio,
+  .wf-canvas,
+  .wf-studio__palette,
+  .studio-card,
+  .studio-bg-card,
+  .studio-bg-surface,
+  .studio-bg-elevated {
+    background: #ffffff !important;
+    color: #111827 !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide chrome that doesn't print */
+  .studio-sidebar,
+  .studio-topbar,
+  .wf-studio__toolbar,
+  .wf-studio__palette,
+  .studio-toasts,
+  .wf-node-modal,
+  .wf-yaml-modal,
+  .studio-tab-panel:not(#panel-editor),
+  .studio-tabs {
+    display: none !important;
+  }
+
+  /* Canvas fills the page */
+  .wf-studio {
+    display: block !important;
+    height: auto !important;
+    border: none !important;
+  }
+
+  .wf-canvas {
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 600px;
+    background: #ffffff !important;
+    /* Remove dot-grid on print */
+    background-image: none !important;
+  }
+
+  /* Nodes — dark border, light background */
+  .wf-node {
+    background: #f9fafb !important;
+    border: 1.5px solid #374151 !important;
+    box-shadow: none !important;
+    color: #111827 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .wf-node__name {
+    color: #111827 !important;
+  }
+
+  .wf-node__body {
+    color: #374151 !important;
+  }
+
+  /* Edges — dark on white */
+  .wf-canvas__svg .wf-edge {
+    stroke: #374151 !important;
+    opacity: 1 !important;
+  }
+
+  .wf-arrow-head {
+    fill: #374151 !important;
+  }
+
+  /* Expand the SVG to show all content */
+  .wf-canvas__svg {
+    overflow: visible !important;
+  }
 }

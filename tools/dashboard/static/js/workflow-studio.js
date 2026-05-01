@@ -286,29 +286,57 @@ const StudioWF = (() => {
   // ── Edge rendering (SVG) ──
   function renderEdges() {
     const svg = edgesSvg();
-    const canvasRect = canvas().getBoundingClientRect();
-    svg.setAttribute('width', canvasRect.width);
-    svg.setAttribute('height', canvasRect.height);
-    let paths = '';
+    const c   = canvas();
+
+    // Cover the full scrollable area so no paths are clipped
+    const svgW = Math.max(c.scrollWidth, c.clientWidth, 800);
+    const svgH = Math.max(c.scrollHeight, c.clientHeight, 600);
+    svg.setAttribute('width', svgW);
+    svg.setAttribute('height', svgH);
+
+    // Arrowhead marker + paths
+    let html = `
+      <defs>
+        <marker id="wf-arrowhead" viewBox="0 0 10 10" refX="9" refY="5"
+                markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10"
+                orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 Z" class="wf-arrow-head"/>
+        </marker>
+        <marker id="wf-arrowhead-active" viewBox="0 0 10 10" refX="9" refY="5"
+                markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10"
+                orient="auto-start-reverse">
+          <path d="M 0 1.5 L 9 5 L 0 8.5 Z" class="wf-arrow-head wf-arrow-head--active"/>
+        </marker>
+      </defs>`;
+
     for (const edge of edges) {
       const fromNode = nodes.find(n => n.id === edge.from);
-      const toNode = nodes.find(n => n.id === edge.to);
+      const toNode   = nodes.find(n => n.id === edge.to);
       if (!fromNode || !toNode) continue;
 
       const fromEl = $(fromNode.id);
-      const toEl = $(toNode.id);
+      const toEl   = $(toNode.id);
       if (!fromEl || !toEl) continue;
 
-      const x1 = fromNode.x + fromEl.offsetWidth;
-      const y1 = fromNode.y + fromEl.offsetHeight / 2;
-      const x2 = toNode.x;
-      const y2 = toNode.y + toEl.offsetHeight / 2;
+      // Fallback to CSS min-width/height constants if not yet painted
+      const fromW = fromEl.offsetWidth  || 200;
+      const fromH = fromEl.offsetHeight || 72;
+      const toH   = toEl.offsetHeight   || 72;
 
-      const dx = Math.abs(x2 - x1) * 0.5;
-      paths += `<path d="M${x1},${y1} C${x1 + dx},${y1} ${x2 - dx},${y2} ${x2},${y2}"
-                  data-from="${edge.from}" data-to="${edge.to}"/>`;
+      // Output port = right-center of source node
+      // Input port  = left-center of target node
+      const x1 = fromNode.x + fromW - 8;   // -8 pulls back from the port dot edge
+      const y1 = fromNode.y + fromH / 2;
+      const x2 = toNode.x + 8;              // +8 clears the port dot
+      const y2 = toNode.y + toH / 2;
+      const dx = Math.max(Math.abs(x2 - x1) * 0.5, 60);
+
+      html += `<path class="wf-edge"
+                     d="M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}"
+                     marker-end="url(#wf-arrowhead)"
+                     data-from="${edge.from}" data-to="${edge.to}"/>`;
     }
-    svg.innerHTML = paths;
+    svg.innerHTML = html;
   }
 
   // ── Node Config Modal ──
