@@ -56,7 +56,10 @@ def _fetch_ff3() -> dict[str, dict[str, float]]:
     _CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     if not _cache_fresh():
-        with urllib.request.urlopen(_FF3_URL, timeout=30) as resp:
+        # B310: URL is a module-level HTTPS constant — scheme verified below
+        if not _FF3_URL.startswith("https://"):
+            raise RuntimeError(f"FF3 URL must use HTTPS, got: {_FF3_URL[:30]}")
+        with urllib.request.urlopen(_FF3_URL, timeout=30) as resp:  # nosec B310
             raw = resp.read()
         with zipfile.ZipFile(io.BytesIO(raw)) as zf:
             inner = next(n for n in zf.namelist() if n.upper().endswith(".CSV"))
