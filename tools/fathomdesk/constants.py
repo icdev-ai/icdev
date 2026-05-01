@@ -27,6 +27,8 @@ class BacktestResult:
     )
 
 
+RATE_LIMIT_RETRY_MAX: int = 3
+
 # Strategy IDs sourced from args/options_strategies.yaml.
 STRATEGY_TYPES: list[str] = [
     "long_call",
