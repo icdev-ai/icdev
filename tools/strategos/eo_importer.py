@@ -91,20 +91,18 @@ def _build_query_url(
     start_str = start_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%S.000Z")
     footprint = f"geography'SRID=4326;{bbox_wkt}'"
+    # Cloud cover filter applied in Python after fetch (OData attribute filter varies by API version)
     filter_expr = " and ".join([
         "Collection/Name eq 'SENTINEL-2'",
         f"OData.CSC.Intersects(area={footprint})",
         f"ContentDate/Start gt {start_str}",
         f"ContentDate/Start lt {end_str}",
-        "Attributes/OData.CSC.DoubleAttribute/any("
-        "att:att/Name eq 'cloudCover' "
-        f"and att/OData.CSC.DoubleAttribute/Value le {CLOUD_THRESHOLD:.2f})",
     ])
     params = {
         "$filter": filter_expr,
         "$orderby": "ContentDate/Start desc",
         "$top": str(max_results),
-        "$expand": "Attributes,Assets",
+        "$expand": "Attributes",
     }
     return CDSE_ODATA_BASE + "?" + urllib.parse.urlencode(params)
 
