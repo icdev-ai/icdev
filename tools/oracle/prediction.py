@@ -27,6 +27,7 @@ class OraclePrediction:
     category: str = ""
     recommendations: list[str] = field(default_factory=list)
     data: dict[str, Any] = field(default_factory=dict)
+    sentiment_weight: float = 0.5  # 0.0–1.0; >0.5 = bullish, <0.5 = bearish; default neutral
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

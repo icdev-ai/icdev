@@ -127,6 +127,45 @@ def _insert_trap_event(conn: Any, event: Dict[str, Any]) -> bool:
         return False
 
 
+# ── Sentiment helpers ──────────────────────────────────────────────────────────
+
+_SENTIMENT_ELEVATION = 0.15   # additive boost when bearish sentiment + near resistance
+_SENTIMENT_BEARISH_THRESHOLD = 0.4  # sentiment_weight below this = bearish
+
+
+def _get_sentiment_weight(conn: Any, ticker: str) -> float:
+    """Return the most recent sentiment_weight for *ticker* from oracle_predictions.
+
+    sentiment_weight is stored in scoring_weights JSON as {'sentiment_weight': <float>}.
+    Returns 0.5 (neutral) when no Oracle prediction is found or the field is absent.
+    """
+    try:
+        row = conn.execute(
+            "SELECT scoring_weights FROM oracle_predictions "
+            "WHERE subject_id = ? ORDER BY created_at DESC LIMIT 1",
+            (ticker,),
+        ).fetchone()
+        if row is None:
+            return 0.5
+        raw = row[0] if not hasattr(row, "keys") else row["scoring_weights"]
+        if not raw:
+            return 0.5
+        weights = json.loads(raw) if isinstance(raw, str) else raw
+        return float(weights.get("sentiment_weight", 0.5))
+    except Exception:
+        return 0.5
+
+
+def _is_near_resistance(pattern: str) -> bool:
+    """Return True when the trap pattern implies the price is/was near resistance.
+
+    A bull trap (BUY→SELL flip) means the ticker broke above resistance then failed —
+    by definition it was at/near resistance.  Bear traps touch support, not resistance,
+    so this check does not apply to them.
+    """
+    return pattern == "bull_trap"
+
+
 # ── Core sweep logic ───────────────────────────────────────────────────────────
 
 def _trap_sweep(conn: Any) -> List[Dict[str, Any]]:
@@ -213,7 +252,19 @@ def _trap_sweep(conn: Any) -> List[Dict[str, Any]]:
         except Exception:
             pass
 
-        confidence = round((conf_new + conf_old) / 2.0, 4)
+        base_confidence = round((conf_new + conf_old) / 2.0, 4)
+
+        # Sentiment elevation: bearish news + price near resistance raises trap probability
+        sentiment_weight = _get_sentiment_weight(conn, ticker)
+        sentiment_elevated = (
+            sentiment_weight < _SENTIMENT_BEARISH_THRESHOLD
+            and _is_near_resistance(pattern)
+        )
+        confidence = round(
+            min(1.0, base_confidence + (_SENTIMENT_ELEVATION if sentiment_elevated else 0.0)),
+            4,
+        )
+
         event: Dict[str, Any] = {
             "ticker": ticker,
             "pattern": pattern,
@@ -226,6 +277,9 @@ def _trap_sweep(conn: Any) -> List[Dict[str, Any]]:
                 "prior_signal_at": r1.get("created_at"),
                 "new_signal_at": r0.get("created_at"),
                 "detected_by": _REFLEX_KEY,
+                "sentiment_weight": sentiment_weight,
+                "sentiment_elevated": sentiment_elevated,
+                "base_confidence": base_confidence,
             },
         }
 
@@ -233,9 +287,11 @@ def _trap_sweep(conn: Any) -> List[Dict[str, Any]]:
         if ok:
             _mark_cooldown(conn, cooldown_key, now)
             inserted.append(event)
+            elev_tag = f" +{_SENTIMENT_ELEVATION} sentiment_elev" if sentiment_elevated else ""
             print(
                 f"  [trap_sweep] inserted {pattern} for {ticker} "
-                f"(conf={confidence:.2f}, flip={dir_old}→{dir_new})"
+                f"(conf={confidence:.2f}, flip={dir_old}→{dir_new}"
+                f", sentiment_w={sentiment_weight:.2f}{elev_tag})"
             )
 
     return inserted
