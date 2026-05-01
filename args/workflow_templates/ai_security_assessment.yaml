@@ -23,24 +23,6 @@ steps:
     tool: "tools/compliance/owasp_asi_assessor.py"
     description: "OWASP ASI01-ASI10 agentic risk assessment"
 
-  - id: ai_rmf
-    name: "NIST AI RMF"
-    tool: "tools/compliance/nist_ai_rmf_assessor.py"
-    depends_on: [atlas]
-    description: "NIST AI RMF 1.0 assessment"
-
-  - id: iso42001
-    name: "ISO 42001"
-    tool: "tools/compliance/iso42001_assessor.py"
-    depends_on: [atlas]
-    description: "ISO/IEC 42001:2023 AI Management System"
-
-  - id: xai
-    name: "XAI Assessment"
-    tool: "tools/compliance/xai_assessor.py"
-    depends_on: [ai_rmf]
-    description: "Explainable AI compliance (10 checks)"
-
   - id: prompt_scan
     name: "Prompt Injection Scan"
     tool: "tools/security/prompt_injection_detector.py"
@@ -51,21 +33,39 @@ steps:
     tool: "tools/security/ai_bom_generator.py"
     description: "AI Bill of Materials generation"
 
+  - id: ai_rmf
+    name: "NIST AI RMF"
+    tool: "tools/compliance/nist_ai_rmf_assessor.py"
+    depends_on: [atlas, owasp_llm, owasp_agentic, owasp_asi, prompt_scan, ai_bom]
+    description: "NIST AI RMF 1.0 assessment"
+
+  - id: iso42001
+    name: "ISO 42001"
+    tool: "tools/compliance/iso42001_assessor.py"
+    depends_on: [ai_rmf]
+    description: "ISO/IEC 42001:2023 AI Management System"
+
   - id: red_team
     name: "ATLAS Red Team"
     tool: "tools/security/atlas_red_team.py"
-    depends_on: [atlas]
+    depends_on: [ai_rmf]
     required: false
     description: "Adversarial testing (6 ATLAS + 6 behavioral)"
+
+  - id: xai
+    name: "XAI Assessment"
+    tool: "tools/compliance/xai_assessor.py"
+    depends_on: [ai_rmf]
+    description: "Explainable AI compliance (10 checks)"
 
   - id: transparency
     name: "AI Transparency Audit"
     tool: "tools/compliance/ai_transparency_audit.py"
-    depends_on: [ai_rmf]
+    depends_on: [iso42001, xai]
     description: "Cross-framework AI transparency audit"
 
   - id: accountability
     name: "AI Accountability Audit"
     tool: "tools/compliance/ai_accountability_audit.py"
-    depends_on: [ai_rmf]
+    depends_on: [red_team, xai]
     description: "Cross-framework AI accountability audit"
