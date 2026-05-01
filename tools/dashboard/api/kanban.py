@@ -933,7 +933,6 @@ def move_task(task_id):
         # guard-22: block direct transitions to "done" unless verification
         # passed (or operator explicitly bypasses with a reason).
         if moving_to_done and _verification_gate_enabled():
-        if moving_to_done and _verification_gate_enabled():
             if bypass:
                 if not bypass_reason:
                     return jsonify({
