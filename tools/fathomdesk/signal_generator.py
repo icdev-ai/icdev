@@ -7,6 +7,7 @@ min_confidence and min_score before passing them downstream.
 from __future__ import annotations
 
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,8 @@ _DEFAULTS: dict[str, Any] = {
     "sentiment": 0.6,
     "macro": 0.65,
     "technical": 0.55,
+    "momentum_window": 20,
+    "mean_reversion_window": 20,
 }
 
 
@@ -45,6 +48,26 @@ def load_thresholds(path: Path | None = None) -> dict[str, Any]:
 
 # Loaded once at module initialization; callers may override per-call via generate(thresholds=…).
 _THRESHOLDS: dict[str, Any] = load_thresholds()
+
+
+def compute_momentum(prices: list[float], window: int = 20) -> float:
+    """Return simple rate-of-change momentum over *window* periods."""
+    if len(prices) < window:
+        raise ValueError(f"Need at least {window} prices, got {len(prices)}")
+    return prices[-1] / prices[-window] - 1
+
+
+def compute_mean_reversion(prices: list[float], window: int = 20) -> float:
+    """Return z-score of the last price vs the rolling mean/std over *window* periods."""
+    if len(prices) < window:
+        raise ValueError(f"Need at least {window} prices, got {len(prices)}")
+    window_prices = prices[-window:]
+    mean = sum(window_prices) / window
+    variance = sum((p - mean) ** 2 for p in window_prices) / window
+    std = math.sqrt(variance)
+    if std == 0.0:
+        return 0.0
+    return (prices[-1] - mean) / std
 
 
 def generate(
