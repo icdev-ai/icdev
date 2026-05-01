@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
-from tools.workflow_hitl.constants import ApprovalPolicy, WfStatus, ApprovalStatus
+from tools.workflow_hitl.constants import WfStatus
 
 logger = logging.getLogger(__name__)
 

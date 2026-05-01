@@ -385,12 +385,57 @@ select.wt-select { background: var(--wt-input-bg); }
                         <th>Canvas</th>
                         <th>Stage Scope</th>
                         <th>Flags</th>
+                        <th>Files</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody id="doc-templates-body">
-                    <tr><td colspan="5" class="wt-empty">Loading...</td></tr>
+                    <tr><td colspan="7" class="wt-empty">Loading...</td></tr>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- ═══ 5. File Ingestion Panel ═════════════════════════════════════════ -->
+    <div class="wt-section" id="ingest-panel" style="display:none;">
+        <div class="wt-section-header">
+            <span class="wt-section-title">📄 Ingest Files — <span id="ingest-tmpl-name"></span></span>
+            <button class="wt-btn wt-btn-ghost wt-btn-sm" onclick="closeIngestPanel()">✕ Close</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+            <!-- Upload form -->
+            <div>
+                <p style="font-size:12px;color:#888;margin-bottom:12px;">
+                    Upload PDF, DOCX, HTML, or Markdown files. Text is extracted, chunked, and indexed for report generation.
+                </p>
+                <div id="ingest-drop-zone" style="border:2px dashed #3d444d;border-radius:8px;padding:24px;text-align:center;cursor:pointer;transition:border-color .2s;"
+                     onclick="document.getElementById('ingest-file-input').click()"
+                     ondragover="event.preventDefault();this.style.borderColor='#58a6ff'"
+                     ondragleave="this.style.borderColor='#3d444d'"
+                     ondrop="handleIngestDrop(event)">
+                    <div style="font-size:28px;margin-bottom:8px;">📁</div>
+                    <div style="color:#8b949e;font-size:13px;">Drag &amp; drop or <strong style="color:#58a6ff">click to browse</strong></div>
+                    <div style="color:#484f58;font-size:11px;margin-top:4px;">PDF · DOCX · HTML · MD · TXT</div>
+                </div>
+                <input type="file" id="ingest-file-input" style="display:none" accept=".pdf,.docx,.doc,.html,.htm,.md,.markdown,.txt"
+                       onchange="uploadIngestFile(this.files[0])">
+                <div id="ingest-progress" style="margin-top:12px;display:none;">
+                    <div style="background:#21262d;border-radius:4px;height:6px;overflow:hidden;">
+                        <div id="ingest-progress-bar" style="height:100%;width:0%;background:#58a6ff;transition:width .3s;"></div>
+                    </div>
+                    <div id="ingest-status-msg" style="font-size:11px;color:#8b949e;margin-top:4px;"></div>
+                </div>
+            </div>
+            <!-- Ingested files list -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                    <strong style="font-size:13px;">Ingested Files</strong>
+                    <button class="wt-btn wt-btn-ghost wt-btn-sm" onclick="loadIngestedFiles()">↻ Refresh</button>
+                </div>
+                <div id="ingested-files-list">
+                    <p style="color:#484f58;font-size:12px;">No files ingested yet.</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -947,10 +992,12 @@ select.wt-select { background: var(--wt-input-bg); }
             });
     };
 
+    var _currentIngestTemplateId = null;
+
     function renderDocTemplatesTable(templates) {
         var tbody = document.getElementById('doc-templates-body');
         if (!templates || templates.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="wt-empty">No document templates yet.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="wt-empty">No document templates yet.</td></tr>';
             return;
         }
         tbody.innerHTML = templates.map(function (t) {
@@ -966,9 +1013,113 @@ select.wt-select { background: var(--wt-input-bg); }
                 '<td>' + (t.canvas_type ? '<span class="badge ' + canvasBadge + '">' + escHtml(t.canvas_type) + '</span>' : '<span style="color:var(--wt-muted);">Global</span>') + '</td>' +
                 '<td style="color:var(--wt-muted);">' + escHtml(t.stage_scope || '&mdash;') + '</td>' +
                 '<td>' + (flags || '<span style="color:var(--wt-muted);">—</span>') + '</td>' +
+                '<td id="file-count-' + t.id + '" style="color:var(--wt-muted);font-size:12px;">—</td>' +
+                '<td><button class="wt-btn wt-btn-ghost wt-btn-sm" onclick="openIngestPanel(' + JSON.stringify(t.id) + ',' + JSON.stringify(t.name) + ')">📁 Files</button></td>' +
             '</tr>';
         }).join('');
+        // Load file counts async
+        templates.forEach(function(t) { loadFileCount(t.id); });
     }
+
+    function loadFileCount(templateId) {
+        fetch('/api/v1/wf/doc-templates/' + templateId + '/ingested-files')
+            .then(function(r){ return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d) return;
+                var el = document.getElementById('file-count-' + templateId);
+                if (el) el.textContent = (d.count || 0) + ' file(s)';
+            }).catch(function(){});
+    }
+
+    window.openIngestPanel = function(templateId, templateName) {
+        _currentIngestTemplateId = templateId;
+        document.getElementById('ingest-tmpl-name').textContent = templateName;
+        document.getElementById('ingest-panel').style.display = '';
+        document.getElementById('ingest-panel').scrollIntoView({behavior:'smooth'});
+        loadIngestedFiles();
+    };
+
+    window.closeIngestPanel = function() {
+        document.getElementById('ingest-panel').style.display = 'none';
+        _currentIngestTemplateId = null;
+    };
+
+    window.handleIngestDrop = function(event) {
+        event.preventDefault();
+        document.getElementById('ingest-drop-zone').style.borderColor = '#3d444d';
+        var file = event.dataTransfer.files[0];
+        if (file) uploadIngestFile(file);
+    };
+
+    window.uploadIngestFile = function(file) {
+        if (!file || !_currentIngestTemplateId) return;
+        var prog = document.getElementById('ingest-progress');
+        var bar  = document.getElementById('ingest-progress-bar');
+        var msg  = document.getElementById('ingest-status-msg');
+        prog.style.display = '';
+        bar.style.width = '10%';
+        msg.textContent = 'Uploading ' + file.name + '…';
+        var fd = new FormData();
+        fd.append('file', file);
+        fetch('/api/v1/wf/doc-templates/' + _currentIngestTemplateId + '/ingest', {
+            method: 'POST', body: fd
+        }).then(function(r) {
+            bar.style.width = '60%';
+            return r.json().then(function(d){ return {ok: r.ok, data: d}; });
+        }).then(function(res) {
+            if (res.ok) {
+                bar.style.width = '100%';
+                bar.style.background = '#3fb950';
+                msg.textContent = '✓ Ingested: ' + file.name;
+                setTimeout(function(){ prog.style.display='none'; bar.style.width='0%'; bar.style.background='#58a6ff'; }, 3000);
+                loadIngestedFiles();
+                loadFileCount(_currentIngestTemplateId);
+            } else {
+                bar.style.background = '#f85149';
+                msg.textContent = '✗ Error: ' + (res.data.error || 'Upload failed');
+            }
+        }).catch(function(e) {
+            bar.style.background = '#f85149';
+            msg.textContent = '✗ Network error: ' + e.message;
+        });
+    };
+
+    window.loadIngestedFiles = function() {
+        if (!_currentIngestTemplateId) return;
+        fetch('/api/v1/wf/doc-templates/' + _currentIngestTemplateId + '/ingested-files')
+            .then(function(r){ return r.json(); })
+            .then(function(d) {
+                var list = document.getElementById('ingested-files-list');
+                if (!d.files || d.files.length === 0) {
+                    list.innerHTML = '<p style="color:#484f58;font-size:12px;">No files ingested yet.</p>';
+                    return;
+                }
+                list.innerHTML = d.files.map(function(f) {
+                    var statusColor = {completed:'#3fb950',failed:'#f85149',processing:'#f0a500',pending:'#8b949e'}[f.ingestion_status] || '#8b949e';
+                    return '<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:6px;margin-bottom:6px;">' +
+                        '<div style="min-width:0;">' +
+                            '<div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escHtml(f.filename) + '</div>' +
+                            '<div style="font-size:10px;color:#8b949e;margin-top:2px;">' +
+                                escHtml(f.file_type.toUpperCase()) + ' · ' +
+                                (f.chunk_count || 0) + ' chunks · ' +
+                                (f.page_count || '?') + ' pages' +
+                            '</div>' +
+                        '</div>' +
+                        '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
+                            '<span style="font-size:10px;color:' + statusColor + ';">' + f.ingestion_status + '</span>' +
+                            '<button style="background:none;border:none;color:#f85149;cursor:pointer;font-size:12px;" title="Delete" onclick="deleteIngestedFile(' + JSON.stringify(f.id) + ')">✕</button>' +
+                        '</div>' +
+                    '</div>';
+                }).join('');
+            }).catch(function(e){ console.error('loadIngestedFiles:', e); });
+    };
+
+    window.deleteIngestedFile = function(ingestId) {
+        if (!_currentIngestTemplateId || !confirm('Delete this ingested file and its chunks?')) return;
+        fetch('/api/v1/wf/doc-templates/' + _currentIngestTemplateId + '/ingested-files/' + ingestId, {method:'DELETE'})
+            .then(function(r){ if(r.ok) { loadIngestedFiles(); loadFileCount(_currentIngestTemplateId); } })
+            .catch(function(e){ console.error('deleteIngestedFile:', e); });
+    };
 
     window.openDocTemplateModal = function () {
         ['dt-name','dt-stage','dt-schema'].forEach(function (id) { document.getElementById(id).value = ''; });

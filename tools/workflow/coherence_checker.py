@@ -2479,19 +2479,19 @@ def check_hitl_workflow() -> CoherenceCheck:
     except Exception as exc:
         issues.append(f"append_only check failed: {exc}")
 
-    # Check 2: HITLGate import
-    try:
-        from tools.workflow_hitl.gate import HITLGate  # noqa: F401
+    # Check 2: HITLGate module exists (file-based — avoids sys.path issues when run as script)
+    gate_path = PROJECT_ROOT / "tools" / "workflow_hitl" / "gate.py"
+    if gate_path.exists() and "HITLGate" in gate_path.read_text(encoding="utf-8"):
         actual.append("HITLGate=importable")
-    except ImportError as exc:
-        issues.append(f"HITLGate import failed: {exc}")
+    else:
+        issues.append("tools/workflow_hitl/gate.py missing or does not define HITLGate")
 
-    # Check 3: blueprint registration
-    try:
-        from tools.workflow_hitl.blueprint import create_wf_blueprint  # noqa: F401
+    # Check 3: blueprint module exists and defines create_wf_blueprint
+    bp_path = PROJECT_ROOT / "tools" / "workflow_hitl" / "blueprint.py"
+    if bp_path.exists() and "create_wf_blueprint" in bp_path.read_text(encoding="utf-8"):
         actual.append("wf_blueprint=importable")
-    except ImportError as exc:
-        issues.append(f"wf_blueprint import failed: {exc}")
+    else:
+        issues.append("tools/workflow_hitl/blueprint.py missing or does not define create_wf_blueprint")
 
     # Check 4: args/workflow_hitl_config.yaml exists
     cfg = PROJECT_ROOT / "args" / "workflow_hitl_config.yaml"

@@ -10028,6 +10028,68 @@ CREATE INDEX IF NOT EXISTS idx_wf_ext_instance ON wf_external_steps(instance_id,
 CREATE INDEX IF NOT EXISTS idx_wf_ext_token ON wf_external_steps(webhook_token);
 CREATE INDEX IF NOT EXISTS idx_wf_docsub_approval ON wf_document_submissions(approval_id);
 CREATE INDEX IF NOT EXISTS idx_wf_citations_instance ON wf_citations(instance_id, stage);
+
+-- Migration 080: WF Report Ingestion
+CREATE TABLE IF NOT EXISTS wf_ingested_files (
+    id TEXT PRIMARY KEY,
+    doc_template_id TEXT NOT NULL REFERENCES wf_document_templates(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    file_type TEXT NOT NULL,
+    file_size_bytes INTEGER,
+    content_hash TEXT NOT NULL,
+    storage_path TEXT,
+    page_count INTEGER,
+    section_count INTEGER,
+    ingestion_status TEXT NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    chunk_count INTEGER DEFAULT 0,
+    ingested_by TEXT,
+    ingested_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wf_ingest_doc ON wf_ingested_files(doc_template_id, ingestion_status);
+CREATE INDEX IF NOT EXISTS idx_wf_ingest_hash ON wf_ingested_files(content_hash);
+CREATE TABLE IF NOT EXISTS wf_report_section_defs (
+    id TEXT PRIMARY KEY,
+    report_type TEXT NOT NULL,
+    section_key TEXT NOT NULL,
+    section_name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    required INTEGER NOT NULL DEFAULT 1,
+    source_hints TEXT,
+    min_chunks INTEGER DEFAULT 1,
+    max_chunks INTEGER DEFAULT 8,
+    max_words INTEGER DEFAULT 800,
+    UNIQUE(report_type, section_key)
+);
+CREATE TABLE IF NOT EXISTS wf_generated_reports (
+    id TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL REFERENCES wf_instances(id),
+    report_type TEXT NOT NULL,
+    style_guide_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    content_html TEXT,
+    content_json TEXT,
+    word_count INTEGER,
+    section_count INTEGER,
+    citation_count INTEGER,
+    error_message TEXT,
+    generated_by TEXT,
+    generated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wf_reports_instance ON wf_generated_reports(instance_id, status);
+CREATE TABLE IF NOT EXISTS wf_report_section_chunks (
+    id TEXT PRIMARY KEY,
+    report_id TEXT NOT NULL REFERENCES wf_generated_reports(id) ON DELETE CASCADE,
+    section_key TEXT NOT NULL,
+    chunk_id TEXT NOT NULL,
+    relevance_score REAL,
+    rank INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_wf_rsc_report ON wf_report_section_chunks(report_id, section_key);
 """
 
 

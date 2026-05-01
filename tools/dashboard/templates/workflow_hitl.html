@@ -496,6 +496,22 @@
                         <li style="color:var(--wf-muted);font-size:0.8rem;list-style:none;padding:8px 0;">Loading...</li>
                     </ul>
                 </div>
+
+                <!-- Report Generation -->
+                <hr class="wf-divider" style="margin:0;">
+                <div class="wf-panel-inner">
+                    <label class="wf-label" style="margin-bottom:10px;">Generate Report</label>
+                    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                        <select id="report-type-select" style="flex:1;min-width:160px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:6px 8px;font-size:12px;">
+                            <option value="standard_audit">Standard Audit</option>
+                            <option value="compliance_assessment">Compliance Assessment</option>
+                            <option value="security_review">Security Review</option>
+                        </select>
+                        <button class="wf-btn wf-btn-ghost" style="font-size:12px;white-space:nowrap;" onclick="generateReport()">⚡ Generate</button>
+                    </div>
+                    <div id="report-gen-status" style="margin-top:8px;font-size:11px;color:#8b949e;"></div>
+                    <div id="report-list" style="margin-top:10px;"></div>
+                </div>
             </div>
 
         </div><!-- /wf-side -->
@@ -960,6 +976,71 @@
         if (str == null) return '';
         return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
+
+    // ── Report Generation ─────────────────────────────────────────────────
+    window.generateReport = function() {
+        if (!selectedInstanceId) {
+            alert('Select an instance from the queue first.');
+            return;
+        }
+        var reportType = document.getElementById('report-type-select').value;
+        var statusEl = document.getElementById('report-gen-status');
+        statusEl.textContent = '⏳ Generating ' + reportType.replace(/_/g,' ') + ' report…';
+        fetch('/api/v1/wf/instances/' + selectedInstanceId + '/generate-report', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({report_type: reportType})
+        }).then(function(r) { return r.json().then(function(d){ return {ok:r.ok, data:d}; }); })
+        .then(function(res) {
+            if (res.ok && res.data.report_id) {
+                statusEl.textContent = '✓ Report queued: ' + res.data.report_id;
+                statusEl.style.color = '#3fb950';
+                setTimeout(function() { loadReportList(selectedInstanceId); }, 2000);
+            } else {
+                statusEl.textContent = '✗ ' + (res.data.error || 'Generation failed');
+                statusEl.style.color = '#f85149';
+            }
+        }).catch(function(e) {
+            statusEl.textContent = '✗ Network error: ' + e.message;
+            statusEl.style.color = '#f85149';
+        });
+    };
+
+    function loadReportList(instanceId) {
+        fetch('/api/v1/wf/reports?instance_id=' + instanceId)
+            .then(function(r){ return r.ok ? r.json() : null; })
+            .then(function(d) {
+                var el = document.getElementById('report-list');
+                if (!d || !d.reports || d.reports.length === 0) {
+                    el.innerHTML = '<p style="color:#484f58;font-size:11px;">No reports yet.</p>';
+                    return;
+                }
+                var statusColors = {completed:'#3fb950',failed:'#f85149',generating:'#f0a500',pending:'#8b949e'};
+                el.innerHTML = d.reports.slice(0,5).map(function(r) {
+                    var sc = statusColors[r.status] || '#8b949e';
+                    var viewLink = r.status === 'completed'
+                        ? ' <a href="/api/v1/wf/reports/' + r.id + '?format=html" target="_blank" style="color:#58a6ff;font-size:10px;text-decoration:none;">View ↗</a>'
+                        : '';
+                    return '<div style="padding:6px 0;border-bottom:1px solid #21262d;font-size:11px;">' +
+                        '<span style="color:' + sc + ';margin-right:6px;">●</span>' +
+                        '<strong>' + escHtml(r.report_type.replace(/_/g,' ')) + '</strong>' +
+                        ' <span style="color:#8b949e;">' + escHtml(r.generated_at ? r.generated_at.slice(0,16) : '') + '</span>' +
+                        (r.word_count ? ' · ' + r.word_count + 'w' : '') +
+                        (r.citation_count ? ' · ' + r.citation_count + ' citations' : '') +
+                        viewLink + '</div>';
+                }).join('');
+            }).catch(function(e){ console.warn('loadReportList:', e); });
+    }
+
+    // Hook into existing selectInstance to also load reports
+    var _origSelectInstance = window.selectInstance;
+    window.selectInstance = function(id) {
+        if (_origSelectInstance) _origSelectInstance(id);
+        document.getElementById('report-gen-status').textContent = '';
+        document.getElementById('report-gen-status').style.color = '#8b949e';
+        document.getElementById('report-list').innerHTML = '';
+        loadReportList(id);
+    };
 
 })();
 </script>

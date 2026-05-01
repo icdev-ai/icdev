@@ -133,7 +133,7 @@ def fork(template_id: str, new_name: str, created_by: str | None = None) -> str:
 def seed_system_templates():
     """Idempotent: seed one system default template per canvas type + global default."""
     import json
-    from tools.workflow_hitl.constants import CANVAS_ROLE_DEFAULTS, DEFAULT_STAGES, DEFAULT_ROLES
+    from tools.workflow_hitl.constants import CANVAS_ROLE_DEFAULTS
 
     canvas_types = list(CANVAS_ROLE_DEFAULTS.keys()) + [None]
     conn = get_connection()
