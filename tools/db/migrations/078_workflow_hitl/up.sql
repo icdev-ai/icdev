@@ -50,3 +50,68 @@ CREATE TABLE IF NOT EXISTS wf_team_assignments (
     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(team_id, scope_type, scope_id)
 );
+
+-- ── Feedback (append-only, NIST AU) ───────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wf_feedback (
+    id               TEXT PRIMARY KEY,
+    approval_id      TEXT NOT NULL REFERENCES wf_approvals(id),
+    instance_id      TEXT NOT NULL REFERENCES wf_instances(id),
+    task_id          TEXT,
+    canvas_type      TEXT,
+    template_id      TEXT REFERENCES wf_templates(id),
+    stage            TEXT NOT NULL,
+    decision         TEXT NOT NULL CHECK(decision IN ('approve','kickback','conditional')),
+    feedback_types   TEXT,
+    rating           INTEGER CHECK(rating BETWEEN 1 AND 5),
+    comments         TEXT,
+    improvement_tags TEXT,
+    kickback_reason  TEXT,
+    citations_json   TEXT,
+    submitted_by     TEXT NOT NULL,
+    submitted_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── Feedback Insights (aggregated by Genesis reflex) ──────────────────────────
+CREATE TABLE IF NOT EXISTS wf_feedback_insights (
+    id            TEXT PRIMARY KEY,
+    canvas_type   TEXT,
+    template_id   TEXT,
+    feedback_type TEXT,
+    avg_rating    REAL,
+    issue_count   INTEGER,
+    top_tags      TEXT,
+    kickback_rate REAL,
+    period_start  TEXT NOT NULL,
+    period_end    TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── External Steps (email / ticket / wiki) ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS wf_external_steps (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT NOT NULL REFERENCES wf_instances(id),
+    stage_name      TEXT NOT NULL,
+    step_type       TEXT NOT NULL
+        CHECK(step_type IN ('manual','external_email','external_ticket','external_wiki')),
+    external_system TEXT,
+    external_ref    TEXT,
+    webhook_token   TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending','sent','waiting','completed','failed','timed_out')),
+    notified_at     TEXT,
+    completed_at    TEXT,
+    completed_by    TEXT,
+    payload_json    TEXT,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- ── kanban_tasks: add hitl_stage tracking column ──────────────────────────────
+ALTER TABLE kanban_tasks ADD COLUMN hitl_stage TEXT;
+
+-- ── Indexes ───────────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_wf_ext_instance          ON wf_external_steps(instance_id, status);
+CREATE INDEX IF NOT EXISTS idx_wf_ext_token             ON wf_external_steps(webhook_token);
+CREATE INDEX IF NOT EXISTS idx_wf_feedback_instance     ON wf_feedback(instance_id);
+CREATE INDEX IF NOT EXISTS idx_wf_feedback_canvas       ON wf_feedback(canvas_type, submitted_at);
+CREATE INDEX IF NOT EXISTS idx_wf_team_assignments_scope ON wf_team_assignments(scope_type, scope_id);
