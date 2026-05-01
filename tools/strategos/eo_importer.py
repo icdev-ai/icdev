@@ -115,9 +115,13 @@ def _fetch_scenes(url: str) -> list[dict] | None:
     Fetch Sentinel-2 scene records from Copernicus OData.
     Returns None if the network is unreachable (triggers api_unavailable fallback).
     """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("https", "http"):
+        logger.error("Rejected non-HTTP URL scheme: %s", parsed.scheme)
+        return None
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:  # nosec B310 — scheme validated above
             body = json.loads(resp.read().decode("utf-8"))
         return body.get("value", [])
     except (urllib.error.URLError, OSError, json.JSONDecodeError) as exc:
@@ -380,7 +384,8 @@ def list_signals(limit: int = 50, conn=None) -> None:
         rows = _conn.execute(
             "SELECT aoi_tag, satellite, sensing_date, cloud_pct, relevance_score, status "
             "FROM sg_eo_signals ORDER BY sensing_date DESC, relevance_score DESC "
-            f"LIMIT {int(limit)}"
+            "LIMIT ?",
+            (int(limit),),
         ).fetchall()
         total = (_conn.execute("SELECT COUNT(*) FROM sg_eo_signals").fetchone() or [0])[0]
         print(f"{'AOI':12}  {'Satellite':12}  {'Date':10}  {'Cloud%':>7}  {'Score':>6}  Status")
