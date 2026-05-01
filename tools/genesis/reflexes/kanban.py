@@ -1860,13 +1860,13 @@ def _detect_orphan_done_tasks() -> list[dict]:
 
     for o in orphans:
         logger.warning(
-            "ORPHAN-DONE detected: %s was done but parent %s is %r \u2014 rolling back to scheduled",
+            "ORPHAN-DONE detected: %s was done but parent %s is %r \u2014 rolling back to backlog",
             o["id"], o["parent_id"], o["parent_status"],
         )
-        # _move_task will cascade-rollback any descendants of o["id"]
-        # that were in_progress/backlog.
+        # Roll back to backlog (not scheduled) \u2014 parent is not done so this
+        # task must wait for the dependency chain to complete before re-scheduling.
         _move_task(
-            o["id"], "scheduled",
+            o["id"], "backlog",
             actor="orphan_sweep",
             reason=f"parent {o['parent_id']} status={o['parent_status']!r} at sweep",
         )
