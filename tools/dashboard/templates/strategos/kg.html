@@ -58,7 +58,10 @@
 .np-action-btn:hover { border-color:#38bdf8;color:var(--text-primary) }
 .np-research-btn { border-color:#10b981;color:#10b981;background:rgba(16,185,129,.08) }
 .np-research-btn:hover { background:rgba(16,185,129,.18) }
-#research-status { font-size:.78rem;margin-top:.4rem }
+#research-status { font-size:.78rem;margin-top:.4rem;line-height:1.5 }
+#research-status a { color:#38bdf8;text-decoration:none;font-weight:600 }
+#research-status a:hover { text-decoration:underline }
+.rs-count { font-weight:700 }
 
 /* Annotation tab */
 .ann-badge { display:inline-block;padding:.1rem .45rem;border-radius:3px;font-size:.75rem;
@@ -637,8 +640,10 @@ function renderActions(node) {
 window.researchNode = function () {
     if (!_activeNode) return;
     const status = document.getElementById('research-status');
+    const btn = document.querySelector('.np-research-btn');
     status.style.color = '#94a3b8';
     status.textContent = 'Triggering OSINT harvest…';
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Harvesting…'; }
     fetch('/api/strategos/osint/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -646,16 +651,26 @@ window.researchNode = function () {
     })
     .then(r => r.json())
     .then(d => {
+        if (btn) { btn.disabled = false; btn.textContent = '✓ Researched'; }
         if (d.scan_id || d.status === 'ok' || d.status === 'queued') {
-            const n = d.ingested != null ? ` — ${d.ingested} items ingested` : '';
+            const sig   = d.ingested  != null ? d.ingested  : 0;
+            const gdelt = d.gdelt_inserted != null ? d.gdelt_inserted : 0;
+            const parts = [];
+            if (sig)   parts.push(`<span class="rs-count">${sig}</span> OSINT signals`);
+            if (gdelt) parts.push(`<span class="rs-count">${gdelt}</span> GDELT events`);
+            const summary = parts.length ? parts.join(' + ') + ' ingested' : 'Harvest complete';
             status.style.color = '#10b981';
-            status.textContent = `Harvest queued${n}. Check OSINT page for results.`;
+            status.innerHTML = `✓ ${summary} &mdash; <a href="/strategos/osint" target="_blank">View signals ↗</a>`;
         } else {
             status.style.color = '#f59e0b';
             status.textContent = d.error || d.status || 'Queued.';
         }
     })
-    .catch(() => { status.style.color = '#e94560'; status.textContent = 'Network error.'; });
+    .catch(() => {
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ Research via OSINT'; }
+        status.style.color = '#e94560';
+        status.textContent = 'Network error — try again.';
+    });
 };
 
 // ── Annotation helpers ────────────────────────────────────────────────────────
