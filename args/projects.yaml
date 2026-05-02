@@ -1499,6 +1499,40 @@ projects:
   - key: winloss
     title: WINLOSS
     priority: medium
+- key: wne
+  name: Workflow Narrative Engine
+  task_prefix: wne-
+  default_open: true
+  description: >
+    General-purpose engine that turns any Workflow Studio DAG into an executive export pack:
+    narrative summary, 3-COA comparison, phased budget, ROI model, and slide outline.
+    Built on existing chat_manager.py so end users interact via a guided chat at /studio/narrate
+    (no Claude CLI required). Depends on wfs-schema-01 (narrative_context YAML block) and
+    wfs-decomp-01 (composite node + sub_steps). First template: ai_ml_transformation.yaml —
+    5-phase defense contractor AI/ML workforce transformation with full training resource
+    taxonomy (free/self-paced/ILT/OJT including AWS SkillBuilder and DeepLearning.ai).
+  briefs:
+    - "Epic meta: narrative_context spec + ai_ml_transformation.yaml template — wne-meta-01..02"
+    - "Epic core: context_builder + narrative_generator + coa_builder + roi_calculator + export_pack — wne-core-01..05"
+    - "Epic chat: wne_sessions DB + chat_engine state machine + /studio/narrate UI + API routes — wne-chat-01..04"
+    - "Epic api: Studio toolbar Generate Narrative Pack button — wne-api-01"
+    - "Epic vv: unit tests + E2E chat→generate→export — wne-vv-01..02"
+  epics:
+    - key: meta
+      title: Schema + Template (narrative_context + ai_ml_transformation.yaml)
+      priority: high
+    - key: core
+      title: Engine Modules (context_builder, narrative, COA, ROI, export_pack)
+      priority: critical
+    - key: chat
+      title: WNE Chat Interface (/studio/narrate — end-user, no Claude CLI)
+      priority: critical
+    - key: api
+      title: Studio Toolbar Integration
+      priority: medium
+    - key: vv
+      title: V&V — Unit Tests + E2E Gate
+      priority: critical
 - key: wfs
   name: Workflow Studio — People, Tools & Process Integration
   task_prefix: wfs-
