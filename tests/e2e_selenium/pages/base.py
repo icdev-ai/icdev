@@ -42,14 +42,19 @@ class BasePage:
             path: URL path to append, e.g. "/dashboard".
         """
         self.driver.get(f"{self.base_url}/{path.lstrip('/')}")
-        self._dismiss_tour()
+        self._suppress_tour()
 
-    def _dismiss_tour(self) -> None:
-        """Dismiss the ICDEV tour welcome overlay if present, so it doesn't intercept clicks."""
+    def _suppress_tour(self) -> None:
+        """Permanently suppress the ICDEV tour overlay via localStorage and direct DOM removal."""
         try:
             self.driver.execute_script(
+                "localStorage.setItem('icdev_tour_completed', '1');"
+                "localStorage.setItem('icdev_tour_last_step', '999');"
                 "var el = document.getElementById('icdev-tour-welcome');"
-                "if (el) { el.classList.remove('visible'); el.style.display='none'; }"
+                "if (el) { el.classList.remove('visible'); el.style.display='none'; el.remove(); }"
+                "document.querySelectorAll('[class*=\"tour\"]').forEach(function(e){"
+                "  e.style.display='none'; e.remove();"
+                "});"
             )
         except Exception:
             pass
