@@ -42,6 +42,7 @@ from tools.daemon.base import (  # noqa: E402
     sha256_hex,
 )
 from tools.db.storage import get_connection  # noqa: E402
+from tools.genesis.constants import TRUST_MODES  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -119,6 +120,11 @@ class GenesisDaemon(DaemonBase):
     event_prefix = "genesis"
     reflex_names = REFLEX_NAMES
     id_prefix = "gen"
+
+    def __init__(self, config: Dict[str, Any]):
+        super().__init__(config)
+        raw = config.get("trust_mode", "full")
+        self.trust_mode: str = raw if raw in TRUST_MODES else "full"
 
     def ensure_tables(self) -> None:
         """Create genesis tables if they do not exist."""

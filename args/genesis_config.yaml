@@ -17,6 +17,12 @@ classification: "CUI // SP-CTI"
 enabled: true  # D-GEN-9: enabled for persistent daemon
 env_override: ICDEV_GENESIS_ENABLED
 
+# ── Trust Mode ────────────────────────────────────────────────────────────────
+# Controls how much autonomy the daemon is granted.
+# Valid values: observer | advisor | executor | full
+# 'full' preserves existing behavior (all reflexes execute unrestricted).
+trust_mode: full
+
 # ── Active Hours ───────────────────────────────────────────────────────────
 # Reflexes only run within this window. Outside it, is_due() returns false.
 # Interval/continuous reflexes (research, ingest, heal) are also gated.
