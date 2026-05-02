@@ -2635,7 +2635,7 @@ def api_osint_scan():
         from tools.strategos.osint_harvester import harvest  # noqa: PLC0415
         _inbox = _Path(__file__).resolve().parents[2] / "data" / "osint_inbox"
         harvested = harvest(target=target, inbox_dir=_inbox)
-        results["ingested"] = harvested.get("inserted", 0)
+        results["ingested"] = harvested.get("ingested", 0)
         results["harvest_status"] = harvested.get("status", "unknown")
     except Exception as exc:
         results["harvest_error"] = str(exc)
