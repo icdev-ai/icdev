@@ -60,4 +60,23 @@ def skip_if_no_server() -> None:  # type: ignore[return]
             "Start the dashboard or set ICDEV_DASHBOARD_URL before running e2e_selenium tests.",
             allow_module_level=True,
         )
+
+
+_TOUR_SUPPRESS_JS = (
+    "localStorage.setItem('icdev_tour_completed', '1');"
+    "localStorage.setItem('icdev_tour_last_step', '999');"
+    "var el = document.getElementById('icdev-tour-welcome');"
+    "if (el) { el.classList.remove('visible'); el.style.display='none'; el.remove(); }"
+    "document.querySelectorAll('[class*=\"tour\"]').forEach(function(e){"
+    "  e.style.display='none'; e.remove();"
+    "});"
+)
+
+
+def suppress_tour(driver) -> None:  # type: ignore[type-arg]
+    """Suppress the ICDEV tour overlay on the current page. Call after every navigation."""
+    try:
+        driver.execute_script(_TOUR_SUPPRESS_JS)
+    except Exception:
+        pass
 # CUI // SP-CTI
