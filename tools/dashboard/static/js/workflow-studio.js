@@ -172,6 +172,11 @@ const StudioWF = (() => {
       timeout: 300,
       required: true,
       status: 'idle',
+      node_type: toolData.node_type || 'tool',
+      role: toolData.role || null,
+      human_required: toolData.human_required || false,
+      approval_policy: toolData.approval_policy || null,
+      doc_template: toolData.doc_template || null,
     };
     nodes.push(node);
     nextNodeY = Math.max(nextNodeY, y + 80);
@@ -188,6 +193,9 @@ const StudioWF = (() => {
     el.id = node.id;
     el.style.left = node.x + 'px';
     el.style.top = node.y + 'px';
+    el.dataset.nodeType = node.node_type || 'tool';
+    if (node.role) el.dataset.role = node.role;
+    if (node.approval_policy) el.dataset.approvalPolicy = node.approval_policy;
     el.innerHTML = `
       <div class="wf-node__port wf-node__port--input"
            onmousedown="StudioWF.startConnect(event, '${node.id}', 'input')"
@@ -537,6 +545,11 @@ const StudioWF = (() => {
       if (n.timeout !== 300) step.timeout = n.timeout;
       if (!n.required) step.required = false;
       if (n.description) step.description = n.description;
+      if (n.node_type) step.node_type = n.node_type;
+      if (n.role) step.role = n.role;
+      if (n.human_required) step.human_required = n.human_required;
+      if (n.approval_policy) step.approval_policy = n.approval_policy;
+      if (n.doc_template) step.doc_template = n.doc_template;
       return step;
     });
 
@@ -553,6 +566,11 @@ const StudioWF = (() => {
       if (s.timeout) yaml += `    timeout: ${s.timeout}\n`;
       if (s.required === false) yaml += `    required: false\n`;
       if (s.description) yaml += `    description: "${s.description}"\n`;
+      if (s.node_type) yaml += `    node_type: "${s.node_type}"\n`;
+      if (s.role) yaml += `    role: "${s.role}"\n`;
+      if (s.human_required) yaml += `    human_required: true\n`;
+      if (s.approval_policy) yaml += `    approval_policy: "${s.approval_policy}"\n`;
+      if (s.doc_template) yaml += `    doc_template: "${s.doc_template}"\n`;
     }
     return yaml;
   }
@@ -620,6 +638,11 @@ const StudioWF = (() => {
           toolPath: s.tool || '',
           toolDesc: s.description || '',
           toolColor: guessColor(s.tool || ''),
+          node_type: s.node_type || 'tool',
+          role: s.role || null,
+          human_required: s.human_required === 'true' || s.human_required === true,
+          approval_policy: s.approval_policy || null,
+          doc_template: s.doc_template || null,
         }, 120, y);
         y += 100;
       }
@@ -973,6 +996,11 @@ const StudioWF = (() => {
           toolPath: s.tool || '',
           toolDesc: s.description || '',
           toolColor: guessColor(s.tool || ''),
+          node_type: s.node_type || 'tool',
+          role: s.role || null,
+          human_required: s.human_required || false,
+          approval_policy: s.approval_policy || null,
+          doc_template: s.doc_template || null,
         }, pos.x, pos.y);
         idMap[s.id] = node.id;
       }
