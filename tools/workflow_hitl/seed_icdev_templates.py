@@ -649,11 +649,6 @@ def _upsert_team(conn, t: dict) -> None:
         return
 
     now = _now()
-    meta = json.dumps({
-        "suggested_roles": t.get("suggested_roles", []),
-        "suggested_templates": t.get("suggested_templates", []),
-        "is_system": True,
-    })
     conn.execute(
         """INSERT INTO wf_teams
            (id, name, description, canvas_type, created_by, created_at)

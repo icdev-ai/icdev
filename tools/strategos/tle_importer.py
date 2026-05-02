@@ -25,10 +25,8 @@ import argparse
 import json
 import math
 import random
-import sys
 import urllib.request
 from datetime import datetime, timezone, timedelta
-from typing import Optional
 
 from tools.db.storage import get_connection, is_pg
 
@@ -174,7 +172,7 @@ def _sgp4_ground_track(
     """Precise ground track using the sgp4 library."""
     sat = Satrec.twoline2rv(line1, line2)
     now = datetime.now(timezone.utc)
-    norad = _norad_from_line1(line1)
+    _norad_from_line1(line1)
     try:
         n = _mean_motion(line2)
         period_s = SECS_DAY / n

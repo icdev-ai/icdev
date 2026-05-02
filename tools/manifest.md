@@ -608,3 +608,17 @@
 | Analyst Panel | tools\fathomdesk\analyst_panel.py | Auto-registered: fathomdesk/analyst_panel.py | --json | JSON |
 | Base Analyst | tools\fathomdesk\agents\base_analyst.py | Auto-registered: agents/base_analyst.py | --json | JSON |
 | Research Manager | tools\fathomdesk\agents\research_manager.py | Auto-registered: agents/research_manager.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Adsb Importer | tools\strategos\adsb_importer.py | Auto-registered: strategos/adsb_importer.py | --json | JSON |
+| Ground Vehicle Importer | tools\strategos\ground_vehicle_importer.py | Auto-registered: strategos/ground_vehicle_importer.py | --json | JSON |
+| Tle Importer | tools\strategos\tle_importer.py | Auto-registered: strategos/tle_importer.py | --json | JSON |
+| Uas Importer | tools\strategos\uas_importer.py | Auto-registered: strategos/uas_importer.py | --json | JSON |
+| Wargame Advisor | tools\strategos\wargame_advisor.py | Auto-registered: strategos/wargame_advisor.py | --json | JSON |
+| Wargame Orbat | tools\strategos\wargame_orbat.py | Auto-registered: strategos/wargame_orbat.py | --json | JSON |
+| Wargame Turn Engine | tools\strategos\wargame_turn_engine.py | Auto-registered: strategos/wargame_turn_engine.py | --json | JSON |
+| Template Linter | tools\studio\template_linter.py | Auto-registered: studio/template_linter.py | --json | JSON |
+| Seed Icdev Templates | tools\workflow_hitl\seed_icdev_templates.py | Auto-registered: workflow_hitl/seed_icdev_templates.py | --json | JSON |
