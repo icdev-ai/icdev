@@ -215,6 +215,9 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.ato_package import ato_package_api
     _mount(ato_package_api, v1_prefix="/api/v1/ato-package")
 
+    from tools.dashboard.api.ato_compliance import ato_compliance_api
+    _mount(ato_compliance_api, v1_prefix="/api/v1/ato-compliance")
+
     from tools.dashboard.api.oracle import oracle_api
     _mount_inline(oracle_api)   # inline routes: /api/oracle/*
 

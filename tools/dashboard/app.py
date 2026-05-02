@@ -3375,6 +3375,11 @@ def create_app() -> Flask:
         """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
         return render_template("ato_package.html")
 
+    @app.route("/ato-compliance")
+    def ato_compliance_page():
+        """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
+        return render_template("ato_compliance.html")
+
     @app.route("/analytics")
     def analytics_page():
         """Compliance Funnel Analytics — ATO pipeline funnel, time-series, child app telemetry."""
