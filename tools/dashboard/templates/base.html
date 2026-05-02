@@ -405,6 +405,7 @@
     <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
     {% endif %}
     {% block scripts %}{% endblock %}
+    {% block extra_js %}{% endblock %}
     <script>
     (function() {
         function refreshBriefsBadge() {

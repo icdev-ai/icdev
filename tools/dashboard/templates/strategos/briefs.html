@@ -45,7 +45,10 @@
         </thead>
         <tbody>
         {% for b in briefs %}
-        <tr style="border-top:1px solid var(--border);font-size:.875rem">
+        <tr style="border-top:1px solid var(--border);font-size:.875rem;cursor:context-menu"
+            data-brief-id="{{ b.id }}"
+            data-brief-title="{{ b.title | e }}"
+            data-brief-type="{{ b.brief_type }}">
             <td style="padding:.6rem 1rem">
                 <span style="background:{% if b.brief_type=='sitrep' %}#1a3a5c{% elif b.brief_type=='iir' %}#3a1a2e{% elif b.brief_type=='warnord' %}#1a3a1a{% else %}#2e2a1a{% endif %};color:#ddd;padding:.15rem .5rem;border-radius:4px;font-size:.75rem;font-family:monospace">
                     {{ b.brief_type | upper }}
@@ -157,5 +160,19 @@ async function submitNewBrief() {
         errEl.style.display = 'block';
     }
 }
+
+// Right-click brief rows → Ask STRATEGOS
+document.querySelectorAll('tr[data-brief-id]').forEach(function(el) {
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (typeof window.sgChat === 'undefined') return;
+    window.sgChat.showMenu(e.clientX, e.clientY, {
+      type: 'intel_brief',
+      brief_id: el.dataset.briefId,
+      label: el.dataset.briefTitle || 'Intel Brief',
+      brief_type: el.dataset.briefType || 'N/A',
+    });
+  });
+});
 </script>
 {% endblock %}

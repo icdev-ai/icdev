@@ -485,5 +485,21 @@ function copyBriefToClipboard() {
     btn.textContent = '✓ Copied!';
     setTimeout(() => btn.textContent = orig, 1500);
 }
+
+// Right-click signal cards → Ask STRATEGOS
+document.querySelectorAll('.signal-card[data-id]').forEach(function(el) {
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (typeof window.sgChat === 'undefined') return;
+    const titleEl = el.querySelector('[style*="font-weight:600"]') || el.querySelector('span');
+    window.sgChat.showMenu(e.clientX, e.clientY, {
+      type: 'signal',
+      signal_id: el.dataset.id,
+      label: (titleEl && titleEl.textContent ? titleEl.textContent.trim() : 'Signal ' + el.dataset.id).slice(0, 80),
+      priority: el.dataset.score || 'N/A',
+      source: 'sg_prioritized_signals',
+    });
+  });
+});
 </script>
 {% endblock %}
