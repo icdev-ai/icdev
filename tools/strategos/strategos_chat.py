@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
-from typing import Optional
 
 from tools.db.storage import get_connection, is_pg
 
@@ -151,10 +149,10 @@ class StrategosRAG:
                 [f"(LOWER(title) LIKE {ph} OR LOWER(content_md) LIKE {ph})" for _ in terms]
             )
             params = [v for t in terms for v in (f"%{t}%", f"%{t}%")]
-            now = datetime.now(timezone.utc).isoformat()
             cur.execute(
                 f"SELECT brief_type, title, content_md, created_at "  # nosec B608
                 f"FROM sg_intelligence_briefs WHERE ({like_clauses}) "
+                f"AND created_at >= datetime('now', '-30 days') "
                 f"ORDER BY created_at DESC LIMIT %s",
                 params + [top_k],
             )
