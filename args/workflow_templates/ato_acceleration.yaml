@@ -34,7 +34,7 @@ steps:
     args:
       spec-version: "1.7"
     inject_project_id: true
-    depends_on: []
+    depends_on: [assess]
     description: "Generate Software Bill of Materials (CycloneDX 1.7)"
 
   - id: slsa

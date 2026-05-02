@@ -43,3 +43,9 @@ steps:
     tool: "tools/requirements/traceability_builder.py"
     depends_on: [decompose]
     description: "Build full RTM: req > model > code > test > control"
+
+  - id: baselined
+    name: "Baseline Requirements"
+    tool: "tools/requirements/requirements_baseliner.py"
+    depends_on: [spec_quality, boundary, trace]
+    description: "Baseline approved requirements set with RTM and boundary assessment"

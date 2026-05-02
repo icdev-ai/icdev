@@ -112,8 +112,9 @@ let _animId = null;
 let _tx = 0, _ty = 0, _scale = 1;
 
 // Interaction state
-let _drag = null;   // {nodeId}
-let _pan  = null;   // {cx0, cy0, tx0, ty0}
+let _drag       = null;   // {nodeId}
+let _pan        = null;   // {cx0, cy0, tx0, ty0}
+let _activeNode = null;   // node open in annotation panel
 
 // ── Resize canvas to container width ────────────────────────────────────────
 function resize() {
@@ -312,6 +313,15 @@ canvas.addEventListener('mouseup', () => {
 });
 canvas.addEventListener('mouseleave', () => { _drag = null; _pan = null; });
 
+// Single click → open annotation panel for that node
+canvas.addEventListener('click', evt => {
+    const { cx, cy } = evXY(evt);
+    const hit = hitNode(toWorld(cx, cy).x, toWorld(cx, cy).y);
+    if (!hit) return;
+    _activeNode = hit;
+    openAnnPanel(hit);
+});
+
 // Double-click to unpin a node
 canvas.addEventListener('dblclick', evt => {
     const { cx, cy } = evXY(evt);
@@ -329,6 +339,70 @@ canvas.addEventListener('wheel', evt => {
     _ty = cy - (cy - _ty) * (newScale / _scale);
     _scale = newScale;
 }, { passive: false });
+
+// ── Annotation panel helpers ──────────────────────────────────────────────────
+function renderAnnotations(list) {
+    const el = document.getElementById('ann-list');
+    if (!list || !list.length) {
+        el.innerHTML = '<div style="color:var(--text-muted)">No annotations yet.</div>';
+        return;
+    }
+    el.innerHTML = list.map(a =>
+        `<div style="margin-bottom:.5rem">
+           <span class="ann-badge ann-${a.annotation_type}">${a.annotation_type}</span>
+           <span style="color:var(--text-muted);font-size:.72rem;margin-left:.3rem">${(a.created_at||'').slice(0,16)}</span>
+           <div style="margin-top:.25rem;color:var(--text-primary);word-break:break-word">${a.content}</div>
+         </div>`
+    ).join('');
+}
+
+function openAnnPanel(node) {
+    document.getElementById('ann-panel-title').textContent = node.label || node.node_id;
+    document.getElementById('ann-list').innerHTML = '<div style="color:var(--text-muted)">Loading…</div>';
+    document.getElementById('ann-msg').textContent = '';
+    document.getElementById('ann-form').reset();
+    document.getElementById('ann-panel').style.display = 'block';
+    fetch('/api/strategos/annotations/kg_node/' + encodeURIComponent(node.node_id))
+        .then(r => r.json())
+        .then(d => renderAnnotations(d.annotations || []))
+        .catch(() => renderAnnotations([]));
+}
+
+window.submitAnnotation = function (evt) {
+    evt.preventDefault();
+    if (!_activeNode) return;
+    const type    = document.getElementById('ann-type').value;
+    const content = document.getElementById('ann-content').value.trim();
+    const msg     = document.getElementById('ann-msg');
+    msg.style.color = '#94a3b8';
+    msg.textContent = 'Saving…';
+    fetch('/api/strategos/annotate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            entity_type:     'kg_node',
+            entity_id:       _activeNode.node_id,
+            annotation_type: type,
+            content:         content,
+        }),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.status === 'ok') {
+            msg.style.color = '#10b981';
+            msg.textContent = 'Saved.';
+            document.getElementById('ann-form').reset();
+            openAnnPanel(_activeNode);
+        } else {
+            msg.style.color = '#e94560';
+            msg.textContent = d.error || 'Error saving annotation.';
+        }
+    })
+    .catch(() => {
+        msg.style.color = '#e94560';
+        msg.textContent = 'Network error — annotation not saved.';
+    });
+};
 
 // ── Kick off ──────────────────────────────────────────────────────────────────
 resize();

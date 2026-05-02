@@ -47,6 +47,7 @@ steps:
   - id: awards
     name: "Award Tracking"
     tool: "tools/govcon/award_tracker.py"
+    depends_on: [scan]
     required: false
     description: "Track SAM.gov award notices"
 

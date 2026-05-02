@@ -41,5 +41,5 @@ steps:
   - id: des_assess
     name: "DES Compliance"
     tool: "tools/mbse/des_assessor.py"
-    depends_on: [trace, sync]
+    depends_on: [trace, sync, control_map]
     description: "DoDI 5000.87 Digital Engineering Strategy assessment"

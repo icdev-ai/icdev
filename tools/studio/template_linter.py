@@ -1,16 +1,22 @@
 """
 tools/studio/template_linter.py
-Detect and optionally auto-fix isolated nodes in workflow YAML templates.
+Detect and auto-fix DAG problems in workflow YAML templates.
+
+Catches:
+  - Isolated nodes  (no edges at all)
+  - Disconnected subgraphs  (multiple connected components)
+  - Dangling depends_on references  (depend on a step that doesn't exist)
 
 Usage:
   python tools/studio/template_linter.py --check           # report only
   python tools/studio/template_linter.py --fix             # rewrite YAMLs in-place
   python tools/studio/template_linter.py --check --json    # machine-readable
-  python tools/studio/template_linter.py --check --gate    # exit 1 if any isolated nodes found
+  python tools/studio/template_linter.py --check --gate    # exit 1 if any problems
 """
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import sys
 from pathlib import Path
@@ -18,106 +24,166 @@ from pathlib import Path
 try:
     import yaml
 except ImportError:
-    print("pyyaml not installed — pip install pyyaml", file=sys.stderr)
+    print("pyyaml not installed -- pip install pyyaml", file=sys.stderr)
     sys.exit(1)
 
 TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templates"
 
 
-# ── DAG analysis ─────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-def _normalize_deps(deps) -> list[str]:
-    if not deps:
+def _deps(step: dict) -> list[str]:
+    d = step.get("depends_on", [])
+    if not d:
         return []
-    if isinstance(deps, str):
-        return [deps]
-    return list(deps)
+    return [d] if isinstance(d, str) else list(d)
 
+
+# ---------------------------------------------------------------------------
+# Union-Find for connected-components
+# ---------------------------------------------------------------------------
+
+def _components(steps: list[dict]) -> list[set[str]]:
+    parent = {s["id"]: s["id"] for s in steps}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for s in steps:
+        for d in _deps(s):
+            if d in parent:
+                union(s["id"], d)
+
+    groups: dict[str, set[str]] = {}
+    for s in steps:
+        groups.setdefault(find(s["id"]), set()).add(s["id"])
+    return list(groups.values())
+
+
+# ---------------------------------------------------------------------------
+# Analysis
+# ---------------------------------------------------------------------------
 
 def analyze(steps: list[dict]) -> dict:
-    """Return sets: roots, leaves, isolated, has_incoming, has_outgoing."""
-    has_incoming: set[str] = set()
-    has_outgoing: set[str] = set()
-    for s in steps:
-        for d in _normalize_deps(s.get("depends_on")):
-            has_incoming.add(s["id"])
-            has_outgoing.add(d)
     ids = {s["id"] for s in steps}
+    has_in: set[str] = set()
+    has_out: set[str] = set()
+    for s in steps:
+        for d in _deps(s):
+            has_in.add(s["id"])
+            has_out.add(d)
+    comps = _components(steps)
     return {
-        "has_incoming": has_incoming,
-        "has_outgoing": has_outgoing,
-        "roots":    [s["id"] for s in steps if s["id"] not in has_incoming and s["id"] in has_outgoing],
-        "leaves":   [s["id"] for s in steps if s["id"] in has_incoming and s["id"] not in has_outgoing],
-        "isolated": [s["id"] for s in steps if s["id"] not in has_incoming and s["id"] not in has_outgoing],
-        "dangling_deps": [d for s in steps for d in _normalize_deps(s.get("depends_on")) if d not in ids],
+        "isolated":    [s["id"] for s in steps if s["id"] not in has_in and s["id"] not in has_out],
+        "roots":       [s["id"] for s in steps if s["id"] not in has_in and s["id"] in has_out],
+        "leaves":      [s["id"] for s in steps if s["id"] in has_in and s["id"] not in has_out],
+        "dangling":    [d for s in steps for d in _deps(s) if d not in ids],
+        "components":  len(comps),
+        "comp_groups": [sorted(c) for c in sorted(comps, key=len, reverse=True)],
+        "has_in":      has_in,
+        "has_out":     has_out,
     }
 
 
-# ── Auto-fix heuristic ────────────────────────────────────────────────────────
+def is_ok(info: dict) -> bool:
+    return not info["isolated"] and not info["dangling"] and info["components"] <= 1
+
+
+# ---------------------------------------------------------------------------
+# Auto-fix
+# ---------------------------------------------------------------------------
 
 def auto_fix(steps: list[dict]) -> tuple[list[dict], list[str]]:
     """
-    Connect isolated nodes using declaration-order heuristics:
-    - Find the "hub" — the non-isolated node with the most incoming edges.
-    - If isolated node appears before the hub (by index) → wire it INTO the hub.
-    - If it appears after the hub → wire hub INTO it, or append to the last leaf.
-    Returns (patched_steps, list_of_changes).
+    Iteratively fix until fully connected:
+      1. Isolated nodes  -> wire into largest component's hub
+      2. Disconnected subgraphs  -> bridge smaller component into largest
+    Heuristic uses YAML declaration order as a tiebreaker for direction.
     """
-    import copy
     steps = copy.deepcopy(steps)
     changes: list[str] = []
-
-    info = analyze(steps)
-    isolated_ids = set(info["isolated"])
-    if not isolated_ids:
-        return steps, []
-
     idx = {s["id"]: i for i, s in enumerate(steps)}
-    by_idx = sorted(steps, key=lambda s: idx[s["id"]])
 
-    # Find hub: non-isolated node with most incoming edges
-    incoming_count: dict[str, int] = {}
-    for s in steps:
-        for d in _normalize_deps(s.get("depends_on")):
-            incoming_count[s["id"]] = incoming_count.get(s["id"], 0) + 1
+    def by_id(sid: str) -> dict:
+        return next(s for s in steps if s["id"] == sid)
 
-    non_isolated = [s for s in steps if s["id"] not in isolated_ids]
-    if not non_isolated:
-        # All nodes isolated → wire them sequentially
-        for i in range(1, len(steps)):
-            steps[i].setdefault("depends_on", [])
-            deps = _normalize_deps(steps[i]["depends_on"])
-            deps.append(steps[i - 1]["id"])
-            steps[i]["depends_on"] = deps
-            changes.append(f"  {steps[i]['id']} ← {steps[i-1]['id']} (sequential fallback)")
-        return steps, changes
+    def add_dep(target: str, dep: str, reason: str) -> None:
+        t = by_id(target)
+        current = _deps(t)
+        if dep not in current:
+            current.append(dep)
+            t["depends_on"] = current
+            changes.append(f"  {target}.depends_on += [{dep}]  ({reason})")
 
-    hub = max(non_isolated, key=lambda s: incoming_count.get(s["id"], 0))
+    def incoming_counts() -> dict[str, int]:
+        cnt: dict[str, int] = {}
+        for s in steps:
+            for d in _deps(s):
+                cnt[s["id"]] = cnt.get(s["id"], 0) + 1
+        return cnt
 
-    for iso_step in by_idx:
-        if iso_step["id"] not in isolated_ids:
+    for _iteration in range(len(steps) + 1):
+        info = analyze(steps)
+        if is_ok(info):
+            break
+
+        # -- Fix isolated nodes ----------------------------------------------
+        for iso_id in list(info["isolated"]):
+            non_iso = {s["id"] for s in steps} - set(info["isolated"])
+            if not non_iso:
+                # All isolated: wire sequentially by YAML order
+                sids = [s["id"] for s in sorted(steps, key=lambda s: idx[s["id"]])]
+                for i in range(1, len(sids)):
+                    add_dep(sids[i], sids[i - 1], "sequential fallback")
+                break
+            cnt = incoming_counts()
+            hub = max(non_iso, key=lambda sid: cnt.get(sid, 0))
+            if idx[iso_id] < idx[hub]:
+                add_dep(hub, iso_id, "isolated feeds hub")
+            else:
+                add_dep(iso_id, hub, "hub feeds isolated")
+
+        # -- Fix disconnected subgraphs --------------------------------------
+        info = analyze(steps)
+        if info["components"] <= 1:
             continue
-        iso_idx = idx[iso_step["id"]]
-        hub_idx = idx[hub["id"]]
 
-        if iso_idx < hub_idx:
-            # Wire isolated → hub
-            hub_step = next(s for s in steps if s["id"] == hub["id"])
-            deps = _normalize_deps(hub_step.get("depends_on", []))
-            deps.append(iso_step["id"])
-            hub_step["depends_on"] = deps
-            changes.append(f"  {hub['id']}.depends_on += [{iso_step['id']}]  (isolated before hub)")
-        else:
-            # Wire hub → isolated (isolated becomes a new leaf)
-            deps = _normalize_deps(iso_step.get("depends_on", []))
-            deps.append(hub["id"])
-            iso_step["depends_on"] = deps
-            changes.append(f"  {iso_step['id']}.depends_on += [{hub['id']}]  (isolated after hub)")
+        comps = _components(steps)
+        main = max(comps, key=len)
+        cnt = incoming_counts()
+
+        for comp in comps:
+            if comp == main:
+                continue
+            # Pick bridge source: leaf of smaller comp earliest in YAML
+            comp_leaves = [sid for sid in comp
+                           if sid in info["has_in"] and sid not in info["has_out"]]
+            src = min(comp_leaves or sorted(comp), key=lambda sid: idx[sid])
+            # Pick bridge target: root of main comp earliest in YAML
+            main_roots = [sid for sid in main if sid not in info["has_in"]]
+            dst = min(main_roots or sorted(main), key=lambda sid: idx[sid])
+
+            if idx[src] < idx[dst]:
+                add_dep(dst, src, "bridge disconnected subgraph")
+            else:
+                add_dep(src, dst, "bridge disconnected subgraph")
 
     return steps, changes
 
 
-# ── File I/O ──────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# File I/O
+# ---------------------------------------------------------------------------
 
 def load_template(path: Path) -> dict:
     with open(path, encoding="utf-8") as f:
@@ -126,16 +192,17 @@ def load_template(path: Path) -> dict:
 
 def save_template(path: Path, data: dict) -> None:
     with open(path, "w", encoding="utf-8") as f:
-        # Preserve header comment
         f.write("# CUI // SP-CTI\n")
         yaml.dump(data, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Runner
+# ---------------------------------------------------------------------------
 
 def run(check_only: bool, as_json: bool, gate: bool) -> int:
     results = []
-    any_isolated = False
+    any_bad = False
 
     for path in sorted(TEMPLATES_DIR.glob("*.yaml")):
         try:
@@ -149,21 +216,22 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             continue
 
         info = analyze(steps)
-        isolated = info["isolated"]
-        dangling = info["dangling_deps"]
-        ok = not isolated and not dangling
+        ok = is_ok(info)
 
         entry: dict = {
             "file": path.name,
-            "template_id": path.stem,
+            "id": path.stem,
             "steps": len(steps),
-            "isolated": isolated,
-            "dangling_deps": dangling,
+            "components": info["components"],
+            "isolated": info["isolated"],
+            "dangling": info["dangling"],
             "status": "ok" if ok else "fail",
         }
+        if info["components"] > 1:
+            entry["comp_groups"] = info["comp_groups"]
 
         if not ok:
-            any_isolated = True
+            any_bad = True
             if not check_only:
                 patched, changes = auto_fix(steps)
                 data["steps"] = patched
@@ -177,37 +245,36 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
         print(json.dumps(results, indent=2))
     else:
         for r in results:
-            icon = {"ok": "OK   ", "fail": "FAIL ", "fixed": "FIXED"}.get(r.get("status", ""), "?    ")
-            print(f"  {icon} {r['file']}", end="")
+            tag = {"ok": "OK   ", "fail": "FAIL ", "fixed": "FIXED"}.get(r.get("status", ""), "?    ")
+            line = f"  [{tag}] {r['file']}"
             if r.get("isolated"):
-                print(f"  isolated: {r['isolated']}", end="")
-            if r.get("dangling_deps"):
-                print(f"  dangling: {r['dangling_deps']}", end="")
-            if r.get("auto_fixed"):
-                for c in r["auto_fixed"]:
-                    print(f"\n      {c}", end="")
-            print()
+                line += f"  isolated={r['isolated']}"
+            if r.get("dangling"):
+                line += f"  dangling={r['dangling']}"
+            if r.get("components", 1) > 1:
+                line += f"  subgraphs={r['components']}"
+            print(line)
+            for c in r.get("auto_fixed", []):
+                print(c)
 
-        total_fail = sum(1 for r in results if r.get("status") == "fail")
-        total_fixed = sum(1 for r in results if r.get("status") == "fixed")
-        total_ok = sum(1 for r in results if r.get("status") == "ok")
-        print(f"\n  {total_ok} ok | {total_fixed} fixed | {total_fail} still failing")
+        n_ok = sum(1 for r in results if r.get("status") == "ok")
+        n_fx = sum(1 for r in results if r.get("status") == "fixed")
+        n_fail = sum(1 for r in results if r.get("status") == "fail")
+        print(f"\n  {n_ok} ok | {n_fx} fixed | {n_fail} still failing")
 
-    if gate and any_isolated and check_only:
+    if gate and any_bad and check_only:
         return 1
     return 0
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Workflow template DAG linter")
-    ap.add_argument("--check", action="store_true", help="Report only, do not write files")
-    ap.add_argument("--fix",   action="store_true", help="Auto-fix isolated nodes in-place")
-    ap.add_argument("--json",  action="store_true", help="Output JSON")
-    ap.add_argument("--gate",  action="store_true", help="Exit 1 if isolated nodes found (for CI)")
+    ap = argparse.ArgumentParser(description="Workflow template DAG linter/fixer")
+    ap.add_argument("--check", action="store_true", help="Report only, no file writes")
+    ap.add_argument("--fix",   action="store_true", help="Auto-fix problems in-place")
+    ap.add_argument("--json",  action="store_true", help="JSON output")
+    ap.add_argument("--gate",  action="store_true", help="Exit 1 if problems found (CI use)")
     args = ap.parse_args()
-
-    check_only = args.check or not args.fix
-    sys.exit(run(check_only=check_only, as_json=args.json, gate=args.gate))
+    sys.exit(run(check_only=not args.fix, as_json=args.json, gate=args.gate))
 
 
 if __name__ == "__main__":
