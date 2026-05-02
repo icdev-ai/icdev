@@ -52,6 +52,10 @@ ROUTE_MODULE_MAP: dict[str, str] = {
     "/proposal-genesis": "tools/proposal_genesis/",
     "/filesync": "tools/filesync/",
     "/wizard": "tools/project/",
+    "/strategos": "tools/strategos/",
+    "/studio": "tools/studio/",
+    "/network": "tools/network/",
+    "/migration-intel": "tools/migration/",
 }
 
 

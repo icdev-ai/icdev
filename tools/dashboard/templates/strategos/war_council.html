@@ -306,6 +306,28 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ── Ask STRATEGOS button (brief header) ─────────────────────────────────── */
+.btn-ask-strategos {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .22rem .65rem;
+  background: rgba(245,158,11,.12);
+  border: 1px solid rgba(245,158,11,.35);
+  border-radius: 4px;
+  color: #f59e0b;
+  font-size: .78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+  font-family: inherit;
+}
+.btn-ask-strategos:hover { background: rgba(245,158,11,.22); border-color: #f59e0b; }
+
+/* ── Brief cards — right-click hint ──────────────────────────────────────── */
+.brief-card[data-sg-ctx] { cursor: context-menu; }
+.brief-card[data-sg-ctx]:hover { border-color: rgba(245,158,11,.4); }
+
 /* ── Error state ─────────────────────────────────────────────────────────── */
 .wc-error {
   background: rgba(239,68,68,.08);
@@ -534,6 +556,7 @@
         <span class="brief-cls-pill">CUI // SP-CTI</span>
         <span class="brief-theater-pill" id="brief-theater-badge">—</span>
         <span class="brief-meta" id="brief-generated-at">—</span>
+        <button class="btn-ask-strategos" id="btn-ask-strategos" onclick="askStratAboutBrief()" style="display:none">&#9889; Ask STRATEGOS</button>
         <button class="btn-save-brief" onclick="saveBrief()">&#9654; Save to Intel Briefs</button>
       </div>
 
@@ -800,6 +823,10 @@ function renderBrief(data) {
   document.getElementById('wc-placeholder').style.display = 'none';
   document.getElementById('brief-output').style.display   = 'block';
 
+  // Show Ask STRATEGOS button
+  const askBtn = document.getElementById('btn-ask-strategos');
+  if (askBtn) askBtn.style.display = '';
+
   // Header row
   document.getElementById('brief-id-badge').textContent =
     data.brief_id ? 'ID: ' + data.brief_id : 'DRAFT';
@@ -820,33 +847,61 @@ function renderBrief(data) {
   }
 
   // Doctrine citations
-  const docEl = document.getElementById('brief-doctrine');
+  const docEl    = document.getElementById('brief-doctrine');
   const citations = data.doctrine_citations || [];
   docEl.innerHTML = citations.length
     ? citations.map(c => `
-        <div class="brief-card">
+        <div class="brief-card" data-sg-ctx="1">
           <div class="bc-ref">${escHtml(c.reference || c.ref || '')}</div>
           <div class="bc-excerpt">${escHtml(c.excerpt || c.text || '')}</div>
         </div>`).join('')
     : '<p style="color:var(--text-muted);font-size:.83rem">No doctrine citations returned.</p>';
+  if (citations.length) {
+    docEl.querySelectorAll('.brief-card').forEach((card, i) => {
+      const c = citations[i];
+      card.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (window.sgChat) window.sgChat.showMenu(e.clientX, e.clientY, {
+          type: 'doctrine_citation',
+          label: c.reference || c.ref || 'Doctrine',
+          detail: c.excerpt || c.text || '',
+          theater: data.theater || '',
+        });
+      });
+    });
+  }
 
   // Historical precedents
   const precEl = document.getElementById('brief-precedents');
   const prec   = data.historical_precedents || data.precedents || [];
   precEl.innerHTML = prec.length
     ? prec.map(p => `
-        <div class="brief-card">
+        <div class="brief-card" data-sg-ctx="1">
           <div class="bc-title">${escHtml(p.title || p.name || '')}</div>
           <div class="bc-excerpt">${escHtml(p.summary || p.description || '')}</div>
         </div>`).join('')
     : '<p style="color:var(--text-muted);font-size:.83rem">No historical precedents returned.</p>';
+  if (prec.length) {
+    precEl.querySelectorAll('.brief-card').forEach((card, i) => {
+      const p = prec[i];
+      card.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (window.sgChat) window.sgChat.showMenu(e.clientX, e.clientY, {
+          type: 'historical_precedent',
+          label: p.title || p.name || 'Precedent',
+          detail: p.summary || p.description || '',
+          theater: data.theater || '',
+        });
+      });
+    });
+  }
 
   // COAs
   const coaEl = document.getElementById('brief-coas');
   const coas   = data.courses_of_action || data.coas || [];
   coaEl.innerHTML = coas.length
     ? coas.map((c, i) => `
-        <div class="brief-card" style="display:flex;gap:.5rem;align-items:flex-start">
+        <div class="brief-card" data-sg-ctx="1" style="display:flex;gap:.5rem;align-items:flex-start">
           <span class="coa-number">${i + 1}</span>
           <div>
             <div class="bc-title">${escHtml(c.title || c.name || 'COA ' + (i + 1))}</div>
@@ -854,6 +909,20 @@ function renderBrief(data) {
           </div>
         </div>`).join('')
     : '<p style="color:var(--text-muted);font-size:.83rem">No COAs returned.</p>';
+  if (coas.length) {
+    coaEl.querySelectorAll('.brief-card').forEach((card, i) => {
+      const c = coas[i];
+      card.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        if (window.sgChat) window.sgChat.showMenu(e.clientX, e.clientY, {
+          type: 'war_council_coa',
+          label: c.title || c.name || 'COA ' + (i + 1),
+          detail: c.description || c.summary || '',
+          theater: data.theater || '',
+        });
+      });
+    });
+  }
 }
 
 // ── Save brief ────────────────────────────────────────────────────────────
@@ -877,6 +946,20 @@ function saveBrief() {
       if (btn) { btn.textContent = '&#10003; Saved'; btn.disabled = true; }
     })
     .catch(err => showError('Save failed: ' + err.message));
+}
+
+// ── Ask STRATEGOS about the current brief ─────────────────────────────────
+function askStratAboutBrief() {
+  if (!_lastBrief || !window.sgChat) return;
+  const theater  = theaterLabel(_lastBrief.theater || '');
+  const scenario = document.getElementById('wc-scenario').value.trim();
+  window.sgChat.open({
+    type:     'war_council_brief',
+    label:    'War Council Brief — ' + theater,
+    detail:   scenario.slice(0, 300),
+    theater:  _lastBrief.theater || '',
+    brief_id: _lastBrief.brief_id || null,
+  });
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
