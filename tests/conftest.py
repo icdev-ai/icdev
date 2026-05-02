@@ -1746,6 +1746,36 @@ CREATE TABLE IF NOT EXISTS ad_backtest_runs (
 CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_ticker      ON ad_backtest_runs(ticker);
 CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_strategy    ON ad_backtest_runs(strategy_id);
 CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_created_at  ON ad_backtest_runs(created_at);
+
+-- WNE session and artifact tables (migration 084)
+CREATE TABLE IF NOT EXISTS wne_sessions (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT,
+    template_slug TEXT,
+    status TEXT CHECK(status IN (
+        'collecting','confirming','generating','reviewing','done','failed'
+    )),
+    context_json TEXT,
+    chat_context_id TEXT,
+    org_name TEXT,
+    audience TEXT,
+    program_name TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wne_sessions_status ON wne_sessions(status);
+
+CREATE TABLE IF NOT EXISTS wne_artifacts (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES wne_sessions(id),
+    artifact_type TEXT CHECK(artifact_type IN (
+        'exec_brief','coa_comparison','budget_table',
+        'roi_analysis','slide_outline','zip_bundle'
+    )),
+    content TEXT,
+    generated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wne_artifacts_session_id ON wne_artifacts(session_id);
 """
 
 # ---------------------------------------------------------------------------
