@@ -222,24 +222,58 @@ const StudioWF = (() => {
 
   // ── Node dragging ──
   document.addEventListener('mousemove', (e) => {
-    if (!dragState || !dragState.nodeId) return;
-    const canvasRect = canvas().getBoundingClientRect();
-    const x = snap((e.clientX - canvasRect.left - dragState.offsetX) / zoom);
-    const y = snap((e.clientY - canvasRect.top - dragState.offsetY) / zoom);
-    const node = nodes.find(n => n.id === dragState.nodeId);
-    if (node) {
-      node.x = Math.max(0, x);
-      node.y = Math.max(0, y);
-      const el = $(node.id);
-      if (el) {
-        el.style.left = node.x + 'px';
-        el.style.top = node.y + 'px';
+    // Node drag
+    if (dragState && dragState.nodeId) {
+      const canvasRect = canvas().getBoundingClientRect();
+      const x = snap((e.clientX - canvasRect.left - dragState.offsetX) / zoom);
+      const y = snap((e.clientY - canvasRect.top - dragState.offsetY) / zoom);
+      const node = nodes.find(n => n.id === dragState.nodeId);
+      if (node) {
+        node.x = Math.max(0, x);
+        node.y = Math.max(0, y);
+        const el = $(node.id);
+        if (el) {
+          el.style.left = node.x + 'px';
+          el.style.top = node.y + 'px';
+        }
+        renderEdges();
       }
-      renderEdges();
+    }
+    // Rubber-band connection line
+    if (connectState) {
+      const fromEl = $(connectState.fromId);
+      if (!fromEl) return;
+      const fromNode = nodes.find(n => n.id === connectState.fromId);
+      if (!fromNode) return;
+      const canvasEl = canvas();
+      const canvasRect = canvasEl.getBoundingClientRect();
+      const fromW = fromEl.offsetWidth || 200;
+      const fromH = fromEl.offsetHeight || 72;
+      const x1 = fromNode.x + fromW - 8;
+      const y1 = fromNode.y + fromH / 2;
+      const x2 = (e.clientX - canvasRect.left + canvasEl.scrollLeft) / zoom;
+      const y2 = (e.clientY - canvasRect.top  + canvasEl.scrollTop)  / zoom;
+      const dx = Math.max(Math.abs(x2 - x1) * 0.5, 60);
+      const svg = edgesSvg();
+      // Ensure SVG covers cursor position
+      const svgW = Math.max(svg.getAttribute('width') || 0, x2 + 40);
+      const svgH = Math.max(svg.getAttribute('height') || 0, y2 + 40);
+      svg.setAttribute('width', svgW);
+      svg.setAttribute('height', svgH);
+      // Remove old rubber-band, keep committed edges
+      const old = svg.querySelector('.wf-edge--rubber');
+      if (old) old.remove();
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('class', 'wf-edge wf-edge--rubber');
+      path.setAttribute('d', `M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}`);
+      svg.appendChild(path);
     }
   });
 
   document.addEventListener('mouseup', () => {
+    // Remove rubber-band line on any mouseup (endConnect may have already removed it)
+    const old = edgesSvg().querySelector('.wf-edge--rubber');
+    if (old) old.remove();
     dragState = null;
     connectState = null;
   });
