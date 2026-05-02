@@ -5701,7 +5701,13 @@ function exportCanvasPDF() {
  * Config Panel Auto-Hide — slide open/close with tab handle
  * ═══════════════════════════════════════════════════════════════════════════ */
 
+// When true, the user has explicitly collapsed the panel — don't auto-open on selection.
+var _configPanelPinClosed = (function() {
+  try { return localStorage.getItem('nc_props_closed') === '1'; } catch (_) { return false; }
+})();
+
 function _openConfigPanel() {
+  if (_configPanelPinClosed) return; // user pinned it closed
   const p = document.getElementById('config-panel');
   const arrow = document.getElementById('cpt-arrow');
   if (p) p.classList.add('config-panel-open');
@@ -5718,6 +5724,8 @@ function _closeConfigPanel() {
 function _toggleConfigPanel() {
   const p = document.getElementById('config-panel');
   if (p && p.classList.contains('config-panel-open')) {
+    _configPanelPinClosed = true;
+    try { localStorage.setItem('nc_props_closed', '1'); } catch (_) {}
     _closeConfigPanel();
     selectedCell = null;
     document.getElementById('config-empty').classList.remove('hidden');
@@ -5727,6 +5735,8 @@ function _toggleConfigPanel() {
     const bp = document.getElementById('bulk-edit-panel');
     if (bp) bp.classList.add('hidden');
   } else {
+    _configPanelPinClosed = false;
+    try { localStorage.setItem('nc_props_closed', '0'); } catch (_) {}
     _openConfigPanel();
   }
 }

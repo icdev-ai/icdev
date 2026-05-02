@@ -944,6 +944,24 @@ def generate_stig_checklist(
         comments = ""
         check = item["check"]
 
+        # Lambda-check items (newer format: check_id instead of stig_id)
+        if callable(check):
+            try:
+                passed = check(nodes, edges, node_types)
+                status = "NotAFinding" if passed else "Open"
+            except Exception:
+                status = "Not_Reviewed"
+            checklist.append({
+                "stig_id": item.get("check_id", "CUSTOM"),
+                "rule_id": item.get("check_id", "CUSTOM"),
+                "severity": item.get("severity", "CAT2"),
+                "title": item.get("title", ""),
+                "status": status,
+                "comments": comments,
+                "fix_text": item.get("fix", "") if status == "Open" else "",
+            })
+            continue
+
         if check == "mgmt_encrypted":
             if insecure_protos:
                 status = "Open"

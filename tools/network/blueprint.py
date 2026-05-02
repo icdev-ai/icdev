@@ -9059,16 +9059,20 @@ Respond with ONLY this JSON (no other text):
         has_as_built = as_built is not None
 
         # Generate the ATO package
-        package = generate_ato_package(
-            topology_id=topo_id,
-            graph=graph,
-            system_name=system_name,
-            classification=classification,
-            regimes=regimes,
-            groups=groups,
-            region_id=region_id,
-            has_as_built_version=has_as_built,
-        )
+        try:
+            package = generate_ato_package(
+                topology_id=topo_id,
+                graph=graph,
+                system_name=system_name,
+                classification=classification,
+                regimes=regimes,
+                groups=groups,
+                region_id=region_id,
+                has_as_built_version=has_as_built,
+            )
+        except Exception as exc:
+            conn.close()
+            return jsonify({"error": f"ATO generation failed: {exc}"}), 500
 
         # Persist to DB
         pkg_id = package["package_id"]

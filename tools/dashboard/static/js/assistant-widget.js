@@ -201,6 +201,42 @@
         }
     }
 
+    function clearChat() {
+        _messages = [];
+        _contextId = null;
+        saveState();
+        var container = document.getElementById('assistant-messages');
+        if (container) container.innerHTML = '';
+        var empty = document.getElementById('assistant-empty');
+        if (empty) empty.style.display = 'block';
+        loadSuggestions();
+        setStatus('Ready');
+    }
+
+    // ===================================================================
+    // Orange panel (Strategos) coordination — shift blue widget left
+    // ===================================================================
+
+    var _ORANGE_SHIFT = 444; // 420px orange panel + 24px gap
+
+    function applyOrangePanelOffset() {
+        var panel = document.getElementById('sg-chat-panel');
+        var isOpen = panel && panel.classList.contains('sg-panel-open');
+        var fab = document.getElementById('assistant-fab');
+        var widget = document.getElementById('assistant-widget');
+        var right = isOpen ? _ORANGE_SHIFT + 'px' : '24px';
+        if (fab) fab.style.right = right;
+        if (widget) widget.style.right = right;
+    }
+
+    function watchOrangePanel() {
+        var panel = document.getElementById('sg-chat-panel');
+        if (!panel) return;
+        var observer = new MutationObserver(applyOrangePanelOffset);
+        observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+        applyOrangePanelOffset(); // apply on init
+    }
+
     // ===================================================================
     // API Communication
     // ===================================================================
