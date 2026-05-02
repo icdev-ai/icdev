@@ -194,3 +194,62 @@ python tools/studio/template_linter.py --fix          # auto-fix DAG issues
 
 Allowed `node_type` values: `tool`, `human`, `approval` (or omitted).  Any other
 value is reported as a lint error.
+
+---
+
+## `narrative_context` — top-level block (optional)
+
+`narrative_context` is an **optional top-level key** (sibling of `steps`) that
+provides human-readable framing for a workflow.  The WNE narrative engine uses
+it to generate stakeholder-facing reports and executive summaries.  All fields
+are optional — WNE degrades gracefully when the block or any individual field
+is omitted.
+
+```yaml
+narrative_context:
+  audience: leadership          # leadership | technical | compliance | board | customer
+  org_name: "Acme Corp"         # string — organization name
+  program_name: "Project Atlas" # string — program or initiative name
+  classification: CUI           # string — default CUI; use SECRET for IL6
+  purpose: "Modernize legacy data pipelines to reduce cycle time by 40%."
+  timeframe_months: 18          # int — planned duration in months
+  parameters:
+    workforce_size: 500                  # total headcount in scope
+    developers_targeted: 80             # engineers receiving training/tooling
+    avg_annual_salary_usd: 130000       # used for ROI calculations
+    contract_value_usd: 4200000         # total contract or program value
+    ai_productivity_gain_pct: 25        # expected productivity uplift (0–100)
+    training_cost_per_person_usd: 1200  # blended per-seat training cost
+    lab_standup_cost_usd: 85000         # one-time lab / environment setup cost
+    free_resources_budget_usd: 0        # budget allocated to free resources
+    paid_courses_per_person_usd: 600    # paid course spend per developer
+    ilt_cost_per_person_usd: 400        # instructor-led training cost per seat
+```
+
+### Field reference
+
+| Field | Type | Allowed values / notes |
+|-------|------|------------------------|
+| `audience` | string | `leadership`, `technical`, `compliance`, `board`, `customer` |
+| `org_name` | string | Free text — name of the organization |
+| `program_name` | string | Free text — name of the program or initiative |
+| `classification` | string | Any valid marking (default `CUI`; use `SECRET` for IL6) |
+| `purpose` | string | One sentence describing the program goal |
+| `timeframe_months` | int | Planned duration in whole months |
+| `parameters.workforce_size` | numeric | Total headcount in scope |
+| `parameters.developers_targeted` | numeric | Developers receiving tooling or training |
+| `parameters.avg_annual_salary_usd` | numeric | Blended annual salary for ROI model |
+| `parameters.contract_value_usd` | numeric | Total contract or program value in USD |
+| `parameters.ai_productivity_gain_pct` | numeric | Expected AI productivity uplift (0–100) |
+| `parameters.training_cost_per_person_usd` | numeric | Blended per-seat training cost |
+| `parameters.lab_standup_cost_usd` | numeric | One-time lab / environment setup cost |
+| `parameters.free_resources_budget_usd` | numeric | Budget allocated to free resources |
+| `parameters.paid_courses_per_person_usd` | numeric | Paid course spend per developer |
+| `parameters.ilt_cost_per_person_usd` | numeric | Instructor-led training cost per seat |
+
+### Validation rules (enforced by `template_linter.py`)
+
+- If `narrative_context` is present and `audience` is set, it must be one of:
+  `leadership`, `technical`, `compliance`, `board`, `customer`.
+- If `parameters` is present, every supplied value must be numeric (int or float).
+  Non-numeric values (strings, booleans, nulls) are reported as lint errors.
