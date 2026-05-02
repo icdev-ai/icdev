@@ -101,10 +101,12 @@ class AnthropicLLMProvider(LLMProvider):
         if request.tools:
             kwargs["tools"] = tools_to_anthropic(request.tools)
 
-        # Thinking support — use "enabled" type (the only valid API type).
-        # "adaptive" was never a valid API type; "enabled" activates extended
-        # thinking with the given budget_tokens cap.
-        use_thinking = model_config.get("supports_thinking", False)
+        # Thinking support — skip if route config sets disable_thinking: true
+        route_config = getattr(request, "_route_config", {}) or {}
+        use_thinking = (
+            model_config.get("supports_thinking", False)
+            and not route_config.get("disable_thinking", False)
+        )
         if use_thinking:
             effort = request.effort or "medium"
             kwargs["thinking"] = {

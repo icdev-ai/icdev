@@ -153,11 +153,28 @@
     _showTyping(true);
 
     try {
-      const res = await fetch(`/api/strategos/chat/${_ctxId}/send`, {
+      let res = await fetch(`/api/strategos/chat/${_ctxId}/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content }),
       });
+      // Context lost after server restart — re-init and retry once
+      if (res.status === 404) {
+        console.warn('[STRATEGOS Chat] context stale, re-initialising…');
+        const initRes = await fetch('/api/strategos/chat/init', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        if (initRes.ok) {
+          const initData = await initRes.json();
+          _ctxId = initData.context_id;
+          _startPolling();
+          res = await fetch(`/api/strategos/chat/${_ctxId}/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+          });
+        }
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
     } catch (err) {
       console.error('[STRATEGOS Chat] send failed:', err);

@@ -480,6 +480,11 @@ routing:
     chain: [qwen3-local, codestral-local, llama-local, claude-sonnet]
     effort: medium
 
+  chat_response:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: low
+    disable_thinking: true
+
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
