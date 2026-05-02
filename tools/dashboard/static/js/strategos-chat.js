@@ -73,11 +73,23 @@
     fab.classList.add('sg-panel-open');
     fab.textContent = '⚡ STRATEGOS';
 
+    // Show badge immediately — don't wait for inject round-trip
+    if (entityCtx) _showEntityBadge(entityCtx);
+
     if (!_ctxId) {
       _pendingEntity = entityCtx || null;
+      // Disable input until context is ready
+      if (input) {
+        input.disabled = true;
+        input.placeholder = 'Connecting to STRATEGOS…';
+      }
+      if (sendBtn) sendBtn.disabled = true;
       _initContext();
     } else if (entityCtx) {
       _injectEntity(entityCtx);
+    } else {
+      // Panel already ready — focus input so user can type immediately
+      if (input) input.focus();
     }
   }
 
@@ -110,8 +122,21 @@
       sessionStorage.setItem('sg_ctx_id', _ctxId);
       _startPolling();
       if (_pendingEntity) { await _injectEntity(_pendingEntity); _pendingEntity = null; }
+      // Context ready — unlock input and focus
+      if (input) {
+        input.disabled = false;
+        input.placeholder = 'Ask STRATEGOS… (Enter to send)';
+        input.focus();
+      }
+      if (sendBtn) sendBtn.disabled = false;
     } catch (err) {
       console.error('[STRATEGOS Chat] init failed:', err);
+      // Restore input so user can retry or see the error
+      if (input) {
+        input.disabled = false;
+        input.placeholder = 'Ask STRATEGOS… (Enter to send)';
+      }
+      if (sendBtn) sendBtn.disabled = false;
       _appendSystemMsg('Connection to STRATEGOS unavailable. Check server status.');
     }
   }
