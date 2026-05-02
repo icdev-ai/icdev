@@ -1517,6 +1517,7 @@ projects:
     - "Epic schema: YAML schema spec + linter update + sample human/approval gates in 2 templates — wfs-schema-01..02"
     - "Epic api: /api/studio/roles + /api/studio/doc-templates endpoints in studio.py — wfs-api-01..02"
     - "Epic studio: node_type field + 3 visual styles (CSS+JS) + extended config modal — wfs-studio-01..04"
+    - "Epic decomp: composite node type + sub_steps YAML + drill-down canvas navigation stack — wfs-decomp-01..05"
     - "Epic vv: linter gate + companion sync + coherence + Playwright smoke — wfs-vv-01..02"
   epics:
     - key: schema
@@ -1528,6 +1529,9 @@ projects:
     - key: studio
       title: Studio JS + CSS — 3-Tier Node Model + Extended Config Modal
       priority: critical
+    - key: decomp
+      title: Node Decomposition — Composite Type + Sub-Steps + Drill-Down Navigation
+      priority: high
     - key: vv
       title: V&V — Linter Gate + Companion Sync + Coherence + Smoke Test
       priority: critical
