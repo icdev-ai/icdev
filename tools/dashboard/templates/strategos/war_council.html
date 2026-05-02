@@ -562,6 +562,173 @@
 <script>
 // ── Globals ────────────────────────────────────────────────────────────────
 let _lastBrief = null;
+let _activeScenario = null;
+
+// ── Preset scenario library ────────────────────────────────────────────────
+const SCENARIOS = {
+  taiwan_blockade: {
+    label: 'Taiwan Strait Blockade', theater: 'indo-pacific', theaterTag: 'IP', tagClass: 'sc-tag-ip',
+    preview: 'PRC imposes a naval quarantine on Taiwan to coerce political concessions ahead of a scheduled independence referendum.',
+    scenario: `People's Liberation Army Navy declares a naval exclusion zone around Taiwan in response to a scheduled independence referendum. Submarine patrols seal the strait; maritime militia vessels enforce inspection of commercial shipping. US 7th Fleet repositions to the Philippine Sea. Japan activates Self-Defense Forces under collective self-defense provisions. Timeline: 72-hour ultimatum before blockade tightens to a full quarantine.`,
+    intent: `Deter PLAN escalation to armed seizure; maintain freedom of navigation through the strait; reassure Taiwan of treaty commitments without triggering miscalculation that could ignite kinetic conflict.`,
+    constraints: 'No first use of lethal force against PLAN vessels, ROE requires positive identification before interdiction, Host-nation basing approval required for Okinawa surge, No strikes on PRC mainland targets',
+    friendly_cog: 'US-Japan-Taiwan combined maritime deterrence posture', friendly_cc: 'Forward carrier strike group presence and ISR coverage of strait', friendly_cv: 'Extended logistics lines from Pearl Harbor; political will fragility under economic pressure',
+    adversary_cog: 'PLAN A2/AD bubble anchored on DF-21D/DF-26 missile forces', adversary_cc: 'Layered anti-ship missile coverage from shore, surface, and submarine', adversary_cv: 'C2 node concentration at Eastern Theater Command HQ, Fuzhou',
+  },
+  arctic_resource: {
+    label: 'Arctic Resource Conflict', theater: 'arctic', theaterTag: 'ARC', tagClass: 'sc-tag-arc',
+    preview: 'Russia and Norway dispute resource extraction rights in newly ice-free Arctic shelf zones as climate change opens new contested maritime boundaries.',
+    scenario: `Accelerated Arctic ice loss opens the Lomonosov Ridge to commercial exploitation. Russia files UN continental shelf claims overlapping Norwegian and Canadian sectors. Russian icebreakers escorted by Akula-class submarines begin exploratory drilling 40 nm inside the disputed zone. Norway invokes Article 5 consultations; Canada deploys HMCS Harry DeWolf. Russia suspends New START inspections and stages Tu-95MS long-range aviation exercises from Murmansk.`,
+    intent: `Uphold UNCLOS-based Arctic governance framework; prevent unilateral Russian fait accompli in disputed shelf zones; avoid escalation to kinetic engagement above the Arctic Circle.`,
+    constraints: 'No military overflights inside Russian Arctic ADIZ without political authorization, Environmental protection constraints limit ASW active sonar use, NATO unified command not yet activated',
+    friendly_cog: 'UNCLOS legal framework and allied Arctic Council solidarity', friendly_cc: 'Norwegian Coast Guard and allied submarine surveillance of Barents approaches', friendly_cv: 'Limited NATO basing infrastructure above Arctic Circle; harsh operating environment degrading sensor performance',
+    adversary_cog: 'Northern Fleet combat power and domestic resource nationalism narrative', adversary_cc: 'Nuclear-powered icebreaker fleet enabling year-round presence; Bastion coastal defense systems', adversary_cv: 'Isolated resupply lines to Arctic outposts; limited allied air defense coverage at extreme latitudes',
+  },
+  eastern_flank: {
+    label: 'NATO Eastern Flank Pressure', theater: 'eastern-europe', theaterTag: 'EE', tagClass: 'sc-tag-ee',
+    preview: 'Multi-axis coercion campaign combining cyber, proxy forces, and conventional military pressure against NATO\'s eastern flank states.',
+    scenario: `Russia launches a coordinated hybrid campaign against the Baltic states: sustained cyber intrusions disrupt financial systems and power grids; Kaliningrad-based Iskander missiles conduct live-fire exercises 30 km from the Lithuanian border; Belarusian forces conduct "snap exercise" with 50,000 troops near the Suwalki Gap; GRU-linked disinformation accelerates political polarization in Estonia's Russian-speaking community. No overt military border crossing — all actions calibrated below Article 5 threshold.`,
+    intent: `Reinforce deterrence credibility along the Suwalki corridor; expose and attribute hybrid operations; prevent fait accompli seizure of any NATO territory without triggering uncontrolled escalation to major theater war.`,
+    constraints: 'Operations must remain below Article 5 response threshold to maintain allied consensus, No offensive cyber operations against Russian civilian infrastructure, No pre-positioning of nuclear-capable systems without full NATO approval',
+    friendly_cog: 'NATO Article 5 collective defense commitment and forward presence battalions', friendly_cc: 'Multinational EFP battle groups at Elblag, Adazi, Tapa, and Rukla providing trip-wire deterrence', friendly_cv: 'Suwalki Gap — 100 km land corridor between Belarus and Kaliningrad easily severable; political cohesion among 31 allies under economic pressure',
+    adversary_cog: 'Integrated escalation dominance — ability to control the conflict threshold', adversary_cc: 'A2/AD bubble from Kaliningrad covering approaches; Iskander-M precision strike capability', adversary_cv: 'Legitimacy deficit in Baltic Russian-speaking population; economic vulnerability to energy decoupling sanctions',
+  },
+  hormuz_closure: {
+    label: 'Strait of Hormuz Closure', theater: 'middle-east', theaterTag: 'ME', tagClass: 'sc-tag-me',
+    preview: 'Iran mines the Strait of Hormuz and deploys IRGC swarm vessels to enforce an asymmetric blockade following US secondary sanctions.',
+    scenario: `Following expanded US secondary sanctions targeting Iranian petrochemical exports, IRGC Navy deploys bottom-influence mines across the Strait of Hormuz shipping lanes. Three commercial tankers strike mines within 72 hours; oil prices spike 40%. Fast-attack swarm craft enforce a de facto exclusion zone using swarming tactics and coastal Noor anti-ship missiles. Iranian proxies activate rocket barrages against UAE and Saudi oil infrastructure. Global shipping market freezes; 20% of world oil transits are interrupted.`,
+    intent: `Restore freedom of navigation through the Strait of Hormuz; neutralize IRGC mine-laying and swarm vessel threat without strikes on Iranian mainland that would widen conflict to regional war; protect partner nation critical infrastructure.`,
+    constraints: 'No strikes on Iranian territory without SecDef authorization, MCM operations require EOD confirmation before declaring lanes clear, Saudi Arabia and UAE basing contingent on no escalation to mainland strikes',
+    friendly_cog: 'Combined Maritime Forces EOD and MCM capability; carrier air superiority over the Gulf', friendly_cc: 'MH-53E airborne MCM and P-8A Poseidon maritime patrol; F/A-18 anti-swarm CAS', friendly_cv: 'Narrow operating environment favors asymmetric attacker; proximity of Iranian Silkworm batteries to Hormuz shipping lanes',
+    adversary_cog: 'IRGC asymmetric deterrence — ability to threaten global oil supply at acceptable cost', adversary_cc: 'Distributed swarm boat tactics; Noor/C-802 shore-based anti-ship missiles; proxy escalation levers', adversary_cv: 'IRGC swarm craft vulnerable to airborne area suppression; mine-laying logistics exposed to ISR',
+  },
+  grid_attack: {
+    label: 'Cyber-Physical Grid Attack', theater: 'cyber-domain', theaterTag: 'CY', tagClass: 'sc-tag-cy',
+    preview: 'Coordinated cyber-physical attacks on US power grid and military logistics nodes ahead of a conventional military provocation in a separate theater.',
+    scenario: `State-sponsored APT pre-positions destructive malware in 12 US power generation control systems (OT/ICS) and 3 major military logistics hubs simultaneously with conventional force build-up in a separate theater. Zero-day exploits targeting Siemens SCADA systems and Honeywell DCS trigger cascading grid failures across the Midwest. Military base operations, GPS spoofing operations, and fuel depot management systems are disrupted. Attribution is deliberately ambiguous — infrastructure consistent with both Russia and a proxy actor.`,
+    intent: `Attribute the attack with sufficient confidence to trigger proportional response options; restore critical infrastructure within 72 hours; prevent the cyber campaign from providing meaningful advantage to conventional forces in the companion theater.`,
+    constraints: 'Offensive cyber response requires Presidential authorization, Attribution must meet IC community confidence threshold before public declaration, Civilian infrastructure targets off-limits for offensive cyber operations',
+    friendly_cog: 'CYBERCOM defensive operations capability and NSA SIGINT attribution pipeline', friendly_cc: 'Hunt Forward operations pre-positioned in partner networks; CISA emergency coordination with sector ISACs', friendly_cv: 'Legacy ICS/SCADA systems lack patch capability; civilian-military infrastructure interdependence creates cascading failure risk',
+    adversary_cog: 'Strategic ambiguity — deniability maintained through proxy actors and false-flag TTPs', adversary_cc: 'Pre-positioned access in US critical infrastructure; sophisticated OT malware tooling (CRASHOVERRIDE/Industroyer-class)', adversary_cv: 'Attribution gaps narrow with each incident; Exfiltration traffic detectable by NSA sensors',
+  },
+  korea_escalation: {
+    label: 'Korean Peninsula Escalation', theater: 'indo-pacific', theaterTag: 'IP', tagClass: 'sc-tag-ip',
+    preview: 'North Korean ICBM test over Japan triggers escalation ladder as DPRK demonstrates nuclear delivery capability against CONUS targets.',
+    scenario: `DPRK launches a Hwasong-17 ICBM on a lofted trajectory over Japan, demonstrating 15,000 km range capability. Tokyo invokes Article 5 consultations; South Korea requests THAAD augmentation. Kim Jong-un announces readiness to "demonstrate warhead miniaturization" with an atmospheric nuclear test. US B-52s surge to Guam; USS Carl Vinson repositions to Yellow Sea. China publicly calls for "restraint by all parties" while PLAAF increases patrol frequency over Senkaku-adjacent airspace.`,
+    intent: `Demonstrate credible extended deterrence to reassure South Korea and Japan without triggering DPRK preemptive strike or Chinese military intervention; establish escalation off-ramps that preserve denuclearization dialogue.`,
+    constraints: 'ROE requires positive launch confirmation before missile defense intercept of DPRK test vehicles, No strikes on DPRK nuclear sites without Presidential authorization, China-US hotline must remain open throughout crisis',
+    friendly_cog: 'Extended nuclear deterrence guarantee to ROK and Japan; US-ROK Combined Forces Command operational integration', friendly_cc: 'THAAD and Patriot PAC-3 layered missile defense; F-22 and B-2 surge capability from Andersen AFB', friendly_cv: 'DPRK artillery threat to Seoul within range without warning; alliance political fragility under DPRK provocations',
+    adversary_cog: 'Kim regime survivability dependent on nuclear deterrence credibility', adversary_cc: 'KN-23 short-range ballistic missiles targeting ROK military bases; nuclear warhead miniaturization', adversary_cv: 'Fuel and logistics vulnerabilities during sustained operations; elite unit loyalty dependent on Kim family patronage',
+  },
+  gray_zone: {
+    label: 'Gray Zone Hybrid Campaign', theater: 'eastern-europe', theaterTag: 'EE', tagClass: 'sc-tag-ee',
+    preview: 'Comprehensive below-threshold coercion campaign combining disinformation, economic pressure, sabotage, and proxy forces — designed to deny Article 5 applicability.',
+    scenario: `A coordinated gray-zone campaign unfolds simultaneously across five domains: (1) Social media influence operation amplifies secessionist sentiment in a NATO member's Russian-speaking minority; (2) Critical infrastructure sabotage — undersea cable cut and pipeline valve tampering; (3) Economic coercion via sudden gas transit fee increases and export controls on rare earth materials; (4) "Volunteer" paramilitary units conduct low-level violence in border region; (5) Consistent legal-political messaging frames all actions as "defensive responses to NATO aggression." No single act crosses the Article 5 threshold.`,
+    intent: `Develop an integrated whole-of-government response that exposes, attributes, and counters the gray-zone campaign without providing adversary a pretext for escalation to overt military action.`,
+    constraints: 'Response must maintain allied consensus — unilateral military action forfeits burden-sharing, Legal attribution for sabotage must meet evidentiary standard for public disclosure, Economic counter-measures require EU coordination',
+    friendly_cog: 'Democratic institutional resilience and allied information environment credibility', friendly_cc: 'NATO Strategic Communications Centre; EUCOM SOF for attribution and counter-influence support', friendly_cv: 'Public opinion vulnerability to sustained disinformation; economic interdependence constraining sanctions toolkit',
+    adversary_cog: 'Escalation control — ability to calibrate below Article 5 threshold while achieving political objectives', adversary_cc: 'Deniability of proxy actors; legal and narrative cover for all physical actions', adversary_cv: 'Coordination between multiple proxy actors creates seams for attribution; economic pressure of own sanctions exposure',
+  },
+  space_denial: {
+    label: 'Space Asset Denial', theater: 'cyber-domain', theaterTag: 'CY', tagClass: 'sc-tag-cy',
+    preview: 'Adversary ASAT campaign targeting GPS Block III and ISR constellations to degrade US precision strike and intelligence collection ahead of conventional operations.',
+    scenario: `During rising tensions in a primary theater, adversary launches coordinated kinetic (co-orbital ASAT) and non-kinetic (directed energy, jamming, cyber) attacks against US GPS Block III satellites and key ISR constellations. Three GPS satellites disabled; two NRO SIGINT satellites experience anomalous telemetry consistent with cyber intrusion. PNT disruption cascades to commercial aviation, financial systems, and military precision munitions guidance. Debris field from kinetic kill vehicle threatens ISS and commercial orbits. Russia and China simultaneously conduct "routine" satellite maneuvering in GEO.`,
+    intent: `Restore space-based PNT and ISR capability within 30 days; establish escalation dominance in space domain without kinetic engagement that generates unacceptable debris; deter follow-on ASAT strikes on remaining assets.`,
+    constraints: 'No kinetic response in space without NSC authorization and debris-field modeling, Commercial satellite operator coordination required before any spectrum operations, OST Article IV compliance required for all response options',
+    friendly_cog: 'US space superiority enabling joint force precision operations globally', friendly_cc: 'Alternative PNT pathways (LORAN resurgence, inertial navigation augmentation); rapid-launch surge capacity via Space Force tactically responsive launch', friendly_cv: 'GPS constellation replacement timeline is 3+ years; allied forces dependent on US-provided PNT with no backup',
+    adversary_cog: 'Space denial strategy — degrade US joint force effectiveness without triggering nuclear escalation', adversary_cc: 'Co-orbital ASAT maneuvering capability; ground-based directed energy systems (Peresvet/Tiangong-class)', adversary_cv: 'Own forces increasingly dependent on GPS-equivalent (GLONASS/BeiDou) — mutual space vulnerability',
+  },
+  island_chain_defense: {
+    label: 'Island Chain Defense', theater: 'indo-pacific', theaterTag: 'IP', tagClass: 'sc-tag-ip',
+    preview: 'Defending the First Island Chain against a combined PLAN amphibious assault and airborne operation targeting multiple objectives simultaneously.',
+    scenario: `PLAN activates Type 075 LHDs and Type 071 LPDs for a multi-pronged amphibious operation targeting simultaneously: (1) a contested atoll in the Spratlys with a PHL garrison; (2) a Taiwanese-controlled outer island; (3) an uninhabited Japanese Senkaku islet. PLAAF provides J-20 and J-16 air superiority coverage; PLA Rocket Force conducts saturation DF-17 HGV strikes on Kadena and Misawa air bases. The multi-front assault is designed to split allied response and prevent mutual reinforcement.`,
+    intent: `Defeat the amphibious assault without allowing any First Island Chain territory to be seized; maintain air superiority in the Philippine Sea; prevent escalation to strikes on Japanese or US home territory.`,
+    constraints: 'Engagement authority for strikes within 12 nm of Chinese-claimed territories requires JCS authorization, PHL, Taiwan, and Japan must be consulted before major strike operations in their EEZ, Rules of engagement prohibit strikes on PLAN vessels inside China\'s 12 nm territorial sea',
+    friendly_cog: 'Combined allied air-maritime deterrence along the First Island Chain', friendly_cc: 'F-35B/C distributed basing across dispersed airfields; submarine picket lines on PLAN amphibious approach routes', friendly_cv: 'Kadena and Misawa fixed basing vulnerable to DF-21D saturation strike; limited pre-positioned logistics for island defense',
+    adversary_cog: 'PLA joint operations capability — ability to conduct multi-domain, multi-axis simultaneous assault', adversary_cc: 'Type 075 LHD amphibious lift; DF-17 HGV saturation strike to suppress air defenses; J-20 stealth fighter air superiority', adversary_cv: 'Amphibious logistics train exposed during transit; C2 seams between PLA theater commands in multi-axis operation',
+  },
+  south_china_sea_atoll: {
+    label: 'SCS Atoll Seizure', theater: 'indo-pacific', theaterTag: 'IP', tagClass: 'sc-tag-ip',
+    preview: 'Rapid seizure and militarization of a contested atoll in the South China Sea using a combination of coast guard vessels, maritime militia, and engineering forces.',
+    scenario: `Under cover of a typhoon that disperses regional maritime patrol assets, PRC coast guard vessels and maritime militia occupy a contested atoll claimed by the Philippines within UNCLOS EEZ. Within 96 hours, engineering barges begin rapid construction of a makeshift airstrip and radar installation. Philippine Coast Guard vessels are water-cannoned when attempting to approach; a supply boat is rammed. China issues Navigation Warning designating a new maritime exclusion zone. US calls for UNCLOS tribunal but China cites its non-participation in the arbitration ruling.`,
+    intent: `Assist Philippines in recovering access to the atoll or ensuring the constructed facility cannot be militarized; avoid direct US-China military confrontation while upholding MDT obligations and UNCLOS-based rules-based order.`,
+    constraints: 'MDT obligations require consultation before any military response; unilateral US strikes would fracture ASEAN consensus, Coast Guard Law Enforcement operations must remain distinct from military actions, No kinetic action against PRC coast guard or maritime militia without escalation review',
+    friendly_cog: 'Rules-based international order and US-PHL Mutual Defense Treaty credibility', friendly_cc: 'US P-8A ISR providing persistent surveillance of construction activity; Philippine Coast Guard sustained legal presence operations', friendly_cv: 'Political will in Manila fragmented; PRC economic leverage over regional ASEAN states limits coalition formation',
+    adversary_cog: 'Fait accompli strategy — establish irreversible facts on the ground below the kinetic threshold', adversary_cc: 'Maritime militia providing legal cover for state action; rapid-construction engineering capability', adversary_cv: 'Supply chain to new facility exposed during initial construction phase; international legal narrative disadvantageous',
+  },
+};
+
+// ── Build scenario picker chips ────────────────────────────────────────────
+(function buildPicker() {
+  const picker = document.getElementById('sc-picker');
+  if (!picker) return;
+  Object.entries(SCENARIOS).forEach(([key, sc]) => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'sc-chip';
+    chip.dataset.key = key;
+    chip.innerHTML = `<span class="sc-theater-tag ${sc.tagClass}">${sc.theaterTag}</span>${escHtml(sc.label)}`;
+    chip.addEventListener('click', () => loadScenario(key));
+    picker.appendChild(chip);
+  });
+  const custom = document.createElement('button');
+  custom.type = 'button';
+  custom.className = 'sc-chip custom-chip';
+  custom.id = 'sc-chip-custom';
+  custom.innerHTML = '✏ Custom';
+  custom.addEventListener('click', () => loadScenario(null));
+  picker.appendChild(custom);
+})();
+
+// ── Load a preset scenario (null = custom / clear) ─────────────────────────
+function loadScenario(key) {
+  _activeScenario = key;
+  document.querySelectorAll('.sc-chip').forEach(c => c.classList.remove('active'));
+  if (key) {
+    const chip = document.querySelector(`.sc-chip[data-key="${key}"]`);
+    if (chip) chip.classList.add('active');
+  } else {
+    const custom = document.getElementById('sc-chip-custom');
+    if (custom) custom.classList.add('active');
+  }
+  const preview = document.getElementById('sc-preview');
+  if (!key) {
+    document.getElementById('wc-theater').value   = 'indo-pacific';
+    document.getElementById('wc-scenario').value  = '';
+    document.getElementById('wc-intent').value    = '';
+    document.getElementById('wc-constraints').value = '';
+    document.getElementById('wc-fcog').value = '';
+    document.getElementById('wc-fcc').value  = '';
+    document.getElementById('wc-fcv').value  = '';
+    document.getElementById('wc-acog').value = '';
+    document.getElementById('wc-acc').value  = '';
+    document.getElementById('wc-acv').value  = '';
+    preview.style.display = 'none';
+    document.getElementById('wc-scenario').focus();
+    return;
+  }
+  const sc = SCENARIOS[key];
+  if (!sc) return;
+  document.getElementById('wc-theater').value     = sc.theater;
+  document.getElementById('wc-scenario').value    = sc.scenario;
+  document.getElementById('wc-intent').value      = sc.intent || '';
+  document.getElementById('wc-constraints').value = sc.constraints || '';
+  document.getElementById('wc-fcog').value = sc.friendly_cog || '';
+  document.getElementById('wc-fcc').value  = sc.friendly_cc  || '';
+  document.getElementById('wc-fcv').value  = sc.friendly_cv  || '';
+  document.getElementById('wc-acog').value = sc.adversary_cog || '';
+  document.getElementById('wc-acc').value  = sc.adversary_cc  || '';
+  document.getElementById('wc-acv').value  = sc.adversary_cv  || '';
+  const cogSec = document.getElementById('cog-section');
+  const cogBtn = document.getElementById('cog-toggle-btn');
+  if (!cogSec.classList.contains('visible')) {
+    cogSec.classList.add('visible');
+    cogBtn.classList.add('open');
+  }
+  preview.style.display = 'block';
+  preview.innerHTML = `<strong style="color:var(--text-primary)">${escHtml(sc.label)}</strong> &mdash; ${escHtml(sc.preview)}`;
+  clearError();
+}
 
 // ── Session timestamp ──────────────────────────────────────────────────────
 (function () {
