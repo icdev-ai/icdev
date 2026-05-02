@@ -2116,6 +2116,18 @@ def api_wargame_coa_create(wargame_id: str):
     return jsonify({"id": cid, "name": name, "composite_score": composite}), 201
 
 
+@_api.route("/wargame/<wargame_id>/assess", methods=["POST"])
+def api_wargame_assess(wargame_id: str):
+    try:
+        from tools.strategos.wargame_advisor import get_ai_assessment
+        result = get_ai_assessment(wargame_id)
+        return jsonify(result)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Info endpoints
 # ---------------------------------------------------------------------------

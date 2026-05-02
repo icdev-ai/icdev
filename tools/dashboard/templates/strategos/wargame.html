@@ -74,6 +74,18 @@
   .sc-item .sc-meta { font-size:.72rem; color:var(--text-muted); margin-top:.1rem; }
 
   @media(max-width:800px) { .wg-grid { grid-template-columns:1fr; } }
+
+  /* AI Assessment */
+  @keyframes wg-spin { to { transform: rotate(360deg); } }
+  .wg-spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--border-color);
+                border-top-color:var(--accent-color,#3b82f6); border-radius:50%;
+                animation:wg-spin .7s linear infinite; vertical-align:middle; }
+  .risk-chip  { display:inline-block; padding:.22rem .6rem; border-radius:4px; font-size:.78rem; font-weight:700; }
+  .risk-low      { background:rgba(16,185,129,.15);  color:#10b981; }
+  .risk-med,
+  .risk-medium   { background:rgba(245,158,11,.15);  color:#f59e0b; }
+  .risk-high     { background:rgba(239,68,68,.15);   color:#ef4444; }
+  .risk-critical { background:rgba(220,38,38,.2);    color:#dc2626; }
 </style>
 
 <div class="page-header page-header--compact">
@@ -154,6 +166,36 @@
     {% else %}
     <div class="card" style="padding:2rem;text-align:center;color:var(--text-muted)">
       No scenario selected. Create one or click a scenario on the left.
+    </div>
+    {% endif %}
+
+    <!-- AI Assessment -->
+    {% if active_game %}
+    <div class="card" style="padding:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:.9rem">AI Assessment</span>
+        <div style="display:flex;gap:.5rem;align-items:center">
+          <button id="ai-collapse-btn" onclick="toggleAiPanel()"
+            style="display:none;padding:.2rem .55rem;background:none;border:1px solid var(--border-color);
+                   color:var(--text-secondary);border-radius:4px;font-size:.75rem;cursor:pointer">
+            ▲ Collapse
+          </button>
+          <button id="ai-assess-btn" onclick="getAiAssessment()"
+            style="padding:.3rem .75rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;
+                   display:flex;align-items:center;gap:.35rem">
+            ⚡ Get AI Assessment
+          </button>
+        </div>
+      </div>
+
+      <div id="ai-spinner" style="display:none;padding:.65rem 0;font-size:.85rem;color:var(--text-secondary)">
+        <span class="wg-spinner" style="margin-right:.4rem"></span>
+        Generating strategic assessment&hellip;
+      </div>
+
+      <div id="ai-result" style="display:none;margin-top:.75rem;
+           border-top:1px solid var(--border-color);padding-top:.75rem"></div>
     </div>
     {% endif %}
 
@@ -853,6 +895,92 @@ function createScenario() {
       location.href = '/strategos/wargame?id=' + d.id;
     })
     .catch(e => alert('Error: ' + e));
+}
+
+// ── AI Assessment ─────────────────────────────────────────────────────────
+function _escHtml(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleAiPanel() {
+  const result = document.getElementById('ai-result');
+  const btn    = document.getElementById('ai-collapse-btn');
+  const hidden = result.style.display === 'none';
+  result.style.display = hidden ? 'block' : 'none';
+  btn.textContent = hidden ? '▲ Collapse' : '▼ Expand';
+}
+
+function getAiAssessment() {
+  const wid = _wargameId;
+  if (!wid) { alert('Select a scenario first.'); return; }
+
+  const assessBtn   = document.getElementById('ai-assess-btn');
+  const spinner     = document.getElementById('ai-spinner');
+  const resultEl    = document.getElementById('ai-result');
+  const collapseBtn = document.getElementById('ai-collapse-btn');
+
+  assessBtn.disabled = true;
+  spinner.style.display = 'block';
+  resultEl.style.display = 'none';
+
+  fetch(`/api/strategos/wargame/${wid}/assess`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      spinner.style.display = 'none';
+      assessBtn.disabled = false;
+      resultEl.style.display = 'block';
+      collapseBtn.style.display = 'inline-block';
+      collapseBtn.textContent = '▲ Collapse';
+      _renderAiAssessment(d, resultEl);
+    })
+    .catch(e => {
+      spinner.style.display = 'none';
+      assessBtn.disabled = false;
+      resultEl.style.display = 'block';
+      collapseBtn.style.display = 'inline-block';
+      resultEl.innerHTML = `<p style="color:#ef4444;font-size:.85rem">LLM unavailable — ${_escHtml(e.message)}</p>`;
+    });
+}
+
+function _renderAiAssessment(d, el) {
+  if (d.error && !d.summary) {
+    el.innerHTML = `<p style="color:#ef4444;font-size:.85rem">LLM unavailable — ${_escHtml(d.error)}</p>`;
+    return;
+  }
+
+  const riskMap = {
+    LOW:      'risk-low',
+    MEDIUM:   'risk-med',
+    MED:      'risk-med',
+    HIGH:     'risk-high',
+    CRITICAL: 'risk-critical',
+  };
+  const risk      = (d.risk_level || 'MEDIUM').toUpperCase();
+  const riskClass = riskMap[risk] || 'risk-med';
+
+  const llmBadge = d.llm_active
+    ? `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:3px;
+                    background:rgba(59,130,246,.1);color:#3b82f6">LLM ON</span>`
+    : `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:3px;
+                    background:rgba(245,158,11,.1);color:#f59e0b">STUB</span>`;
+
+  let html = `
+    <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+      <span class="risk-chip ${riskClass}">RISK: ${risk}</span>
+      <span style="padding:.22rem .6rem;border-radius:4px;font-size:.78rem;font-weight:600;
+                   background:var(--bg-secondary);border:1px solid var(--border-color)">
+        Rec COA: ${_escHtml(d.recommended_coa || '—')}
+      </span>
+      ${llmBadge}
+    </div>
+    <p style="font-size:.85rem;margin:0 0 .45rem;color:var(--text-primary)">${_escHtml(d.summary || '')}</p>
+    <p style="font-size:.8rem;color:var(--text-secondary);margin:0;font-style:italic">${_escHtml(d.rationale || '')}</p>`;
+
+  if (d.error) {
+    html += `<p style="font-size:.72rem;color:var(--text-muted);margin-top:.35rem">Note: ${_escHtml(d.error)}</p>`;
+  }
+
+  el.innerHTML = html;
 }
 
 // Init charts that need the tab to be visible on load
