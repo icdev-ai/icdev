@@ -70,12 +70,16 @@ class StrategosRAG:
         results: list[dict] = []
         ph = _PH()
 
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=8) as pool:
             futures = {
                 pool.submit(self._query_conflict_events, terms, ph, top_k): "conflict_event",
                 pool.submit(self._query_orbat_units, terms, ph, top_k): "orbat_unit",
                 pool.submit(self._query_briefs, terms, ph, top_k): "intel_brief",
                 pool.submit(self._query_corpus, terms, ph, top_k): "doctrine",
+                pool.submit(self._query_aircraft, terms, ph, top_k): "aircraft",
+                pool.submit(self._query_uas, terms, ph, top_k): "uas",
+                pool.submit(self._query_satellites, terms, ph, top_k): "satellite",
+                pool.submit(self._query_ground_vehicles, terms, ph, top_k): "ground_vehicle",
             }
             for fut in as_completed(futures):
                 try:
@@ -166,6 +170,131 @@ class StrategosRAG:
             return out
         except Exception as exc:
             logger.debug("intel_briefs RAG error: %s", exc)
+            return []
+
+    def _query_aircraft(self, terms: list[str], ph: str, top_k: int) -> list[dict]:
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            like_clauses = " OR ".join(
+                [f"(LOWER(callsign) LIKE {ph} OR LOWER(origin_country) LIKE {ph} "
+                 f"OR LOWER(aircraft_type) LIKE {ph})" for _ in terms]
+            )
+            params = [v for t in terms for v in (f"%{t}%", f"%{t}%", f"%{t}%")]
+            cur.execute(
+                f"SELECT callsign, origin_country, aircraft_type, lat, lon, "  # nosec B608
+                f"baro_altitude, velocity, military_flag, track_ts "
+                f"FROM sg_aircraft_tracks WHERE {like_clauses} "
+                f"ORDER BY track_ts DESC LIMIT %s",
+                params + [top_k],
+            )
+            rows = cur.fetchall()
+            conn.close()
+            out = []
+            for r in rows:
+                content = (
+                    f"[Aircraft] {r[0]} ({r[2]}), Country: {r[1]}, "
+                    f"Position: {r[3]:.3f}°N {r[4]:.3f}°E, "
+                    f"Alt: {r[5] or '?'} ft, Speed: {r[6] or '?'} kts, "
+                    f"Military: {'YES' if r[7] else 'NO'}, Time: {str(r[8])[:16]}"
+                )
+                out.append({"content": content[:500], "source_type": "aircraft", "score": 0.72})
+            return out
+        except Exception as exc:
+            logger.debug("aircraft RAG error: %s", exc)
+            return []
+
+    def _query_uas(self, terms: list[str], ph: str, top_k: int) -> list[dict]:
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            like_clauses = " OR ".join(
+                [f"(LOWER(operator) LIKE {ph} OR LOWER(uas_type) LIKE {ph} "
+                 f"OR LOWER(operator_country) LIKE {ph})" for _ in terms]
+            )
+            params = [v for t in terms for v in (f"%{t}%", f"%{t}%", f"%{t}%")]
+            cur.execute(
+                f"SELECT uas_id, operator, uas_type, operator_country, lat, lon, "  # nosec B608
+                f"threat_level, payload, track_ts "
+                f"FROM sg_uas_tracks WHERE {like_clauses} "
+                f"ORDER BY track_ts DESC LIMIT %s",
+                params + [top_k],
+            )
+            rows = cur.fetchall()
+            conn.close()
+            out = []
+            for r in rows:
+                content = (
+                    f"[UAS/Drone] ID: {r[0]}, Operator: {r[1]} ({r[3]}), "
+                    f"Type: {r[2]}, Position: {r[4]:.3f}°N {r[5]:.3f}°E, "
+                    f"Threat: {r[6]}, Payload: {r[7] or 'N/A'}"
+                )
+                out.append({"content": content[:400], "source_type": "uas", "score": 0.70})
+            return out
+        except Exception as exc:
+            logger.debug("uas RAG error: %s", exc)
+            return []
+
+    def _query_satellites(self, terms: list[str], ph: str, top_k: int) -> list[dict]:
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            like_clauses = " OR ".join(
+                [f"(LOWER(sat_name) LIKE {ph} OR LOWER(sat_type) LIKE {ph})" for _ in terms]
+            )
+            params = [v for t in terms for v in (f"%{t}%", f"%{t}%")]
+            cur.execute(
+                f"SELECT norad_id, sat_name, sat_type, max_elevation, "  # nosec B608
+                f"pass_start, pass_end, military_flag "
+                f"FROM sg_satellite_passes WHERE {like_clauses} "
+                f"ORDER BY pass_start DESC LIMIT %s",
+                params + [top_k],
+            )
+            rows = cur.fetchall()
+            conn.close()
+            out = []
+            for r in rows:
+                content = (
+                    f"[Satellite] {r[1]} (NORAD {r[0]}), Type: {r[2]}, "
+                    f"Max El: {r[3]}°, Pass: {str(r[4])[:16]} – {str(r[5])[:16]}, "
+                    f"Military: {'YES' if r[6] else 'NO'}"
+                )
+                out.append({"content": content[:400], "source_type": "satellite", "score": 0.68})
+            return out
+        except Exception as exc:
+            logger.debug("satellite RAG error: %s", exc)
+            return []
+
+    def _query_ground_vehicles(self, terms: list[str], ph: str, top_k: int) -> list[dict]:
+        try:
+            conn = get_connection()
+            cur = conn.cursor()
+            like_clauses = " OR ".join(
+                [f"(LOWER(description) LIKE {ph} OR LOWER(actor) LIKE {ph} "
+                 f"OR LOWER(country) LIKE {ph})" for _ in terms]
+            )
+            params = [v for t in terms for v in (f"%{t}%", f"%{t}%", f"%{t}%")]
+            cur.execute(
+                f"SELECT vehicle_type, actor, country, lat, lon, "  # nosec B608
+                f"threat_level, description, event_ts "
+                f"FROM sg_ground_vehicle_events WHERE {like_clauses} "
+                f"ORDER BY event_ts DESC LIMIT %s",
+                params + [top_k],
+            )
+            rows = cur.fetchall()
+            conn.close()
+            out = []
+            for r in rows:
+                snippet = (r[6] or "")[:200]
+                content = (
+                    f"[Ground Vehicle] {r[0]}, Actor: {r[1]} ({r[2]}), "
+                    f"Position: {r[3]:.3f}°N {r[4]:.3f}°E, "
+                    f"Threat: {r[5]}, {str(r[7])[:10]}: {snippet}"
+                )
+                out.append({"content": content[:500], "source_type": "ground_vehicle", "score": 0.71})
+            return out
+        except Exception as exc:
+            logger.debug("ground_vehicles RAG error: %s", exc)
             return []
 
     def _query_corpus(self, terms: list[str], ph: str, top_k: int) -> list[dict]:
@@ -288,6 +417,63 @@ _ENTITY_TEMPLATES: dict[str, str] = {
         "Type: {brief_type}\n\n"
         "Summarize the key intelligence findings from this brief and provide your assessment."
     ),
+    "aircraft": (
+        "AIRCRAFT CONTEXT\n"
+        "Callsign: {label}\n"
+        "ICAO24: {icao24}\n"
+        "Country: {origin_country}\n"
+        "Type: {aircraft_type}\n"
+        "Position: {lat:.4f}°N, {lon:.4f}°E\n"
+        "Altitude: {baro_altitude} ft\n"
+        "Speed: {velocity} kts\n"
+        "Heading: {true_track}°\n"
+        "Military flag: {military_flag}\n\n"
+        "Provide an air intelligence assessment of this aircraft. "
+        "Include mission-type analysis, threat vector, COA options, and recommended PIR."
+    ),
+    "uas": (
+        "UAS/DRONE CONTEXT\n"
+        "UAS ID: {label}\n"
+        "Operator: {operator}\n"
+        "Country: {operator_country}\n"
+        "UAS Type: {uas_type}\n"
+        "Position: {lat:.4f}°N, {lon:.4f}°E\n"
+        "Altitude: {altitude_m} m\n"
+        "Speed: {speed_kts} kts\n"
+        "Payload: {payload}\n"
+        "Threat Level: {threat_level}\n"
+        "Anomaly: {anomaly_flag}\n\n"
+        "Assess this UAS/drone contact. "
+        "Include probable mission (ISR/strike/EW/logistics), threat rating, counter-UAS "
+        "options [FM 3-01.91], and escalation risk."
+    ),
+    "satellite": (
+        "SATELLITE CONTEXT\n"
+        "Name: {label}\n"
+        "NORAD ID: {norad_id}\n"
+        "Type: {sat_type}\n"
+        "Max Elevation: {max_elevation}°\n"
+        "Pass Start: {pass_start}\n"
+        "Pass End: {pass_end}\n"
+        "Military: {military_flag}\n\n"
+        "Assess this satellite pass. "
+        "Include ISR collection window, sensor coverage of theater, "
+        "OPSEC implications, and recommended EMCON/deception measures."
+    ),
+    "ground_vehicle": (
+        "GROUND VEHICLE EVENT\n"
+        "Event: {label}\n"
+        "Vehicle Type: {vehicle_type}\n"
+        "Actor: {actor}\n"
+        "Country: {country}\n"
+        "Position: {lat:.4f}°N, {lon:.4f}°E\n"
+        "Threat Level: {threat_level}\n"
+        "Description: {description}\n"
+        "Source: {source}\n\n"
+        "Provide a ground-threat assessment for this vehicle event. "
+        "Include tactical significance, force composition indicators, "
+        "and interdiction/targeting recommendations."
+    ),
 }
 
 _DEFAULTS: dict[str, str] = {
@@ -299,6 +485,19 @@ _DEFAULTS: dict[str, str] = {
     "tier": "N/A", "criticality": "N/A",
     "signal_id": "N/A", "priority": "N/A", "source": "N/A",
     "brief_id": "N/A", "brief_type": "N/A",
+    # aircraft
+    "icao24": "N/A", "origin_country": "N/A", "aircraft_type": "N/A",
+    "baro_altitude": "N/A", "velocity": "N/A", "true_track": "N/A",
+    "military_flag": "N/A",
+    # uas
+    "operator": "N/A", "operator_country": "N/A", "uas_type": "N/A",
+    "altitude_m": "N/A", "payload": "N/A", "threat_level": "N/A",
+    # satellite
+    "norad_id": "N/A", "sat_type": "N/A", "max_elevation": "N/A",
+    "pass_start": "N/A", "pass_end": "N/A",
+    # ground vehicle
+    "vehicle_type": "N/A", "actor": "N/A", "country": "N/A",
+    "description": "N/A",
 }
 
 
