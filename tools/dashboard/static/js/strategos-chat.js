@@ -48,7 +48,7 @@
     });
 
     // Context menu
-    ctxAsk.addEventListener('click', () => { hideCtxMenu(); if (_menuEntity) openPanel(_menuEntity); });
+    ctxAsk.addEventListener('click', () => { const ent = _menuEntity; hideCtxMenu(); if (ent) openPanel(ent); });
     ctxDismiss.addEventListener('click', hideCtxMenu);
     document.addEventListener('click', e => {
       if (ctxMenu && !ctxMenu.contains(e.target)) hideCtxMenu();
