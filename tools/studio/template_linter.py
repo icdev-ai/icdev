@@ -29,6 +29,8 @@ except ImportError:
 
 TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templates"
 
+VALID_NODE_TYPES: frozenset[str] = frozenset({"tool", "human", "approval"})
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -83,20 +85,31 @@ def analyze(steps: list[dict]) -> dict:
             has_in.add(s["id"])
             has_out.add(d)
     comps = _components(steps)
+    bad_node_types = [
+        (s["id"], s["node_type"])
+        for s in steps
+        if s.get("node_type") is not None and s["node_type"] not in VALID_NODE_TYPES
+    ]
     return {
-        "isolated":    [s["id"] for s in steps if s["id"] not in has_in and s["id"] not in has_out],
-        "roots":       [s["id"] for s in steps if s["id"] not in has_in and s["id"] in has_out],
-        "leaves":      [s["id"] for s in steps if s["id"] in has_in and s["id"] not in has_out],
-        "dangling":    [d for s in steps for d in _deps(s) if d not in ids],
-        "components":  len(comps),
-        "comp_groups": [sorted(c) for c in sorted(comps, key=len, reverse=True)],
-        "has_in":      has_in,
-        "has_out":     has_out,
+        "isolated":       [s["id"] for s in steps if s["id"] not in has_in and s["id"] not in has_out],
+        "roots":          [s["id"] for s in steps if s["id"] not in has_in and s["id"] in has_out],
+        "leaves":         [s["id"] for s in steps if s["id"] in has_in and s["id"] not in has_out],
+        "dangling":       [d for s in steps for d in _deps(s) if d not in ids],
+        "bad_node_types": bad_node_types,
+        "components":     len(comps),
+        "comp_groups":    [sorted(c) for c in sorted(comps, key=len, reverse=True)],
+        "has_in":         has_in,
+        "has_out":        has_out,
     }
 
 
 def is_ok(info: dict) -> bool:
-    return not info["isolated"] and not info["dangling"] and info["components"] <= 1
+    return (
+        not info["isolated"]
+        and not info["dangling"]
+        and not info["bad_node_types"]
+        and info["components"] <= 1
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +238,7 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             "components": info["components"],
             "isolated": info["isolated"],
             "dangling": info["dangling"],
+            "bad_node_types": info["bad_node_types"],
             "status": "ok" if ok else "fail",
         }
         if info["components"] > 1:
@@ -251,6 +265,8 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
                 line += f"  isolated={r['isolated']}"
             if r.get("dangling"):
                 line += f"  dangling={r['dangling']}"
+            if r.get("bad_node_types"):
+                line += f"  bad_node_types={r['bad_node_types']}"
             if r.get("components", 1) > 1:
                 line += f"  subgraphs={r['components']}"
             print(line)
