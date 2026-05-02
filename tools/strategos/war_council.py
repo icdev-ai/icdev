@@ -92,26 +92,44 @@ class WarCouncilBrief:
     error: str = ""
 
     def to_dict(self) -> dict[str, Any]:
+        coas = self.strategy_result.courses_of_action
         return {
             "brief_id": self.brief_id,
             "theater": self.theater,
-            "doctrine_citations_count": len(self.doctrine_citations),
-            "historical_precedents_count": len(self.historical_precedents),
-            "rag_active": self.strategy_result.rag_active,
-            "rag_doc_count": self.strategy_result.rag_doc_count,
-            "coa_count": len(self.strategy_result.courses_of_action),
-            "recommended_coa": (
-                self.strategy_result.courses_of_action[
-                    self.strategy_result.recommended_coa_index
-                ].name
-                if self.strategy_result.courses_of_action
-                else ""
-            ),
-            "model_used": self.strategy_result.model_used,
-            "latency_ms": self.strategy_result.latency_ms,
+            "content_md": self.content_md,
+            "content": self.content_md,          # alias for template compatibility
             "generated_at": self.generated_at,
             "error": self.error,
-            "content_md": self.content_md,
+            # Full arrays for UI rendering
+            "doctrine_citations": [
+                {"reference": d.citation_line(), "excerpt": d.content[:300]}
+                for d in self.doctrine_citations
+            ],
+            "historical_precedents": [
+                {"title": h.title, "summary": h.content[:300]}
+                for h in self.historical_precedents
+            ],
+            "courses_of_action": [
+                {
+                    "title": c.name,
+                    "description": c.description,
+                    "risk_level": c.risk_level,
+                    "feasibility": c.feasibility,
+                    "doctrine_basis": c.doctrine_basis,
+                    "historical_analogy": c.historical_analogy,
+                    "composite_score": c.composite_score,
+                }
+                for c in coas
+            ],
+            # Summary counts
+            "doctrine_citations_count": len(self.doctrine_citations),
+            "historical_precedents_count": len(self.historical_precedents),
+            "coa_count": len(coas),
+            "recommended_coa": coas[self.strategy_result.recommended_coa_index].name if coas else "",
+            "rag_active": self.strategy_result.rag_active,
+            "rag_doc_count": self.strategy_result.rag_doc_count,
+            "model_used": self.strategy_result.model_used,
+            "latency_ms": self.strategy_result.latency_ms,
         }
 
     def to_json(self) -> str:
