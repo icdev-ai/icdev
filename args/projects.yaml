@@ -283,6 +283,9 @@ projects:
     â€” sg-rag-01..06'
   - 'Pacific: PLAN ORBAT + A2AD rings + amphibious analyzer + Taiwan Strait + militia
     classifier â€” sg-pacific-01..06'
+  - 'Digital Twin: formalize Ghost Track/I&W/War Game as managed twins + cross-canvas
+    event bus (NDC->cyber, FathomDesk->war-endurance) + awareness engine indexing
+    â€” sg-twin-01..07'
   epics:
   - key: foundation
     title: Theater Abstraction + DB + KG Schema + Blueprint
@@ -344,6 +347,9 @@ projects:
   - key: core
     title: CORE
     priority: medium
+  - key: twin
+    title: Digital Twin Integration â€” Ghost Track + I&W + War Game + Cross-Canvas Bus
+    priority: high
 - key: sc-core
   name: Supply Chain Core Promotion
   description: 'Promote tools/supply_chain/ to true ICDEV core: domain-agnostic DB
@@ -1785,44 +1791,44 @@ projects:
     title: V&V â€” manifest + companion sync + feature docs
     priority: low
 - key: sgc
-  name: Strategos Chat — Context-Aware Intelligence Assistant
+  name: Strategos Chat ï¿½ Context-Aware Intelligence Assistant
   description: 'Floating chat panel on all Strategos pages powered by the existing
     ChatManager. Strategos-domain system prompt (tactical analyst persona) + StrategosRAG
     over sg_conflict_events, sg_orbat_units, sg_intelligence_briefs, sg_corpus_documents.
     Right-click context menus on vessels (maritime), KG nodes, and ORBAT/wargame units
     inject entity data as the opening message. Reuses ChatManager/SSEManager entirely
-    — new code is: strategos_chat.py (domain layer), 3 API routes, _chat_panel.html,
+    ï¿½ new code is: strategos_chat.py (domain layer), 3 API routes, _chat_panel.html,
     strategos-chat.js, and per-page right-click handlers.'
   task_prefix: sgc-
   default_open: true
   briefs:
-  - 'Epic core: STRATEGOS_SYSTEM_PROMPT + StrategosRAG + context factory — sgc-core-01..02'
-  - 'Epic api: 3 blueprint routes (init/inject/poll) + tests — sgc-api-01..02'
-  - 'Epic ui: floating panel HTML + CSS + base.html injection — sgc-ui-01..03'
+  - 'Epic core: STRATEGOS_SYSTEM_PROMPT + StrategosRAG + context factory ï¿½ sgc-core-01..02'
+  - 'Epic api: 3 blueprint routes (init/inject/poll) + tests ï¿½ sgc-api-01..02'
+  - 'Epic ui: floating panel HTML + CSS + base.html injection ï¿½ sgc-ui-01..03'
   - 'Epic js: strategos-chat.js (open/close, init, send, poll, render, entity injection)
-    — sgc-js-01..04'
-  - 'Epic rc: right-click context menu component + maritime/KG/ORBAT handlers — sgc-rc-01..04'
-  - 'Epic nav: Strategos nav dropdown link — sgc-nav-01'
-  - 'Epic vv: manifest + companion sync + feature docs — sgc-vv-01..03'
+    ï¿½ sgc-js-01..04'
+  - 'Epic rc: right-click context menu component + maritime/KG/ORBAT handlers ï¿½ sgc-rc-01..04'
+  - 'Epic nav: Strategos nav dropdown link ï¿½ sgc-nav-01'
+  - 'Epic vv: manifest + companion sync + feature docs ï¿½ sgc-vv-01..03'
   epics:
   - key: core
-    title: Domain Layer — System Prompt + RAG + Context Factory
+    title: Domain Layer ï¿½ System Prompt + RAG + Context Factory
     priority: critical
   - key: api
-    title: API Routes — init / inject / poll
+    title: API Routes ï¿½ init / inject / poll
     priority: critical
   - key: ui
-    title: Floating Panel — HTML + CSS + base.html injection
+    title: Floating Panel ï¿½ HTML + CSS + base.html injection
     priority: high
   - key: js
-    title: strategos-chat.js — panel logic + polling + rendering
+    title: strategos-chat.js ï¿½ panel logic + polling + rendering
     priority: high
   - key: rc
-    title: Right-Click Handlers — maritime / KG / ORBAT
+    title: Right-Click Handlers ï¿½ maritime / KG / ORBAT
     priority: high
   - key: nav
-    title: Nav Link — Strategos dropdown
+    title: Nav Link ï¿½ Strategos dropdown
     priority: medium
   - key: vv
-    title: V&V — manifest + companion + docs
+    title: V&V ï¿½ manifest + companion + docs
     priority: low

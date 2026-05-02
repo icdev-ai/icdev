@@ -173,5 +173,116 @@ def api_wargame_turns(wargame_id: str):
     return resp
 
 
+# ---------------------------------------------------------------------------
+# Strategos Chat API
+# ---------------------------------------------------------------------------
+
+
+def _require_chat_manager():
+    """Return chat_manager or None if unavailable."""
+    try:
+        from tools.dashboard.chat_manager import chat_manager
+        return chat_manager
+    except ImportError:
+        return None
+
+
+@bp.route("/api/strategos/chat/init", methods=["POST"])
+def api_strategos_chat_init():
+    mgr = _require_chat_manager()
+    if not mgr:
+        resp = make_response(jsonify({"error": "chat_manager unavailable"}), 503)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("user_id", "local")
+    page = data.get("page", "")
+    from tools.strategos.strategos_chat import create_strategos_context
+    ctx = create_strategos_context(user_id=user_id, page=page)
+    if "error" in ctx:
+        resp = make_response(jsonify(ctx), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify({
+        "context_id": ctx.get("context_id"),
+        "status": ctx.get("status"),
+        "title": ctx.get("title"),
+    }), 201)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/chat/<context_id>/inject", methods=["POST"])
+def api_strategos_chat_inject(context_id: str):
+    mgr = _require_chat_manager()
+    if not mgr:
+        resp = make_response(jsonify({"error": "chat_manager unavailable"}), 503)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    data = request.get_json(silent=True) or {}
+    entity = data.get("entity", {})
+    if not entity:
+        resp = make_response(jsonify({"error": "entity required"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    from tools.strategos.strategos_chat import inject_entity_context
+    result = inject_entity_context(context_id, entity)
+    if "error" in result:
+        resp = make_response(jsonify(result), 404 if "not found" in result.get("error", "").lower() else 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify({"status": "ok", "turn_number": result.get("turn_number")}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/chat/<context_id>/send", methods=["POST"])
+def api_strategos_chat_send(context_id: str):
+    mgr = _require_chat_manager()
+    if not mgr:
+        resp = make_response(jsonify({"error": "chat_manager unavailable"}), 503)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    data = request.get_json(silent=True) or {}
+    content = (data.get("content") or "").strip()
+    if not content:
+        resp = make_response(jsonify({"error": "content required"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    result = mgr.send_message(context_id, content, role="user")
+    if "error" in result:
+        resp = make_response(jsonify(result), 404 if "not found" in result.get("error", "").lower() else 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify({"status": "queued", "turn_number": result.get("turn_number")}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/api/strategos/chat/poll/<context_id>")
+def api_strategos_chat_poll(context_id: str):
+    mgr = _require_chat_manager()
+    if not mgr:
+        resp = make_response(jsonify({"error": "chat_manager unavailable"}), 503)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    ctx = mgr.get_context(context_id)
+    if not ctx:
+        resp = make_response(jsonify({"error": "context not found"}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    messages = mgr.get_messages(context_id, since_turn=0, limit=100)
+    resp = make_response(jsonify({
+        "context_id": context_id,
+        "status": ctx.get("status"),
+        "is_processing": ctx.get("is_processing", False),
+        "dirty_version": ctx.get("dirty_version", 0),
+        "turn_number": ctx.get("turn_number", 0),
+        "messages": messages,
+    }))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
 def create_strategos_blueprint() -> Blueprint:
     return bp

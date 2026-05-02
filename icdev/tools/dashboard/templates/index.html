@@ -576,7 +576,7 @@ function renderTaskKanban(tasks) {
 }
 
 // ── Auto-refresh: 5-minute interval with countdown ──────────────────
-var AUTO_REFRESH_SECONDS = 300; // 5 minutes
+var AUTO_REFRESH_SECONDS = 60; // completion poller handles real-time; this is the safety net
 var _refreshCountdown = AUTO_REFRESH_SECONDS;
 var _refreshTimer = null;
 var _countdownTimer = null;

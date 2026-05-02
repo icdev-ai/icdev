@@ -443,5 +443,49 @@
   window.checkBoardEmptyAndToggle = checkBoardEmptyAndToggle;
   // Backward-compat alias for any page that called refreshLiveActivity()
   window.refreshLiveActivity      = refreshProjectsInFlight;
+
+  // ── Task completion poller — triggers dashboard refresh immediately on any
+  // task moving to "done", without waiting for the 5-minute auto-refresh cycle.
+  // Polls /api/kanban/last-update every 15s (single-row query, negligible cost).
+  var _pifCompletionCursor = null;
+  var _pifCompletionTimer  = null;
+
+  function _pollCompletion() {
+    fetch('/api/kanban/last-update')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.last_update === undefined) return;
+        if (_pifCompletionCursor === null) {
+          // Seed cursor on first poll — no refresh needed yet
+          _pifCompletionCursor = d.last_update;
+          return;
+        }
+        if (d.last_update && d.last_update !== _pifCompletionCursor) {
+          // A task just completed — update cursor and refresh immediately
+          _pifCompletionCursor = d.last_update;
+          refreshProjectsInFlight();
+          // Also refresh the kanban task board if it's on this page
+          if (typeof refreshKanbanTasks === 'function') refreshKanbanTasks();
+          // Reset the 5-min countdown so the next auto-refresh starts fresh
+          if (typeof _refreshCountdown !== 'undefined') {
+            // index.html sets this; reset it so we don't double-refresh
+            if (typeof AUTO_REFRESH_SECONDS !== 'undefined') {
+              window._refreshCountdown = AUTO_REFRESH_SECONDS;
+            }
+          }
+        }
+      })
+      .catch(function () { /* network error — retry next tick */ });
+  }
+
+  // Start poller after a short delay so the page renders first
+  setTimeout(function () {
+    _pollCompletion(); // seed cursor immediately
+    _pifCompletionTimer = setInterval(_pollCompletion, 15000);
+  }, 2000);
+
+  window.ICDEV_PIF.stopCompletionPoller = function () {
+    if (_pifCompletionTimer) { clearInterval(_pifCompletionTimer); _pifCompletionTimer = null; }
+  };
 })();
 </script>

@@ -502,6 +502,21 @@ canvas.addEventListener('click', evt => {
     openNodePanel(hit);
 });
 
+// Right-click → STRATEGOS context menu
+canvas.addEventListener('contextmenu', evt => {
+    evt.preventDefault();
+    const { cx, cy } = evXY(evt);
+    const hit = hitNode(toWorld(cx, cy).x, toWorld(cx, cy).y);
+    if (!hit || typeof window.sgChat === 'undefined') return;
+    window.sgChat.showMenu(evt.clientX, evt.clientY, {
+        type: 'kg_node',
+        id: hit.node_id,
+        label: hit.label,
+        node_type: hit.node_type || hit.type,
+        neighbors: neighborIds(hit.node_id).size,
+    });
+});
+
 // Double-click → unpin
 canvas.addEventListener('dblclick', evt => {
     const { cx, cy } = evXY(evt);

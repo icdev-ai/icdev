@@ -1006,3 +1006,36 @@ def move_task(task_id):
         conn.close()
 
 
+@kanban_api.route("/last-update", methods=["GET"])
+def last_update():
+    """Return the most recently completed task — used by the dashboard completion poller.
+
+    Clients poll this every 15s; when `last_update` advances they trigger a
+    full project-progress refresh without waiting for the 5-minute cycle.
+
+    Returns:
+        {last_update: ISO|null, task_id: str|null, task_title: str|null,
+         completed_count: int}
+    """
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, title, completed_at FROM kanban_tasks "
+            "WHERE completed_at IS NOT NULL ORDER BY completed_at DESC LIMIT 1"
+        ).fetchone()
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'done'"
+        ).fetchone()
+        count = count_row["cnt"] if count_row else 0
+        if row:
+            row = dict(row)
+            return jsonify({
+                "last_update": row["completed_at"],
+                "task_id": row["id"],
+                "task_title": row["title"],
+                "completed_count": count,
+            })
+        return jsonify({"last_update": None, "task_id": None, "task_title": None, "completed_count": 0})
+    finally:
+        conn.close()
+
