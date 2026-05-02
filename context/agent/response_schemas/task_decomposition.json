@@ -48,7 +48,9 @@
               "modernization-agent",
               "requirements-analyst-agent",
               "supply-chain-agent",
-              "simulation-agent"
+              "simulation-agent",
+              "devsecops-agent",
+              "gateway-agent"
             ]
           },
           "skill_id": {
