@@ -303,6 +303,16 @@ def import_files(
     finally:
         conn.close()
 
+    # Invalidate ghost track predictions for every MMSI that just reported in.
+    # Import lazily so the importer remains functional if ghost_track is absent.
+    if all_rows:
+        try:
+            from apps.geosigint.ghost_track import invalidate_prediction  # noqa: E402
+            for mmsi in {r["mmsi"] for r in all_rows}:
+                invalidate_prediction(mmsi)
+        except Exception:
+            pass  # invalidation is best-effort; never block an import
+
     return {
         "status": "ok",
         "files_processed": files_processed,
