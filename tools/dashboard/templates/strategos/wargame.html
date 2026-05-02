@@ -293,10 +293,14 @@
           <label>ρ (Red loss rate)
             <input type="number" id="lch-rho" value="{{ (lanchester_data.rho if lanchester_data else 0.01) }}" step="0.001" min="0.001" max="0.5">
           </label>
+          <button onclick="loadFromOrbat()"
+            style="padding:.3rem .8rem;background:var(--bg-tertiary,#374151);color:var(--text-primary,#fff);
+                   border:1px solid var(--border-color,#4b5563);border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Load from ORBAT</button>
           <button onclick="runLanchester()"
             style="padding:.3rem .8rem;background:var(--accent-color,#3b82f6);color:#fff;
                    border:none;border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Run</button>
         </div>
+        <div id="lch-orbat-status" style="margin-bottom:.5rem;font-size:.8rem"></div>
 
         <div id="lch-result" style="margin-bottom:.75rem;font-size:.85rem"></div>
         <div style="position:relative;height:260px">
@@ -560,6 +564,33 @@ const _wargameId = {{ (active_game.id if active_game else 'null') | tojson }};
 
 function initLanchester() {
   if (_initLchData) renderLanchester(_initLchData);
+}
+
+function loadFromOrbat() {
+  const wid = _wargameId || 'default';
+  const statusEl = document.getElementById('lch-orbat-status');
+  statusEl.textContent = 'Loading…';
+  statusEl.style.color = 'var(--text-muted,#9ca3af)';
+  fetch(`/wargame/${wid}/orbat-seed`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        statusEl.textContent = data.error;
+        statusEl.style.color = 'var(--danger-color,#ef4444)';
+        return;
+      }
+      if (data.unit_count === 0) {
+        statusEl.innerHTML = '<span style="color:var(--warning-color,#f59e0b)">⚠ No ORBAT data for this conflict</span>';
+        return;
+      }
+      document.getElementById('lch-b0').value = data.blue_strength;
+      document.getElementById('lch-r0').value = data.red_strength;
+      statusEl.innerHTML = `<span style="display:inline-flex;align-items:center;gap:.35rem;padding:.15rem .5rem;background:var(--bg-tertiary,#374151);border-radius:4px;color:var(--text-secondary,#d1d5db)">Loaded from ${data.unit_count} ORBAT units</span>`;
+    })
+    .catch(() => {
+      statusEl.textContent = 'Failed to load ORBAT data';
+      statusEl.style.color = 'var(--danger-color,#ef4444)';
+    });
 }
 
 function runLanchester() {
