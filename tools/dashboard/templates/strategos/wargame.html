@@ -75,6 +75,17 @@
 
   @media(max-width:800px) { .wg-grid { grid-template-columns:1fr; } }
 
+  /* Turn log */
+  .turn-log-scroll { max-height:280px; overflow-y:auto; }
+  .turn-log-table { width:100%; border-collapse:collapse; font-size:.82rem; }
+  .turn-log-table th { background:var(--bg-secondary); padding:.4rem .6rem; text-align:right;
+                       border:1px solid var(--border-color); color:var(--text-secondary); font-weight:600; }
+  .turn-log-table th:first-child { text-align:center; }
+  .turn-log-table td { padding:.35rem .6rem; border:1px solid var(--border-color); text-align:right; }
+  .turn-log-table td:first-child { text-align:center; font-weight:700; }
+  .turn-row-blue { background:rgba(16,185,129,.08); }
+  .turn-row-red  { background:rgba(239,68,68,.07); }
+
   /* AI Assessment */
   @keyframes wg-spin { to { transform: rotate(360deg); } }
   .wg-spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--border-color);
@@ -495,6 +506,47 @@
         {% endif %}
       </div>
     </div><!-- /card -->
+
+    <!-- ── Turn Controls ── -->
+    {% if active_game %}
+    <div class="card" style="padding:.75rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:.9rem">Turn Controls</span>
+        <div style="display:flex;gap:.6rem;align-items:center">
+          <span id="turn-status" style="font-size:.8rem;color:var(--text-muted)"></span>
+          <button id="advance-btn" onclick="advanceTurn()"
+            style="padding:.3rem .75rem;background:var(--accent-color,#3b82f6);color:#fff;
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;
+                   display:flex;align-items:center;gap:.3rem">
+            &#9654; Advance Turn
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Turn Log ── -->
+    <div class="card" style="padding:.75rem">
+      <div style="font-weight:600;font-size:.9rem;margin-bottom:.6rem">Turn Log</div>
+      <div class="turn-log-scroll">
+        <table class="turn-log-table">
+          <thead>
+            <tr>
+              <th>Turn</th>
+              <th class="blue">Blue Strength</th>
+              <th class="red">Red Losses</th>
+              <th class="red">Red Strength</th>
+              <th class="blue">Blue Losses</th>
+              <th>Tempo &Delta;</th>
+            </tr>
+          </thead>
+          <tbody id="turn-log-body">
+            <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:.75rem">Loading&hellip;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
   </div><!-- /wg-main -->
 </div><!-- /wg-grid -->
 
@@ -1179,6 +1231,68 @@ function _renderAiAssessment(d, el) {
 
   el.innerHTML = html;
 }
+
+// ── Turn Controls & Turn Log ──────────────────────────────────────────────
+function advanceTurn() {
+  const wid = _wargameId;
+  if (!wid) { alert('Select a scenario first.'); return; }
+  const btn      = document.getElementById('advance-btn');
+  const statusEl = document.getElementById('turn-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Advancing…';
+  fetch(`/wargame/${wid}/turn/advance`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      btn.disabled = false;
+      if (d.error) { statusEl.textContent = d.error; return; }
+      statusEl.textContent = 'Turn ' + (d.turn_number || '') + ' complete';
+      loadTurnLog();
+    })
+    .catch(e => {
+      btn.disabled = false;
+      statusEl.textContent = 'Error: ' + e.message;
+    });
+}
+
+function loadTurnLog() {
+  const wid = _wargameId;
+  if (!wid) return;
+  fetch(`/wargame/${wid}/turns`)
+    .then(r => r.json())
+    .then(renderTurnLog)
+    .catch(() => {
+      const body = document.getElementById('turn-log-body');
+      if (body) body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#ef4444">Failed to load turns.</td></tr>';
+    });
+}
+
+function renderTurnLog(data) {
+  const body = document.getElementById('turn-log-body');
+  if (!body) return;
+  const turns = data.turns || [];
+  if (!turns.length) {
+    body.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:.75rem">No turns recorded yet.</td></tr>';
+    return;
+  }
+  body.innerHTML = turns.map(t => {
+    const blueStr = t.blue_remaining != null ? t.blue_remaining : 0;
+    const redStr  = t.red_remaining  != null ? t.red_remaining  : 0;
+    const rowClass = blueStr >= redStr ? 'turn-row-blue' : 'turn-row-red';
+    const td = t.tempo_delta;
+    const tdStr = td != null ? (td > 0 ? '+' : '') + td : '—';
+    const tdColor = td > 0 ? '#3b82f6' : td < 0 ? '#ef4444' : 'var(--text-muted)';
+    return `<tr class="${rowClass}">
+      <td>${t.turn_number}</td>
+      <td style="color:#3b82f6">${blueStr}</td>
+      <td style="color:#ef4444">${t.red_losses ?? '—'}</td>
+      <td style="color:#ef4444">${redStr}</td>
+      <td style="color:#3b82f6">${t.blue_losses ?? '—'}</td>
+      <td style="color:${tdColor}">${tdStr}</td>
+    </tr>`;
+  }).join('');
+}
+
+if (_wargameId) loadTurnLog();
 
 // Init charts that need the tab to be visible on load
 initLanchester();
