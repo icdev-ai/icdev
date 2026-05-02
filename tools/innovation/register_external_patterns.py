@@ -235,6 +235,43 @@ EXTERNAL_PATTERNS = [
         },
         "implementation_status": "implemented",
     },
+    {
+        "id": "compliance-evidence",
+        "source": "icdev",
+        "title": "Compliance Evidence Agent",
+        "description": (
+            "Scheduled compliance evidence collection agent that runs on cron cadence, "
+            "collects artifacts from all active compliance frameworks via evidence_collector, "
+            "maps each artifact to the corresponding NIST 800-53 control family via "
+            "control_mapper, updates open POAM items with freshness timestamps and closure "
+            "status via poam_generator, regenerates the SSP narrative sections that depend on "
+            "the new evidence via ssp_generator, and emits a consolidated ATO progress report "
+            "via compliance_status. No new Python required — composes "
+            "tools/compliance/evidence_collector.py + ssp_generator.py + poam_generator.py + "
+            "control_mapper.py + cato_scheduler.py + compliance_status.py."
+        ),
+        "category": "compliance_evidence",
+        "gotcha_layer": "agent",
+        "url": "",
+        "deploy_config": {
+            "evidence_collector": "tools/compliance/evidence_collector.py",
+            "ssp_generator": "tools/compliance/ssp_generator.py",
+            "poam_generator": "tools/compliance/poam_generator.py",
+            "control_mapper": "tools/compliance/control_mapper.py",
+            "cato_scheduler": "tools/compliance/cato_scheduler.py",
+            "compliance_status": "tools/compliance/compliance_status.py",
+            "schedule_config": "args/workflow_templates/cato_continuous.yaml",
+            "goal": "goals/compliance_evidence.md",
+        },
+        "scoring_hints": {
+            "novelty": 0.65,
+            "feasibility": 0.95,
+            "compliance_alignment": 0.98,
+            "user_impact": 0.90,
+            "effort": 0.80,
+        },
+        "implementation_status": "pending",
+    },
 ]
 
 # Scoring weights (5-dimension)
