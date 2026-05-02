@@ -315,6 +315,69 @@
   color: #f87171;
   font-size: .85rem;
 }
+
+/* ── Scenario Library chips ──────────────────────────────────────────────── */
+.sc-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+  margin-top: .3rem;
+}
+.sc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  padding: .22rem .55rem;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: .76rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color .12s, background .12s, color .12s;
+  white-space: nowrap;
+}
+.sc-chip:hover { border-color: #3b82f6; color: var(--text-primary); }
+.sc-chip.active {
+  border-color: #3b82f6;
+  background: rgba(59,130,246,.12);
+  color: #60a5fa;
+  font-weight: 600;
+}
+.sc-chip.custom-chip { border-style: dashed; color: var(--text-muted); }
+.sc-chip.custom-chip:hover  { border-color: #a78bfa; color: #a78bfa; }
+.sc-chip.custom-chip.active {
+  border-color: #a78bfa;
+  background: rgba(167,139,250,.1);
+  color: #a78bfa;
+}
+.sc-theater-tag {
+  font-size: .62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: .1rem .3rem;
+  border-radius: 3px;
+  line-height: 1;
+}
+.sc-tag-ip  { background: rgba(16,185,129,.15);  color: #10b981; }
+.sc-tag-ee  { background: rgba(239,68,68,.15);   color: #ef4444; }
+.sc-tag-me  { background: rgba(245,158,11,.15);  color: #f59e0b; }
+.sc-tag-arc { background: rgba(96,165,250,.15);  color: #60a5fa; }
+.sc-tag-cy  { background: rgba(167,139,250,.15); color: #a78bfa; }
+.sc-preview {
+  padding: .5rem .75rem;
+  background: rgba(59,130,246,.06);
+  border: 1px solid rgba(59,130,246,.18);
+  border-radius: 5px;
+  font-size: .78rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-top: .3rem;
+  animation: sc-fade .15s ease;
+}
+@keyframes sc-fade { from { opacity:0; transform:translateY(-4px); } to { opacity:1; } }
 </style>
 {% endblock %}
 
@@ -344,6 +407,13 @@
 
   <!-- ── LEFT: Input form ── -->
   <div class="card" style="padding:1rem;display:flex;flex-direction:column;gap:.85rem">
+
+    <!-- Scenario Library -->
+    <div>
+      <label class="wc-form-label">Scenario Library</label>
+      <div class="sc-picker" id="sc-picker"><!-- chips rendered by JS --></div>
+      <div id="sc-preview" class="sc-preview" style="display:none"></div>
+    </div>
 
     <!-- Theater -->
     <div>
