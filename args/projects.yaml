@@ -1499,6 +1499,38 @@ projects:
   - key: winloss
     title: WINLOSS
     priority: medium
+- key: wfs
+  name: Workflow Studio — People, Tools & Process Integration
+  task_prefix: wfs-
+  default_open: true
+  description: >
+    Upgrade the Workflow Studio visual editor (/studio/workflows) from a tool-only DAG to a
+    three-tier node model: Tool nodes (automated Python scripts, existing), Human Gate nodes
+    (teal, requires a named role + optional SOP/doc template), and Approval Gate nodes (amber,
+    configurable policy: any_one/all/majority). Roles pulled live from /workflow-teams
+    (wf_team_members) so the two pages stay in sync without merging. YAML template schema
+    extended with node_type, role, human_required, approval_policy, doc_template fields.
+    template_linter.py updated to validate node types. 14 existing templates get explicit
+    node_type: tool markers; requirements_intake and ato_acceleration get sample human+approval
+    gate nodes to demonstrate the full model.
+  briefs:
+    - "Epic schema: YAML schema spec + linter update + sample human/approval gates in 2 templates — wfs-schema-01..02"
+    - "Epic api: /api/studio/roles + /api/studio/doc-templates endpoints in studio.py — wfs-api-01..02"
+    - "Epic studio: node_type field + 3 visual styles (CSS+JS) + extended config modal — wfs-studio-01..04"
+    - "Epic vv: linter gate + companion sync + coherence + Playwright smoke — wfs-vv-01..02"
+  epics:
+    - key: schema
+      title: YAML Schema Extension (node_type + role + approval_policy + doc_template)
+      priority: high
+    - key: api
+      title: Studio API Endpoints (roles + doc-templates)
+      priority: high
+    - key: studio
+      title: Studio JS + CSS — 3-Tier Node Model + Extended Config Modal
+      priority: critical
+    - key: vv
+      title: V&V — Linter Gate + Companion Sync + Coherence + Smoke Test
+      priority: critical
 - key: wf
   name: HITL Workflow Management
   task_prefix: wf-
