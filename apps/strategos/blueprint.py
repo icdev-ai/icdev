@@ -2719,6 +2719,320 @@ def api_ccir_trigger_resolve(event_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 — IPB Canvas, I&W Indicators, F3EAD Targeting, BDA
+# ---------------------------------------------------------------------------
+
+@_bp.route("/ipb")
+@_bp.route("/ipb/")
+def strategos_ipb():
+    from tools.strategos.ipb import list_sessions  # noqa: PLC0415
+    sessions = []
+    try:
+        sessions = list_sessions(limit=20)
+    except Exception:
+        pass
+    return render_template("strategos/ipb.html", sessions=sessions)
+
+
+@_api.route("/ipb/sessions", methods=["GET"])
+def api_ipb_sessions():
+    try:
+        from tools.strategos.ipb import list_sessions  # noqa: PLC0415
+        rows = list_sessions(limit=20)
+        resp = make_response(jsonify({"sessions": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/ipb/sessions", methods=["POST"])
+def api_ipb_create():
+    try:
+        from tools.strategos.ipb import create_session  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        theater = data.get("theater", "unspecified")
+        scenario = data.get("scenario", "")
+        result = create_session(theater=theater, scenario=scenario)
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/ipb/sessions/<session_id>", methods=["GET"])
+def api_ipb_session_detail(session_id: str):
+    try:
+        from tools.strategos.ipb import get_session  # noqa: PLC0415
+        sess = get_session(session_id)
+        if not sess:
+            return jsonify({"error": "session not found"}), 404
+        resp = make_response(jsonify(sess))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/ipb/sessions/<session_id>/synthesize/<int:step_num>", methods=["POST"])
+def api_ipb_synthesize(session_id: str, step_num: int):
+    try:
+        from tools.strategos.ipb import synthesize_step  # noqa: PLC0415
+        result = synthesize_step(session_id=session_id, step_num=step_num)
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/ipb/sessions/<session_id>", methods=["DELETE"])
+def api_ipb_delete(session_id: str):
+    try:
+        from tools.strategos.ipb import delete_session  # noqa: PLC0415
+        ok = delete_session(session_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# I&W Indicators Board
+@_bp.route("/indicators")
+@_bp.route("/indicators/")
+def strategos_indicators():
+    return render_template("strategos/indicators.html")
+
+
+@_api.route("/indicators", methods=["GET"])
+def api_indicators_list():
+    try:
+        from tools.strategos.iw_indicators import list_indicators  # noqa: PLC0415
+        theater = request.args.get("theater", "global")
+        coa_id = request.args.get("coa_id", "")
+        rows = list_indicators(theater=theater, coa_id=coa_id)
+        resp = make_response(jsonify({"indicators": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/indicators", methods=["POST"])
+def api_indicators_create():
+    try:
+        from tools.strategos.iw_indicators import create_indicator  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = create_indicator(
+            name=data.get("name", ""),
+            coa_id=data.get("coa_id", ""),
+            coa_name=data.get("coa_name", ""),
+            description=data.get("description", ""),
+            weight=float(data.get("weight", 1.0)),
+            category=data.get("category", "general"),
+            theater=data.get("theater", "global"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/indicators/<indicator_id>/observe", methods=["POST"])
+def api_indicators_observe(indicator_id: str):
+    try:
+        from tools.strategos.iw_indicators import record_observation  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = record_observation(
+            indicator_id=indicator_id,
+            observed_status=data.get("observed_status", "not_observed"),
+            source=data.get("source", ""),
+            notes=data.get("notes", ""),
+            confidence=float(data.get("confidence", 0.5)),
+        )
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/indicators/coa-probabilities", methods=["GET"])
+def api_indicators_coa_probs():
+    try:
+        from tools.strategos.iw_indicators import compute_coa_probabilities  # noqa: PLC0415
+        theater = request.args.get("theater", "global")
+        results = compute_coa_probabilities(theater=theater)
+        resp = make_response(jsonify({"coa_probabilities": results}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/indicators/<indicator_id>", methods=["DELETE"])
+def api_indicators_delete(indicator_id: str):
+    try:
+        from tools.strategos.iw_indicators import delete_indicator  # noqa: PLC0415
+        ok = delete_indicator(indicator_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# F3EAD Targeting Workflow
+@_bp.route("/f3ead")
+@_bp.route("/f3ead/")
+def strategos_f3ead():
+    return render_template("strategos/f3ead.html")
+
+
+@_api.route("/f3ead/board", methods=["GET"])
+def api_f3ead_board():
+    try:
+        from tools.strategos.f3ead import get_board  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        data = get_board(theater=theater)
+        resp = make_response(jsonify(data))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/f3ead/targets", methods=["POST"])
+def api_f3ead_create():
+    try:
+        from tools.strategos.f3ead import create_target  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = create_target(
+            target_name=data.get("target_name", ""),
+            target_type=data.get("target_type", "node"),
+            description=data.get("description", ""),
+            responsible_element=data.get("responsible_element", ""),
+            priority=int(data.get("priority", 3)),
+            theater=data.get("theater", "unspecified"),
+            geo_hint=data.get("geo_hint", ""),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/f3ead/targets/<target_id>/advance", methods=["POST"])
+def api_f3ead_advance(target_id: str):
+    try:
+        from tools.strategos.f3ead import advance_phase  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = advance_phase(
+            target_id=target_id,
+            actor=data.get("actor", "analyst"),
+            notes=data.get("notes", ""),
+        )
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/f3ead/targets/<target_id>/phase", methods=["PATCH"])
+def api_f3ead_set_phase(target_id: str):
+    try:
+        from tools.strategos.f3ead import set_phase  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = set_phase(
+            target_id=target_id,
+            phase=data.get("phase", "find"),
+            actor=data.get("actor", "analyst"),
+            notes=data.get("notes", ""),
+        )
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/f3ead/targets/<target_id>", methods=["DELETE"])
+def api_f3ead_delete(target_id: str):
+    try:
+        from tools.strategos.f3ead import delete_target  # noqa: PLC0415
+        ok = delete_target(target_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# BDA — Battle Damage Assessment
+@_bp.route("/bda")
+@_bp.route("/bda/")
+def strategos_bda():
+    return render_template("strategos/bda.html")
+
+
+@_api.route("/bda/assessments", methods=["GET"])
+def api_bda_list():
+    try:
+        from tools.strategos.bda import list_assessments  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        limit = int(request.args.get("limit", 50))
+        rows = list_assessments(theater=theater, limit=limit)
+        resp = make_response(jsonify({"assessments": rows, "total": len(rows)}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/bda/assessments", methods=["POST"])
+def api_bda_create():
+    try:
+        from tools.strategos.bda import create_assessment  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = create_assessment(
+            target_name=data.get("target_name", ""),
+            target_id=data.get("target_id", ""),
+            strike_time=data.get("strike_time", ""),
+            method=data.get("method", "kinetic"),
+            physical_damage=data.get("physical_damage", "unknown"),
+            functional_defeat=bool(data.get("functional_defeat", False)),
+            confidence=float(data.get("confidence", 0.5)),
+            collection_method=data.get("collection_method", "IMINT"),
+            analyst_notes=data.get("analyst_notes", ""),
+            theater=data.get("theater", "unspecified"),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/bda/summary", methods=["GET"])
+def api_bda_summary():
+    try:
+        from tools.strategos.bda import get_summary  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        summary = get_summary(theater=theater)
+        resp = make_response(jsonify(summary))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # OSINT Ingestion Panel page + APIs
 # ---------------------------------------------------------------------------
 
