@@ -205,11 +205,9 @@ def _fetch_design(design_id: str) -> tuple[str, list[dict[str, Any]]]:
     conn = get_connection()
     try:
         ph = sql_placeholder(conn)
+        query = "SELECT name, canvas_json FROM aisg_agent_designs WHERE id = " + ph
         c = conn.cursor()
-        c.execute(
-            f"SELECT name, canvas_json FROM aisg_agent_designs WHERE id = {ph}",
-            (design_id,),
-        )
+        c.execute(query, (design_id,))
         row = c.fetchone()
     finally:
         conn.close()
@@ -239,12 +237,12 @@ def _persist_goal(design_id: str, markdown: str) -> None:
     conn = get_connection()
     try:
         ph = sql_placeholder(conn)
-        conn.execute(
-            f"UPDATE aisg_agent_designs "
-            f"SET generated_goal_md = {ph}, updated_at = datetime('now') "
-            f"WHERE id = {ph}",
-            (markdown, design_id),
+        query = (
+            "UPDATE aisg_agent_designs "
+            "SET generated_goal_md = " + ph + ", updated_at = datetime('now') "
+            "WHERE id = " + ph
         )
+        conn.execute(query, (markdown, design_id))
         conn.commit()
     finally:
         conn.close()
