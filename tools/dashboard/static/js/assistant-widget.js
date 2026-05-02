@@ -349,6 +349,7 @@
     function init() {
         var fab = document.getElementById('assistant-fab');
         var closeBtn = document.getElementById('assistant-close');
+        var clearBtn = document.getElementById('assistant-clear');
         var fullscreenBtn = document.getElementById('assistant-fullscreen');
         var sendBtn = document.getElementById('assistant-send');
         var input = document.getElementById('assistant-input');
@@ -371,6 +372,7 @@
         // Event handlers
         fab.addEventListener('click', expand);
         if (closeBtn) closeBtn.addEventListener('click', collapse);
+        if (clearBtn) clearBtn.addEventListener('click', clearChat);
         if (fullscreenBtn) fullscreenBtn.addEventListener('click', goFullScreen);
 
         if (sendBtn) sendBtn.addEventListener('click', function () {
@@ -399,6 +401,9 @@
 
         // Load index status
         loadStatus();
+
+        // Watch for orange Strategos panel open/close and adjust position
+        watchOrangePanel();
     }
 
     // Run on DOM ready
