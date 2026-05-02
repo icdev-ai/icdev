@@ -313,6 +313,61 @@ def lanchester_linear(
     }
 
 
+# ── Lanchester Monte Carlo ────────────────────────────────────────────────────
+
+def lanchester_monte_carlo(
+    b0: float, r0: float,
+    beta: float = 0.01, rho: float = 0.01,
+    iterations: int = 500, sigma: float = 0.15,
+) -> dict[str, Any]:
+    """Monte Carlo Lanchester square-law simulation with Gaussian noise on attrition rates.
+
+    Each iteration perturbs beta and rho independently:
+        beta_i = beta * (1 + N(0, sigma))
+        rho_i  = rho  * (1 + N(0, sigma))
+
+    Returns percentile bands and blue victory probability.
+    """
+    import random
+
+    final_blues: list[float] = []
+    final_reds: list[float] = []
+    blue_victories = 0
+
+    for _ in range(iterations):
+        beta_i = beta * (1.0 + random.gauss(0.0, sigma))
+        rho_i  = rho  * (1.0 + random.gauss(0.0, sigma))
+        run = lanchester_square(b0, r0, beta_i, rho_i)
+        fb = run["final_b"]
+        fr = run["final_r"]
+        final_blues.append(fb)
+        final_reds.append(fr)
+        if fb > 0 and fr == 0:
+            blue_victories += 1
+
+    def _pct(series: list[float], p: float) -> float:
+        sorted_s = sorted(series)
+        idx = (len(sorted_s) - 1) * p / 100.0
+        lo, hi = int(idx), min(int(idx) + 1, len(sorted_s) - 1)
+        frac = idx - lo
+        return round(sorted_s[lo] * (1 - frac) + sorted_s[hi] * frac, 2)
+
+    return {
+        "model":             "lanchester_monte_carlo",
+        "b0": b0, "r0": r0,
+        "beta": beta, "rho": rho,
+        "iterations":        iterations,
+        "sigma":             sigma,
+        "p5_blue":           _pct(final_blues, 5),
+        "p50_blue":          _pct(final_blues, 50),
+        "p95_blue":          _pct(final_blues, 95),
+        "p5_red":            _pct(final_reds,  5),
+        "p50_red":           _pct(final_reds,  50),
+        "p95_red":           _pct(final_reds,  95),
+        "victory_prob_blue": round(blue_victories / iterations, 4),
+    }
+
+
 # ── Colonel Blotto ────────────────────────────────────────────────────────────
 
 def blotto_expected_payoff(
