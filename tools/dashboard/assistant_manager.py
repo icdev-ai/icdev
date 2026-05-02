@@ -53,9 +53,9 @@ def _ensure_tables(conn) -> None:
             id TEXT PRIMARY KEY,
             question_hash TEXT NOT NULL,
             scope TEXT DEFAULT '',
-            question TEXT NOT NULL,
-            answer TEXT NOT NULL,
-            citations TEXT DEFAULT '[]',
+            question_text TEXT NOT NULL,
+            answer_text TEXT NOT NULL,
+            source_citations TEXT DEFAULT '[]',
             hit_count INTEGER DEFAULT 1,
             last_hit_at TEXT DEFAULT (datetime('now')),
             created_at TEXT DEFAULT (datetime('now'))
@@ -309,7 +309,7 @@ def query(
 
     # 3. Check cache
     cur.execute(
-        """SELECT id, answer, citations, hit_count
+        """SELECT id, answer_text, source_citations, hit_count
            FROM codebase_qa_cache
            WHERE question_hash = ? AND scope = ?
            LIMIT 1""",
@@ -444,7 +444,7 @@ def query(
         cur.execute(
             "UPDATE codebase_qa_cache "
             "SET hit_count = hit_count + 1, "
-            "answer = ?, citations = ?, last_hit_at = ? "
+            "answer_text = ?, source_citations = ?, last_hit_at = ? "
             "WHERE question_hash = ? AND scope = ?",
             (answer, json.dumps(citations), now, q_hash, scope),
         )
@@ -461,8 +461,8 @@ def query(
             cit_json = json.dumps(citations)
             cur.execute(
                 """INSERT INTO codebase_qa_cache
-                       (id, question_hash, scope, question,
-                        answer, citations, hit_count,
+                       (id, question_hash, scope, question_text,
+                        answer_text, source_citations, hit_count,
                         created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
