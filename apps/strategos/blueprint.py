@@ -2379,9 +2379,42 @@ def strategos_api_cyber_infra():
         ev.setdefault("criticality", "high")
         ev["source"] = "conflict_event"
         ev["cyber_vuln_score"] = round((ev.get("confidence") or 0.5) * 10, 1)
+
+    # CVE enrichment: join sg_cve_feed to supply nodes by vendor/product match
+    ph = "%s" if is_pg() else "?"
+    ilike = "ILIKE" if is_pg() else "LIKE"
     for n in nodes:
         n["source"] = "supply_node"
-        n["cyber_vuln_score"] = _crit_score.get((n.get("criticality") or "medium").lower(), 5.0)
+        base_score = _crit_score.get((n.get("criticality") or "medium").lower(), 5.0)
+        term = (n.get("label") or n.get("node_type") or "").strip()
+        if term:
+            cve_rows = _safe_fetch(
+                f"SELECT cve_id, cvss_score, is_kev FROM sg_cve_feed "  # nosec: B608
+                f"WHERE (vendor {ilike} {ph} OR product {ilike} {ph}) AND cvss_score >= 7.0 "
+                f"ORDER BY cvss_score DESC LIMIT 5",
+                (f"%{term}%", f"%{term}%"),
+            )
+            cve_count_rows = _safe_fetch(
+                f"SELECT COUNT(*) AS cnt FROM sg_cve_feed "  # nosec: B608
+                f"WHERE (vendor {ilike} {ph} OR product {ilike} {ph}) AND cvss_score >= 7.0",
+                (f"%{term}%", f"%{term}%"),
+            )
+        else:
+            cve_rows, cve_count_rows = [], []
+        total = (cve_count_rows[0].get("cnt") or 0) if cve_count_rows else 0
+        has_kev = any(r.get("is_kev") for r in cve_rows)
+        n["cve_count"] = total
+        n["top_cves"] = [
+            {"cve_id": r["cve_id"], "cvss_score": r["cvss_score"], "is_kev": bool(r.get("is_kev"))}
+            for r in cve_rows
+        ]
+        n["has_kev"] = has_kev
+        if has_kev:
+            base_score = max(base_score, 9.0)
+        elif total > 0:
+            base_score = min(10.0, base_score + total * 0.3)
+        n["cyber_vuln_score"] = round(base_score, 1)
+
     return jsonify({"nodes": nodes + cyber_events})
 
 
