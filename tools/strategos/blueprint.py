@@ -235,6 +235,64 @@ def api_wargame_lanchester_monte_carlo(wargame_id: str):
     return resp
 
 
+@bp.route("/wargame/<wargame_id>/ooda/live")
+def api_wargame_ooda_live(wargame_id: str):
+    from tools.db.storage import get_connection, is_pg
+    ph = "%s" if is_pg() else "?"
+
+    conn = get_connection()
+    try:
+        # Latest OODA assessment for this wargame
+        row = conn.execute(
+            f"SELECT id, observe_score, orient_score, decide_score, act_score, "  # nosec B608
+            f"overall_score, notes, created_at "
+            f"FROM sg_ooda_assessments WHERE wargame_id = {ph} "
+            f"ORDER BY created_at DESC LIMIT 1",
+            (wargame_id,),
+        ).fetchone()
+
+        # Signal count over last 24h — unscoped (sg_prioritized_signals has no conflict_id)
+        if is_pg():
+            sig_row = conn.execute(
+                "SELECT COUNT(*) FROM sg_prioritized_signals "
+                "WHERE created_at > NOW() - INTERVAL '24 hours'",
+            ).fetchone()
+        else:
+            sig_row = conn.execute(
+                "SELECT COUNT(*) FROM sg_prioritized_signals "
+                "WHERE created_at > datetime('now', '-24 hours')",
+            ).fetchone()
+    finally:
+        conn.close()
+
+    signal_count_24h = int(sig_row[0]) if sig_row else 0
+
+    if row is None:
+        assessment = None
+        last_updated = None
+    else:
+        assessment = {
+            "id": row[0],
+            "observe_score": row[1],
+            "orient_score": row[2],
+            "decide_score": row[3],
+            "act_score": row[4],
+            "overall_score": row[5],
+            "notes": row[6],
+        }
+        last_updated = row[7]
+
+    payload = {
+        "wargame_id": wargame_id,
+        "assessment": assessment,
+        "signal_count_24h": signal_count_24h,
+        "last_updated": last_updated,
+    }
+    resp = make_response(jsonify(payload))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
 @bp.route("/wargame/<wargame_id>/turns")
 def api_wargame_turns(wargame_id: str):
     from tools.db.storage import get_connection, is_pg
