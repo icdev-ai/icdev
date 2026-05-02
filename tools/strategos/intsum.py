@@ -173,7 +173,7 @@ def _synthesize_paragraph(prompt: str) -> str:
             max_tokens=512,
             classification="CUI // SP-CTI",
         )
-        resp = router.invoke(req, function="chat_response")
+        resp = router.invoke("chat_response", req)
         return (resp.content or "").strip()
     except Exception as exc:
         logger.warning("LLM synthesis failed: %s", exc)
@@ -197,7 +197,6 @@ def generate_intsum(theater: str = "global", lookback_hours: int = 24) -> dict[s
         prompts = _build_prompts(ctx)
 
         paragraphs = []
-        model_used = ""
         for i, (heading, prompt) in enumerate(zip(_PARA_HEADINGS, prompts), start=1):
             text = _synthesize_paragraph(prompt)
             paragraphs.append({"para_num": i, "heading": heading, "content": text})

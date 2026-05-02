@@ -7,8 +7,9 @@
 
 {{ purpose }}
 
-### Recommended COA
-Implement **{{ program_name }}** over {{ timeframe_months }} month(s) across {{ phases | length }} phase(s).
+### Recommended COA: COA B — Balanced (Hybrid Approach)
+Implement **{{ program_name }}** via the **COA B — Balanced (Hybrid)** approach over {{ timeframe_months }} month(s) across {{ phases | length }} phase(s).
+The hybrid model combines structured training, lab standup, and on-the-job tasks for optimal risk-cost-speed tradeoff.
 The workflow navigates {{ decision_points | length }} decision point(s) and {{ approval_gates | length }} approval gate(s).
 
 ### Return on Investment

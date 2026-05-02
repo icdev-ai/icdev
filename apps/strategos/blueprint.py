@@ -2651,6 +2651,29 @@ def api_intsum_detail(intsum_id: str):
         return jsonify({"error": str(exc)}), 500
 
 
+@_api.route("/intsum/<intsum_id>", methods=["DELETE"])
+def api_intsum_delete(intsum_id: str):
+    try:
+        from tools.db.storage import get_connection, is_pg  # noqa: PLC0415
+        ph = "%s" if is_pg() else "?"
+        conn = get_connection()
+        try:
+            conn.execute(
+                f"DELETE FROM sg_intsum_paragraphs WHERE intsum_id = {ph}", (intsum_id,)  # nosec B608
+            )
+            conn.execute(
+                f"DELETE FROM sg_intsums WHERE id = {ph}", (intsum_id,)  # nosec B608
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        resp = make_response(jsonify({"status": "deleted"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 # ---------------------------------------------------------------------------
 # CCIR Trigger Engine API
 # ---------------------------------------------------------------------------
