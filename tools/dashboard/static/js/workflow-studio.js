@@ -201,8 +201,8 @@ const StudioWF = (() => {
     el.dataset.nodeType = node.node_type || 'tool';
     if (node.role) el.dataset.role = node.role;
     if (node.approval_policy) el.dataset.approvalPolicy = node.approval_policy;
-    const hasSubSteps = node.sub_steps && node.sub_steps.length > 0;
-    if (hasSubSteps) el.dataset.hasSubSteps = 'true';
+    const hasSubSteps = true;  // always show decompose button on every node
+    el.dataset.hasSubSteps = node.sub_steps && node.sub_steps.length > 0 ? 'true' : 'false';
     let badgeHtml = '';
     if (node.node_type === 'human' && node.role) {
       badgeHtml = `<div class="wf-node__badge">Human | ${node.role}</div>`;
@@ -328,7 +328,7 @@ const StudioWF = (() => {
       toast(`Sub-canvas for “${node.name}” — add steps to build sub-workflow`, 'info');
     }
 
-    $('wf-name').value = `Sub: ${node.name}`;
+    $('wf-name').value = node.name;
     updateCounts();
     renderBreadcrumb();
   }
@@ -801,7 +801,27 @@ const StudioWF = (() => {
 
   function showEmptyState() {
     const es = emptyState();
-    if (es) es.style.display = '';
+    if (!es) return;
+    if (_navStack.length > 0) {
+      es.innerHTML = `
+        <div class="studio-empty__icon">&#10753;</div>
+        <div class="studio-empty__title">Empty Sub-Canvas</div>
+        <div class="studio-empty__description">
+          Drag tools from the palette to build the sub-workflow for this step.
+        </div>`;
+    } else {
+      es.innerHTML = `
+        <div class="studio-empty__icon">&#128640;</div>
+        <div class="studio-empty__title">Start Building</div>
+        <div class="studio-empty__description">
+          Drag tools from the palette to create workflow steps,
+          or start from a template.
+        </div>
+        <button class="studio-btn studio-btn--primary" onclick="StudioWF.loadTemplate()">
+          Browse Templates
+        </button>`;
+    }
+    es.style.display = '';
   }
 
   // ── Tabs ──
@@ -970,8 +990,11 @@ const StudioWF = (() => {
       let stepsStart = -1;
 
       for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i].trim();
-        if (trimmed.startsWith('description:')) {
+        const line = lines[i];
+        const trimmed = line.trim();
+        // Only read top-level description (no leading whitespace) to avoid
+        // step-level description: fields overwriting the workflow name
+        if (line.startsWith('description:')) {
           const match = trimmed.match(/description:\s*"?(.+?)"?\s*$/);
           if (match) $('wf-name').value = match[1];
         }
@@ -1237,8 +1260,9 @@ const StudioWF = (() => {
       }
     }
 
+    const validLabel = _navStack.length > 0 ? 'Sub-workflow valid' : 'Workflow valid';
     if (issues.length) toast('Validation failed: ' + issues.join(' | '), 'warning');
-    else toast('Workflow valid — ' + nodes.length + ' steps, ' + edges.length + ' connections', 'success');
+    else toast(validLabel + ' — ' + nodes.length + ' steps, ' + edges.length + ' connections', 'success');
   }
 
   // ── Utility ──
@@ -1359,6 +1383,7 @@ const StudioWF = (() => {
           human_required: s.human_required || false,
           approval_policy: s.approval_policy || null,
           doc_template: s.doc_template || null,
+          sub_steps: s.sub_steps || [],
         }, pos.x, pos.y);
         idMap[s.id] = node.id;
       }

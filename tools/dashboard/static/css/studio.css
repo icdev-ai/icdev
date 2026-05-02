@@ -1448,6 +1448,10 @@
 }
 
 /* Node type variants */
+.wf-node[data-node-type='tool'] {
+  border-color: #8b5cf6;
+}
+
 .wf-node[data-node-type='human'] {
   border-color: #2dd4bf;
   background: rgba(45, 212, 191, 0.08);

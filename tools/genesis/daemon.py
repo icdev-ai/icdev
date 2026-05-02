@@ -246,8 +246,19 @@ class GenesisDaemon(DaemonBase):
                 # observe() wrapper should wrap module.run(config, trust) here:
                 #   result = observe(name, module.run, config, trust)
                 result = module.run(config, trust)
+                success = result.get("success", False)
+                if success:
+                    try:
+                        from tools.aisg.roi_tracker import emit_roi_event
+                        emit_roi_event(
+                            "genesis_reflex",
+                            f"Reflex '{name}' executed successfully",
+                            triggered_by="genesis_daemon",
+                        )
+                    except Exception:
+                        pass
                 return (
-                    result.get("success", False),
+                    success,
                     result.get("metric_value", 0.0),
                     result.get("details", {}),
                 )

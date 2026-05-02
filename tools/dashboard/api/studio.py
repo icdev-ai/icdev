@@ -108,6 +108,30 @@ def api_tool_catalog():
     return jsonify(get_tool_catalog())
 
 
+# ── Roles (for human-gate node config dropdowns) ──────────
+
+
+_STUDIO_ROLES = [
+    {"id": "stakeholder", "name": "Stakeholder"},
+    {"id": "program_manager", "name": "Program Manager"},
+    {"id": "isso", "name": "ISSO / Security Officer"},
+    {"id": "contracting_officer", "name": "Contracting Officer"},
+    {"id": "developer", "name": "Developer / Architect"},
+    {"id": "reviewer", "name": "Reviewer"},
+    {"id": "approver", "name": "Approver"},
+]
+
+
+@studio_api.route("/roles", methods=["GET"])
+def api_studio_roles():
+    return jsonify({"roles": _STUDIO_ROLES})
+
+
+@studio_api.route("/doc-templates", methods=["GET"])
+def api_doc_templates():
+    return jsonify({"doc_templates": []})
+
+
 # ── Built-in Templates ─────────────────────────────────────
 
 
