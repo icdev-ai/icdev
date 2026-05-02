@@ -93,6 +93,7 @@ let currentOpordId = null;
 let currentScenario = "";
 
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function mth(s) { return (window.ICDEV && window.ICDEV.mdToHtml) ? window.ICDEV.mdToHtml(s) : esc(s).replace(/\n/g,'<br>'); }
 
 function showNewModal() { document.getElementById('newModal').style.display='flex'; }
 function closeModal() { document.getElementById('newModal').style.display='none'; }
@@ -176,7 +177,7 @@ function renderParas(o) {
       </div>
       <div id="paraBody${i}" style="display:${content?'block':'none'};padding:1rem;border-top:1px solid #1e293b">
         ${content
-          ? `<div style="color:#cbd5e1;line-height:1.75;font-size:.875rem;white-space:pre-wrap">${esc(content)}</div>`
+          ? `<div style="color:#cbd5e1;line-height:1.75;font-size:.875rem">${mth(content)}</div>`
           : `<div style="color:#475569;font-size:.85rem">Click Synthesize to generate this paragraph.</div>`}
       </div>
     </div>`;

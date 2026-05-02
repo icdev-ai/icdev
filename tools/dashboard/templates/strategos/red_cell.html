@@ -67,7 +67,7 @@
             <button id="mlcoaBtn" onclick="synthMLCOA()" style="margin-left:auto;background:#3b82f6;color:#fff;border:none;padding:.35rem .9rem;border-radius:5px;cursor:pointer;font-size:.8rem">Synthesize</button>
           </div>
           <div style="padding:1rem">
-            <div id="mlcoaContent" style="color:#cbd5e1;line-height:1.75;font-size:.875rem;white-space:pre-wrap"></div>
+            <div id="mlcoaContent" style="color:#cbd5e1;line-height:1.75;font-size:.875rem"></div>
             <div id="mlcoaPlaceholder" style="color:#475569;font-size:.85rem">Click Synthesize to generate MLCOA from the adversary perspective.</div>
           </div>
         </div>
@@ -79,7 +79,7 @@
             <button id="mdcoaBtn" onclick="synthMDCOA()" style="margin-left:auto;background:#e94560;color:#fff;border:none;padding:.35rem .9rem;border-radius:5px;cursor:pointer;font-size:.8rem">Synthesize</button>
           </div>
           <div style="padding:1rem">
-            <div id="mdcoaContent" style="color:#cbd5e1;line-height:1.75;font-size:.875rem;white-space:pre-wrap"></div>
+            <div id="mdcoaContent" style="color:#cbd5e1;line-height:1.75;font-size:.875rem"></div>
             <div id="mdcoaPlaceholder" style="color:#475569;font-size:.85rem">Click Synthesize to generate MDCOA from the adversary perspective.</div>
           </div>
         </div>
@@ -151,13 +151,14 @@ async function loadAnalysis(id) {
   document.getElementById('rcScenarioLabel').textContent = a.scenario || 'No scenario description';
   document.getElementById('analystNotes').value = a.analyst_notes || '';
 
+  const mth = (window.ICDEV && window.ICDEV.mdToHtml) ? window.ICDEV.mdToHtml : (s => s ? s.replace(/\n/g,'<br>') : '');
   const ml = a.mlcoa_rationale;
-  document.getElementById('mlcoaContent').textContent = ml || '';
+  document.getElementById('mlcoaContent').innerHTML = ml ? mth(ml) : '';
   document.getElementById('mlcoaContent').style.display = ml ? '' : 'none';
   document.getElementById('mlcoaPlaceholder').style.display = ml ? 'none' : '';
 
   const md = a.mdcoa_rationale;
-  document.getElementById('mdcoaContent').textContent = md || '';
+  document.getElementById('mdcoaContent').innerHTML = md ? mth(md) : '';
   document.getElementById('mdcoaContent').style.display = md ? '' : 'none';
   document.getElementById('mdcoaPlaceholder').style.display = md ? 'none' : '';
 }

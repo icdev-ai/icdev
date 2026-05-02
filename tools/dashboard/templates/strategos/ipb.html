@@ -81,6 +81,7 @@ const STEP_NAMES = [
 const STEP_COLORS = ["#3b82f6","#f59e0b","#e94560","#8b5cf6"];
 
 let currentSessionId = null;
+function mth(s) { return (window.ICDEV && window.ICDEV.mdToHtml) ? window.ICDEV.mdToHtml(s) : (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/\n/g,'<br>'); }
 
 function showNewSession() {
   document.getElementById('newSessionModal').style.display = 'flex';
@@ -155,7 +156,7 @@ function renderSteps(steps) {
       </div>
       <div id="stepBody${i}" style="display:none;padding:1rem;border-top:1px solid #1e293b">
         ${isComplete && step.content
-          ? `<div style="color:#cbd5e1;line-height:1.7;font-size:.9rem;white-space:pre-wrap">${step.content}</div>`
+          ? `<div style="color:#cbd5e1;line-height:1.7;font-size:.9rem">${mth(step.content)}</div>`
           : `<div style="color:#475569;font-size:.85rem">No synthesis yet. Click <strong>Synthesize</strong> to generate.</div>`}
       </div>
     </div>`;
