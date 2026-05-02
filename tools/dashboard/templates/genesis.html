@@ -151,6 +151,7 @@
                     <td>{{ info.last_metric_value if info.last_metric_value is not none else '—' }}</td>
                     <td>
                         <button class="btn btn-sm" onclick="runReflex('{{ name }}')" id="btn-run-{{ name }}">Run</button>
+                        <button class="btn btn-sm btn-explain" onclick="showReflexExplain('{{ name }}')" style="margin-left:4px;">? Explain</button>
                     </td>
                 </tr>
                 {% endfor %}
@@ -607,6 +608,20 @@ function showToast(message, type) {
     toast.textContent = message;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
+}
+
+function showReflexExplain(reflexName) {
+    fetch('/api/explain/reflex/' + encodeURIComponent(reflexName))
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var html = d.explanation ? (d.explanation.html || '<p>' + (d.explanation.summary || '') + '</p>') : '<p>No explanation available.</p>';
+            if (window.showExplainHtml) {
+                window.showExplainHtml('Reflex: ' + reflexName, html);
+            } else {
+                alert(d.explanation ? d.explanation.summary : 'No explanation available.');
+            }
+        })
+        .catch(function(err) { console.error('Explain reflex error:', err); });
 }
 </script>
 

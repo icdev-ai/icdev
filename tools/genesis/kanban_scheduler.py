@@ -29,15 +29,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-# Force UTF-8 on the stream so emoji/Unicode in task titles never silently
-# kill the logger on Windows (cp1252 streams swallow UnicodeEncodeError and
-# then stop writing entirely for the rest of the process lifetime).
-_stream = open(sys.stderr.fileno(), mode="w", encoding="utf-8", errors="replace", closefd=False)
+# Force UTF-8 on both stdout and stderr so emoji/Unicode in task titles never
+# silently kill the logger on Windows (cp1252 streams raise UnicodeEncodeError
+# and then stop writing entirely for the rest of the process lifetime).
+_stderr_utf8 = open(sys.stderr.fileno(), mode="w", encoding="utf-8", errors="replace", closefd=False)
+_stdout_utf8 = open(sys.stdout.fileno(), mode="w", encoding="utf-8", errors="replace", closefd=False)
+sys.stdout = _stdout_utf8
+sys.stderr = _stderr_utf8
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [kanban] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    stream=_stream,
+    stream=_stderr_utf8,
 )
 logger = logging.getLogger(__name__)
 

@@ -558,6 +558,19 @@
             p.setAttribute('aria-hidden', 'true');
         };
 
+        window.showExplainHtml = function(title, htmlContent) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            var titleEl = document.getElementById('explain-panel-title');
+            if (loading) loading.style.display = 'none';
+            if (titleEl && title) titleEl.textContent = title;
+            if (content) content.innerHTML = htmlContent || '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+        };
+
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') window.closeExplain();
         });

@@ -14,6 +14,7 @@ GREEN tier (non-destructive writes to KG tables).  Air-gap safe.
 import logging
 import os
 import sys
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -120,12 +121,14 @@ def _ingest_to_knowledge_graph(entries: List[Dict], feed_name: str, category: st
             if row and (row["cnt"] if isinstance(row, dict) else row[0]) > 0:
                 continue
 
+            signal_id = f"sig-{uuid.uuid4().hex[:8]}"
             conn.execute(
                 """INSERT INTO innovation_signals
-                   (source, source_type, title, description, content_hash,
+                   (id, source, source_type, title, description, content_hash,
                     innovation_score, status, discovered_at, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
+                    signal_id,
                     f"genesis_ingest:{feed_name}",
                     category,
                     title[:500],
