@@ -42,6 +42,17 @@ class BasePage:
             path: URL path to append, e.g. "/dashboard".
         """
         self.driver.get(f"{self.base_url}/{path.lstrip('/')}")
+        self._dismiss_tour()
+
+    def _dismiss_tour(self) -> None:
+        """Dismiss the ICDEV tour welcome overlay if present, so it doesn't intercept clicks."""
+        try:
+            self.driver.execute_script(
+                "var el = document.getElementById('icdev-tour-welcome');"
+                "if (el) { el.classList.remove('visible'); el.style.display='none'; }"
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Element helpers
