@@ -411,6 +411,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_feedback",
         "wf_document_submissions",
         "wf_citations",
+        # WNE artifact store (migration 084, NIST AU — append-only)
+        "wne_artifacts",
     ]
 
     if tool_name == "Bash":
