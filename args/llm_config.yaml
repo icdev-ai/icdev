@@ -336,6 +336,34 @@ routing:
     chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
     effort: low
 
+  agent_mbse:
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    effort: max
+
+  agent_modernization:
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    effort: high
+
+  agent_requirements_analyst:
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    effort: high
+
+  agent_supply_chain:
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: medium
+
+  agent_simulation:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: high
+
+  agent_gateway:
+    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
+    effort: low
+
+  agent_devsecops:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: high
+
   task_decomposition:
     chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, qwen3-local]
     effort: high
@@ -502,10 +530,11 @@ agent_effort_defaults:
   knowledge-agent: medium
   monitor-agent: low
   mbse-agent: high
-  modernization-agent: medium
-  requirements-agent: medium
+  modernization-agent: high
+  requirements-analyst-agent: high
   supply-chain-agent: medium
   simulation-agent: high
+  gateway-agent: low
   devsecops-agent: high
 
 # -----------------------------------------------------------------------
@@ -623,6 +652,9 @@ two_tier:
   planner_functions:
     - agent_architect
     - agent_orchestrator
+    - agent_mbse
+    - agent_modernization
+    - agent_requirements_analyst
     - task_decomposition
     - child_app
     - saas_proxy
@@ -698,6 +730,20 @@ token_budgets:
       monthly_usd: 20.00
     monitor-agent:
       monthly_usd: 10.00
+    mbse-agent:
+      monthly_usd: 40.00
+    modernization-agent:
+      monthly_usd: 50.00
+    requirements-analyst-agent:
+      monthly_usd: 30.00
+    supply-chain-agent:
+      monthly_usd: 20.00
+    simulation-agent:
+      monthly_usd: 40.00
+    gateway-agent:
+      monthly_usd: 5.00
+    devsecops-agent:
+      monthly_usd: 30.00
     # Scanner-tier agents (Ollama-only, zero cloud cost) — generous caps
     genesis-daemon:
       monthly_usd: 5.00           # mostly Ollama, minimal cloud
