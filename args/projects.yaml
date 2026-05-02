@@ -286,6 +286,8 @@ projects:
   - 'Digital Twin: formalize Ghost Track/I&W/War Game as managed twins + cross-canvas
     event bus (NDC->cyber, FathomDesk->war-endurance) + awareness engine indexing
     — sg-twin-01..07'
+  - 'Cyber Extension: NVD CVE ingest + CISA KEV + MITRE ATT&CK live sync + Shodan
+    InternetDB + CVE-to-infra join + daily Genesis reflex — sg-cyber-ext-01..09'
   epics:
   - key: foundation
     title: Theater Abstraction + DB + KG Schema + Blueprint
@@ -349,6 +351,9 @@ projects:
     priority: medium
   - key: twin
     title: Digital Twin Integration — Ghost Track + I&W + War Game + Cross-Canvas Bus
+    priority: high
+  - key: cyber-ext
+    title: Cyber Extension — NVD/KEV/ATT&CK Ingest + Shodan + Dynamic Heatmap
     priority: high
 - key: sc-core
   name: Supply Chain Core Promotion
