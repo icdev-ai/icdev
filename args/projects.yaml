@@ -1880,3 +1880,31 @@ projects:
   - key: vv
     title: V&V � manifest + companion + docs
     priority: low
+- key: sg-roadmap
+  name: Strategos Military Feature Roadmap
+  description: >-
+    Four-phase roadmap of military analyst features for the Strategos intelligence
+    platform. Phase 1: CCIR Trigger Engine + INTSUM Auto-Generator + Commander
+    Dashboard + War Endurance widget. Phase 2: IPB Canvas + I&W Board + F3EAD
+    Targeting + BDA Module. Phase 3: OPORD Generator + Red Cell + METT-TC.
+    Phase 4: Sync Matrix + ISR Planner + Confidence Decay.
+  task_prefix: sg-
+  default_open: true
+  briefs:
+  - 'Phase 1: CCIR trigger + INTSUM + Commander Dashboard + endurance — sg-s1-01..10'
+  - 'Phase 2: IPB Canvas + I&W Board + F3EAD + BDA — sg-s2-01..12'
+  - 'Phase 3: OPORD + Red Cell + METT-TC — sg-s3-01..09'
+  - 'Phase 4: Sync Matrix + ISR Planner + Confidence Decay — sg-s4-01..06'
+  epics:
+  - key: s1
+    title: Phase 1 — CCIR Trigger + INTSUM + Commander Dashboard
+    priority: critical
+  - key: s2
+    title: Phase 2 — IPB Canvas + I&W Board + F3EAD + BDA
+    priority: high
+  - key: s3
+    title: Phase 3 — OPORD Generator + Red Cell + METT-TC
+    priority: medium
+  - key: s4
+    title: Phase 4 — Sync Matrix + ISR Planner + Confidence Decay
+    priority: low

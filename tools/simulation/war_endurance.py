@@ -13,7 +13,7 @@ Formula:
 
 Supply-degradation integration (sg-sc-06):
     get_supply_degradation_coefficients() from interdiction_ranker returns per-unit
-    degradation factors derived from top-N interdiction targets.  For each side,
+    degradation factors computed from top-N interdiction targets.  For each side,
     the mean degradation factor across its affected units is converted to a
     supply_interdiction_factor (≥ 1.0) that amplifies effective_attrition.
     run_endurance_with_supply_interdiction() applies this automatically.

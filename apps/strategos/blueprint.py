@@ -2558,6 +2558,144 @@ def api_war_council_generate():
 
 
 # ---------------------------------------------------------------------------
+# Commander's Dashboard
+# ---------------------------------------------------------------------------
+
+@_bp.route("/commander")
+@_bp.route("/commander/")
+def strategos_commander():
+    return render_template("strategos/commander.html")
+
+
+@_api.route("/commander/picture", methods=["GET"])
+def api_commander_picture():
+    try:
+        from tools.strategos.commander_dashboard import get_commander_picture  # noqa: PLC0415
+        pic = get_commander_picture()
+        resp = make_response(jsonify(pic))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/endurance", methods=["GET"])
+def api_endurance():
+    try:
+        from tools.strategos.commander_dashboard import get_war_endurance  # noqa: PLC0415
+        data = get_war_endurance()
+        resp = make_response(jsonify(data))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# INTSUM Auto-Generator
+# ---------------------------------------------------------------------------
+
+@_bp.route("/intsum")
+@_bp.route("/intsum/")
+def strategos_intsum():
+    from tools.strategos.intsum import list_intsums  # noqa: PLC0415
+    intsums = []
+    try:
+        intsums = list_intsums(limit=20)
+    except Exception:
+        pass
+    return render_template("strategos/intsum.html", intsums=intsums)
+
+
+@_api.route("/intsum/generate", methods=["POST"])
+def api_intsum_generate():
+    data = request.get_json(silent=True) or {}
+    theater = data.get("theater", "global")
+    lookback_hours = int(data.get("lookback_hours", 24))
+    try:
+        from tools.strategos.intsum import generate_intsum  # noqa: PLC0415
+        result = generate_intsum(theater=theater, lookback_hours=lookback_hours)
+        if "error" in result:
+            return jsonify(result), 500
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/intsum/list", methods=["GET"])
+def api_intsum_list():
+    limit = int(request.args.get("limit", 10))
+    try:
+        from tools.strategos.intsum import list_intsums  # noqa: PLC0415
+        rows = list_intsums(limit=limit)
+        resp = make_response(jsonify({"intsums": rows, "total": len(rows)}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/intsum/<intsum_id>", methods=["GET"])
+def api_intsum_detail(intsum_id: str):
+    try:
+        from tools.strategos.intsum import get_intsum_detail  # noqa: PLC0415
+        intsum = get_intsum_detail(intsum_id)
+        if not intsum:
+            return jsonify({"error": "not found"}), 404
+        resp = make_response(jsonify(intsum))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# CCIR Trigger Engine API
+# ---------------------------------------------------------------------------
+
+@_api.route("/ccir/evaluate", methods=["POST"])
+def api_ccir_evaluate():
+    data = request.get_json(silent=True) or {}
+    lookback_hours = int(data.get("lookback_hours", 12))
+    threshold = float(data.get("threshold", 0.15))
+    try:
+        from tools.strategos.ccir_trigger import evaluate_ccirs  # noqa: PLC0415
+        result = evaluate_ccirs(lookback_hours=lookback_hours, threshold=threshold)
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/ccir/triggers", methods=["GET"])
+def api_ccir_triggers():
+    limit = int(request.args.get("limit", 20))
+    try:
+        from tools.strategos.ccir_trigger import get_recent_trigger_events  # noqa: PLC0415
+        events = get_recent_trigger_events(limit=limit)
+        resp = make_response(jsonify({"events": events, "total": len(events)}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/ccir/triggers/<event_id>/resolve", methods=["POST"])
+def api_ccir_trigger_resolve(event_id: str):
+    try:
+        from tools.strategos.ccir_trigger import resolve_trigger_event  # noqa: PLC0415
+        ok = resolve_trigger_event(event_id)
+        resp = make_response(jsonify({"status": "resolved" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # OSINT Ingestion Panel page + APIs
 # ---------------------------------------------------------------------------
 

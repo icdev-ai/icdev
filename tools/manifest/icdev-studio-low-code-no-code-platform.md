@@ -16,4 +16,8 @@
 | Studio CSS | tools/dashboard/static/css/studio.css | Premium design system: glass cards, gradients, animations, 8px grid | (asset) | CSS |
 | Workflow Studio JS | tools/dashboard/static/js/workflow-studio.js | DAG canvas editor: drag-drop nodes, SVG edges, zoom, validate, YAML import/export | (asset) | JS |
 | Marketplace JS | tools/dashboard/static/js/marketplace.js | Asset browser: search, filter, sort, detail modal, one-click install | (asset) | JS |
+| WNE Budget Estimator | tools/studio/wne/budget_estimator.py | Phase-by-phase budget estimator using node-type cost heuristics; T-shirt sizing; no LLM; air-gap safe | WorkflowContext | Phased cost table dict |
+| WNE COA Builder | tools/studio/wne/coa_builder.py | Builds 3-COA comparison (A/B/C) from composite nodes or parametric fallback; reuses coa_generation.md structure | WorkflowContext | 3-COA markdown table |
+| WNE Export Pack Generator | tools/studio/wne/export_pack_generator.py | Orchestrates all WNE modules into a downloadable zip (exec_brief, COA, budget, ROI, slides, summary) | WorkflowContext + audience | zip file |
+| WNE ROI Calculator | tools/studio/wne/roi_calculator.py | Computes ROI, NPV, payback period, and sensitivity table from WorkflowContext parameters; no LLM; air-gap safe | WorkflowContext.parameters | ROI/NPV/payback dict |
 

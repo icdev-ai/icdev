@@ -2,7 +2,7 @@
 # CUI // SP-CTI
 """Seed sgx-sigint, sgx-geoint, sgx-socmint Kanban tasks.
 
-22 tasks across 3 epics derived from research-signal mining:
+22 tasks across 3 epics covering research-signal mining:
   sigint  — ARCANE-inspired passive RF/beacon attribution
   geoint  — GDELT wiring + Copernicus Sentinel-2 EO imagery
   socmint — Telegram milblog harvester → sg_raw_signals feed
