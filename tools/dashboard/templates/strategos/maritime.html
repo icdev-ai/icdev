@@ -536,13 +536,24 @@ setInterval(refreshFeedStatus, 30000);
 fetch('/api/strategos/maritime/tracks')
   .then(r => r.json())
   .then(data => {
-    // Parse ISO timestamps → epoch ms once
+    // Parse ISO timestamps → epoch ms; drop any point with invalid ts
     allVessels = data.vessels.map(v => ({
       ...v,
-      track: v.track.map(p => ({ ...p, ms: new Date(p.ts).getTime() })),
-    }));
+      track: v.track
+        .map(p => ({ ...p, ms: new Date(p.ts).getTime() }))
+        .filter(p => isFinite(p.ms)),
+    })).filter(v => v.track.length >= 2);
 
-    // Global time bounds
+    // Outlier guard: exclude vessels whose first timestamp is > 30 days
+    // outside the median first-timestamp across all vessels.
+    const firstMss = allVessels.map(v => v.track[0].ms).sort((a, b) => a - b);
+    const medianFirst = firstMss[Math.floor(firstMss.length / 2)] || 0;
+    const DAY_MS = 86400000;
+    allVessels = allVessels.filter(v =>
+      Math.abs(v.track[0].ms - medianFirst) <= 30 * DAY_MS
+    );
+
+    // Global time bounds from cleaned vessel set
     allVessels.forEach(v => {
       const first = v.track[0].ms;
       const last  = v.track[v.track.length - 1].ms;
