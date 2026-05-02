@@ -508,6 +508,25 @@ function initMapObjects() {
     }).addTo(map);
 
     vesselState[v.mmsi] = { marker, wakeLine, wake: [], color: c };
+
+    // Right-click → Ask STRATEGOS
+    marker.on('contextmenu', function(e) {
+      L.DomEvent.stop(e);
+      if (typeof window.sgChat === 'undefined') return;
+      const pos = posAtProgress(v, _progress);
+      window.sgChat.showMenu(e.originalEvent.clientX, e.originalEvent.clientY, {
+        type: 'vessel',
+        label: v.vessel_name || 'Unknown Vessel',
+        mmsi: v.mmsi,
+        flag: v.flag || 'N/A',
+        lat: pos ? pos.lat : (v.track[0] ? v.track[0].lat : 0),
+        lon: pos ? pos.lon : (v.track[0] ? v.track[0].lon : 0),
+        speed_kts: v.speed_kts || 'N/A',
+        cargo_type: v.cargo_type || v.vessel_type || 'N/A',
+        track_points: v.track.length,
+        anomaly_flag: v.anomaly_flag ? 'YES' : 'NO',
+      });
+    });
   });
 }
 

@@ -281,6 +281,7 @@
                     <li><a href="/strategos/war-council" style="color:#f59e0b">&#9670; War Council</a></li>
                     <li><a href="/strategos/osint">OSINT Panel</a></li>
                     <li><a href='/strategos/darkweb' style='color:#a855f7'>&#9670; Dark Web Monitor</a></li>
+                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600">&#9670; Intelligence Chat</a></li>
                     <li>
                         <a href="/strategos/briefs" style="color:#a78bfa">&#9670; Intel Briefs
                             <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
@@ -371,6 +372,10 @@
 
     <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
     {% include "includes/assistant_widget.html" ignore missing %}
+    <!-- STRATEGOS floating chat panel (only on Strategos pages) -->
+    {% if '/strategos' in request.path %}
+    {% include "strategos/_chat_panel.html" ignore missing %}
+    {% endif %}
 
     <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
     <script>window.ROUTE_MODULE_MAP = {{ route_module_map|default({})|tojson }};</script>
@@ -395,6 +400,10 @@
     <script defer src="{{ url_for('static', filename='js/chat-renderers.js') }}"></script>
     <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
     <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
+    {% if '/strategos' in request.path %}
+    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
+    <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
     <script>
     (function() {
