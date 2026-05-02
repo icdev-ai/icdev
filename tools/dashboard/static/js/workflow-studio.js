@@ -196,6 +196,13 @@ const StudioWF = (() => {
     el.dataset.nodeType = node.node_type || 'tool';
     if (node.role) el.dataset.role = node.role;
     if (node.approval_policy) el.dataset.approvalPolicy = node.approval_policy;
+    let badgeHtml = '';
+    if (node.node_type === 'human' && node.role) {
+      badgeHtml = `<div class="wf-node__badge">Human | ${node.role}</div>`;
+    } else if (node.node_type === 'approval' && node.approval_policy) {
+      badgeHtml = `<div class="wf-node__badge">Approval | ${node.approval_policy}</div>`;
+    }
+
     el.innerHTML = `
       <div class="wf-node__port wf-node__port--input"
            onmousedown="StudioWF.startConnect(event, '${node.id}', 'input')"
@@ -205,6 +212,7 @@ const StudioWF = (() => {
           ${iconFor(node.color)}
         </div>
         <div class="wf-node__name">${node.name}</div>
+        ${badgeHtml}
         <div class="wf-node__status wf-node__status--${node.status}"></div>
       </div>
       <div class="wf-node__body">${node.description}</div>
