@@ -30,6 +30,7 @@ except ImportError:
 TEMPLATES_DIR = Path(__file__).parent.parent.parent / "args" / "workflow_templates"
 
 VALID_NODE_TYPES: frozenset[str] = frozenset({"tool", "human", "approval"})
+VALID_AUDIENCES: frozenset[str] = frozenset({"leadership", "technical", "compliance", "board", "customer"})
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +76,24 @@ def _components(steps: list[dict]) -> list[set[str]]:
 # ---------------------------------------------------------------------------
 # Analysis
 # ---------------------------------------------------------------------------
+
+def validate_narrative_context(nc: dict) -> list[str]:
+    """Return a list of error strings for a narrative_context block."""
+    errors: list[str] = []
+    audience = nc.get("audience")
+    if audience is not None and audience not in VALID_AUDIENCES:
+        errors.append(
+            f"narrative_context.audience '{audience}' not in {sorted(VALID_AUDIENCES)}"
+        )
+    params = nc.get("parameters")
+    if params is not None:
+        for key, val in params.items():
+            if not isinstance(val, (int, float)):
+                errors.append(
+                    f"narrative_context.parameters.{key} must be numeric, got {type(val).__name__!r}"
+                )
+    return errors
+
 
 def analyze(steps: list[dict]) -> dict:
     ids = {s["id"] for s in steps}
@@ -225,11 +244,19 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             continue
 
         steps = data.get("steps", [])
-        if not steps:
+        nc_errors: list[str] = []
+        nc = data.get("narrative_context")
+        if nc is not None:
+            nc_errors = validate_narrative_context(nc)
+
+        if not steps and not nc_errors:
             continue
 
-        info = analyze(steps)
-        ok = is_ok(info)
+        info = analyze(steps) if steps else {
+            "isolated": [], "dangling": [], "bad_node_types": [],
+            "components": 0, "comp_groups": [], "has_in": set(), "has_out": set(),
+        }
+        ok = is_ok(info) and not nc_errors
 
         entry: dict = {
             "file": path.name,
@@ -239,6 +266,7 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
             "isolated": info["isolated"],
             "dangling": info["dangling"],
             "bad_node_types": info["bad_node_types"],
+            "narrative_context_errors": nc_errors,
             "status": "ok" if ok else "fail",
         }
         if info["components"] > 1:
@@ -267,6 +295,8 @@ def run(check_only: bool, as_json: bool, gate: bool) -> int:
                 line += f"  dangling={r['dangling']}"
             if r.get("bad_node_types"):
                 line += f"  bad_node_types={r['bad_node_types']}"
+            if r.get("narrative_context_errors"):
+                line += f"  narrative_context_errors={r['narrative_context_errors']}"
             if r.get("components", 1) > 1:
                 line += f"  subgraphs={r['components']}"
             print(line)
