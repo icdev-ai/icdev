@@ -278,6 +278,28 @@
 
       <!-- ── Lanchester Tab ── -->
       <div id="tab-lanchester" class="tab-panel">
+        <!-- Mode toggle -->
+        <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.75rem">
+          <span style="font-size:.8rem;color:var(--text-secondary)">Mode:</span>
+          <div style="display:flex;border:1px solid var(--border-color,#4b5563);border-radius:5px;overflow:hidden">
+            <button id="lch-mode-det" onclick="setLchMode('det')"
+              style="padding:.25rem .7rem;font-size:.78rem;cursor:pointer;border:none;
+                     background:var(--accent-color,#3b82f6);color:#fff;transition:.15s">Deterministic</button>
+            <button id="lch-mode-mc" onclick="setLchMode('mc')"
+              style="padding:.25rem .7rem;font-size:.78rem;cursor:pointer;border:none;
+                     background:var(--bg-tertiary,#374151);color:var(--text-secondary,#9ca3af);transition:.15s">Monte Carlo</button>
+          </div>
+          <!-- Iterations slider — shown only in MC mode -->
+          <div id="lch-mc-opts" style="display:none;align-items:center;gap:.4rem">
+            <label style="font-size:.78rem;color:var(--text-secondary)">Iterations:
+              <input type="range" id="lch-iterations" min="100" max="2000" step="100" value="500"
+                oninput="document.getElementById('lch-iter-val').textContent=this.value"
+                style="vertical-align:middle;width:100px">
+              <span id="lch-iter-val" style="font-size:.78rem;color:var(--text-primary,#fff);min-width:2.5rem;display:inline-block">500</span>
+            </label>
+          </div>
+        </div>
+
         <div class="lch-controls">
           <label>Model
             <select id="lch-model">
@@ -302,11 +324,13 @@
                    border:1px solid var(--border-color,#4b5563);border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Load from ORBAT</button>
           <button onclick="runLanchester()"
             style="padding:.3rem .8rem;background:var(--accent-color,#3b82f6);color:#fff;
-                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Run</button>
+                   border:none;border-radius:4px;font-size:.8rem;cursor:pointer;height:32px">Run Simulation</button>
         </div>
         <div id="lch-orbat-status" style="margin-bottom:.5rem;font-size:.8rem"></div>
 
         <div id="lch-result" style="margin-bottom:.75rem;font-size:.85rem"></div>
+        <!-- Victory probability badge (Monte Carlo only) -->
+        <div id="lch-mc-badge" style="display:none;margin-bottom:.6rem"></div>
         <div style="position:relative;height:260px">
           <canvas id="lch-chart"></canvas>
         </div>
@@ -597,6 +621,29 @@ function loadFromOrbat() {
     });
 }
 
+let _lchMode = 'det';
+
+function setLchMode(mode) {
+  _lchMode = mode;
+  const detBtn = document.getElementById('lch-mode-det');
+  const mcBtn  = document.getElementById('lch-mode-mc');
+  const mcOpts = document.getElementById('lch-mc-opts');
+  if (mode === 'mc') {
+    detBtn.style.background = 'var(--bg-tertiary,#374151)';
+    detBtn.style.color = 'var(--text-secondary,#9ca3af)';
+    mcBtn.style.background  = 'var(--accent-color,#3b82f6)';
+    mcBtn.style.color = '#fff';
+    mcOpts.style.display = 'flex';
+  } else {
+    detBtn.style.background = 'var(--accent-color,#3b82f6)';
+    detBtn.style.color = '#fff';
+    mcBtn.style.background  = 'var(--bg-tertiary,#374151)';
+    mcBtn.style.color = 'var(--text-secondary,#9ca3af)';
+    mcOpts.style.display = 'none';
+    document.getElementById('lch-mc-badge').style.display = 'none';
+  }
+}
+
 function runLanchester() {
   const model = document.getElementById('lch-model').value;
   const b0    = parseFloat(document.getElementById('lch-b0').value) || 1000;
@@ -604,14 +651,25 @@ function runLanchester() {
   const beta  = parseFloat(document.getElementById('lch-beta').value) || 0.01;
   const rho   = parseFloat(document.getElementById('lch-rho').value) || 0.01;
   const wid   = _wargameId || 'default';
+  const resultEl = document.getElementById('lch-result');
 
-  fetch(`/api/strategos/wargame/${wid}/lanchester?model=${model}&b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}`)
-    .then(r => r.json())
-    .then(renderLanchester)
-    .catch(e => { document.getElementById('lch-result').textContent = 'Error: ' + e; });
+  if (_lchMode === 'mc') {
+    const iters = parseInt(document.getElementById('lch-iterations').value) || 500;
+    resultEl.innerHTML = '<span style="color:var(--text-muted)">Running Monte Carlo…</span>';
+    fetch(`/wargame/${wid}/lanchester/monte-carlo?b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}&iterations=${iters}`)
+      .then(r => r.json())
+      .then(renderLanchesterMC)
+      .catch(e => { resultEl.textContent = 'Error: ' + e; });
+  } else {
+    fetch(`/api/strategos/wargame/${wid}/lanchester?model=${model}&b0=${b0}&r0=${r0}&beta=${beta}&rho=${rho}`)
+      .then(r => r.json())
+      .then(renderLanchester)
+      .catch(e => { resultEl.textContent = 'Error: ' + e; });
+  }
 }
 
 function renderLanchester(d) {
+  document.getElementById('lch-mc-badge').style.display = 'none';
   const resultEl = document.getElementById('lch-result');
   if (d.error) { resultEl.textContent = 'Error: ' + d.error; return; }
   const wc = d.winner === 'blue' ? '#3b82f6' : d.winner === 'red' ? '#ef4444' : '#f59e0b';
@@ -656,6 +714,110 @@ function renderLanchester(d) {
         y: { title: { display: true, text: 'Force Strength' }, min: 0 },
       },
       plugins: { legend: { position: 'top' } },
+    }
+  });
+}
+
+function renderLanchesterMC(d) {
+  const resultEl = document.getElementById('lch-result');
+  const badgeEl  = document.getElementById('lch-mc-badge');
+  if (d.error) { resultEl.textContent = 'Error: ' + d.error; badgeEl.style.display = 'none'; return; }
+
+  resultEl.innerHTML =
+    `<span style="color:var(--text-secondary);font-size:.8rem">`
+    + `Monte Carlo &nbsp;·&nbsp; ${d.iterations} iterations &nbsp;·&nbsp; σ=${d.sigma}`
+    + ` &nbsp;·&nbsp; Final p50 Blue: ${d.p50_blue} / Red: ${d.p50_red}</span>`;
+
+  const pct = Math.round(d.victory_prob_blue * 100);
+  const badgeColor = pct >= 60 ? '#3b82f6' : pct <= 40 ? '#ef4444' : '#f59e0b';
+  badgeEl.style.display = 'block';
+  badgeEl.innerHTML =
+    `<span style="display:inline-flex;align-items:center;gap:.45rem;padding:.3rem .75rem;`
+    + `border-radius:6px;background:${badgeColor}22;border:1px solid ${badgeColor}55;font-size:.85rem;font-weight:600;color:${badgeColor}">`
+    + `Blue wins ${pct}% of simulations`
+    + `</span>`;
+
+  const ctx = document.getElementById('lch-chart').getContext('2d');
+  if (lchChart) lchChart.destroy();
+  lchChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: d.t_series,
+      datasets: [
+        // Blue band: p95 fills down to p5
+        {
+          label: 'Blue p95',
+          data: d.p95_blue_series,
+          borderColor: 'transparent',
+          backgroundColor: 'rgba(59,130,246,0.18)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: '+1',
+        },
+        {
+          label: 'Blue p5',
+          data: d.p5_blue_series,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: `Blue p50 (β=${d.beta})`,
+          data: d.p50_blue_series,
+          borderColor: '#3b82f6',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+        },
+        // Red band: p95 fills down to p5
+        {
+          label: 'Red p95',
+          data: d.p95_red_series,
+          borderColor: 'transparent',
+          backgroundColor: 'rgba(239,68,68,0.15)',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: '+1',
+        },
+        {
+          label: 'Red p5',
+          data: d.p5_red_series,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          borderWidth: 0,
+          pointRadius: 0,
+          fill: false,
+        },
+        {
+          label: `Red p50 (ρ=${d.rho})`,
+          data: d.p50_red_series,
+          borderColor: '#ef4444',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 0,
+          fill: false,
+        },
+      ]
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: { title: { display: true, text: 'Time Steps' }, ticks: { maxTicksLimit: 10 } },
+        y: { title: { display: true, text: 'Force Strength' }, min: 0 },
+      },
+      plugins: {
+        legend: {
+          position: 'top',
+          labels: {
+            filter: item => item.text.includes('p50'),
+          },
+        },
+      },
     }
   });
 }
