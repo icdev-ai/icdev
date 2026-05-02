@@ -1433,6 +1433,45 @@
   transform: translateY(-50%) scale(1.3);
 }
 
+/* Node badge */
+.wf-node__badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--studio-radius-full);
+  white-space: nowrap;
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Node type variants */
+.wf-node[data-node-type='human'] {
+  border-color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.wf-node[data-node-type='human'] .wf-node__icon::before { content: '\1F464'; }
+
+.wf-node[data-node-type='human'] .wf-node__badge {
+  background: rgba(45, 212, 191, 0.15);
+  color: #2dd4bf;
+}
+
+.wf-node[data-node-type='approval'] {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.wf-node[data-node-type='approval'] .wf-node__icon::before { content: '\1F512'; }
+
+.wf-node[data-node-type='approval'] .wf-node__badge {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
 
 /* ============================================================
    MARKETPLACE STOREFRONT
