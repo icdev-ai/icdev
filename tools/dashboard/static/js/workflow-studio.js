@@ -16,6 +16,8 @@ const StudioWF = (() => {
   const GRID = 24;
   let _rolesCache = null;
   let _docTemplatesCache = null;
+  let _navStack = [];  // [{nodes, edges, name, parentNodeId}]
+  let _contextMenu = null;
 
   // ── DOM refs ──
   const $ = id => document.getElementById(id);
@@ -179,6 +181,7 @@ const StudioWF = (() => {
       human_required: toolData.human_required || false,
       approval_policy: toolData.approval_policy || null,
       doc_template: toolData.doc_template || null,
+      sub_steps: toolData.sub_steps || [],
     };
     nodes.push(node);
     nextNodeY = Math.max(nextNodeY, y + 80);
@@ -198,6 +201,8 @@ const StudioWF = (() => {
     el.dataset.nodeType = node.node_type || 'tool';
     if (node.role) el.dataset.role = node.role;
     if (node.approval_policy) el.dataset.approvalPolicy = node.approval_policy;
+    const hasSubSteps = node.sub_steps && node.sub_steps.length > 0;
+    if (hasSubSteps) el.dataset.hasSubSteps = 'true';
     let badgeHtml = '';
     if (node.node_type === 'human' && node.role) {
       badgeHtml = `<div class="wf-node__badge">Human | ${node.role}</div>`;
@@ -209,6 +214,7 @@ const StudioWF = (() => {
       <div class="wf-node__port wf-node__port--input"
            onmousedown="StudioWF.startConnect(event, '${node.id}', 'input')"
            onmouseup="StudioWF.endConnect(event, '${node.id}', 'input')"></div>
+      ${hasSubSteps ? `<button class="wf-node__expand" onclick="event.stopPropagation();StudioWF.drillInto('${node.id}')" title="Expand sub-steps" style="position:absolute;top:4px;right:4px;background:transparent;border:1px solid var(--studio-border,#2d3047);border-radius:3px;width:20px;height:20px;font-size:13px;cursor:pointer;color:var(--studio-accent,#6366f1);padding:0;display:flex;align-items:center;justify-content:center;z-index:1;">⊞</button>` : ''}
       <div class="wf-node__header">
         <div class="wf-node__icon wf-studio__tool-icon--${node.color}">
           ${iconFor(node.color)}
@@ -235,7 +241,166 @@ const StudioWF = (() => {
     // Double-click to configure
     el.addEventListener('dblclick', () => openNodeConfig(node.id));
 
+    // Right-click context menu
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showContextMenu(e.clientX, e.clientY, node.id);
+    });
+
     container.appendChild(el);
+  }
+
+  // ── Context Menu ──
+  function showContextMenu(x, y, nodeId) {
+    hideContextMenu();
+    const menu = document.createElement('div');
+    menu.id = 'wf-context-menu';
+    menu.style.cssText = `position:fixed;left:${x}px;top:${y}px;z-index:9999;` +
+      `background:var(--studio-bg-elevated,#1e2030);border:1px solid var(--studio-border,#2d3047);` +
+      `border-radius:6px;padding:4px 0;box-shadow:0 8px 32px rgba(0,0,0,0.4);min-width:160px;`;
+    menu.innerHTML = `<div style="padding:8px 16px;cursor:pointer;font-size:0.85rem;` +
+      `color:var(--studio-text,#e2e8f0);"` +
+      ` onmouseenter="this.style.background='rgba(99,102,241,0.15)'"` +
+      ` onmouseleave="this.style.background=''"` +
+      ` onclick="StudioWF.drillInto('${nodeId}');StudioWF.hideContextMenu();">` +
+      `⊞ Decompose node</div>`;
+    document.body.appendChild(menu);
+    _contextMenu = menu;
+    setTimeout(() => document.addEventListener('click', hideContextMenu, { once: true }), 0);
+  }
+
+  function hideContextMenu() {
+    if (_contextMenu) { _contextMenu.remove(); _contextMenu = null; }
+  }
+
+  // ── Sub-canvas navigation ──
+  function drillInto(nodeId) {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    hideContextMenu();
+
+    _navStack.push({
+      nodes: nodes.map(n => Object.assign({}, n, { sub_steps: (n.sub_steps || []).slice() })),
+      edges: edges.map(e => Object.assign({}, e)),
+      name: $('wf-name').value,
+      parentNodeId: nodeId,
+    });
+
+    nodes = []; edges = []; selectedNode = null; nextNodeY = 60;
+    nodesEl().innerHTML = '';
+    edgesSvg().innerHTML = '';
+
+    if (node.sub_steps && node.sub_steps.length > 0) {
+      const layoutSteps = node.sub_steps.map(s => ({ id: s.id, depends_on: s.dependsOn || [] }));
+      const positions = computeDagLayout(layoutSteps);
+      const idMap = {};
+      for (const sub of node.sub_steps) {
+        const pos = positions[sub.id] || { x: 60, y: nextNodeY };
+        const n = addNode({
+          toolId: sub.id,
+          toolName: sub.name,
+          toolPath: sub.tool || '',
+          toolDesc: sub.description || '',
+          toolColor: sub.color || guessColor(sub.tool || ''),
+          node_type: sub.node_type || 'tool',
+          role: sub.role || null,
+          human_required: sub.human_required || false,
+          approval_policy: sub.approval_policy || null,
+          doc_template: sub.doc_template || null,
+          sub_steps: sub.sub_steps || [],
+        }, pos.x, pos.y);
+        idMap[sub.id] = n.id;
+      }
+      for (const sub of node.sub_steps) {
+        for (const dep of (sub.dependsOn || [])) {
+          const fromId = idMap[dep], toId = idMap[sub.id];
+          if (fromId && toId && !edges.some(e => e.from === fromId && e.to === toId)) {
+            edges.push({ from: fromId, to: toId });
+            const target = nodes.find(n => n.id === toId);
+            if (target && !target.dependsOn.includes(fromId)) target.dependsOn.push(fromId);
+          }
+        }
+      }
+      requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+      toast(`Drilling into “${node.name}” — ${node.sub_steps.length} sub-steps`, 'info');
+    } else {
+      showEmptyState();
+      toast(`Sub-canvas for “${node.name}” — add steps to build sub-workflow`, 'info');
+    }
+
+    $('wf-name').value = `Sub: ${node.name}`;
+    updateCounts();
+    renderBreadcrumb();
+  }
+
+  function drillBack() {
+    if (!_navStack.length) return;
+    const frame = _navStack.pop();
+
+    if (frame.parentNodeId) {
+      const parentNode = frame.nodes.find(n => n.id === frame.parentNodeId);
+      if (parentNode) {
+        const idReverseMap = {};
+        nodes.forEach(n => { idReverseMap[n.id] = n.toolId || n.id; });
+        parentNode.sub_steps = nodes.map(n => ({
+          id: n.toolId || n.id,
+          name: n.name,
+          tool: n.tool,
+          description: n.description,
+          color: n.color,
+          node_type: n.node_type,
+          role: n.role,
+          human_required: n.human_required,
+          approval_policy: n.approval_policy,
+          doc_template: n.doc_template,
+          args: n.args,
+          timeout: n.timeout,
+          required: n.required,
+          dependsOn: n.dependsOn.map(cid => idReverseMap[cid] || cid),
+          sub_steps: n.sub_steps || [],
+        }));
+      }
+    }
+
+    nodes = frame.nodes; edges = frame.edges; selectedNode = null;
+    nodesEl().innerHTML = '';
+    edgesSvg().innerHTML = '';
+    nodes.forEach(n => renderNode(n));
+    $('wf-name').value = frame.name;
+    updateCounts();
+    if (nodes.length === 0) showEmptyState(); else hideEmptyState();
+    renderBreadcrumb();
+    requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+  }
+
+  function drillBackTo(stackIndex) {
+    const popCount = _navStack.length - stackIndex;
+    for (let k = 0; k < popCount; k++) drillBack();
+  }
+
+  function renderBreadcrumb() {
+    let crumbEl = $('wf-breadcrumb');
+    if (!crumbEl) {
+      crumbEl = document.createElement('div');
+      crumbEl.id = 'wf-breadcrumb';
+      crumbEl.style.cssText = `display:flex;align-items:center;gap:6px;padding:4px 12px;` +
+        `background:var(--studio-bg-elevated,#1e2030);border-bottom:1px solid var(--studio-border,#2d3047);` +
+        `font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);flex-wrap:wrap;`;
+      const canvasEl = canvas();
+      if (canvasEl && canvasEl.parentNode) canvasEl.parentNode.insertBefore(crumbEl, canvasEl);
+    }
+    if (!_navStack.length) { crumbEl.style.display = 'none'; return; }
+    crumbEl.style.display = 'flex';
+    let html = _navStack.map((f, i) =>
+      `<span style="cursor:pointer;color:var(--studio-accent,#6366f1);" onclick="StudioWF.drillBackTo(${i})">${esc(f.name || 'Root')}</span>` +
+      `<span style="opacity:0.5;">›</span>`
+    ).join('');
+    const nameEl = $('wf-name');
+    html += `<span>${esc(nameEl ? nameEl.value : '')}</span>`;
+    html += `<button onclick="StudioWF.drillBack()" style="margin-left:auto;padding:2px 8px;` +
+      `font-size:0.75rem;background:transparent;border:1px solid var(--studio-border,#2d3047);` +
+      `border-radius:4px;color:var(--studio-text,#e2e8f0);cursor:pointer;">↩ Back</button>`;
+    crumbEl.innerHTML = html;
   }
 
   // ── Node dragging ──
@@ -678,6 +843,29 @@ const StudioWF = (() => {
     }
   }
 
+  // ── YAML step serializer (recursive, handles sub_steps) ──
+  function serializeStepYAML(s, stepIndent) {
+    const sp = ' '.repeat(stepIndent);
+    const pp = ' '.repeat(stepIndent + 2);
+    let out = `${sp}- id: "${s.id}"\n${pp}name: "${s.name}"\n${pp}tool: "${s.tool || ''}"\n`;
+    const deps = s.depends_on || s.dependsOn || [];
+    if (deps.length) out += `${pp}depends_on: [${deps.map(d => `"${d}"`).join(', ')}]\n`;
+    if (s.args && Object.keys(s.args).length) out += `${pp}args: ${JSON.stringify(s.args)}\n`;
+    if (s.timeout && s.timeout !== 300) out += `${pp}timeout: ${s.timeout}\n`;
+    if (s.required === false) out += `${pp}required: false\n`;
+    if (s.description) out += `${pp}description: "${s.description}"\n`;
+    if (s.node_type) out += `${pp}node_type: "${s.node_type}"\n`;
+    if (s.role) out += `${pp}role: "${s.role}"\n`;
+    if (s.human_required) out += `${pp}human_required: true\n`;
+    if (s.approval_policy) out += `${pp}approval_policy: "${s.approval_policy}"\n`;
+    if (s.doc_template) out += `${pp}doc_template: "${s.doc_template}"\n`;
+    if (s.sub_steps && s.sub_steps.length) {
+      out += `${pp}sub_steps:\n`;
+      for (const sub of s.sub_steps) out += serializeStepYAML(sub, stepIndent + 4);
+    }
+    return out;
+  }
+
   // ── Export YAML ──
   function exportToYAML() {
     const steps = nodes.map(n => {
@@ -696,28 +884,14 @@ const StudioWF = (() => {
       if (n.human_required) step.human_required = n.human_required;
       if (n.approval_policy) step.approval_policy = n.approval_policy;
       if (n.doc_template) step.doc_template = n.doc_template;
+      if (n.sub_steps && n.sub_steps.length) step.sub_steps = n.sub_steps;
       return step;
     });
 
-    // Simple YAML serialization (no library dependency)
     let yaml = `description: "${$('wf-name').value.trim() || 'Untitled Workflow'}"\n`;
     yaml += `category: "custom"\n`;
     yaml += `steps:\n`;
-    for (const s of steps) {
-      yaml += `  - id: "${s.id}"\n`;
-      yaml += `    name: "${s.name}"\n`;
-      yaml += `    tool: "${s.tool}"\n`;
-      if (s.depends_on) yaml += `    depends_on: [${s.depends_on.map(d => `"${d}"`).join(', ')}]\n`;
-      if (s.args) yaml += `    args: ${JSON.stringify(s.args)}\n`;
-      if (s.timeout) yaml += `    timeout: ${s.timeout}\n`;
-      if (s.required === false) yaml += `    required: false\n`;
-      if (s.description) yaml += `    description: "${s.description}"\n`;
-      if (s.node_type) yaml += `    node_type: "${s.node_type}"\n`;
-      if (s.role) yaml += `    role: "${s.role}"\n`;
-      if (s.human_required) yaml += `    human_required: true\n`;
-      if (s.approval_policy) yaml += `    approval_policy: "${s.approval_policy}"\n`;
-      if (s.doc_template) yaml += `    doc_template: "${s.doc_template}"\n`;
-    }
+    for (const s of steps) yaml += serializeStepYAML(s, 2);
     return yaml;
   }
 
@@ -738,44 +912,81 @@ const StudioWF = (() => {
     $('wf-yaml-modal').style.display = '';
   }
 
+  // ── YAML import helpers ──
+  function _yamlIndent(line) { return line.search(/\S/); }
+  function _yamlUnquote(s) { return (s || '').replace(/^["']|["']$/g, '').trim(); }
+
+  function _parseYAMLSteps(lines, stepIndent) {
+    const steps = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      if (!line.trim()) { i++; continue; }
+      const indent = _yamlIndent(line);
+      if (indent < stepIndent) break;
+      const trimmed = line.trim();
+      if (trimmed.startsWith('- id:') && indent === stepIndent) {
+        const step = { id: _yamlUnquote(trimmed.replace('- id:', '').trim()), sub_steps: [] };
+        i++;
+        while (i < lines.length) {
+          const pl = lines[i];
+          if (!pl.trim()) { i++; continue; }
+          const pi = _yamlIndent(pl);
+          if (pi < stepIndent + 2) break;
+          const pt = pl.trim();
+          if (pt === 'sub_steps:' && pi === stepIndent + 2) {
+            i++;
+            const subLines = [];
+            while (i < lines.length) {
+              const sl = lines[i];
+              if (!sl.trim()) { i++; continue; }
+              if (_yamlIndent(sl) <= stepIndent + 2) break;
+              subLines.push(sl);
+              i++;
+            }
+            step.sub_steps = _parseYAMLSteps(subLines, stepIndent + 4);
+          } else if (pi === stepIndent + 2) {
+            const kv = pt.match(/^(\w+):\s*(.+)/);
+            if (kv) step[kv[1]] = _yamlUnquote(kv[2].trim());
+            i++;
+          } else {
+            i++;
+          }
+        }
+        steps.push(step);
+      } else {
+        i++;
+      }
+    }
+    return steps;
+  }
+
   function doImportYAML() {
     const raw = $('wf-yaml-input').value.trim();
     if (!raw) { toast('Paste YAML first', 'warning'); return; }
 
     try {
-      // Basic YAML parsing (steps extraction)
       const lines = raw.split('\n');
-      let inSteps = false;
-      let currentStep = null;
-      const steps = [];
+      let stepsStart = -1;
 
-      for (const line of lines) {
-        const trimmed = line.trim();
+      for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
         if (trimmed.startsWith('description:')) {
           const match = trimmed.match(/description:\s*"?(.+?)"?\s*$/);
           if (match) $('wf-name').value = match[1];
         }
-        if (trimmed === 'steps:') { inSteps = true; continue; }
-        if (!inSteps) continue;
-
-        if (trimmed.startsWith('- id:')) {
-          if (currentStep) steps.push(currentStep);
-          currentStep = { id: trimmed.replace('- id:', '').trim().replace(/"/g, '') };
-        } else if (currentStep) {
-          const kv = trimmed.match(/^(\w+):\s*(.+)/);
-          if (kv) currentStep[kv[1]] = kv[2].replace(/"/g, '').trim();
-        }
+        if (trimmed === 'steps:') stepsStart = i + 1;
       }
-      if (currentStep) steps.push(currentStep);
 
+      if (stepsStart < 0) { toast('No steps: found in YAML', 'error'); return; }
+
+      const steps = _parseYAMLSteps(lines.slice(stepsStart), 2);
       if (!steps.length) { toast('No steps found in YAML', 'error'); return; }
 
-      // Clear canvas
       nodes = []; edges = [];
       nodesEl().innerHTML = '';
       edgesSvg().innerHTML = '';
 
-      // Add nodes
       let y = 60;
       for (const s of steps) {
         addNode({
@@ -789,12 +1000,13 @@ const StudioWF = (() => {
           human_required: s.human_required === 'true' || s.human_required === true,
           approval_policy: s.approval_policy || null,
           doc_template: s.doc_template || null,
+          sub_steps: s.sub_steps || [],
         }, 120, y);
         y += 100;
       }
 
       $('wf-yaml-modal').style.display = 'none';
-      toast(`Imported ${steps.length} steps`, 'success');
+      toast(`Imported ${steps.length} step${steps.length !== 1 ? 's' : ''}`, 'success');
     } catch (e) {
       toast('Parse error: ' + e.message, 'error');
     }
@@ -1215,5 +1427,6 @@ const StudioWF = (() => {
     validate, createNew, loadTemplate, loadWorkflow, useTemplate,
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode, onNodeTypeChange,
     zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
+    drillInto, drillBack, drillBackTo, hideContextMenu,
   };
 })();
