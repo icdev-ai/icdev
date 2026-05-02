@@ -5,7 +5,7 @@
 2. Add each server below:
 
 ## Servers
-  - **icdev-unified**: `python tools/mcp/unified_server.py`
+  - **icdev-unified**: `python C:/Users/schuo/Downloads/ICDev/tools/mcp/mcp_debug_wrapper.py`
   - **playwright**: `cmd /c npx -y @playwright/mcp@latest`
 
 ## Environment Variables
