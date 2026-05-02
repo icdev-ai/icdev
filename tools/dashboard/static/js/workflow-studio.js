@@ -14,6 +14,8 @@ const StudioWF = (() => {
   let nextNodeY = 60;
   let _nodeSeq = 0;
   const GRID = 24;
+  let _rolesCache = null;
+  let _docTemplatesCache = null;
 
   // ── DOM refs ──
   const $ = id => document.getElementById(id);
@@ -390,44 +392,148 @@ const StudioWF = (() => {
     svg.innerHTML = html;
   }
 
+  // ── Role / doc-template lazy fetchers ──
+  async function fetchRoles() {
+    if (_rolesCache) return _rolesCache;
+    try {
+      const data = await fetch('/api/studio/roles').then(r => r.json());
+      _rolesCache = Array.isArray(data) ? data : (data.roles || []);
+    } catch (e) { _rolesCache = []; }
+    return _rolesCache;
+  }
+
+  async function fetchDocTemplates() {
+    if (_docTemplatesCache) return _docTemplatesCache;
+    try {
+      const data = await fetch('/api/studio/doc-templates').then(r => r.json());
+      _docTemplatesCache = Array.isArray(data) ? data : (data.templates || data.doc_templates || []);
+    } catch (e) { _docTemplatesCache = []; }
+    return _docTemplatesCache;
+  }
+
+  function buildRoleOptions(roles, selected) {
+    return roles.map(r => {
+      const val = typeof r === 'string' ? r : (r.id || r.name || '');
+      const lbl = typeof r === 'string' ? r : (r.name || r.id || '');
+      return `<option value="${esc(val)}"${selected === val ? ' selected' : ''}>${esc(lbl)}</option>`;
+    }).join('');
+  }
+
+  function buildDocTplOptions(templates, selected) {
+    return templates.map(t => {
+      const val = typeof t === 'string' ? t : (t.id || t.name || '');
+      const lbl = typeof t === 'string' ? t : `${t.name || t.id}${t.doc_type ? ' (' + t.doc_type + ')' : ''}`;
+      return `<option value="${esc(val)}"${selected === val ? ' selected' : ''}>${esc(lbl)}</option>`;
+    }).join('');
+  }
+
+  function onNodeTypeChange(value) {
+    const toolSec = $('cfg-tool-section');
+    const humanSec = $('cfg-human-section');
+    const approvalSec = $('cfg-approval-section');
+    if (!toolSec || !humanSec || !approvalSec) return;
+    toolSec.style.display     = value === 'tool'     ? '' : 'none';
+    humanSec.style.display    = value === 'human'    ? '' : 'none';
+    approvalSec.style.display = value === 'approval' ? '' : 'none';
+  }
+
   // ── Node Config Modal ──
-  function openNodeConfig(nodeId) {
+  async function openNodeConfig(nodeId) {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
+    const nodeType = node.node_type || 'tool';
+
+    let roles = [], docTemplates = [];
+    try {
+      [roles, docTemplates] = await Promise.all([fetchRoles(), fetchDocTemplates()]);
+    } catch (e) { console.warn('Config fetch error:', e); }
+
+    const rolesOpts   = buildRoleOptions(roles, node.role);
+    const docTplOpts  = buildDocTplOptions(docTemplates, node.doc_template);
 
     $('wf-modal-title').textContent = `Configure: ${node.name}`;
     $('wf-modal-body').innerHTML = `
       <div class="studio-form-group">
+        <label class="studio-label">Node Type</label>
+        <select class="studio-input studio-select" id="cfg-node-type"
+                onchange="StudioWF.onNodeTypeChange(this.value)">
+          <option value="tool"${nodeType === 'tool' ? ' selected' : ''}>Tool</option>
+          <option value="human"${nodeType === 'human' ? ' selected' : ''}>Human Gate</option>
+          <option value="approval"${nodeType === 'approval' ? ' selected' : ''}>Approval Gate</option>
+        </select>
+      </div>
+      <div class="studio-form-group">
         <label class="studio-label">Step Name</label>
-        <input type="text" class="studio-input" id="cfg-name" value="${node.name}">
+        <input type="text" class="studio-input" id="cfg-name" value="${esc(node.name)}">
       </div>
       <div class="studio-form-group">
         <label class="studio-label">Description</label>
-        <input type="text" class="studio-input" id="cfg-desc" value="${node.description}">
+        <input type="text" class="studio-input" id="cfg-desc" value="${esc(node.description)}">
       </div>
-      <div class="studio-form-group">
-        <label class="studio-label">Tool Path</label>
-        <input type="text" class="studio-input" id="cfg-tool" value="${node.tool}" readonly
-               style="opacity:0.7;">
-      </div>
-      <div class="studio-grid studio-grid--2">
+      <div id="cfg-tool-section">
         <div class="studio-form-group">
-          <label class="studio-label">Timeout (seconds)</label>
-          <input type="number" class="studio-input" id="cfg-timeout" value="${node.timeout}">
+          <label class="studio-label">Tool Path</label>
+          <input type="text" class="studio-input" id="cfg-tool" value="${esc(node.tool)}" readonly
+                 style="opacity:0.7;">
+        </div>
+        <div class="studio-grid studio-grid--2">
+          <div class="studio-form-group">
+            <label class="studio-label">Timeout (seconds)</label>
+            <input type="number" class="studio-input" id="cfg-timeout" value="${node.timeout}">
+          </div>
+          <div class="studio-form-group">
+            <label class="studio-label">Required</label>
+            <select class="studio-input studio-select" id="cfg-required">
+              <option value="true"${node.required ? ' selected' : ''}>Yes</option>
+              <option value="false"${!node.required ? ' selected' : ''}>No (skip on failure)</option>
+            </select>
+          </div>
         </div>
         <div class="studio-form-group">
-          <label class="studio-label">Required</label>
-          <select class="studio-input studio-select" id="cfg-required">
-            <option value="true" ${node.required ? 'selected' : ''}>Yes</option>
-            <option value="false" ${!node.required ? 'selected' : ''}>No (skip on failure)</option>
+          <label class="studio-label">Custom Arguments (JSON)</label>
+          <textarea class="studio-input studio-textarea" id="cfg-args" rows="4"
+                    style="font-family:var(--studio-font-mono);font-size:0.8rem;"
+                    placeholder='{"categorize": true}'>${esc(JSON.stringify(node.args, null, 2))}</textarea>
+        </div>
+      </div>
+      <div id="cfg-human-section">
+        <div class="studio-form-group">
+          <label class="studio-label">Role</label>
+          <select class="studio-input studio-select" id="cfg-role">
+            <option value="">— select role —</option>
+            ${rolesOpts}
+          </select>
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label" style="display:flex;align-items:center;gap:8px;">
+            <input type="checkbox" id="cfg-human-required"${node.human_required !== false ? ' checked' : ''}>
+            Human Required
+          </label>
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label">Document Template</label>
+          <select class="studio-input studio-select" id="cfg-doc-template">
+            <option value="">— none —</option>
+            ${docTplOpts}
           </select>
         </div>
       </div>
-      <div class="studio-form-group">
-        <label class="studio-label">Custom Arguments (JSON)</label>
-        <textarea class="studio-input studio-textarea" id="cfg-args" rows="4"
-                  style="font-family:var(--studio-font-mono);font-size:0.8rem;"
-                  placeholder='{"categorize": true}'>${JSON.stringify(node.args, null, 2)}</textarea>
+      <div id="cfg-approval-section">
+        <div class="studio-form-group">
+          <label class="studio-label">Approval Policy</label>
+          <select class="studio-input studio-select" id="cfg-approval-policy">
+            <option value="any"${node.approval_policy === 'any' ? ' selected' : ''}>Any One</option>
+            <option value="all"${node.approval_policy === 'all' ? ' selected' : ''}>All</option>
+            <option value="majority"${node.approval_policy === 'majority' ? ' selected' : ''}>Majority</option>
+          </select>
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label">Approver Role</label>
+          <select class="studio-input studio-select" id="cfg-approver-role">
+            <option value="">— select role —</option>
+            ${buildRoleOptions(roles, node.role)}
+          </select>
+        </div>
       </div>
       <div style="margin-top:12px;">
         <button class="studio-btn studio-btn--danger studio-btn--sm"
@@ -438,6 +544,7 @@ const StudioWF = (() => {
     `;
     $('wf-node-modal').dataset.nodeId = nodeId;
     $('wf-node-modal').style.display = '';
+    onNodeTypeChange(nodeType);
   }
 
   function closeModal() {
@@ -449,22 +556,53 @@ const StudioWF = (() => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return;
 
-    node.name = $('cfg-name').value;
+    node.name        = $('cfg-name').value;
     node.description = $('cfg-desc').value;
-    node.timeout = parseInt($('cfg-timeout').value, 10) || 300;
-    node.required = $('cfg-required').value === 'true';
-    try {
-      node.args = JSON.parse($('cfg-args').value || '{}');
-    } catch (e) {
-      toast('Invalid JSON in arguments', 'error');
-      return;
+    const nodeType   = $('cfg-node-type').value;
+    node.node_type   = nodeType;
+
+    if (nodeType === 'tool') {
+      node.timeout  = parseInt($('cfg-timeout').value, 10) || 300;
+      node.required = $('cfg-required').value === 'true';
+      try {
+        node.args = JSON.parse($('cfg-args').value || '{}');
+      } catch (e) {
+        toast('Invalid JSON in arguments', 'error');
+        return;
+      }
+      node.role            = null;
+      node.human_required  = false;
+      node.doc_template    = null;
+      node.approval_policy = null;
+    } else if (nodeType === 'human') {
+      node.role            = $('cfg-role').value || null;
+      node.human_required  = $('cfg-human-required').checked;
+      node.doc_template    = $('cfg-doc-template').value || null;
+      node.approval_policy = null;
+    } else if (nodeType === 'approval') {
+      node.approval_policy = $('cfg-approval-policy').value || null;
+      node.role            = $('cfg-approver-role').value || null;
+      node.human_required  = false;
+      node.doc_template    = null;
     }
 
-    // Re-render node
     const el = $(nodeId);
     if (el) {
+      el.dataset.nodeType = nodeType;
       el.querySelector('.wf-node__name').textContent = node.name;
       el.querySelector('.wf-node__body').textContent = node.description;
+      const existing = el.querySelector('.wf-node__badge');
+      if (existing) existing.remove();
+      let badge = '';
+      if (nodeType === 'human' && node.role) {
+        badge = `<div class="wf-node__badge">Human | ${esc(node.role)}</div>`;
+      } else if (nodeType === 'approval' && node.approval_policy) {
+        badge = `<div class="wf-node__badge">Approval | ${esc(node.approval_policy)}</div>`;
+      }
+      if (badge) {
+        const statusEl = el.querySelector('.wf-node__status');
+        if (statusEl) statusEl.insertAdjacentHTML('beforebegin', badge);
+      }
     }
 
     closeModal();
@@ -1075,7 +1213,7 @@ const StudioWF = (() => {
     startConnect, endConnect,
     switchTab, save, exportYAML, importYAML, doImportYAML,
     validate, createNew, loadTemplate, loadWorkflow, useTemplate,
-    openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode,
+    openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode, onNodeTypeChange,
     zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
   };
 })();
