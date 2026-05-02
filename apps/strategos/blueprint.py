@@ -2719,6 +2719,327 @@ def api_ccir_trigger_resolve(event_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Phase 3 — OPORD Generator, Red Cell, METT-TC
+# ---------------------------------------------------------------------------
+
+@_bp.route("/opord")
+@_bp.route("/opord/")
+def strategos_opord():
+    from tools.strategos.opord import list_opords  # noqa: PLC0415
+    opords = []
+    try:
+        opords = list_opords(limit=20)
+    except Exception:
+        pass
+    return render_template("strategos/opord.html", opords=opords)
+
+
+@_api.route("/opord", methods=["GET"])
+def api_opord_list():
+    try:
+        from tools.strategos.opord import list_opords  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        rows = list_opords(theater=theater, limit=30)
+        resp = make_response(jsonify({"opords": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/opord", methods=["POST"])
+def api_opord_create():
+    try:
+        from tools.strategos.opord import create_opord  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = create_opord(
+            title=data.get("title", ""),
+            theater=data.get("theater", "unspecified"),
+            scenario=data.get("scenario", ""),
+            task_org=data.get("task_org", ""),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/opord/<opord_id>", methods=["GET"])
+def api_opord_detail(opord_id: str):
+    try:
+        from tools.strategos.opord import get_opord  # noqa: PLC0415
+        o = get_opord(opord_id)
+        if not o:
+            return jsonify({"error": "OPORD not found"}), 404
+        resp = make_response(jsonify(o))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/opord/<opord_id>/synthesize/<int:para_num>", methods=["POST"])
+def api_opord_synthesize(opord_id: str, para_num: int):
+    try:
+        from tools.strategos.opord import synthesize_paragraph  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = synthesize_paragraph(opord_id, para_num, scenario=data.get("scenario", ""))
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/opord/<opord_id>/synthesize-all", methods=["POST"])
+def api_opord_synthesize_all(opord_id: str):
+    try:
+        from tools.strategos.opord import synthesize_all  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = synthesize_all(opord_id, scenario=data.get("scenario", ""))
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/opord/<opord_id>/approve", methods=["POST"])
+def api_opord_approve(opord_id: str):
+    try:
+        from tools.strategos.opord import approve_opord  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        ok = approve_opord(opord_id, approved_by=data.get("approved_by", "commander"))
+        resp = make_response(jsonify({"status": "approved" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/opord/<opord_id>", methods=["DELETE"])
+def api_opord_delete(opord_id: str):
+    try:
+        from tools.strategos.opord import delete_opord  # noqa: PLC0415
+        ok = delete_opord(opord_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# Red Cell — MLCOA / MDCOA
+@_bp.route("/red-cell")
+@_bp.route("/red-cell/")
+def strategos_red_cell():
+    from tools.strategos.red_cell import list_analyses  # noqa: PLC0415
+    analyses = []
+    try:
+        analyses = list_analyses(limit=20)
+    except Exception:
+        pass
+    return render_template("strategos/red_cell.html", analyses=analyses)
+
+
+@_api.route("/red-cell/analyses", methods=["GET"])
+def api_red_cell_list():
+    try:
+        from tools.strategos.red_cell import list_analyses  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        rows = list_analyses(theater=theater, limit=20)
+        resp = make_response(jsonify({"analyses": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/red-cell/analyses", methods=["POST"])
+def api_red_cell_create():
+    try:
+        from tools.strategos.red_cell import create_analysis  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = create_analysis(
+            theater=data.get("theater", "global"),
+            scenario=data.get("scenario", ""),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/red-cell/analyses/<analysis_id>", methods=["GET"])
+def api_red_cell_detail(analysis_id: str):
+    try:
+        from tools.strategos.red_cell import get_analysis  # noqa: PLC0415
+        a = get_analysis(analysis_id)
+        if not a:
+            return jsonify({"error": "not found"}), 404
+        resp = make_response(jsonify(a))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/red-cell/analyses/<analysis_id>/mlcoa", methods=["POST"])
+def api_red_cell_mlcoa(analysis_id: str):
+    try:
+        from tools.strategos.red_cell import synthesize_mlcoa  # noqa: PLC0415
+        result = synthesize_mlcoa(analysis_id)
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/red-cell/analyses/<analysis_id>/mdcoa", methods=["POST"])
+def api_red_cell_mdcoa(analysis_id: str):
+    try:
+        from tools.strategos.red_cell import synthesize_mdcoa  # noqa: PLC0415
+        result = synthesize_mdcoa(analysis_id)
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/red-cell/analyses/<analysis_id>", methods=["PATCH"])
+def api_red_cell_update(analysis_id: str):
+    try:
+        from tools.strategos.red_cell import update_analysis  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        ok = update_analysis(analysis_id, data)
+        resp = make_response(jsonify({"status": "updated" if ok else "no_change"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/red-cell/analyses/<analysis_id>", methods=["DELETE"])
+def api_red_cell_delete(analysis_id: str):
+    try:
+        from tools.strategos.red_cell import delete_analysis  # noqa: PLC0415
+        ok = delete_analysis(analysis_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# METT-TC Worksheet
+@_bp.route("/mett-tc")
+@_bp.route("/mett-tc/")
+def strategos_mett_tc():
+    from tools.strategos.mett_tc import list_worksheets  # noqa: PLC0415
+    worksheets = []
+    try:
+        worksheets = list_worksheets(limit=20)
+    except Exception:
+        pass
+    return render_template("strategos/mett_tc.html", worksheets=worksheets)
+
+
+@_api.route("/mett-tc", methods=["GET"])
+def api_mett_tc_list():
+    try:
+        from tools.strategos.mett_tc import list_worksheets  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        rows = list_worksheets(theater=theater, limit=20)
+        resp = make_response(jsonify({"worksheets": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/mett-tc/auto-populate", methods=["GET"])
+def api_mett_tc_auto():
+    try:
+        from tools.strategos.mett_tc import auto_populate  # noqa: PLC0415
+        theater = request.args.get("theater", "unspecified")
+        data = auto_populate(theater=theater)
+        resp = make_response(jsonify(data))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/mett-tc", methods=["POST"])
+def api_mett_tc_create():
+    try:
+        from tools.strategos.mett_tc import create_worksheet  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        result = create_worksheet(
+            theater=data.get("theater", "unspecified"),
+            operation_name=data.get("operation_name", ""),
+            mission=data.get("mission", ""),
+            enemy_situation=data.get("enemy_situation", ""),
+            terrain_weather=data.get("terrain_weather", ""),
+            troops_available=data.get("troops_available", ""),
+            time_available=data.get("time_available", ""),
+            civil_considerations=data.get("civil_considerations", ""),
+            auto_populated=bool(data.get("auto_populated", False)),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/mett-tc/<ws_id>", methods=["GET"])
+def api_mett_tc_detail(ws_id: str):
+    try:
+        from tools.strategos.mett_tc import get_worksheet  # noqa: PLC0415
+        ws = get_worksheet(ws_id)
+        if not ws:
+            return jsonify({"error": "worksheet not found"}), 404
+        resp = make_response(jsonify(ws))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/mett-tc/<ws_id>", methods=["PATCH"])
+def api_mett_tc_update(ws_id: str):
+    try:
+        from tools.strategos.mett_tc import update_worksheet  # noqa: PLC0415
+        data = request.get_json(force=True, silent=True) or {}
+        ok = update_worksheet(ws_id, data)
+        resp = make_response(jsonify({"status": "updated" if ok else "no_change"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/mett-tc/<ws_id>", methods=["DELETE"])
+def api_mett_tc_delete(ws_id: str):
+    try:
+        from tools.strategos.mett_tc import delete_worksheet  # noqa: PLC0415
+        ok = delete_worksheet(ws_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Phase 2 — IPB Canvas, I&W Indicators, F3EAD Targeting, BDA
 # ---------------------------------------------------------------------------
 
