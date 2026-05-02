@@ -60,3 +60,4 @@
 | Genesis Promoter | goals/genesis_promoter.md | Knowledge Bridge — GKP export/import, dedup, auto-promote, human review gateway |
 | Genesis Goal Learner | goals/genesis_goal_learner.md | Self-Improving Goals from Experience — novelty detection, quality scoring, version history, human approval gate (D-GEN-GL-1) |
 | Network Intelligence | goals/network_intelligence.md | Network Infrastructure Intelligence: 13 analysis dimensions (redundancy, EOL, blast radius, capacity planning, cost projection, config management, compliance, SLA, latency, vendor risk, circuits), diagram ingestion (Visio/Draw.io/PDF), self-provisioning via Ansible (D-NII-1 through D-NII-5) |
+| Threat Triage Agent | goals/threat_triage.md | Automated CVE triage: ingest NVD/CISA feeds, correlate with SIEM events, classify by severity + asset impact, SLA enforcement, blast radius analysis, triage report — composes tools/security + tools/supply_chain + tools/knowledge (pattern='threat-triage') |

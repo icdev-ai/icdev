@@ -235,6 +235,43 @@ EXTERNAL_PATTERNS = [
         },
         "implementation_status": "implemented",
     },
+    {
+        "id": "threat-triage",
+        "source": "icdev",
+        "title": "Threat Triage Agent",
+        "description": (
+            "Automated CVE threat triage agent that ingests NVD and CISA advisory feeds, "
+            "correlates findings with SIEM events and asset inventory, classifies each "
+            "vulnerability by severity (CRITICAL/HIGH/MEDIUM/LOW) and asset impact, "
+            "computes SLA deadlines via cve_triager, traces upstream/downstream blast "
+            "radius through the dependency graph, and emits a structured triage report. "
+            "Composes existing tools: security/vuln_scanner + supply_chain/cve_triager "
+            "for feed ingestion and knowledge/pattern_detector for KB pattern matching."
+        ),
+        "category": "threat_triage",
+        "gotcha_layer": "agent",
+        "url": "",
+        "deploy_config": {
+            "feeds": ["nvd", "cisa_advisories"],
+            "feed_config": "args/innovation_config.yaml#cve_databases",
+            "ingest_tools": [
+                "tools/security/vuln_scanner.py",
+                "tools/security/dependency_auditor.py",
+                "tools/supply_chain/cve_triager.py",
+            ],
+            "pattern_matcher": "tools/knowledge/pattern_detector.py",
+            "recommendation_engine": "tools/knowledge/recommendation_engine.py",
+            "goal": "goals/threat_triage.md",
+        },
+        "scoring_hints": {
+            "novelty": 0.70,
+            "feasibility": 0.90,
+            "compliance_alignment": 0.95,
+            "user_impact": 0.85,
+            "effort": 0.75,
+        },
+        "implementation_status": "pending",
+    },
 ]
 
 # Scoring weights (5-dimension)
