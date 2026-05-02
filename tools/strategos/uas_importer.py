@@ -21,7 +21,6 @@ import argparse
 import json
 import math
 import random
-import sys
 from datetime import datetime, timezone, timedelta
 
 from tools.db.storage import get_connection, is_pg
