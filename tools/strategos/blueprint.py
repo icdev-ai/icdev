@@ -132,6 +132,24 @@ def api_strategos_darkweb_run():
 # ---------------------------------------------------------------------------
 
 
+@bp.route("/wargame/<wargame_id>/orbat-seed")
+def api_wargame_orbat_seed(wargame_id: str):
+    from tools.strategos.wargame_orbat import load_orbat_strengths
+    try:
+        result = load_orbat_strengths(wargame_id)
+    except ValueError as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
 @bp.route("/wargame/<wargame_id>/turn/advance", methods=["POST"])
 def api_wargame_turn_advance(wargame_id: str):
     from tools.strategos.wargame_turn_engine import advance_turn
