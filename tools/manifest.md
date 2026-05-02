@@ -151,6 +151,7 @@
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
 - [Strategos — DIB Supply Chain & Strategy Intelligence](manifest/strategos.md)
+- [Strategos Chat — Floating Analyst Chat Panel](manifest/strategos-chat.md)
 
 
 ## Auto-Registered (Coherence Fix)
