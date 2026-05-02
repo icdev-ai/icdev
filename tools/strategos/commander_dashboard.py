@@ -140,7 +140,6 @@ def get_commander_picture() -> dict[str, Any]:
                 "ORDER BY generated_at DESC LIMIT 1"
             ).fetchone()
             if row:
-                from tools.strategos.war_council import WarCouncilEngine  # noqa: PLC0415
                 pic["war_council_coa"] = {
                     "brief_id": row[0],
                     "theater": row[1],

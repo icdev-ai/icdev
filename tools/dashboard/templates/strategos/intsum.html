@@ -66,16 +66,22 @@
         <div style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:.5rem">Past INTSUMs ({{ intsums|length }})</div>
         <div class="card" style="padding:0;max-height:600px;overflow-y:auto">
             {% for s in intsums %}
-            <div class="intsum-row" onclick="loadIntsum('{{ s.id }}')"
-                 style="padding:.65rem 1rem;border-bottom:1px solid var(--border-color)">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
-                    <span class="intsum-badge intsum-badge--{{ s.status }}">{{ s.status|title }}</span>
-                    <span style="font-size:.72rem;color:var(--text-muted)">{{ (s.created_at or '')[:16] }}</span>
+            <div style="padding:.65rem 1rem;border-bottom:1px solid var(--border-color);position:relative">
+                <div class="intsum-row" onclick="loadIntsum('{{ s.id }}')" style="cursor:pointer">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
+                        <span class="intsum-badge intsum-badge--{{ s.status }}">{{ s.status|title }}</span>
+                        <span style="font-size:.72rem;color:var(--text-muted)">{{ (s.created_at or '')[:16] }}</span>
+                    </div>
+                    <div style="font-size:.82rem;font-weight:500;color:var(--text-primary)">{{ s.theater|replace('_',' ')|title }}</div>
+                    <div style="font-size:.75rem;color:var(--text-muted)">
+                        {{ (s.period_start or '')[:10] }} → {{ (s.period_end or '')[:10] }}
+                    </div>
                 </div>
-                <div style="font-size:.82rem;font-weight:500;color:var(--text-primary)">{{ s.theater|replace('_',' ')|title }}</div>
-                <div style="font-size:.75rem;color:var(--text-muted)">
-                    {{ (s.period_start or '')[:10] }} → {{ (s.period_end or '')[:10] }}
-                </div>
+                <button onclick="deleteIntsum('{{ s.id }}', this)"
+                        style="position:absolute;top:.5rem;right:.5rem;padding:.15rem .45rem;
+                               border-radius:3px;font-size:.7rem;cursor:pointer;
+                               border:1px solid rgba(233,69,96,.3);background:transparent;
+                               color:#e94560;line-height:1" title="Delete INTSUM">&#x2715;</button>
             </div>
             {% else %}
             <div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:.85rem">
@@ -122,6 +128,26 @@ async function generateIntsum() {
         status.textContent = 'Request failed: ' + e;
     } finally {
         btn.disabled = false;
+    }
+}
+
+async function deleteIntsum(id, btn) {
+    if (!confirm('Delete this INTSUM? This cannot be undone.')) return;
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/strategos/intsum/' + id, {method: 'DELETE'});
+        if (res.ok) {
+            const row = btn.closest('div[style*="position:relative"]');
+            if (row) row.remove();
+            document.getElementById('intsum-detail').innerHTML =
+                '<div class="card" style="text-align:center;padding:2.5rem;color:var(--text-muted)">Select an INTSUM from the list, or generate a new one.</div>';
+        } else {
+            btn.disabled = false;
+            alert('Delete failed: ' + res.status);
+        }
+    } catch (e) {
+        btn.disabled = false;
+        alert('Delete failed: ' + e);
     }
 }
 
