@@ -46,3 +46,9 @@ steps:
     depends_on: [assess, decompose]
     required: false
     description: "Generate adapters, facades, service scaffolds"
+
+  - id: migration_report
+    name: "Migration Readiness Report"
+    tool: "tools/modernization/migration_report_generator.py"
+    depends_on: [compliance, code_gen, db_plan]
+    description: "Consolidated readiness report across all migration tracks"

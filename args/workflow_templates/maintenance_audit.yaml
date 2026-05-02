@@ -44,3 +44,9 @@ steps:
     depends_on: [audit]
     required: false
     description: "Auto-implement dependency version fixes"
+
+  - id: health_report
+    name: "Health Report"
+    tool: "tools/maintenance/health_reporter.py"
+    depends_on: [graph, scrm, triage, remediate]
+    description: "Consolidated dependency health and supply chain risk report"
