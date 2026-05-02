@@ -48,6 +48,10 @@ class NarrativeResult:
     slide_bullets: list[str] = field(default_factory=list)
     audience: str = ""
     llm_refined: bool = False
+    writeguard_score: float | None = None
+    writeguard_badge: str | None = None
+    writeguard_findings: list[str] = field(default_factory=list)
+    quality_warning: str | None = None
 
 
 # ── Generator ─────────────────────────────────────────────────────────────────
@@ -78,6 +82,8 @@ class NarrativeGenerator:
 
         if self._llm_available():
             result = self._refine_with_llm(result, ctx)
+
+        result = self._apply_writeguard(result)
 
         return result
 
@@ -198,6 +204,109 @@ class NarrativeGenerator:
             f"Decision points: {len(ctx.decision_points)}. "
             f"Approval gates: {len(ctx.approval_gates)}."
         )
+
+
+    # ── WriteGuard integration ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _badge_for_score(score: float) -> str:
+        if score >= 80:
+            return "green"
+        if score >= 60:
+            return "yellow"
+        return "red"
+
+    @staticmethod
+    def _run_writeguard(text: str) -> dict | None:
+        try:
+            from tools.pulse.writeguard import run_full_quality_check  # noqa: PLC0415
+            return run_full_quality_check(text)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @staticmethod
+    def _extract_top_findings(wg_result: dict) -> list[str]:
+        candidates: list[str] = list(wg_result.get("recommendations", []))
+        weakest = (wg_result.get("section_scores") or {}).get("weakest") or {}
+        candidates.extend(weakest.get("recommendations", []))
+        seen: set[str] = set()
+        top: list[str] = []
+        for f in candidates:
+            if f and f not in seen:
+                seen.add(f)
+                top.append(f)
+            if len(top) >= 3:
+                break
+        return top
+
+    def _writeguard_rewrite(self, text: str, findings: list[str]) -> str:
+        try:
+            from tools.llm.router import LLMRouter  # noqa: PLC0415
+            router = LLMRouter()
+            provider = router.get_provider_for_function("narrative_generation")
+            guidance = "\n".join(f"- {f}" for f in findings) if findings else "Improve overall clarity and tone."
+            prompt = (
+                "Rewrite the following executive brief to address these quality issues:\n"
+                f"{guidance}\n\n"
+                "Keep under 300 words. Be direct, authoritative, and specific.\n\n"
+                f"---\n{text}\n---"
+            )
+            rewritten = provider.complete(prompt, max_tokens=1200)
+            if rewritten and len(rewritten.strip()) > 50:
+                return rewritten.strip()
+        except Exception:  # noqa: BLE001
+            pass
+        return text
+
+    def _apply_writeguard(self, result: NarrativeResult) -> NarrativeResult:
+        wg = self._run_writeguard(result.executive_summary)
+        if wg is None:
+            return result
+
+        score: float = float(wg.get("overall_score", 0.0))
+        badge = self._badge_for_score(score)
+        findings = self._extract_top_findings(wg)
+
+        result.writeguard_score = score
+        result.writeguard_badge = badge
+        result.writeguard_findings = findings
+
+        if score >= 80:
+            return result
+
+        if not self._llm_available():
+            result.quality_warning = "critical" if score < 60 else f"score {score:.0f} ({badge})"
+            return result
+
+        max_passes = 1 if score >= 60 else 2
+        for _ in range(max_passes):
+            rewritten = self._writeguard_rewrite(result.executive_summary, findings)
+            if rewritten == result.executive_summary:
+                break
+
+            re_wg = self._run_writeguard(rewritten)
+            if re_wg is None:
+                break
+
+            new_score = float(re_wg.get("overall_score", score))
+            if new_score >= score:
+                result.executive_summary = rewritten
+                result.llm_refined = True
+                score = new_score
+                badge = self._badge_for_score(score)
+                findings = self._extract_top_findings(re_wg)
+
+            if score >= 80:
+                break
+
+        result.writeguard_score = score
+        result.writeguard_badge = badge
+        result.writeguard_findings = findings
+
+        if score < 80:
+            result.quality_warning = f"score {score:.0f} ({badge}) after rewrite"
+
+        return result
 
 
 # ── CLI ────────────────────────────────────────────────────────────────────────
