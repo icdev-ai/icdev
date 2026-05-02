@@ -15,7 +15,7 @@ Routes:
 
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, make_response, render_template, request
 
 bp = Blueprint("strategos", __name__, url_prefix="")
 
@@ -125,6 +125,52 @@ def api_strategos_darkweb_run():
     _, _, run_monitor = _darkweb()
     result = run_monitor()
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Wargame Turn Engine
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/wargame/<wargame_id>/turn/advance", methods=["POST"])
+def api_wargame_turn_advance(wargame_id: str):
+    from tools.strategos.wargame_turn_engine import advance_turn
+    try:
+        turn = advance_turn(wargame_id)
+    except ValueError as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    resp = make_response(jsonify(turn), 201)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/wargame/<wargame_id>/turns")
+def api_wargame_turns(wargame_id: str):
+    from tools.db.storage import get_connection, is_pg
+    ph = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            f"SELECT id, wargame_id, turn_number, blue_losses, red_losses, "  # nosec B608
+            f"blue_remaining, red_remaining, tempo_delta, notes, created_at "
+            f"FROM sg_wargame_turns WHERE wargame_id = {ph} "
+            f"ORDER BY turn_number ASC",
+            (wargame_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    cols = ("id", "wargame_id", "turn_number", "blue_losses", "red_losses",
+            "blue_remaining", "red_remaining", "tempo_delta", "notes", "created_at")
+    turns = [dict(zip(cols, r)) for r in rows]
+    resp = make_response(jsonify({"wargame_id": wargame_id, "turns": turns, "total": len(turns)}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
 
 
 def create_strategos_blueprint() -> Blueprint:
