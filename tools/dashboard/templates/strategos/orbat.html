@@ -41,7 +41,11 @@
         </thead>
         <tbody>
             {% for u in units %}
-            <tr style="border-bottom:1px solid var(--border-color)">
+            <tr style="border-bottom:1px solid var(--border-color);cursor:context-menu"
+                data-unit-id="{{ u.id }}"
+                data-unit-name="{{ u.unit_name }}"
+                data-side="{{ u.nation or '' }}"
+                data-strength="{{ u.strength or '' }}">
                 <td style="padding:.55rem 1rem;font-weight:500">{{ u.unit_name }}</td>
                 <td style="padding:.55rem 1rem;color:var(--text-secondary)">{{ u.unit_type|replace('_',' ')|title }}</td>
                 <td style="padding:.55rem 1rem">{{ u.nation or '—' }}</td>
@@ -59,5 +63,22 @@
         </tbody>
     </table>
 </div>
-<div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ units|length }} unit(s)</div>
+<div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ units|length }} unit(s) — right-click any row to ask STRATEGOS</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.querySelectorAll('tr[data-unit-id]').forEach(function(el) {
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (typeof window.sgChat === 'undefined') return;
+    window.sgChat.showMenu(e.clientX, e.clientY, {
+      type: 'orbat_unit',
+      unit_id: el.dataset.unitId,
+      label: el.dataset.unitName,
+      side: el.dataset.side || 'Unknown',
+      strength: el.dataset.strength || 'Unknown',
+    });
+  });
+});
+</script>
 {% endblock %}

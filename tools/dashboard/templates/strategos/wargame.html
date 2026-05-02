@@ -107,7 +107,11 @@
       {% for g in wargames %}
       {% set is_active = active_game and active_game.id == g.id %}
       <div class="sc-item {% if is_active %}selected{% endif %}"
-           onclick="location.href='/strategos/wargame?id={{ g.id }}'">
+           onclick="location.href='/strategos/wargame?id={{ g.id }}'"
+           data-unit-id="{{ g.id }}"
+           data-unit-name="{{ g.name }}"
+           data-side="{{ g.state or 'pending' }}"
+           data-strength="{{ g.blue_strength|default(0) }}v{{ g.red_strength|default(0) }}">
         <div class="sc-name">{{ g.name }}</div>
         <div class="sc-meta">
           <span style="color:{% if g.state=='active' %}#10b981{% elif g.state=='complete' %}#3b82f6{% elif g.state=='paused' %}#f59e0b{% else %}var(--text-muted){% endif %}">{{ (g.state or 'pending')|title }}</span>
@@ -1016,5 +1020,20 @@ function _renderAiAssessment(d, el) {
 
 // Init charts that need the tab to be visible on load
 initLanchester();
+
+// Right-click scenario cards → Ask STRATEGOS
+document.querySelectorAll('.sc-item[data-unit-id]').forEach(function(el) {
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (typeof window.sgChat === 'undefined') return;
+    window.sgChat.showMenu(e.clientX, e.clientY, {
+      type: 'orbat_unit',
+      unit_id: el.dataset.unitId,
+      label: el.dataset.unitName,
+      side: 'Wargame Scenario — ' + (el.dataset.side || 'pending'),
+      strength: el.dataset.strength || 'N/A',
+    });
+  });
+});
 </script>
 {% endblock %}
