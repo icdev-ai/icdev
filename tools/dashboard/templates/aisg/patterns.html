@@ -15,7 +15,7 @@
         <button class="btn btn-sm filter-btn" data-filter="document_qa" onclick="filterPatterns('document_qa', this)">Document Q&amp;A</button>
         <button class="btn btn-sm filter-btn" data-filter="procurement" onclick="filterPatterns('procurement', this)">Procurement</button>
         <button class="btn btn-sm filter-btn" data-filter="threat_triage" onclick="filterPatterns('threat_triage', this)">Threat Triage</button>
-        <button class="btn btn-sm filter-btn" data-filter="compliance" onclick="filterPatterns('compliance', this)">Compliance</button>
+        <button class="btn btn-sm filter-btn" data-filter="compliance_evidence" onclick="filterPatterns('compliance_evidence', this)">Compliance</button>
         <button class="btn btn-sm filter-btn" data-filter="custom" onclick="filterPatterns('custom', this)">Custom</button>
     </div>
     <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
@@ -39,7 +39,7 @@
                     {% if p.category == 'document_qa' %}📄
                     {% elif p.category == 'procurement' %}🏛️
                     {% elif p.category == 'threat_triage' %}🛡️
-                    {% elif p.category == 'compliance' %}✅
+                    {% elif p.category == 'compliance_evidence' %}✅
                     {% else %}⚙️{% endif %}
                 </div>
                 <div class="pattern-meta">
