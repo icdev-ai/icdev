@@ -87,7 +87,7 @@ def _insert_brief(conn, brief_id: str, wargame_id: str, title: str,
 # ── Template renderer ──────────────────────────────────────────────────────────
 
 def _render_brief(context: dict[str, Any]) -> str:
-    env = Environment(
+    env = Environment(  # nosec B701 — Markdown output, not HTML; autoescape would corrupt syntax
         loader=FileSystemLoader(str(_TEMPLATES_DIR)),
         autoescape=False,
     )
