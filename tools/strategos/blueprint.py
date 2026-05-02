@@ -11,6 +11,8 @@ Routes:
 
   GET  /strategos/darkweb                    → Dark Web Monitor dashboard
   POST /api/strategos/darkweb/run            → Trigger monitor scan (async)
+
+  GET  /wargame/<id>/lanchester/monte-carlo  → Monte Carlo percentile bands JSON
 """
 
 from __future__ import annotations
@@ -164,6 +166,60 @@ def api_wargame_turn_advance(wargame_id: str):
         resp.headers["X-Classification"] = "CUI"
         return resp
     resp = make_response(jsonify(turn), 201)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/wargame/<wargame_id>/lanchester/monte-carlo")
+def api_wargame_lanchester_monte_carlo(wargame_id: str):
+    import json as _json
+    from tools.db.storage import get_connection, is_pg
+    from tools.strategos.ooda import lanchester_monte_carlo
+
+    try:
+        iterations = int(request.args.get("iterations", 500))
+        sigma = float(request.args.get("sigma", 0.15))
+    except (ValueError, TypeError) as exc:
+        resp = make_response(jsonify({"error": f"invalid query param: {exc}"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    ph = "%s" if is_pg() else "?"
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            f"SELECT blue_strength, red_strength, attrition_coefficients_json "  # nosec B608
+            f"FROM sg_wargames WHERE id = {ph}",
+            (wargame_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        resp = make_response(jsonify({"error": f"Wargame {wargame_id!r} not found"}), 404)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    b0 = float(row[0] or 0)
+    r0 = float(row[1] or 0)
+    coeff: dict = {}
+    if row[2]:
+        try:
+            coeff = _json.loads(row[2])
+        except Exception:
+            pass
+    beta = float(coeff.get("beta", 0.01))
+    rho  = float(coeff.get("rho",  0.01))
+
+    try:
+        result = lanchester_monte_carlo(b0, r0, beta=beta, rho=rho,
+                                        iterations=iterations, sigma=sigma)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+
+    resp = make_response(jsonify(result))
     resp.headers["X-Classification"] = "CUI"
     return resp
 
