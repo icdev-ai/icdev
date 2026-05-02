@@ -524,7 +524,7 @@
 
     <!-- Generate button -->
     <button class="btn-generate" id="wc-generate-btn" onclick="generateBrief()">
-      <span id="wc-btn-icon">&#9733;</span>
+      <span id="wc-btn-icon">[*]</span>
       <span id="wc-btn-label">Generate Brief</span>
     </button>
 
@@ -900,14 +900,24 @@ function renderBrief(data) {
   const coaEl = document.getElementById('brief-coas');
   const coas   = data.courses_of_action || data.coas || [];
   coaEl.innerHTML = coas.length
-    ? coas.map((c, i) => `
+    ? coas.map((c, i) => {
+        const risk = (c.risk_level || '').toUpperCase();
+        const riskColor = risk === 'LOW' ? '#22c55e' : risk === 'HIGH' || risk === 'CRITICAL' ? '#ef4444' : '#f59e0b';
+        const score = c.composite_score != null ? ' &nbsp;<span style="color:#94a3b8;font-size:.78rem">Score: ' + (c.composite_score * 100).toFixed(0) + '%</span>' : '';
+        return `
         <div class="brief-card" data-sg-ctx="1" style="display:flex;gap:.5rem;align-items:flex-start">
           <span class="coa-number">${i + 1}</span>
-          <div>
-            <div class="bc-title">${escHtml(c.title || c.name || 'COA ' + (i + 1))}</div>
+          <div style="flex:1">
+            <div class="bc-title" style="display:flex;align-items:center;gap:.5rem">
+              ${escHtml(c.title || c.name || 'COA ' + (i + 1))}
+              ${risk ? `<span style="font-size:.7rem;font-weight:700;color:${riskColor};border:1px solid ${riskColor};border-radius:3px;padding:0 4px">${risk}</span>` : ''}
+              ${score}
+            </div>
             <div class="bc-excerpt">${escHtml(c.description || c.summary || '')}</div>
+            ${c.doctrine_basis ? `<div style="font-size:.75rem;color:#64748b;margin-top:.3rem">&#128196; ${escHtml(c.doctrine_basis)}</div>` : ''}
           </div>
-        </div>`).join('')
+        </div>`;
+      }).join('')
     : '<p style="color:var(--text-muted);font-size:.83rem">No COAs returned.</p>';
   if (coas.length) {
     coaEl.querySelectorAll('.brief-card').forEach((card, i) => {
@@ -974,7 +984,7 @@ function setLoading(on) {
     label.textContent = 'Generating…';
   } else {
     icon.className  = '';
-    icon.textContent = '&#9733;';
+    icon.textContent = '[*]';
     label.textContent = 'Generate Brief';
   }
 }
