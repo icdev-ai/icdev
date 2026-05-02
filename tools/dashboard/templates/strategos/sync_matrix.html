@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% block title %}Sync Matrix — Strategos{% endblock %}
+{% block content %}
+<div style="padding:24px;max-width:1600px;margin:0 auto">
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+    <div>
+      <h1 style="margin:0;font-size:1.5rem;color:#f1f5f9">Synchronization Matrix</h1>
+      <p style="margin:4px 0 0;color:#64748b;font-size:.85rem">FM 3-0 / JP 5-0 — Time-phased operational effects synchronization</p>
+    </div>
+    <button onclick="showCreateModal()" style="margin-left:auto;padding:8px 18px;background:#f97316;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer">+ New Matrix</button>
+  </div>
+
+  <div style="display:grid;grid-template-columns:280px 1fr;gap:20px">
+    <!-- Sidebar: matrices list -->
+    <div style="background:#1e293b;border-radius:8px;padding:16px;height:fit-content">
+      <h3 style="margin:0 0 12px;color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Operations</h3>
+      <div id="matrixList" style="display:flex;flex-direction:column;gap:6px">
+        {% for m in matrices %}
+        <div class="matrix-item" data-id="{{ m.id }}" onclick="loadMatrix('{{ m.id }}')"
+             style="padding:10px;background:#0f172a;border-radius:6px;cursor:pointer;border:1px solid transparent">
+          <div style="color:#f1f5f9;font-weight:600;font-size:.9rem">{{ m.operation_name }}</div>
+          <div style="color:#64748b;font-size:.75rem;margin-top:2px">{{ m.theater }} · {{ m.phase or 'planning' }}</div>
+        </div>
+        {% else %}
+        <div style="color:#475569;font-size:.85rem;text-align:center;padding:20px 0">No matrices yet</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Main: matrix grid -->
+    <div id="matrixPanel" style="background:#1e293b;border-radius:8px;padding:16px">
+      <div id="matrixEmpty" style="display:flex;align-items:center;justify-content:center;height:300px;color:#475569">
+        Select an operation or create a new matrix
+      </div>
+      <div id="matrixContent" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div>
+            <h2 id="matrixOpName" style="margin:0;color:#f1f5f9;font-size:1.2rem"></h2>
+            <div id="matrixMeta" style="color:#64748b;font-size:.8rem"></div>
+          </div>
+          <button onclick="saveMatrix()" style="margin-left:auto;padding:7px 16px;background:#10b981;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer">Save All</button>
+          <button onclick="deleteMatrix()" style="padding:7px 16px;background:#991b1b;border:none;border-radius:6px;color:#fff;cursor:pointer">Delete</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="syncTable" style="border-collapse:collapse;min-width:900px;font-size:.8rem"></table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Create modal -->
+<div id="createModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:#1e293b;border-radius:10px;padding:28px;width:420px;border:1px solid #334155">
+    <h3 style="margin:0 0 20px;color:#f1f5f9">New Synchronization Matrix</h3>
+    <label style="display:block;margin-bottom:4px;color:#94a3b8;font-size:.85rem">Operation Name</label>
+    <input id="newOpName" type="text" placeholder="e.g. Operation Iron Hammer" style="width:100%;box-sizing:border-box;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;margin-bottom:14px">
+    <label style="display:block;margin-bottom:4px;color:#94a3b8;font-size:.85rem">Theater</label>
+    <input id="newTheater" type="text" placeholder="e.g. Pacific" style="width:100%;box-sizing:border-box;padding:8px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;margin-bottom:20px">
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeCreateModal()" style="padding:8px 18px;background:#334155;border:none;border-radius:6px;color:#f1f5f9;cursor:pointer">Cancel</button>
+      <button onclick="createMatrix()" style="padding:8px 18px;background:#f97316;border:none;border-radius:6px;color:#fff;font-weight:600;cursor:pointer">Create</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentMatrix = null;
+
+const CELL_COLORS = {
+  'Maneuver': '#3b82f6',
+  'Fires': '#e94560',
+  'ISR / Collection': '#8b5cf6',
+  'C2 / Command': '#06b6d4',
+  'CSS / Sustainment': '#10b981',
+  'Air Defense': '#f97316',
+  'SIGINT / EW': '#f59e0b',
+  'Cyber / Info Ops': '#a855f7',
+  'Aviation': '#34d399',
+  'Special Operations': '#ec4899',
+};
+
+function showCreateModal() {
+  document.getElementById('createModal').style.display = 'flex';
+}
+function closeCreateModal() {
+  document.getElementById('createModal').style.display = 'none';
+}
+
+async function createMatrix() {
+  const opName = document.getElementById('newOpName').value.trim();
+  const theater = document.getElementById('newTheater').value.trim();
+  if (!opName) { alert('Operation name required'); return; }
+  const r = await fetch('/api/strategos/sync-matrix/matrices', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({operation_name: opName, theater: theater || 'unspecified'})
+  });
+  const d = await r.json();
+  closeCreateModal();
+  document.getElementById('newOpName').value = '';
+  document.getElementById('newTheater').value = '';
+  await loadMatrix(d.matrix_id);
+  addMatrixSidebar(d);
+}
+
+function addMatrixSidebar(m) {
+  const list = document.getElementById('matrixList');
+  const empty = list.querySelector('[style*="No matrices"]');
+  if (empty) empty.remove();
+  const el = document.createElement('div');
+  el.className = 'matrix-item';
+  el.dataset.id = m.matrix_id || m.id;
+  el.onclick = () => loadMatrix(m.matrix_id || m.id);
+  el.style.cssText = 'padding:10px;background:#0f172a;border-radius:6px;cursor:pointer;border:1px solid transparent';
+  el.innerHTML = `<div style="color:#f1f5f9;font-weight:600;font-size:.9rem">${m.operation_name}</div><div style="color:#64748b;font-size:.75rem;margin-top:2px">unspecified · planning</div>`;
+  list.prepend(el);
+}
+
+async function loadMatrix(id) {
+  document.querySelectorAll('.matrix-item').forEach(el => {
+    el.style.borderColor = el.dataset.id === id ? '#f97316' : 'transparent';
+    el.style.background = el.dataset.id === id ? '#1e3a5f' : '#0f172a';
+  });
+  const r = await fetch(`/api/strategos/sync-matrix/matrices/${id}`);
+  const m = await r.json();
+  currentMatrix = m;
+  document.getElementById('matrixEmpty').style.display = 'none';
+  document.getElementById('matrixContent').style.display = 'block';
+  document.getElementById('matrixOpName').textContent = m.operation_name;
+  document.getElementById('matrixMeta').textContent = `Theater: ${m.theater} · Phase: ${m.phase || 'planning'} · Created by: ${m.created_by}`;
+  renderTable(m);
+}
+
+function renderTable(m) {
+  const rows = m.row_labels || [];
+  const cols = m.time_blocks || [];
+  const cells = m.cells || {};
+  const table = document.getElementById('syncTable');
+
+  // Header
+  let html = '<thead><tr><th style="padding:6px 10px;background:#0f172a;color:#94a3b8;text-align:left;min-width:140px;position:sticky;left:0;z-index:2">WFA / Time</th>';
+  for (const c of cols) {
+    const isHHour = c === 'H-Hour';
+    html += `<th style="padding:6px 8px;background:${isHHour ? '#7c3aed' : '#0f172a'};color:${isHHour ? '#fff' : '#94a3b8'};text-align:center;min-width:90px;white-space:nowrap">${c}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+
+  for (let ri = 0; ri < rows.length; ri++) {
+    const rowColor = CELL_COLORS[rows[ri]] || '#64748b';
+    html += `<tr>`;
+    html += `<td style="padding:6px 10px;background:#0f172a;color:${rowColor};font-weight:600;font-size:.8rem;position:sticky;left:0;z-index:1;border-right:2px solid #334155">${rows[ri]}</td>`;
+    for (let ci = 0; ci < cols.length; ci++) {
+      const key = `${ri}:${ci}`;
+      const val = cells[key] || '';
+      const isHHour = cols[ci] === 'H-Hour';
+      html += `<td style="padding:2px;background:${isHHour ? '#1e1b4b' : '#131c2e'};border:1px solid #1e293b;vertical-align:top">
+        <textarea data-key="${key}" data-row="${ri}" data-col="${ci}"
+          style="width:100%;min-width:86px;box-sizing:border-box;background:transparent;border:none;color:#e2e8f0;resize:none;font-size:.75rem;padding:4px;line-height:1.4;min-height:52px;outline:none"
+          placeholder="...">${val}</textarea>
+      </td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody>';
+  table.innerHTML = html;
+}
+
+async function saveMatrix() {
+  if (!currentMatrix) return;
+  const cells = {};
+  document.querySelectorAll('#syncTable textarea').forEach(ta => {
+    if (ta.value.trim()) cells[ta.dataset.key] = ta.value.trim();
+  });
+  const r = await fetch(`/api/strategos/sync-matrix/matrices/${currentMatrix.id}/bulk`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({cells})
+  });
+  const d = await r.json();
+  if (d.ok) {
+    showToast('Matrix saved');
+    currentMatrix.cells = cells;
+  }
+}
+
+async function deleteMatrix() {
+  if (!currentMatrix) return;
+  if (!confirm(`Delete "${currentMatrix.operation_name}"?`)) return;
+  await fetch(`/api/strategos/sync-matrix/matrices/${currentMatrix.id}`, {method:'DELETE'});
+  const el = document.querySelector(`.matrix-item[data-id="${currentMatrix.id}"]`);
+  if (el) el.remove();
+  currentMatrix = null;
+  document.getElementById('matrixEmpty').style.display = 'flex';
+  document.getElementById('matrixContent').style.display = 'none';
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#10b981;color:#fff;padding:10px 20px;border-radius:8px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s';
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.style.opacity = '1');
+  setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 2500);
+}
+
+// Auto-load first matrix if any
+{% if matrices %}
+loadMatrix('{{ matrices[0].id }}');
+{% endif %}
+</script>
+{% endblock %}

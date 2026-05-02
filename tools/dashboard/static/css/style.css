@@ -147,13 +147,16 @@ a:hover {
     border: 1px solid var(--border-color, #334155);
     border-radius: 6px;
     padding: 4px 0;
-    min-width: 160px;
-    z-index: 100;
+    min-width: 200px;
+    max-height: 80vh;
+    overflow-y: auto;
+    z-index: 1000;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     list-style: none;
     margin: 0;
 }
-.nav-dropdown:hover .nav-dropdown-menu {
+.nav-dropdown:hover .nav-dropdown-menu,
+.nav-dropdown-menu:hover {
     display: block;
 }
 .nav-dropdown-menu li a {

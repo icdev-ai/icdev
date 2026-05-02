@@ -3702,6 +3702,380 @@ def api_strategos_chat_poll(context_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Phase 4 — Sync Matrix, ISR Planner, Source Registry
+# ---------------------------------------------------------------------------
+
+@_bp.route("/sync-matrix")
+@_bp.route("/sync-matrix/")
+def strategos_sync_matrix():
+    from tools.strategos.sync_matrix import list_matrices  # noqa: PLC0415
+    matrices = []
+    try:
+        matrices = list_matrices(limit=20)
+    except Exception:
+        pass
+    return render_template("strategos/sync_matrix.html", matrices=matrices)
+
+
+@_api.route("/sync-matrix/matrices", methods=["GET"])
+def api_sync_matrix_list():
+    try:
+        from tools.strategos.sync_matrix import list_matrices  # noqa: PLC0415
+        theater = request.args.get("theater", "")
+        rows = list_matrices(theater=theater, limit=30)
+        resp = make_response(jsonify({"matrices": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sync-matrix/matrices", methods=["POST"])
+def api_sync_matrix_create():
+    try:
+        from tools.strategos.sync_matrix import create_matrix  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        result = create_matrix(
+            operation_name=data.get("operation_name", "New Operation"),
+            theater=data.get("theater", "unspecified"),
+            time_blocks=data.get("time_blocks"),
+            row_labels=data.get("row_labels"),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sync-matrix/matrices/<matrix_id>", methods=["GET"])
+def api_sync_matrix_detail(matrix_id: str):
+    try:
+        from tools.strategos.sync_matrix import get_matrix  # noqa: PLC0415
+        m = get_matrix(matrix_id)
+        if not m:
+            return jsonify({"error": "not found"}), 404
+        resp = make_response(jsonify(m))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sync-matrix/matrices/<matrix_id>/cell", methods=["PATCH"])
+def api_sync_matrix_cell(matrix_id: str):
+    try:
+        from tools.strategos.sync_matrix import update_cell  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        ok = update_cell(matrix_id, int(data["row"]), int(data["col"]), data.get("text", ""))
+        resp = make_response(jsonify({"ok": ok}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sync-matrix/matrices/<matrix_id>/bulk", methods=["PATCH"])
+def api_sync_matrix_bulk(matrix_id: str):
+    try:
+        from tools.strategos.sync_matrix import bulk_update_cells  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        ok = bulk_update_cells(matrix_id, data.get("cells", {}))
+        resp = make_response(jsonify({"ok": ok}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sync-matrix/matrices/<matrix_id>", methods=["DELETE"])
+def api_sync_matrix_delete(matrix_id: str):
+    try:
+        from tools.strategos.sync_matrix import delete_matrix  # noqa: PLC0415
+        ok = delete_matrix(matrix_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── ISR Planner ────────────────────────────────────────────────────────────────
+
+@_bp.route("/isr-planner")
+@_bp.route("/isr-planner/")
+def strategos_isr_planner():
+    from tools.strategos.isr_planner import list_requirements, list_assets, gap_analysis  # noqa: PLC0415
+    reqs, assets, gaps = [], [], {}
+    try:
+        reqs = list_requirements()
+        assets = list_assets()
+        gaps = gap_analysis()
+    except Exception:
+        pass
+    return render_template("strategos/isr_planner.html", requirements=reqs, assets=assets, gaps=gaps)
+
+
+@_api.route("/isr-planner/requirements", methods=["GET"])
+def api_isr_req_list():
+    try:
+        from tools.strategos.isr_planner import list_requirements  # noqa: PLC0415
+        rows = list_requirements(theater=request.args.get("theater", ""), status=request.args.get("status", ""))
+        resp = make_response(jsonify({"requirements": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/requirements", methods=["POST"])
+def api_isr_req_create():
+    try:
+        from tools.strategos.isr_planner import create_requirement  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        result = create_requirement(
+            nai=data.get("nai", ""),
+            collection_type=data.get("collection_type", "IMINT"),
+            priority=int(data.get("priority", 3)),
+            theater=data.get("theater", "unspecified"),
+            earliest=data.get("earliest", ""),
+            latest=data.get("latest", ""),
+            purpose=data.get("purpose", ""),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/requirements/<req_id>/assign", methods=["PATCH"])
+def api_isr_req_assign(req_id: str):
+    try:
+        from tools.strategos.isr_planner import assign_asset  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        result = assign_asset(req_id, data.get("asset_id", ""))
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/requirements/<req_id>/status", methods=["PATCH"])
+def api_isr_req_status(req_id: str):
+    try:
+        from tools.strategos.isr_planner import update_requirement_status  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        ok = update_requirement_status(req_id, data.get("status", "open"))
+        resp = make_response(jsonify({"ok": ok}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/requirements/<req_id>", methods=["DELETE"])
+def api_isr_req_delete(req_id: str):
+    try:
+        from tools.strategos.isr_planner import delete_requirement  # noqa: PLC0415
+        ok = delete_requirement(req_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/assets", methods=["GET"])
+def api_isr_asset_list():
+    try:
+        from tools.strategos.isr_planner import list_assets  # noqa: PLC0415
+        rows = list_assets(theater=request.args.get("theater", ""))
+        resp = make_response(jsonify({"assets": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/assets", methods=["POST"])
+def api_isr_asset_create():
+    try:
+        from tools.strategos.isr_planner import register_asset  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        result = register_asset(
+            asset_name=data.get("asset_name", ""),
+            asset_type=data.get("asset_type", "UAV"),
+            theater=data.get("theater", "unspecified"),
+            notes=data.get("notes", ""),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/assets/<asset_id>/status", methods=["PATCH"])
+def api_isr_asset_status(asset_id: str):
+    try:
+        from tools.strategos.isr_planner import update_asset_status  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        ok = update_asset_status(asset_id, data.get("status", "available"))
+        resp = make_response(jsonify({"ok": ok}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/assets/<asset_id>", methods=["DELETE"])
+def api_isr_asset_delete(asset_id: str):
+    try:
+        from tools.strategos.isr_planner import delete_asset  # noqa: PLC0415
+        ok = delete_asset(asset_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/isr-planner/gap-analysis", methods=["GET"])
+def api_isr_gap_analysis():
+    try:
+        from tools.strategos.isr_planner import gap_analysis  # noqa: PLC0415
+        result = gap_analysis(theater=request.args.get("theater", ""))
+        resp = make_response(jsonify(result))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ── Source Registry ────────────────────────────────────────────────────────────
+
+@_bp.route("/sources")
+@_bp.route("/sources/")
+def strategos_sources():
+    from tools.strategos.source_registry import list_sources, list_reports  # noqa: PLC0415
+    sources, reports = [], []
+    try:
+        sources = list_sources()
+        reports = list_reports(limit=50)
+    except Exception:
+        pass
+    return render_template("strategos/sources.html", sources=sources, reports=reports)
+
+
+@_api.route("/sources", methods=["GET"])
+def api_sources_list():
+    try:
+        from tools.strategos.source_registry import list_sources  # noqa: PLC0415
+        rows = list_sources(
+            theater=request.args.get("theater", ""),
+            source_type=request.args.get("source_type", ""),
+        )
+        resp = make_response(jsonify({"sources": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sources", methods=["POST"])
+def api_sources_create():
+    try:
+        from tools.strategos.source_registry import create_source  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        result = create_source(
+            source_name=data.get("source_name", ""),
+            source_type=data.get("source_type", "HUMINT"),
+            reliability=data.get("reliability", "F"),
+            theater=data.get("theater", "global"),
+            notes=data.get("notes", ""),
+            created_by=data.get("created_by", "analyst"),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sources/<source_id>/reliability", methods=["PATCH"])
+def api_sources_reliability(source_id: str):
+    try:
+        from tools.strategos.source_registry import update_reliability  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        ok = update_reliability(source_id, data.get("reliability", "F"))
+        resp = make_response(jsonify({"ok": ok}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sources/<source_id>", methods=["DELETE"])
+def api_sources_delete(source_id: str):
+    try:
+        from tools.strategos.source_registry import delete_source  # noqa: PLC0415
+        ok = delete_source(source_id)
+        resp = make_response(jsonify({"status": "deleted" if ok else "error"}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sources/<source_id>/reports", methods=["GET"])
+def api_sources_reports_list(source_id: str):
+    try:
+        from tools.strategos.source_registry import list_reports  # noqa: PLC0415
+        rows = list_reports(source_id=source_id, limit=int(request.args.get("limit", 50)))
+        resp = make_response(jsonify({"reports": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sources/<source_id>/reports", methods=["POST"])
+def api_sources_report_add(source_id: str):
+    try:
+        from tools.strategos.source_registry import add_report  # noqa: PLC0415
+        data = request.get_json(force=True) or {}
+        result = add_report(
+            source_id=source_id,
+            content=data.get("content", ""),
+            credibility=data.get("credibility", "6"),
+            subject=data.get("subject", ""),
+            collected_at=data.get("collected_at", ""),
+        )
+        resp = make_response(jsonify(result), 201)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/sources/reports/all", methods=["GET"])
+def api_sources_all_reports():
+    try:
+        from tools.strategos.source_registry import list_reports  # noqa: PLC0415
+        rows = list_reports(limit=int(request.args.get("limit", 100)))
+        resp = make_response(jsonify({"reports": rows}))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Factory functions called from tools/dashboard/app.py
 # ---------------------------------------------------------------------------
 
