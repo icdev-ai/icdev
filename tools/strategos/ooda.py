@@ -27,7 +27,7 @@ DOMAINS = ("land", "air", "sea", "cyber", "ew", "space")
 PHASES = ("observe", "orient", "decide", "act")
 
 # Fallback baselines (seconds) used when no DB data exists.
-# Derived from open-source doctrine estimates for reference-scenario seeding.
+# Seeded from publicly available doctrine estimates for reference-scenario use.
 _BASELINE_BLUE: dict[str, dict[str, float]] = {
     "land":  {"observe": 120, "orient": 180, "decide": 300, "act": 240},
     "air":   {"observe":  30, "orient":  60, "decide":  90, "act":  45},

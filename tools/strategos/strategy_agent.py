@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """Strategy Agent — generates Courses of Action (COAs) from scenario context.
 
-Ported from sg-agent-04 stub. RAG activation gate (sg-rag-06) is now open:
+Extends sg-agent-04 design. RAG activation gate (sg-rag-06) is now open:
 before calling Ollama, the agent retrieves doctrine passages and historical
 conflict events via corrective_rag.parallel_retrieve() (D-KARL-3) and injects
 them into ScenarioContext.rag_context.
