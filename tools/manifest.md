@@ -628,3 +628,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Explain Translator | tools\aisg\explain_translator.py | Auto-registered: aisg/explain_translator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Roi Tracker | tools\aisg\roi_tracker.py | Auto-registered: aisg/roi_tracker.py | --json | JSON |

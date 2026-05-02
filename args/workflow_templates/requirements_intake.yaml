@@ -26,10 +26,18 @@ steps:
     depends_on: [gaps]
     description: "5-dimension readiness assessment"
 
+  - id: stakeholder_review
+    name: "Stakeholder Review"
+    node_type: "human"
+    role: "stakeholder"
+    human_required: true
+    depends_on: [readiness]
+    description: "Human stakeholder sign-off on readiness assessment"
+
   - id: decompose
     name: "SAFe Decomposition"
     tool: "tools/requirements/decomposition_engine.py"
-    depends_on: [readiness]
+    depends_on: [stakeholder_review]
     description: "Decompose into Epic > Feature > Story"
 
   - id: boundary
@@ -44,8 +52,15 @@ steps:
     depends_on: [decompose]
     description: "Build full RTM: req > model > code > test > control"
 
+  - id: crb_approval
+    name: "CRB Approval Gate"
+    node_type: "approval"
+    approval_policy: "unanimous"
+    depends_on: [boundary, trace]
+    description: "Change Review Board unanimous approval before baselining"
+
   - id: baselined
     name: "Baseline Requirements"
     tool: "tools/requirements/requirements_baseliner.py"
-    depends_on: [spec_quality, boundary, trace]
+    depends_on: [spec_quality, crb_approval]
     description: "Baseline approved requirements set with RTM and boundary assessment"
