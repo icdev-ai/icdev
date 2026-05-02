@@ -26,6 +26,7 @@ import urllib.request
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
@@ -45,9 +46,12 @@ DOWNLOAD_TIMEOUT = 60  # seconds
 
 def _fetch_kev_json() -> dict:
     """Download KEV catalog from CISA. Raises on network error."""
+    parsed = urlparse(KEV_URL)
+    if parsed.scheme != "https":
+        raise ValueError(f"Unexpected scheme in KEV_URL: {parsed.scheme!r} — only https is permitted")
     try:
         req = urllib.request.Request(KEV_URL, headers={"User-Agent": "ICDEV-Strategos/1.0"})
-        with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:  # nosec B310 — scheme validated above
             return json.loads(resp.read().decode("utf-8"))
     except Exception as exc:
         raise RuntimeError(f"Failed to fetch KEV catalog: {exc}") from exc
