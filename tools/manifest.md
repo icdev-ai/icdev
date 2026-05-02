@@ -146,6 +146,7 @@
 - [ANVIL Headless Commands (OPT-42, 2026-04-12)](manifest/anvil-headless-commands.md)
 - [Dashboard UX Enhancements (OPT-68, 2026-04-12)](manifest/dashboard-ux-enhancements.md)
 - [Manifest Gap Fill (2026-04-12)](manifest/manifest-gap-fill.md)
+- [AISG — AI Strategy Guide Tools](manifest/aisg.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
 - [Kanban System](manifest/kanban.md)
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
