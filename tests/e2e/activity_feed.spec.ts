@@ -127,14 +127,15 @@ test.describe('Activity Feed', () => {
 
   test('activity page navigation from dashboard', async ({ page }) => {
     // Step 1: Start at dashboard
+    // Use 'load' not 'networkidle' — dashboard keeps SSE connections open indefinitely
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('load');
 
     // Step 2: Find and click activity navigation link
     const activityLink = page.getByRole('link', { name: /Activity/i });
     if (await activityLink.count() > 0) {
       await activityLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('load');
 
       // Step 3: Verify navigation worked
       const url = page.url();
@@ -152,7 +153,7 @@ test.describe('Activity Feed', () => {
     } else {
       // Direct navigation fallback
       await page.goto('/activity');
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('load');
 
       const bodyText = await page.textContent('body');
       expect(bodyText).toContain(CUI_BANNER);
