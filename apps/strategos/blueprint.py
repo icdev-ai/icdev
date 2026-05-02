@@ -2208,11 +2208,14 @@ def strategos_api_cyber_infra():
         f"FROM sg_conflict_events WHERE {' AND '.join(clauses)} LIMIT 200",  # nosec: B608
         params,
     )
+    _crit_score = {"critical": 9.5, "high": 7.5, "medium": 5.0, "low": 2.5}
     for ev in cyber_events:
         ev.setdefault("criticality", "high")
         ev["source"] = "conflict_event"
+        ev["cyber_vuln_score"] = round((ev.get("confidence") or 0.5) * 10, 1)
     for n in nodes:
         n["source"] = "supply_node"
+        n["cyber_vuln_score"] = _crit_score.get((n.get("criticality") or "medium").lower(), 5.0)
     return jsonify({"nodes": nodes + cyber_events})
 
 
