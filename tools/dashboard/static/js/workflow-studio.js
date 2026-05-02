@@ -817,41 +817,47 @@ const StudioWF = (() => {
   // ── Validate ──
   function validate() {
     if (!nodes.length) { toast('Add steps before validating', 'warning'); return; }
-
     const issues = [];
-    // Check for cycles (simple)
-    const visited = new Set();
-    const visiting = new Set();
+
+    // 1. Cycle check (DFS)
+    const visited = new Set(), visiting = new Set();
     function hasCycle(id) {
       if (visiting.has(id)) return true;
       if (visited.has(id)) return false;
       visiting.add(id);
-      for (const e of edges.filter(e => e.from === id)) {
-        if (hasCycle(e.to)) return true;
-      }
-      visiting.delete(id);
-      visited.add(id);
-      return false;
+      for (const e of edges.filter(e => e.from === id)) { if (hasCycle(e.to)) return true; }
+      visiting.delete(id); visited.add(id); return false;
     }
-    for (const n of nodes) {
-      if (hasCycle(n.id)) { issues.push('Circular dependency detected'); break; }
-    }
+    for (const n of nodes) { if (hasCycle(n.id)) { issues.push('Circular dependency detected'); break; } }
 
-    // Check disconnected nodes
-    const connected = new Set();
-    edges.forEach(e => { connected.add(e.from); connected.add(e.to); });
+    // 2. Union-Find — detect isolated nodes and disconnected subgraphs
     if (nodes.length > 1) {
-      const disconnected = nodes.filter(n => !connected.has(n.id));
-      if (disconnected.length) {
-        issues.push(`${disconnected.length} disconnected step(s)`);
+      const parent = {};
+      nodes.forEach(n => { parent[n.id] = n.id; });
+      function find(x) {
+        while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+      }
+      function union(a, b) { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; }
+      edges.forEach(e => { if (e.from in parent && e.to in parent) union(e.from, e.to); });
+
+      const compMap = {};
+      nodes.forEach(n => {
+        const r = find(n.id);
+        (compMap[r] = compMap[r] || []).push(n.label || n.id);
+      });
+      const comps = Object.values(compMap);
+      if (comps.length > 1) {
+        const iso = comps.filter(c => c.length === 1).map(c => c[0]);
+        const sub = comps.filter(c => c.length > 1);
+        if (iso.length) issues.push(`${iso.length} isolated node(s): ${iso.join(', ')}`);
+        if (sub.length > 1) issues.push(`${sub.length} disconnected subgraph(s) — connect all chains into one graph`);
+        if (!iso.length && !sub.length && comps.length > 1) issues.push(`${comps.length} disconnected component(s)`);
       }
     }
 
-    if (issues.length) {
-      toast('Validation: ' + issues.join('; '), 'warning');
-    } else {
-      toast('Workflow is valid', 'success');
-    }
+    if (issues.length) toast('Validation failed: ' + issues.join(' | '), 'warning');
+    else toast('Workflow valid — ' + nodes.length + ' steps, ' + edges.length + ' connections', 'success');
   }
 
   // ── Utility ──

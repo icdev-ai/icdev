@@ -1283,6 +1283,15 @@
   animation: studioDash 1s linear infinite;
 }
 
+.wf-canvas__svg .wf-edge.wf-edge--rubber {
+  stroke: #f59e0b;
+  stroke-width: 2px;
+  stroke-dasharray: 8 4;
+  opacity: 0.75;
+  fill: none;
+  pointer-events: none;
+}
+
 /* Arrowhead fill colours */
 .wf-arrow-head {
   fill: #818cf8;
