@@ -28,7 +28,7 @@ export default defineConfig({
   outputDir: '.tmp/test_runs/playwright-artifacts',
 
   use: {
-    baseURL: process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5000',
+    baseURL: process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050',
     trace: 'on-first-retry',
     screenshot: 'on',
     video: 'on',
@@ -58,7 +58,7 @@ export default defineConfig({
   webServer: process.env.ICDEV_START_SERVER
     ? {
         command: 'python tools/dashboard/app.py',
-        url: 'http://localhost:5000',
+        url: 'http://localhost:5050',
         reuseExistingServer: true,
         timeout: 30000,
       }
