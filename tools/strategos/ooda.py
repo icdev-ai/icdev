@@ -326,10 +326,12 @@ def lanchester_monte_carlo(
         beta_i = beta * (1 + N(0, sigma))
         rho_i  = rho  * (1 + N(0, sigma))
 
-    Returns percentile bands and blue victory probability.
+    Returns time-series percentile bands (p5/p50/p95) and blue victory probability.
     """
     import random
 
+    all_b_series: list[list[float]] = []
+    all_r_series: list[list[float]] = []
     final_blues: list[float] = []
     final_reds: list[float] = []
     blue_victories = 0
@@ -338,12 +340,24 @@ def lanchester_monte_carlo(
         beta_i = beta * (1.0 + random.gauss(0.0, sigma))
         rho_i  = rho  * (1.0 + random.gauss(0.0, sigma))
         run = lanchester_square(b0, r0, beta_i, rho_i)
+        all_b_series.append(run["b_series"])
+        all_r_series.append(run["r_series"])
         fb = run["final_b"]
         fr = run["final_r"]
         final_blues.append(fb)
         final_reds.append(fr)
         if fb > 0 and fr == 0:
             blue_victories += 1
+
+    # Pad all runs to the same length using their final value
+    max_len = max(len(s) for s in all_b_series)
+    for i in range(iterations):
+        b_last = all_b_series[i][-1]
+        r_last = all_r_series[i][-1]
+        if len(all_b_series[i]) < max_len:
+            all_b_series[i] = all_b_series[i] + [b_last] * (max_len - len(all_b_series[i]))
+        if len(all_r_series[i]) < max_len:
+            all_r_series[i] = all_r_series[i] + [r_last] * (max_len - len(all_r_series[i]))
 
     def _pct(series: list[float], p: float) -> float:
         sorted_s = sorted(series)
@@ -352,19 +366,41 @@ def lanchester_monte_carlo(
         frac = idx - lo
         return round(sorted_s[lo] * (1 - frac) + sorted_s[hi] * frac, 2)
 
+    def _ts_pct(all_series: list[list[float]], p: float) -> list[float]:
+        result: list[float] = []
+        for t in range(max_len):
+            vals = sorted(s[t] for s in all_series)
+            n = len(vals)
+            idx = (n - 1) * p / 100.0
+            lo, hi = int(idx), min(int(idx) + 1, n - 1)
+            frac = idx - lo
+            result.append(round(vals[lo] * (1 - frac) + vals[hi] * frac, 2))
+        return result
+
+    t_series = [float(i) for i in range(max_len)]
+
     return {
-        "model":             "lanchester_monte_carlo",
+        "model":              "lanchester_monte_carlo",
         "b0": b0, "r0": r0,
         "beta": beta, "rho": rho,
-        "iterations":        iterations,
-        "sigma":             sigma,
-        "p5_blue":           _pct(final_blues, 5),
-        "p50_blue":          _pct(final_blues, 50),
-        "p95_blue":          _pct(final_blues, 95),
-        "p5_red":            _pct(final_reds,  5),
-        "p50_red":           _pct(final_reds,  50),
-        "p95_red":           _pct(final_reds,  95),
-        "victory_prob_blue": round(blue_victories / iterations, 4),
+        "iterations":         iterations,
+        "sigma":              sigma,
+        # Time-series percentile bands for chart rendering
+        "t_series":           t_series,
+        "p5_blue_series":     _ts_pct(all_b_series, 5),
+        "p50_blue_series":    _ts_pct(all_b_series, 50),
+        "p95_blue_series":    _ts_pct(all_b_series, 95),
+        "p5_red_series":      _ts_pct(all_r_series, 5),
+        "p50_red_series":     _ts_pct(all_r_series, 50),
+        "p95_red_series":     _ts_pct(all_r_series, 95),
+        # Scalar final percentiles (backward compat)
+        "p5_blue":            _pct(final_blues, 5),
+        "p50_blue":           _pct(final_blues, 50),
+        "p95_blue":           _pct(final_blues, 95),
+        "p5_red":             _pct(final_reds,  5),
+        "p50_red":            _pct(final_reds,  50),
+        "p95_red":            _pct(final_reds,  95),
+        "victory_prob_blue":  round(blue_victories / iterations, 4),
     }
 
 

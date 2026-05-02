@@ -200,16 +200,27 @@ def api_wargame_lanchester_monte_carlo(wargame_id: str):
         resp.headers["X-Classification"] = "CUI"
         return resp
 
-    b0 = float(row[0] or 0)
-    r0 = float(row[1] or 0)
+    b0_db = float(row[0] or 0)
+    r0_db = float(row[1] or 0)
     coeff: dict = {}
     if row[2]:
         try:
             coeff = _json.loads(row[2])
         except Exception:
             pass
-    beta = float(coeff.get("beta", 0.01))
-    rho  = float(coeff.get("rho",  0.01))
+    beta_db = float(coeff.get("beta", 0.01))
+    rho_db  = float(coeff.get("rho",  0.01))
+
+    # Allow UI overrides for b0/r0/beta/rho (user may have edited the fields)
+    try:
+        b0   = float(request.args["b0"])   if "b0"   in request.args else b0_db
+        r0   = float(request.args["r0"])   if "r0"   in request.args else r0_db
+        beta = float(request.args["beta"]) if "beta" in request.args else beta_db
+        rho  = float(request.args["rho"])  if "rho"  in request.args else rho_db
+    except (ValueError, TypeError) as exc:
+        resp = make_response(jsonify({"error": f"invalid param: {exc}"}), 400)
+        resp.headers["X-Classification"] = "CUI"
+        return resp
 
     try:
         result = lanchester_monte_carlo(b0, r0, beta=beta, rho=rho,
