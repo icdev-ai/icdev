@@ -327,6 +327,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         except ImportError as exc:
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
+    # AISG explain translator — /api/explain/<event_id>
+    try:
+        from tools.aisg.blueprint import bp as aisg_bp
+        _mount_inline(aisg_bp)
+        logger.info("AISG explain blueprint registered at /api/explain/<event_id>")
+    except Exception as exc:
+        logger.warning("AISG explain blueprint skipped: %s", exc)
+
     # HITL Workflow — opt-in via ICDEV_HITL_ENABLED=true
     try:
         from tools.workflow_hitl.blueprint import create_wf_blueprint
