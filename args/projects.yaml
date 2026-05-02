@@ -1,4 +1,67 @@
+# CUI // SP-CTI
+#
+# Auto-managed by tools/project/kanban_project_sync.py
+# Human edits to name/description/briefs are preserved.
+
 projects:
+- key: aisg
+  name: AI Skills Gap — Zero-to-AI Enablement Platform
+  description: >
+    Strategic initiative to close the AI skills gap for government agencies and commercial
+    companies. ICDEV becomes the vehicle that enables development teams with no AI expertise
+    to build, deploy, and govern AI systems — shortening the AI journey from months to days.
+    Four phases: (A) Zero-to-AI onboarding (wizard, role views, explain-this),
+    (B) Guided AI curriculum (pattern library, learning paths, institutional memory),
+    (C) No-code customization (visual agent builder, autotune fine-tuning, graduated trust),
+    (D) Workforce multiplier metrics (ROI dashboard, skills gap tracker, talent retention).
+  task_prefix: aisg-
+  default_open: true
+  briefs:
+  - 'Phase A: Launchpad wizard + role-based views + explain-this — aisg-a1-01..05, aisg-a2-01..05, aisg-a3-01..03'
+  - 'Phase B: AI pattern library + learning paths + institutional memory — aisg-b1-01..07, aisg-b2-01..04, aisg-b3-01..03'
+  - 'Phase C: Visual agent builder + autotune fine-tuning + Genesis graduated trust — aisg-c1-01..04, aisg-c2-01..04, aisg-c3-01..04'
+  - 'Phase D: AI ROI dashboard + skills gap tracker + talent retention package — aisg-d1-01..03, aisg-d2-01..03, aisg-d3-01..02'
+  - 'V&V: companion sync + coherence gate + Playwright E2E all 10 pages — aisg-vv-01..02'
+  epics:
+  - key: a1
+    title: Phase A — Launchpad Wizard (5-question setup, 30-day sprint seeder)
+    priority: critical
+  - key: a2
+    title: Phase A — Role-Based Dashboard Views (Builder/Compliance/Executive/PM)
+    priority: critical
+  - key: a3
+    title: Phase A — Explain This Decision (plain-English AI decision translator)
+    priority: high
+  - key: b1
+    title: Phase B — AI Pattern Library (4 pre-built agent patterns + CLI deploy)
+    priority: critical
+  - key: b2
+    title: Phase B — In-Platform Learning Paths (3 progressive tracks)
+    priority: high
+  - key: b3
+    title: Phase B — Institutional Memory Capture (handoff/onboarding package)
+    priority: high
+  - key: c1
+    title: Phase C — Visual Agent Builder (drag-and-drop FORGE goal generator)
+    priority: high
+  - key: c2
+    title: Phase C — AutoTune Fine-Tuning (thumbs-up/down, business metrics)
+    priority: high
+  - key: c3
+    title: Phase C — Genesis Graduated Trust (observer/advisor/executor/full)
+    priority: high
+  - key: d1
+    title: Phase D — AI ROI Dashboard (hours saved, action breakdown, weekly trend)
+    priority: high
+  - key: d2
+    title: Phase D — Skills Gap Tracker (maturity score, usage heatmap, next steps)
+    priority: high
+  - key: d3
+    title: Phase D — Talent Retention Package (AI profile encode/import)
+    priority: high
+  - key: vv
+    title: Final V&V (companion sync + coherence + Playwright E2E all 10 pages)
+    priority: critical
 - key: fdt
   name: FathomDesk — TradingAgents Adaptation
   description: 'Five-phase adaptation of tauricresearch/tradingagents patterns into
@@ -149,9 +212,9 @@ projects:
 - key: km
   name: Kanban Maintenance
   description: 'Two-phase Kanban engine hardening: (1) auto-close sweep for decomposed
-    parent tasks that get stuck when all children complete — requires manual DB
-    fix today; (2) multi-parent dependency support via junction table, replacing the
-    single depends_on_task_id scalar with a full DAG + DFS cycle detection.'
+    parent tasks that get stuck when all children complete — requires manual DB fix
+    today; (2) multi-parent dependency support via junction table, replacing the single
+    depends_on_task_id scalar with a full DAG + DFS cycle detection.'
   task_prefix: km-
   default_open: true
   briefs:
@@ -350,7 +413,8 @@ projects:
     title: CORE
     priority: medium
   - key: twin
-    title: Digital Twin Integration — Ghost Track + I&W + War Game + Cross-Canvas Bus
+    title: Digital Twin Integration — Ghost Track + I&W + War Game + Cross-Canvas
+      Bus
     priority: high
   - key: cyber-ext
     title: Cyber Extension — NVD/KEV/ATT&CK Ingest + Shodan + Dynamic Heatmap
@@ -382,8 +446,7 @@ projects:
   default_open: true
   briefs:
   - 'DB schema: 6 mc_net_* tables — nmig-db-01 (done)'
-  - 'Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01
-    (done)'
+  - 'Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01 (done)'
   - 'Blueprint: 23 network-migration API + page routes — nmig-engine-02 (done)'
   - 'UI: 8-step wizard (device/config/ports/compat/diff/test/cutover/ERB) — nmig-wizard-01/02/03
     (done)'
@@ -441,8 +504,8 @@ projects:
   - 'Opportunity scanner: NDC EOL, topology, MDC cross-canvas — mi-scan-01 (done)'
   - 'Strategy generator: 7R + roadmap builder — mi-strat-01 (done)'
   - 'Migration manager: 8-stage pipeline + daemon + CLI — mi-mgr-01 (done)'
-  - 'Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API —
-    mi-api-01 (done)'
+  - 'Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API — mi-api-01
+    (done)'
   - 'Dashboard UI: index.html with tabbed goals/opps/roadmaps/wishlist/chat — mi-ui-01
     (done)'
   - 'Genesis reflex: migration_intel.py autonomous 24h scan — mi-reflex-01 (done)'
@@ -866,9 +929,9 @@ projects:
     priority: medium
 - key: sim-chat
   name: TFW Simulation Chat Workbench
-  description: 'Canvas-agnostic simulation engine at /simulate/chat — upload any
-    diagram (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows
-    with color-coded Mermaid diagrams, troubleshoot auth and routing issues, and generate
+  description: 'Canvas-agnostic simulation engine at /simulate/chat — upload any diagram
+    (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows with
+    color-coded Mermaid diagrams, troubleshoot auth and routing issues, and generate
     compliance artifacts (PPSM, DFD, CIS, ISA, POA&M, OSCAL). Covers all 7 canvases:
     NDC, SDC, EDA, DDC, PDC, BDC, IDC. 35 dependency-chained tasks across 7 layers.
 
@@ -1515,9 +1578,9 @@ projects:
     model, and slide outline. Built on existing chat_manager.py so end users interact
     via a guided chat at /studio/narrate (no Claude CLI required). Depends on wfs-schema-01
     (narrative_context YAML block) and wfs-decomp-01 (composite node + sub_steps).
-    First template: ai_ml_transformation.yaml — 5-phase defense contractor AI/ML
-    workforce transformation with full training resource taxonomy (free/self-paced/ILT/OJT
-    including AWS SkillBuilder and DeepLearning.ai).
+    First template: ai_ml_transformation.yaml — 5-phase defense contractor AI/ML workforce
+    transformation with full training resource taxonomy (free/self-paced/ILT/OJT including
+    AWS SkillBuilder and DeepLearning.ai).
 
     '
   briefs:
@@ -1648,17 +1711,16 @@ projects:
 - key: pint
   name: Product Intelligence — 5 New Engines + Universal Orchestrator
   description: 'Build five new product-discovery engines and one universal orchestrator
-    that calls all eight. New engines: (1) Regulatory Foresight — scans proposed
-    legislation (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub,
-    DoD DARS) before mandates land; (2) Usage Analytics — instruments dashboard
-    routes and CLI invocations to reveal actual feature adoption; (3) Win/Loss Intelligence
-    — correlates GovCon proposal outcomes with ICDEV feature presence to surface
-    roadmap priorities; (4) Voice of Customer (VOC) — JTBD synthesis from first-party
-    support tickets, NPS verbatims, and debrief documents; (5) Technology Radar —
-    tracks adopt/trial/assess/hold ring movements for frameworks and tools. Universal
-    Orchestrator (tools/product_intel/ orchestrator.py) invokes all eight engines
-    in sequence, runs the federation router, stores a consolidated run record, and
-    exposes --run-all and --daemon modes.'
+    that calls all eight. New engines: (1) Regulatory Foresight — scans proposed legislation
+    (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub, DoD DARS) before
+    mandates land; (2) Usage Analytics — instruments dashboard routes and CLI invocations
+    to reveal actual feature adoption; (3) Win/Loss Intelligence — correlates GovCon
+    proposal outcomes with ICDEV feature presence to surface roadmap priorities; (4)
+    Voice of Customer (VOC) — JTBD synthesis from first-party support tickets, NPS
+    verbatims, and debrief documents; (5) Technology Radar — tracks adopt/trial/assess/hold
+    ring movements for frameworks and tools. Universal Orchestrator (tools/product_intel/
+    orchestrator.py) invokes all eight engines in sequence, runs the federation router,
+    stores a consolidated run record, and exposes --run-all and --daemon modes.'
   task_prefix: pint-
   default_open: true
   briefs:
@@ -1752,20 +1814,22 @@ projects:
   name: Strategos Multi-Domain Operations — Airspace COP
   description: 'Expands Strategos beyond maritime AIS to a full Multi-Domain Common
     Operating Picture at /strategos/airspace. Adds 4 new OSINT/open-data domains:
-    ADS-B aircraft (OpenSky Network), UAS/drone tracks (FAA DroneZone + OSINT),
-    satellite passes (CelesTrak TLE), and ground vehicle events (GDELT/Oryx).
-    New DB tables: sg_aircraft_tracks, sg_uas_tracks, sg_satellite_passes,
-    sg_ground_vehicle_events. New importers: adsb_importer.py, tle_importer.py,
-    uas_importer.py, ground_vehicle_importer.py. Multi-layer Leaflet COP page
-    with domain toggles, animated aircraft/UAS tracks, satellite ground-track
-    overlays, and right-click → STRATEGOS Chat for all entity types.'
+    ADS-B aircraft (OpenSky Network), UAS/drone tracks (FAA DroneZone + OSINT), satellite
+    passes (CelesTrak TLE), and ground vehicle events (GDELT/Oryx). New DB tables:
+    sg_aircraft_tracks, sg_uas_tracks, sg_satellite_passes, sg_ground_vehicle_events.
+    New importers: adsb_importer.py, tle_importer.py, uas_importer.py, ground_vehicle_importer.py.
+    Multi-layer Leaflet COP page with domain toggles, animated aircraft/UAS tracks,
+    satellite ground-track overlays, and right-click → STRATEGOS Chat for all entity
+    types.'
   task_prefix: mdo-
   default_open: true
   briefs:
   - 'DB: migration 083 — 4 new sg_* tables — mdo-db-01'
-  - 'Import: adsb_importer + tle_importer + uas_importer + ground_vehicle_importer — mdo-import-01..04'
+  - 'Import: adsb_importer + tle_importer + uas_importer + ground_vehicle_importer
+    — mdo-import-01..04'
   - 'API: /strategos/airspace page + 5 API routes — mdo-api-01..02'
-  - 'UI: airspace.html multi-domain COP (Leaflet, 4 layer groups, toolbar, sidebar) — mdo-ui-01..02'
+  - 'UI: airspace.html multi-domain COP (Leaflet, 4 layer groups, toolbar, sidebar)
+    — mdo-ui-01..02'
   - 'RC: right-click handlers for 4 new entity types + chat templates — mdo-rc-01'
   - 'RAG: StrategosRAG extended for 4 new tables — mdo-rag-01'
   - 'VV: import smoke test + route verification + companion sync — mdo-vv-01..02'
@@ -1797,24 +1861,24 @@ projects:
     mechanic with Lanchester step + Blotto + OODA delta + turn log. (2) AI Strategic
     Advisor — war_council + strategy_agent assessment panel. (3) ORBAT Pre-population
     — seed Lanchester b0/r0 from sg_orbat_units.strength. (4) Monte Carlo Lanchester
-    — 500-iter stochastic attrition with p5/p50/p95 confidence bands. (5) Signal
-    feed → OODA refresh — 30s poll of sg_prioritized_signals, flash changed OODA
-    domains. (6) Export to Intel Brief — bundle scenario state into sg_intelligence_briefs.'
+    — 500-iter stochastic attrition with p5/p50/p95 confidence bands. (5) Signal feed
+    → OODA refresh — 30s poll of sg_prioritized_signals, flash changed OODA domains.
+    (6) Export to Intel Brief — bundle scenario state into sg_intelligence_briefs.'
   task_prefix: wge-
   default_open: true
   briefs:
   - 'Epic te: Turn Engine — sg_wargame_turns migration + advance_turn() + blueprint
     routes + UI controls + turn log'
-  - 'Epic ai: AI Strategic Advisor — wargame_advisor.py wrapping strategy_agent
-    + blueprint + assessment panel'
-  - 'Epic orbat: ORBAT Pre-pop — wargame_orbat.py + seed route + Load from ORBAT
-    button in Lanchester tab'
+  - 'Epic ai: AI Strategic Advisor — wargame_advisor.py wrapping strategy_agent +
+    blueprint + assessment panel'
+  - 'Epic orbat: ORBAT Pre-pop — wargame_orbat.py + seed route + Load from ORBAT button
+    in Lanchester tab'
   - 'Epic mc: Monte Carlo Lanchester — lanchester_monte_carlo() in ooda.py + blueprint
     + confidence band chart'
   - 'Epic sig: Signal→OODA Refresh — /ooda/live route + 30s frontend poll + domain
     flash'
-  - 'Epic exp: Export to Brief — wargame_exporter.py + blueprint + Export button
-    + brief link toast'
+  - 'Epic exp: Export to Brief — wargame_exporter.py + blueprint + Export button +
+    brief link toast'
   - 'Epic vv: V&V — manifest + companion sync + feature docs'
   epics:
   - key: te
@@ -1882,12 +1946,11 @@ projects:
     priority: low
 - key: sg-roadmap
   name: Strategos Military Feature Roadmap
-  description: >-
-    Four-phase roadmap of military analyst features for the Strategos intelligence
-    platform. Phase 1: CCIR Trigger Engine + INTSUM Auto-Generator + Commander
-    Dashboard + War Endurance widget. Phase 2: IPB Canvas + I&W Board + F3EAD
-    Targeting + BDA Module. Phase 3: OPORD Generator + Red Cell + METT-TC.
-    Phase 4: Sync Matrix + ISR Planner + Confidence Decay.
+  description: 'Four-phase roadmap of military analyst features for the Strategos
+    intelligence platform. Phase 1: CCIR Trigger Engine + INTSUM Auto-Generator +
+    Commander Dashboard + War Endurance widget. Phase 2: IPB Canvas + I&W Board +
+    F3EAD Targeting + BDA Module. Phase 3: OPORD Generator + Red Cell + METT-TC. Phase
+    4: Sync Matrix + ISR Planner + Confidence Decay.'
   task_prefix: sg-
   default_open: true
   briefs:
@@ -1908,3 +1971,63 @@ projects:
   - key: s4
     title: Phase 4 — Sync Matrix + ISR Planner + Confidence Decay
     priority: low
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
