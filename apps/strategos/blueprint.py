@@ -4007,6 +4007,21 @@ def api_sources_create():
         return jsonify({"error": str(exc)}), 500
 
 
+@_api.route("/sources/<source_id>", methods=["GET"])
+def api_sources_detail(source_id: str):
+    try:
+        from tools.strategos.source_registry import list_sources  # noqa: PLC0415
+        rows = list_sources()
+        src = next((s for s in rows if s["id"] == source_id), None)
+        if not src:
+            return jsonify({"error": "not found"}), 404
+        resp = make_response(jsonify(src))
+        resp.headers["X-Classification"] = "CUI"
+        return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @_api.route("/sources/<source_id>/reliability", methods=["PATCH"])
 def api_sources_reliability(source_id: str):
     try:

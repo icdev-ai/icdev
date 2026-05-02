@@ -2,11 +2,12 @@
 {% block title %}ISR Collection Planner — Strategos{% endblock %}
 {% block content %}
 <div style="padding:24px;max-width:1400px;margin:0 auto">
-  <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;flex-wrap:wrap">
     <div>
       <h1 style="margin:0;font-size:1.5rem;color:#f1f5f9">ISR Collection Planner</h1>
       <p style="margin:4px 0 0;color:#64748b;font-size:.85rem">FM 3-55 / JP 2-01 — Map collection requirements to assets · Gap analysis</p>
     </div>
+    <button onclick="seedISRExamples()" style="margin-left:auto;padding:7px 16px;background:#334155;border:none;border-radius:6px;color:#94a3b8;font-size:.85rem;cursor:pointer">+ Load Examples</button>
   </div>
 
   <!-- Gap Analysis Banner -->
@@ -254,6 +255,74 @@ async function refreshGaps() {
   document.getElementById('gOpen').textContent = d.open || 0;
   document.getElementById('gAssigned').textContent = d.assigned || 0;
   document.getElementById('gCoverage').textContent = (d.coverage_pct || 0) + '%';
+}
+
+// ── Seed realistic Pacific examples ───────────────────────────────────────────
+const EXAMPLE_REQS = [
+  {nai:'NAI-01 Luzon Strait',       collection_type:'IMINT',  priority:1, purpose:'Confirm PLAN naval sortie posture — carrier and LHD count'},
+  {nai:'NAI-02 Yulin Naval Base',   collection_type:'IMINT',  priority:1, purpose:'Count submarines at pier — SSBNs and SSNs in/out status'},
+  {nai:'NAI-03 Coastal Radar Net',  collection_type:'SIGINT', priority:2, purpose:'Map YLC-18 and HQ-9 radar emissions for EA planning'},
+  {nai:'NAI-04 Amphibious Staging', collection_type:'IMINT',  priority:2, purpose:'BDA on LST/LPD concentration at Zhanjiang'},
+  {nai:'NAI-05 Sanya Fuel Depot',   collection_type:'MASINT', priority:3, purpose:'Estimate fuel pre-positioning quantity for timeline assessment'},
+  {nai:'NAI-06 PRC Social Media',   collection_type:'OSINT',  priority:3, purpose:'Track mobilization messaging and troop movement discussion'},
+  {nai:'NAI-07 Port City HUMINT',   collection_type:'HUMINT', priority:2, purpose:'Confirm civilian evacuation orders — indicator of imminent ops'},
+];
+
+const EXAMPLE_ASSETS = [
+  {asset_name:'MQ-9 REAPER ALPHA',        asset_type:'UAV',             theater:'Pacific', notes:'On-station 16 hrs/day. Rotating with BRAVO orbit.'},
+  {asset_name:'MQ-9 REAPER BRAVO',        asset_type:'UAV',             theater:'Pacific', notes:'Relief orbit for ALPHA. 14 hrs endurance.'},
+  {asset_name:'NRO SAT PASS #KH-12',      asset_type:'satellite',       theater:'Pacific', notes:'1 pass/day over Hainan at 0430L. 30cm resolution.'},
+  {asset_name:'EP-3E ARIES SIGINT',       asset_type:'SIGINT_aircraft', theater:'Pacific', notes:'12-hr sorties from Kadena. Restricted airspace coordination required.'},
+  {asset_name:'HUMINT-ALPHA-07 (Asset)',  asset_type:'HUMINT_asset',    theater:'Pacific', notes:'Network asset. Tasking cycle 48 hrs minimum lead time.'},
+  {asset_name:'CSS-VICTOR SURFACE SHIP',  asset_type:'surface',         theater:'Pacific', notes:'MASINT collection suite embarked. SIGINT secondary capability.'},
+  {asset_name:'CYBER-GHOST TEAM',         asset_type:'cyber',           theater:'Pacific', notes:'OSINT automated collection pipeline. SIGINT CNE secondary.'},
+];
+
+async function seedISRExamples() {
+  if (!confirm('Load Pacific ISR Collection Plan — 7 requirements + 7 assets?')) return;
+  const reqIds = [];
+  for (const req of EXAMPLE_REQS) {
+    const r = await fetch('/api/strategos/isr-planner/requirements', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({...req, theater:'Pacific'})
+    });
+    const d = await r.json();
+    reqIds.push(d.requirement_id);
+  }
+  const assetIds = [];
+  for (const asset of EXAMPLE_ASSETS) {
+    const r = await fetch('/api/strategos/isr-planner/assets', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(asset)
+    });
+    const d = await r.json();
+    assetIds.push(d.asset_id);
+  }
+  // Assign capable assets to requirements
+  // NAI-01 IMINT → NRO sat (index 2)
+  // NAI-02 IMINT → MQ-9 ALPHA (index 0)
+  // NAI-03 SIGINT → EP-3E (index 3)
+  // NAI-07 HUMINT → HUMINT asset (index 4)
+  const assignments = [[0,2],[1,0],[2,3],[6,4]];
+  for (const [ri, ai] of assignments) {
+    if (reqIds[ri] && assetIds[ai]) {
+      await fetch(`/api/strategos/isr-planner/requirements/${reqIds[ri]}/assign`, {
+        method:'PATCH', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({asset_id: assetIds[ai]})
+      });
+    }
+  }
+  showToast('Pacific ISR plan loaded — 7 requirements, 7 assets, 4 assigned');
+  setTimeout(() => location.reload(), 1500);
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText='position:fixed;bottom:24px;right:24px;background:#a855f7;color:#fff;padding:10px 22px;border-radius:8px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s';
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.style.opacity='1');
+  setTimeout(() => { t.style.opacity='0'; setTimeout(() => t.remove(),300); }, 2000);
 }
 </script>
 {% endblock %}
