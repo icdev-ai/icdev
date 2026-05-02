@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS aisg_patterns (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
-    category        TEXT NOT NULL CHECK (category IN ('document_qa', 'procurement', 'threat_triage', 'compliance', 'custom')),
+    category        TEXT NOT NULL CHECK (category IN ('document_qa', 'procurement', 'threat_triage', 'compliance_evidence', 'custom')),
     description     TEXT,
     goal_template   TEXT,
     canvas_type     TEXT,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS aisg_patterns (
 CREATE TABLE IF NOT EXISTS aisg_patterns (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
-    category        TEXT NOT NULL CHECK (category IN ('document_qa', 'procurement', 'threat_triage', 'compliance', 'custom')),
+    category        TEXT NOT NULL CHECK (category IN ('document_qa', 'procurement', 'threat_triage', 'compliance_evidence', 'custom')),
     description     TEXT,
     goal_template   TEXT,
     canvas_type     TEXT,

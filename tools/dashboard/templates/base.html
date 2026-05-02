@@ -423,13 +423,15 @@
 
             <!-- Utility -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/notifications', '/profile'] %}active{% endif %}">More</a>
+                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/ai-wizard', '/ai-patterns', '/notifications', '/profile'] %}active{% endif %}">More</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/usage">Usage</a></li>
                     <li><a href="/notifications">Notifications</a></li>
                     <li><a href="/quick-paths">Quick Paths</a></li>
                     <li><a href="/profile">Profile &amp; Settings</a></li>
                     <li><a href="/wizard" style="color: var(--accent-blue-light);">Get Started</a></li>
+                    <li><a href="/ai-wizard" style="color: var(--accent-blue-light);">AI Launchpad Wizard</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
                 </ul>
             </li>
 
