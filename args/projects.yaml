@@ -1748,6 +1748,49 @@ projects:
   - key: vv
     title: V&V — Tests, Manifest, Companion Sync, Feature Doc
     priority: medium
+- key: mdo
+  name: Strategos Multi-Domain Operations — Airspace COP
+  description: 'Expands Strategos beyond maritime AIS to a full Multi-Domain Common
+    Operating Picture at /strategos/airspace. Adds 4 new OSINT/open-data domains:
+    ADS-B aircraft (OpenSky Network), UAS/drone tracks (FAA DroneZone + OSINT),
+    satellite passes (CelesTrak TLE), and ground vehicle events (GDELT/Oryx).
+    New DB tables: sg_aircraft_tracks, sg_uas_tracks, sg_satellite_passes,
+    sg_ground_vehicle_events. New importers: adsb_importer.py, tle_importer.py,
+    uas_importer.py, ground_vehicle_importer.py. Multi-layer Leaflet COP page
+    with domain toggles, animated aircraft/UAS tracks, satellite ground-track
+    overlays, and right-click → STRATEGOS Chat for all entity types.'
+  task_prefix: mdo-
+  default_open: true
+  briefs:
+  - 'DB: migration 083 — 4 new sg_* tables — mdo-db-01'
+  - 'Import: adsb_importer + tle_importer + uas_importer + ground_vehicle_importer — mdo-import-01..04'
+  - 'API: /strategos/airspace page + 5 API routes — mdo-api-01..02'
+  - 'UI: airspace.html multi-domain COP (Leaflet, 4 layer groups, toolbar, sidebar) — mdo-ui-01..02'
+  - 'RC: right-click handlers for 4 new entity types + chat templates — mdo-rc-01'
+  - 'RAG: StrategosRAG extended for 4 new tables — mdo-rag-01'
+  - 'VV: import smoke test + route verification + companion sync — mdo-vv-01..02'
+  epics:
+  - key: db
+    title: DB Migration 083 — 4 Multi-Domain Tables
+    priority: critical
+  - key: import
+    title: Data Importers (ADS-B / TLE / UAS / Ground Vehicle)
+    priority: critical
+  - key: api
+    title: Flask Routes — Page + 5 API Endpoints
+    priority: high
+  - key: ui
+    title: Airspace COP UI — Multi-Layer Leaflet + Sidebar
+    priority: high
+  - key: rc
+    title: Right-Click Handlers + STRATEGOS Chat Entity Templates
+    priority: high
+  - key: rag
+    title: StrategosRAG — 4 New Domain Tables
+    priority: medium
+  - key: vv
+    title: V&V — Import Smoke + Routes + Companion Sync
+    priority: critical
 - key: wge
   name: Wargame Dashboard — 6 Enhancements
   description: 'Six enhancements to /strategos/wargame: (1) Turn Engine — advance-turn

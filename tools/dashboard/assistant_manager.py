@@ -47,9 +47,9 @@ def _ensure_tables(conn) -> None:
     chat_contexts and chat_messages are created by init_icdev_db.py (Phase 44).
     codebase_qa_cache and codebase_index are Phase 69 additions.
     """
-    cur = conn.cursor()
-    cur.executescript("""
-        CREATE TABLE IF NOT EXISTS codebase_qa_cache (
+    from tools.db.storage import translate_sql
+    stmts = [
+        translate_sql("""CREATE TABLE IF NOT EXISTS codebase_qa_cache (
             id TEXT PRIMARY KEY,
             question_hash TEXT NOT NULL,
             scope TEXT DEFAULT '',
@@ -59,11 +59,12 @@ def _ensure_tables(conn) -> None:
             hit_count INTEGER DEFAULT 1,
             last_hit_at TEXT DEFAULT (datetime('now')),
             created_at TEXT DEFAULT (datetime('now'))
-        );
-        CREATE INDEX IF NOT EXISTS idx_qa_cache_hash
-            ON codebase_qa_cache(question_hash, scope);
-
-        CREATE TABLE IF NOT EXISTS codebase_index (
+        )"""),
+        translate_sql(
+            "CREATE INDEX IF NOT EXISTS idx_qa_cache_hash "
+            "ON codebase_qa_cache(question_hash, scope)"
+        ),
+        translate_sql("""CREATE TABLE IF NOT EXISTS codebase_index (
             id TEXT PRIMARY KEY,
             file_path TEXT NOT NULL,
             file_hash TEXT NOT NULL DEFAULT '',
@@ -73,10 +74,17 @@ def _ensure_tables(conn) -> None:
             last_indexed_at TEXT,
             chunk_count INTEGER DEFAULT 0,
             classification TEXT DEFAULT 'CUI'
-        );
-        CREATE INDEX IF NOT EXISTS idx_codebase_idx_module
-            ON codebase_index(module);
-    """)
+        )"""),
+        translate_sql(
+            "CREATE INDEX IF NOT EXISTS idx_codebase_idx_module "
+            "ON codebase_index(module)"
+        ),
+    ]
+    for stmt in stmts:
+        try:
+            conn.execute(stmt)
+        except Exception:
+            pass  # index/table already exists
     conn.commit()
 
 

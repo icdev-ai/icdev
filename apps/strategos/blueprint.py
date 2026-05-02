@@ -873,6 +873,172 @@ def api_maritime_tracks():
 
 
 # ---------------------------------------------------------------------------
+# Multi-Domain Operations — Airspace COP
+# ---------------------------------------------------------------------------
+
+
+@_bp.route("/airspace")
+@_bp.route("/airspace/")
+def strategos_airspace():
+    return render_template("strategos/airspace.html")
+
+
+@_api.route("/airspace/aircraft")
+def api_airspace_aircraft():
+    """Return aircraft tracks grouped by ICAO24 for animation."""
+    rows = _safe_fetch(
+        "SELECT icao24, callsign, origin_country, aircraft_type, military_flag, "
+        "lat, lon, baro_altitude, velocity, true_track, track_ts, source "
+        "FROM sg_aircraft_tracks ORDER BY icao24, track_ts ASC",
+        default=[],
+    )
+    aircraft: dict = {}
+    for r in rows:
+        ic = r["icao24"]
+        if ic not in aircraft:
+            aircraft[ic] = {
+                "icao24":          ic,
+                "callsign":        r["callsign"] or ic.upper(),
+                "origin_country":  r["origin_country"] or "?",
+                "aircraft_type":   r["aircraft_type"] or "unknown",
+                "military_flag":   bool(r.get("military_flag")),
+                "source":          r["source"] or "opensky",
+                "track":           [],
+            }
+        aircraft[ic]["track"].append({
+            "lat":       r["lat"],
+            "lon":       r["lon"],
+            "altitude":  r["baro_altitude"],
+            "velocity":  r["velocity"],
+            "heading":   r["true_track"],
+            "ts":        r["track_ts"],
+        })
+    return jsonify({"aircraft": list(aircraft.values()), "total": len(aircraft)})
+
+
+@_api.route("/airspace/uas")
+def api_airspace_uas():
+    """Return UAS/drone tracks grouped by uas_id."""
+    rows = _safe_fetch(
+        "SELECT uas_id, operator, uas_type, operator_country, threat_level, "
+        "payload, lat, lon, altitude_m, speed_kts, heading, anomaly_flag, "
+        "track_ts, source "
+        "FROM sg_uas_tracks ORDER BY uas_id, track_ts ASC",
+        default=[],
+    )
+    uas: dict = {}
+    for r in rows:
+        uid = r["uas_id"]
+        if uid not in uas:
+            uas[uid] = {
+                "uas_id":           uid,
+                "operator":         r["operator"] or "Unknown",
+                "uas_type":         r["uas_type"] or "unknown",
+                "operator_country": r["operator_country"] or "?",
+                "threat_level":     r["threat_level"] or "low",
+                "payload":          r["payload"] or "",
+                "anomaly_flag":     bool(r.get("anomaly_flag")),
+                "source":           r["source"] or "analyst",
+                "track":            [],
+            }
+        uas[uid]["track"].append({
+            "lat":       r["lat"],
+            "lon":       r["lon"],
+            "altitude":  r["altitude_m"],
+            "speed":     r["speed_kts"],
+            "heading":   r["heading"],
+            "ts":        r["track_ts"],
+        })
+    return jsonify({"uas": list(uas.values()), "total": len(uas)})
+
+
+@_api.route("/airspace/satellites")
+def api_airspace_satellites():
+    """Return satellite passes with ground tracks."""
+    rows = _safe_fetch(
+        "SELECT norad_id, sat_name, sat_type, max_elevation, pass_start, pass_end, "
+        "ground_track_json, military_flag, source "
+        "FROM sg_satellite_passes ORDER BY pass_start DESC",
+        default=[],
+    )
+    import json as _json
+    sats = []
+    for r in rows:
+        try:
+            track = _json.loads(r.get("ground_track_json") or "[]")
+        except Exception:
+            track = []
+        sats.append({
+            "norad_id":      r["norad_id"],
+            "sat_name":      r["sat_name"] or r["norad_id"],
+            "sat_type":      r["sat_type"] or "other",
+            "max_elevation": r["max_elevation"],
+            "pass_start":    r["pass_start"],
+            "pass_end":      r["pass_end"],
+            "ground_track":  track,
+            "military_flag": bool(r.get("military_flag")),
+            "source":        r["source"] or "celestrak",
+        })
+    return jsonify({"satellites": sats, "total": len(sats)})
+
+
+@_api.route("/airspace/ground-vehicles")
+def api_airspace_ground_vehicles():
+    """Return ground vehicle events as point markers."""
+    country = request.args.get("country")
+    threat  = request.args.get("threat_level")
+    where_parts = []
+    params: list = []
+    ph = "%s" if is_pg() else "?"
+    if country:
+        where_parts.append(f"LOWER(country) = {ph}")
+        params.append(country.lower())
+    if threat:
+        where_parts.append(f"threat_level = {ph}")
+        params.append(threat)
+    where_sql = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    rows = _safe_fetch(
+        f"SELECT event_id, vehicle_type, lat, lon, country, actor, "  # nosec B608
+        f"description, event_ts, threat_level, source "
+        f"FROM sg_ground_vehicle_events {where_sql} "
+        f"ORDER BY event_ts DESC LIMIT 500",
+        params or (),
+        default=[],
+    )
+    events = [dict(r) for r in rows]
+    return jsonify({"events": events, "total": len(events)})
+
+
+@_api.route("/airspace/sync", methods=["POST"])
+def api_airspace_sync():
+    """Trigger demo data seeding for all 4 airspace domains."""
+    results: dict = {}
+    try:
+        from tools.strategos.adsb_importer import seed_demo_data as seed_ac
+        results["aircraft"] = seed_ac()
+    except Exception as exc:
+        results["aircraft"] = {"error": str(exc)}
+    try:
+        from tools.strategos.tle_importer import seed_demo_data as seed_sat
+        results["satellites"] = seed_sat()
+    except Exception as exc:
+        results["satellites"] = {"error": str(exc)}
+    try:
+        from tools.strategos.uas_importer import seed_demo_data as seed_uas
+        results["uas"] = seed_uas()
+    except Exception as exc:
+        results["uas"] = {"error": str(exc)}
+    try:
+        from tools.strategos.ground_vehicle_importer import seed_demo_data as seed_gv
+        results["ground_vehicles"] = seed_gv()
+    except Exception as exc:
+        results["ground_vehicles"] = {"error": str(exc)}
+    resp = make_response(jsonify({"status": "ok", "seeded": results}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # API routes
 # ---------------------------------------------------------------------------
 
