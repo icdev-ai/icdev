@@ -622,3 +622,9 @@
 | Wargame Turn Engine | tools\strategos\wargame_turn_engine.py | Auto-registered: strategos/wargame_turn_engine.py | --json | JSON |
 | Template Linter | tools\studio\template_linter.py | Auto-registered: studio/template_linter.py | --json | JSON |
 | Seed Icdev Templates | tools\workflow_hitl\seed_icdev_templates.py | Auto-registered: workflow_hitl/seed_icdev_templates.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Explain Translator | tools\aisg\explain_translator.py | Auto-registered: aisg/explain_translator.py | --json | JSON |
