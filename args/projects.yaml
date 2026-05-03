@@ -2509,6 +2509,12 @@ projects:
   - 'Epic s1: Snippets library — 12 reusable subgraph patterns — aadc-s1-01..05'
   - 'Epic a1: Assessment engine — NIST AI RMF, OWASP LLM Top 10, artifacts — aadc-a1-01..07'
   - 'Epic v1: V&V — E2E tests, companion sync, coherence gate — aadc-v1-01..03'
+  - 'Phase 1 Canvas Parity: undo/redo, multi-select, copy/paste, draw.io+PDF+CSV export,
+    compliance legend, version diff — aadc-p1-01..11'
+  - 'Phase 2 Ecosystem Wiring: Genesis reflex, MCP registry, activity feed, fine-tuning
+    linkage, Kanban back-sync — aadc-p2-01..07'
+  - 'Phase 3 AADC-Unique: safety redundancy graph, coordination matrix, model provenance,
+    agent simulation — aadc-p3-01..09'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2528,3 +2534,12 @@ projects:
   - key: v1
     title: V&V (E2E tests, companion sync, coherence gate)
     priority: critical
+  - key: p1
+    title: Phase 1 — Canvas Parity (undo/redo, multi-select, copy/paste, exports, legend, diff)
+    priority: critical
+  - key: p2
+    title: Phase 2 — Ecosystem Wiring (Genesis, MCP, activity feed, fine-tuning, Kanban)
+    priority: high
+  - key: p3
+    title: Phase 3 — AADC-Unique (safety graph, coord matrix, provenance, simulation)
+    priority: high
