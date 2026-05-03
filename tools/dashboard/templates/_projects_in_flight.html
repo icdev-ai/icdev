@@ -208,6 +208,18 @@
 
   var TASK_TIMEOUT_SECS = 900;  // reaper baseline; per-task budget varies but 900 is the default
 
+  // Polyfill Promise.allSettled for older browsers
+  if (!Promise.allSettled) {
+    Promise.allSettled = function (promises) {
+      return Promise.all(promises.map(function (p) {
+        return Promise.resolve(p).then(
+          function (v) { return { status: 'fulfilled', value: v }; },
+          function (e) { return { status: 'rejected', reason: e }; }
+        );
+      }));
+    };
+  }
+
   // Live timer + reaper bar intervals — cleared and rebuilt on each refresh
   var _pifIntervals = [];
   function _clearPifIntervals() {
@@ -495,19 +507,24 @@
   }
 
   // ── Combined refresh: live-check + projects/progress + events in parallel ──
+  // Uses allSettled so a failing events fetch never kills the live-task or
+  // project-card panels (Promise.all rejects entirely on any single failure).
   function refreshProjectsInFlight() {
-    Promise.all([
+    var fetches = [
       fetch('/api/live-check').then(function (r) { return r.json(); }),
       fetch('/api/projects/progress').then(function (r) { return r.json(); }),
       fetch('/api/kanban/recent-events').then(function (r) { return r.json(); }),
-    ]).then(function (results) {
-      var liveData    = results[0];
-      var projectData = results[1];
-      var eventsData  = results[2];
+    ];
+
+    // allSettled: each result is {status:'fulfilled',value:...} or {status:'rejected'}
+    Promise.allSettled(fetches).then(function (settled) {
+      var liveData    = settled[0].status === 'fulfilled' ? settled[0].value : null;
+      var projectData = settled[1].status === 'fulfilled' ? settled[1].value : null;
+      var eventsData  = settled[2].status === 'fulfilled' ? settled[2].value : null;
 
       renderLiveTasks(
         (liveData && liveData.tasks) || [],
-        (liveData && liveData.scheduler_last_seen_secs) != null
+        liveData && liveData.scheduler_last_seen_secs != null
           ? liveData.scheduler_last_seen_secs : null
       );
       renderProjectCards(projectData);
@@ -515,14 +532,10 @@
 
       // Show section if live tasks, projects, or recent events are present
       var section = document.getElementById('projects-in-flight');
-      var hasLive   = (liveData && liveData.tasks && liveData.tasks.length > 0);
-      var hasProj   = (projectData && projectData.projects && projectData.projects.length > 0);
-      var hasEvents = (eventsData && eventsData.events && eventsData.events.length > 0);
+      var hasLive   = !!(liveData && liveData.tasks && liveData.tasks.length > 0);
+      var hasProj   = !!(projectData && projectData.projects && projectData.projects.length > 0);
+      var hasEvents = !!(eventsData && eventsData.events && eventsData.events.length > 0);
       if (section) section.style.display = (hasLive || hasProj || hasEvents) ? '' : 'none';
-    }).catch(function () {
-      // On error, hide live tasks but leave project cards and events as-is
-      var c = document.getElementById('pif-live-tasks');
-      if (c) c.style.display = 'none';
     });
   }
 
