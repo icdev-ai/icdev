@@ -5564,87 +5564,79 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     processed = []
     errors = 0
+    decomposed_this_cycle = []
 
-    # Only dispatch ONE task at a time to claude
-    task = due_tasks[0]
+    for task in due_tasks:
+        # Pre-dispatch complexity gate: score the task before spending any tokens.
+        # If it looks too big for a single session (score ≥ 7) decompose it now
+        # instead of letting it fail and waste a full 900s agent run.
+        _cscore = _complexity_score(task)
+        if _cscore >= 7:
+            logger.info(
+                "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
+                task["id"], _cscore,
+            )
+            print(
+                f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
+                f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
+            )
+            try:
+                _decompose_one_task(task)
+            except Exception as _pd_exc:
+                logger.warning(
+                    "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
+                    task["id"], _pd_exc,
+                )
+            else:
+                # Decomposed successfully — skip dispatch for this task;
+                # children will be picked up next cycle. Continue to next task.
+                decomposed_this_cycle.append(task["id"])
+                continue
 
-    # Pre-dispatch complexity gate: score the task before spending any tokens.
-    # If it looks too big for a single session (score ≥ 7) decompose it now
-    # instead of letting it fail and waste a full 900s agent run.
-    _cscore = _complexity_score(task)
-    if _cscore >= 7:
-        logger.info(
-            "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
-            task["id"], _cscore,
-        )
-        print(
-            f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
-            f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
-        )
         try:
-            _decompose_one_task(task)
-        except Exception as _pd_exc:
-            logger.warning(
-                "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
-                task["id"], _pd_exc,
-            )
-        else:
-            # Decomposed successfully — skip dispatch this cycle; children will
-            # be picked up next cycle.
-            return {
-                "success": True,
-                "metric_value": 0,
-                "details": {
-                    "status": "pre_dispatch_decomposed",
-                    "task_id": task["id"],
-                    "complexity_score": _cscore,
-                },
-            }
+            # Write prompt file first (low risk)
+            prompt_path = _write_prompt_file(task)
 
-    try:
-        # Write prompt file first (low risk)
-        prompt_path = _write_prompt_file(task)
+            # Dispatch to claude CLI — only move to in_progress AFTER
+            # subprocess is confirmed running, so tasks don't get stuck
+            # in in_progress when dispatch fails.
+            _dispatch_to_claude(task, prompt_path)
 
-        # Dispatch to claude CLI — only move to in_progress AFTER
-        # subprocess is confirmed running, so tasks don't get stuck
-        # in in_progress when dispatch fails.
-        _dispatch_to_claude(task, prompt_path)
-
-        if task["id"] in _ollama_completed:
-            # Synchronous Ollama dispatch — completed immediately, mark done
-            _ollama_completed.discard(task["id"])
-            _move_task(task["id"], "done")
-            _send_notification(task, event="done")
-            processed.append(
-                {
-                    "id": task["id"],
-                    "title": task["title"],
-                    "prompt_file": prompt_path,
-                }
-            )
-            print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
-        elif task["id"] in _running:
-            # Async Claude/LLM subprocess launched — move to in_progress
-            _move_task(task["id"], "in_progress")
-            _send_notification(task)
-            processed.append(
-                {
-                    "id": task["id"],
-                    "title": task["title"],
-                    "prompt_file": prompt_path,
-                }
-            )
-            print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
-        else:
-            # Dispatch failed — leave task in backlog, clean up prompt
+            if task["id"] in _ollama_completed:
+                # Synchronous Ollama dispatch — completed immediately, mark done
+                _ollama_completed.discard(task["id"])
+                _move_task(task["id"], "done")
+                _send_notification(task, event="done")
+                processed.append(
+                    {
+                        "id": task["id"],
+                        "title": task["title"],
+                        "prompt_file": prompt_path,
+                    }
+                )
+                print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
+            elif task["id"] in _running:
+                # Async Claude/LLM subprocess launched — move to in_progress
+                _move_task(task["id"], "in_progress")
+                _send_notification(task)
+                processed.append(
+                    {
+                        "id": task["id"],
+                        "title": task["title"],
+                        "prompt_file": prompt_path,
+                    }
+                )
+                print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
+            else:
+                # Dispatch failed — leave task in backlog, clean up prompt
+                errors += 1
+                prompt_file = Path(prompt_path)
+                if prompt_file.exists():
+                    prompt_file.unlink()
+                print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
+        except Exception as e:
             errors += 1
-            prompt_file = Path(prompt_path)
-            if prompt_file.exists():
-                prompt_file.unlink()
-            print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
-    except Exception as e:
-        errors += 1
-        print(f"  Kanban error: {task['id']}: {e}")
+            print(f"  Kanban error: {task['id']}: {e}")
 
     return {
         "success": errors == 0,
@@ -5653,6 +5645,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "tasks_activated": len(processed),
             "telegram_commands": len(tg_results),
             "completed_this_cycle": completed,
+            "decomposed_this_cycle": decomposed_this_cycle,
             "errors": errors,
             "tasks": processed,
         },
