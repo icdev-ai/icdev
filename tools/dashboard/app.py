@@ -40,6 +40,7 @@ from flask import (
     redirect,
     url_for,
     send_from_directory,
+    make_response,
 )  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
@@ -1166,12 +1167,14 @@ def create_app() -> Flask:
         except ImportError:
             _route_map = {}
 
+        theme_pref = flask_request.cookies.get("icdev_theme", "dark")
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
             "cui_banner_enabled": CUI_BANNER_ENABLED,
             "cui_designation": CUI_DESIGNATION,
             "current_role": role,
+            "theme_pref": theme_pref,
             "role_config": role_config,
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
@@ -2434,10 +2437,28 @@ def create_app() -> Flask:
 
     # ---- Profile routes (D172, D175-D178) ----
 
+    @app.route("/settings")
+    def settings_redirect():
+        return redirect(url_for("profile_page"))
+
     @app.route("/profile")
     def profile_page():
         """User profile page with BYOK key management."""
         return render_template("profile.html")
+
+    @app.route("/profile/api/theme", methods=["GET", "POST"])
+    def profile_theme():
+        """Get or set the user's theme preference (stored as a cookie)."""
+        if flask_request.method == "POST":
+            data = flask_request.get_json(silent=True) or {}
+            theme = data.get("theme", "dark")
+            if theme not in ("dark", "light"):
+                theme = "dark"
+            resp = make_response(jsonify({"theme": theme}))
+            resp.set_cookie("icdev_theme", theme, max_age=60 * 60 * 24 * 365, samesite="Lax")
+            return resp
+        theme = flask_request.cookies.get("icdev_theme", "dark")
+        return jsonify({"theme": theme})
 
     @app.route("/profile/api/keys")
     def profile_api_keys():

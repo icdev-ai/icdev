@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme_pref or 'dark' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,15 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
     {% block head %}{% endblock %}
     {% block extra_css %}{% endblock %}
+    <script>
+    // Apply theme before render to prevent FOUC
+    (function() {
+        var serverTheme = document.documentElement.getAttribute('data-theme');
+        var stored = localStorage.getItem('icdev-theme');
+        var theme = serverTheme && serverTheme !== 'dark' ? serverTheme : (stored || 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
     <style>
     /* ExplainPanel — collapsible slide-out (aisg-a3-01) */
     #explain-panel {
@@ -484,6 +493,10 @@
             </a>
             <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
             {% endif %}
+            <button id="theme-toggle" onclick="ICDEV.toggleTheme()" title="Toggle light/dark theme"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">
+                <span id="theme-icon">☀</span>
+            </button>
             <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
                     style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
             <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
@@ -532,6 +545,29 @@
 
     <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
     <script>window.ROUTE_MODULE_MAP = {{ route_module_map|default({})|tojson }};</script>
+    <script>
+    // Theme toggle (FDE E1)
+    window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleTheme = function() {
+        var html = document.documentElement;
+        var cur = html.getAttribute('data-theme') || 'dark';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('icdev-theme', next);
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = next === 'light' ? '🌙' : '☀';
+        fetch('/profile/api/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({theme: next})
+        }).catch(function(){});
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = theme === 'light' ? '🌙' : '☀';
+    });
+    </script>
 
     <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
