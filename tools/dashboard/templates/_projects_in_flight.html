@@ -162,6 +162,38 @@
 .badge-progress { background:rgba(255,152,0,0.25); color:#ffb74d; }
 .badge-backlog  { background:rgba(120,144,156,0.25); color:#b0bec5; }
 .badge-failed   { background:rgba(244,67,54,0.25); color:#ff6b7a; }
+.badge-needs-decomp { background:rgba(168,85,247,0.25); color:#c084fc; border:1px solid rgba(168,85,247,0.4); }
+
+/* ── Recent Task Events feed ── */
+#pif-events-section > summary::-webkit-details-marker { display:none; }
+#pif-events-section > summary::before { content:"\25B6"; font-size:0.72rem;
+  color:var(--text-secondary); margin-right:0.3rem; transition:transform 0.15s; }
+#pif-events-section[open] > summary::before { transform:rotate(90deg); }
+
+.pif-event-card {
+  display:grid; grid-template-columns:auto 1fr auto;
+  gap:0.5rem; align-items:start;
+  padding:0.45rem 0.7rem; margin-bottom:0.3rem;
+  border-radius:6px; border:1px solid var(--border-color,#2a2a40);
+  background:var(--bg-card,#16213e); font-size:0.82rem;
+}
+.pif-event-card:last-child { margin-bottom:0; }
+.pif-event-icon { font-size:1rem; line-height:1.2; flex-shrink:0; }
+.pif-event-body { min-width:0; }
+.pif-event-title { font-weight:600; color:var(--text-primary,#e0e0e0);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pif-event-type  { font-size:0.7rem; font-weight:700; padding:0.05rem 0.28rem;
+  border-radius:3px; margin-right:0.35rem; display:inline-block; }
+.pif-event-type-done        { background:rgba(34,197,94,0.18);  color:#86efac; }
+.pif-event-type-failed      { background:rgba(239,68,68,0.18);  color:#fca5a5; }
+.pif-event-type-unverified  { background:rgba(245,158,11,0.18); color:#fcd34d; }
+.pif-event-type-in_progress { background:rgba(59,130,246,0.18); color:#93c5fd; }
+.pif-event-type-unknown     { background:rgba(107,114,128,0.18);color:#d1d5db; }
+.pif-event-gates { font-size:0.7rem; color:var(--text-muted,#6b7280);
+  margin-top:0.18rem; white-space:pre; font-family:monospace; }
+.pif-event-ts { font-size:0.68rem; color:var(--text-muted,#6b7280);
+  white-space:nowrap; text-align:right; padding-top:0.1rem; }
+
 .kanban-empty-placeholder { padding:2rem; text-align:center;
                             color:var(--text-muted,#6c6c80);
                             border:1px dashed var(--border-color,#2a2a40);
@@ -360,10 +392,11 @@
       var pct = Math.max(0, Math.min(100, e.pct || 0));
       var pri = esc(e.priority || 'medium');
       var badges = [];
-      if (e.in_progress) badges.push('<span class="proj-badge badge-progress">' + e.in_progress + ' in flight</span>');
-      if (e.scheduled)   badges.push('<span class="proj-badge badge-progress">' + e.scheduled + ' scheduled</span>');
-      if (e.backlog)     badges.push('<span class="proj-badge badge-backlog">' + e.backlog + ' queued</span>');
-      if (e.failed)      badges.push('<span class="proj-badge badge-failed">' + e.failed + ' failed</span>');
+      if (e.in_progress)     badges.push('<span class="proj-badge badge-progress">' + e.in_progress + ' in flight</span>');
+      if (e.scheduled)       badges.push('<span class="proj-badge badge-progress">' + e.scheduled + ' scheduled</span>');
+      if (e.backlog)         badges.push('<span class="proj-badge badge-backlog">' + e.backlog + ' queued</span>');
+      if (e.failed)          badges.push('<span class="proj-badge badge-failed">' + e.failed + ' failed</span>');
+      if (e.needs_decomp)    badges.push('<span class="proj-badge badge-needs-decomp" title="Queued for auto-decompose">&#8674; ' + e.needs_decomp + ' decompose</span>');
       return '<div class="proj-epic">'
         + '<div class="proj-epic-key">' + esc(e.title || e.key)
         + '<span class="pri pri-' + pri + '">' + pri + '</span></div>'
@@ -397,14 +430,80 @@
     container.innerHTML = projects.map(projectCardHTML).join('');
   }
 
-  // ── Combined refresh: live-check + projects/progress in parallel ──
+  // ── Event feed: recent task done/failed/unverified/in_progress ────────────
+  var EVENT_ICONS = {
+    'done': '✅', 'failed': '❌', 'unverified': '⚠️',
+    'in_progress': 'ℹ️', 'unknown': '•'
+  };
+  var EVENT_LABELS = {
+    'done': 'done', 'failed': 'failed', 'unverified': 'unverified',
+    'in_progress': 'in progress', 'unknown': 'event'
+  };
+
+  function _relTime(isoStr) {
+    if (!isoStr) return '';
+    var ms = Date.now() - new Date(isoStr).getTime();
+    var s = Math.floor(ms / 1000);
+    if (s < 60)   return s + 's ago';
+    if (s < 3600) return Math.floor(s / 60) + 'm ago';
+    if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+    return Math.floor(s / 86400) + 'd ago';
+  }
+
+  function _extractGates(message) {
+    // Pull "Validation gates:" block from notification message
+    if (!message) return '';
+    var idx = message.indexOf('Validation gates:');
+    if (idx === -1) return '';
+    return message.substring(idx).replace(/\n/g, '\n');
+  }
+
+  function renderEventFeed(data) {
+    var section  = document.getElementById('pif-events-section');
+    var listEl   = document.getElementById('pif-events-list');
+    var countEl  = document.getElementById('pif-events-count');
+    if (!section || !listEl) return;
+
+    var events = (data && data.events) || [];
+    // Always show the section if there are events (don't auto-hide the accordion)
+    if (events.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+    section.style.display = '';
+    if (countEl) countEl.textContent = '(' + events.length + ')';
+
+    var html = '';
+    events.forEach(function (ev) {
+      var et   = ev.event_type || 'unknown';
+      var icon = EVENT_ICONS[et] || '•';
+      var typeClass = 'pif-event-type-' + et;
+      var gates = _extractGates(ev.message || '');
+      html += '<div class="pif-event-card">'
+        + '<span class="pif-event-icon">' + icon + '</span>'
+        + '<div class="pif-event-body">'
+        + '  <div class="pif-event-title">'
+        + '    <span class="pif-event-type ' + esc(typeClass) + '">' + esc(EVENT_LABELS[et] || et) + '</span>'
+        + esc(ev.title || '')
+        + '  </div>'
+        + (gates ? '<div class="pif-event-gates">' + esc(gates) + '</div>' : '')
+        + '</div>'
+        + '<div class="pif-event-ts">' + _relTime(ev.created_at) + '</div>'
+        + '</div>';
+    });
+    listEl.innerHTML = html;
+  }
+
+  // ── Combined refresh: live-check + projects/progress + events in parallel ──
   function refreshProjectsInFlight() {
     Promise.all([
       fetch('/api/live-check').then(function (r) { return r.json(); }),
       fetch('/api/projects/progress').then(function (r) { return r.json(); }),
+      fetch('/api/kanban/recent-events').then(function (r) { return r.json(); }),
     ]).then(function (results) {
       var liveData    = results[0];
       var projectData = results[1];
+      var eventsData  = results[2];
 
       renderLiveTasks(
         (liveData && liveData.tasks) || [],
@@ -412,14 +511,16 @@
           ? liveData.scheduler_last_seen_secs : null
       );
       renderProjectCards(projectData);
+      renderEventFeed(eventsData);
 
-      // Show section if either live tasks or projects are present
+      // Show section if live tasks, projects, or recent events are present
       var section = document.getElementById('projects-in-flight');
-      var hasLive = (liveData && liveData.tasks && liveData.tasks.length > 0);
-      var hasProj = (projectData && projectData.projects && projectData.projects.length > 0);
-      if (section) section.style.display = (hasLive || hasProj) ? '' : 'none';
+      var hasLive   = (liveData && liveData.tasks && liveData.tasks.length > 0);
+      var hasProj   = (projectData && projectData.projects && projectData.projects.length > 0);
+      var hasEvents = (eventsData && eventsData.events && eventsData.events.length > 0);
+      if (section) section.style.display = (hasLive || hasProj || hasEvents) ? '' : 'none';
     }).catch(function () {
-      // On error, hide live tasks but leave project cards as-is
+      // On error, hide live tasks but leave project cards and events as-is
       var c = document.getElementById('pif-live-tasks');
       if (c) c.style.display = 'none';
     });
@@ -447,10 +548,12 @@
 
   window.ICDEV_PIF.refresh        = refreshProjectsInFlight;
   window.ICDEV_PIF.render         = renderProjectCards;
+  window.ICDEV_PIF.renderEvents   = renderEventFeed;
   window.ICDEV_PIF.checkBoardEmpty = checkBoardEmptyAndToggle;
 
   window.refreshProjectsInFlight  = refreshProjectsInFlight;
   window.renderProjectsInFlight   = renderProjectCards;
+  window.renderEventFeed          = renderEventFeed;
   window.checkBoardEmptyAndToggle = checkBoardEmptyAndToggle;
   // Backward-compat alias for any page that called refreshLiveActivity()
   window.refreshLiveActivity      = refreshProjectsInFlight;
