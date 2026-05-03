@@ -338,6 +338,138 @@ EXPLICITLY EXCLUDED during the 2026-04 review:
   review decision.
 
 --------------------------------------------------------------------------------
+ARCHITECTURAL INSPIRATIONS — 2026-05 batch
+--------------------------------------------------------------------------------
+
+The following projects were analyzed during the 2026-05 innovation/creative/
+research engine run (AADC Phase 4 competitive edge research). No code was
+copied from any of these sources; they informed design patterns only.
+
+  deepset-ai/haystack — Pluggable component pipeline patterns, ProxyTracer
+  abstraction, async streaming interfaces, HITL node patterns.
+  https://github.com/deepset-ai/haystack
+  License: Apache-2.0
+
+  langchain-ai/langchain — Tool-use abstraction, structured output parsing,
+  retriever interface, agent executor patterns.
+  https://github.com/langchain-ai/langchain
+  License: MIT
+
+  langchain-ai/langgraph — Checkpoint/fork pattern, graph-based agent state
+  machine, parallel execution branches, interrupt-and-resume HITL gate node,
+  streaming event interface.
+  https://github.com/langchain-ai/langgraph
+  License: MIT
+
+  langchain-ai/langsmith — Observability trace nodes, run tree structure,
+  evaluation harness patterns.
+  https://github.com/langchain-ai/langsmith-sdk
+  License: MIT
+
+  crewAIInc/crewAI — Role-based multi-agent coordination matrix, crew
+  kickoff lifecycle, task delegation patterns.
+  https://github.com/crewAIInc/crewAI
+  License: MIT
+
+  microsoft/autogen — Multi-agent conversation orchestration, nested chat
+  patterns, agent-as-tool composition.
+  https://github.com/microsoft/autogen
+  License: MIT (CC-BY-4.0 for docs)
+
+  stanfordnlp/dspy — Declarative LM program patterns, signature-based
+  module composition, optimizer/teleprompter abstraction.
+  https://github.com/stanfordnlp/dspy
+  License: MIT
+
+  run-llama/llama_index — Memory enrichment patterns, structured retrieval,
+  knowledge graph index construction.
+  https://github.com/run-llama/llama_index
+  License: MIT
+
+  microsoft/semantic-kernel — Kernel plugin architecture, planner patterns,
+  function calling conventions, memory store abstraction.
+  https://github.com/microsoft/semantic-kernel
+  License: MIT
+
+  FlowiseAI/Flowise — Visual agent canvas node schema, flow serialization
+  format, modular node type registry.
+  https://github.com/FlowiseAI/Flowise
+  License: Apache-2.0
+
+  langflow-ai/langflow — Component-based agentic canvas, graph export/import
+  patterns, sandbox execution model.
+  https://github.com/langflow-ai/langflow
+  License: MIT
+
+  PrefectHQ/prefect — Workflow orchestration patterns, task run state machine,
+  flow deployment lifecycle.
+  https://github.com/PrefectHQ/prefect
+  License: Apache-2.0
+
+  temporalio/temporal — Durable execution workflow patterns, activity/workflow
+  separation, saga pattern for compensating transactions.
+  https://github.com/temporalio/temporal
+  License: MIT
+
+All 13 frameworks above are MIT or Apache-2.0 licensed. No GPL/AGPL
+dependencies were introduced. Concepts adapted for AADC Phase 4
+(tasks aadc-p4-01 through aadc-p4-11) include: checkpoint/fork,
+HITL Gate node, parallel execution graph, observability trace nodes,
+memory enrichment, streaming toggle, A2A/sandbox nodes, and PII guardrails.
+All ICDEV implementations are independent clean-room Python.
+
+--------------------------------------------------------------------------------
+LICENSE COMPLIANCE AUDIT — 2026-05-03
+--------------------------------------------------------------------------------
+
+A full pip-licenses scan was performed on all 374 installed packages.
+
+LGPL PACKAGES (acceptable — used as dynamic library dependencies, not derived
+works; dynamic linking is explicitly permitted under LGPL):
+  - psycopg2-binary (LGPL-3.0)
+  - CairoSVG (LGPL-3.0)
+  - Pyrogram (LGPL-3.0)
+  - chardet (LGPL-2.1)
+  - frozendict (LGPL-3.0)
+  - stem (LGPL-3.0)
+
+MPL-2.0 PACKAGE (acceptable — file-level copyleft, test-only use):
+  - hypothesis (MPL-2.0) — used exclusively in test suites; not distributed
+
+RESOLVED UNKNOWNS (verified compatible with Apache-2.0):
+  - llm-sandbox — MIT
+  - peewee — MIT
+  - sentencepiece — Apache-2.0
+  - text-unidecode — Artistic License 2.0 (transitive dep of python-slugify;
+    compatible with Apache-2.0 per OSI and FSF guidance)
+
+GPL/AGPL VIOLATIONS IDENTIFIED AND MITIGATED:
+
+  1. PyMuPDF (AGPL-3.0)
+     Files affected: tools/simulation/parsers/pdf_parser.py,
+                     tools/requirements/document_extractor.py
+     Mitigation applied 2026-05-03: Removed _render_fitz() function entirely.
+     pdf2image (poppler-based, MIT) is the sole rendering backend.
+     PyMuPDF is no longer imported or referenced.
+
+  2. ciscoconfparse2 (GPL-3.0-only)
+     File affected: tools/network/config_import.py
+     Mitigation applied 2026-05-03: Wrapped import in try/except ImportError
+     with graceful degradation (returns partial result + warning log).
+     ciscoconfparse2 is now an optional dependency; ICDEV operates correctly
+     without it. The package may be installed in an isolated environment for
+     sites that need full Cisco config parsing.
+
+  3. pyrtlsdr (GPL-3.0-or-later)
+     No Python import found — package was not in requirements.txt.
+     A comment-only reference in tools/db/seeds/seed_sgx_osint_epics.py
+     was the only occurrence. No mitigation required beyond confirming
+     the package is not a dependency.
+
+All violations have been remediated. ICDEV's Apache-2.0 license posture
+is confirmed clean as of 2026-05-03.
+
+--------------------------------------------------------------------------------
 NODE.JS DEPENDENCIES (see package.json)
 --------------------------------------------------------------------------------
 
