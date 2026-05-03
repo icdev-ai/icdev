@@ -26,6 +26,8 @@ Routes:
 
   GET  /agentic-ai/api/designs/<id>/artifacts  list artifacts
   POST /agentic-ai/api/designs/<id>/artifacts  generate artifact
+
+  POST /agentic-ai/canvas/<id>/export-pdf      export design as PDF
 """
 
 from __future__ import annotations
@@ -35,7 +37,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, render_template, request
 
 from tools.agentic_ai_canvas.constants import AADC_OBJECTS, FRAMEWORK_LABELS, NODE_DESCRIPTIONS
 from tools.agentic_ai_canvas.agentic_engine import assess_design
@@ -712,3 +714,40 @@ def generate_artifact(design_id: str):
 
     return jsonify({"id": aid, "type": artifact_type, "title": title,
                     "content": content, "markdown": md}), 201
+
+
+# ---------------------------------------------------------------------------
+# PDF export
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/canvas/<design_id>/export-pdf", methods=["POST"])
+def export_pdf(design_id: str):
+    from tools.agentic_ai_canvas.export_pdf import generate_pdf
+
+    data = request.get_json(force=True, silent=True) or {}
+    nodes = data.get("nodes", [])
+    edges = data.get("edges", [])
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT classification, name FROM aadc_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        classification = row["classification"] if row else "CUI"
+        design_name = (row["name"] if row else design_id) or design_id
+    finally:
+        conn.close()
+
+    try:
+        pdf_bytes = generate_pdf(design_id, nodes, edges, classification)
+    except Exception as exc:
+        logger.error("aadc: PDF export error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in design_name)
+    filename = f"aadc-{safe_name}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
