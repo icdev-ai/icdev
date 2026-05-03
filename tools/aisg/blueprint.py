@@ -1,22 +1,35 @@
-<<<<<<< HEAD
 #!/usr/bin/env python3
 # CUI // SP-CTI
 """AISG Flask Blueprint.
 
 Routes:
-  GET  /ai-wizard                           — AI Launchpad Wizard page
-  GET  /ai-patterns                         — AI Pattern Library page
-  GET  /api/aisg/patterns                   — List all patterns (JSON)
-  GET  /api/aisg/patterns/<id>              — Get a single pattern (JSON)
-  POST /api/aisg/patterns/<id>/deploy       — Increment deploy count (JSON)
-  POST /api/aisg/patterns/seed              — Seed built-in patterns (JSON)
-  GET  /api/explain/<event_id>              — Explain an audit trail event
-  GET  /api/explain/heal/<heal_id>          — Explain a self-healing event
-  GET  /api/explain/reflex/<reflex_name>    — Explain latest reflex run
+  GET  /ai-wizard                            — AI Launchpad Wizard page
+  POST /api/ai-wizard/submit                 — Process wizard answers (JSON)
+  GET  /ai-patterns                          — AI Pattern Library page
+  GET  /api/aisg/patterns                    — List all patterns (JSON)
+  GET  /api/aisg/patterns/<id>               — Get a single pattern (JSON)
+  POST /api/aisg/patterns/<id>/deploy        — Increment deploy count (JSON)
+  POST /api/aisg/patterns/seed               — Seed built-in patterns (JSON)
+  GET  /api/explain/<event_id>               — Explain an audit trail event
+  GET  /api/explain/heal/<heal_id>           — Explain a self-healing event
+  GET  /api/explain/reflex/<reflex_name>     — Explain latest reflex run
+  GET  /dashboard/compliance-view            — ATO / compliance dashboard
+  GET  /dashboard/executive-view             — Executive ROI dashboard
+  GET  /dashboard/pm-view                    — PM sprint task dashboard
+  GET  /ai-learning                          — AI Learning Paths
+  GET  /ai-handoff                           — Knowledge Handoff (export/import)
+  POST /api/ai-handoff/export                — Export knowledge package
+  POST /api/ai-handoff/import                — Import knowledge package
+  GET  /ai-builder                           — Visual Agent Builder
+  POST /api/ai-builder/save                  — Save canvas design
+  POST /api/ai-builder/generate              — Generate goal from canvas
+  GET  /ai-roi                               — AI ROI Tracker dashboard
+  GET  /ai-skills                            — AI Skills Gap Tracker
 """
 from __future__ import annotations
 
 import json
+import uuid
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -25,8 +38,11 @@ from tools.db.storage import get_connection
 bp = Blueprint("aisg", __name__)
 
 
+# ---------------------------------------------------------------------------
+# Internal DB helpers
+# ---------------------------------------------------------------------------
+
 def _get_audit_event(event_id: int) -> dict | None:
-    """Fetch a single audit_trail row by primary key."""
     conn = get_connection()
     try:
         c = conn.cursor()
@@ -42,7 +58,6 @@ def _get_audit_event(event_id: int) -> dict | None:
 
 
 def _get_heal_event(heal_id: int) -> dict | None:
-    """Fetch a self_healing_events row by primary key."""
     conn = get_connection()
     try:
         c = conn.cursor()
@@ -58,7 +73,6 @@ def _get_heal_event(heal_id: int) -> dict | None:
 
 
 def _get_reflex_latest(reflex_name: str) -> dict | None:
-    """Fetch the most recent genesis_audit row for a given reflex name."""
     conn = get_connection()
     try:
         c = conn.cursor()
@@ -74,9 +88,12 @@ def _get_reflex_latest(reflex_name: str) -> dict | None:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Explain API
+# ---------------------------------------------------------------------------
+
 @bp.route("/api/explain/heal/<int:heal_id>", methods=["GET"])
 def explain_heal(heal_id: int):
-    """Return a plain-English explanation for a self-healing event."""
     row = _get_heal_event(heal_id)
     if row is None:
         return jsonify({"error": f"Self-healing event {heal_id} not found"}), 404
@@ -117,7 +134,6 @@ def explain_heal(heal_id: int):
 
 @bp.route("/api/explain/reflex/<reflex_name>", methods=["GET"])
 def explain_reflex(reflex_name: str):
-    """Return a plain-English explanation for the latest run of a Genesis reflex."""
     row = _get_reflex_latest(reflex_name)
     if row is None:
         return jsonify({
@@ -162,13 +178,7 @@ def explain_reflex(reflex_name: str):
 
 @bp.route("/api/explain/<int:event_id>", methods=["GET"])
 def explain_event(event_id: int):
-    """Return a plain-English explanation for an audit trail event.
-
-    Fetches the event from audit_trail by *event_id*, parses the JSON
-    details field as event_data, then delegates to
-    explain_translator.translate() for deterministic rule-based rendering.
-    """
-    from tools.aisg.explain_translator import translate  # local to avoid circular
+    from tools.aisg.explain_translator import translate
 
     row = _get_audit_event(event_id)
     if row is None:
@@ -193,100 +203,18 @@ def explain_event(event_id: int):
 
 
 # ---------------------------------------------------------------------------
-# Dashboard pages
+# AI Wizard
 # ---------------------------------------------------------------------------
 
 @bp.route("/ai-wizard", methods=["GET"])
 def ai_wizard_page():
-    """AI Launchpad Wizard — guided onboarding for non-AI teams."""
     return render_template("aisg/wizard.html")
-
-
-@bp.route("/ai-patterns", methods=["GET"])
-def ai_patterns_page():
-    """AI Pattern Library dashboard page."""
-    from tools.aisg.pattern_registry import list_patterns  # noqa: PLC0415
-    try:
-        patterns = list_patterns()
-    except Exception:
-        patterns = []
-    return render_template("aisg/patterns.html", patterns=patterns)
-
-
-# ---------------------------------------------------------------------------
-# Pattern API
-# ---------------------------------------------------------------------------
-
-@bp.route("/api/aisg/patterns", methods=["GET"])
-def api_list_patterns():
-    """List patterns; optional ?category= and ?complexity= query params."""
-    from tools.aisg.pattern_registry import list_patterns  # noqa: PLC0415
-    category = request.args.get("category")
-    complexity = request.args.get("complexity")
-    try:
-        patterns = list_patterns(category=category, complexity=complexity)
-        return jsonify({"patterns": patterns, "total": len(patterns)})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
-@bp.route("/api/aisg/patterns/seed", methods=["POST"])
-def api_seed_patterns():
-    """Seed built-in patterns. Idempotent."""
-    from tools.aisg.pattern_registry import _seed_builtins  # noqa: PLC0415
-    try:
-        inserted = _seed_builtins()
-        return jsonify({"inserted": inserted})
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-
-@bp.route("/api/aisg/patterns/<pattern_id>", methods=["GET"])
-def api_get_pattern(pattern_id: str):
-    """Return a single pattern by ID."""
-    from tools.aisg.pattern_registry import get_pattern  # noqa: PLC0415
-    pat = get_pattern(pattern_id)
-    if pat is None:
-        return jsonify({"error": f"Pattern {pattern_id} not found"}), 404
-    return jsonify(pat)
-
-
-@bp.route("/api/aisg/patterns/<pattern_id>/deploy", methods=["POST"])
-def api_deploy_pattern(pattern_id: str):
-    """Increment deploy_count and return updated pattern."""
-    from tools.aisg.pattern_registry import deploy_pattern  # noqa: PLC0415
-    result = deploy_pattern(pattern_id)
-    if "error" in result:
-        return jsonify(result), 404
-    return jsonify(result)
-=======
-# CUI // SP-CTI
-"""AISG Setup Wizard — Flask Blueprint.
-
-Routes:
-  GET  /ai-wizard          → Wizard landing page (5-step form)
-  POST /api/ai-wizard/submit → Process wizard answers, return JSON result
-"""
-
-from __future__ import annotations
-
-import uuid
-
-from flask import Blueprint, jsonify, render_template, request
-
-from tools.aisg.wizard import WizardEngine
-
-bp = Blueprint("aisg_wizard", __name__)
-_engine = WizardEngine()
-
-
-@bp.route("/ai-wizard")
-def wizard_page():
-    return render_template("aisg/page.html")
 
 
 @bp.route("/api/ai-wizard/submit", methods=["POST"])
 def wizard_submit():
+    from tools.aisg.wizard import WizardEngine
+    _engine = WizardEngine()
     data = request.get_json(silent=True) or {}
     answers = {
         "use_case": data.get("use_case", "web_app"),
@@ -298,4 +226,186 @@ def wizard_submit():
     session_token = data.get("session_token") or str(uuid.uuid4())
     result = _engine.process(session_token=session_token, answers=answers)
     return jsonify({"session_token": session_token, **result})
->>>>>>> 4e22c60b (chore: auto-commit from Claude Code session)
+
+
+# ---------------------------------------------------------------------------
+# AI Pattern Library
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai-patterns", methods=["GET"])
+def ai_patterns_page():
+    from tools.aisg.pattern_registry import list_patterns
+    try:
+        patterns = list_patterns()
+    except Exception:
+        patterns = []
+    return render_template("aisg/patterns.html", patterns=patterns)
+
+
+@bp.route("/api/aisg/patterns", methods=["GET"])
+def api_list_patterns():
+    from tools.aisg.pattern_registry import list_patterns
+    category = request.args.get("category")
+    complexity = request.args.get("complexity")
+    try:
+        patterns = list_patterns(category=category, complexity=complexity)
+        return jsonify({"patterns": patterns, "total": len(patterns)})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.route("/api/aisg/patterns/seed", methods=["POST"])
+def api_seed_patterns():
+    from tools.aisg.pattern_registry import _seed_builtins
+    try:
+        inserted = _seed_builtins()
+        return jsonify({"inserted": inserted})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.route("/api/aisg/patterns/<pattern_id>", methods=["GET"])
+def api_get_pattern(pattern_id: str):
+    from tools.aisg.pattern_registry import get_pattern
+    pat = get_pattern(pattern_id)
+    if pat is None:
+        return jsonify({"error": f"Pattern {pattern_id} not found"}), 404
+    return jsonify(pat)
+
+
+@bp.route("/api/aisg/patterns/<pattern_id>/deploy", methods=["POST"])
+def api_deploy_pattern(pattern_id: str):
+    from tools.aisg.pattern_registry import deploy_pattern
+    result = deploy_pattern(pattern_id)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Role-based dashboard views
+# ---------------------------------------------------------------------------
+
+@bp.route("/dashboard/compliance-view", methods=["GET"])
+def compliance_view_page():
+    from tools.aisg.compliance_view import get_compliance_data
+    data = get_compliance_data()
+    return render_template("aisg/compliance_view.html", **data)
+
+
+@bp.route("/dashboard/executive-view", methods=["GET"])
+def executive_view_page():
+    from tools.aisg.executive_view import get_executive_data
+    data = get_executive_data()
+    return render_template("aisg/executive_view.html", **data)
+
+
+@bp.route("/dashboard/pm-view", methods=["GET"])
+def pm_view_page():
+    from tools.aisg.pm_view import get_pm_data
+    data = get_pm_data()
+    return render_template("aisg/pm_view.html", **data)
+
+
+# ---------------------------------------------------------------------------
+# AI Learning Paths
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai-learning", methods=["GET"])
+def ai_learning_page():
+    from tools.aisg.learning_paths import get_tracks
+    tracks = get_tracks()
+    return render_template("aisg/learning.html", tracks=tracks)
+
+
+# ---------------------------------------------------------------------------
+# Knowledge Handoff
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai-handoff", methods=["GET"])
+def ai_handoff_page():
+    return render_template("aisg/handoff.html")
+
+
+@bp.route("/api/ai-handoff/export", methods=["POST"])
+def api_handoff_export():
+    from tools.aisg.knowledge_handoff import export_package
+    import tempfile, os
+    data = request.get_json(silent=True) or {}
+    user_email = data.get("user_email", "unknown@example.com")
+    output_path = os.path.join(tempfile.gettempdir(), f"handoff_{user_email.split('@')[0]}.zip")
+    try:
+        result = export_package(user_email=user_email, output_path=output_path)
+        return jsonify({"status": "ok", **result})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.route("/api/ai-handoff/import", methods=["POST"])
+def api_handoff_import():
+    data = request.get_json(silent=True) or {}
+    zip_path = data.get("zip_path", "")
+    new_user = data.get("new_user_email", "")
+    if not zip_path or not new_user:
+        return jsonify({"error": "zip_path and new_user_email are required"}), 400
+    return jsonify({"status": "ok", "imported_for": new_user, "source": zip_path})
+
+
+# ---------------------------------------------------------------------------
+# Visual Agent Builder
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai-builder", methods=["GET"])
+def ai_builder_page():
+    return render_template("aisg/builder.html")
+
+
+@bp.route("/api/ai-builder/save", methods=["POST"])
+def api_builder_save():
+    from tools.aisg.visual_agent_builder import save_design
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "Untitled Design")
+    canvas_json = data.get("canvas_json", "{}")
+    trust_tier = data.get("trust_tier", "advisor")
+    created_by = data.get("created_by", "user")
+    try:
+        design_id = save_design(name=name, canvas_json=canvas_json, trust_tier=trust_tier, created_by=created_by)
+        return jsonify({"status": "saved", "design_id": design_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@bp.route("/api/ai-builder/generate", methods=["POST"])
+def api_builder_generate():
+    from tools.aisg.visual_agent_builder import generate_goal
+    data = request.get_json(silent=True) or {}
+    design_id = data.get("design_id")
+    if not design_id:
+        return jsonify({"error": "design_id is required"}), 400
+    try:
+        goal_md = generate_goal(design_id)
+        return jsonify({"status": "ok", "goal_markdown": goal_md})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# AI ROI Tracker
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai-roi", methods=["GET"])
+def ai_roi_page():
+    from tools.aisg.roi_tracker import get_roi_summary
+    summary = get_roi_summary()
+    return render_template("aisg/roi.html", **summary)
+
+
+# ---------------------------------------------------------------------------
+# AI Skills Gap Tracker
+# ---------------------------------------------------------------------------
+
+@bp.route("/ai-skills", methods=["GET"])
+def ai_skills_page():
+    from tools.aisg.skills_tracker import get_skills_data
+    data = get_skills_data()
+    return render_template("aisg/skills.html", **data)

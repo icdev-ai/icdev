@@ -49,6 +49,12 @@ def create_simulation_blueprint() -> Blueprint:
         url_prefix="",
     )
 
+    @bp.route("/simulate")
+    @bp.route("/simulate/")
+    def simulate_index():
+        from flask import redirect
+        return redirect("/simulate/chat")
+
     @bp.route("/simulate/chat")
     def simulate_chat_page():
         """TFW Simulation Chat — conversational Digital Program Twin for NDC/SDC/EDA/DDC."""
