@@ -437,7 +437,7 @@ function renderGKPRows(gkps) {
 
         const summary = extractGKPSummary(g);
 
-        let actions = '';
+        let actions = `<button class="btn btn-sm btn-explain" onclick="showExplain('${g.id}')" style="margin-right:4px;">? Explain</button>`;
         if (g.promotion_status === 'pending_review') {
             actions += `<button class="btn btn-sm btn-success" onclick="promoteGKP('${g.id}')">Promote</button> `;
             actions += `<button class="btn btn-sm btn-danger" onclick="rejectGKP('${g.id}')">Reject</button>`;
