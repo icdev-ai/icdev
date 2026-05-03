@@ -1,0 +1,438 @@
+{% extends "base.html" %}
+{% block title %}AADC Canvas — {{ design.name }}{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/css/agentic-canvas.css">
+{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;">CUI // SP-CTI</div>
+
+<!-- Toolbar -->
+<div id="aadc-toolbar" style="display:flex;align-items:center;gap:10px;padding:8px 16px;background:#0f172a;border-bottom:1px solid #1e3a6e;">
+  <a href="/agentic-ai/" style="color:#7a8cb0;text-decoration:none;font-size:13px;">← AADC</a>
+  <span style="color:#334155;">|</span>
+
+  <input id="design-name" value="{{ design.name }}" style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 10px;border-radius:4px;font-size:13px;width:220px;">
+
+  <select id="design-domain" style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
+    <option value="" {% if not design.domain %}selected{% endif %}>Domain (optional)</option>
+    <option value="general" {% if design.domain=='general' %}selected{% endif %}>General</option>
+    <option value="defense" {% if design.domain=='defense' %}selected{% endif %}>Defense</option>
+    <option value="medical" {% if design.domain=='medical' %}selected{% endif %}>Medical ⚠</option>
+    <option value="benefits" {% if design.domain=='benefits' %}selected{% endif %}>Benefits ⚠</option>
+    <option value="employment" {% if design.domain=='employment' %}selected{% endif %}>Employment ⚠</option>
+    <option value="critical-infrastructure" {% if design.domain=='critical-infrastructure' %}selected{% endif %}>Critical Infra ⚠</option>
+    <option value="criminal-justice" {% if design.domain=='criminal-justice' %}selected{% endif %}>Criminal Justice ⚠</option>
+  </select>
+
+  <select id="design-class" style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
+    <option value="CUI" {% if design.classification=='CUI' %}selected{% endif %}>CUI</option>
+    <option value="UNCLASSIFIED" {% if design.classification=='UNCLASSIFIED' %}selected{% endif %}>UNCLASSIFIED</option>
+    <option value="SECRET" {% if design.classification=='SECRET' %}selected{% endif %}>SECRET</option>
+  </select>
+
+  <div style="flex:1;"></div>
+
+  <!-- Workflow status badge -->
+  {% if wf_status %}
+  <div style="background:{% if wf_status.status == 'approved' %}#052e16{% elif wf_status.status == 'pending' %}#422006{% else %}#1e293b{% endif %};
+       border:1px solid {% if wf_status.status == 'approved' %}#166534{% elif wf_status.status == 'pending' %}#7c2d12{% else %}#334155{% endif %};
+       padding:4px 10px;border-radius:4px;font-size:11px;
+       color:{% if wf_status.status == 'approved' %}#4ade80{% elif wf_status.status == 'pending' %}#fdba74{% else %}#94a3b8{% endif %};">
+    {% if wf_status.status == 'approved' %}✓ HITL Approved{% elif wf_status.status == 'pending' %}⏳ Awaiting HITL Review{% else %}● {{ wf_status.status|title }}{% endif %}
+  </div>
+  {% endif %}
+
+  {% if assessment %}
+  <div style="background:#1e293b;border:1px solid #334155;padding:4px 10px;border-radius:4px;font-size:11px;color:{% if assessment.score >= 70 %}#4ade80{% elif assessment.score >= 50 %}#fb923c{% else %}#f87171{% endif %};">
+    Score: {{ assessment.score|round(1) }}%
+  </div>
+  {% endif %}
+
+  <button onclick="saveDesign()" id="save-btn" style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
+  <button onclick="assessDesign()" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Assess</button>
+  {% if not wf_status or wf_status.status == 'approved' %}
+  <button onclick="launchDesign()" id="launch-btn" style="background:#059669;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🚀 Launch</button>
+  {% endif %}
+</div>
+
+<!-- Main layout -->
+<div style="display:flex;height:calc(100vh - 130px);">
+
+  <!-- Left sidebar: palette -->
+  <div id="palette-sidebar" style="width:200px;min-width:200px;background:#0f172a;border-right:1px solid #1e3a6e;overflow-y:auto;padding:8px;">
+    <div style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px;">Node Palette</div>
+
+    {% for cat_key, cat_nodes in palette.categories.items() %}
+    <div class="palette-category">
+      <div onclick="togglePalette('{{ cat_key }}')" style="color:#eaeaea;font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer;border-radius:3px;background:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between;">
+        {{ cat_key|title|replace('_',' ') }} <span>▾</span>
+      </div>
+      <div id="cat-{{ cat_key }}" style="margin-bottom:8px;">
+        {% for node in cat_nodes %}
+        <div class="palette-node" draggable="true"
+          data-type="{{ node.type }}" data-label="{{ node.label }}" data-color="{{ node.color }}" data-icon="{{ node.icon }}"
+          title="{{ node.label }}"
+          style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:3px;cursor:grab;font-size:11px;color:#eaeaea;margin-bottom:2px;"
+          onmouseenter="this.style.background='#1e3a6e'" onmouseleave="this.style.background='transparent'">
+          <span style="color:{{ node.color }};">{{ node.icon }}</span>
+          {{ node.label }}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    <hr style="border-color:#1e3a6e;margin:8px 0;">
+    <div style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px;">Snippets</div>
+    <div id="snippets-sidebar" style="font-size:11px;color:#7a8cb0;padding:4px 8px;">Loading...</div>
+  </div>
+
+  <!-- Canvas area -->
+  <div id="canvas-container" style="flex:1;position:relative;background:radial-gradient(circle at 50% 50%, #0f172a 0%, #090e1a 100%);overflow:hidden;"
+    ondragover="event.preventDefault()" ondrop="onDrop(event)">
+    <svg id="edges-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></svg>
+    <div id="nodes-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
+
+    <!-- Canvas grid overlay -->
+    <div style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;background-image:radial-gradient(circle,#1e3a6e22 1px,transparent 1px);background-size:28px 28px;"></div>
+
+    <!-- Drop hint -->
+    <div id="drop-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#1e3a6e;pointer-events:none;">
+      <div style="font-size:48px;">🤖</div>
+      <div style="font-size:14px;margin-top:8px;">Drag nodes from the palette to begin designing</div>
+      <div style="font-size:12px;margin-top:4px;color:#1e3a6e;">or</div>
+      <a href="/agentic-ai/templates" style="color:#6366f1;font-size:12px;pointer-events:all;">Start from a template →</a>
+    </div>
+  </div>
+
+  <!-- Right sidebar: properties + assessment -->
+  <div id="props-sidebar" style="width:260px;min-width:260px;background:#0f172a;border-left:1px solid #1e3a6e;overflow-y:auto;padding:12px;">
+    <div id="node-props" style="display:none;">
+      <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Node Properties</h4>
+      <div style="margin-bottom:8px;">
+        <label style="color:#7a8cb0;font-size:11px;">Label</label>
+        <input id="prop-label" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:3px;font-size:12px;box-sizing:border-box;margin-top:3px;">
+      </div>
+      <div id="prop-desc" style="color:#7a8cb0;font-size:11px;margin-bottom:12px;"></div>
+      <button onclick="deleteSelectedNode()" style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
+    </div>
+
+    <div id="no-selection" style="color:#7a8cb0;font-size:12px;text-align:center;padding:20px 0;">
+      Click a node to edit properties
+    </div>
+
+    {% if assessment %}
+    <hr style="border-color:#1e3a6e;margin:12px 0;">
+    <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Last Assessment</h4>
+
+    {% macro score_bar(label, val) %}
+    <div style="margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#7a8cb0;margin-bottom:3px;">
+        <span>{{ label }}</span>
+        <span style="color:{% if val >= 70 %}#4ade80{% elif val >= 50 %}#fb923c{% else %}#f87171{% endif %};">{{ val|round(1) }}%</span>
+      </div>
+      <div style="background:#1e293b;border-radius:3px;height:4px;">
+        <div style="background:{% if val >= 70 %}#10b981{% elif val >= 50 %}#f59e0b{% else %}#ef4444{% endif %};width:{{ val }}%;height:4px;border-radius:3px;"></div>
+      </div>
+    </div>
+    {% endmacro %}
+
+    {{ score_bar('NIST AI RMF', assessment.nist_rmf_score) }}
+    {{ score_bar('OWASP LLM', assessment.owasp_score) }}
+    {{ score_bar('Overall', assessment.score) }}
+
+    {% if assessment.findings %}
+    <div style="color:#f87171;font-size:11px;margin-top:8px;">{{ assessment.findings|length }} finding(s)</div>
+    {% for f in assessment.findings[:3] %}
+    <div style="background:#1e293b;border-left:2px solid {% if f.severity == 'CRITICAL' %}#ef4444{% elif f.severity == 'HIGH' %}#f97316{% else %}#f59e0b{% endif %};padding:6px 8px;border-radius:0 3px 3px 0;margin-bottom:4px;font-size:11px;">
+      <div style="color:#eaeaea;">{{ f.title }}</div>
+      <div style="color:#7a8cb0;font-size:10px;">{{ f.framework }}</div>
+    </div>
+    {% endfor %}
+    {% if assessment.findings|length > 3 %}
+    <a href="/agentic-ai/assessments/{{ design.id }}" style="color:#6366f1;font-size:11px;">See all {{ assessment.findings|length }} findings →</a>
+    {% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div id="status-bar" style="position:fixed;bottom:0;left:0;right:0;background:#0f172a;border-top:1px solid #1e3a6e;padding:3px 16px;font-size:11px;color:#7a8cb0;display:flex;gap:16px;">
+  <span id="node-count">Nodes: 0</span>
+  <span id="edge-count">Edges: 0</span>
+  <span id="status-msg"></span>
+</div>
+
+<script>
+// ── State ──
+const DESIGN_ID = "{{ design.id or '' }}";
+let graph = {{ design.graph_json | safe }};
+let selectedNode = null;
+let connectingFrom = null;
+let dragOffset = {x:0, y:0};
+let nextId = () => 'n-' + Math.random().toString(36).substr(2, 10);
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  loadSnippetsSidebar();
+  render();
+  setupPaletteListeners();
+  if (graph.nodes.length > 0) document.getElementById('drop-hint').style.display = 'none';
+});
+
+// ── Palette listeners ──
+function setupPaletteListeners() {
+  document.querySelectorAll('.palette-node').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('node-type', el.dataset.type);
+      e.dataTransfer.setData('node-label', el.dataset.label);
+      e.dataTransfer.setData('node-color', el.dataset.color);
+      e.dataTransfer.setData('node-icon', el.dataset.icon);
+    });
+  });
+}
+
+// ── Drop ──
+function onDrop(e) {
+  e.preventDefault();
+  const type = e.dataTransfer.getData('node-type');
+  if (!type) return;
+  const rect = document.getElementById('canvas-container').getBoundingClientRect();
+  const x = e.clientX - rect.left - 70;
+  const y = e.clientY - rect.top - 25;
+  const node = {
+    id: nextId(),
+    type: type,
+    label: e.dataTransfer.getData('node-label'),
+    color: e.dataTransfer.getData('node-color'),
+    icon: e.dataTransfer.getData('node-icon'),
+    x: Math.max(0, x), y: Math.max(0, y), w: 140, h: 50
+  };
+  graph.nodes.push(node);
+  document.getElementById('drop-hint').style.display = 'none';
+  render();
+}
+
+// ── Render ──
+function render() {
+  renderNodes();
+  renderEdges();
+  document.getElementById('node-count').textContent = 'Nodes: ' + graph.nodes.length;
+  document.getElementById('edge-count').textContent = 'Edges: ' + graph.edges.length;
+}
+
+function renderNodes() {
+  const layer = document.getElementById('nodes-layer');
+  layer.innerHTML = '';
+  graph.nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'canvas-node';
+    el.dataset.id = n.id;
+    el.style.cssText = `
+      position:absolute; left:${n.x}px; top:${n.y}px; width:${n.w||140}px; height:${n.h||50}px;
+      background:#16213e; border:2px solid ${n.color||'#6366f1'};
+      border-radius:6px; display:flex; align-items:center; justify-content:center;
+      cursor:move; user-select:none; font-size:11px; color:#eaeaea; text-align:center;
+      padding:0 8px; box-sizing:border-box; gap:4px;
+      box-shadow: ${selectedNode && selectedNode.id === n.id ? '0 0 0 2px #fff' : '0 2px 8px rgba(0,0,0,0.4)'};
+    `;
+    el.innerHTML = `<span style="color:${n.color||'#6366f1'};font-size:14px;">${n.icon||'⬡'}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}</span>`;
+
+    // Drag
+    el.addEventListener('mousedown', e => startDrag(e, n));
+    el.addEventListener('click', e => { e.stopPropagation(); selectNode(n); });
+
+    // Connect mode: click on node while holding Shift → draw edge
+    el.addEventListener('click', e => {
+      if (!e.shiftKey) return;
+      e.stopPropagation();
+      if (!connectingFrom) {
+        connectingFrom = n.id;
+        el.style.boxShadow = '0 0 0 3px #10b981';
+        setStatus('Shift-click target node to connect');
+      } else if (connectingFrom !== n.id) {
+        graph.edges.push({id:'e-'+Math.random().toString(36).substr(2,8), source:connectingFrom, target:n.id, label:''});
+        connectingFrom = null;
+        render();
+        setStatus('Edge created');
+      }
+    });
+
+    layer.appendChild(el);
+  });
+}
+
+function renderEdges() {
+  const svg = document.getElementById('edges-layer');
+  svg.innerHTML = '';
+  const nodeMap = {};
+  graph.nodes.forEach(n => nodeMap[n.id] = n);
+
+  // Arrow marker
+  svg.innerHTML = `<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/></marker></defs>`;
+
+  graph.edges.forEach(e => {
+    const s = nodeMap[e.source], t = nodeMap[e.target];
+    if (!s || !t) return;
+    const x1 = s.x + (s.w||140)/2, y1 = s.y + (s.h||50)/2;
+    const x2 = t.x + (t.w||140)/2, y2 = t.y + (t.h||50)/2;
+    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d',`M${x1},${y1} Q${mx},${y1} ${x2},${y2}`);
+    path.setAttribute('stroke','#6366f1');
+    path.setAttribute('stroke-width','1.5');
+    path.setAttribute('fill','none');
+    path.setAttribute('marker-end','url(#arr)');
+    path.setAttribute('opacity','0.7');
+    svg.appendChild(path);
+
+    if (e.label) {
+      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
+      text.setAttribute('x', String(mx)); text.setAttribute('y', String(my - 5));
+      text.setAttribute('fill','#7a8cb0'); text.setAttribute('font-size','10');
+      text.setAttribute('text-anchor','middle');
+      text.textContent = e.label;
+      svg.appendChild(text);
+    }
+  });
+}
+
+// ── Drag nodes ──
+let _dragging = null;
+function startDrag(e, node) {
+  if (e.shiftKey) return;
+  _dragging = node;
+  const rect = e.currentTarget.getBoundingClientRect();
+  dragOffset = {x: e.clientX - rect.left, y: e.clientY - rect.top};
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup', stopDrag);
+}
+function onDragMove(e) {
+  if (!_dragging) return;
+  const cr = document.getElementById('canvas-container').getBoundingClientRect();
+  _dragging.x = Math.max(0, e.clientX - cr.left - dragOffset.x);
+  _dragging.y = Math.max(0, e.clientY - cr.top - dragOffset.y);
+  render();
+}
+function stopDrag() {
+  _dragging = null;
+  document.removeEventListener('mousemove', onDragMove);
+  document.removeEventListener('mouseup', stopDrag);
+}
+
+// ── Selection ──
+function selectNode(node) {
+  selectedNode = node;
+  document.getElementById('node-props').style.display = 'block';
+  document.getElementById('no-selection').style.display = 'none';
+  document.getElementById('prop-label').value = node.label;
+  const descs = {{ node_descs | tojson }};
+  document.getElementById('prop-desc').textContent = descs[node.type] || '';
+  render();
+}
+document.getElementById('canvas-container').addEventListener('click', () => {
+  selectedNode = null; connectingFrom = null;
+  document.getElementById('node-props').style.display = 'none';
+  document.getElementById('no-selection').style.display = 'block';
+  render();
+});
+document.getElementById('prop-label').addEventListener('input', e => {
+  if (selectedNode) { selectedNode.label = e.target.value; render(); }
+});
+
+function deleteSelectedNode() {
+  if (!selectedNode) return;
+  graph.nodes = graph.nodes.filter(n => n.id !== selectedNode.id);
+  graph.edges = graph.edges.filter(e => e.source !== selectedNode.id && e.target !== selectedNode.id);
+  selectedNode = null;
+  document.getElementById('node-props').style.display = 'none';
+  document.getElementById('no-selection').style.display = 'block';
+  render();
+}
+
+// ── Save ──
+function saveDesign() {
+  const btn = document.getElementById('save-btn');
+  btn.textContent = 'Saving...'; btn.disabled = true;
+  const payload = {
+    name: document.getElementById('design-name').value,
+    domain: document.getElementById('design-domain').value,
+    classification: document.getElementById('design-class').value,
+    graph: graph,
+  };
+  const url = DESIGN_ID ? '/agentic-ai/api/designs/' + DESIGN_ID : '/agentic-ai/api/designs';
+  const method = DESIGN_ID ? 'PUT' : 'POST';
+  fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .then(r => r.json())
+    .then(d => {
+      btn.textContent = '✓ Saved'; btn.disabled = false;
+      setStatus('Saved · Score: ' + (d.score||'--') + '% · ' + (d.findings_json ? JSON.parse(d.findings_json).length : 0) + ' finding(s)');
+      if (!DESIGN_ID && d.id) window.location.href = '/agentic-ai/canvas/' + d.id;
+      setTimeout(() => { btn.textContent = 'Save'; }, 2000);
+    })
+    .catch(err => { btn.textContent = 'Save'; btn.disabled = false; setStatus('Error: ' + err); });
+}
+
+// ── Assess ──
+function assessDesign() {
+  setStatus('Running assessment...');
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/assess', {method:'POST'})
+    .then(r => r.json())
+    .then(d => { setStatus('Assessment done · Score: ' + d.score + '%'); setTimeout(() => location.reload(), 1200); });
+}
+
+// ── Launch ──
+function launchDesign() {
+  if (!confirm('Launch this design to Kanban? This will create implementation tasks.')) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/launch', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert(d.error); return; }
+      setStatus('Launched! ' + (d.task_ids||[]).length + ' Kanban tasks created.');
+    });
+}
+
+// ── Palette toggle ──
+function togglePalette(cat) {
+  const el = document.getElementById('cat-'+cat);
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+// ── Snippets sidebar ──
+function loadSnippetsSidebar() {
+  fetch('/agentic-ai/api/snippets')
+    .then(r => r.json())
+    .then(snippets => {
+      const el = document.getElementById('snippets-sidebar');
+      if (!snippets.length) { el.textContent = 'No snippets'; return; }
+      el.innerHTML = snippets.map(s =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b;">
+          <span style="font-size:11px;color:#eaeaea;">${s.name}</span>
+          <button onclick="insertSnippet('${s.id}')" style="background:#0f3460;color:#7ab3f0;border:none;padding:2px 6px;border-radius:2px;cursor:pointer;font-size:10px;">+</button>
+        </div>`
+      ).join('');
+    });
+}
+
+function insertSnippet(snippetId) {
+  if (!DESIGN_ID) { saveDesign(); return; }
+  fetch('/agentic-ai/api/snippets/' + snippetId + '/insert/' + DESIGN_ID, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({offset_x: 100, offset_y: 100})
+  }).then(r => r.json()).then(d => {
+    if (d.graph_json) { graph = JSON.parse(d.graph_json); render(); setStatus('Snippet inserted'); }
+  });
+}
+
+// ── Status ──
+function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveDesign(); }
+  if (e.key === 'Delete' && selectedNode) deleteSelectedNode();
+  if (e.key === 'Escape') { connectingFrom = null; }
+});
+</script>
+{% endblock %}

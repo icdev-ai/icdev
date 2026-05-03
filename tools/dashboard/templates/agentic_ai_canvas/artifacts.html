@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}AADC Artifacts — {{ design.name }}{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">📄 Artifacts — {{ design.name }}</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Model cards, system cards, AI BOM, use case inventory</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/agentic-ai/canvas/{{ design.id }}" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Canvas</a>
+  </div>
+</div>
+
+<!-- Generate buttons -->
+<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:24px;">
+  <button onclick="generateArtifact('model_card')" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;border:none;cursor:pointer;font-size:13px;">🧠 Model Card</button>
+  <button onclick="generateArtifact('system_card')" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;border:none;cursor:pointer;font-size:13px;">🗂️ System Card</button>
+  <button onclick="generateArtifact('ai_bom')" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;border:none;cursor:pointer;font-size:13px;">📦 AI BOM</button>
+</div>
+
+<div id="artifact-result" style="display:none;background:#052e16;border:1px solid #166534;border-radius:6px;padding:16px;margin-bottom:20px;color:#4ade80;font-size:12px;white-space:pre-wrap;"></div>
+
+{% if artifacts %}
+<div style="display:flex;flex-direction:column;gap:12px;">
+  {% for a in artifacts %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;color:#eaeaea;font-size:14px;">{{ a.title }}</h3>
+      <span style="background:#0f3460;color:#7a8cb0;padding:2px 8px;border-radius:3px;font-size:10px;">{{ a.artifact_type }}</span>
+    </div>
+    <div style="color:#7a8cb0;font-size:11px;margin-bottom:10px;">Generated {{ a.created_at[:19] }}</div>
+    <details>
+      <summary style="color:#6366f1;cursor:pointer;font-size:12px;">View Markdown</summary>
+      <pre style="background:#0f172a;color:#94a3b8;padding:12px;border-radius:4px;font-size:11px;overflow-x:auto;margin-top:8px;">{{ a.content_md }}</pre>
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div style="text-align:center;padding:40px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;color:#7a8cb0;">
+  No artifacts generated yet. Use the buttons above to generate.
+</div>
+{% endif %}
+
+<script>
+function generateArtifact(type) {
+  fetch('/agentic-ai/api/designs/{{ design.id }}/artifacts', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({type: type})
+  }).then(r => r.json()).then(d => {
+    if (d.error) { alert(d.error); return; }
+    const el = document.getElementById('artifact-result');
+    el.style.display = 'block';
+    el.textContent = d.markdown;
+    setTimeout(() => location.reload(), 2000);
+  });
+}
+</script>
+{% endblock %}

@@ -350,6 +350,19 @@
             </li>
             {% endif %}
 
+            {% if aadc_enabled %}
+            <!-- Agentic AI Design Canvas (AADC) -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/agentic-ai' in request.path %}active{% endif %}" style="color:#a5b4fc;">Agentic AI</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/agentic-ai/">Dashboard</a></li>
+                    <li><a href="/agentic-ai/canvas/new">New Design</a></li>
+                    <li><a href="/agentic-ai/templates">Templates</a></li>
+                    <li><a href="/agentic-ai/snippets">Snippets</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Strategos — Strategic Intelligence Operations -->
             {% if strategos_enabled %}
             <li class="nav-dropdown">

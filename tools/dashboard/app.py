@@ -145,6 +145,7 @@ _CANVAS_DEFS = [
     ("ddc", "ICDEV_DDC_ENABLED", "tools.data_canvas.blueprint", "create_data_canvas_blueprint"),
     ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
     ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
+    ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -1159,6 +1160,7 @@ def create_app() -> Flask:
             "canvas_kg_enabled": _HAS_CANVAS_KG,
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
+            "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "canvas_flags": _CANVAS_FLAGS,
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
