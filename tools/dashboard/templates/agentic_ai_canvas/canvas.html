@@ -2,165 +2,323 @@
 {% block title %}AADC Canvas — {{ design.name }}{% endblock %}
 {% block extra_head %}
 <link rel="stylesheet" href="/static/css/agentic-canvas.css">
+<style>
+/* ── Sidebar collapse transitions ── */
+#palette-sidebar { transition: width 0.2s, min-width 0.2s; }
+#props-sidebar   { transition: width 0.2s, min-width 0.2s; }
+
+/* ── AADC menu dropdown ── */
+.aadc-menu-wrap { position: relative; }
+.aadc-menu-dd {
+  position: absolute; top: 34px; left: 0;
+  background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px;
+  min-width: 190px; z-index: 999; padding: 4px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+}
+.aadc-menu-dd a,
+.aadc-menu-dd button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 12px; text-align: left;
+  background: none; border: none; color: #eaeaea;
+  font-size: 12px; cursor: pointer; border-radius: 4px;
+  text-decoration: none; box-sizing: border-box;
+}
+.aadc-menu-dd a:hover,
+.aadc-menu-dd button:hover { background: #1e3a6e; }
+.aadc-menu-sep { border: none; border-top: 1px solid #1e3a6e; margin: 4px 0; }
+
+/* ── Sidebar expand strips ── */
+.expand-strip {
+  display: none; align-items: center; justify-content: center;
+  background: #0f172a; cursor: pointer; flex-shrink: 0;
+}
+.expand-strip:hover { background: #1e293b; }
+.expand-strip span { color: #7a8cb0; font-size: 9px; writing-mode: vertical-rl; user-select: none; }
+#palette-expand-strip { width: 14px; border-right: 1px solid #1e3a6e; }
+#props-expand-strip   { width: 14px; border-left:  1px solid #1e3a6e; }
+
+/* ── Category arrow ── */
+.cat-arrow { display: inline-block; transition: transform 0.2s; }
+.cat-arrow.collapsed { transform: rotate(-90deg); }
+
+/* ── Zoom button cluster ── */
+.zoom-cluster {
+  position: absolute; bottom: 32px; right: 8px; z-index: 20;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.zoom-btn {
+  width: 28px; height: 28px; background: #16213e; border: 1px solid #1e3a6e;
+  color: #eaeaea; border-radius: 4px; cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.zoom-btn:hover { background: #1e3a6e; }
+.zoom-btn.sm { font-size: 10px; }
+
+/* ── Pan mode indicator ── */
+#pan-hint {
+  display: none; position: absolute; top: 8px; left: 50%;
+  transform: translateX(-50%); background: #16213e99;
+  border: 1px solid #1e3a6e; border-radius: 4px; padding: 3px 10px;
+  font-size: 10px; color: #7a8cb0; pointer-events: none; z-index: 20;
+}
+</style>
 {% endblock %}
 {% block content %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;">CUI // SP-CTI</div>
 
-<!-- Toolbar -->
-<div id="aadc-toolbar" style="display:flex;align-items:center;gap:10px;padding:8px 16px;background:#0f172a;border-bottom:1px solid #1e3a6e;">
-  <a href="/agentic-ai/" style="color:#7a8cb0;text-decoration:none;font-size:13px;">← AADC</a>
+<!-- ── Toolbar ── -->
+<div id="aadc-toolbar" style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;border-bottom:1px solid #1e3a6e;position:relative;flex-wrap:wrap;">
+
+  <!-- Menu button -->
+  <div class="aadc-menu-wrap">
+    <button id="aadc-menu-btn" onclick="toggleMenu(event)"
+      style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:5px;">
+      ☰ <span style="font-size:11px;color:#6366f1;font-weight:700;">AADC</span>
+    </button>
+    <div id="aadc-menu" class="aadc-menu-dd" style="display:none;">
+      <a href="/agentic-ai/"><span>←</span> All Designs</a>
+      <hr class="aadc-menu-sep">
+      <a href="/agentic-ai/templates"><span>📋</span> Templates</a>
+      <a href="/agentic-ai/snippets"><span>🧩</span> Snippets</a>
+      {% if design.id %}
+      <a href="/agentic-ai/assessments/{{ design.id }}"><span>📊</span> Assessments</a>
+      <a href="/agentic-ai/artifacts/{{ design.id }}"><span>📄</span> Artifacts</a>
+      {% endif %}
+      <hr class="aadc-menu-sep">
+      <button onclick="doExportJSON()"><span>⬇</span> Export JSON</button>
+      <button onclick="doExportSVG()"><span>🖼</span> Export SVG</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="zoomFit()"><span>⊡</span> Fit to Canvas</button>
+      <button onclick="zoomReset()"><span>⊙</span> Reset Zoom</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
+    </div>
+  </div>
+
   <span style="color:#334155;">|</span>
 
-  <input id="design-name" value="{{ design.name }}" style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 10px;border-radius:4px;font-size:13px;width:220px;">
+  <input id="design-name" value="{{ design.name }}"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 10px;border-radius:4px;font-size:13px;width:200px;">
 
-  <select id="design-domain" style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
+  <select id="design-domain"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
     <option value="" {% if not design.domain %}selected{% endif %}>Domain (optional)</option>
-    <option value="general" {% if design.domain=='general' %}selected{% endif %}>General</option>
-    <option value="defense" {% if design.domain=='defense' %}selected{% endif %}>Defense</option>
-    <option value="medical" {% if design.domain=='medical' %}selected{% endif %}>Medical ⚠</option>
-    <option value="benefits" {% if design.domain=='benefits' %}selected{% endif %}>Benefits ⚠</option>
-    <option value="employment" {% if design.domain=='employment' %}selected{% endif %}>Employment ⚠</option>
+    <option value="general"              {% if design.domain=='general'              %}selected{% endif %}>General</option>
+    <option value="defense"              {% if design.domain=='defense'              %}selected{% endif %}>Defense</option>
+    <option value="medical"              {% if design.domain=='medical'              %}selected{% endif %}>Medical ⚠</option>
+    <option value="benefits"             {% if design.domain=='benefits'             %}selected{% endif %}>Benefits ⚠</option>
+    <option value="employment"           {% if design.domain=='employment'           %}selected{% endif %}>Employment ⚠</option>
     <option value="critical-infrastructure" {% if design.domain=='critical-infrastructure' %}selected{% endif %}>Critical Infra ⚠</option>
-    <option value="criminal-justice" {% if design.domain=='criminal-justice' %}selected{% endif %}>Criminal Justice ⚠</option>
+    <option value="criminal-justice"     {% if design.domain=='criminal-justice'     %}selected{% endif %}>Criminal Justice ⚠</option>
   </select>
 
-  <select id="design-class" style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
-    <option value="CUI" {% if design.classification=='CUI' %}selected{% endif %}>CUI</option>
+  <select id="design-class"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
+    <option value="CUI"          {% if design.classification=='CUI'          %}selected{% endif %}>CUI</option>
     <option value="UNCLASSIFIED" {% if design.classification=='UNCLASSIFIED' %}selected{% endif %}>UNCLASSIFIED</option>
-    <option value="SECRET" {% if design.classification=='SECRET' %}selected{% endif %}>SECRET</option>
+    <option value="SECRET"       {% if design.classification=='SECRET'       %}selected{% endif %}>SECRET</option>
   </select>
 
   <div style="flex:1;"></div>
 
-  <!-- Workflow status badge -->
+  <!-- Zoom controls in toolbar -->
+  <button onclick="zoomOut()" title="Zoom Out (Ctrl+−)"
+    style="background:#1e293b;color:#eaeaea;border:1px solid #1e3a6e;width:26px;height:26px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;">−</button>
+  <span id="zoom-display" style="color:#7a8cb0;font-size:11px;min-width:38px;text-align:center;font-variant-numeric:tabular-nums;">100%</span>
+  <button onclick="zoomIn()" title="Zoom In (Ctrl++)"
+    style="background:#1e293b;color:#eaeaea;border:1px solid #1e3a6e;width:26px;height:26px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
+  <button onclick="zoomFit()" title="Fit all nodes"
+    style="background:#1e293b;color:#7a8cb0;border:1px solid #1e3a6e;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Fit</button>
+
+  <span style="color:#334155;">|</span>
+
   {% if wf_status %}
-  <div style="background:{% if wf_status.status == 'approved' %}#052e16{% elif wf_status.status == 'pending' %}#422006{% else %}#1e293b{% endif %};
-       border:1px solid {% if wf_status.status == 'approved' %}#166534{% elif wf_status.status == 'pending' %}#7c2d12{% else %}#334155{% endif %};
+  <div style="background:{% if wf_status.status=='approved' %}#052e16{% elif wf_status.status=='pending' %}#422006{% else %}#1e293b{% endif %};
+       border:1px solid {% if wf_status.status=='approved' %}#166534{% elif wf_status.status=='pending' %}#7c2d12{% else %}#334155{% endif %};
        padding:4px 10px;border-radius:4px;font-size:11px;
-       color:{% if wf_status.status == 'approved' %}#4ade80{% elif wf_status.status == 'pending' %}#fdba74{% else %}#94a3b8{% endif %};">
-    {% if wf_status.status == 'approved' %}✓ HITL Approved{% elif wf_status.status == 'pending' %}⏳ Awaiting HITL Review{% else %}● {{ wf_status.status|title }}{% endif %}
+       color:{% if wf_status.status=='approved' %}#4ade80{% elif wf_status.status=='pending' %}#fdba74{% else %}#94a3b8{% endif %};">
+    {% if wf_status.status=='approved' %}✓ HITL Approved{% elif wf_status.status=='pending' %}⏳ Awaiting HITL Review{% else %}● {{ wf_status.status|title }}{% endif %}
   </div>
   {% endif %}
 
   {% if assessment %}
-  <div style="background:#1e293b;border:1px solid #334155;padding:4px 10px;border-radius:4px;font-size:11px;color:{% if assessment.score >= 70 %}#4ade80{% elif assessment.score >= 50 %}#fb923c{% else %}#f87171{% endif %};">
+  <div style="background:#1e293b;border:1px solid #334155;padding:4px 10px;border-radius:4px;font-size:11px;
+       color:{% if assessment.score >= 70 %}#4ade80{% elif assessment.score >= 50 %}#fb923c{% else %}#f87171{% endif %};">
     Score: {{ assessment.score|round(1) }}%
   </div>
   {% endif %}
 
-  <button onclick="saveDesign()" id="save-btn" style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
-  <button onclick="assessDesign()" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Assess</button>
+  <button onclick="saveDesign()" id="save-btn"
+    style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
+  <button onclick="assessDesign()"
+    style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Assess</button>
   {% if not wf_status or wf_status.status == 'approved' %}
-  <button onclick="launchDesign()" id="launch-btn" style="background:#059669;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🚀 Launch</button>
+  <button onclick="launchDesign()" id="launch-btn"
+    style="background:#059669;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🚀 Launch</button>
   {% endif %}
 </div>
 
-<!-- Main layout -->
+<!-- ── Main three-pane layout ── -->
 <div style="display:flex;height:calc(100vh - 130px);">
 
+  <!-- Left sidebar expand strip (visible when collapsed) -->
+  <div id="palette-expand-strip" class="expand-strip" style="display:none;" onclick="togglePaletteSidebar()" title="Expand palette">
+    <span>▶ Palette</span>
+  </div>
+
   <!-- Left sidebar: palette -->
-  <div id="palette-sidebar" style="width:200px;min-width:200px;background:#0f172a;border-right:1px solid #1e3a6e;overflow-y:auto;padding:8px;">
-    <div style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px;">Node Palette</div>
+  <div id="palette-sidebar" style="width:200px;min-width:200px;background:#0f172a;border-right:1px solid #1e3a6e;display:flex;flex-direction:column;overflow:hidden;">
 
-    {% for cat_key, cat_nodes in palette.categories.items() %}
-    <div class="palette-category">
-      <div onclick="togglePalette('{{ cat_key }}')" style="color:#eaeaea;font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer;border-radius:3px;background:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between;">
-        {{ cat_key|title|replace('_',' ') }} <span>▾</span>
-      </div>
-      <div id="cat-{{ cat_key }}" style="margin-bottom:8px;">
-        {% for node in cat_nodes %}
-        <div class="palette-node" draggable="true"
-          data-type="{{ node.type }}" data-label="{{ node.label }}" data-color="{{ node.color }}" data-icon="{{ node.icon }}"
-          title="{{ node.label }}"
-          style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:3px;cursor:grab;font-size:11px;color:#eaeaea;margin-bottom:2px;"
-          onmouseenter="this.style.background='#1e3a6e'" onmouseleave="this.style.background='transparent'">
-          <span style="color:{{ node.color }};">{{ node.icon }}</span>
-          {{ node.label }}
-        </div>
-        {% endfor %}
-      </div>
+    <!-- Sidebar header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-bottom:1px solid #1e3a6e;flex-shrink:0;">
+      <span style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Node Palette</span>
+      <button onclick="togglePaletteSidebar()" title="Collapse palette"
+        style="background:#1e293b;border:1px solid #1e3a6e;color:#7a8cb0;width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">◀</button>
     </div>
-    {% endfor %}
 
-    <hr style="border-color:#1e3a6e;margin:8px 0;">
-    <div style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px;">Snippets</div>
-    <div id="snippets-sidebar" style="font-size:11px;color:#7a8cb0;padding:4px 8px;">Loading...</div>
+    <!-- Scrollable content -->
+    <div id="palette-content" style="overflow-y:auto;flex:1;padding:8px;">
+      {% for cat_key, cat_nodes in palette.categories.items() %}
+      <div class="palette-category">
+        <div onclick="toggleCat('{{ cat_key }}')"
+          style="color:#eaeaea;font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer;border-radius:3px;background:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;user-select:none;">
+          <span>{{ cat_key|title|replace('_',' ') }}</span>
+          <span id="cat-arrow-{{ cat_key }}" class="cat-arrow">▾</span>
+        </div>
+        <div id="cat-{{ cat_key }}" style="margin-bottom:8px;">
+          {% for node in cat_nodes %}
+          <div class="palette-node" draggable="true"
+            data-type="{{ node.type }}" data-label="{{ node.label }}" data-color="{{ node.color }}" data-icon="{{ node.icon }}"
+            title="{{ node.label }}"
+            style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:3px;cursor:grab;font-size:11px;color:#eaeaea;margin-bottom:2px;"
+            onmouseenter="this.style.background='#1e3a6e'" onmouseleave="this.style.background='transparent'">
+            <span style="color:{{ node.color }};">{{ node.icon }}</span>{{ node.label }}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <hr style="border-color:#1e3a6e;margin:8px 0;">
+      <div style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px;">Snippets</div>
+      <div id="snippets-sidebar" style="font-size:11px;color:#7a8cb0;padding:4px 8px;">Loading...</div>
+    </div>
   </div>
 
   <!-- Canvas area -->
-  <div id="canvas-container" style="flex:1;position:relative;background:radial-gradient(circle at 50% 50%, #0f172a 0%, #090e1a 100%);overflow:hidden;"
+  <div id="canvas-container"
+    style="flex:1;position:relative;background:radial-gradient(circle at 50% 50%,#0f172a 0%,#090e1a 100%);overflow:hidden;cursor:default;"
     ondragover="event.preventDefault()" ondrop="onDrop(event)">
-    <svg id="edges-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></svg>
-    <div id="nodes-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
 
-    <!-- Canvas grid overlay -->
-    <div style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;background-image:radial-gradient(circle,#1e3a6e22 1px,transparent 1px);background-size:28px 28px;"></div>
+    <!-- dot grid (fixed, behind viewport) -->
+    <div style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;
+      background-image:radial-gradient(circle,#1e3a6e22 1px,transparent 1px);background-size:28px 28px;"></div>
 
-    <!-- Drop hint -->
-    <div id="drop-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#1e3a6e;pointer-events:none;">
+    <!-- Zoomable/pannable viewport -->
+    <div id="canvas-viewport" style="position:absolute;top:0;left:0;transform-origin:0 0;width:4000px;height:4000px;">
+      <svg id="edges-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
+      <div id="nodes-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
+    </div>
+
+    <!-- Drop hint (above viewport) -->
+    <div id="drop-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#1e3a6e;pointer-events:none;z-index:5;">
       <div style="font-size:48px;">🤖</div>
       <div style="font-size:14px;margin-top:8px;">Drag nodes from the palette to begin designing</div>
-      <div style="font-size:12px;margin-top:4px;color:#1e3a6e;">or</div>
+      <div style="font-size:12px;margin-top:4px;">or</div>
       <a href="/agentic-ai/templates" style="color:#6366f1;font-size:12px;pointer-events:all;">Start from a template →</a>
+    </div>
+
+    <!-- Pan mode hint -->
+    <div id="pan-hint">Space+Drag to pan · Scroll to zoom</div>
+
+    <!-- Zoom cluster (canvas corner) -->
+    <div class="zoom-cluster">
+      <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+      <button class="zoom-btn sm" onclick="zoomReset()" title="Reset (Ctrl+0)">1:1</button>
+      <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">−</button>
+      <button class="zoom-btn sm" onclick="zoomFit()" title="Fit nodes">Fit</button>
     </div>
   </div>
 
   <!-- Right sidebar: properties + assessment -->
-  <div id="props-sidebar" style="width:260px;min-width:260px;background:#0f172a;border-left:1px solid #1e3a6e;overflow-y:auto;padding:12px;">
-    <div id="node-props" style="display:none;">
-      <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Node Properties</h4>
+  <div id="props-sidebar" style="width:260px;min-width:260px;background:#0f172a;border-left:1px solid #1e3a6e;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #1e3a6e;flex-shrink:0;">
+      <span style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Properties</span>
+      <button onclick="togglePropsSidebar()" title="Collapse panel"
+        style="background:#1e293b;border:1px solid #1e3a6e;color:#7a8cb0;width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">▶</button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div id="props-content" style="overflow-y:auto;flex:1;padding:12px;">
+      <div id="node-props" style="display:none;">
+        <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Node Properties</h4>
+        <div style="margin-bottom:8px;">
+          <label style="color:#7a8cb0;font-size:11px;">Label</label>
+          <input id="prop-label"
+            style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:3px;font-size:12px;box-sizing:border-box;margin-top:3px;">
+        </div>
+        <div id="prop-desc" style="color:#7a8cb0;font-size:11px;margin-bottom:12px;"></div>
+        <button onclick="deleteSelectedNode()"
+          style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
+      </div>
+
+      <div id="no-selection" style="color:#7a8cb0;font-size:12px;text-align:center;padding:20px 0;">
+        Click a node to edit properties
+      </div>
+
+      {% if assessment %}
+      <hr style="border-color:#1e3a6e;margin:12px 0;">
+      <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Last Assessment</h4>
+
+      {% macro score_bar(label, val) %}
       <div style="margin-bottom:8px;">
-        <label style="color:#7a8cb0;font-size:11px;">Label</label>
-        <input id="prop-label" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:3px;font-size:12px;box-sizing:border-box;margin-top:3px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#7a8cb0;margin-bottom:3px;">
+          <span>{{ label }}</span>
+          <span style="color:{% if val >= 70 %}#4ade80{% elif val >= 50 %}#fb923c{% else %}#f87171{% endif %};">{{ val|round(1) }}%</span>
+        </div>
+        <div style="background:#1e293b;border-radius:3px;height:4px;">
+          <div style="background:{% if val >= 70 %}#10b981{% elif val >= 50 %}#f59e0b{% else %}#ef4444{% endif %};width:{{ val }}%;height:4px;border-radius:3px;"></div>
+        </div>
       </div>
-      <div id="prop-desc" style="color:#7a8cb0;font-size:11px;margin-bottom:12px;"></div>
-      <button onclick="deleteSelectedNode()" style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
-    </div>
+      {% endmacro %}
 
-    <div id="no-selection" style="color:#7a8cb0;font-size:12px;text-align:center;padding:20px 0;">
-      Click a node to edit properties
-    </div>
+      {{ score_bar('NIST AI RMF', assessment.nist_rmf_score) }}
+      {{ score_bar('OWASP LLM',   assessment.owasp_score) }}
+      {{ score_bar('Overall',      assessment.score) }}
 
-    {% if assessment %}
-    <hr style="border-color:#1e3a6e;margin:12px 0;">
-    <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Last Assessment</h4>
-
-    {% macro score_bar(label, val) %}
-    <div style="margin-bottom:8px;">
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:#7a8cb0;margin-bottom:3px;">
-        <span>{{ label }}</span>
-        <span style="color:{% if val >= 70 %}#4ade80{% elif val >= 50 %}#fb923c{% else %}#f87171{% endif %};">{{ val|round(1) }}%</span>
+      {% if assessment.findings %}
+      <div style="color:#f87171;font-size:11px;margin-top:8px;">{{ assessment.findings|length }} finding(s)</div>
+      {% for f in assessment.findings[:3] %}
+      <div style="background:#1e293b;border-left:2px solid {% if f.severity=='CRITICAL' %}#ef4444{% elif f.severity=='HIGH' %}#f97316{% else %}#f59e0b{% endif %};
+           padding:6px 8px;border-radius:0 3px 3px 0;margin-bottom:4px;font-size:11px;">
+        <div style="color:#eaeaea;">{{ f.title }}</div>
+        <div style="color:#7a8cb0;font-size:10px;">{{ f.framework }}</div>
       </div>
-      <div style="background:#1e293b;border-radius:3px;height:4px;">
-        <div style="background:{% if val >= 70 %}#10b981{% elif val >= 50 %}#f59e0b{% else %}#ef4444{% endif %};width:{{ val }}%;height:4px;border-radius:3px;"></div>
-      </div>
+      {% endfor %}
+      {% if assessment.findings|length > 3 %}
+      <a href="/agentic-ai/assessments/{{ design.id }}" style="color:#6366f1;font-size:11px;">See all {{ assessment.findings|length }} findings →</a>
+      {% endif %}
+      {% endif %}
+      {% endif %}
     </div>
-    {% endmacro %}
-
-    {{ score_bar('NIST AI RMF', assessment.nist_rmf_score) }}
-    {{ score_bar('OWASP LLM', assessment.owasp_score) }}
-    {{ score_bar('Overall', assessment.score) }}
-
-    {% if assessment.findings %}
-    <div style="color:#f87171;font-size:11px;margin-top:8px;">{{ assessment.findings|length }} finding(s)</div>
-    {% for f in assessment.findings[:3] %}
-    <div style="background:#1e293b;border-left:2px solid {% if f.severity == 'CRITICAL' %}#ef4444{% elif f.severity == 'HIGH' %}#f97316{% else %}#f59e0b{% endif %};padding:6px 8px;border-radius:0 3px 3px 0;margin-bottom:4px;font-size:11px;">
-      <div style="color:#eaeaea;">{{ f.title }}</div>
-      <div style="color:#7a8cb0;font-size:10px;">{{ f.framework }}</div>
-    </div>
-    {% endfor %}
-    {% if assessment.findings|length > 3 %}
-    <a href="/agentic-ai/assessments/{{ design.id }}" style="color:#6366f1;font-size:11px;">See all {{ assessment.findings|length }} findings →</a>
-    {% endif %}
-    {% endif %}
-    {% endif %}
   </div>
+
+  <!-- Right sidebar expand strip (visible when collapsed) -->
+  <div id="props-expand-strip" class="expand-strip" style="display:none;" onclick="togglePropsSidebar()" title="Expand properties">
+    <span>◀ Props</span>
+  </div>
+
 </div>
 
-<div id="status-bar" style="position:fixed;bottom:0;left:0;right:0;background:#0f172a;border-top:1px solid #1e3a6e;padding:3px 16px;font-size:11px;color:#7a8cb0;display:flex;gap:16px;">
+<div id="status-bar"
+  style="position:fixed;bottom:0;left:0;right:0;background:#0f172a;border-top:1px solid #1e3a6e;padding:3px 16px;font-size:11px;color:#7a8cb0;display:flex;gap:16px;">
   <span id="node-count">Nodes: 0</span>
   <span id="edge-count">Edges: 0</span>
-  <span id="status-msg"></span>
+  <span id="zoom-status">Zoom: 100%</span>
+  <span id="status-msg" style="margin-left:auto;"></span>
 </div>
 
 <script>
@@ -169,51 +327,161 @@ const DESIGN_ID = "{{ design.id or '' }}";
 let graph = {{ design.graph_json | safe }};
 let selectedNode = null;
 let connectingFrom = null;
-let dragOffset = {x:0, y:0};
 let nextId = () => 'n-' + Math.random().toString(36).substr(2, 10);
+
+// ── Viewport (pan/zoom) state ──
+const VP_MIN = 0.15, VP_MAX = 3.0, VP_STEP = 0.1;
+let vp = {x: 0, y: 0, scale: 1.0};
+let _panning = false, _panStart = {x:0,y:0}, _vpAtPanStart = {x:0,y:0};
+let _spaceDown = false;
+
+// ── Node drag state ──
+let _dragging = null, _dragOffset = {x:0, y:0};
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
+  setupPaletteListeners();
+  setupCanvasEvents();
   loadSnippetsSidebar();
   render();
-  setupPaletteListeners();
+  applyVP();
   if (graph.nodes.length > 0) document.getElementById('drop-hint').style.display = 'none';
 });
 
-// ── Palette listeners ──
+// ────────────────────────────────────────────────
+// PAN / ZOOM
+// ────────────────────────────────────────────────
+function applyVP() {
+  document.getElementById('canvas-viewport').style.transform =
+    `translate(${vp.x}px,${vp.y}px) scale(${vp.scale})`;
+  const pct = Math.round(vp.scale * 100) + '%';
+  document.getElementById('zoom-display').textContent = pct;
+  document.getElementById('zoom-status').textContent  = 'Zoom: ' + pct;
+}
+
+function zoomIn()    { vpScaleTo(vp.scale + VP_STEP); }
+function zoomOut()   { vpScaleTo(vp.scale - VP_STEP); }
+function zoomReset() { vp = {x:0, y:0, scale:1}; applyVP(); }
+function vpScaleTo(s, cx, cy) {
+  const container = document.getElementById('canvas-container');
+  if (cx == null) cx = container.clientWidth  / 2;
+  if (cy == null) cy = container.clientHeight / 2;
+  const ns = Math.max(VP_MIN, Math.min(VP_MAX, s));
+  vp.x = cx - (cx - vp.x) * (ns / vp.scale);
+  vp.y = cy - (cy - vp.y) * (ns / vp.scale);
+  vp.scale = ns;
+  applyVP();
+}
+
+function zoomFit() {
+  if (!graph.nodes.length) { zoomReset(); return; }
+  const container = document.getElementById('canvas-container');
+  const cw = container.clientWidth, ch = container.clientHeight, pad = 60;
+  const xs  = graph.nodes.map(n => n.x),             ys  = graph.nodes.map(n => n.y);
+  const x2s = graph.nodes.map(n => n.x+(n.w||140)), y2s = graph.nodes.map(n => n.y+(n.h||50));
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const maxX = Math.max(...x2s), maxY = Math.max(...y2s);
+  const cw2 = maxX-minX, ch2 = maxY-minY;
+  if (cw2 < 1 || ch2 < 1) { zoomReset(); return; }
+  const s = Math.max(VP_MIN, Math.min(VP_MAX, Math.min((cw-pad*2)/cw2, (ch-pad*2)/ch2)));
+  vp.scale = s;
+  vp.x = (cw - cw2*s)/2 - minX*s;
+  vp.y = (ch - ch2*s)/2 - minY*s;
+  applyVP();
+}
+
+// Screen → canvas coordinate conversion
+function screenToCanvas(sx, sy) {
+  const r = document.getElementById('canvas-container').getBoundingClientRect();
+  return { x: (sx - r.left - vp.x) / vp.scale, y: (sy - r.top - vp.y) / vp.scale };
+}
+
+function setupCanvasEvents() {
+  const container = document.getElementById('canvas-container');
+
+  // Wheel → zoom toward cursor
+  container.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = container.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    vpScaleTo(vp.scale + (e.deltaY < 0 ? VP_STEP : -VP_STEP), cx, cy);
+  }, {passive: false});
+
+  // Middle-mouse or Space+left-drag → pan
+  container.addEventListener('mousedown', e => {
+    const isPanTrigger = e.button === 1 || (e.button === 0 && _spaceDown);
+    if (!isPanTrigger) return;
+    e.preventDefault();
+    _panning = true;
+    _panStart = {x: e.clientX, y: e.clientY};
+    _vpAtPanStart = {x: vp.x, y: vp.y};
+    container.style.cursor = 'grabbing';
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!_panning) return;
+    vp.x = _vpAtPanStart.x + (e.clientX - _panStart.x);
+    vp.y = _vpAtPanStart.y + (e.clientY - _panStart.y);
+    applyVP();
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (_panning) {
+      _panning = false;
+      container.style.cursor = _spaceDown ? 'grab' : 'default';
+    }
+  });
+
+  // Click on empty canvas → deselect
+  container.addEventListener('click', e => {
+    if (e.target === container || e.target.id === 'canvas-viewport' ||
+        e.target.id === 'nodes-layer' || e.target.id === 'edges-layer') {
+      selectedNode = null; connectingFrom = null;
+      document.getElementById('node-props').style.display = 'none';
+      document.getElementById('no-selection').style.display = 'block';
+      render();
+    }
+  });
+}
+
+// ────────────────────────────────────────────────
+// PALETTE LISTENERS
+// ────────────────────────────────────────────────
 function setupPaletteListeners() {
   document.querySelectorAll('.palette-node').forEach(el => {
     el.addEventListener('dragstart', e => {
-      e.dataTransfer.setData('node-type', el.dataset.type);
+      e.dataTransfer.setData('node-type',  el.dataset.type);
       e.dataTransfer.setData('node-label', el.dataset.label);
       e.dataTransfer.setData('node-color', el.dataset.color);
-      e.dataTransfer.setData('node-icon', el.dataset.icon);
+      e.dataTransfer.setData('node-icon',  el.dataset.icon);
     });
   });
 }
 
-// ── Drop ──
+// ────────────────────────────────────────────────
+// DROP
+// ────────────────────────────────────────────────
 function onDrop(e) {
   e.preventDefault();
   const type = e.dataTransfer.getData('node-type');
   if (!type) return;
-  const rect = document.getElementById('canvas-container').getBoundingClientRect();
-  const x = e.clientX - rect.left - 70;
-  const y = e.clientY - rect.top - 25;
+  const pos = screenToCanvas(e.clientX, e.clientY);
   const node = {
-    id: nextId(),
-    type: type,
+    id: nextId(), type, w: 140, h: 50,
     label: e.dataTransfer.getData('node-label'),
     color: e.dataTransfer.getData('node-color'),
-    icon: e.dataTransfer.getData('node-icon'),
-    x: Math.max(0, x), y: Math.max(0, y), w: 140, h: 50
+    icon:  e.dataTransfer.getData('node-icon'),
+    x: Math.max(0, pos.x - 70),
+    y: Math.max(0, pos.y - 25),
   };
   graph.nodes.push(node);
   document.getElementById('drop-hint').style.display = 'none';
   render();
 }
 
-// ── Render ──
+// ────────────────────────────────────────────────
+// RENDER
+// ────────────────────────────────────────────────
 function render() {
   renderNodes();
   renderEdges();
@@ -228,100 +496,90 @@ function renderNodes() {
     const el = document.createElement('div');
     el.className = 'canvas-node';
     el.dataset.id = n.id;
+    const isSelected = selectedNode && selectedNode.id === n.id;
+    const isConnSrc  = connectingFrom === n.id;
     el.style.cssText = `
       position:absolute; left:${n.x}px; top:${n.y}px; width:${n.w||140}px; height:${n.h||50}px;
       background:#16213e; border:2px solid ${n.color||'#6366f1'};
       border-radius:6px; display:flex; align-items:center; justify-content:center;
-      cursor:move; user-select:none; font-size:11px; color:#eaeaea; text-align:center;
-      padding:0 8px; box-sizing:border-box; gap:4px;
-      box-shadow: ${selectedNode && selectedNode.id === n.id ? '0 0 0 2px #fff' : '0 2px 8px rgba(0,0,0,0.4)'};
+      cursor:move; user-select:none; font-size:11px; color:#eaeaea;
+      text-align:center; padding:0 8px; box-sizing:border-box; gap:4px;
+      box-shadow:${isSelected ? '0 0 0 2px #fff' : isConnSrc ? '0 0 0 3px #10b981' : '0 2px 8px rgba(0,0,0,0.4)'};
     `;
-    el.innerHTML = `<span style="color:${n.color||'#6366f1'};font-size:14px;">${n.icon||'⬡'}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}</span>`;
+    el.innerHTML = `<span style="color:${n.color||'#6366f1'};font-size:14px;">${n.icon||'⬡'}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}</span>`;
 
-    // Drag
-    el.addEventListener('mousedown', e => startDrag(e, n));
-    el.addEventListener('click', e => { e.stopPropagation(); selectNode(n); });
-
-    // Connect mode: click on node while holding Shift → draw edge
+    el.addEventListener('mousedown', e => startNodeDrag(e, n));
     el.addEventListener('click', e => {
-      if (!e.shiftKey) return;
       e.stopPropagation();
-      if (!connectingFrom) {
-        connectingFrom = n.id;
-        el.style.boxShadow = '0 0 0 3px #10b981';
-        setStatus('Shift-click target node to connect');
-      } else if (connectingFrom !== n.id) {
-        graph.edges.push({id:'e-'+Math.random().toString(36).substr(2,8), source:connectingFrom, target:n.id, label:''});
-        connectingFrom = null;
-        render();
-        setStatus('Edge created');
+      if (e.shiftKey) {
+        if (!connectingFrom) {
+          connectingFrom = n.id; render(); setStatus('Shift-click target node to connect');
+        } else if (connectingFrom !== n.id) {
+          graph.edges.push({id:'e-'+Math.random().toString(36).substr(2,8), source:connectingFrom, target:n.id, label:''});
+          connectingFrom = null; render(); setStatus('Edge created');
+        }
+      } else {
+        selectNode(n);
       }
     });
-
     layer.appendChild(el);
   });
 }
 
 function renderEdges() {
   const svg = document.getElementById('edges-layer');
-  svg.innerHTML = '';
   const nodeMap = {};
   graph.nodes.forEach(n => nodeMap[n.id] = n);
-
-  // Arrow marker
   svg.innerHTML = `<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="8" refY="3" orient="auto">
     <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/></marker></defs>`;
-
   graph.edges.forEach(e => {
     const s = nodeMap[e.source], t = nodeMap[e.target];
     if (!s || !t) return;
-    const x1 = s.x + (s.w||140)/2, y1 = s.y + (s.h||50)/2;
-    const x2 = t.x + (t.w||140)/2, y2 = t.y + (t.h||50)/2;
-    const mx = (x1+x2)/2, my = (y1+y2)/2;
+    const x1=s.x+(s.w||140)/2, y1=s.y+(s.h||50)/2, x2=t.x+(t.w||140)/2, y2=t.y+(t.h||50)/2;
+    const mx=(x1+x2)/2, my=(y1+y2)/2;
     const path = document.createElementNS('http://www.w3.org/2000/svg','path');
-    path.setAttribute('d',`M${x1},${y1} Q${mx},${y1} ${x2},${y2}`);
-    path.setAttribute('stroke','#6366f1');
-    path.setAttribute('stroke-width','1.5');
-    path.setAttribute('fill','none');
-    path.setAttribute('marker-end','url(#arr)');
-    path.setAttribute('opacity','0.7');
+    path.setAttribute('d', `M${x1},${y1} Q${mx},${y1} ${x2},${y2}`);
+    path.setAttribute('stroke','#6366f1'); path.setAttribute('stroke-width','1.5');
+    path.setAttribute('fill','none'); path.setAttribute('marker-end','url(#arr)'); path.setAttribute('opacity','0.7');
     svg.appendChild(path);
-
     if (e.label) {
-      const text = document.createElementNS('http://www.w3.org/2000/svg','text');
-      text.setAttribute('x', String(mx)); text.setAttribute('y', String(my - 5));
-      text.setAttribute('fill','#7a8cb0'); text.setAttribute('font-size','10');
-      text.setAttribute('text-anchor','middle');
-      text.textContent = e.label;
-      svg.appendChild(text);
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x',String(mx)); txt.setAttribute('y',String(my-5));
+      txt.setAttribute('fill','#7a8cb0'); txt.setAttribute('font-size','10'); txt.setAttribute('text-anchor','middle');
+      txt.textContent = e.label; svg.appendChild(txt);
     }
   });
 }
 
-// ── Drag nodes ──
-let _dragging = null;
-function startDrag(e, node) {
-  if (e.shiftKey) return;
+// ────────────────────────────────────────────────
+// NODE DRAG
+// ────────────────────────────────────────────────
+function startNodeDrag(e, node) {
+  if (e.shiftKey || _spaceDown || e.button !== 0) return;
+  e.stopPropagation();
   _dragging = node;
-  const rect = e.currentTarget.getBoundingClientRect();
-  dragOffset = {x: e.clientX - rect.left, y: e.clientY - rect.top};
-  document.addEventListener('mousemove', onDragMove);
-  document.addEventListener('mouseup', stopDrag);
+  const c = screenToCanvas(e.clientX, e.clientY);
+  _dragOffset = {x: c.x - node.x, y: c.y - node.y};
+  document.addEventListener('mousemove', onNodeDragMove);
+  document.addEventListener('mouseup',   stopNodeDrag);
 }
-function onDragMove(e) {
+function onNodeDragMove(e) {
   if (!_dragging) return;
-  const cr = document.getElementById('canvas-container').getBoundingClientRect();
-  _dragging.x = Math.max(0, e.clientX - cr.left - dragOffset.x);
-  _dragging.y = Math.max(0, e.clientY - cr.top - dragOffset.y);
+  const c = screenToCanvas(e.clientX, e.clientY);
+  _dragging.x = Math.max(0, c.x - _dragOffset.x);
+  _dragging.y = Math.max(0, c.y - _dragOffset.y);
   render();
 }
-function stopDrag() {
+function stopNodeDrag() {
   _dragging = null;
-  document.removeEventListener('mousemove', onDragMove);
-  document.removeEventListener('mouseup', stopDrag);
+  document.removeEventListener('mousemove', onNodeDragMove);
+  document.removeEventListener('mouseup',   stopNodeDrag);
 }
 
-// ── Selection ──
+// ────────────────────────────────────────────────
+// SELECTION
+// ────────────────────────────────────────────────
 function selectNode(node) {
   selectedNode = node;
   document.getElementById('node-props').style.display = 'block';
@@ -331,14 +589,10 @@ function selectNode(node) {
   document.getElementById('prop-desc').textContent = descs[node.type] || '';
   render();
 }
-document.getElementById('canvas-container').addEventListener('click', () => {
-  selectedNode = null; connectingFrom = null;
-  document.getElementById('node-props').style.display = 'none';
-  document.getElementById('no-selection').style.display = 'block';
-  render();
-});
-document.getElementById('prop-label').addEventListener('input', e => {
-  if (selectedNode) { selectedNode.label = e.target.value; render(); }
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('prop-label').addEventListener('input', e => {
+    if (selectedNode) { selectedNode.label = e.target.value; render(); }
+  });
 });
 
 function deleteSelectedNode() {
@@ -351,55 +605,164 @@ function deleteSelectedNode() {
   render();
 }
 
-// ── Save ──
+// ────────────────────────────────────────────────
+// SAVE / ASSESS / LAUNCH
+// ────────────────────────────────────────────────
 function saveDesign() {
   const btn = document.getElementById('save-btn');
-  btn.textContent = 'Saving...'; btn.disabled = true;
+  btn.textContent = 'Saving…'; btn.disabled = true;
   const payload = {
     name: document.getElementById('design-name').value,
     domain: document.getElementById('design-domain').value,
     classification: document.getElementById('design-class').value,
-    graph: graph,
+    graph,
   };
-  const url = DESIGN_ID ? '/agentic-ai/api/designs/' + DESIGN_ID : '/agentic-ai/api/designs';
+  const url = DESIGN_ID ? '/agentic-ai/api/designs/'+DESIGN_ID : '/agentic-ai/api/designs';
   const method = DESIGN_ID ? 'PUT' : 'POST';
   fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
     .then(r => r.json())
     .then(d => {
       btn.textContent = '✓ Saved'; btn.disabled = false;
-      setStatus('Saved · Score: ' + (d.score||'--') + '% · ' + (d.findings_json ? JSON.parse(d.findings_json).length : 0) + ' finding(s)');
-      if (!DESIGN_ID && d.id) window.location.href = '/agentic-ai/canvas/' + d.id;
+      const fc = d.findings_json ? JSON.parse(d.findings_json).length : 0;
+      setStatus('Saved · Score: '+(d.score||'--')+'% · '+fc+' finding(s)');
+      if (!DESIGN_ID && d.id) window.location.href = '/agentic-ai/canvas/'+d.id;
       setTimeout(() => { btn.textContent = 'Save'; }, 2000);
     })
-    .catch(err => { btn.textContent = 'Save'; btn.disabled = false; setStatus('Error: ' + err); });
+    .catch(err => { btn.textContent = 'Save'; btn.disabled = false; setStatus('Error: '+err); });
 }
 
-// ── Assess ──
 function assessDesign() {
-  setStatus('Running assessment...');
-  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/assess', {method:'POST'})
+  setStatus('Running assessment…');
+  fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/assess', {method:'POST'})
     .then(r => r.json())
-    .then(d => { setStatus('Assessment done · Score: ' + d.score + '%'); setTimeout(() => location.reload(), 1200); });
+    .then(d => { setStatus('Assessment done · Score: '+d.score+'%'); setTimeout(() => location.reload(), 1200); });
 }
 
-// ── Launch ──
 function launchDesign() {
   if (!confirm('Launch this design to Kanban? This will create implementation tasks.')) return;
-  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/launch', {method:'POST'})
+  fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/launch', {method:'POST'})
     .then(r => r.json())
     .then(d => {
       if (d.error) { alert(d.error); return; }
-      setStatus('Launched! ' + (d.task_ids||[]).length + ' Kanban tasks created.');
+      setStatus('Launched! '+(d.task_ids||[]).length+' Kanban tasks created.');
     });
 }
 
-// ── Palette toggle ──
-function togglePalette(cat) {
-  const el = document.getElementById('cat-'+cat);
-  el.style.display = el.style.display === 'none' ? 'block' : 'none';
+// ────────────────────────────────────────────────
+// SIDEBAR TOGGLES
+// ────────────────────────────────────────────────
+let _paletteOpen = true;
+function togglePaletteSidebar() {
+  _paletteOpen = !_paletteOpen;
+  const sidebar = document.getElementById('palette-sidebar');
+  const strip   = document.getElementById('palette-expand-strip');
+  if (_paletteOpen) {
+    sidebar.style.width = '200px'; sidebar.style.minWidth = '200px';
+    sidebar.style.borderRight = '1px solid #1e3a6e';
+    strip.style.display = 'none';
+  } else {
+    sidebar.style.width = '0'; sidebar.style.minWidth = '0';
+    sidebar.style.borderRight = 'none';
+    strip.style.display = 'flex';
+  }
 }
 
-// ── Snippets sidebar ──
+let _propsOpen = true;
+function togglePropsSidebar() {
+  _propsOpen = !_propsOpen;
+  const sidebar = document.getElementById('props-sidebar');
+  const strip   = document.getElementById('props-expand-strip');
+  if (_propsOpen) {
+    sidebar.style.width = '260px'; sidebar.style.minWidth = '260px';
+    sidebar.style.borderLeft = '1px solid #1e3a6e';
+    strip.style.display = 'none';
+  } else {
+    sidebar.style.width = '0'; sidebar.style.minWidth = '0';
+    sidebar.style.borderLeft = 'none';
+    strip.style.display = 'flex';
+  }
+}
+
+// ────────────────────────────────────────────────
+// CATEGORY TOGGLE
+// ────────────────────────────────────────────────
+function toggleCat(cat) {
+  const body  = document.getElementById('cat-'+cat);
+  const arrow = document.getElementById('cat-arrow-'+cat);
+  const open  = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  arrow.classList.toggle('collapsed', open);
+}
+
+// ────────────────────────────────────────────────
+// MENU
+// ────────────────────────────────────────────────
+function toggleMenu(e) {
+  e && e.stopPropagation();
+  const m = document.getElementById('aadc-menu');
+  m.style.display = m.style.display === 'block' ? 'none' : 'block';
+}
+document.addEventListener('click', () => {
+  document.getElementById('aadc-menu').style.display = 'none';
+});
+
+// ────────────────────────────────────────────────
+// EXPORT
+// ────────────────────────────────────────────────
+function doExportJSON() {
+  const blob = new Blob([JSON.stringify({
+    name: document.getElementById('design-name').value,
+    domain: document.getElementById('design-domain').value,
+    classification: document.getElementById('design-class').value,
+    graph, exported_at: new Date().toISOString()
+  }, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('design-name').value||'aadc-design')+'.json';
+  a.click();
+  document.getElementById('aadc-menu').style.display = 'none';
+}
+
+function doExportSVG() {
+  const pad = 20;
+  const maxX = graph.nodes.reduce((m,n) => Math.max(m, n.x+(n.w||140)), 400);
+  const maxY = graph.nodes.reduce((m,n) => Math.max(m, n.y+(n.h||50)),  300);
+  const W = maxX+pad*2, H = maxY+pad*2;
+  let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <rect width="${W}" height="${H}" fill="#090e1a"/>
+  <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/></marker></defs>`;
+  const nodeMap = {};
+  graph.nodes.forEach(n => nodeMap[n.id] = n);
+  graph.edges.forEach(e => {
+    const s=nodeMap[e.source], t=nodeMap[e.target];
+    if (!s||!t) return;
+    const x1=s.x+(s.w||140)/2, y1=s.y+(s.h||50)/2, x2=t.x+(t.w||140)/2, y2=t.y+(t.h||50)/2;
+    const mx=(x1+x2)/2;
+    svgContent += `<path d="M${x1},${y1} Q${mx},${y1} ${x2},${y2}" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#arr)" opacity="0.7"/>`;
+  });
+  graph.nodes.forEach(n => {
+    svgContent += `<rect x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" rx="6" fill="#16213e" stroke="${n.color||'#6366f1'}" stroke-width="2"/>`;
+    svgContent += `<text x="${n.x+(n.w||140)/2}" y="${n.y+(n.h||50)/2+4}" fill="#eaeaea" font-size="11" text-anchor="middle" font-family="sans-serif">${n.label}</text>`;
+  });
+  svgContent += '</svg>';
+  const blob = new Blob([svgContent], {type:'image/svg+xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('design-name').value||'aadc-design')+'.svg';
+  a.click();
+  document.getElementById('aadc-menu').style.display = 'none';
+}
+
+function doToggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+  document.getElementById('aadc-menu').style.display = 'none';
+}
+
+// ────────────────────────────────────────────────
+// SNIPPETS
+// ────────────────────────────────────────────────
 function loadSnippetsSidebar() {
   fetch('/agentic-ai/api/snippets')
     .then(r => r.json())
@@ -410,29 +773,54 @@ function loadSnippetsSidebar() {
         `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b;">
           <span style="font-size:11px;color:#eaeaea;">${s.name}</span>
           <button onclick="insertSnippet('${s.id}')" style="background:#0f3460;color:#7ab3f0;border:none;padding:2px 6px;border-radius:2px;cursor:pointer;font-size:10px;">+</button>
-        </div>`
-      ).join('');
+        </div>`).join('');
     });
 }
 
 function insertSnippet(snippetId) {
   if (!DESIGN_ID) { saveDesign(); return; }
-  fetch('/agentic-ai/api/snippets/' + snippetId + '/insert/' + DESIGN_ID, {
+  fetch('/agentic-ai/api/snippets/'+snippetId+'/insert/'+DESIGN_ID, {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({offset_x: 100, offset_y: 100})
+    body: JSON.stringify({offset_x:100, offset_y:100})
   }).then(r => r.json()).then(d => {
     if (d.graph_json) { graph = JSON.parse(d.graph_json); render(); setStatus('Snippet inserted'); }
   });
 }
 
-// ── Status ──
+// ────────────────────────────────────────────────
+// STATUS
+// ────────────────────────────────────────────────
 function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
 
-// ── Keyboard shortcuts ──
+// ────────────────────────────────────────────────
+// KEYBOARD
+// ────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveDesign(); }
-  if (e.key === 'Delete' && selectedNode) deleteSelectedNode();
-  if (e.key === 'Escape') { connectingFrom = null; }
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+  if ((e.ctrlKey||e.metaKey) && e.key === 's')         { e.preventDefault(); saveDesign(); }
+  if (e.key === 'Delete' && selectedNode)              deleteSelectedNode();
+  if (e.key === 'Escape')                              { connectingFrom = null; render(); }
+  if ((e.ctrlKey||e.metaKey) && (e.key==='='||e.key==='+')) { e.preventDefault(); zoomIn(); }
+  if ((e.ctrlKey||e.metaKey) && e.key === '-')         { e.preventDefault(); zoomOut(); }
+  if ((e.ctrlKey||e.metaKey) && e.key === '0')         { e.preventDefault(); zoomReset(); }
+
+  if (e.key === ' ') {
+    e.preventDefault();
+    _spaceDown = true;
+    document.getElementById('canvas-container').style.cursor = 'grab';
+    document.getElementById('pan-hint').style.display = 'block';
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === ' ') {
+    _spaceDown = false;
+    if (!_panning) {
+      document.getElementById('canvas-container').style.cursor = 'default';
+      document.getElementById('pan-hint').style.display = 'none';
+    }
+  }
 });
 </script>
 {% endblock %}

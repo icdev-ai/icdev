@@ -410,3 +410,25 @@ def ai_skills_page():
     from tools.aisg.skills_tracker import get_skills_data
     data = get_skills_data()
     return render_template("aisg/skills.html", **data)
+
+
+# ---------------------------------------------------------------------------
+# AutoTune — business-metric evaluation
+# ---------------------------------------------------------------------------
+
+@bp.route("/api/autotune/evaluate", methods=["GET"])
+def api_autotune_evaluate():
+    from tools.aisg.autotune import evaluate_business_metric
+    business_goal = request.args.get("business_goal", "accuracy")
+    model_version = request.args.get("model_version", "latest")
+    _test_pct_raw = request.args.get("_test_pct")
+    _test_pct = float(_test_pct_raw) if _test_pct_raw is not None else None
+    try:
+        result = evaluate_business_metric(
+            business_goal=business_goal,
+            model_version=model_version,
+            _test_pct=_test_pct,
+        )
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
