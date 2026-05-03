@@ -1090,16 +1090,16 @@ def _get_due_tasks() -> list:
         if slots <= 0:
             return result
 
-        # Backlog cooldown: skip tasks updated in the last 10 minutes
-        # (prevents rapid-fire retry of recently failed tasks).
-        # Exception: tasks with reset_count > 0 were explicitly reset by
-        # _reset_to_backlog() which back-dates updated_at by 11 minutes,
-        # so they pass the cooldown naturally.
+        # Backlog cooldown: skip tasks updated in the last 2 minutes
+        # (prevents rapid-fire retry of recently failed tasks; 2 min aligns
+        # with the 60s scheduler cycle and keeps parallel slots filling fast).
+        # Tasks with fc≥5 are quarantined by the stale-reaper sweep and will
+        # not appear here (status='suggested' after the sweep).
         backlog = conn.execute(
             "SELECT kt.* FROM kanban_tasks kt "
             "WHERE kt.status = 'backlog' "
             "  AND (kt.updated_at IS NULL "
-            "       OR kt.updated_at <= datetime('now', '-10 minutes')) "
+            "       OR kt.updated_at <= datetime('now', '-2 minutes')) "
             "  AND (kt.last_failure_reason IS NULL "
             "       OR kt.last_failure_reason NOT LIKE ?) "
             f"  AND {dep_clause} "  # nosec B608
@@ -4287,25 +4287,38 @@ def _reap_stale_in_progress() -> None:
                 continue  # task is recent enough — let it run
 
             now_iso = now.isoformat()
+            # Check current failure count before incrementing — if this
+            # reap would bring fc to ≥5, escalate to 'suggested' for HITL
+            # review instead of infinite backlog retry (fc≥5 quarantine).
+            fc_row = conn.execute(
+                "SELECT COALESCE(failure_count, 0) FROM kanban_tasks WHERE id = ?",
+                (tid,),
+            ).fetchone()
+            new_fc = (fc_row[0] if fc_row else 0) + 1
+            next_status = "suggested" if new_fc >= 5 else "backlog"
             reason = (
                 f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
                 f"with {reap_label} (threshold={threshold / 60:.0f} min). "
-                "Automatically reset to backlog for re-dispatch."
+                + (
+                    f"fc={new_fc}>=5 - escalated to suggested for HITL review."
+                    if next_status == "suggested"
+                    else "Automatically reset to backlog for re-dispatch."
+                )
             )
             conn.execute(
                 "UPDATE kanban_tasks SET "
-                "  status = 'backlog', "
+                "  status = ?, "
                 "  failure_count = COALESCE(failure_count, 0) + 1, "
                 "  last_failure_reason = ?, "
                 "  last_failure_at = ?, "
                 "  updated_at = ? "
                 "WHERE id = ? AND status = 'in_progress'",
-                (reason, now_iso, now_iso, tid),
+                (next_status, reason, now_iso, now_iso, tid),
             )
             reaped.append(tid)
             print(
                 f"  Kanban: stale-reaper reset {tid} "
-                f"(in_progress {age_seconds / 60:.0f} min, {reap_label})"
+                f"(in_progress {age_seconds / 60:.0f} min, {reap_label}) -> {next_status}"
             )
 
         if reaped:
@@ -4352,7 +4365,7 @@ def _startup_recover_stale_in_progress() -> None:
                 "last_failure_reason=?, updated_at=? WHERE id=?",
                 (reason, now_iso, tid),
             )
-            print(f"  Kanban: startup-recovery reset {tid} in_progress → backlog")
+            print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
         conn.commit()
         conn.close()
     except Exception as exc:
