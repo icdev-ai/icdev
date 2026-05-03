@@ -989,3 +989,32 @@ def create_wf_blueprint() -> Blueprint:
             return jsonify({"error": str(exc)}), 500
 
     return bp
+
+
+def create_wf_page_blueprint() -> Blueprint:
+    """Page blueprint for HITL Workflow — mounts UI routes at /workflow."""
+    page_bp = Blueprint("wf_pages", __name__, url_prefix="/workflow")
+
+    @page_bp.route("/")
+    @page_bp.route("")
+    def wf_queue():
+        if not _hitl_enabled():
+            from flask import abort
+            abort(503)
+        from flask import render_template as _rt
+        return _rt("workflow_hitl.html")
+
+    @page_bp.route("/teams")
+    def wf_teams():
+        if not _hitl_enabled():
+            from flask import abort
+            abort(503)
+        from flask import render_template as _rt
+        return _rt("workflow_teams.html")
+
+    @page_bp.route("/hitl")
+    def wf_hitl_redirect():
+        from flask import redirect
+        return redirect("/workflow/")
+
+    return page_bp

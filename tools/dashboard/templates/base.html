@@ -186,14 +186,16 @@
                 </ul>
             </li>
 
+            {% if hitl_enabled %}
             <!-- HITL Workflow Management -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/workflow-hitl', '/workflow-teams'] %}active{% endif %}">Workflow</a>
+                <a href="#" class="{% if '/workflow' in request.path %}active{% endif %}">Workflow</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/workflow-hitl">HITL Queue</a></li>
-                    <li><a href="/workflow-teams">Teams &amp; Assignments</a></li>
+                    <li><a href="/workflow/">HITL Queue</a></li>
+                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
                 </ul>
             </li>
+            {% endif %}
 
             {% if not airgap_mode %}
             <!-- Genesis (all apps) -->
@@ -346,6 +348,27 @@
                     <li><a href="/quality/assessments">Assessments</a></li>
                     <li><a href="/quality/runbooks">Runbooks</a></li>
                     <li><a href="/quality/sops">SOPs</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if academy_enabled %}
+            <!-- FORGE Academy -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/academy' in request.path %}active{% endif %}" style="color:#10b981;">Academy</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/academy/">Dashboard</a></li>
+                    <li><a href="/academy/oracle">Oracle Insights</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if gameday_enabled %}
+            <!-- AI GameDay TTX Platform -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/gameday' in request.path %}active{% endif %}" style="color:#f59e0b;">GameDay</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/gameday/">Sessions</a></li>
                 </ul>
             </li>
             {% endif %}

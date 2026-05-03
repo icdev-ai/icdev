@@ -167,6 +167,34 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
                 "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
             )
 
+# ── Application Modules (conditional registration) ─────────────────────────
+_APP_FLAGS: dict[str, bool] = {}
+_APP_BLUEPRINTS: dict[str, object] = {}
+
+_APP_DEFS = [
+    ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
+    ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
+    ("gameday",       "ICDEV_GAMEDAY_ENABLED",         "apps.ai_gameday.blueprint",     "gameday_bp"),
+]
+
+for _key, _env, _mod, _attr in _APP_DEFS:
+    _enabled = os.environ.get(_env, "false").lower() in ("true", "1", "yes")
+    _APP_FLAGS[_key] = False
+    if _enabled:
+        try:
+            import importlib as _il
+            _m = _il.import_module(_mod)
+            _bp = getattr(_m, _attr, None)
+            if callable(_bp) and not hasattr(_bp, "name"):
+                _bp = _bp()
+            if _bp:
+                _APP_BLUEPRINTS[_key] = _bp
+                _APP_FLAGS[_key] = True
+        except Exception as _exc:
+            logging.getLogger("icdev.dashboard").warning(
+                "App module %s import failed (%s): %s", _key, _mod, _exc
+            )
+
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
 # ---------------------------------------------------------------------------
@@ -1162,6 +1190,9 @@ def create_app() -> Flask:
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "canvas_flags": _CANVAS_FLAGS,
+            "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
+            "academy_enabled": _APP_FLAGS.get("forge_academy", False),
+            "gameday_enabled": _APP_FLAGS.get("gameday", False),
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -1314,17 +1345,22 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
 
-    # ---- HITL Workflow Blueprint ----
+    # ---- App Module Blueprints (_APP_DEFS — page blueprints for workflow, academy, etc.) ----
+    for _ak, _abp in _APP_BLUEPRINTS.items():
+        try:
+            app.register_blueprint(_abp)
+            app.logger.info("App module %s registered", _ak)
+        except Exception as _exc:
+            app.logger.warning("App module %s registration failed: %s", _ak, _exc)
+
+    # ---- HITL Workflow API Blueprint (always registered when importable; gated per-route) ----
     try:
         from tools.workflow_hitl.blueprint import create_wf_blueprint
         _wf_bp = create_wf_blueprint()
-        # Mount at /api/wf (legacy session-cookie path) so dashboard Jinja pages
-        # can call it without a JWT Bearer token — same pattern as all other
-        # dashboard-internal blueprints.
         app.register_blueprint(_wf_bp, url_prefix="/api/wf")
-        app.logger.info("HITL Workflow blueprint registered at /api/wf")
+        app.logger.info("HITL Workflow API blueprint registered at /api/wf")
     except Exception as _exc:
-        app.logger.warning("HITL Workflow blueprint failed to register: %s", _exc)
+        app.logger.warning("HITL Workflow API blueprint failed to register: %s", _exc)
 
     # ---- AISG Setup Wizard Blueprint ----
     try:
@@ -7166,16 +7202,6 @@ def create_app() -> Flask:
             return jsonify({"error": str(exc)}), 500
 
     # ---- Phase 67: Engineering Review Board ----
-    @app.route("/workflow-hitl")
-    def workflow_hitl_page():
-        """HITL Workflow Queue — pending approval gates and feedback submission."""
-        return render_template("workflow_hitl.html")
-
-    @app.route("/workflow-teams")
-    def workflow_teams_page():
-        """HITL Workflow Teams — team creation, member management, and assignments."""
-        return render_template("workflow_teams.html")
-
     @app.route("/review-board")
     def review_board_page():
         """Engineering Review Board — multi-persona analysis dashboard."""
