@@ -35,6 +35,17 @@
   <div id="projects-container">
     <div class="kanban-empty" style="padding:1rem;">Loading projects…</div>
   </div>
+
+  {# ── Recent Task Events feed — done/failed/unverified notifications ── #}
+  <details id="pif-events-section" style="margin-top:1rem; display:none;">
+    <summary style="cursor:pointer; list-style:none; display:flex; align-items:center; gap:0.5rem;
+                    padding:0.5rem 0; border-top:1px solid var(--border-color,#2a2a40);">
+      <span style="font-size:0.9rem; font-weight:600; color:var(--text-primary);">Recent Task Events</span>
+      <span id="pif-events-count" style="font-size:0.72rem; color:var(--text-muted); margin-left:0.25rem;"></span>
+      <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);">last 24h</span>
+    </summary>
+    <div id="pif-events-list" style="margin-top:0.5rem;"></div>
+  </details>
 </section>
 
 <style>
