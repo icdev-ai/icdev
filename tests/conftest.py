@@ -1776,6 +1776,18 @@ CREATE TABLE IF NOT EXISTS wne_artifacts (
     generated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_wne_artifacts_session_id ON wne_artifacts(session_id);
+
+CREATE TABLE IF NOT EXISTS aisg_wizard_sessions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_token       TEXT UNIQUE NOT NULL,
+    use_case            TEXT,
+    compliance_level    TEXT,
+    tech_stack          TEXT,
+    ai_maturity         TEXT CHECK (ai_maturity IN ('none', 'pilot', 'scaling')),
+    cloud_provider      TEXT,
+    generated_args_json TEXT,
+    created_at          TEXT DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
