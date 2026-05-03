@@ -199,7 +199,7 @@ flowchart TD
                 <td>{{ event.duration_seconds or '—' }}</td>
                 <td>{{ event.escalated_to or '—' }}</td>
                 <td class="text-muted">{{ event.created_at }}</td>
-                <td><button class="btn btn-sm btn-explain" onclick="showHealExplain({{ event.id }})">? Explain</button></td>
+                <td><button class="btn btn-sm btn-explain" onclick="showExplain({{ event.id }})">Explain</button></td>
             </tr>
             {% else %}
             <tr class="empty-row"><td colspan="8">No self-healing events recorded</td></tr>
@@ -238,22 +238,5 @@ flowchart TD
         document.getElementById('chart-mon-status').innerHTML = '<p class="text-muted" style="text-align:center;padding:50px 0;">No alert data</p>';
     }
 })();
-</script>
-<script>
-function showHealExplain(healId) {
-    fetch('/api/explain/heal/' + healId)
-        .then(function(r) { return r.json(); })
-        .then(function(d) {
-            var html = d.explanation ? (d.explanation.html || '<p>' + (d.explanation.summary || JSON.stringify(d.explanation)) + '</p>') : '<p>No explanation available.</p>';
-            if (window.showExplainHtml) {
-                window.showExplainHtml('Self-Healing Event #' + healId, html);
-            } else if (window.showExplain) {
-                window.showExplain(healId);
-            } else {
-                alert(d.explanation ? d.explanation.summary : 'No explanation available.');
-            }
-        })
-        .catch(function(err) { console.error('Explain heal error:', err); });
-}
 </script>
 {% endblock %}

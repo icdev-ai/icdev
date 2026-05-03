@@ -37,7 +37,7 @@
 .type-briefing{background:#2d1b1a;color:#fca5a5;}
 .type-custom{background:#21262d;color:#8b949e;}
 .sim-inject-title{font-size:1.6rem;font-weight:800;color:#e6edf3;line-height:1.2;margin-bottom:1rem;}
-.sim-inject-body{font-size:.9rem;color:#8b949e;line-height:1.6;white-space:pre-wrap;}
+.sim-inject-body{font-size:.9rem;color:#8b949e;line-height:1.6;}
 .sim-inject-body strong{color:#e6edf3;}
 .sim-at-minute{font-size:.78rem;color:#6e7681;margin-top:.8rem;}
 .sim-ai-tools{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.8rem;}
@@ -151,6 +151,34 @@
 
 <script>
 const SESSION_ID = {{ session.session_id }};
+
+function renderMd(src) {
+  if (!src) return '';
+  // Escape HTML first
+  let s = src.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Headings
+  s = s.replace(/^### (.+)$/gm, '<h4 style="color:#e6edf3;margin:.8rem 0 .3rem;font-size:.95rem;">$1</h4>');
+  s = s.replace(/^## (.+)$/gm,  '<h3 style="color:#e6edf3;margin:.9rem 0 .35rem;font-size:1.05rem;">$1</h3>');
+  s = s.replace(/^# (.+)$/gm,   '<h2 style="color:#e6edf3;margin:1rem 0 .4rem;font-size:1.2rem;">$1</h2>');
+  // Bold + italic
+  s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+  s = s.replace(/\*\*(.+?)\*\*/g,     '<strong style="color:#e6edf3;">$1</strong>');
+  s = s.replace(/\*(.+?)\*/g,         '<em>$1</em>');
+  // HR
+  s = s.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #30363d;margin:.6rem 0;">');
+  // Unordered lists (must run before line-break handling)
+  s = s.replace(/(^- .+$(\n^- .+$)*)/gm, m => {
+    const items = m.split('\n').map(l => `<li>${l.replace(/^- /, '')}</li>`).join('');
+    return `<ul style="margin:.4rem 0 .4rem 1.2rem;padding:0;color:#8b949e;">${items}</ul>`;
+  });
+  // Inline code
+  s = s.replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:.1rem .3rem;border-radius:4px;font-size:.85em;color:#79c0ff;">$1</code>');
+  // Paragraphs / line breaks — blank line → paragraph break
+  s = s.replace(/\n{2,}/g, '</p><p style="margin:.5rem 0;color:#8b949e;">');
+  s = s.replace(/\n/g, '<br>');
+  return `<p style="margin:.5rem 0;color:#8b949e;">${s}</p>`;
+}
+
 let injects = [];
 let leaderboard = [];
 let teams = [];
@@ -194,7 +222,7 @@ function showPhase(idx) {
   titleEl.textContent = inj.title || '—';
 
   const bodyEl = document.getElementById('inject-body');
-  bodyEl.textContent = inj.body_md || inj.description || '(No description)';
+  bodyEl.innerHTML = renderMd(inj.body_md || inj.description || '(No description)');
 
   const minEl = document.getElementById('inject-minute');
   minEl.textContent = inj.at_minute != null ? `⏱ T+${inj.at_minute} min` : '';
