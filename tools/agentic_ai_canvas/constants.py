@@ -11,7 +11,9 @@ MODEL_NODES = {"llm", "llm-local", "embedding-model", "fine-tuned-adapter",
                "classifier", "reranker", "multimodal"}
 
 MEMORY_NODES = {"vector-db", "doc-store", "short-term-mem", "long-term-mem",
-                "episodic-buffer", "knowledge-graph", "embedding-cache"}
+                "episodic-buffer", "knowledge-graph", "embedding-cache",
+                # Phase 4 — LangGraph/LlamaIndex-inspired memory enrichment
+                "working-memory", "semantic-cache", "conversation-history"}
 
 AGENT_NODES = {"autonomous-agent", "semi-auto-agent", "orchestrator",
                "sub-agent", "researcher-agent", "writer-agent",
@@ -19,14 +21,18 @@ AGENT_NODES = {"autonomous-agent", "semi-auto-agent", "orchestrator",
 
 TOOL_MCP_NODES = {"mcp-server", "mcp-gateway", "tool-chain",
                   "function-caller", "output-validator", "external-api",
-                  "code-executor", "web-search"}
+                  "code-executor", "web-search",
+                  # Phase 4 — A2A bridge + sandboxed execution
+                  "a2a-bridge", "sandbox-exec"}
 
 DATA_NODES = {"training-data", "inference-input", "feedback-collector",
               "rlhf-pipeline", "data-lake", "chunker", "data-validator"}
 
 SAFETY_NODES = {"guardrail", "pii-detector", "toxicity-filter",
                 "confidence-threshold", "circuit-breaker", "rate-limiter",
-                "input-sanitizer", "redaction-engine"}
+                "input-sanitizer", "redaction-engine",
+                # Phase 4 — trusted monitor + field-level PII
+                "trusted-monitor", "pii-field-detector"}
 
 GOVERNANCE_NODES = {"hitl-gate", "audit-logger", "approval-workflow",
                     "caio-override", "compliance-reporter", "alert-manager",
@@ -36,8 +42,15 @@ INFRA_NODES = {"gpu-cluster", "model-registry", "token-budget",
                "vector-index", "siem-forwarder", "baseline-snapshot",
                "drift-detector"}
 
+# Phase 4 — execution control (checkpoint/fork/join from LangGraph pattern)
+EXECUTION_NODES = {"checkpoint", "fork", "join", "parallel-group"}
+
+# Phase 4 — observability (Haystack ProxyTracer / OpenTelemetry pattern)
+OBSERVABILITY_NODES = {"trace-collector", "span-recorder", "metrics-emitter"}
+
 ALL_NODE_TYPES = (MODEL_NODES | MEMORY_NODES | AGENT_NODES | TOOL_MCP_NODES
-                  | DATA_NODES | SAFETY_NODES | GOVERNANCE_NODES | INFRA_NODES)
+                  | DATA_NODES | SAFETY_NODES | GOVERNANCE_NODES | INFRA_NODES
+                  | EXECUTION_NODES | OBSERVABILITY_NODES)
 
 # Nodes considered "output-producing" for HITL path tracing
 OUTPUT_NODES = {"output-validator", "compliance-reporter", "external-api",
@@ -143,6 +156,64 @@ OWASP_LLM_CHECKS: list[dict] = [
     {"id": "llm10", "title": "Model Theft",
      "description": "Inference calls must be logged (audit-logger present).",
      "required_any": ["audit-logger"], "weight": 10},
+]
+
+# ---------------------------------------------------------------------------
+# MITRE ATLAS — node type → adversarial technique mapping
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Phase 4 — NIST AI RMF observability checks
+# ---------------------------------------------------------------------------
+
+P4_OBSERVABILITY_CHECKS: list[dict] = [
+    {"id": "obs-1", "function": "MEASURE", "category": "MEA-3",
+     "title": "Execution trace coverage",
+     "description": "At least one trace-collector or span-recorder node must be present for observability.",
+     "required_any": ["trace-collector", "span-recorder"],
+     "weight": 10},
+    {"id": "obs-2", "function": "MEASURE", "category": "MEA-4",
+     "title": "Metrics emission enabled",
+     "description": "A metrics-emitter node must be present to surface runtime telemetry.",
+     "required_any": ["metrics-emitter"],
+     "weight": 5},
+]
+
+# Phase 4 — safety extension checks
+P4_SAFETY_EXT_CHECKS: list[dict] = [
+    {"id": "p4-trusted-monitor", "function": "MANAGE", "category": "MNG-3",
+     "title": "Trusted monitor present for autonomous agents",
+     "description": "If any autonomous-agent is present, a trusted-monitor node must exist downstream.",
+     "check": "autonomous_agent_has_trusted_monitor",
+     "weight": 12},
+    {"id": "p4-pii-field", "function": "MANAGE", "category": "MNG-4",
+     "title": "Field-level PII detection enabled",
+     "description": "Designs with a pii-field-detector must wire it upstream of redaction-engine.",
+     "check": "pii_field_wired_to_redaction",
+     "weight": 8},
+]
+
+# Phase 4 — A2A / sandbox checks
+P4_A2A_CHECKS: list[dict] = [
+    {"id": "p4-a2a-audit", "function": "GOVERN", "category": "GOV-3",
+     "title": "A2A bridge audited",
+     "description": "Every a2a-bridge node must have an audit-logger downstream.",
+     "check": "a2a_bridge_has_audit_logger",
+     "weight": 10},
+    {"id": "p4-sandbox-guard", "function": "GOVERN", "category": "GOV-4",
+     "title": "Sandbox execution guarded",
+     "description": "Every sandbox-exec node must have a guardrail or input-sanitizer upstream.",
+     "check": "sandbox_exec_has_guardrail",
+     "weight": 10},
+]
+
+# Phase 4 — checkpoint coverage check
+P4_EXECUTION_CHECKS: list[dict] = [
+    {"id": "p4-checkpoint", "function": "MANAGE", "category": "MNG-5",
+     "title": "Execution checkpoints present",
+     "description": "Multi-agent designs benefit from at least one checkpoint node for fault recovery.",
+     "check": "has_checkpoint_node",
+     "weight": 5},
 ]
 
 # ---------------------------------------------------------------------------
@@ -257,8 +328,41 @@ AADC_OBJECTS: dict = {
             {"id": "baseline-snapshot", "label": "Baseline Snapshot","type": "baseline-snapshot", "icon": "📸", "color": "#374151"},
             {"id": "drift-detector",    "label": "Drift Detector",   "type": "drift-detector",    "icon": "📡", "color": "#6b7280"},
         ],
+        # ── Phase 4: Execution Control (LangGraph checkpoint/fork pattern) ──
+        "execution": [
+            {"id": "checkpoint",        "label": "Checkpoint",       "type": "checkpoint",        "icon": "💾", "color": "#a855f7"},
+            {"id": "fork",              "label": "Fork",             "type": "fork",              "icon": "⑂",  "color": "#c084fc"},
+            {"id": "join",              "label": "Join",             "type": "join",              "icon": "⊕",  "color": "#a855f7"},
+            {"id": "parallel-group",    "label": "Parallel Group",   "type": "parallel-group",    "icon": "⊞",  "color": "#7e22ce"},
+        ],
+        # ── Phase 4: Observability (Haystack/OTel trace pattern) ──
+        "observability": [
+            {"id": "trace-collector",   "label": "Trace Collector",  "type": "trace-collector",  "icon": "🔭", "color": "#06b6d4"},
+            {"id": "span-recorder",     "label": "Span Recorder",    "type": "span-recorder",    "icon": "📏", "color": "#0891b2"},
+            {"id": "metrics-emitter",   "label": "Metrics Emitter",  "type": "metrics-emitter",  "icon": "📈", "color": "#0e7490"},
+        ],
     }
 }
+
+# Palette extension for Phase 4 additions to existing categories
+# (injected via _extend_palette() called at module load time)
+_P4_MEMORY_NODES = [
+    {"id": "working-memory",       "label": "Working Memory",    "type": "working-memory",       "icon": "🧠", "color": "#38bdf8"},
+    {"id": "semantic-cache",       "label": "Semantic Cache",    "type": "semantic-cache",       "icon": "⚡", "color": "#0ea5e9"},
+    {"id": "conversation-history", "label": "Conv. History",     "type": "conversation-history", "icon": "💬", "color": "#0284c7"},
+]
+_P4_SAFETY_NODES = [
+    {"id": "trusted-monitor",      "label": "Trusted Monitor",   "type": "trusted-monitor",      "icon": "🛡️", "color": "#f43f5e"},
+    {"id": "pii-field-detector",   "label": "PII Field Detect",  "type": "pii-field-detector",   "icon": "🔐", "color": "#e11d48"},
+]
+_P4_TOOL_NODES = [
+    {"id": "a2a-bridge",           "label": "A2A Bridge",        "type": "a2a-bridge",           "icon": "🤝", "color": "#34d399"},
+    {"id": "sandbox-exec",         "label": "Sandbox Exec",      "type": "sandbox-exec",         "icon": "📦", "color": "#059669"},
+]
+
+AADC_OBJECTS["categories"]["memory"].extend(_P4_MEMORY_NODES)
+AADC_OBJECTS["categories"]["safety"].extend(_P4_SAFETY_NODES)
+AADC_OBJECTS["categories"]["tools_mcp"].extend(_P4_TOOL_NODES)
 
 # ---------------------------------------------------------------------------
 # Compliance rule display labels
