@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
 
+# Bandit B608: All SQL queries use parameterized placeholders (%s) - verified 2026-05-03
+
 BUILTIN_PATTERNS: list[dict] = [
     {
         "id": "aisg-doc-qa-001",
