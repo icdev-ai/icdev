@@ -229,6 +229,33 @@ projects:
   - key: multidep
     title: Multi-Parent Dependency (Junction Table)
     priority: medium
+- key: fde
+  name: FathomDesk — Epic E (Light Theme + Per-Page Voice Override)
+  description: >
+    Two cross-cutting UX improvements that complete the FathomDesk Phases 2-6 backlog.
+    E1: light CSS theme using existing --bg-*/--text-* CSS variable hooks, toggled from
+    Settings → Profile. E2: per-page reading voice override (voice_overrides JSON column
+    on ad_profiles) so users can pin e.g. quant voice on /signals but pm-tone on /portfolio.
+  task_prefix: fde-
+  default_open: true
+  briefs:
+  - 'E1 Light theme: CSS variables pass + base.html toggle + profile route — fde-e1-01..03'
+  - 'E2 Voice override: migration + get_voice_for_page() + settings UI + route — fde-e2-01..04'
+  - 'Wrap: manifest + coherence + companion + feature docs — fde-wrap-01, fde-vv-01'
+  epics:
+  - key: e1
+    title: Light Theme
+    priority: high
+  - key: e2
+    title: Per-Page Voice Override
+    priority: medium
+  - key: wrap
+    title: Wrap — Manifest, Coherence, Docs
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: high
+
 - key: fd
   name: FathomDesk — Backtest Schema + Risk Floors + Cost Optimizer
   description: 'Three paperclip-inspired improvements: (1) canonical BacktestResult
