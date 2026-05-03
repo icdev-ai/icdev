@@ -22,10 +22,16 @@ def _ensure_name_column() -> None:
     """Add `name` column to ttx_sessions if absent (one-time migration)."""
     try:
         conn = get_connection()
-        conn.execute("ALTER TABLE ttx_sessions ADD COLUMN name TEXT DEFAULT ''")
-        conn.commit()
+        exists = conn.execute("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name='ttx_sessions' AND column_name='name'
+        """).fetchone()
+        if not exists:
+            conn.execute("SET lock_timeout = '3s'")
+            conn.execute("ALTER TABLE ttx_sessions ADD COLUMN name TEXT DEFAULT ''")
+            conn.commit()
     except Exception:
-        pass  # column already exists or DB doesn't support ALTER — that's fine
+        pass  # column already exists, lock timeout, or unsupported — fine
 
 
 # Run once at module import
