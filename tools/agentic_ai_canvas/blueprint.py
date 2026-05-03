@@ -536,7 +536,7 @@ def list_snippets():
             s = dict(r)
             s["tag_list"] = json.loads(s.get("tags", "[]"))
             snippets.append(s)
-        return jsonify(snippets)
+        return jsonify({"snippets": snippets})
     finally:
         conn.close()
 
