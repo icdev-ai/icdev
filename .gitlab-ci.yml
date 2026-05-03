@@ -3,6 +3,7 @@
 # Classification: CUI // SP-CTI
 
 stages:
+  - validate
   - lint
   - test
   - security
@@ -15,6 +16,51 @@ default:
   image: python:3.11-slim
   before_script:
     - pip install --quiet -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# Stage: validate — CI/CD environment variable pre-flight check
+# Fails fast if required variables are missing before any heavy stage runs.
+# Skipped when KANBAN_TASK_ID is set (trigger pipelines set their own vars).
+# ---------------------------------------------------------------------------
+validate:env-vars:
+  stage: validate
+  before_script: []
+  script:
+    - |
+      echo "=== CI/CD Environment Variable Pre-flight ==="
+      ERRORS=0
+
+      check_var() {
+        VAR_NAME="$1"
+        VAR_VALUE="${!VAR_NAME}"
+        if [ -z "$VAR_VALUE" ]; then
+          echo "  MISSING: $VAR_NAME"
+          ERRORS=$((ERRORS + 1))
+        else
+          echo "  OK:      $VAR_NAME"
+        fi
+      }
+
+      # Core platform vars
+      check_var ICDEV_CLASSIFICATION
+      check_var ICDEV_IMPACT_LEVEL
+      check_var ICDEV_DASHBOARD_SECRET
+
+      if [ $ERRORS -gt 0 ]; then
+        echo ""
+        echo "ERROR: $ERRORS required variable(s) not set."
+        echo "Set them at Settings → CI/CD → Variables."
+        echo "Reference: docs/operations/cicd-env-vars.md"
+        exit 1
+      fi
+
+      echo ""
+      echo "All required variables present."
+  allow_failure: false
+  rules:
+    - if: '$KANBAN_TASK_ID != ""'
+      when: never
+    - when: always
 
 lint:
   stage: lint
@@ -255,21 +301,49 @@ kanban-test:
   rules:
     - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "test"'
 
-# Deploy tasks: IaC generation + terraform plan (no LLM)
+# Deploy tasks: IaC generation, pipeline config, pattern deployment (no LLM)
 kanban-deploy:
   extends: .kanban-base
   stage: test
   script:
     - |
       echo "=== Kanban Deploy Job: $KANBAN_TASK_ID ==="
-      python tools/ci/pipeline_config_generator.py \
-        --task-id "$KANBAN_TASK_ID" \
-        --json 2>&1 | tee /tmp/kanban_output.txt || true
+      # Detect deploy sub-type from prompt (pattern-deploy vs IaC)
+      PROMPT_TEXT=""
+      if [ -f /tmp/kanban_prompt.txt ]; then
+        PROMPT_TEXT=$(cat /tmp/kanban_prompt.txt)
+      fi
+
+      # Pattern deploy: prompt contains "pattern" or task id starts with "*-pat-*"
+      if echo "$KANBAN_TASK_ID $PROMPT_TEXT" | grep -qi "pattern\|aisg-pat\|-pat-"; then
+        echo "--- Pattern Deploy mode detected ---"
+        # Generate/validate pipeline config from icdev.yaml if present
+        if [ -f "icdev.yaml" ]; then
+          python tools/ci/pipeline_config_generator.py \
+            --dir . --platform gitlab --dry-run --json \
+            2>&1 | tee /tmp/pipeline_gen.json || true
+          echo "Pipeline config validation complete."
+        fi
+        # Validate .gitlab-ci.yml YAML syntax
+        python -c "import yaml,json,sys; cfg=yaml.safe_load(open('.gitlab-ci.yml')); stages=cfg.get('stages',[]); jobs=[k for k in cfg if not k.startswith('.')]; print(json.dumps({'valid':True,'stages':stages,'job_count':len(jobs)})); sys.exit(0)" 2>&1 | tee /tmp/pipeline_yaml_check.json
+        # Health check — verify environment is configured correctly
+        python tools/testing/health_check.py --json 2>&1 | tee /tmp/kanban_output.txt || true
+        # Record pattern_deploy ROI event
+        python -c "from tools.db.storage import get_connection,sql_placeholder; from datetime import datetime,timezone; conn=get_connection(); ph=sql_placeholder(); conn.execute('INSERT INTO aisg_roi_events (task_id, action_type, triggered_at) VALUES ('+ph+','+ph+','+ph+')',('$KANBAN_TASK_ID','pattern_deploy',datetime.now(timezone.utc).isoformat())); conn.commit(); conn.close(); print('ROI event recorded: pattern_deploy')" 2>&1 || true
+      else
+        # Standard IaC deploy: generate pipeline config from icdev.yaml
+        echo "--- IaC Deploy mode ---"
+        python tools/ci/pipeline_config_generator.py \
+          --dir . --platform gitlab --dry-run --json \
+          2>&1 | tee /tmp/kanban_output.txt || true
+      fi
       echo "Deploy job complete."
   artifacts:
     when: always
     paths:
       - /tmp/kanban_output.txt
+      - /tmp/pipeline_yaml_check.json
+      - /tmp/pipeline_gen.json
     expire_in: 7 days
   rules:
     - if: '$KANBAN_TASK_ID != "" && $KANBAN_TASK_TYPE == "deploy"'
