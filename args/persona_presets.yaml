@@ -499,6 +499,14 @@ voice_presets:
     add_glossary: false
     show_considerations: false
     profile_format: compact
+  quant:
+    description: Quant/systematic. Metric-heavy, no narrative softening. Same rendering
+      as technical but exposed as a selectable voice override for quant-persona users.
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: false
+    profile_format: compact
   standard:
     description: Same as 'pm' currently. Reserved for future divergence (e.g., advisor-tone
       variant).
