@@ -239,7 +239,7 @@ def artifacts_view(design_id: str):
 
 @aadc_bp.route("/api/designs", methods=["POST"])
 def create_design():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     did = f"aadc-{_uid()}"
     now = _utcnow()
     conn = _conn()
@@ -274,7 +274,7 @@ def get_design(design_id: str):
 
 @aadc_bp.route("/api/designs/<design_id>", methods=["PUT"])
 def save_design(design_id: str):
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     graph = data.get("graph", {"nodes": [], "edges": []})
     graph_json = json.dumps(graph)
     now = _utcnow()
@@ -484,7 +484,7 @@ def apply_template(template_id: str, design_id: str):
 
 @aadc_bp.route("/api/templates/save", methods=["POST"])
 def save_as_template():
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     design_id = data.get("design_id")
     name = data.get("name", "Custom Template")
     category = data.get("category", "custom")
@@ -543,7 +543,7 @@ def list_snippets():
 
 @aadc_bp.route("/api/snippets/<snippet_id>/insert/<design_id>", methods=["POST"])
 def insert_snippet(snippet_id: str, design_id: str):
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     offset_x = data.get("offset_x", 0)
     offset_y = data.get("offset_y", 0)
 
@@ -616,7 +616,7 @@ def list_artifacts(design_id: str):
 
 @aadc_bp.route("/api/designs/<design_id>/artifacts", methods=["POST"])
 def generate_artifact(design_id: str):
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     artifact_type = data.get("type", "model_card")
 
     conn = _conn()
