@@ -2031,3 +2031,41 @@ projects:
   - key: viz
     title: VIZ
     priority: medium
+- key: aadc
+  name: Agentic AI Design Canvas
+  description: >
+    Purpose-built visual design canvas (the 10th ICDEV canvas) for architecting,
+    governing, and assessing Agentic AI systems — LLM pipelines, RAG architectures,
+    multi-agent orchestrators, MCP server clusters. Fills the gap created by
+    OMB M-25-21, OMB M-26-04, NIST AI RMF, and DoD AI Ethics requirements.
+    Integrates HITL + loop-engine workflow, 12 ready-made solution templates,
+    12 reusable snippets, and compliance assessment across NIST AI RMF / OWASP
+    LLM Top 10 / OMB M-25-21 / NIST AI 600-1 / MITRE ATLAS.
+  task_prefix: aadc-
+  default_open: true
+  briefs:
+  - 'Epic c1: Core foundation — module, DB, engine, templates, JS/CSS, registration — aadc-c1-01..07'
+  - 'Epic w1: Workflow engine — HITL templates, workflow.py, launcher.py, event bus — aadc-w1-01..07'
+  - 'Epic t1: Templates gallery — 12 built-in solution architectures — aadc-t1-01..06'
+  - 'Epic s1: Snippets library — 12 reusable subgraph patterns — aadc-s1-01..05'
+  - 'Epic a1: Assessment engine — NIST AI RMF, OWASP LLM Top 10, artifacts — aadc-a1-01..07'
+  - 'Epic v1: V&V — E2E tests, companion sync, coherence gate — aadc-v1-01..03'
+  epics:
+  - key: c1
+    title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
+    priority: critical
+  - key: w1
+    title: Workflow Engine Integration (HITL + loop-engine + event bus)
+    priority: critical
+  - key: t1
+    title: Templates Gallery (12 built-in agentic AI solution architectures)
+    priority: high
+  - key: s1
+    title: Snippets Library (12 reusable subgraph patterns)
+    priority: high
+  - key: a1
+    title: Assessment Engine + Artifacts (NIST AI RMF, OWASP, model cards)
+    priority: high
+  - key: v1
+    title: V&V (E2E tests, companion sync, coherence gate)
+    priority: critical
