@@ -2,6 +2,8 @@
 """TTX Engine — team creation, member management, and scenario orchestration."""
 from __future__ import annotations
 
+import random
+import string
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
@@ -11,14 +13,18 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _join_code() -> str:
+    return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+
 class TTXEngine:
     """Core game engine for TTX sessions."""
 
     def create_team(self, session_id: int, team_name: str) -> dict:
         conn = get_connection()
         conn.execute(
-            "INSERT INTO ttx_teams (session_id, team_name, created_at) VALUES (?,?,?)",
-            (session_id, team_name, _now()),
+            "INSERT INTO ttx_teams (session_id, team_name, join_code, created_at) VALUES (?,?,?,?)",
+            (session_id, team_name, _join_code(), _now()),
         )
         conn.commit()
         row = conn.execute(
