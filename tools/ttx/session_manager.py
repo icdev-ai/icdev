@@ -1,88 +1,104 @@
 # CUI // SP-CTI
-"""TTX Session Manager — CRUD for TTX game sessions."""
+"""TTX Engine — session lifecycle CRUD."""
+
 from __future__ import annotations
 
 import json
-import random
-import string
+import secrets
 from datetime import datetime, timezone
+from typing import Any
 
 from tools.db.storage import get_connection
+from .constants import SESSION_STATES
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _join_code() -> str:
-    return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
+def _join_code(n: int = 6) -> str:
+    return secrets.token_urlsafe(n)[:n].upper()
 
 
-def _ensure_name_column() -> None:
-    """Add `name` column to ttx_sessions if absent (one-time migration)."""
-    try:
-        conn = get_connection()
-        exists = conn.execute("""
-            SELECT 1 FROM information_schema.columns
-            WHERE table_name='ttx_sessions' AND column_name='name'
-        """).fetchone()
-        if not exists:
-            conn.execute("SET lock_timeout = '3s'")
-            conn.execute("ALTER TABLE ttx_sessions ADD COLUMN name TEXT DEFAULT ''")
-            conn.commit()
-    except Exception:
-        pass  # column already exists, lock timeout, or unsupported — fine
+# ---------------------------------------------------------------------------
+# Session CRUD
+# ---------------------------------------------------------------------------
 
-
-# Run once at module import
-_ensure_name_column()
-
-
-def create_session(name: str, scenario_slug: str = "", max_teams: int = 8,
-                   config: dict | None = None) -> dict:
+def create_session(
+    scenario_slug: str,
+    session_mode: str,
+    facilitator_name: str,
+    duration_minutes: int = 120,
+    max_teams: int = 8,
+    config: dict | None = None,
+) -> dict[str, Any]:
     conn = get_connection()
+    code = _join_code()
+    cfg = json.dumps(config or {})
     conn.execute(
-        "INSERT INTO ttx_sessions (name, scenario_slug, config_json, state, max_teams, created_at, join_code) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (name, scenario_slug, json.dumps(config or {}), "open", max_teams, _now(), _join_code()),
+        """INSERT INTO ttx_sessions
+           (scenario_slug, session_mode, state, facilitator_name,
+            join_code, duration_minutes, max_teams, config_json, created_at)
+           VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
+        (scenario_slug, session_mode, facilitator_name,
+         code, duration_minutes, max_teams, cfg, _now()),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT * FROM ttx_sessions WHERE name=? ORDER BY session_id DESC LIMIT 1", (name,)
+        "SELECT * FROM ttx_sessions WHERE join_code = ?", (code,)
     ).fetchone()
-    return dict(row) if row else {}
+    return dict(row)
 
 
-def get_session(session_id: int) -> dict:
+def get_session(session_id: int) -> dict[str, Any] | None:
     conn = get_connection()
-    row = conn.execute("SELECT * FROM ttx_sessions WHERE session_id=?", (session_id,)).fetchone()
-    if not row:
-        return {}
-    d = dict(row)
-    # Normalise: expose 'status' alias for 'state' for code that uses either name
-    d.setdefault("status", d.get("state", "open"))
-    return d
+    row = conn.execute(
+        "SELECT * FROM ttx_sessions WHERE session_id = ?", (session_id,)
+    ).fetchone()
+    return dict(row) if row else None
 
 
-def list_sessions(status: str | None = None) -> list[dict]:
+def get_session_by_code(join_code: str) -> dict[str, Any] | None:
     conn = get_connection()
-    if status:
+    row = conn.execute(
+        "SELECT * FROM ttx_sessions WHERE join_code = ?", (join_code.upper(),)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_sessions(state: str | None = None) -> list[dict[str, Any]]:
+    conn = get_connection()
+    if state:
         rows = conn.execute(
-            "SELECT * FROM ttx_sessions WHERE state=? ORDER BY session_id DESC", (status,)
+            "SELECT * FROM ttx_sessions WHERE state = ? ORDER BY created_at DESC",
+            (state,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM ttx_sessions ORDER BY session_id DESC"
+            "SELECT * FROM ttx_sessions ORDER BY created_at DESC LIMIT 100"
         ).fetchall()
-    result = []
-    for r in rows:
-        d = dict(r)
-        d.setdefault("status", d.get("state", "open"))
-        result.append(d)
-    return result
+    return [dict(r) for r in rows]
 
 
-def update_session_status(session_id: int, status: str) -> None:
+def update_session_state(session_id: int, new_state: str) -> dict[str, Any] | None:
+    if new_state not in SESSION_STATES:
+        raise ValueError(f"Invalid state: {new_state!r}")
     conn = get_connection()
-    conn.execute("UPDATE ttx_sessions SET state=? WHERE session_id=?", (status, session_id))
+    updates: list[tuple] = [(new_state, session_id)]
+    if new_state == "active":
+        conn.execute(
+            "UPDATE ttx_sessions SET state = ?, started_at = ? WHERE session_id = ?",
+            (new_state, _now(), session_id),
+        )
+    elif new_state == "ended":
+        conn.execute(
+            "UPDATE ttx_sessions SET state = ?, ended_at = ? WHERE session_id = ?",
+            (new_state, _now(), session_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE ttx_sessions SET state = ? WHERE session_id = ?",
+            *updates,
+        )
     conn.commit()
+    return get_session(session_id)
