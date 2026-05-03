@@ -1152,6 +1152,62 @@ def create_app() -> Flask:
         except Exception as exc:
             return _j2({"events": [], "error": str(exc)})
 
+    _NOTIFY_SETTINGS_PATH = Path("args/kanban_notify.json")
+    _NOTIFY_CHANNELS = [
+        {"id": "telegram",   "label": "Telegram",   "env_keys": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]},
+        {"id": "slack",      "label": "Slack",      "env_keys": ["SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL"]},
+        {"id": "teams",      "label": "MS Teams",   "env_keys": ["TEAMS_WEBHOOK_URL"]},
+        {"id": "email",      "label": "Email",      "env_keys": ["SMTP_HOST", "EMAIL_HOST"]},
+        {"id": "webhook",    "label": "Webhook",    "env_keys": ["WEBHOOK_URL"]},
+        {"id": "mattermost", "label": "Mattermost", "env_keys": ["MATTERMOST_WEBHOOK_URL", "MATTERMOST_URL"]},
+    ]
+
+    @app.route("/api/kanban/notify-channel", methods=["GET", "PUT"])
+    def api_kanban_notify_channel():
+        """GET/PUT /api/kanban/notify-channel — Read or set the active notification channel.
+
+        GET returns {available: [{id, label, configured}], current}.
+        PUT body {channel: "slack"} persists to args/kanban_notify.json.
+        """
+        import os as _os
+        from flask import jsonify as _jnc, request as _req
+
+        def _load_settings():
+            if _NOTIFY_SETTINGS_PATH.exists():
+                try:
+                    import json as _j
+                    return _j.loads(_NOTIFY_SETTINGS_PATH.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            return {"current": "telegram"}
+
+        def _save_settings(settings):
+            _NOTIFY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            import json as _j
+            _NOTIFY_SETTINGS_PATH.write_text(
+                _j.dumps(settings, indent=2), encoding="utf-8"
+            )
+
+        if flask_request.method == "PUT":
+            body = flask_request.get_json(silent=True) or {}
+            channel = body.get("channel", "").strip()
+            valid_ids = {ch["id"] for ch in _NOTIFY_CHANNELS}
+            if channel not in valid_ids:
+                return _jnc({"error": f"Unknown channel: {channel}"}), 400
+            settings = _load_settings()
+            settings["current"] = channel
+            _save_settings(settings)
+            return _jnc({"ok": True, "current": channel})
+
+        # GET
+        settings = _load_settings()
+        current = settings.get("current", "telegram")
+        available = []
+        for ch in _NOTIFY_CHANNELS:
+            configured = any(_os.environ.get(k) for k in ch["env_keys"])
+            available.append({"id": ch["id"], "label": ch["label"], "configured": configured})
+        return _jnc({"available": available, "current": current})
+
     # Role-based view configuration
     ROLE_VIEWS = {
         "pm": {
