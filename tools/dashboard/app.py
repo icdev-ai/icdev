@@ -8309,6 +8309,7 @@ def create_app() -> Flask:
                 "scheduled": counts.get("scheduled", 0),
                 "backlog": counts.get("backlog", 0),
                 "failed": counts.get("failed", 0),
+                "needs_decomp": counts.get("needs_decomposition", 0),
                 "pct": pct,
             })
         in_flight_rows = conn.execute(
