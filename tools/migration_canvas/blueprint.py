@@ -247,6 +247,15 @@ def create_migration_blueprint():
     def mc_api_create_design():
         """Create a new migration design."""
         data = request.get_json(force=True, silent=True) or {}
+        template_id = data.get("template_id")
+        if template_id:
+            with get_connection() as conn:
+                ex = conn.execute(
+                    "SELECT id, name FROM migration_designs WHERE template_id=? LIMIT 1",
+                    (template_id,),
+                ).fetchone()
+            if ex:
+                return jsonify({"id": ex["id"], "name": ex["name"]}), 200
         design_id = str(_uuid.uuid4())
         name = data.get("name", "Untitled Migration Design")
         now = now_isoformat()
