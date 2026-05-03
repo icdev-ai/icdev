@@ -674,6 +674,15 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
+    <!-- MCP Monitor tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">MCP Monitor
+            <span class="help-icon" title="MCP tool registry: registered tools, categories, wrapper activity">?</span>
+        </div>
+        <div id="tile-mcp" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
 </div>
 
 <script>
@@ -771,6 +780,51 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderOracleTile);
+})();
+
+// MCP Monitor tile renderer
+(function () {
+    function fmtAge(secs) {
+        if (secs == null) return 'never';
+        if (secs < 60)   return secs + 's ago';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        return Math.floor(secs / 3600) + 'h ago';
+    }
+    function renderMcpTile() {
+        fetch('/api/mcp/status').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-mcp');
+            if (!el) return;
+            var ageColor = d.log_age_secs == null ? '#6b7280'
+                         : d.log_age_secs < 300  ? '#22c55e'
+                         : d.log_age_secs < 1800 ? '#f59e0b' : '#ef4444';
+            var topCats = (d.top_categories || []).slice(0, 5).map(function (c) {
+                return '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:3px;">'
+                    + '<span>' + c.name + '</span>'
+                    + '<span style="color:var(--text-primary);font-weight:600;">' + c.count + '</span>'
+                    + '</div>';
+            }).join('');
+            el.innerHTML =
+                '<div style="display:flex;gap:12px;margin-bottom:10px;">'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.tool_count || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Tools registered</div></div>'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.category_count || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Categories</div></div>'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.wrapper_starts_today || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Starts today</div></div>'
+                + '</div>'
+                + topCats
+                + '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + ageColor + ';display:inline-block;flex-shrink:0;"></span>'
+                + '<span style="font-size:11px;color:var(--text-dim);">Last activity: ' + fmtAge(d.log_age_secs) + '</span>'
+                + (d.error_count > 0 ? '<span style="margin-left:auto;font-size:10px;color:#ef4444;font-weight:600;">⚠ ' + d.error_count + ' errors</span>' : '')
+                + '</div>'
+                + '<div style="margin-top:8px;"><a href="/mcp-wrapper" class="btn" style="font-size:11px;padding:3px 10px;">View registry</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-mcp');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">MCP status unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderMcpTile);
 })();
 </script>
 
@@ -957,23 +1011,25 @@ document.addEventListener('DOMContentLoaded', function() { refreshRemediationHis
 
 {% block scripts %}
 <script>
-// Auto-show notification toasts for critical alerts on page load
-(function() {
+// Auto-show notification toasts for critical alerts on page load.
+// Deferred to DOMContentLoaded so ux.js (defer) has loaded
+// ICDEV.showNotification before we call it.
+document.addEventListener('DOMContentLoaded', function() {
     var firingCount = {{ firing_alerts }};
     var openPoam = {{ open_poam }};
-    if (firingCount > 0) {
-        window.ICDEV && ICDEV.showNotification(
+    if (firingCount > 0 && window.ICDEV && typeof ICDEV.showNotification === 'function') {
+        ICDEV.showNotification(
             firingCount + ' alert' + (firingCount > 1 ? 's' : '') + ' currently firing \u2014 <a href="/monitoring" style="color:inherit;text-decoration:underline;">view monitoring</a>',
             'error'
         );
     }
-    if (openPoam > 5) {
-        window.ICDEV && ICDEV.showNotification(
+    if (openPoam > 5 && window.ICDEV && typeof ICDEV.showNotification === 'function') {
+        ICDEV.showNotification(
             openPoam + ' open POA&M items need attention \u2014 <a href="/projects" style="color:inherit;text-decoration:underline;">review projects</a>',
             'warning'
         );
     }
-})();
+});
 
 // Load charts from API — exposed as window._loadCharts for auto-refresh
 window._loadCharts = function() {
