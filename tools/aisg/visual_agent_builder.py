@@ -253,6 +253,31 @@ def _persist_goal(design_id: str, markdown: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def save_design(
+    name: str,
+    canvas_json: str,
+    trust_tier: str = "advisor",
+    created_by: str = "user",
+) -> str:
+    """Persist a new agent design to aisg_agent_designs and return its ID."""
+    import uuid as _uuid
+    design_id = str(_uuid.uuid4())[:8]
+    conn = get_connection()
+    try:
+        ph = sql_placeholder(conn)
+        conn.execute(
+            f"INSERT INTO aisg_agent_designs (id, name, canvas_json, trust_tier, created_by) "
+            f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph})",
+            (design_id, name, canvas_json, trust_tier, created_by),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return design_id
+
+
 def generate_goal(design_id: str) -> str:
     """Generate a FORGE goal Markdown document from a canvas design.
 
