@@ -23,8 +23,8 @@ def get_executive_data() -> dict:
             for r in rows:
                 d = dict(r)
                 events.append(d)
-                hours_saved += (d.get("time_saved_minutes") or 0) / 60
-                cost_avoided += ((d.get("time_saved_minutes") or 0) / 60) * 150.0
+                hours_saved += float(d.get("time_saved_minutes") or 0) / 60
+                cost_avoided += (float(d.get("time_saved_minutes") or 0) / 60) * 150.0
         finally:
             conn.close()
     except Exception:

@@ -29,7 +29,7 @@
     </div>
 
     <!-- Step 1: Mission -->
-    <div class="wizard-step" id="step-1">
+    <div class="wizard-step active" id="step-1">
         <h2>What is your mission objective?</h2>
         <p class="step-desc">Describe the problem you want AI to solve in plain English.</p>
         <div class="form-group">
@@ -279,9 +279,9 @@ function stepNext() {
         _answers.mission = txt;
     }
     if (_step < 3) {
-        document.getElementById('step-' + _step).classList.add('hidden');
+        document.getElementById('step-' + _step).classList.remove('active');
         _step++;
-        document.getElementById('step-' + _step).classList.remove('hidden');
+        document.getElementById('step-' + _step).classList.add('active');
         document.getElementById('step-dot-' + (_step - 1)).classList.add('done');
         document.getElementById('step-dot-' + _step).classList.add('active');
         document.getElementById('btn-back').style.display = 'inline-flex';
@@ -294,11 +294,11 @@ function stepNext() {
 
 function stepBack() {
     if (_step > 1) {
-        document.getElementById('step-' + _step).classList.add('hidden');
+        document.getElementById('step-' + _step).classList.remove('active');
         document.getElementById('step-dot-' + _step).classList.remove('active');
         document.getElementById('step-dot-' + (_step - 1)).classList.remove('done');
         _step--;
-        document.getElementById('step-' + _step).classList.remove('hidden');
+        document.getElementById('step-' + _step).classList.add('active');
         document.getElementById('step-dot-' + _step).classList.add('active');
         if (_step === 1) document.getElementById('btn-back').style.display = 'none';
         document.getElementById('btn-next').style.display = 'inline-flex';
@@ -311,10 +311,10 @@ function generatePlan() {
     btn.disabled = true;
     btn.textContent = 'Generating…';
 
-    document.getElementById('step-3').classList.add('hidden');
+    document.getElementById('step-3').classList.remove('active');
     document.getElementById('step-dot-3').classList.add('done');
     _step = 4;
-    document.getElementById('step-4').classList.remove('hidden');
+    document.getElementById('step-4').classList.add('active');
     document.getElementById('step-dot-4').classList.add('active');
     document.getElementById('wizard-nav').style.display = 'none';
 
