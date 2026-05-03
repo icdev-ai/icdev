@@ -538,6 +538,21 @@ reflexes:
     promotion_threshold: 0.7  # Oracle confidence threshold for kanban card creation
     config_path: args/awareness_config.yaml  # Full config — probes, gaps, oracle, narrative
 
+  # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
+
+  oracle_triage:
+    enabled: true
+    risk_tier: green
+    schedule: "every 3h"
+    interval_seconds: 10800  # runs right after the awareness cycle produces new cards
+    cooldown_minutes: 60     # at most once per hour even if awareness fires more often
+    description: "Oracle Triage — deterministically promote/dismiss Oracle-suggested kanban tasks using file-exists, Flask-route, and migration checks"
+    success_metric:
+      name: oracle_triage_errors
+      threshold: 0
+      operator: eq
+    api_base: "http://localhost:5050"
+
   # ── Canvas Indexer (per-canvas /ask GraphRAG freshness) ─────────────────────
 
   canvas_indexer:

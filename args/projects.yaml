@@ -2515,6 +2515,9 @@ projects:
     linkage, Kanban back-sync — aadc-p2-01..07'
   - 'Phase 3 AADC-Unique: safety redundancy graph, coordination matrix, model provenance,
     agent simulation — aadc-p3-01..09'
+  - 'Phase 4 Competitive Edge: checkpoint/fork, HITL Gate node, parallel exec graph,
+    observability trace nodes, memory enrichment, streaming toggle, A2A/sandbox nodes,
+    PII+trusted-monitor safety nodes — aadc-p4-01..11'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2542,4 +2545,7 @@ projects:
     priority: high
   - key: p3
     title: Phase 3 — AADC-Unique (safety graph, coord matrix, provenance, simulation)
+    priority: high
+  - key: p4
+    title: Phase 4 — Competitive Edge (checkpoint/fork, HITL Gate node, parallel exec graph, observability nodes, memory enrichment, streaming, A2A/sandbox, PII guardrails)
     priority: high
