@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}FORGE Academy — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">🎓 FORGE Academy</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Gamified AI/DevSecOps training platform — build skills across all ICDEV™ roles</p>
+  </div>
+  <a href="/academy/oracle" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">Oracle Insights →</a>
+</div>
+
+<!-- Oracle summary strip -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if stats.total_pending > 0 %}#f59e0b{% else %}#10b981{% endif %};">{{ stats.total_pending or 0 }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Pending Insights</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if stats.critical > 0 %}#ef4444{% else %}#10b981{% endif %};">{{ stats.critical or 0 }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Critical</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if stats.warning > 0 %}#f59e0b{% else %}#10b981{% endif %};">{{ stats.warning or 0 }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Warnings</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#6366f1;">{{ stats.convergence_events or 0 }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Convergence Events</div>
+  </div>
+</div>
+
+<!-- Role tracks -->
+<h3 style="color:#eaeaea;margin:0 0 14px;font-size:15px;">Learning Tracks</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:28px;">
+  {% set tracks = [
+    ("🛡️", "DevSecOps Engineer",     "Security hardening, STIG compliance, CI/CD pipeline gates",      "#ef4444", "coming-soon"),
+    ("🤖", "AI/ML Practitioner",      "Agentic AI design, NIST AI RMF, OWASP LLM Top 10",              "#6366f1", "coming-soon"),
+    ("📊", "Compliance Analyst",      "FedRAMP, CMMC, RMF A&A, eMASS integration",                     "#10b981", "coming-soon"),
+    ("🏗️", "Solutions Architect",     "FORGE framework, multi-cloud IaC, zero-trust network design",    "#f59e0b", "coming-soon"),
+    ("🎯", "Product Owner",           "Requirements decomposition, Kanban, HITL workflow governance",   "#06b6d4", "coming-soon"),
+    ("🔬", "Research Analyst",        "INTaaS reasoning, OSINT pipelines, geospatial intelligence",     "#8b5cf6", "coming-soon"),
+  ] %}
+  {% for icon, name, desc, color, status in tracks %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;position:relative;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <span style="font-size:22px;">{{ icon }}</span>
+      <div>
+        <div style="color:#eaeaea;font-size:13px;font-weight:600;">{{ name }}</div>
+        <span style="background:#0f3460;color:#7a8cb0;padding:1px 6px;border-radius:3px;font-size:9px;text-transform:uppercase;">{{ status }}</span>
+      </div>
+    </div>
+    <p style="color:#7a8cb0;font-size:11px;margin:0 0 10px;">{{ desc }}</p>
+    <div style="height:4px;background:#0d1117;border-radius:2px;">
+      <div style="height:4px;width:0%;background:{{ color }};border-radius:2px;"></div>
+    </div>
+    <div style="display:flex;justify-content:space-between;margin-top:4px;">
+      <span style="color:#5a6e8c;font-size:9px;">0% complete</span>
+      <span style="color:#5a6e8c;font-size:9px;">0 / 0 modules</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Oracle CTA -->
+<div style="background:#1e1b4b;border:1px solid #3730a3;border-radius:8px;padding:20px;display:flex;justify-content:space-between;align-items:center;">
+  <div>
+    <div style="color:#a5b4fc;font-size:14px;font-weight:600;margin-bottom:4px;">🔮 Academy Oracle</div>
+    <div style="color:#7a8cb0;font-size:12px;">3-lens AI engine detecting learner risk, content quality gaps, and skill drift across your team</div>
+    {% if stats.last_run_at %}
+    <div style="color:#5a6e8c;font-size:10px;margin-top:4px;">Last run: {{ stats.last_run_at[:19] }}</div>
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button onclick="runOracle()" style="background:#6366f1;color:#fff;padding:8px 16px;border:none;border-radius:5px;cursor:pointer;font-size:13px;">▶ Run Oracle</button>
+    <a href="/academy/oracle" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">View Insights</a>
+  </div>
+</div>
+
+<script>
+function runOracle() {
+  fetch('/academy/api/oracle/run', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      alert('Oracle run complete — ' + (d.persisted_count || 0) + ' new predictions, ' + (d.convergence?.length || 0) + ' convergence events.');
+      location.reload();
+    })
+    .catch(e => alert('Oracle run failed: ' + e));
+}
+</script>
+{% endblock %}
