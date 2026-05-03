@@ -47,6 +47,7 @@
 - [ATO Boundary Impact (RICOAS Phase 2)](manifest/ato-boundary-impact.md)
 - [Supply Chain Intelligence (RICOAS Phase 2)](manifest/supply-chain-intelligence.md)
 - [Digital Program Twin Simulation (RICOAS Phase 3)](manifest/digital-program-twin-simulation.md)
+- [TTX Tabletop Exercise (GameDay) Engine](manifest/ttx-tabletop-exercise-engine.md)
 - [External Integration (RICOAS Phase 4)](manifest/external-integration.md)
 - [SharePoint Integration (Phase E / P4.1)](manifest/sharepoint.md)
 - [Agent Execution Framework (Phase 39)](manifest/agent-execution-framework.md)
@@ -153,6 +154,7 @@
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
 - [Strategos — DIB Supply Chain & Strategy Intelligence](manifest/strategos.md)
 - [Strategos Chat — Floating Analyst Chat Panel](manifest/strategos-chat.md)
+- [TTX Engine — Tabletop Exercise (AI GameDay)](manifest/ttx.md)
 
 
 ## Auto-Registered (Coherence Fix)
