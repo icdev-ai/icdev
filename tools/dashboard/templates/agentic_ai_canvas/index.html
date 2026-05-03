@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Agentic AI Canvas — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">🤖 Agentic AI Design Canvas</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Design, govern, and assess Agentic AI systems — LLM pipelines, RAG, multi-agent orchestrators, MCP clusters</p>
+  </div>
+  <div style="display:flex;gap:10px;">
+    <a href="/agentic-ai/templates" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">📋 Templates</a>
+    <a href="/agentic-ai/snippets" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">🧩 Snippets</a>
+    <a href="/agentic-ai/canvas" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;font-weight:600;">+ New Design</a>
+  </div>
+</div>
+
+<!-- Stats bar -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
+  {% set total = designs|length %}
+  {% set flagged = designs|selectattr('safety_impacting')|list|length + designs|selectattr('rights_impacting')|list|length %}
+  {% set high_auto = designs|selectattr('autonomy_max','ge',4)|list|length %}
+  {% set avg_score = (designs|selectattr('score')|map(attribute='score')|list|sum / (designs|selectattr('score')|list|length or 1))|round(1) %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#6366f1;">{{ total }}</div>
+    <div style="color:#7a8cb0;font-size:12px;">Total Designs</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if flagged > 0 %}#f59e0b{% else %}#10b981{% endif %};">{{ flagged }}</div>
+    <div style="color:#7a8cb0;font-size:12px;">Safety/Rights-Impacting</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if high_auto > 0 %}#ef4444{% else %}#10b981{% endif %};">{{ high_auto }}</div>
+    <div style="color:#7a8cb0;font-size:12px;">High Autonomy (L4+)</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if avg_score >= 70 %}#10b981{% elif avg_score >= 50 %}#f59e0b{% else %}#ef4444{% endif %};">{{ avg_score }}%</div>
+    <div style="color:#7a8cb0;font-size:12px;">Avg Compliance Score</div>
+  </div>
+</div>
+
+{% if not designs %}
+<div style="text-align:center;padding:60px 20px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;">
+  <div style="font-size:48px;margin-bottom:16px;">🤖</div>
+  <h3 style="color:#eaeaea;margin:0 0 8px;">No designs yet</h3>
+  <p style="color:#7a8cb0;margin:0 0 20px;">Start from a template or create a blank canvas</p>
+  <div style="display:flex;gap:12px;justify-content:center;">
+    <a href="/agentic-ai/templates" style="background:#0f3460;color:#7ab3f0;padding:10px 20px;border-radius:5px;text-decoration:none;">Browse Templates</a>
+    <a href="/agentic-ai/canvas" style="background:#6366f1;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none;">Blank Canvas</a>
+  </div>
+</div>
+{% else %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+  {% for d in designs %}
+  <div style="background:#16213e;border:1px solid {% if d.safety_impacting or d.rights_impacting %}#f59e0b{% else %}#1e3a6e{% endif %};border-radius:8px;padding:16px;position:relative;">
+    {% if d.safety_impacting or d.rights_impacting %}
+    <div style="position:absolute;top:10px;right:10px;background:#f59e0b22;border:1px solid #f59e0b;border-radius:3px;padding:2px 6px;font-size:10px;color:#f59e0b;">
+      ⚠ {% if d.safety_impacting %}SAFETY{% endif %}{% if d.rights_impacting %} RIGHTS{% endif %}-IMPACTING
+    </div>
+    {% endif %}
+
+    <h3 style="margin:0 0 6px;color:#eaeaea;font-size:14px;padding-right:140px;">{{ d.name }}</h3>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 12px;">{{ d.description or 'No description' }}</p>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      {% if d.domain %}
+      <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">{{ d.domain }}</span>
+      {% endif %}
+      <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">L{{ d.autonomy_max }} autonomy</span>
+      <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">{{ d.classification }}</span>
+    </div>
+
+    {% if d.score is not none %}
+    <div style="margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#7a8cb0;margin-bottom:4px;">
+        <span>Compliance Score</span><span style="color:{% if d.score >= 70 %}#10b981{% elif d.score >= 50 %}#f59e0b{% else %}#ef4444{% endif %};">{{ d.score }}%</span>
+      </div>
+      <div style="background:#0f172a;border-radius:4px;height:4px;">
+        <div style="background:{% if d.score >= 70 %}#10b981{% elif d.score >= 50 %}#f59e0b{% else %}#ef4444{% endif %};width:{{ d.score }}%;height:4px;border-radius:4px;"></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="display:flex;gap:8px;">
+      <a href="/agentic-ai/canvas/{{ d.id }}" style="flex:1;background:#6366f1;color:#fff;padding:6px 12px;border-radius:4px;text-decoration:none;text-align:center;font-size:12px;">Edit</a>
+      <a href="/agentic-ai/assessments/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border-radius:4px;text-decoration:none;font-size:12px;">Assessment</a>
+      <a href="/agentic-ai/artifacts/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border-radius:4px;text-decoration:none;font-size:12px;">Artifacts</a>
+    </div>
+    <div style="color:#5a6e8c;font-size:10px;margin-top:8px;">Updated {{ d.updated_at[:10] }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

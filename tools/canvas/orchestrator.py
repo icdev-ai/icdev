@@ -24,7 +24,7 @@ logger = logging.getLogger("icdev.canvas.orchestrator")
 # Constants
 # ---------------------------------------------------------------------------
 
-VALID_CANVAS_KEYS = {"idc", "ndc", "sdc", "bdc", "pdc", "odc", "ddc", "qdc", "mdc"}
+VALID_CANVAS_KEYS = {"idc", "ndc", "sdc", "bdc", "pdc", "odc", "ddc", "qdc", "mdc", "aadc"}
 
 # Canvas key -> (db filename, assessment table, score column)
 CANVAS_DB_MAP: dict[str, tuple[str, str, str]] = {
@@ -37,6 +37,7 @@ CANVAS_DB_MAP: dict[str, tuple[str, str, str]] = {
     "ddc": ("data_canvas.db", "ddc_assessments", "score"),
     "qdc": ("qdc_canvas.db", "qdc_assessments", "score"),
     "mdc": ("migration_canvas.db", "mc_assessments", "score"),
+    "aadc": ("agentic_ai_canvas.db", "aadc_assessments", "score"),
 }
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"

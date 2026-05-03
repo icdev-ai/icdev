@@ -2371,6 +2371,19 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
 
         _tag_task_source(task_id, "genesis_scheduler")
 
+        # Write instruction to a temp file and pipe via stdin to avoid the
+        # Windows 32767-char command-line length limit (WinError 206).
+        # Claude auto-detects non-TTY stdout and enters non-interactive mode.
+        import tempfile as _tempfile
+        _instr_tmp = _tempfile.NamedTemporaryFile(
+            mode="w", suffix="_instr.txt", delete=False,
+            dir=str(BASE_DIR / ".tmp"),
+            encoding="utf-8", errors="replace",
+        )
+        _instr_tmp.write(instruction)
+        _instr_tmp.close()
+        _stdin_fh = open(_instr_tmp.name, "r", encoding="utf-8", errors="replace")
+
         proc = subprocess.Popen(
             [
                 claude_cli,
@@ -2379,19 +2392,35 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
                 "50",
                 "--output-format",
                 "text",
-                "-p",
-                instruction,
             ],
             cwd=work_dir,
+            stdin=_stdin_fh,
             stdout=log_fh,
             stderr=subprocess.STDOUT,
             env=env,
         )
+        _stdin_fh.close()  # subprocess inherits the fd; close our handle
+        # Clean up temp instruction file after 5 min (process has read it by then)
+        import threading as _threading
+        import os as _os2
+
+        def _cleanup_instr(path, delay=300.0):
+            import time
+            time.sleep(delay)
+            try:
+                _os2.unlink(path)
+            except Exception:
+                pass
+
+        _threading.Thread(
+            target=_cleanup_instr, args=(_instr_tmp.name,), daemon=True
+        ).start()
+
         _running[task_id] = proc
         _dispatch_times[task_id] = datetime.now(timezone.utc)
         print(f"  Kanban: dispatched {task_id} to claude CLI (PID {proc.pid})")
-    except FileNotFoundError:
-        print(f"  Kanban: claude CLI not found at {claude_cli}")
+    except FileNotFoundError as e:
+        print(f"  Kanban: claude dispatch error for {task_id}: {e}")
     except Exception as e:
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
 
