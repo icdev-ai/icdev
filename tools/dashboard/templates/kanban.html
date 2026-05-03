@@ -361,8 +361,9 @@ function renderTaskKanban(tasks) {
     var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
     var prevStatus = { backlog: 'suggested', scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
     var executorLabels = {
-        claude_cli: { icon: '\uD83E\uDD16', label: 'Claude', color: '#7c3aed' },
-        gitlab: { icon: '\uD83E\uDD8A', label: 'GitLab', color: '#e24304' },
+        claude_cli:     { icon: '\uD83E\uDD16', label: 'Claude',     color: '#7c3aed' },
+        ollama_local:   { icon: '\uD83D\uDCBB', label: 'Local',      color: '#0891b2' },
+        gitlab:         { icon: '\uD83E\uDD8A', label: 'GitLab',     color: '#e24304' },
         github_actions: { icon: '\u2699\uFE0F', label: 'GH Actions', color: '#2ea043' }
     };
     var llmModeIcons = { claude: '\uD83E\uDDE0', ollama: '\uD83D\uDCBB', none: '\u2699\uFE0F' };
@@ -418,7 +419,7 @@ function renderTaskKanban(tasks) {
             }
 
             // LLM mode indicator — inferred from executor_type
-            var llmMode = (t.executor_type === 'claude_cli') ? 'claude' : (t.executor_type === 'gitlab' ? 'none' : 'none');
+            var llmMode = (t.executor_type === 'claude_cli') ? 'claude' : (t.executor_type === 'ollama_local' ? 'ollama' : 'none');
             var llmIcon = llmModeIcons[llmMode] || '';
             var llmTitle = llmModeTitles[llmMode] || '';
             var llmBadge = '<span title="' + llmTitle + '" style="font-size:11px; cursor:default;">' + llmIcon + '</span>';

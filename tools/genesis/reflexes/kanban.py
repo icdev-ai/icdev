@@ -2674,6 +2674,20 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     return False, ""
 
 
+def _set_executor_type(task_id: str, executor_type: str) -> None:
+    """Stamp executor_type on the task row so the UI badge is accurate."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
+            (executor_type, task_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -2701,11 +2715,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             _move_task(task_id, "done")
         except Exception:
             pass
-        _send_notification({"id": task_id, "title": title,
-                            "task_type": task.get("task_type", "chore"),
-                            "priority": task.get("priority", "medium")},
-                           event="done")
-        return
+        return  # No notification — false-positive resolves are scheduler noise
 
     prompt_text = Path(prompt_path).read_text(encoding="utf-8")
 
@@ -2758,18 +2768,21 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
         if tier == "claude_cli":
             if _claude_code_available():
                 _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
+                _set_executor_type(task_id, "claude_cli")
                 dispatched = True
                 break
         elif tier == "gitlab":
             ok = _dispatch_gitlab(task_id, task_desc, task_type)
             if ok:
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
+                _set_executor_type(task_id, "gitlab")
                 print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
                 dispatched = True
                 break
         elif tier == "ollama_local":
             ok = _dispatch_ollama_local(task_id, task_desc, task_type)
             if ok:
+                _set_executor_type(task_id, "ollama_local")
                 print(f"  Kanban: dispatched {task_id} via Ollama local")
                 dispatched = True
                 break
