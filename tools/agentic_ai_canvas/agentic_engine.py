@@ -16,24 +16,15 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from tools.agentic_ai_canvas.constants import (
     AGENT_NODES,
     ATLAS_THREAT_MAP,
-    DATA_NODES,
-    GOVERNANCE_NODES,
-    INFRA_NODES,
-    MEMORY_NODES,
-    MODEL_NODES,
     NIST_AI_RMF_CHECKS,
     OWASP_LLM_CHECKS,
     OUTPUT_NODES,
     RIGHTS_IMPACTING_DOMAINS,
     SAFETY_IMPACTING_DOMAINS,
-    SAFETY_NODES,
-    TOOL_MCP_NODES,
-    AUTONOMY_LEVELS,
 )
 
 
