@@ -28,6 +28,10 @@ Routes:
   POST /agentic-ai/api/designs/<id>/artifacts  generate artifact
 
   POST /agentic-ai/canvas/<id>/export-pdf      export design as PDF
+
+  GET  /agentic-ai/canvas/<id>/versions        list version history
+  POST /agentic-ai/canvas/<id>/versions        save explicit version snapshot
+  GET  /agentic-ai/canvas/<id>/versions/diff   diff two versions (?v1=N&v2=M)
 """
 
 from __future__ import annotations
@@ -751,3 +755,53 @@ def export_pdf(design_id: str):
         mimetype="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Version history API
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/canvas/<design_id>/versions", methods=["GET"])
+def get_versions(design_id: str):
+    from tools.agentic_ai_canvas.version_diff import list_versions
+    return jsonify({"versions": list_versions(design_id)})
+
+
+@aadc_bp.route("/canvas/<design_id>/versions", methods=["POST"])
+def create_version(design_id: str):
+    from tools.agentic_ai_canvas.version_diff import save_version
+
+    data = request.get_json(force=True, silent=True) or {}
+    label = data.get("label")
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+        snapshot = row["graph_json"]
+    finally:
+        conn.close()
+
+    ver = save_version(design_id, snapshot, label)
+    return jsonify({"version_number": ver}), 201
+
+
+@aadc_bp.route("/canvas/<design_id>/versions/diff", methods=["GET"])
+def diff_design_versions(design_id: str):
+    from tools.agentic_ai_canvas.version_diff import diff_versions
+
+    try:
+        v1 = int(request.args.get("v1", ""))
+        v2 = int(request.args.get("v2", ""))
+    except (TypeError, ValueError):
+        return jsonify({"error": "v1 and v2 query params are required integers"}), 400
+
+    try:
+        result = diff_versions(design_id, v1, v2)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+
+    return jsonify(result)
