@@ -88,7 +88,7 @@ def get_roi_summary() -> dict:
     by_type: dict[str, float] = {}
     for e in events:
         at = e.get("action_type", "other")
-        by_type[at] = by_type.get(at, 0.0) + (e.get("time_saved_minutes") or 0) / 60.0
+        by_type[at] = by_type.get(at, 0.0) + float(e.get("time_saved_minutes") or 0) / 60.0
 
     breakdown = [
         {"action_type": k, "hours": round(v, 1)}

@@ -40,6 +40,13 @@
 /* ── Category arrow ── */
 .cat-arrow { display: inline-block; transition: transform 0.2s; }
 .cat-arrow.collapsed { transform: rotate(-90deg); }
+/* ── Node type chip in props panel ── */
+.node-type-chip {
+  display: inline-block; padding: 2px 7px; border-radius: 3px;
+  background: #1e293b; border: 1px solid #334155;
+  color: #7a8cb0; font-size: 10px; font-family: monospace;
+  margin-bottom: 10px;
+}
 
 /* ── Zoom button cluster ── */
 .zoom-cluster {
@@ -184,9 +191,9 @@
         <div onclick="toggleCat('{{ cat_key }}')"
           style="color:#eaeaea;font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer;border-radius:3px;background:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;user-select:none;">
           <span>{{ cat_key|title|replace('_',' ') }}</span>
-          <span id="cat-arrow-{{ cat_key }}" class="cat-arrow">▾</span>
+          <span id="cat-arrow-{{ cat_key }}" class="cat-arrow collapsed">▾</span>
         </div>
-        <div id="cat-{{ cat_key }}" style="margin-bottom:8px;">
+        <div id="cat-{{ cat_key }}" style="display:none;margin-bottom:8px;">
           {% for node in cat_nodes %}
           <div class="palette-node" draggable="true"
             data-type="{{ node.type }}" data-label="{{ node.label }}" data-color="{{ node.color }}" data-icon="{{ node.icon }}"
@@ -254,13 +261,15 @@
     <!-- Scrollable content -->
     <div id="props-content" style="overflow-y:auto;flex:1;padding:12px;">
       <div id="node-props" style="display:none;">
-        <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Node Properties</h4>
+        <h4 style="color:#eaeaea;margin:0 0 8px;font-size:13px;">Node Properties</h4>
+        <div id="prop-type-chip" class="node-type-chip"></div>
         <div style="margin-bottom:8px;">
           <label style="color:#7a8cb0;font-size:11px;">Label</label>
           <input id="prop-label"
             style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:3px;font-size:12px;box-sizing:border-box;margin-top:3px;">
         </div>
-        <div id="prop-desc" style="color:#7a8cb0;font-size:11px;margin-bottom:12px;"></div>
+        <div id="prop-desc" style="color:#94a3b8;font-size:11px;line-height:1.5;margin-bottom:8px;padding:6px 8px;background:#1e293b;border-radius:4px;min-height:32px;"></div>
+        <div id="prop-connections" style="color:#7a8cb0;font-size:10px;margin-bottom:12px;"></div>
         <button onclick="deleteSelectedNode()"
           style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
       </div>
@@ -584,9 +593,16 @@ function selectNode(node) {
   selectedNode = node;
   document.getElementById('node-props').style.display = 'block';
   document.getElementById('no-selection').style.display = 'none';
-  document.getElementById('prop-label').value = node.label;
+  document.getElementById('prop-label').value = node.label || '';
+  document.getElementById('prop-type-chip').textContent = node.type || '';
   const descs = {{ node_descs | tojson }};
-  document.getElementById('prop-desc').textContent = descs[node.type] || '';
+  const desc = descs[node.type] || '';
+  const descEl = document.getElementById('prop-desc');
+  descEl.textContent = desc;
+  descEl.style.display = desc ? 'block' : 'none';
+  const conns = graph.edges.filter(e => e.source === node.id || e.target === node.id).length;
+  document.getElementById('prop-connections').textContent =
+    conns ? `${conns} connection${conns !== 1 ? 's' : ''}` : 'No connections';
   render();
 }
 document.addEventListener('DOMContentLoaded', () => {
