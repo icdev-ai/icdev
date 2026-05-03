@@ -2167,6 +2167,11 @@ _running: Dict[str, Any] = {}
 # Semaphore counter for EXEC_OLLAMA_LOCAL concurrent dispatch limit.
 _ollama_running_count: int = 0
 
+# Task IDs dispatched synchronously via Ollama (already completed when added).
+# The reflex run() checks this to mark them done immediately rather than
+# routing through the in_progress polling loop.
+_ollama_completed: set = set()
+
 
 class _LLMTaskHandle:
     """Popen-compatible handle around a threaded LLMRouter.invoke() call.
@@ -2783,6 +2788,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             ok = _dispatch_ollama_local(task_id, task_desc, task_type)
             if ok:
                 _set_executor_type(task_id, "ollama_local")
+                _ollama_completed.add(task_id)
                 print(f"  Kanban: dispatched {task_id} via Ollama local")
                 dispatched = True
                 break
@@ -5575,8 +5581,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         # in in_progress when dispatch fails.
         _dispatch_to_claude(task, prompt_path)
 
-        if task["id"] in _running:
-            # Subprocess launched successfully — now move to in_progress
+        if task["id"] in _ollama_completed:
+            # Synchronous Ollama dispatch — completed immediately, mark done
+            _ollama_completed.discard(task["id"])
+            _move_task(task["id"], "done")
+            _send_notification(task, event="done")
+            processed.append(
+                {
+                    "id": task["id"],
+                    "title": task["title"],
+                    "prompt_file": prompt_path,
+                }
+            )
+            print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
+        elif task["id"] in _running:
+            # Async Claude/LLM subprocess launched — move to in_progress
             _move_task(task["id"], "in_progress")
             _send_notification(task)
             processed.append(
