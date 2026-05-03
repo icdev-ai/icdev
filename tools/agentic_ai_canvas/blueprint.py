@@ -609,7 +609,7 @@ def list_artifacts(design_id: str):
             "SELECT * FROM aadc_artifacts WHERE design_id=? ORDER BY created_at DESC",
             (design_id,)
         ).fetchall()
-        return jsonify([dict(r) for r in rows])
+        return jsonify({"artifacts": [dict(r) for r in rows]})
     finally:
         conn.close()
 
