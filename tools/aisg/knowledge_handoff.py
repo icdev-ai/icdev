@@ -97,7 +97,7 @@ def _extract_patterns(user_email: str) -> list[dict[str, Any]]:
         if session_ids:
             placeholders = ",".join("?" * len(session_ids))
             audit_details = conn.execute(
-                f"SELECT details FROM audit_trail WHERE session_id IN ({placeholders})",
+                "SELECT details FROM audit_trail WHERE session_id IN (" + placeholders + ")",  # nosec B608
                 session_ids,
             ).fetchall()
             for (details_json,) in audit_details:
@@ -113,9 +113,9 @@ def _extract_patterns(user_email: str) -> list[dict[str, Any]]:
         if dataset_ids:
             placeholders = ",".join("?" * len(dataset_ids))
             rows = conn.execute(
-                f"SELECT id, dataset_id, instruction, input_text, output_text, "
-                f"purpose, approved, source, created_at "
-                f"FROM ft_training_pairs WHERE dataset_id IN ({placeholders})",
+                "SELECT id, dataset_id, instruction, input_text, output_text, "
+                "purpose, approved, source, created_at "
+                "FROM ft_training_pairs WHERE dataset_id IN (" + placeholders + ")",  # nosec B608
                 dataset_ids,
             ).fetchall()
 
