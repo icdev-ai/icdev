@@ -144,6 +144,8 @@ def new_canvas():
 
 @aadc_bp.route("/canvas/<design_id>")
 def edit_canvas(design_id: str):
+    if design_id == "new":
+        return new_canvas()
     conn = _conn()
     try:
         row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
@@ -369,6 +371,19 @@ def delete_design(design_id: str):
     finally:
         conn.close()
     return jsonify({"status": "deleted"})
+
+
+@aadc_bp.route("/api/designs", methods=["DELETE"])
+def delete_all_designs():
+    conn = _conn()
+    try:
+        result = conn.execute("SELECT COUNT(*) FROM aadc_designs").fetchone()
+        count = result[0] if result else 0
+        conn.execute("DELETE FROM aadc_designs")
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"status": "deleted", "count": count})
 
 
 @aadc_bp.route("/api/designs/<design_id>/assess", methods=["POST"])

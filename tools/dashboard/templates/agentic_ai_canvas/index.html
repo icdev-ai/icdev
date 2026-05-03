@@ -8,9 +8,12 @@
     <h2 style="margin:0;color:#eaeaea;">🤖 Agentic AI Design Canvas</h2>
     <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Design, govern, and assess Agentic AI systems — LLM pipelines, RAG, multi-agent orchestrators, MCP clusters</p>
   </div>
-  <div style="display:flex;gap:10px;">
+  <div style="display:flex;gap:10px;align-items:center;">
     <a href="/agentic-ai/templates" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">📋 Templates</a>
     <a href="/agentic-ai/snippets" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">🧩 Snippets</a>
+    {% if designs %}
+    <button onclick="deleteAllDesigns()" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:8px 16px;border-radius:5px;font-size:13px;cursor:pointer;">🗑 Delete All</button>
+    {% endif %}
     <a href="/agentic-ai/canvas" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;font-weight:600;">+ New Design</a>
   </div>
 </div>
@@ -85,10 +88,33 @@
       <a href="/agentic-ai/canvas/{{ d.id }}" style="flex:1;background:#6366f1;color:#fff;padding:6px 12px;border-radius:4px;text-decoration:none;text-align:center;font-size:12px;">Edit</a>
       <a href="/agentic-ai/assessments/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border-radius:4px;text-decoration:none;font-size:12px;">Assessment</a>
       <a href="/agentic-ai/artifacts/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border-radius:4px;text-decoration:none;font-size:12px;">Artifacts</a>
+      <button onclick="deleteDesign('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:6px 10px;border-radius:4px;font-size:12px;cursor:pointer;" title="Delete">🗑</button>
     </div>
     <div style="color:#5a6e8c;font-size:10px;margin-top:8px;">Updated {{ d.updated_at[:10] }}</div>
   </div>
   {% endfor %}
 </div>
 {% endif %}
+
+<script>
+function deleteDesign(id, name) {
+  if (!confirm('Delete "' + name + '"?\nThis cannot be undone.')) return;
+  fetch('/agentic-ai/api/designs/' + id, { method: 'DELETE' })
+    .then(function(r) {
+      if (r.ok) { location.reload(); }
+      else { alert('Delete failed (status ' + r.status + ')'); }
+    })
+    .catch(function(e) { alert('Delete failed: ' + e); });
+}
+
+function deleteAllDesigns() {
+  if (!confirm('Delete ALL designs?\nThis cannot be undone.')) return;
+  fetch('/agentic-ai/api/designs', { method: 'DELETE' })
+    .then(function(r) {
+      if (r.ok) { location.reload(); }
+      else { alert('Delete all failed (status ' + r.status + ')'); }
+    })
+    .catch(function(e) { alert('Delete all failed: ' + e); });
+}
+</script>
 {% endblock %}
