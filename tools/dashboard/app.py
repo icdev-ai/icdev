@@ -1099,6 +1099,59 @@ def create_app() -> Flask:
             "tasks": tasks,
         })
 
+    @app.route("/api/kanban/recent-events")
+    def api_kanban_recent_events():
+        """GET /api/kanban/recent-events — Last 24h kanban task events from notifications.
+
+        Returns done/failed/in_progress/unverified events with validation gate detail.
+        Used by the Projects in Flight panel on the home dashboard.
+        """
+        from tools.db.storage import get_connection as _gc
+        from datetime import timedelta as _td
+        from flask import jsonify as _j2
+
+        limit = min(int(flask_request.args.get("limit", 30)), 100)
+        since_hours = int(flask_request.args.get("hours", 24))
+
+        try:
+            cutoff = (datetime.now(timezone.utc) - _td(hours=since_hours)).isoformat()
+            with _gc() as conn:
+                rows = conn.execute(
+                    "SELECT id, title, message, severity, created_at "
+                    "FROM notifications "
+                    "WHERE source = 'genesis.kanban' "
+                    "  AND created_at > ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (cutoff, limit),
+                ).fetchall()
+            events = []
+            for r in rows:
+                d = dict(r)
+                title = d.get("title") or ""
+                # Parse event type from title: "Task {event}: {task_title}"
+                event_type = "unknown"
+                task_title = title
+                if title.upper().startswith("UNVERIFIED"):
+                    event_type = "unverified"
+                    task_title = title
+                elif title.startswith("Task "):
+                    rest = title[5:]
+                    colon = rest.find(":")
+                    if colon != -1:
+                        event_type = rest[:colon].strip().lower()
+                        task_title = rest[colon + 1:].strip()
+                events.append({
+                    "id": d["id"],
+                    "title": task_title,
+                    "event_type": event_type,
+                    "message": (d.get("message") or "")[:600],
+                    "severity": d.get("severity") or "info",
+                    "created_at": d["created_at"],
+                })
+            return _j2({"events": events})
+        except Exception as exc:
+            return _j2({"events": [], "error": str(exc)})
+
     # Role-based view configuration
     ROLE_VIEWS = {
         "pm": {
