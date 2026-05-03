@@ -108,6 +108,7 @@
     <div style="margin-top:.8rem;display:flex;gap:.6rem;flex-wrap:wrap;">
       <a href="/gameday/session/{{ s.session_id }}/facilitate" class="gd-btn-outline">🎮 Facilitate</a>
       <a href="/gameday/leaderboard/{{ s.session_id }}" class="gd-btn-outline">📊 Leaderboard</a>
+      <a href="/gameday/session/{{ s.session_id }}/simulate" class="gd-btn-outline" style="color:#a78bfa;border-color:#a78bfa;">⚡ Simulate</a>
     </div>
   </div>
   {% endfor %}
@@ -130,6 +131,7 @@
       <span>{{ s.ended_at[:10] if s.ended_at else '' }}</span>
     </div>
     <a href="/gameday/session/{{ s.session_id }}/results" class="gd-btn-outline">📋 View AAR</a>
+    <a href="/gameday/session/{{ s.session_id }}/simulate" class="gd-btn-outline" style="color:#a78bfa;border-color:#7c3aed;">⚡ Replay</a>
   </div>
   {% endfor %}
 </div>
