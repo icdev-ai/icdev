@@ -6423,6 +6423,49 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
+    # ── MCP Monitor status ───────────────────────────────────────────
+    @app.route("/api/mcp/status", methods=["GET"])
+    def api_mcp_status():
+        """GET /api/mcp/status — snapshot of the MCP tool registry and wrapper activity."""
+        import time as _t
+        from collections import Counter as _Counter
+
+        try:
+            from tools.mcp.tool_registry import TOOL_REGISTRY
+        except Exception:
+            TOOL_REGISTRY = {}
+
+        # Category breakdown
+        cats = _Counter(v.get("category", "unknown") for v in TOOL_REGISTRY.values())
+        top_cats = [{"name": k, "count": v} for k, v in cats.most_common(8)]
+
+        # MCP debug log activity
+        log_path = BASE_DIR / ".tmp" / "mcp_debug.log"
+        log_age_secs = None
+        wrapper_starts = 0
+        error_count = 0
+        if log_path.exists():
+            log_age_secs = int(_t.time() - log_path.stat().st_mtime)
+            try:
+                with open(log_path, encoding="utf-8", errors="ignore") as _f:
+                    today = str(datetime.now(timezone.utc).date())
+                    for line in _f:
+                        if "MCP wrapper started" in line and today in line:
+                            wrapper_starts += 1
+                        if "ERROR" in line or "Exception" in line:
+                            error_count += 1
+            except Exception:
+                pass
+
+        return jsonify({
+            "tool_count": len(TOOL_REGISTRY),
+            "category_count": len(cats),
+            "top_categories": top_cats,
+            "log_age_secs": log_age_secs,
+            "wrapper_starts_today": wrapper_starts,
+            "error_count": error_count,
+        })
+
     # ── Page Agent Copilot API ───────────────────────────────────────
     # Inspired by alibaba/page-agent: text-based DOM navigation + AI copilot
 
