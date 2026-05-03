@@ -198,11 +198,34 @@ def is_approved(design_id: str) -> bool:
 # Loop engine integration
 # ---------------------------------------------------------------------------
 
+def _cluster_task_id(design_id: str, cluster_name: str) -> str:
+    """Deterministic task ID: same design + cluster always yields the same ID.
+
+    This makes launch_to_kanban idempotent — re-launching skips tasks that
+    already exist (ON CONFLICT DO NOTHING actually fires on the stable ID).
+    """
+    import hashlib
+    slug = cluster_name.lower().replace(" ", "_")
+    h = hashlib.sha256(f"{design_id}:{slug}".encode()).hexdigest()[:8]
+    return f"aadc-{h}"
+
+
+def _loop_id_for_design(design_id: str) -> str:
+    """Deterministic loop ID so the workflow_loops row is also idempotent."""
+    import hashlib
+    h = hashlib.sha256(design_id.encode()).hexdigest()[:8]
+    return f"wl-aadc-{h}"
+
+
 def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                      project_id: str | None = None) -> dict:
     """Create a workflow loop and seed Kanban tasks from the design graph.
 
-    Returns {"loop_id": ..., "task_ids": [...]} or {"error": ...}
+    Idempotent: deterministic IDs mean re-launching the same design returns
+    the same task IDs without creating duplicates.  Tasks already in
+    in_progress/done are left untouched.
+
+    Returns {"loop_id": ..., "task_ids": [...], "skipped": [...]} or {"error": ...}
     """
     try:
         import json as _json
@@ -223,23 +246,22 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
         }
         clusters = {k: v for k, v in clusters.items() if v}  # drop empty
 
-        # Try loop_engine create
-        loop_id = None
+        loop_id = _loop_id_for_design(design_id)
+
+        # Upsert the workflow_loops row (idempotent via deterministic ID)
         try:
             from tools.db.storage import get_connection
             conn = get_connection()
             try:
-                lid = f"wl-aadc-{uuid.uuid4().hex[:8]}"
                 conn.execute(
                     """INSERT INTO workflow_loops
                        (id, project_id, phase_name, plan_summary, created_at)
                        VALUES (?,?,?,?,?)
                        ON CONFLICT DO NOTHING""",
-                    (lid, project_id or design_id, "plan",
+                    (loop_id, project_id or design_id, "plan",
                      f"Implement AADC design: {design_name}", _now()),
                 )
                 conn.commit()
-                loop_id = lid
             except Exception as le:
                 logger.warning("aadc.workflow: loop_engine insert: %s", le)
             finally:
@@ -247,26 +269,35 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
         except Exception:
             pass
 
-        # Seed Kanban tasks
+        # Seed Kanban tasks — deterministic IDs prevent duplicates
         task_ids: list[str] = []
+        skipped: list[str] = []
         try:
             from tools.db.storage import get_connection
             conn = get_connection()
             try:
                 for cluster_name, cluster_nodes in clusters.items():
+                    tid = _cluster_task_id(design_id, cluster_name)
+                    # Check if this task already exists (any non-suggested status)
+                    existing = conn.execute(
+                        "SELECT status FROM kanban_tasks WHERE id=?", (tid,)
+                    ).fetchone()
+                    if existing:
+                        skipped.append(tid)
+                        task_ids.append(tid)
+                        continue
                     labels = ", ".join(n.get("label", n.get("type", "")) for n in cluster_nodes[:4])
-                    tid = f"aadc-{uuid.uuid4().hex[:8]}"
                     conn.execute(
                         """INSERT INTO kanban_tasks
-                           (id, title, description, status, task_type, priority, project_id, created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?,?)
+                           (id, title, description, status, task_type, priority, created_at, updated_at)
+                           VALUES (?,?,?,?,?,?,?,?)
                            ON CONFLICT DO NOTHING""",
                         (tid,
                          f"[AADC] Implement {cluster_name} — {design_name}",
                          f"Build and integrate the {cluster_name} components from the Agentic AI design "
                          f"'{design_name}'. Nodes: {labels}.",
-                         "backlog", "feature", "high",
-                         project_id or design_id, _now(), _now()),
+                         "backlog", "build", "high",
+                         _now(), _now()),
                     )
                     task_ids.append(tid)
                 conn.commit()
@@ -275,23 +306,31 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
         except Exception as ke:
             logger.warning("aadc.workflow: kanban seed: %s", ke)
 
-        # Record loop link in AADC DB
-        if loop_id:
+        # Record loop link in AADC DB (idempotent: same loop_id reuses the row)
+        try:
+            from tools.agentic_ai_canvas.db.init_db import get_connection as aadc_conn
+            conn = aadc_conn()
             try:
-                from tools.agentic_ai_canvas.db.init_db import get_connection as aadc_conn
-                conn = aadc_conn()
-                try:
-                    conn.execute(
-                        "INSERT INTO aadc_loop_links (id, design_id, loop_id, phase, created_at) VALUES (?,?,?,?,?)",
-                        (f"ll-{uuid.uuid4().hex[:8]}", design_id, loop_id, "plan", _now()),
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
+                ll_id = f"ll-{_loop_id_for_design(design_id)}"
+                conn.execute(
+                    """INSERT INTO aadc_loop_links (id, design_id, loop_id, phase, created_at)
+                       VALUES (?,?,?,?,?) """,
+                    (ll_id, design_id, loop_id, "plan", _now()),
+                )
+                conn.commit()
             except Exception:
-                pass
+                pass  # already exists — idempotent
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
-        return {"loop_id": loop_id, "task_ids": task_ids, "clusters": list(clusters.keys())}
+        return {
+            "loop_id": loop_id,
+            "task_ids": task_ids,
+            "skipped": skipped,
+            "clusters": list(clusters.keys()),
+        }
 
     except Exception as exc:
         logger.error("aadc.workflow: launch_to_kanban error: %s", exc)

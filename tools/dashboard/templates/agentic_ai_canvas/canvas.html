@@ -929,12 +929,27 @@ function assessDesign() {
 }
 
 function launchDesign() {
-  if (!confirm('Launch this design to Kanban? This will create implementation tasks.')) return;
+  if (!confirm('Launch this design to Kanban? This will create implementation tasks.\n\nRe-launching is safe — existing tasks are not duplicated.')) return;
+  var btn = document.getElementById('launch-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Launching...'; }
   fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/launch', {method:'POST'})
     .then(r => r.json())
-    .then(d => {
+    .then(function(d) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#x1F680; Launch'; }
       if (d.error) { alert(d.error); return; }
-      setStatus('Launched! '+(d.task_ids||[]).length+' Kanban tasks created.');
+      var newCount = (d.task_ids||[]).length - (d.skipped||[]).length;
+      var skipCount = (d.skipped||[]).length;
+      if (skipCount > 0 && newCount === 0) {
+        setStatus('Already launched — ' + skipCount + ' task(s) already in Kanban. No duplicates created.');
+      } else if (skipCount > 0) {
+        setStatus('Launched! ' + newCount + ' new task(s) queued; ' + skipCount + ' already existed.');
+      } else {
+        setStatus('Launched! ' + newCount + ' Kanban task(s) created for ' + (d.clusters||[]).length + ' layer(s).');
+      }
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#x1F680; Launch'; }
+      alert('Launch failed: ' + e);
     });
 }
 
