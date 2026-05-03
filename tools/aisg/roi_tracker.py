@@ -63,7 +63,7 @@ def get_roi_summary() -> dict:
             for r in rows:
                 d = dict(r)
                 events.append(d)
-                hours_saved += (d.get("time_saved_minutes") or 0) / 60.0
+                hours_saved += float(d.get("time_saved_minutes") or 0) / 60.0
         finally:
             conn.close()
     except Exception:
