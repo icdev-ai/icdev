@@ -1324,6 +1324,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("HITL Workflow blueprint failed to register: %s", _exc)
 
+    # ---- AISG Setup Wizard Blueprint ----
+    try:
+        from tools.aisg.blueprint import bp as _aisg_bp
+        app.register_blueprint(_aisg_bp)
+        app.logger.info("AISG Wizard blueprint registered at /ai-wizard")
+    except Exception as _exc:
+        app.logger.warning("AISG Wizard blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 

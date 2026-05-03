@@ -215,8 +215,9 @@
 
             <!-- Build & Dev -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/dev-profiles', '/phases', '/translations', '/finetune', '/diagrams'] %}active{% endif %}">Build</a>
+                <a href="#" class="{% if request.path in ['/dev-profiles', '/phases', '/translations', '/finetune', '/diagrams', '/ai-wizard'] %}active{% endif %}">Build</a>
                 <ul class="nav-dropdown-menu">
+                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
                     <li><a href="/dev-profiles">Dev Profiles</a></li>
                     <li><a href="/phases">Phases</a></li>
                     <li><a href="/translations">Translations</a></li>

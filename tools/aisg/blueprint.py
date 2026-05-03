@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #!/usr/bin/env python3
 # CUI // SP-CTI
 """AISG Flask Blueprint.
@@ -258,3 +259,43 @@ def api_deploy_pattern(pattern_id: str):
     if "error" in result:
         return jsonify(result), 404
     return jsonify(result)
+=======
+# CUI // SP-CTI
+"""AISG Setup Wizard — Flask Blueprint.
+
+Routes:
+  GET  /ai-wizard          → Wizard landing page (5-step form)
+  POST /api/ai-wizard/submit → Process wizard answers, return JSON result
+"""
+
+from __future__ import annotations
+
+import uuid
+
+from flask import Blueprint, jsonify, render_template, request
+
+from tools.aisg.wizard import WizardEngine
+
+bp = Blueprint("aisg_wizard", __name__)
+_engine = WizardEngine()
+
+
+@bp.route("/ai-wizard")
+def wizard_page():
+    return render_template("aisg/page.html")
+
+
+@bp.route("/api/ai-wizard/submit", methods=["POST"])
+def wizard_submit():
+    data = request.get_json(silent=True) or {}
+    answers = {
+        "use_case": data.get("use_case", "web_app"),
+        "compliance_level": data.get("compliance_level", "IL2"),
+        "tech_stack": data.get("tech_stack", "python"),
+        "ai_maturity": data.get("ai_maturity", "none"),
+        "cloud_provider": data.get("cloud_provider", "local"),
+    }
+    session_token = data.get("session_token") or str(uuid.uuid4())
+    result = _engine.process(session_token=session_token, answers=answers)
+    return jsonify({"session_token": session_token, **result})
+>>>>>>> 4e22c60b (chore: auto-commit from Claude Code session)
