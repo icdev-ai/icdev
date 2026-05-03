@@ -125,6 +125,7 @@
       <hr class="aadc-menu-sep">
       <button onclick="doExportJSON()"><span>⬇</span> Export JSON</button>
       <button onclick="doExportSVG()"><span>🖼</span> Export SVG</button>
+      <button onclick="doExportPDF()"><span>📄</span> Export PDF</button>
       <hr class="aadc-menu-sep">
       <button onclick="zoomFit()"><span>⊡</span> Fit to Canvas</button>
       <button onclick="zoomReset()"><span>⊙</span> Reset Zoom</button>
@@ -956,6 +957,29 @@ function doExportSVG() {
   a.download = (document.getElementById('design-name').value||'aadc-design')+'.svg';
   a.click();
   document.getElementById('aadc-menu').style.display = 'none';
+}
+
+function doExportPDF() {
+  document.getElementById('aadc-menu').style.display = 'none';
+  if (!DESIGN_ID) { alert('Save the design first before exporting PDF.'); return; }
+  setStatus('Generating PDF…');
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/export-pdf', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nodes: graph.nodes, edges: graph.edges})
+  })
+  .then(r => {
+    if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'PDF generation failed'); });
+    return r.blob();
+  })
+  .then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (document.getElementById('design-name').value || 'aadc-design') + '.pdf';
+    a.click();
+    setStatus('PDF exported');
+  })
+  .catch(err => setStatus('PDF error: ' + err));
 }
 
 function doToggleFullscreen() {
