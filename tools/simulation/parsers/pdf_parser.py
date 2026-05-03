@@ -3,7 +3,7 @@
 Parse PDFs (SSPs, STIGs, architecture review docs) into a normalized graph_json.
 
 Strategy:
-  1. Render each PDF page to a PNG via PyMuPDF (fitz) or pdf2image.
+  1. Render each PDF page to a PNG via pdf2image.
   2. Pass each rendered page through image_ingestor.ingest_image() with the
      caller-supplied canvas_type hint.
   3. Extract embedded text via pypdf for context.
@@ -56,29 +56,10 @@ if str(BASE_DIR) not in sys.path:
 from .image_ingestor import ingest_image  # noqa: E402
 
 # ---------------------------------------------------------------------------
-# PDF page rendering (soft dependencies — try fitz, then pdf2image)
+# PDF page rendering (pdf2image / poppler)
 # ---------------------------------------------------------------------------
 
 _RENDER_DPI = 150  # 150 DPI balances quality vs token cost for vision LLM
-
-
-def _render_fitz(file_bytes: bytes) -> Optional[List[bytes]]:
-    """Render all pages to PNG bytes via PyMuPDF. Returns None if unavailable."""
-    try:
-        import fitz  # PyMuPDF
-    except ImportError:
-        return None
-    try:
-        doc = fitz.open(stream=file_bytes, filetype="pdf")
-        mat = fitz.Matrix(_RENDER_DPI / 72, _RENDER_DPI / 72)
-        pages = []
-        for page in doc:
-            pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-            pages.append(pix.tobytes("png"))
-        doc.close()
-        return pages
-    except Exception:
-        return None
 
 
 def _render_pdf2image(file_bytes: bytes) -> Optional[List[bytes]]:
