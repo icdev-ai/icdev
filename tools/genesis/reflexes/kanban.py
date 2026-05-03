@@ -5418,7 +5418,24 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     f"verification gate). Agent likely died before completion "
                     f"or self-reported via an external path."
                 )
-                _record_failure_and_maybe_flag(tid, reason)
+                # Run self_debug FIRST so signature_count is incremented
+                # before we decide the target state — quarantine to
+                # 'suggested' takes precedence over backlog/needs_decomposition.
+                try:
+                    from tools.workflow.self_debug import check_and_diagnose as _cad
+                    _sd_work_dir = str(BASE_DIR)
+                    _cad(tid, reason, _sd_work_dir)
+                except Exception as _sd_exc:
+                    logger.warning(
+                        "silent-cleanup self_debug call failed for %s: %s",
+                        tid, _sd_exc,
+                    )
+                new_target = _record_failure_and_maybe_flag(tid, reason)
+                if new_target == "needs_decomposition" and cur_status != "needs_decomposition":
+                    _move_task(
+                        tid, "needs_decomposition",
+                        actor="silent-cleanup", reason=reason,
+                    )
                 # Bump failure count + persist reason explicitly so
                 # failure_triage's recency window picks it up.
                 try:
@@ -5484,17 +5501,22 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 except Exception:
                     pass
 
-                # Hand off to the self_debug reflex — it tracks recurrences
-                # across runs and will quarantine if the signature repeats.
-                try:
-                    from tools.workflow.self_debug import check_and_diagnose
-                    work_dir = str(BASE_DIR)
-                    check_and_diagnose(tid, reason, work_dir)
-                except Exception as _sd_exc:
-                    logger.warning(
-                        "silent-cleanup self_debug call failed for %s: %s",
-                        tid, _sd_exc,
-                    )
+        # Stale cleanup happened — defer promotion to the next cycle so the
+        # quarantine state written by check_and_diagnose has time to settle
+        # before the scheduler considers the task eligible for re-dispatch.
+        if stale_info:
+            print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)) "
+                  f"— deferring promotion to next cycle")
+            return {
+                "success": True,
+                "metric_value": len(completed),
+                "details": {
+                    "status": "stale_cleanup",
+                    "cleaned": [t for t, _ in stale_info],
+                    "completed_this_cycle": completed,
+                    "telegram_commands": len(tg_results),
+                },
+            }
 
     if _running:
         print(f"  Kanban: {len(_running)} task(s) executing in claude, waiting...")
