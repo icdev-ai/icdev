@@ -2171,6 +2171,14 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "Not found"}), 404
         tpl = _row_to_dict(row)
+        # Idempotency: return existing topology for this template rather than duplicating
+        existing = conn.execute(
+            "SELECT id, name FROM topologies WHERE template_id=? LIMIT 1", (tpl_id,)
+        ).fetchone()
+        if existing:
+            conn.close()
+            ex = _row_to_dict(existing)
+            return jsonify({"id": ex["id"], "name": ex["name"], "redirect": f"/network/canvas/{ex['id']}"}), 200
         topo_id = str(_uuid.uuid4())
         now = _now()
         name = f"{tpl['name']} (copy)"
