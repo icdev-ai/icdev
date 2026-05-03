@@ -74,15 +74,15 @@
     {% endfor %}
 </div>
 
-{# Projects in Flight — reusable partial (config at args/projects.yaml).
-   Auto-hides each project when done; Task Board auto-hides when all active
-   columns are empty. Init hooks wired below in the DOMContentLoaded block. #}
-{% include "_projects_in_flight.html" %}
-
 {# Autonomous Recovery — shows failure_triage activity, autofix branches,
    and unresolved failures. Auto-hides when idle (no triage in 24h, no
    branches, no unresolved failures in the last hour). #}
 {% include "_autonomy_status.html" %}
+
+{# Projects in Flight — reusable partial (config at args/projects.yaml).
+   Auto-hides each project when done; Task Board auto-hides when all active
+   columns are empty. Init hooks wired below in the DOMContentLoaded block. #}
+{% include "_projects_in_flight.html" %}
 
 <!-- Add/Edit Task Modal -->
 <div id="task-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:center; justify-content:center;">
