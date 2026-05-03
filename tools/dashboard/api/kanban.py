@@ -233,14 +233,21 @@ def list_tasks():
                 f"{select}WHERE kt.status IN ('backlog','scheduled') "
                 f"ORDER BY {priority_case}, kt.created_at ASC"  # nosec B608
             ).fetchall()
-            other_sql = (
-                f"{select}WHERE kt.status NOT IN ('backlog','scheduled') "
+            # in_progress + suggested are always returned in full so they
+            # never get buried by a cap on the done bucket (which can be
+            # thousands of rows). Only "done" is capped.
+            active_rows = conn.execute(
+                f"{select}WHERE kt.status IN ('in_progress','suggested','token_exhausted') "
+                f"ORDER BY {priority_case}, kt.created_at DESC"  # nosec B608
+            ).fetchall()
+            done_sql = (
+                f"{select}WHERE kt.status = 'done' "
                 f"ORDER BY {priority_case}, kt.created_at DESC"  # nosec B608
             )
             if done_limit > 0:
-                other_sql += f" LIMIT {done_limit}"  # nosec B608
-            other_rows = conn.execute(other_sql).fetchall()
-            rows = list(queue_rows) + list(other_rows)
+                done_sql += f" LIMIT {done_limit}"  # nosec B608
+            done_rows = conn.execute(done_sql).fetchall()
+            rows = list(queue_rows) + list(active_rows) + list(done_rows)
         tasks = [dict(r) for r in rows]
         # Stringify datetimes for JSON + compute is_blocked + derive
         # a stable oracle_rule label.
