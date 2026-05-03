@@ -81,6 +81,15 @@
   border: 1px solid #1e3a6e; border-radius: 4px; padding: 3px 10px;
   font-size: 10px; color: #7a8cb0; pointer-events: none; z-index: 20;
 }
+
+/* ── Undo / Redo toolbar buttons ── */
+#btn-undo, #btn-redo {
+  background:#1e293b; color:#eaeaea; border:1px solid #1e3a6e;
+  padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px;
+  transition: background 0.15s;
+}
+#btn-undo:not(:disabled):hover, #btn-redo:not(:disabled):hover { background: #1e3a6e; }
+#btn-undo:disabled, #btn-redo:disabled { opacity: 0.35; cursor: not-allowed; }
 </style>
 {% endblock %}
 {% block content %}
@@ -149,6 +158,11 @@
     style="background:#1e293b;color:#eaeaea;border:1px solid #1e3a6e;width:26px;height:26px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
   <button onclick="zoomFit()" title="Fit all nodes"
     style="background:#1e293b;color:#7a8cb0;border:1px solid #1e3a6e;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Fit</button>
+
+  <span style="color:#334155;">|</span>
+
+  <button id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↩ Undo</button>
+  <button id="btn-redo" onclick="redo()" title="Redo (Ctrl+Y / Ctrl+Shift+Z)" disabled>↪ Redo</button>
 
   <span style="color:#334155;">|</span>
 
@@ -364,6 +378,12 @@ let selectedNodes = new Set();
 let _rbActive = false, _rbStart = {x:0, y:0};
 let _dragInitPositions = {};
 
+// ── Undo / Redo history ──
+const HISTORY_MAX = 50;
+let _historyStack = [];
+let _redoStack    = [];
+let _preDragSnapshot = null;
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
   setupPaletteListeners();
@@ -540,6 +560,52 @@ function setupPaletteListeners() {
 }
 
 // ────────────────────────────────────────────────
+// UNDO / REDO
+// ────────────────────────────────────────────────
+function pushHistory() {
+  const snapshot = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  _historyStack.push(snapshot);
+  if (_historyStack.length > HISTORY_MAX) _historyStack.shift();
+  _redoStack = [];
+  updateUndoRedoBtns();
+}
+
+function restoreState(snapshot) {
+  graph.nodes = JSON.parse(JSON.stringify(snapshot.nodes));
+  graph.edges = JSON.parse(JSON.stringify(snapshot.edges));
+  selectedNode = null;
+  selectedNodes = new Set();
+  connectingFrom = null;
+  document.getElementById('node-props').style.display = 'none';
+  document.getElementById('no-selection').style.display = 'block';
+  document.getElementById('drop-hint').style.display = graph.nodes.length > 0 ? 'none' : '';
+  render();
+  updateUndoRedoBtns();
+}
+
+function undo() {
+  if (_historyStack.length === 0) return;
+  const current = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  _redoStack.push(current);
+  restoreState(_historyStack.pop());
+}
+
+function redo() {
+  if (_redoStack.length === 0) return;
+  const current = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  _historyStack.push(current);
+  if (_historyStack.length > HISTORY_MAX) _historyStack.shift();
+  restoreState(_redoStack.pop());
+}
+
+function updateUndoRedoBtns() {
+  const u = document.getElementById('btn-undo');
+  const r = document.getElementById('btn-redo');
+  if (u) u.disabled = _historyStack.length === 0;
+  if (r) r.disabled = _redoStack.length === 0;
+}
+
+// ────────────────────────────────────────────────
 // DROP
 // ────────────────────────────────────────────────
 function onDrop(e) {
@@ -555,6 +621,7 @@ function onDrop(e) {
     x: Math.max(0, pos.x - 70),
     y: Math.max(0, pos.y - 25),
   };
+  pushHistory();
   graph.nodes.push(node);
   document.getElementById('drop-hint').style.display = 'none';
   render();
@@ -639,6 +706,7 @@ function startNodeDrag(e, node) {
   if (e.shiftKey || _spaceDown || e.button !== 0) return;
   e.stopPropagation();
   _dragging = node;
+  _preDragSnapshot = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
   const c = screenToCanvas(e.clientX, e.clientY);
   _dragOffset = {x: c.x - node.x, y: c.y - node.y};
   // Record initial positions for bulk-drag when this node is part of multi-selection
@@ -671,6 +739,19 @@ function onNodeDragMove(e) {
   render();
 }
 function stopNodeDrag() {
+  if (_dragging && _preDragSnapshot) {
+    const moved = graph.nodes.some(n => {
+      const old = _preDragSnapshot.nodes.find(o => o.id === n.id);
+      return old && (old.x !== n.x || old.y !== n.y);
+    });
+    if (moved) {
+      _historyStack.push(_preDragSnapshot);
+      if (_historyStack.length > HISTORY_MAX) _historyStack.shift();
+      _redoStack = [];
+      updateUndoRedoBtns();
+    }
+  }
+  _preDragSnapshot = null;
   _dragging = null;
   _dragInitPositions = {};
   document.removeEventListener('mousemove', onNodeDragMove);
@@ -704,6 +785,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function deleteSelectedNode() {
   if (!selectedNode) return;
+  pushHistory();
   graph.nodes = graph.nodes.filter(n => n.id !== selectedNode.id);
   graph.edges = graph.edges.filter(e => e.source !== selectedNode.id && e.target !== selectedNode.id);
   selectedNode = null;
@@ -907,8 +989,11 @@ document.addEventListener('keydown', e => {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
   if ((e.ctrlKey||e.metaKey) && e.key === 's')         { e.preventDefault(); saveDesign(); }
+  if ((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); return; }
+  if ((e.ctrlKey||e.metaKey) && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); redo(); return; }
   if (e.key === 'Delete') {
     if (selectedNodes.size > 0) {
+      pushHistory();
       graph.nodes = graph.nodes.filter(n => !selectedNodes.has(n.id));
       graph.edges = graph.edges.filter(ed => !selectedNodes.has(ed.source) && !selectedNodes.has(ed.target));
       if (selectedNode && selectedNodes.has(selectedNode.id)) {
