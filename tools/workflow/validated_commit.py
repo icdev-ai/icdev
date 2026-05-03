@@ -26,6 +26,7 @@ Usage:
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import os
@@ -530,29 +531,31 @@ def validate_working_tree(
         "budget_sec": budget,
     }
 
-    # 1. CodeLens
-    ok, reason, cl_metrics = _run_codelens(cwd, modified_py, compare_to_main=compare_to_main)
+    # 1+2. CodeLens + Coherence in parallel — wall-clock time is max(cl, co)
+    #       instead of cl + co, which was eating into the 300s budget.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as _pool:
+        _cl_fut = _pool.submit(_run_codelens, cwd, modified_py, compare_to_main)
+        _co_fut = _pool.submit(_run_coherence, cwd, compare_to_main)
+        cl_ok, cl_reason, cl_metrics = _cl_fut.result()
+        co_ok, co_reason = _co_fut.result()
+
     metrics.update(cl_metrics)
-    if not ok:
-        metrics["codelens_passed"] = False
+    metrics["codelens_passed"] = cl_ok
+    metrics["coherence_passed"] = co_ok
+
+    if not cl_ok:
         metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
-        return False, reason, metrics
-    metrics["codelens_passed"] = True
+        # Include coherence result in reason so the notification shows both
+        suffix = f" | coherence: {'pass' if co_ok else co_reason}" if not co_ok else ""
+        return False, cl_reason + suffix, metrics
+
+    if not co_ok:
+        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
+        return False, co_reason, metrics
 
     if _over_budget():
         metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
-        return False, f"BUDGET EXHAUSTED after CodeLens ({budget:.0f}s)", metrics
-
-    # 2. Coherence
-    ok, reason = _run_coherence(cwd, compare_to_main)
-    metrics["coherence_passed"] = ok
-    if not ok:
-        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
-        return False, reason, metrics
-
-    if _over_budget():
-        metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)
-        return False, f"BUDGET EXHAUSTED after Coherence ({budget:.0f}s)", metrics
+        return False, f"BUDGET EXHAUSTED after CodeLens+Coherence ({budget:.0f}s)", metrics
 
     # 3. E2E
     ui_touched = any(
