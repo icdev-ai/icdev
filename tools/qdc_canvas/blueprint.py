@@ -159,6 +159,12 @@ def new_canvas():
     if template_id:
         conn = _get_conn()
         try:
+            ex = conn.execute(
+                "SELECT id FROM qdc_designs WHERE template_id=? LIMIT 1",
+                (template_id,),
+            ).fetchone()
+            if ex:
+                return redirect(url_for("qdc_canvas.canvas_editor", design_id=ex["id"]))
             row = conn.execute(
                 "SELECT name, graph_json FROM qdc_templates WHERE id = ?",
                 (template_id,),

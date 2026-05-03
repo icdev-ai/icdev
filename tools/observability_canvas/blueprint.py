@@ -287,9 +287,17 @@ def create_observability_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         if len(json.dumps(data)) > 5_000_000:
             return jsonify({"error": "Payload too large"}), 413
-        design_id = str(_uuid.uuid4())
         name = data.get("name", "Untitled Observability Design")[:200]
         template_id = data.get("template_id", "")
+        if template_id:
+            with get_connection() as conn:
+                ex = conn.execute(
+                    "SELECT id, name FROM observability_designs WHERE template_id=? LIMIT 1",
+                    (template_id,),
+                ).fetchone()
+            if ex:
+                return jsonify({"id": ex["id"], "name": ex["name"]}), 200
+        design_id = str(_uuid.uuid4())
         graph_json = data.get("graph_json", '{"nodes":[],"edges":[]}')
 
         # If template_id given and no graph_json, load from template
