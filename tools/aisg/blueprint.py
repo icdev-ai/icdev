@@ -330,7 +330,8 @@ def ai_handoff_page():
 @bp.route("/api/ai-handoff/export", methods=["POST"])
 def api_handoff_export():
     from tools.aisg.knowledge_handoff import export_package
-    import tempfile, os
+    import tempfile
+    import os
     data = request.get_json(silent=True) or {}
     user_email = data.get("user_email", "unknown@example.com")
     output_path = os.path.join(tempfile.gettempdir(), f"handoff_{user_email.split('@')[0]}.zip")
