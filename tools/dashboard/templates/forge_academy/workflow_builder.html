@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% block title %}Workflow Builder — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
+.fa-wb-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-wb-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-cyan),var(--fa-green)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
+.fa-wb-layout { display:grid; grid-template-columns:240px 1fr 280px; min-height:500px; gap:0; }
+.fa-palette {
+  background:#0d1221; border-right:1px solid var(--fa-border);
+  padding:1.2rem; overflow-y:auto;
+}
+.fa-palette-title { font-size:.62rem; text-transform:uppercase; letter-spacing:.15em; color:var(--fa-orange); margin:0 0 .8rem; }
+.fa-node-chip {
+  background:var(--fa-card); border:1px solid var(--fa-border); border-radius:6px;
+  padding:.45rem .7rem; margin-bottom:.4rem; cursor:grab; font-size:.75rem;
+  display:flex; align-items:center; gap:.4rem; transition:border-color .15s;
+}
+.fa-node-chip:hover { border-color:var(--fa-cyan); }
+.fa-canvas-area {
+  background:#060910;
+  background-image: radial-gradient(rgba(74,144,217,.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+  position:relative; min-height:480px; overflow:hidden;
+}
+.fa-canvas-empty {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:rgba(255,255,255,.15); font-size:.85rem; pointer-events:none; flex-direction:column; gap:.5rem;
+}
+.fa-canvas-node {
+  position:absolute; background:var(--fa-card); border:1.5px solid var(--fa-border);
+  border-radius:8px; padding:.5rem .8rem; cursor:move; font-size:.75rem;
+  user-select:none; transition:border-color .15s; white-space:nowrap;
+  display:flex; align-items:center; gap:.4rem;
+}
+.fa-canvas-node:hover { border-color:var(--fa-cyan); }
+.fa-canvas-node.selected { border-color:var(--fa-orange); }
+.fa-props-panel {
+  background:#0d1221; border-left:1px solid var(--fa-border);
+  padding:1.2rem; overflow-y:auto;
+}
+.fa-props-title { font-size:.62rem; text-transform:uppercase; letter-spacing:.15em; color:var(--fa-cyan); margin:0 0 .8rem; }
+.fa-wb-controls {
+  display:flex; gap:.6rem; padding:1rem 2rem; border-top:1px solid var(--fa-border);
+  background:#0a0a14; flex-wrap:wrap; align-items:center;
+}
+.fa-wb-field { width:100%; background:#060910; border:1px solid var(--fa-border); color:var(--text-primary); border-radius:6px; padding:.45rem .7rem; font-size:.82rem; margin-bottom:.5rem; }
+.fa-goal-output {
+  background:#060910; border:1px solid var(--fa-border); border-radius:6px;
+  padding:.8rem; font-family:monospace; font-size:.72rem; color:var(--fa-green);
+  white-space:pre-wrap; max-height:200px; overflow-y:auto; margin-top:.8rem; display:none;
+}
+.fa-btn-submit {
+  background:linear-gradient(135deg,var(--fa-green),#00b860); color:#0a0a14;
+  border:none; border-radius:6px; padding:.55rem 1.4rem; font-size:.82rem;
+  font-weight:700; cursor:pointer; transition:opacity .15s;
+}
+.fa-btn-submit:hover { opacity:.85; }
+.fa-btn-clear {
+  background:transparent; border:1px solid var(--fa-border); color:var(--text-secondary);
+  border-radius:6px; padding:.5rem 1rem; font-size:.78rem; cursor:pointer;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+  <div class="fa-wb-header">
+    <h1>⬡ Workflow Builder</h1>
+    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">
+      Design agent workflows visually. FORGE generates the goal markdown automatically.
+    </p>
+    <a href="/academy" class="btn" style="font-size:.75rem;margin-top:.6rem;">← Hub</a>
+  </div>
+
+  <div class="fa-wb-layout">
+    <!-- Node Palette -->
+    <div class="fa-palette">
+      <div class="fa-palette-title">Node Types</div>
+      <div id="node-palette"></div>
+      <div style="margin-top:1.2rem;">
+        <div class="fa-palette-title">AISG Patterns</div>
+        {% for p in patterns %}
+        <div class="fa-node-chip" onclick="addPatternNode('{{ p.id }}','{{ p.name | default(p.id) }}')">
+          🔷 {{ (p.name | default(p.id))[:22] }}
+        </div>
+        {% else %}
+        <div style="font-size:.7rem;color:var(--text-secondary);">No patterns available.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Canvas -->
+    <div class="fa-canvas-area" id="canvas" ondragover="event.preventDefault()" ondrop="dropNode(event)">
+      <div class="fa-canvas-empty" id="canvas-empty">
+        <div>⬡</div>
+        <div>Drag nodes here to build your workflow</div>
+      </div>
+    </div>
+
+    <!-- Properties -->
+    <div class="fa-props-panel">
+      <div class="fa-props-title">Properties</div>
+      <div id="props-content" style="color:var(--text-secondary);font-size:.78rem;">
+        Select a node to edit its properties.
+      </div>
+
+      <div style="margin-top:1.5rem;">
+        <div class="fa-palette-title">Workflow Name</div>
+        <input class="fa-wb-field" id="wf-name" placeholder="My Agent Workflow" value="My Agent Workflow">
+      </div>
+
+      <div style="margin-top:1rem;">
+        <div class="fa-palette-title">FORGE Goal Preview</div>
+        <div class="fa-goal-output" id="goal-preview"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fa-wb-controls">
+    <button class="fa-btn-submit" onclick="submitWorkflow()">⬡ Generate &amp; Deploy</button>
+    <button class="fa-btn-clear" onclick="clearCanvas()">✕ Clear</button>
+    <button class="fa-btn-clear" onclick="previewGoal()" style="color:var(--fa-cyan);border-color:var(--fa-cyan);">👁 Preview Goal MD</button>
+    <div id="wf-result" style="font-size:.78rem;margin-left:auto;"></div>
+  </div>
+</div>
+
+<script>
+const NODE_TEMPLATES = [
+  {type:'trigger',   label:'Trigger',     icon:'⚡', color:'#FF6B35'},
+  {type:'llm_call',  label:'LLM Call',    icon:'🧠', color:'#4a90d9'},
+  {type:'rag_retrieve', label:'RAG',      icon:'🔍', color:'#00D4FF'},
+  {type:'tool_call', label:'Tool Call',   icon:'🔧', color:'#00FF88'},
+  {type:'decision',  label:'Decision',    icon:'◆',  color:'#9b59b6'},
+  {type:'output',    label:'Output',      icon:'📤', color:'#FFB800'},
+  {type:'agent',     label:'Sub-Agent',   icon:'🤖', color:'#FF6B35'},
+  {type:'api_call',  label:'API Call',    icon:'🌐', color:'#4a90d9'},
+];
+
+let nodes = [];
+let nodeCount = 0;
+
+// Populate palette
+const palette = document.getElementById('node-palette');
+NODE_TEMPLATES.forEach(t => {
+  const d = document.createElement('div');
+  d.className = 'fa-node-chip';
+  d.draggable = true;
+  d.innerHTML = `<span>${t.icon}</span><span>${t.label}</span>`;
+  d.addEventListener('dragstart', e => e.dataTransfer.setData('node-type', JSON.stringify(t)));
+  palette.appendChild(d);
+});
+
+function dropNode(e) {
+  e.preventDefault();
+  const data = e.dataTransfer.getData('node-type');
+  if (!data) return;
+  const t = JSON.parse(data);
+  const canvas = document.getElementById('canvas');
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left - 50;
+  const y = e.clientY - rect.top - 20;
+  addNode(t, x, y);
+}
+
+function addNode(t, x, y) {
+  document.getElementById('canvas-empty').style.display = 'none';
+  const id = 'node-' + (++nodeCount);
+  nodes.push({id, type: t.type, label: t.label, x, y});
+  const el = document.createElement('div');
+  el.className = 'fa-canvas-node';
+  el.id = id;
+  el.style.left = x + 'px';
+  el.style.top = y + 'px';
+  el.style.borderColor = t.color || 'var(--fa-border)';
+  el.innerHTML = `<span>${t.icon || '◆'}</span><span>${t.label}</span>`;
+  el.onclick = () => selectNode(id, t);
+  makeDraggable(el, id);
+  document.getElementById('canvas').appendChild(el);
+}
+
+function addPatternNode(patternId, name) {
+  addNode({type: 'pattern', label: name, icon: '🔷', color: '#9b59b6'}, 100 + nodeCount*10, 100 + nodeCount*10);
+}
+
+function makeDraggable(el, nodeId) {
+  let dragging = false, ox, oy;
+  el.addEventListener('mousedown', e => {
+    dragging = true; ox = e.clientX - el.offsetLeft; oy = e.clientY - el.offsetTop;
+    el.style.zIndex = 10;
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    el.style.left = (e.clientX - ox) + 'px';
+    el.style.top = (e.clientY - oy) + 'px';
+    const n = nodes.find(n => n.id === nodeId);
+    if (n) { n.x = e.clientX - ox; n.y = e.clientY - oy; }
+  });
+  document.addEventListener('mouseup', () => { dragging = false; el.style.zIndex = ''; });
+}
+
+function selectNode(id, t) {
+  document.querySelectorAll('.fa-canvas-node').forEach(n => n.classList.remove('selected'));
+  document.getElementById(id)?.classList.add('selected');
+  document.getElementById('props-content').innerHTML = `
+    <div style="font-size:.7rem;color:var(--fa-cyan);margin-bottom:.5rem;">${t.icon} ${t.label}</div>
+    <label style="font-size:.7rem;color:var(--text-secondary);display:block;margin-bottom:.2rem;">Node Label</label>
+    <input class="fa-wb-field" value="${t.label}" onchange="updateNodeLabel('${id}', this.value)" style="margin-bottom:.4rem;">
+    <label style="font-size:.7rem;color:var(--text-secondary);display:block;margin-bottom:.2rem;">Type</label>
+    <div style="font-size:.78rem;color:var(--fa-cyan);">${t.type}</div>
+  `;
+}
+
+function updateNodeLabel(id, label) {
+  const n = nodes.find(n => n.id === id);
+  if (n) { n.label = label; document.getElementById(id).querySelector('span:last-child').textContent = label; }
+}
+
+function clearCanvas() {
+  nodes = []; nodeCount = 0;
+  const canvas = document.getElementById('canvas');
+  canvas.querySelectorAll('.fa-canvas-node').forEach(n => n.remove());
+  document.getElementById('canvas-empty').style.display = 'flex';
+  document.getElementById('props-content').textContent = 'Select a node to edit its properties.';
+  document.getElementById('goal-preview').style.display = 'none';
+}
+
+function previewGoal() {
+  const name = document.getElementById('wf-name').value;
+  const lines = [`# Goal: ${name}`, '', '## Steps'];
+  nodes.forEach((n,i) => lines.push(`${i+1}. ${n.label} (${n.type})`));
+  const el = document.getElementById('goal-preview');
+  el.style.display = 'block';
+  el.textContent = lines.join('\n');
+}
+
+async function submitWorkflow() {
+  if (!nodes.length) { alert('Add at least one node to the canvas.'); return; }
+  const name = document.getElementById('wf-name').value || 'My Workflow';
+  const result = document.getElementById('wf-result');
+  result.textContent = '⚙ Generating...';
+  try {
+    const resp = await fetch('/api/academy/workflow/submit', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, canvas: {nodes, edges: []}})
+    });
+    const d = await resp.json();
+    if (d.status === 'ok' || d.status === 'partial') {
+      result.style.color = 'var(--fa-green)';
+      result.textContent = '✓ Workflow generated and deployed!';
+      if (d.goal_md) {
+        document.getElementById('goal-preview').style.display = 'block';
+        document.getElementById('goal-preview').textContent = d.goal_md;
+      }
+    } else {
+      result.style.color = '#ff6b6b';
+      result.textContent = 'Error: ' + (d.message || 'Unknown');
+    }
+  } catch(e) {
+    result.style.color = '#ff6b6b';
+    result.textContent = 'Error: ' + e.message;
+  }
+}
+</script>
+{% endblock %}

@@ -366,7 +366,15 @@
             <li class="nav-dropdown">
                 <a href="#" class="{% if '/academy' in request.path %}active{% endif %}" style="color:#10b981;">Academy</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/academy/">Dashboard</a></li>
+                    <li><a href="/academy" style="color:#FF6B35;font-weight:600;">⬡ FORGE Academy</a></li>
+                    <li><a href="/academy/missions">Missions</a></li>
+                    <li><a href="/academy/skill-tree">Skill Tree</a></li>
+                    <li><a href="/academy/achievements">Achievements</a></li>
+                    <li><a href="/academy/leaderboard">Leaderboard</a></li>
+                    <li><a href="/academy/guild">Guild</a></li>
+                    <li><a href="/academy/arena" style="color:#FF6B35;">⚡ Arena</a></li>
+                    <li><a href="/academy/workflow-builder" style="color:#00D4FF;">⬡ Workflow Builder</a></li>
+                    <li><a href="/academy/profile">Profile Setup</a></li>
                     <li><a href="/academy/oracle">Oracle Insights</a></li>
                 </ul>
             </li>
@@ -378,6 +386,8 @@
                 <a href="#" class="{% if '/gameday' in request.path %}active{% endif %}" style="color:#f59e0b;">GameDay</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/gameday/">Sessions</a></li>
+                    <li><a href="/gameday/leaderboard">Leaderboard</a></li>
+                    <li><a href="/gameday/scenarios">Scenarios</a></li>
                 </ul>
             </li>
             {% endif %}

@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Arena — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
+.fa-arena-header {
+  background:linear-gradient(135deg,#1a0a00,#2a1200);
+  border-bottom:1px solid rgba(255,107,53,.2); padding:2rem;
+}
+.fa-arena-header h1 {
+  font-size:2rem; font-weight:900; letter-spacing:.12em;
+  background:linear-gradient(135deg,var(--fa-orange),#ff2d55);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0;
+}
+.fa-arena-body { padding:1.5rem 2rem; }
+.fa-challenge-card {
+  background:var(--fa-card); border:1px solid rgba(255,107,53,.3);
+  border-radius:12px; padding:1.5rem; margin-bottom:1.2rem;
+  position:relative; overflow:hidden;
+}
+.fa-challenge-card::before { content:""; position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--fa-orange),#ff2d55); }
+.fa-challenge-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:.8rem; }
+.fa-challenge-title { font-size:1.1rem; font-weight:800; }
+.fa-mult-badge { background:rgba(255,107,53,.15); border:1px solid rgba(255,107,53,.3); color:var(--fa-orange); font-size:.72rem; font-weight:700; padding:.25rem .7rem; border-radius:4px; }
+.fa-countdown { font-family:monospace; font-size:1.1rem; color:var(--fa-gold); font-weight:700; }
+.fa-arena-locked {
+  text-align:center; padding:3rem;
+  background:var(--fa-card); border:1px solid var(--fa-border); border-radius:12px;
+}
+.fa-enter-btn {
+  background:linear-gradient(135deg,var(--fa-orange),#ff2d55);
+  color:#fff; border:none; border-radius:6px; padding:.55rem 1.5rem;
+  font-size:.85rem; font-weight:700; cursor:pointer; letter-spacing:.04em;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+  <div class="fa-arena-header">
+    <h1>⚡ Arena</h1>
+    <p style="color:rgba(255,107,53,.7);margin:.3rem 0 0;font-size:.82rem;letter-spacing:.05em;">
+      TIMED CHALLENGES // TECHNICAL ROLES ONLY // XP MULTIPLIERS UP TO 3×
+    </p>
+    <a href="/academy" class="btn" style="font-size:.75rem;margin-top:.6rem;">← Hub</a>
+  </div>
+
+  <div class="fa-arena-body">
+    {% if fa_user and fa_user.role in TECHNICAL_ROLES %}
+
+    {% if challenges %}
+    {% for ch in challenges %}
+    <div class="fa-challenge-card">
+      <div class="fa-challenge-top">
+        <div class="fa-challenge-title">{{ ch.title }}</div>
+        <span class="fa-mult-badge">{{ ch.xp_multiplier }}× XP</span>
+      </div>
+      <div style="font-size:.78rem;color:var(--text-secondary);margin-bottom:1rem;">
+        Timed coding challenge. Complete before the clock runs out for maximum multiplier.
+      </div>
+      <div style="display:flex;align-items:center;gap:1rem;">
+        <div>
+          <div style="font-size:.62rem;color:var(--text-secondary);margin-bottom:.2rem;">Ends in</div>
+          <div class="fa-countdown" data-ends="{{ ch.ends_at }}">Loading...</div>
+        </div>
+        <button class="fa-enter-btn" onclick="enterChallenge({{ ch.id }})">Enter Challenge →</button>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="fa-arena-locked">
+      <div style="font-size:3rem;margin-bottom:1rem;">⚡</div>
+      <h2 style="color:var(--fa-orange);font-size:1.2rem;margin:0 0 .5rem;">No Active Challenges</h2>
+      <p style="color:var(--text-secondary);font-size:.82rem;max-width:400px;margin:0 auto 1.5rem;">
+        Arena challenges rotate weekly. Complete Tier 1 missions and check back — your next challenge is incoming.
+      </p>
+      <a href="/academy/missions" class="fa-enter-btn" style="text-decoration:none;display:inline-block;padding:.55rem 1.5rem;">Browse Missions →</a>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="fa-arena-locked">
+      <div style="font-size:3rem;margin-bottom:1rem;">🔒</div>
+      <h2 style="color:var(--fa-orange);font-size:1.2rem;margin:0 0 .5rem;">Technical Roles Only</h2>
+      <p style="color:var(--text-secondary);font-size:.82rem;max-width:400px;margin:0 auto 1.5rem;">
+        The Arena is reserved for DevOps, SecOps-Eng, DataOps, and SWE/Architect tracks.
+        Guided role learners have their own advanced capstone challenges.
+      </p>
+      <a href="/academy/profile" class="fa-enter-btn" style="text-decoration:none;display:inline-block;padding:.55rem 1.5rem;">Update Profile →</a>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+function updateCountdowns() {
+  document.querySelectorAll('.fa-countdown[data-ends]').forEach(el => {
+    const ends = new Date(el.dataset.ends);
+    const now = new Date();
+    const diff = Math.max(0, ends - now);
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    const s = Math.floor((diff % 60000) / 1000);
+    el.textContent = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+  });
+}
+updateCountdowns();
+setInterval(updateCountdowns, 1000);
+
+async function enterChallenge(challengeId) {
+  if (!confirm('Enter this timed challenge? The clock starts now.')) return;
+  const resp = await fetch('/api/academy/challenge/enter', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({challenge_id: challengeId, submission: ''})
+  });
+  const d = await resp.json();
+  if (d.ok) {
+    alert('Challenge entered! Good luck, Operative.');
+  }
+}
+</script>
+{% endblock %}
