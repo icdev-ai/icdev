@@ -309,10 +309,19 @@ def create_boundary_blueprint():
     def bdc_api_create_design():
         """Create a new boundary design."""
         data = request.get_json(force=True, silent=True) or {}
-        design_id = str(_uuid.uuid4())
+        template_id = data.get("template_id")
         name = data.get("name", "Untitled Boundary Design")
         now = now_isoformat()
         default_graph = {"nodes": [], "edges": [], "boundaries": []}
+        # Idempotency: if loading from a template, return the existing design rather than duplicating
+        if template_id:
+            with get_connection() as conn:
+                ex = conn.execute(
+                    "SELECT id, name FROM boundary_designs WHERE template_id=? LIMIT 1", (template_id,)
+                ).fetchone()
+            if ex:
+                return jsonify({"id": ex["id"], "name": ex["name"]}), 200
+        design_id = str(_uuid.uuid4())
         with get_connection() as conn:
             conn.execute(
                 "INSERT INTO boundary_designs "
@@ -326,7 +335,7 @@ def create_boundary_blueprint():
                     data.get("graph_json")
                     if isinstance(data.get("graph_json"), str)
                     else json.dumps(data.get("graph_json", default_graph)),
-                    data.get("template_id"),
+                    template_id,
                     data.get("classification", "CUI"),
                     now,
                     now,

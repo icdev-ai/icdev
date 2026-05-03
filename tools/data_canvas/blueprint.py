@@ -279,11 +279,20 @@ def create_data_canvas_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         if len(json.dumps(data)) > 5_000_000:
             return jsonify({"error": "Payload too large"}), 413
-        design_id = str(_uuid.uuid4())
         name = data.get("name", "Untitled Data Design")[:200]
         classification = data.get("classification", "CUI")
         graph_json = data.get("graph_json", '{"nodes":[],"edges":[],"boundaries":[]}')
         template_id = data.get("template_id", None)
+        # Idempotency: if loading from a template, return the existing design rather than duplicating
+        if template_id:
+            conn = get_connection()
+            ex = conn.execute(
+                "SELECT id, name FROM data_designs WHERE template_id=? LIMIT 1", (template_id,)
+            ).fetchone()
+            conn.close()
+            if ex:
+                return jsonify({"id": ex["id"], "name": ex["name"]}), 200
+        design_id = str(_uuid.uuid4())
         logger.info("Creating data design: %s (%s)", name, design_id)
         conn = get_connection()
         conn.execute(
