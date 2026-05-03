@@ -232,11 +232,11 @@ def launch_to_kanban(design_id: str, design_name: str, graph_json: str,
                 lid = f"wl-aadc-{uuid.uuid4().hex[:8]}"
                 conn.execute(
                     """INSERT INTO workflow_loops
-                       (id, project_id, phase, summary, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?)
+                       (id, project_id, phase_name, plan_summary, created_at)
+                       VALUES (?,?,?,?,?)
                        ON CONFLICT DO NOTHING""",
                     (lid, project_id or design_id, "plan",
-                     f"Implement AADC design: {design_name}", _now(), _now()),
+                     f"Implement AADC design: {design_name}", _now()),
                 )
                 conn.commit()
                 loop_id = lid
