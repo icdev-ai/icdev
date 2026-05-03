@@ -254,8 +254,17 @@ def detect_vendor(text: str) -> str:
 
 
 def _parse_cisco(text: str) -> dict:
-    """Parse Cisco IOS-style config via ciscoconfparse2."""
-    from ciscoconfparse2 import CiscoConfParse  # type: ignore
+    """Parse Cisco IOS-style config via ciscoconfparse2 (optional GPL dep)."""
+    try:
+        from ciscoconfparse2 import CiscoConfParse  # type: ignore
+    except ImportError:
+        import logging
+        logging.getLogger(__name__).warning(
+            "ciscoconfparse2 not installed — Cisco config parsing unavailable. "
+            "Install it in an isolated environment if needed."
+        )
+        return {"vendor": "cisco", "hostname": "", "interfaces": [], "routes": [],
+                "acls": [], "vrfs": [], "parse_error": "ciscoconfparse2 not available"}
 
     parse = CiscoConfParse(text.splitlines(), syntax="ios")
 

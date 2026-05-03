@@ -81,10 +81,7 @@ def _render_pdf2image(file_bytes: bytes) -> Optional[List[bytes]]:
 
 
 def _render_pages(file_bytes: bytes) -> Optional[List[bytes]]:
-    """Try rendering backends in order; return list of PNG bytes or None."""
-    pages = _render_fitz(file_bytes)
-    if pages is not None:
-        return pages
+    """Return list of PNG bytes or None if pdf2image is unavailable."""
     return _render_pdf2image(file_bytes)
 
 
@@ -185,7 +182,7 @@ def _dominant_canvas(
 def parse_pdf(file_bytes: bytes, canvas_type: str = "auto") -> dict:
     """Extract diagrams from a PDF and return a merged graph_json.
 
-    Renders each page to PNG via PyMuPDF or pdf2image, passes each through
+    Renders each page to PNG via pdf2image, passes each through
     image_ingestor, then merges all per-page results. Embedded text is
     extracted via pypdf and included as metadata.text_context.
 
@@ -217,7 +214,7 @@ def parse_pdf(file_bytes: bytes, canvas_type: str = "auto") -> dict:
     if rendered is None:
         return _text_only_result(
             canvas_hint, page_texts, doc_title, len(page_texts),
-            "No image rendering backend available (install PyMuPDF or pdf2image). "
+            "No image rendering backend available (install pdf2image + poppler). "
             "Text extracted only.",
         )
 
