@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from tools.aisg.constants import ACTION_TYPES, ROI_RATES_MINUTES
+from tools.aisg.constants import ROI_RATES_MINUTES
 from tools.db.storage import get_connection
 
 

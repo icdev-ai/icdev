@@ -635,3 +635,36 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Roi Tracker | tools\aisg\roi_tracker.py | Auto-registered: aisg/roi_tracker.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Export Pdf | tools\agentic_ai_canvas\export_pdf.py | Auto-registered: agentic_ai_canvas/export_pdf.py | --json | JSON |
+| Version Diff | tools\agentic_ai_canvas\version_diff.py | Auto-registered: agentic_ai_canvas/version_diff.py | --json | JSON |
+| Autotune | tools\aisg\autotune.py | Auto-registered: aisg/autotune.py | --json | JSON |
+| Compliance View | tools\aisg\compliance_view.py | Auto-registered: aisg/compliance_view.py | --json | JSON |
+| Executive View | tools\aisg\executive_view.py | Auto-registered: aisg/executive_view.py | --json | JSON |
+| Knowledge Handoff | tools\aisg\knowledge_handoff.py | Auto-registered: aisg/knowledge_handoff.py | --json | JSON |
+| Learning Paths | tools\aisg\learning_paths.py | Auto-registered: aisg/learning_paths.py | --json | JSON |
+| Pattern Registry | tools\aisg\pattern_registry.py | Auto-registered: aisg/pattern_registry.py | --json | JSON |
+| Pm View | tools\aisg\pm_view.py | Auto-registered: aisg/pm_view.py | --json | JSON |
+| Skills Tracker | tools\aisg\skills_tracker.py | Auto-registered: aisg/skills_tracker.py | --json | JSON |
+| Sprint Seeder | tools\aisg\sprint_seeder.py | Auto-registered: aisg/sprint_seeder.py | --json | JSON |
+| Seed Aadc Enhancement | tools\kanban\seed_aadc_enhancement.py | Auto-registered: kanban/seed_aadc_enhancement.py | --json | JSON |
+| Seed Fde Epic E | tools\scripts\seed_fde_epic_e.py | Auto-registered: scripts/seed_fde_epic_e.py | --json | JSON |
+| Cisa Kev Importer | tools\strategos\cisa_kev_importer.py | Auto-registered: strategos/cisa_kev_importer.py | --json | JSON |
+| Wargame Exporter | tools\strategos\wargame_exporter.py | Auto-registered: strategos/wargame_exporter.py | --json | JSON |
+| Aar Generator | tools\ttx\aar_generator.py | Auto-registered: ttx/aar_generator.py | --json | JSON |
+| Ai Scorer | tools\ttx\ai_scorer.py | Auto-registered: ttx/ai_scorer.py | --json | JSON |
+| Inject Dispatcher | tools\ttx\inject_dispatcher.py | Auto-registered: ttx/inject_dispatcher.py | --json | JSON |
+| Persona Generator | tools\ttx\persona_generator.py | Auto-registered: ttx/persona_generator.py | --json | JSON |
+| Scenario Loader | tools\ttx\scenario_loader.py | Auto-registered: ttx/scenario_loader.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Migrate To Vault | tools\trading\credentials\migrate_to_vault.py | Auto-registered: credentials/migrate_to_vault.py | --json | JSON |
+| Certificates | tools\trading\lessons\certificates.py | Auto-registered: lessons/certificates.py | --json | JSON |
+| Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |

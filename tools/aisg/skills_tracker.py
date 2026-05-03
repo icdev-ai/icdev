@@ -122,7 +122,6 @@ _RECOMMENDATIONS = [
 def get_skills_data() -> dict:
     """Return skill domains, maturity badge, and recommendations."""
     total_current = sum(s["current_level"] for s in _SKILL_DOMAINS)
-    total_max = len(_SKILL_DOMAINS) * 5
     avg_level = round(total_current / len(_SKILL_DOMAINS), 1) if _SKILL_DOMAINS else 0
     maturity_int = max(1, min(5, round(avg_level)))
     maturity = _MATURITY_LEVELS[maturity_int]

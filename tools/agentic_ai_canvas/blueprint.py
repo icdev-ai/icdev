@@ -362,11 +362,27 @@ def save_design(design_id: str):
     return jsonify(result)
 
 
+_DESIGN_CHILD_TABLES = [
+    "aadc_audit",
+    "aadc_versions",
+    "aadc_loop_links",
+    "aadc_workflow_links",
+    "aadc_artifacts",
+    "aadc_assessments",
+]
+
+
+def _delete_design_cascade(conn, design_id: str) -> None:
+    for tbl in _DESIGN_CHILD_TABLES:
+        conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (design_id,))  # nosec B608
+    conn.execute("DELETE FROM aadc_designs WHERE id=?", (design_id,))
+
+
 @aadc_bp.route("/api/designs/<design_id>", methods=["DELETE"])
 def delete_design(design_id: str):
     conn = _conn()
     try:
-        conn.execute("DELETE FROM aadc_designs WHERE id=?", (design_id,))
+        _delete_design_cascade(conn, design_id)
         conn.commit()
     finally:
         conn.close()
@@ -377,13 +393,13 @@ def delete_design(design_id: str):
 def delete_all_designs():
     conn = _conn()
     try:
-        result = conn.execute("SELECT COUNT(*) FROM aadc_designs").fetchone()
-        count = result[0] if result else 0
-        conn.execute("DELETE FROM aadc_designs")
+        ids = [r[0] for r in conn.execute("SELECT id FROM aadc_designs").fetchall()]
+        for did in ids:
+            _delete_design_cascade(conn, did)
         conn.commit()
     finally:
         conn.close()
-    return jsonify({"status": "deleted", "count": count})
+    return jsonify({"status": "deleted", "count": len(ids)})
 
 
 @aadc_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
