@@ -95,8 +95,9 @@ def _count_pending_prompts() -> int:
         conn.close()
 
 
-# Max tasks to auto-promote per cycle (prevents flooding)
-MAX_AUTO_PROMOTE = 2
+# Max tasks to auto-promote per cycle — matches MAX_IN_PROGRESS so a full
+# batch fills all available slots in one cycle rather than two.
+MAX_AUTO_PROMOTE = 3
 # Max in-progress tasks at any time (prevents pile-up)
 MAX_IN_PROGRESS = 3
 # Max seconds a Claude CLI subprocess can run before being killed
