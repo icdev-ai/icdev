@@ -70,14 +70,14 @@ def seed_hitl_templates() -> None:
                     conn.execute(
                         """INSERT INTO wf_templates
                            (id, name, canvas_type, is_default, is_system,
-                            stages_json, roles_json, approval_policy, description,
+                            stages_json, roles_json, approval_policy,
                             created_at, updated_at)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
                         (tid, tmpl["name"], tmpl["canvas_type"],
                          1 if tmpl["is_default"] else 0,
                          1 if tmpl["is_system"] else 0,
                          tmpl["stages_json"], tmpl["roles_json"],
-                         tmpl["approval_policy"], tmpl["description"],
+                         tmpl["approval_policy"],
                          _now(), _now()),
                     )
             conn.commit()

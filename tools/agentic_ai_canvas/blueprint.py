@@ -445,7 +445,7 @@ def list_templates():
             g = json.loads(t.get("graph_json", '{"nodes":[],"edges":[]}'))
             t["node_count"] = len(g.get("nodes", []))
             templates.append(t)
-        return jsonify(templates)
+        return jsonify({"templates": templates})
     finally:
         conn.close()
 
