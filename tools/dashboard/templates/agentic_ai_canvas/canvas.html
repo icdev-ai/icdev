@@ -82,6 +82,15 @@
   font-size: 10px; color: #7a8cb0; pointer-events: none; z-index: 20;
 }
 
+/* ── Copy/Paste toast ── */
+#canvas-toast {
+  display: none; position: absolute; bottom: 16px; left: 50%;
+  transform: translateX(-50%); background: #1e3a6e;
+  border: 1px solid #6366f1; border-radius: 6px; padding: 6px 16px;
+  font-size: 12px; color: #eaeaea; pointer-events: none; z-index: 50;
+  white-space: nowrap;
+}
+
 /* ── Undo / Redo toolbar buttons ── */
 #btn-undo, #btn-redo {
   background:#1e293b; color:#eaeaea; border:1px solid #1e3a6e;
@@ -265,6 +274,9 @@
     <!-- Pan mode hint -->
     <div id="pan-hint">Space+Drag to pan · Scroll to zoom</div>
 
+    <!-- Copy/Paste toast -->
+    <div id="canvas-toast"></div>
+
     <!-- Zoom cluster (canvas corner) -->
     <div class="zoom-cluster">
       <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
@@ -383,6 +395,9 @@ const HISTORY_MAX = 50;
 let _historyStack = [];
 let _redoStack    = [];
 let _preDragSnapshot = null;
+
+// ── Copy / Paste clipboard ──
+let _clipboard = [];
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -982,6 +997,46 @@ function insertSnippet(snippetId) {
 function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
 
 // ────────────────────────────────────────────────
+// COPY / PASTE
+// ────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('canvas-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+function copySelectedNodes() {
+  if (selectedNodes.size === 0) return;
+  _clipboard = graph.nodes
+    .filter(n => selectedNodes.has(n.id))
+    .map(n => { const c = JSON.parse(JSON.stringify(n)); delete c.id; c.copied = true; return c; });
+  showToast('Copied ' + _clipboard.length + ' node' + (_clipboard.length !== 1 ? 's' : ''));
+}
+
+function pasteNodes() {
+  if (_clipboard.length === 0) return;
+  pushHistory();
+  const newIds = [];
+  _clipboard.forEach((snap, i) => {
+    const node = JSON.parse(JSON.stringify(snap));
+    node.id = nextId();
+    node.x = (snap.x || 0) + 20;
+    node.y = (snap.y || 0) + 20;
+    delete node.copied;
+    graph.nodes.push(node);
+    newIds.push(node.id);
+  });
+  _clipboard = [];
+  selectedNodes = new Set(newIds);
+  document.getElementById('drop-hint').style.display = 'none';
+  render();
+}
+
+// ────────────────────────────────────────────────
 // KEYBOARD
 // ────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
@@ -991,6 +1046,8 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey||e.metaKey) && e.key === 's')         { e.preventDefault(); saveDesign(); }
   if ((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); return; }
   if ((e.ctrlKey||e.metaKey) && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key === 'c')         { e.preventDefault(); copySelectedNodes(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key === 'v')         { e.preventDefault(); pasteNodes(); return; }
   if (e.key === 'Delete') {
     if (selectedNodes.size > 0) {
       pushHistory();
