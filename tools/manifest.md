@@ -660,6 +660,7 @@
 | Inject Dispatcher | tools\ttx\inject_dispatcher.py | Auto-registered: ttx/inject_dispatcher.py | --json | JSON |
 | Persona Generator | tools\ttx\persona_generator.py | Auto-registered: ttx/persona_generator.py | --json | JSON |
 | Scenario Loader | tools\ttx\scenario_loader.py | Auto-registered: ttx/scenario_loader.py | --json | JSON |
+| Session Manager | tools\ttx\session_manager.py | TTX Engine — session lifecycle CRUD. Create/get/list/update ttx_sessions rows; generates a random join_code; enforces SESSION_STATES enum on state transitions. Public API: `create_session(scenario_slug, session_mode, facilitator_name, duration_minutes, max_teams, config)`, `get_session(session_id)`, `get_session_by_code(join_code)`, `list_sessions(state)`, `update_session_state(session_id, new_state)`. | imported by TTX blueprint | dict \| list[dict] |
 
 
 ## Auto-Registered (Coherence Fix)
