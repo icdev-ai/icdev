@@ -15,7 +15,6 @@ from tools.agentic_ai_canvas.constants import (
     GOVERNANCE_NODES,
     INFRA_NODES,
     MODEL_NODES,
-    SAFETY_NODES,
     TOOL_MCP_NODES,
 )
 
@@ -109,9 +108,6 @@ _STRIDE_RULES: list[dict] = [
 
 def generate_threat_model(nodes: list[dict], edges: list[dict]) -> dict:
     """Generate a STRIDE + ATLAS threat model from a design graph."""
-    node_types = {n.get("type", "") for n in nodes}
-    node_by_id = {n["id"]: n for n in nodes}
-
     # STRIDE threats: apply rules where at least one matching node exists
     stride_threats: list[dict] = []
     for rule in _STRIDE_RULES:

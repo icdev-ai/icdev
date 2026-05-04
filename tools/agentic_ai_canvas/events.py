@@ -7,7 +7,7 @@ Uses get_connection() so it works with both SQLite and PostgreSQL backends.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+
 from typing import Any, Dict, Optional
 
 
@@ -42,7 +42,7 @@ def emit_event(
         )
         conn.commit()
         return True
-    except Exception as exc:
+    except Exception:
         # Table may not exist in SQLite mode (migration is PostgreSQL-only DDL).
         # Silently skip — event feed is non-critical.
         try:
