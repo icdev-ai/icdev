@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}Autonomous Coder — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="max-width:900px;margin:0 auto;padding:0 16px;">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;">
+    <div>
+      <h2 style="margin:0;color:#eaeaea;">🤖 Autonomous Coder</h2>
+      <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Agentic AI coding pipeline — Plan → Code → Validate → Deliver</p>
+    </div>
+    <a href="/agentic-ai/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← AADC</a>
+  </div>
+
+  <!-- Architecture strip -->
+  <div style="background:#0d2137;border:1px solid #1e3a6e;border-radius:8px;padding:14px 20px;margin-bottom:24px;display:flex;gap:0;align-items:center;overflow-x:auto;">
+    {% set nodes = [
+      ('🔒','Input Sanitizer','safety'),
+      ('🧠','Planner Agent','agent'),
+      ('💻','Coder Agent','agent'),
+      ('✅','Validator','agent'),
+      ('📋','Audit Logger','gov'),
+    ] %}
+    {% for icon, label, kind in nodes %}
+    {% set colors = {'safety':'#431407:#fb923c','agent':'#0f1e3d:#7ab3f0','gov':'#1a1a2e:#a5b4fc'} %}
+    {% set bg, fg = colors[kind].split(':') %}
+    <div style="background:{{bg}};border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:110px;flex-shrink:0;">
+      <div style="font-size:20px;">{{icon}}</div>
+      <div style="color:{{fg}};font-size:11px;margin-top:3px;font-weight:600;">{{label}}</div>
+    </div>
+    {% if not loop.last %}
+    <div style="color:#334155;font-size:20px;padding:0 6px;flex-shrink:0;">→</div>
+    {% endif %}
+    {% endfor %}
+    <div style="color:#334155;font-size:20px;padding:0 6px;flex-shrink:0;">→</div>
+    <div style="background:#052e16;border:1px solid #166534;border-radius:6px;padding:8px 14px;text-align:center;min-width:110px;flex-shrink:0;">
+      <div style="font-size:20px;">📦</div>
+      <div style="color:#4ade80;font-size:11px;margin-top:3px;font-weight:600;">Generated Code</div>
+    </div>
+  </div>
+
+  <!-- Input form -->
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:10px;padding:24px;margin-bottom:24px;">
+    <h3 style="color:#eaeaea;font-size:15px;margin:0 0 16px;">Describe your coding task</h3>
+
+    <textarea id="task-input" placeholder="e.g. Write a Python class that implements a rate limiter using a sliding window algorithm..."
+      style="width:100%;background:#0d2137;border:1px solid #1e3a6e;border-radius:6px;color:#eaeaea;font-size:13px;
+             padding:12px;resize:vertical;min-height:100px;box-sizing:border-box;font-family:monospace;"></textarea>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap;">
+      <select id="backend-select" style="background:#0d2137;border:1px solid #1e3a6e;color:#eaeaea;padding:7px 12px;border-radius:5px;font-size:12px;">
+        <option value="icdev">ICDEV Router (Claude)</option>
+        <option value="ollama">Ollama (local)</option>
+        <option value="stub">Stub (instant / offline)</option>
+      </select>
+      <select id="max-duration" style="background:#0d2137;border:1px solid #1e3a6e;color:#eaeaea;padding:7px 12px;border-radius:5px;font-size:12px;">
+        <option value="120">120s timeout</option>
+        <option value="300" selected>300s timeout</option>
+        <option value="600">600s timeout</option>
+      </select>
+      <button onclick="runCoder()" id="run-btn"
+        style="background:#6366f1;color:#fff;padding:9px 24px;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;">
+        ▶ Run Coder
+      </button>
+      <button onclick="clearResult()" style="background:none;border:1px solid #334155;color:#64748b;padding:9px 16px;border-radius:5px;cursor:pointer;font-size:12px;">
+        Clear
+      </button>
+    </div>
+
+    <!-- Example prompts -->
+    <div style="margin-top:14px;">
+      <span style="color:#7a8cb0;font-size:11px;">Try: </span>
+      {% set examples = [
+        'Write a binary search tree with insert, delete, and traversal',
+        'Build a Python decorator that retries on exception with backoff',
+        'Implement an LRU cache using OrderedDict',
+        'Write a CSV parser that handles quoted fields and escaped commas',
+      ] %}
+      {% for ex in examples %}
+      <button onclick="setExample(this)" data-prompt="{{ ex }}"
+        style="background:#0f1e3d;color:#7ab3f0;border:1px solid #1e3a6e;padding:3px 10px;border-radius:3px;font-size:11px;cursor:pointer;margin:2px;">
+        {{ex[:40]}}…
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Loading indicator -->
+  <div id="loading-bar" style="display:none;background:#0d2137;border:1px solid #6366f1;border-radius:8px;padding:20px;margin-bottom:20px;text-align:center;">
+    <div style="color:#6366f1;font-size:22px;margin-bottom:8px;">⚙️</div>
+    <div style="color:#eaeaea;font-size:14px;font-weight:600;">Running agentic pipeline…</div>
+    <div style="color:#7a8cb0;font-size:12px;margin-top:4px;" id="loading-phase">Initializing…</div>
+    <div style="background:#1e293b;border-radius:4px;height:4px;margin-top:12px;overflow:hidden;">
+      <div id="loading-progress" style="background:#6366f1;height:100%;width:0%;transition:width 0.5s ease;"></div>
+    </div>
+  </div>
+
+  <!-- Result panel -->
+  <div id="result-panel" style="display:none;">
+
+    <!-- Status bar -->
+    <div id="status-bar" style="border-radius:8px;padding:14px 20px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div>
+        <span id="status-badge" style="padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;"></span>
+        <span id="session-label" style="color:#7a8cb0;font-size:12px;margin-left:10px;"></span>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <span id="score-badge" style="font-size:12px;padding:3px 10px;border-radius:4px;"></span>
+        <span id="elapsed-badge" style="background:#0f1e3d;color:#7ab3f0;font-size:12px;padding:3px 10px;border-radius:4px;"></span>
+      </div>
+    </div>
+
+    <!-- Plan -->
+    <div id="plan-section" style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:18px;margin-bottom:14px;">
+      <div style="color:#7a8cb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Plan</div>
+      <ol id="plan-list" style="margin:0;padding-left:20px;color:#94a3b8;font-size:13px;line-height:1.7;"></ol>
+    </div>
+
+    <!-- Code -->
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:18px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <div style="color:#7a8cb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;">Generated Code</div>
+        <button onclick="copyCode()" style="background:#0f3460;color:#7ab3f0;border:1px solid #1e3a6e;padding:4px 12px;border-radius:4px;font-size:11px;cursor:pointer;">
+          Copy
+        </button>
+      </div>
+      <pre id="code-block" style="background:#0a0e1a;color:#e2e8f0;padding:16px;border-radius:6px;overflow-x:auto;font-size:12px;line-height:1.6;margin:0;white-space:pre-wrap;"></pre>
+    </div>
+
+    <!-- Validation -->
+    <div id="validation-section" style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:18px;margin-bottom:14px;">
+      <div style="color:#7a8cb0;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Validation</div>
+      <div id="validation-body"></div>
+    </div>
+
+    <!-- Audit log -->
+    <details style="background:#0d2137;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+      <summary style="color:#7a8cb0;font-size:12px;cursor:pointer;text-transform:uppercase;letter-spacing:1px;">Audit Log</summary>
+      <pre id="audit-log" style="color:#475569;font-size:11px;margin:12px 0 0;line-height:1.6;overflow-x:auto;"></pre>
+    </details>
+
+  </div>
+
+</div>
+
+<script>
+let _lastCode = '';
+
+function setExample(btn) {
+  document.getElementById('task-input').value = btn.dataset.prompt;
+}
+
+function clearResult() {
+  document.getElementById('result-panel').style.display = 'none';
+  document.getElementById('task-input').value = '';
+}
+
+function copyCode() {
+  navigator.clipboard.writeText(_lastCode).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+function runCoder() {
+  const task = document.getElementById('task-input').value.trim();
+  if (!task) { alert('Please enter a coding task.'); return; }
+
+  const backend = document.getElementById('backend-select').value;
+  const maxDur = parseInt(document.getElementById('max-duration').value);
+
+  document.getElementById('run-btn').disabled = true;
+  document.getElementById('result-panel').style.display = 'none';
+  document.getElementById('loading-bar').style.display = 'block';
+
+  // Animate progress bar through phases
+  const phases = [
+    [10, 'Sanitizing input…'],
+    [30, 'Planning steps…'],
+    [60, 'Generating code…'],
+    [85, 'Validating output…'],
+    [95, 'Finalizing…'],
+  ];
+  let phaseIdx = 0;
+  const tick = setInterval(() => {
+    if (phaseIdx < phases.length) {
+      const [pct, label] = phases[phaseIdx++];
+      document.getElementById('loading-progress').style.width = pct + '%';
+      document.getElementById('loading-phase').textContent = label;
+    }
+  }, Math.max(800, (maxDur * 1000) / phases.length));
+
+  fetch('/autonomous-coder/api/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({task, backend, max_duration_s: maxDur}),
+  })
+  .then(r => r.json())
+  .then(data => {
+    clearInterval(tick);
+    document.getElementById('loading-progress').style.width = '100%';
+    setTimeout(() => {
+      document.getElementById('loading-bar').style.display = 'none';
+      document.getElementById('run-btn').disabled = false;
+      renderResult(data);
+    }, 400);
+  })
+  .catch(err => {
+    clearInterval(tick);
+    document.getElementById('loading-bar').style.display = 'none';
+    document.getElementById('run-btn').disabled = false;
+    alert('Error: ' + err);
+  });
+}
+
+function renderResult(d) {
+  _lastCode = d.code || '';
+
+  // Status bar
+  const isOk = d.status === 'success';
+  const isFail = d.status === 'failed';
+  const sbg = isOk ? '#052e16' : isFail ? '#450a0a' : '#431407';
+  const sfg = isOk ? '#4ade80' : isFail ? '#fca5a5' : '#fb923c';
+  document.getElementById('status-bar').style.background = sbg;
+  document.getElementById('status-bar').style.border = `1px solid ${sfg}44`;
+  document.getElementById('status-badge').style.background = sbg;
+  document.getElementById('status-badge').style.color = sfg;
+  document.getElementById('status-badge').style.border = `1px solid ${sfg}55`;
+  document.getElementById('status-badge').textContent = d.status.toUpperCase();
+  document.getElementById('session-label').textContent = 'Session ' + (d.session_id || '');
+  document.getElementById('elapsed-badge').textContent = (d.elapsed_s || 0).toFixed(1) + 's';
+
+  const score = (d.validation || {}).score || 0;
+  const sbg2 = score >= 80 ? '#052e16' : score >= 60 ? '#431407' : '#1e1b4b';
+  const sfg2 = score >= 80 ? '#4ade80' : score >= 60 ? '#fb923c' : '#a5b4fc';
+  document.getElementById('score-badge').style.background = sbg2;
+  document.getElementById('score-badge').style.color = sfg2;
+  document.getElementById('score-badge').textContent = 'Score: ' + score + '/100';
+
+  // Plan
+  const steps = (d.plan || {}).steps || [];
+  document.getElementById('plan-list').innerHTML = steps.map(s =>
+    `<li style="margin-bottom:4px;">${s}</li>`).join('') || '<li style="color:#475569;">No plan returned</li>';
+
+  // Code
+  document.getElementById('code-block').textContent = d.code || '(no code generated)';
+
+  // Validation
+  const v = d.validation || {};
+  const vdict = {'pass':'#4ade80','warn':'#fb923c','fail':'#fca5a5'};
+  const vbg = v.verdict === 'pass' ? '#052e16' : v.verdict === 'warn' ? '#431407' : '#450a0a';
+  const issues = (v.issues || []).map(i => `<li style="color:#94a3b8;margin-bottom:3px;">${i}</li>`).join('');
+  document.getElementById('validation-body').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <span style="background:${vbg};color:${vdict[v.verdict]||'#a5b4fc'};padding:3px 10px;border-radius:4px;font-size:12px;font-weight:600;">${(v.verdict||'?').toUpperCase()}</span>
+      <span style="color:#7a8cb0;font-size:12px;">Syntax: ${d.syntax_ok ? '✓ OK' : '✗ Error'}</span>
+    </div>
+    ${issues ? '<ul style="margin:0;padding-left:18px;">' + issues + '</ul>' : '<p style="color:#4ade80;font-size:12px;">No issues found</p>'}
+    ${v.suggestion ? '<p style="color:#94a3b8;font-size:12px;margin:8px 0 0;border-top:1px solid #1e3a6e;padding-top:8px;">💡 ' + v.suggestion + '</p>' : ''}
+  `;
+
+  // Audit log
+  const log = (d.audit_log || []).map(e => {
+    const ts = (e.created_at || '').slice(11,19);
+    const payload = e.payload ? ' ' + e.payload.slice(0,80) : '';
+    return `[${ts}] ${e.agent}: ${e.event}${payload}`;
+  }).join('\n');
+  document.getElementById('audit-log').textContent = log || '(no audit entries)';
+
+  document.getElementById('result-panel').style.display = 'block';
+  document.getElementById('result-panel').scrollIntoView({behavior:'smooth'});
+}
+</script>
+{% endblock %}

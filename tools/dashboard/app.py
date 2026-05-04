@@ -1482,6 +1482,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("AISG Wizard blueprint failed to register: %s", _exc)
 
+    # ---- Autonomous Coder Blueprint ----
+    try:
+        from apps.autonomous_coder.blueprint import ac_bp as _ac_bp
+        app.register_blueprint(_ac_bp)
+        app.logger.info("Autonomous Coder blueprint registered at /autonomous-coder")
+    except Exception as _exc:
+        app.logger.warning("Autonomous Coder blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 
