@@ -181,6 +181,10 @@
       {% if design.id %}<a href="/agentic-ai/scorecard/{{ design.id }}"><span>🎯</span> Scorecard</a>{% endif %}
       {% if design.id %}<a href="/agentic-ai/deploy-gate/{{ design.id }}"><span>🚦</span> Deploy Gate</a>{% endif %}
       <a href="/agentic-ai/findings"><span>📬</span> Findings Inbox</a>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}<a href="/agentic-ai/lifecycle/{{ design.id }}"><span>🔄</span> Lifecycle</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/review/{{ design.id }}"><span>👁</span> Review</a>{% endif %}
+      <a href="/agentic-ai/monitoring"><span>🔔</span> Monitoring</a>
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
       <hr class="aadc-menu-sep">
       {% if design.id %}

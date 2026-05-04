@@ -2196,3 +2196,127 @@ def get_findings_api():
         severity_filter=severity_f, source_filter=source_f, design_filter=design_f,
     )
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# PHASE 10 — Design Review, Lifecycle & Monitoring
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/lifecycle/<design_id>", methods=["GET"])
+def lifecycle_page(design_id: str):
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return "Design not found", 404
+    design = dict(row)
+    from tools.agentic_ai_canvas.lifecycle_manager import get_lifecycle
+    lc = get_lifecycle(design_id, conn)
+    conn.close()
+    return render_template("agentic_ai_canvas/lifecycle.html", design=design, lc=lc)
+
+
+@aadc_bp.route("/api/designs/<design_id>/lifecycle", methods=["GET"])
+def get_lifecycle_api(design_id: str):
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    from tools.agentic_ai_canvas.lifecycle_manager import get_lifecycle
+    lc = get_lifecycle(design_id, conn)
+    conn.close()
+    return jsonify(lc)
+
+
+@aadc_bp.route("/api/designs/<design_id>/lifecycle/transition", methods=["POST"])
+def lifecycle_transition(design_id: str):
+    from flask import request
+    data = request.get_json(silent=True) or {}
+    to_state = data.get("to_state", "")
+    actor = data.get("actor", "")
+    reason = data.get("reason", "")
+    conn = _conn()
+    row = conn.execute("SELECT id FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "design not found"}), 404
+    from tools.agentic_ai_canvas.lifecycle_manager import transition
+    result = transition(design_id, to_state, actor, reason, conn)
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/review/<design_id>", methods=["GET"])
+def review_page(design_id: str):
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return "Design not found", 404
+    design = dict(row)
+    from tools.agentic_ai_canvas.review_workflow import get_review
+    review = get_review(design_id, conn)
+    conn.close()
+    return render_template("agentic_ai_canvas/review.html", design=design, review=review)
+
+
+@aadc_bp.route("/api/designs/<design_id>/review", methods=["GET"])
+def get_review_api(design_id: str):
+    conn = _conn()
+    row = conn.execute("SELECT id FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    from tools.agentic_ai_canvas.review_workflow import get_review
+    result = get_review(design_id, conn)
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/review", methods=["POST"])
+def add_review_comment(design_id: str):
+    from flask import request
+    data = request.get_json(silent=True) or {}
+    conn = _conn()
+    row = conn.execute("SELECT id FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "design not found"}), 404
+    from tools.agentic_ai_canvas.review_workflow import add_comment
+    result = add_comment(
+        design_id,
+        data.get("reviewer", ""),
+        data.get("comment_type", "COMMENT"),
+        data.get("body", ""),
+        data.get("node_id"),
+        conn,
+    )
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/monitoring", methods=["GET"])
+def monitoring_page():
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT id, name, domain FROM aadc_designs").fetchall()]
+    assessments = [dict(r) for r in conn.execute(
+        "SELECT design_id, score, created_at FROM aadc_assessments"
+    ).fetchall()]
+    conn.close()
+    from tools.agentic_ai_canvas.monitoring_engine import compute_monitoring
+    data = compute_monitoring(designs, assessments)
+    return render_template("agentic_ai_canvas/monitoring.html", data=data)
+
+
+@aadc_bp.route("/api/monitoring", methods=["GET"])
+def get_monitoring_api():
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT id, name, domain FROM aadc_designs").fetchall()]
+    assessments = [dict(r) for r in conn.execute(
+        "SELECT design_id, score, created_at FROM aadc_assessments"
+    ).fetchall()]
+    conn.close()
+    from tools.agentic_ai_canvas.monitoring_engine import compute_monitoring
+    data = compute_monitoring(designs, assessments)
+    return jsonify(data)

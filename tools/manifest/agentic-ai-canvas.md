@@ -152,6 +152,26 @@ Phase 9 — Unified Findings Inbox (cross-analysis findings aggregator).
 - Sources: assessment findings, lint issues, red team unmitigated scenarios, ATO failures, regulatory gaps, open CRITICAL/HIGH risk items
 - Filterable by severity, source, design_id; sorted by severity descending.
 
+### `tools/agentic_ai_canvas/lifecycle_manager.py`
+Phase 10 — Design Lifecycle State Machine.
+- `get_lifecycle(design_id, conn)` → {current_state, history, available_transitions, state_colors}
+- `transition(design_id, to_state, actor, reason, conn)` → {ok, new_state/error}
+- States: DRAFT → UNDER_REVIEW → APPROVED → DEPLOYED → DEPRECATED (+ CHANGES_REQUESTED branch)
+- APPROVED and DEPLOYED transitions flagged as requiring deploy gate check.
+
+### `tools/agentic_ai_canvas/review_workflow.py`
+Phase 10 — Design Review Workflow (multi-reviewer comments/decisions).
+- `get_review(design_id, conn)` → {comments, status, reviewer_summary, type_colors}
+- `add_comment(design_id, reviewer, comment_type, body, node_id, conn)` → {ok, comment_id}
+- Comment types: COMMENT / APPROVAL / CHANGE_REQUEST / REJECTION
+- Derived status: PENDING → APPROVED / CHANGES_REQUESTED / REJECTED
+
+### `tools/agentic_ai_canvas/monitoring_engine.py`
+Phase 10 — Portfolio Monitoring Engine (score drift + alerts).
+- `compute_monitoring(designs, assessments)` → {design_alerts, summary, generated_at}
+- Per-design: current_score, baseline_score, drift, alert_level (CRITICAL/HIGH/MEDIUM/OK), last-10 history
+- Alert thresholds: CRITICAL ≥20pts drop, HIGH ≥10pts, MEDIUM ≥5pts
+
 ### `tools/agentic_ai_canvas/ato_readiness.py`
 Phase 6 — ATO Readiness Checker (15 items across FedRAMP / OMB M-25-21 / DoD AI Ethics / CMMC L2).
 - `run_ato_checklist(nodes, design_meta)` → `{items, summary, by_framework}`
@@ -219,6 +239,9 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/scorecard/<id>` | `agentic_ai_canvas/scorecard.html` |
 | `GET /agentic-ai/deploy-gate/<id>` | `agentic_ai_canvas/deploy_gate.html` |
 | `GET /agentic-ai/findings` | `agentic_ai_canvas/findings.html` |
+| `GET /agentic-ai/lifecycle/<id>` | `agentic_ai_canvas/lifecycle.html` |
+| `GET /agentic-ai/review/<id>` | `agentic_ai_canvas/review.html` |
+| `GET /agentic-ai/monitoring` | `agentic_ai_canvas/monitoring.html` |
 
 **API routes:**
 | Method + Route | Purpose |
@@ -276,6 +299,11 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/api/designs/<id>/deploy-gate` | Deployment gate verdict JSON |
 | `GET /agentic-ai/api/designs/<id>/deploy-gate/download` | Gate check YAML download |
 | `GET /agentic-ai/api/findings` | Portfolio-wide findings feed JSON |
+| `GET /agentic-ai/api/designs/<id>/lifecycle` | Lifecycle state + history JSON |
+| `POST /agentic-ai/api/designs/<id>/lifecycle/transition` | Execute lifecycle state transition |
+| `GET /agentic-ai/api/designs/<id>/review` | Review comments + status JSON |
+| `POST /agentic-ai/api/designs/<id>/review` | Add review comment/decision |
+| `GET /agentic-ai/api/monitoring` | Portfolio monitoring alerts JSON |
 
 ---
 
@@ -306,6 +334,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_impact_reports` | Phase 8 — Cascade impact analysis snapshots per design (migration 110) |
 | `aadc_scorecard_snapshots` | Phase 9 — Unified design scorecard snapshots per design (migration 111) |
 | `aadc_deploy_gates` | Phase 9 — Deployment gate verdict snapshots per design (migration 111) |
+| `aadc_lifecycle_states` | Phase 10 — Design lifecycle state transition log per design (migration 112) |
+| `aadc_review_comments` | Phase 10 — Design review comments and decisions per design (migration 112) |
 
 ---
 
