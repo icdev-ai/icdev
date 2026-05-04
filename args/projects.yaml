@@ -2521,6 +2521,8 @@ projects:
     dashboard, OSCAL component export â€” aadc-p5-01..09'
   - 'Phase 6 Lifecycle & Deployment Readiness: ATO readiness checklist, regulatory
     tracker (EU AI Act/DoD/OMB), design comparison, executive summary report — aadc-p6-01..09'
+  - 'Phase 7 Adversarial Security: AI red team engine (12 scenarios), design linter/auto-recommendations,
+    accreditation package builder (ZIP) — aadc-p7-01..09'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2563,4 +2565,8 @@ projects:
   - key: p6
     title: Phase 6 — Lifecycle & Deployment Readiness (ATO checklist, regulatory tracker,
       design compare, exec summary)
+    priority: high
+  - key: p7
+    title: Phase 7 — Adversarial Security & Accreditation (red team, design linter,
+      accred ZIP)
     priority: high

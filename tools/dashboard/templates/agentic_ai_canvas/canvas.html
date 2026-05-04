@@ -170,6 +170,9 @@
       <button onclick="showRegulatoryTracker()"><span>📜</span> Regulatory</button>
       {% if design.id %}<a href="/agentic-ai/ato/{{ design.id }}"><span>🏛</span> ATO Readiness</a>{% endif %}
       {% if design.id %}<a href="/agentic-ai/exec-summary/{{ design.id }}"><span>📊</span> Exec Brief</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/red-team/{{ design.id }}"><span>⚔</span> Red Team</a>{% endif %}
+      <button onclick="runLint()"><span>💡</span> Lint Design</button>
+      {% if design.id %}<a href="/agentic-ai/api/designs/{{ design.id }}/accred-package"><span>📦</span> Accred Package</a>{% endif %}
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
       <hr class="aadc-menu-sep">
       {% if design.id %}
@@ -2210,6 +2213,93 @@ doExportCSV = function() { _emitExportEvent('export_csv'); _origExportCSV(); };
 // Load kanban badges after page ready
 if (DESIGN_ID) {
   loadKanbanBadges();
+}
+
+// ────────────────────────────────────────────────
+// PHASE 7 — Design Linter
+// ────────────────────────────────────────────────
+let _lintActive = false;
+
+function runLint() {
+  toggleMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  setStatus('Running design linter…');
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/lint')
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setStatus('Lint error: ' + d.error); return; }
+      _applyLintOverlay(d);
+      const s = d.summary;
+      setStatus(`Lint: score ${s.lint_score}% · ${s.total} issues (${s.critical} critical, ${s.high} high)`);
+    })
+    .catch(err => setStatus('Lint error: ' + err));
+}
+
+function _applyLintOverlay(data) {
+  // Clear old lint badges
+  document.querySelectorAll('.lint-badge').forEach(el => el.remove());
+  _lintActive = true;
+
+  const nodeWarnings = data.node_warnings || {};
+  const recs = data.recommendations || [];
+
+  // Global banner
+  const s = data.summary;
+  let banner = document.getElementById('lint-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'lint-banner';
+    banner.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:300;' +
+      'background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 14px;font-size:11px;' +
+      'color:#94a3b8;display:flex;gap:10px;align-items:center;cursor:pointer;';
+    banner.onclick = () => { banner.remove(); _clearLintOverlay(); };
+    document.body.appendChild(banner);
+  }
+  const scoreColor = s.lint_score >= 80 ? '#4ade80' : s.lint_score >= 60 ? '#fbbf24' : '#f87171';
+  banner.innerHTML = `<span style="color:${scoreColor};font-weight:700;">💡 Lint ${s.lint_score}%</span>` +
+    `<span>${s.total} issues</span><span style="color:#ef4444;">${s.critical} critical</span>` +
+    `<span style="color:#475569;">✕ dismiss</span>`;
+
+  // Per-node warning badges
+  Object.entries(nodeWarnings).forEach(([nodeId, warnings]) => {
+    const el = document.querySelector(`.aadc-node[data-id="${nodeId}"]`);
+    if (!el) return;
+    const badge = document.createElement('div');
+    badge.className = 'lint-badge';
+    badge.style.cssText = 'position:absolute;top:2px;left:4px;font-size:10px;font-weight:700;' +
+      'color:#fbbf24;cursor:pointer;z-index:11;';
+    badge.textContent = '⚠ ' + warnings.length;
+    badge.title = warnings.join('\n');
+    el.style.position = 'relative';
+    el.style.outline = '2px solid #f59e0b';
+    el.appendChild(badge);
+  });
+
+  // Show recommendations in status panel (reuse sim-results)
+  const panel = document.getElementById('sim-results');
+  if (panel && recs.length) {
+    const sevColor = {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fbbf24',LOW:'#94a3b8'};
+    let html = `<div style="color:#fbbf24;font-size:11px;font-weight:600;margin-bottom:6px;">💡 ${recs.length} recommendations</div>`;
+    for (const r of recs.slice(0, 8)) {
+      html += `<div style="padding:4px 0;border-bottom:1px solid #1e293b;">
+        <span style="color:${sevColor[r.severity]||'#94a3b8'};font-size:10px;font-weight:700;">[${r.severity}]</span>
+        <span style="color:#eaeaea;font-size:11px;margin-left:4px;">${r.message}</span>
+        ${r.add_node_type ? `<div style="color:#38bdf8;font-size:10px;">→ Add: ${r.add_node_type}</div>` : ''}
+      </div>`;
+    }
+    panel.innerHTML = html;
+    if (!document.getElementById('sim-panel').style.display || document.getElementById('sim-panel').style.display === 'none') {
+      document.getElementById('sim-panel').style.display = 'block';
+    }
+  }
+}
+
+function _clearLintOverlay() {
+  _lintActive = false;
+  document.querySelectorAll('.lint-badge').forEach(el => el.remove());
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    el.style.outline = '';
+  });
 }
 
 // ────────────────────────────────────────────────

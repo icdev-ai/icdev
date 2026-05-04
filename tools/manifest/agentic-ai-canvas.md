@@ -94,6 +94,23 @@ Phase 3 — Agent behavior simulation engine (BFS trace).
 - `simulate_execution(nodes, edges, start_node_id, input_payload, max_steps=50)` → `{trace, decisions, halted_by, steps_count, status}`
 - Halts at hitl-gate / approval-workflow / circuit-breaker nodes; marks filter nodes as "filtered" but continues.
 
+### `tools/agentic_ai_canvas/red_team.py`
+Phase 7 — AI Red Team Engine (12 MITRE ATLAS scenarios).
+- `run_red_team(nodes, edges)` → `{scenarios, summary, attack_surface}`
+- Exploitability score 0–10 per scenario; mitigated/exposed per node type presence.
+- Attack surface flags: no_input_guard, no_output_guard, no_hitl, no_pii_guard, unsandboxed_exec.
+
+### `tools/agentic_ai_canvas/auto_recommend.py`
+Phase 7 — Design Linter / Auto-Recommendation Engine (13 rules).
+- `lint_design(nodes, edges, design_meta)` → `{recommendations, node_warnings, lint_score, summary}`
+- Per-node warnings keyed by node_id for canvas overlay.
+- Lint score: 100 − Σ(penalty per rule severity).
+
+### `tools/agentic_ai_canvas/accred_package.py`
+Phase 7 — Accreditation Package Builder.
+- `build_accred_zip(design, assessment, risks, threat_model, ato, reg, red_team, exec, oscal)` → ZIP bytes
+- Assembles 8+ JSON artifacts + README cover sheet into a single downloadable ZIP.
+
 ### `tools/agentic_ai_canvas/ato_readiness.py`
 Phase 6 — ATO Readiness Checker (15 items across FedRAMP / OMB M-25-21 / DoD AI Ethics / CMMC L2).
 - `run_ato_checklist(nodes, design_meta)` → `{items, summary, by_framework}`
@@ -152,6 +169,7 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/canvas/<id>/assessments` | `agentic_ai_canvas/assessments.html` |
 | `GET /agentic-ai/canvas/<id>/artifacts` | `agentic_ai_canvas/artifacts.html` |
 | `GET /agentic-ai/risks/<id>` | `agentic_ai_canvas/risks.html` |
+| `GET /agentic-ai/red-team/<id>` | `agentic_ai_canvas/red_team.html` |
 | `GET /agentic-ai/ato/<id>` | `agentic_ai_canvas/ato.html` |
 | `GET /agentic-ai/exec-summary/<id>` | `agentic_ai_canvas/exec_summary.html` |
 
@@ -201,6 +219,9 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/api/designs/<id>/regulatory` | Regulatory gap analysis JSON |
 | `GET /agentic-ai/api/designs/<id>/exec-summary` | Executive summary report JSON |
 | `POST /agentic-ai/api/designs/compare` | Compare two designs side-by-side |
+| `GET /agentic-ai/api/designs/<id>/red-team` | Red team adversarial analysis JSON |
+| `GET /agentic-ai/api/designs/<id>/lint` | Design lint report JSON |
+| `GET /agentic-ai/api/designs/<id>/accred-package` | Accreditation package ZIP download |
 
 ---
 
@@ -223,6 +244,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_agent_simulations` | Phase 3 — agent behavior simulation traces (migration 106) |
 | `aadc_risk_items` | Phase 5 — risk register items per design (migration 107) |
 | `aadc_threat_models` | Phase 5 — STRIDE + ATLAS threat model snapshots per design (migration 107) |
+| `aadc_red_team_reports` | Phase 7 — AI red team report snapshots per design (migration 109) |
+| `aadc_lint_reports` | Phase 7 — Design lint report snapshots per design (migration 109) |
 | `aadc_ato_reports` | Phase 6 — ATO readiness report snapshots per design (migration 108) |
 | `aadc_regulatory_gaps` | Phase 6 — Regulatory gap analysis snapshots per design (migration 108) |
 
