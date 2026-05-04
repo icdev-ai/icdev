@@ -122,6 +122,28 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "status": "open",
             "mitigation": "Enforce confidence-threshold gate; require RAG grounding with citation; route low-confidence to HITL.",
         },
+        {
+            # LL-001: Universal — discovered in Autonomous Coder E2E build 2026-05-04
+            "title": "LLM Structured Output Non-Compliance",
+            "description": "LLM agents required to return structured data at handoffs consistently return prose instead, causing parse failures and fallback degradation. Observed in 3/3 live runs against Claude Sonnet during Autonomous Coder E2E build.",
+            "risk_category": "model",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Add structured-output-enforcer node between LLM and downstream consumers; use function-calling / tool_use mode instead of freeform JSON prompts.",
+        },
+        {
+            # LL-002: Universal — discovered in Autonomous Coder E2E build 2026-05-04
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Multi-step LLM pipelines can take 80–110s per run. Default timeout values of 30–120s are too low for slow-network or high-load environments, causing premature abort before pipeline completes.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Set circuit breaker max_duration_s=300 as production default; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
+        },
     ],
     "Autonomous Coder": [
         {
@@ -198,6 +220,28 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "status": "open",
             "mitigation": "Scope tool-chain allowlist; require approval-workflow before accessing non-public sources.",
         },
+        {
+            # LL-001: Universal
+            "title": "LLM Structured Output Non-Compliance",
+            "description": "LLM agents required to return structured data at handoffs consistently return prose instead, causing parse failures and fallback degradation. Observed in 3/3 live runs against Claude Sonnet during Autonomous Coder E2E build.",
+            "risk_category": "model",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Add structured-output-enforcer node between LLM Reasoner and Confidence Gate; use function-calling / tool_use mode instead of freeform JSON prompts.",
+        },
+        {
+            # LL-002: Universal
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Multi-step LLM pipelines can take 80–110s per run. Default timeout values of 30–120s are too low for slow-network or high-load environments, causing premature abort before pipeline completes.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Set circuit breaker max_duration_s=300 as production default; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
+        },
     ],
     "Cybersecurity SOC Agent": [
         {
@@ -229,6 +273,17 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "impact": "HIGH",
             "status": "open",
             "mitigation": "Tune classifier threshold; implement alert deduplication in alert-manager; add confidence-threshold pre-filter.",
+        },
+        {
+            # LL-002: Universal — LL-001 N/A (SOC uses tool calls, not LLM→LLM handoffs requiring structured output)
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Multi-step LLM pipelines can take 80–110s per run. Default timeout values of 30–120s are too low for slow-network or high-load environments, causing premature abort before pipeline completes.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Tune circuit breaker max_duration_s to 300s for production; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
         },
     ],
     "Healthcare Admin Agent": [
@@ -262,6 +317,28 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "status": "open",
             "mitigation": "Set doc-store cache TTL ≤ 15 minutes for clinical data; implement data-validator node for EHR schema conformance.",
         },
+        {
+            # LL-001: Universal
+            "title": "LLM Structured Output Non-Compliance",
+            "description": "LLM agents required to return structured data at handoffs consistently return prose instead, causing parse failures and fallback degradation. Observed in 3/3 live runs against Claude Sonnet during Autonomous Coder E2E build.",
+            "risk_category": "model",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Add structured-output-enforcer node between Clinical LLM and Admin Agent; use function-calling / tool_use mode instead of freeform JSON prompts.",
+        },
+        {
+            # LL-002: Universal
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Multi-step LLM pipelines can take 80–110s per run. Default timeout values of 30–120s are too low for slow-network or high-load environments, causing premature abort before pipeline completes.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Set circuit breaker max_duration_s=300 as production default; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
+        },
     ],
     "Gov/Procurement Agent": [
         {
@@ -294,6 +371,28 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "status": "open",
             "mitigation": "Audit-logger must capture all LLM prompts, retrieved context, and approval decisions with timestamps; retain for 7 years.",
         },
+        {
+            # LL-001: Universal
+            "title": "LLM Structured Output Non-Compliance",
+            "description": "LLM agents required to return structured data at handoffs consistently return prose instead, causing parse failures and fallback degradation. Observed in 3/3 live runs against Claude Sonnet during Autonomous Coder E2E build.",
+            "risk_category": "model",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Add structured-output-enforcer node between Gov LLM and Procurement Orchestrator; use function-calling / tool_use mode instead of freeform JSON prompts.",
+        },
+        {
+            # LL-002: Universal
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Multi-step LLM pipelines can take 80–110s per run. Default timeout values of 30–120s are too low for slow-network or high-load environments, causing premature abort before pipeline completes.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Set circuit breaker max_duration_s=300 as production default; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
+        },
     ],
     "Multi-Agent Research Lab": [
         {
@@ -325,6 +424,28 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "impact": "HIGH",
             "status": "open",
             "mitigation": "Require data-validator before any knowledge graph write; source provenance tagging; periodic ATLAS T0020 audit.",
+        },
+        {
+            # LL-001: Universal
+            "title": "LLM Structured Output Non-Compliance",
+            "description": "LLM agents required to return structured data at handoffs consistently return prose instead, causing parse failures and fallback degradation. Observed in 3/3 live runs against Claude Sonnet during Autonomous Coder E2E build.",
+            "risk_category": "model",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Add shared structured-output-enforcer node between parallel domain agents and synthesis join; use function-calling / tool_use mode instead of freeform JSON prompts.",
+        },
+        {
+            # LL-002: Universal
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Multi-step LLM pipelines can take 80–110s per run. Default timeout values of 30–120s are too low for slow-network or high-load environments, causing premature abort before pipeline completes.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Set circuit breaker max_duration_s=300 as production default alongside token budget; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
         },
     ],
 }
@@ -373,6 +494,7 @@ def build_packs() -> list[dict]:
         _node("vector-db",           "Vector DB",        390,  300),
         _node("tool-chain",          "CRM Tool Chain",   770,  300),
         _node("audit-logger",        "Audit Logger",    1110,  300),
+        _node("circuit-breaker",     "Circuit Breaker",  600,  300),  # 13 — LL-002: default 300s
     ]
     es1 = [
         _edge(ns1[0]["id"], ns1[1]["id"], "request"),
@@ -388,6 +510,7 @@ def build_packs() -> list[dict]:
         _edge(ns1[6]["id"], ns1[11]["id"], "tool lookup"),
         _edge(ns1[11]["id"], ns1[7]["id"], "resolved"),
         _edge(ns1[6]["id"], ns1[12]["id"], "log"),
+        _edge(ns1[13]["id"], ns1[3]["id"], "abort signal"),   # LL-002
     ]
     packs.append({
         "name": "Customer Service Agent",
@@ -477,6 +600,8 @@ def build_packs() -> list[dict]:
         _node("confidence-threshold","Confidence Gate",  820,  300),
         _node("approval-workflow",   "Research Review", 1020,  150),
         _node("audit-logger",        "Audit Logger",    1020,  300),
+        _node("structured-output",   "Schema Enforcer",  620,  300),  # 12 — LL-001
+        _node("circuit-breaker",     "Circuit Breaker",  420,  300),  # 13 — LL-002: default 300s
     ]
     es3 = [
         _edge(ns3[0]["id"], ns3[1]["id"], "query"),
@@ -489,10 +614,12 @@ def build_packs() -> list[dict]:
         _edge(ns3[7]["id"], ns3[2]["id"], "memory context"),
         _edge(ns3[2]["id"], ns3[8]["id"], "search query"),
         _edge(ns3[8]["id"], ns3[2]["id"], "web results"),
-        _edge(ns3[2]["id"], ns3[9]["id"], "draft report"),
+        _edge(ns3[2]["id"], ns3[12]["id"], "draft report"),   # LL-001: through schema enforcer
+        _edge(ns3[12]["id"], ns3[9]["id"], "schema-validated"),
         _edge(ns3[9]["id"], ns3[10]["id"], "uncertain"),
         _edge(ns3[9]["id"], ns3[11]["id"], "log"),
         _edge(ns3[10]["id"], ns3[11]["id"], "approved"),
+        _edge(ns3[13]["id"], ns3[2]["id"], "abort signal"),   # LL-002
     ]
     packs.append({
         "name": "Knowledge Research Agent",
@@ -564,6 +691,8 @@ def build_packs() -> list[dict]:
         _node("hitl-gate",           "Clinician Review", 1020,  300),
         _node("approval-workflow",   "Authorization",    1220,  150),
         _node("audit-logger",        "HIPAA Audit Log",  1220,  300),
+        _node("structured-output",   "Schema Enforcer",  1000,  150),  # 13 — LL-001
+        _node("circuit-breaker",     "Circuit Breaker",   820,  430),  # 14 — LL-002: default 300s
     ]
     es5 = [
         _edge(ns5[0]["id"], ns5[1]["id"], "request"),
@@ -573,13 +702,15 @@ def build_packs() -> list[dict]:
         _edge(ns5[5]["id"], ns5[6]["id"], "records"),
         _edge(ns5[6]["id"], ns5[7]["id"], "vectors"),
         _edge(ns5[7]["id"], ns5[4]["id"], "clinical context"),
-        _edge(ns5[4]["id"], ns5[8]["id"], "analysis"),
+        _edge(ns5[4]["id"], ns5[13]["id"], "raw analysis"),    # LL-001: through schema enforcer
+        _edge(ns5[13]["id"], ns5[8]["id"], "schema-validated"),
         _edge(ns5[8]["id"], ns5[9]["id"], "recommendation"),
         _edge(ns5[9]["id"], ns5[10]["id"], "low confidence"),
         _edge(ns5[9]["id"], ns5[11]["id"], "high confidence"),
         _edge(ns5[10]["id"], ns5[11]["id"], "clinician approved"),
         _edge(ns5[11]["id"], ns5[12]["id"], "authorized"),
         _edge(ns5[10]["id"], ns5[12]["id"], "log"),
+        _edge(ns5[14]["id"], ns5[8]["id"], "abort signal"),   # LL-002
     ]
     packs.append({
         "name": "Healthcare Admin Agent",
@@ -609,6 +740,8 @@ def build_packs() -> list[dict]:
         _node("approval-workflow",   "Approvals",        1080,  300),
         _node("compliance-reporter", "FAR Compliance",   1280,  150),
         _node("audit-logger",        "CUI Audit Logger", 1280,  300),
+        _node("structured-output",   "Schema Enforcer",   765,  150),  # 14 — LL-001
+        _node("circuit-breaker",     "Circuit Breaker",   880,  430),  # 15 — LL-002: default 300s
     ]
     es6 = [
         _edge(ns6[0]["id"], ns6[1]["id"], "rfp"),
@@ -619,13 +752,15 @@ def build_packs() -> list[dict]:
         _edge(ns6[7]["id"], ns6[3]["id"], "reg context"),
         _edge(ns6[3]["id"], ns6[4]["id"], "entities"),
         _edge(ns6[4]["id"], ns6[3]["id"], "kg context"),
-        _edge(ns6[3]["id"], ns6[8]["id"], "analysis"),
+        _edge(ns6[3]["id"], ns6[14]["id"], "raw analysis"),    # LL-001: through schema enforcer
+        _edge(ns6[14]["id"], ns6[8]["id"], "schema-validated"),
         _edge(ns6[8]["id"], ns6[9]["id"], "budget check"),
         _edge(ns6[8]["id"], ns6[10]["id"], "draft recommendation"),
         _edge(ns6[10]["id"], ns6[11]["id"], "co approved"),
         _edge(ns6[11]["id"], ns6[12]["id"], "compliant"),
         _edge(ns6[12]["id"], ns6[13]["id"], "log"),
         _edge(ns6[10]["id"], ns6[13]["id"], "log"),
+        _edge(ns6[15]["id"], ns6[8]["id"], "abort signal"),   # LL-002
     ]
     packs.append({
         "name": "Gov/Procurement Agent",
@@ -655,6 +790,8 @@ def build_packs() -> list[dict]:
         _node("checkpoint",       "Checkpoint",       1420,  250),
         _node("token-budget",     "Token Budget",      420,  420),
         _node("audit-logger",     "Audit Logger",     1420,  420),
+        _node("structured-output","Schema Enforcer",   920,  250),  # 14 — LL-001: shared enforcer before synthesis join
+        _node("circuit-breaker",  "Circuit Breaker",   420,  530),  # 15 — LL-002: default 300s
     ]
     es7 = [
         _edge(ns7[0]["id"], ns7[1]["id"], "brief"),
@@ -663,9 +800,10 @@ def build_packs() -> list[dict]:
         _edge(ns7[3]["id"], ns7[4]["id"], "domain A"),
         _edge(ns7[3]["id"], ns7[5]["id"], "domain B"),
         _edge(ns7[3]["id"], ns7[6]["id"], "domain C"),
-        _edge(ns7[4]["id"], ns7[7]["id"], "findings A"),
-        _edge(ns7[5]["id"], ns7[7]["id"], "findings B"),
-        _edge(ns7[6]["id"], ns7[7]["id"], "findings C"),
+        _edge(ns7[4]["id"], ns7[14]["id"], "findings A"),   # LL-001: through shared schema enforcer
+        _edge(ns7[5]["id"], ns7[14]["id"], "findings B"),
+        _edge(ns7[6]["id"], ns7[14]["id"], "findings C"),
+        _edge(ns7[14]["id"], ns7[7]["id"], "schema-validated"),
         _edge(ns7[7]["id"], ns7[8]["id"], "entities"),
         _edge(ns7[7]["id"], ns7[9]["id"], "evidence"),
         _edge(ns7[9]["id"], ns7[10]["id"], "embed"),
@@ -673,6 +811,7 @@ def build_packs() -> list[dict]:
         _edge(ns7[8]["id"], ns7[11]["id"], "synthesized"),
         _edge(ns7[11]["id"], ns7[13]["id"], "log"),
         _edge(ns7[12]["id"], ns7[2]["id"], "budget"),
+        _edge(ns7[15]["id"], ns7[2]["id"], "abort signal"),   # LL-002
     ]
     packs.append({
         "name": "Multi-Agent Research Lab",
