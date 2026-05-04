@@ -437,4 +437,23 @@ NODE_DESCRIPTIONS: dict[str, str] = {
     "siem-forwarder":    "Forwards security events to SIEM (Splunk, Sentinel)",
     "baseline-snapshot": "Captures behavioral baseline for drift comparison",
     "drift-detector":    "Compares production behavior against baseline",
+    # Phase 4 — execution control
+    "checkpoint":           "Save/restore execution state — enables fault recovery and timeline branching",
+    "fork":                 "Splits execution into parallel branches — each branch receives the same state",
+    "join":                 "Convergence point — waits for all upstream parallel branches to complete",
+    "parallel-group":       "Visual container grouping parallel execution nodes into a named swim-lane",
+    # Phase 4 — observability
+    "trace-collector":      "Collects distributed traces from agent executions (OTel-compatible)",
+    "span-recorder":        "Records individual LLM call spans with latency, tokens, and metadata",
+    "metrics-emitter":      "Emits runtime metrics (token rates, latency, error rates) to monitoring",
+    # Phase 4 — memory enrichment
+    "working-memory":       "Transient in-flight memory scoped to a single agent turn",
+    "semantic-cache":       "Caches semantically similar query responses to reduce LLM calls",
+    "conversation-history": "Stores ordered conversation turns for multi-turn context injection",
+    # Phase 4 — safety extensions
+    "trusted-monitor":      "Out-of-band monitor that audits all autonomous agent outputs independently",
+    "pii-field-detector":   "Field-level PII scanner — identifies and tags specific sensitive fields",
+    # Phase 4 — A2A / sandbox
+    "a2a-bridge":           "Agent-to-Agent communication bridge — zero-trust inter-agent messaging",
+    "sandbox-exec":         "Isolated sandboxed execution environment for untrusted code or tools",
 }

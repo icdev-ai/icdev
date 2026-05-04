@@ -836,3 +836,130 @@ def diff_design_versions(design_id: str):
         return jsonify({"error": str(exc)}), 404
 
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Checkpoint / fork API
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/checkpoints", methods=["GET"])
+def list_checkpoints(design_id: str):
+    from tools.agentic_ai_canvas.checkpoint_manager import list_checkpoints as _list
+    return jsonify({"checkpoints": _list(design_id)})
+
+
+@aadc_bp.route("/api/designs/<design_id>/checkpoints", methods=["POST"])
+def create_checkpoint(design_id: str):
+    from tools.agentic_ai_canvas.checkpoint_manager import save_checkpoint
+
+    data = request.get_json(force=True, silent=True) or {}
+    label = data.get("label", "")
+    node_id = data.get("node_id", "")
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+        graph_json = row["graph_json"]
+    finally:
+        conn.close()
+
+    result = save_checkpoint(design_id, graph_json, label=label, node_id=node_id)
+    return jsonify(result), 201
+
+
+@aadc_bp.route("/api/designs/<design_id>/checkpoints/<checkpoint_id>/restore",
+               methods=["POST"])
+def restore_checkpoint(design_id: str, checkpoint_id: str):
+    from tools.agentic_ai_canvas.checkpoint_manager import restore_checkpoint as _restore
+    try:
+        result = _restore(design_id, checkpoint_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/checkpoints/<checkpoint_id>/fork",
+               methods=["POST"])
+def fork_checkpoint(design_id: str, checkpoint_id: str):
+    from tools.agentic_ai_canvas.checkpoint_manager import fork_design
+
+    data = request.get_json(force=True, silent=True) or {}
+    new_name = data.get("name", "Forked Design")
+
+    try:
+        result = fork_design(design_id, checkpoint_id, new_name)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(result), 201
+
+
+@aadc_bp.route("/api/designs/<design_id>/checkpoints/<checkpoint_id>",
+               methods=["DELETE"])
+def delete_checkpoint(design_id: str, checkpoint_id: str):
+    from tools.agentic_ai_canvas.checkpoint_manager import delete_checkpoint as _del
+    return jsonify(_del(design_id, checkpoint_id))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Parallel group API
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/parallel-groups", methods=["GET"])
+def list_parallel_groups(design_id: str):
+    from tools.agentic_ai_canvas.parallel_graph import list_groups
+    return jsonify({"groups": list_groups(design_id)})
+
+
+@aadc_bp.route("/api/designs/<design_id>/parallel-groups", methods=["POST"])
+def create_parallel_group(design_id: str):
+    from tools.agentic_ai_canvas.parallel_graph import create_group
+
+    data = request.get_json(force=True, silent=True) or {}
+    result = create_group(
+        design_id,
+        node_ids=data.get("node_ids", []),
+        label=data.get("label", "Parallel Group"),
+        color=data.get("color", "#7e22ce"),
+    )
+    return jsonify(result), 201
+
+
+@aadc_bp.route("/api/designs/<design_id>/parallel-groups/<group_id>",
+               methods=["PUT"])
+def update_parallel_group(design_id: str, group_id: str):
+    from tools.agentic_ai_canvas.parallel_graph import update_group
+
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        result = update_group(design_id, group_id,
+                              node_ids=data.get("node_ids"),
+                              label=data.get("label"))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/parallel-groups/<group_id>",
+               methods=["DELETE"])
+def delete_parallel_group(design_id: str, group_id: str):
+    from tools.agentic_ai_canvas.parallel_graph import delete_group
+    return jsonify(delete_group(design_id, group_id))
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Parallel path validation
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/validate-parallel", methods=["POST"])
+def validate_parallel_paths(design_id: str):
+    from tools.agentic_ai_canvas.parallel_graph import validate_parallel_paths as _validate
+
+    data = request.get_json(force=True, silent=True) or {}
+    nodes = data.get("nodes", [])
+    edges = data.get("edges", [])
+    warnings = _validate(nodes, edges)
+    return jsonify({"warnings": warnings, "count": len(warnings)})

@@ -20,12 +20,18 @@ from datetime import datetime, timezone
 from tools.agentic_ai_canvas.constants import (
     AGENT_NODES,
     ATLAS_THREAT_MAP,
+    EXECUTION_NODES,
     NIST_AI_RMF_CHECKS,
+    OBSERVABILITY_NODES,
     OWASP_LLM_CHECKS,
     OUTPUT_NODES,
+    P4_EXECUTION_CHECKS,
     RIGHTS_IMPACTING_DOMAINS,
     SAFETY_IMPACTING_DOMAINS,
 )
+from tools.agentic_ai_canvas.observability_nodes import check_observability_coverage
+from tools.agentic_ai_canvas.a2a_sandbox import check_a2a_sandbox
+from tools.agentic_ai_canvas.safety_extensions import check_safety_extensions
 
 
 def _now() -> str:
@@ -345,6 +351,34 @@ def map_atlas_threats(nodes: list[dict]) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Phase 4 — execution node check
+# ---------------------------------------------------------------------------
+
+def _check_execution_nodes(nodes: list[dict], edges: list[dict]) -> list[dict]:
+    """Advisory check: multi-agent designs benefit from checkpoint nodes."""
+    types = _node_types(nodes)
+    agent_count = sum(1 for n in nodes if n.get("type") in AGENT_NODES)
+    findings: list[dict] = []
+
+    for check in P4_EXECUTION_CHECKS:
+        if check["check"] == "has_checkpoint_node":
+            if agent_count < 2:
+                continue  # only relevant for multi-agent designs
+            if "checkpoint" not in types:
+                findings.append({
+                    "id": f"p4-{check['id']}",
+                    "framework": "NIST AI RMF (Phase 4)",
+                    "function": check["function"],
+                    "category": check["category"],
+                    "severity": "LOW",
+                    "title": check["title"],
+                    "detail": check["description"],
+                    "recommendation": "Add a checkpoint node to enable state recovery on agent failure.",
+                })
+    return findings
+
+
+# ---------------------------------------------------------------------------
 # Full design assessment
 # ---------------------------------------------------------------------------
 
@@ -362,7 +396,7 @@ def assess_design(design_id: str, graph_json: str | dict,
     autonomy_levels = [classify_autonomy(a, nodes, edges) for a in agent_nodes]
     autonomy_max = max(autonomy_levels, default=0)
 
-    # Run checks
+    # Run core checks
     rmf_findings, rmf_score = check_nist_ai_rmf(nodes, edges, {
         **meta, "has_prior_assessment": meta.get("has_prior_assessment", False)
     })
@@ -370,10 +404,20 @@ def assess_design(design_id: str, graph_json: str | dict,
     hitl_findings = verify_hitl_paths(nodes, edges, safety_impacting or rights_impacting)
     atlas_threats = map_atlas_threats(nodes)
 
-    all_findings = rmf_findings + owasp_findings + hitl_findings
+    # Phase 4 checks
+    obs_findings, obs_score = check_observability_coverage(nodes, edges)
+    a2a_findings, a2a_score = check_a2a_sandbox(nodes, edges)
+    safety_ext_findings, safety_ext_score = check_safety_extensions(nodes, edges)
+
+    # Phase 4 execution check (bonus — not penalised if no agents)
+    p4_exec_findings = _check_execution_nodes(nodes, edges)
+
+    all_findings = (rmf_findings + owasp_findings + hitl_findings
+                    + obs_findings + a2a_findings + safety_ext_findings
+                    + p4_exec_findings)
 
     # L5 (unconstrained) agent is always a CRITICAL finding
-    for i, (a, level) in enumerate(zip(agent_nodes, autonomy_levels)):
+    for a, level in zip(agent_nodes, autonomy_levels):
         if level == 5:
             all_findings.append({
                 "id": f"autonomy-l5-{a['id'][:6]}",
@@ -387,8 +431,15 @@ def assess_design(design_id: str, graph_json: str | dict,
     # OMB M-25-21 compliance flag
     omb_compliant = int((safety_impacting or rights_impacting) and not hitl_findings)
 
-    # Aggregate score: 50% NIST RMF + 50% OWASP
-    score = round((rmf_score * 0.5) + (owasp_score * 0.5), 1)
+    # Aggregate score:
+    #   Core: 40% NIST RMF + 40% OWASP  = 80%
+    #   Phase 4 (optional bonus when applicable): up to 20% from obs/a2a/safety-ext
+    p4_scores = [s for s in (obs_score, a2a_score, safety_ext_score) if s is not None]
+    if p4_scores:
+        p4_avg = sum(p4_scores) / len(p4_scores)
+        score = round((rmf_score * 0.40) + (owasp_score * 0.40) + (p4_avg * 0.20), 1)
+    else:
+        score = round((rmf_score * 0.50) + (owasp_score * 0.50), 1)
 
     return {
         "id": f"asmnt-{uuid.uuid4().hex[:10]}",
@@ -396,6 +447,9 @@ def assess_design(design_id: str, graph_json: str | dict,
         "score": score,
         "nist_rmf_score": rmf_score,
         "owasp_score": owasp_score,
+        "obs_score": obs_score,
+        "a2a_score": a2a_score,
+        "safety_ext_score": safety_ext_score,
         "omb_compliant": omb_compliant,
         "autonomy_max": autonomy_max,
         "safety_impacting": int(safety_impacting),
