@@ -99,6 +99,32 @@
 }
 #btn-undo:not(:disabled):hover, #btn-redo:not(:disabled):hover { background: #1e3a6e; }
 #btn-undo:disabled, #btn-redo:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Phase 4: Streaming badge on LLM nodes ── */
+.stream-badge {
+  display: inline-block; font-size: 8px; padding: 1px 4px;
+  background: #0891b2; color: #fff; border-radius: 2px;
+  vertical-align: middle; margin-left: 3px; letter-spacing: 0.5px;
+}
+
+/* ── Phase 4: Parallel group background rect ── */
+.parallel-group-rect {
+  position: absolute; border: 1.5px dashed #7e22ce;
+  background: rgba(126,34,206,0.06); border-radius: 8px;
+  pointer-events: none; z-index: 0;
+}
+.parallel-group-label {
+  position: absolute; color: #c084fc; font-size: 9px;
+  font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  pointer-events: none; z-index: 1;
+}
+
+/* ── Phase 4: Checkpoint drawer ── */
+#checkpoints-drawer {
+  display:none; position:fixed; top:60px; right:16px; z-index:200;
+  background:#0f172a; border:1px solid #1e3a6e; border-radius:8px;
+  width:340px; box-shadow:0 8px 32px rgba(0,0,0,0.7);
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -132,6 +158,7 @@
       <button onclick="zoomFit()"><span>⊡</span> Fit to Canvas</button>
       <button onclick="zoomReset()"><span>⊙</span> Reset Zoom</button>
       <hr class="aadc-menu-sep">
+      <button onclick="groupSelectedNodes()"><span>⊞</span> Group Selected (Parallel)</button>
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
     </div>
   </div>
@@ -198,6 +225,8 @@
     style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;" title="Compliance Legend">§ Legend</button>
   <button id="btn-versions" onclick="toggleVersions(event)"
     style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;" title="Version History">⊞ Versions</button>
+  <button id="btn-checkpoints" onclick="toggleCheckpoints(event)"
+    style="background:#1e293b;color:#c084fc;padding:5px 10px;border:1px solid #7e22ce;border-radius:4px;cursor:pointer;font-size:12px;" title="Checkpoints & Forks">💾 Checkpoints</button>
 
   <button onclick="saveDesign()" id="save-btn"
     style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
@@ -316,6 +345,18 @@
         </div>
         <div id="prop-desc" style="color:#94a3b8;font-size:11px;line-height:1.5;margin-bottom:8px;padding:6px 8px;background:#1e293b;border-radius:4px;min-height:32px;"></div>
         <div id="prop-connections" style="color:#7a8cb0;font-size:10px;margin-bottom:12px;"></div>
+
+        <!-- Phase 4: Streaming toggle (visible for LLM nodes only) -->
+        <div id="prop-streaming-wrap" style="display:none;margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="prop-streaming"
+              onchange="toggleNodeStreaming(this.checked)"
+              style="width:14px;height:14px;accent-color:#0891b2;">
+            <span style="color:#38bdf8;font-size:11px;">Streaming mode</span>
+            <span style="color:#475569;font-size:10px;">(token-by-token)</span>
+          </label>
+        </div>
+
         <button onclick="deleteSelectedNode()"
           style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
       </div>
@@ -409,9 +450,17 @@
       <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#06b6d4;flex-shrink:0;"></span>
       <span style="color:#eaeaea;font-size:11px;">Data pipeline nodes</span>
     </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#a855f7;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Execution (checkpoint/fork)</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0891b2;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Observability (trace/span)</span>
+    </div>
   </div>
   <hr style="border-color:#1e3a6e;margin:10px 0;">
-  <div style="color:#7a8cb0;font-size:10px;">NIST AI RMF · OWASP LLM Top 10 · FedRAMP AI</div>
+  <div style="color:#7a8cb0;font-size:10px;">NIST AI RMF · OWASP LLM Top 10 · FedRAMP AI · Phase 4</div>
 </div>
 
 <!-- ── Versions Drawer ── -->
@@ -443,6 +492,25 @@
       <button onclick="closeDiffModal()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">✕</button>
     </div>
     <div id="diff-modal-body" style="overflow-y:auto;padding:16px;flex:1;font-size:12px;color:#eaeaea;"></div>
+  </div>
+</div>
+
+<!-- ── Phase 4: Checkpoints Drawer ── -->
+<div id="checkpoints-drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #1e3a6e;">
+    <span style="color:#c084fc;font-size:13px;font-weight:600;">💾 Checkpoints & Forks</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="saveCheckpoint()"
+        style="background:#7e22ce;color:#fff;padding:4px 10px;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Save Checkpoint</button>
+      <button onclick="toggleCheckpoints()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">✕</button>
+    </div>
+  </div>
+  <div id="checkpoints-list" style="max-height:300px;overflow-y:auto;padding:8px 0;"></div>
+  <div style="padding:8px 16px;border-top:1px solid #1e3a6e;">
+    <div style="color:#7a8cb0;font-size:10px;line-height:1.5;">
+      <strong style="color:#c084fc;">Restore</strong> — roll back to this snapshot.<br>
+      <strong style="color:#c084fc;">Fork</strong> — create a new independent design from this checkpoint.
+    </div>
   </div>
 </div>
 
@@ -485,11 +553,23 @@ let _preDragSnapshot = null;
 // ── Copy / Paste clipboard ──
 let _clipboard = [];
 
+// ── Phase 4 state ──
+let _p4Groups = [];        // parallel groups for current design
+let _p4GroupsLoaded = false;
+
+function loadParallelGroups() {
+  if (!DESIGN_ID || _p4GroupsLoaded) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/parallel-groups')
+    .then(r => r.json())
+    .then(d => { _p4Groups = d.groups || []; _p4GroupsLoaded = true; renderParallelGroups(); });
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
   setupPaletteListeners();
   setupCanvasEvents();
   loadSnippetsSidebar();
+  if (DESIGN_ID) loadParallelGroups();
   render();
   applyVP();
   if (graph.nodes.length > 0) document.getElementById('drop-hint').style.display = 'none';
@@ -734,6 +814,7 @@ function onDrop(e) {
 function render() {
   renderNodes();
   renderEdges();
+  renderParallelGroups();
   document.getElementById('node-count').textContent = 'Nodes: ' + graph.nodes.length;
   document.getElementById('edge-count').textContent = 'Edges: ' + graph.edges.length;
 }
@@ -756,8 +837,10 @@ function renderNodes() {
       text-align:center; padding:0 8px; box-sizing:border-box; gap:4px;
       box-shadow:${isSelected ? '0 0 0 2px #fff' : isConnSrc ? '0 0 0 3px #10b981' : '0 2px 8px rgba(0,0,0,0.4)'};
     `;
+    const streamBadge = (n.streaming && (n.type === 'llm' || n.type === 'llm-local'))
+      ? '<span class="stream-badge">⚡ STREAM</span>' : '';
     el.innerHTML = `<span style="color:${n.color||'#6366f1'};font-size:14px;">${n.icon||'⬡'}</span>
-      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}</span>`;
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}${streamBadge}</span>`;
 
     el.addEventListener('mousedown', e => startNodeDrag(e, n));
     el.addEventListener('click', e => {
@@ -876,6 +959,17 @@ function selectNode(node) {
   const conns = graph.edges.filter(e => e.source === node.id || e.target === node.id).length;
   document.getElementById('prop-connections').textContent =
     conns ? `${conns} connection${conns !== 1 ? 's' : ''}` : 'No connections';
+
+  // Phase 4: streaming toggle — visible only for LLM nodes
+  const streamWrap = document.getElementById('prop-streaming-wrap');
+  const streamCb   = document.getElementById('prop-streaming');
+  if (node.type === 'llm' || node.type === 'llm-local') {
+    streamWrap.style.display = 'block';
+    streamCb.checked = !!node.streaming;
+  } else {
+    streamWrap.style.display = 'none';
+  }
+
   render();
 }
 document.addEventListener('DOMContentLoaded', () => {
@@ -1385,6 +1479,177 @@ document.addEventListener('keyup', e => {
       document.getElementById('canvas-container').style.cursor = 'default';
       document.getElementById('pan-hint').style.display = 'none';
     }
+  }
+});
+
+// ────────────────────────────────────────────────
+// PHASE 4 — STREAMING TOGGLE
+// ────────────────────────────────────────────────
+function toggleNodeStreaming(enabled) {
+  if (!selectedNode) return;
+  pushHistory();
+  selectedNode.streaming = enabled;
+  render();
+}
+
+// ────────────────────────────────────────────────
+// PHASE 4 — PARALLEL GROUPS
+// ────────────────────────────────────────────────
+function renderParallelGroups() {
+  // Remove existing group rects
+  document.querySelectorAll('.parallel-group-rect,.parallel-group-label').forEach(el => el.remove());
+  if (!_p4Groups.length) return;
+
+  const nodeLayer = document.getElementById('nodes-layer');
+  const nodeMap = {};
+  graph.nodes.forEach(n => nodeMap[n.id] = n);
+
+  _p4Groups.forEach(g => {
+    const members = (g.node_ids || []).map(id => nodeMap[id]).filter(Boolean);
+    if (!members.length) return;
+
+    const pad = 12;
+    const xs  = members.map(n => n.x - pad);
+    const ys  = members.map(n => n.y - pad - 16); // room for label
+    const x2s = members.map(n => n.x + (n.w || 140) + pad);
+    const y2s = members.map(n => n.y + (n.h || 50) + pad);
+
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    const maxX = Math.max(...x2s), maxY = Math.max(...y2s);
+
+    const rect = document.createElement('div');
+    rect.className = 'parallel-group-rect';
+    rect.style.left   = minX + 'px';
+    rect.style.top    = minY + 'px';
+    rect.style.width  = (maxX - minX) + 'px';
+    rect.style.height = (maxY - minY) + 'px';
+    rect.style.borderColor = g.color || '#7e22ce';
+    nodeLayer.insertBefore(rect, nodeLayer.firstChild);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'parallel-group-label';
+    lbl.style.left = (minX + 6) + 'px';
+    lbl.style.top  = (minY + 3) + 'px';
+    lbl.style.color = g.color || '#c084fc';
+    lbl.textContent = '⊞ ' + (g.label || 'Parallel Group');
+    nodeLayer.insertBefore(lbl, nodeLayer.firstChild);
+  });
+}
+
+function groupSelectedNodes() {
+  if (selectedNodes.size < 2) { alert('Select at least 2 nodes (Shift+click) to create a parallel group.'); return; }
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  const label = prompt('Group label:', 'Parallel Group') || 'Parallel Group';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/parallel-groups', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({node_ids: [...selectedNodes], label})
+  }).then(r => r.json()).then(g => {
+    _p4Groups.push(g);
+    renderParallelGroups();
+    setStatus('Parallel group created: ' + label);
+  }).catch(() => setStatus('Group creation failed'));
+}
+
+// ────────────────────────────────────────────────
+// PHASE 4 — CHECKPOINTS
+// ────────────────────────────────────────────────
+let _ckptsDrawerOpen = false;
+
+function toggleCheckpoints(e) {
+  e && e.stopPropagation();
+  const drawer = document.getElementById('checkpoints-drawer');
+  document.getElementById('legend-panel').style.display = 'none';
+  document.getElementById('versions-drawer').style.display = 'none';
+  _ckptsDrawerOpen = !_ckptsDrawerOpen;
+  drawer.style.display = _ckptsDrawerOpen ? 'block' : 'none';
+  if (_ckptsDrawerOpen) loadCheckpointsList();
+}
+
+function loadCheckpointsList() {
+  if (!DESIGN_ID) {
+    document.getElementById('checkpoints-list').innerHTML =
+      '<div style="padding:12px 16px;color:#7a8cb0;font-size:12px;">Save the design first.</div>';
+    return;
+  }
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('checkpoints-list');
+      const ckpts = data.checkpoints || [];
+      if (!ckpts.length) {
+        el.innerHTML = '<div style="padding:12px 16px;color:#7a8cb0;font-size:12px;">No checkpoints saved. Click "Save Checkpoint" to create one.</div>';
+        return;
+      }
+      el.innerHTML = ckpts.map(c => `
+        <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid #1e293b;">
+          <div style="flex:1;">
+            <div style="color:#eaeaea;font-size:12px;">💾 ${c.label || 'Checkpoint'}</div>
+            <div style="color:#7a8cb0;font-size:10px;">${(c.created_at||'').slice(0,19).replace('T',' ')}</div>
+          </div>
+          <button onclick="restoreCheckpoint('${c.id}')"
+            style="background:#052e16;color:#4ade80;border:1px solid #166534;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Restore</button>
+          <button onclick="forkCheckpoint('${c.id}')"
+            style="background:#1e1b4b;color:#a5b4fc;border:1px solid #3730a3;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Fork</button>
+          <button onclick="deleteCheckpoint('${c.id}')"
+            style="background:none;color:#475569;border:none;padding:3px 6px;cursor:pointer;font-size:12px;" title="Delete">✕</button>
+        </div>`).join('');
+    })
+    .catch(() => {
+      document.getElementById('checkpoints-list').innerHTML =
+        '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Failed to load checkpoints.</div>';
+    });
+}
+
+function saveCheckpoint() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  const label = prompt('Checkpoint label (optional):') || '';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({label})
+  }).then(r => r.json()).then(d => {
+    setStatus('Checkpoint saved: ' + (d.id || ''));
+    loadCheckpointsList();
+  }).catch(() => setStatus('Checkpoint save failed'));
+}
+
+function restoreCheckpoint(ckptId) {
+  if (!confirm('Restore to this checkpoint? Current unsaved changes will be overwritten.')) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints/' + ckptId + '/restore', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      setStatus('Restored to checkpoint');
+      location.reload();
+    }).catch(() => setStatus('Restore failed'));
+}
+
+function forkCheckpoint(ckptId) {
+  const name = prompt('Name for the forked design:', 'Forked Design');
+  if (!name) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints/' + ckptId + '/fork', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name})
+  }).then(r => r.json()).then(d => {
+    if (d.error) { alert(d.error); return; }
+    if (confirm('Fork created: "' + name + '". Open it now?')) {
+      window.location.href = d.redirect;
+    }
+  }).catch(() => setStatus('Fork failed'));
+}
+
+function deleteCheckpoint(ckptId) {
+  if (!confirm('Delete this checkpoint?')) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints/' + ckptId, {method:'DELETE'})
+    .then(() => { setStatus('Checkpoint deleted'); loadCheckpointsList(); });
+}
+
+// Close checkpoints drawer on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('#checkpoints-drawer') && !e.target.closest('#btn-checkpoints')) {
+    document.getElementById('checkpoints-drawer').style.display = 'none';
+    _ckptsDrawerOpen = false;
   }
 });
 </script>
