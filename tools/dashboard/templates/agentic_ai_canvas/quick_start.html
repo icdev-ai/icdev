@@ -19,7 +19,7 @@
   </div>
 
   <!-- Step 1: Domain -->
-  <div id="step-1" class="wizard-step">
+  <div id="step-1" class="wizard-step active">
     <div style="color:#7a8cb0;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Step 1 of 3</div>
     <h3 style="color:#eaeaea;font-size:18px;margin:0 0 24px;">What domain or industry are you in?</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -49,7 +49,7 @@
   </div>
 
   <!-- Step 2: Goal -->
-  <div id="step-2" class="wizard-step" style="display:none;">
+  <div id="step-2" class="wizard-step">
     <div style="color:#7a8cb0;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Step 2 of 3</div>
     <h3 style="color:#eaeaea;font-size:18px;margin:0 0 24px;">What's your primary use case?</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
@@ -80,7 +80,7 @@
   </div>
 
   <!-- Step 3: Autonomy -->
-  <div id="step-3" class="wizard-step" style="display:none;">
+  <div id="step-3" class="wizard-step">
     <div style="color:#7a8cb0;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Step 3 of 3</div>
     <h3 style="color:#eaeaea;font-size:18px;margin:0 0 24px;">What level of AI autonomy are you comfortable with?</h3>
     <div style="display:flex;flex-direction:column;gap:12px;">
@@ -111,7 +111,7 @@
   </div>
 
   <!-- Step 4: Result -->
-  <div id="step-4" class="wizard-step" style="display:none;">
+  <div id="step-4" class="wizard-step">
     <div style="color:#7a8cb0;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Your Recommendation</div>
     <h3 style="color:#eaeaea;font-size:18px;margin:0 0 24px;">We found the right pack for you</h3>
     <div id="recommendation-card" style="background:#0d2137;border:2px solid #6366f1;border-radius:10px;padding:24px;margin-bottom:24px;"></div>
@@ -156,8 +156,8 @@ function selectOption(group, val, btn) {
 }
 
 function nextStep(n) {
-  document.querySelectorAll('.wizard-step').forEach(s => s.style.display = 'none');
-  document.getElementById('step-' + n).style.display = 'block';
+  document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+  document.getElementById('step-' + n).classList.add('active');
   const pct = {2: '33%', 3: '66%', 4: '100%'}[n] || '0%';
   document.getElementById('progress-bar').style.width = pct;
   window.scrollTo(0, 0);
@@ -226,7 +226,8 @@ function restartWizard() {
     if (b) { b.disabled = true; b.style.opacity = '0.4'; }
   });
   document.getElementById('progress-bar').style.width = '0%';
-  nextStep(1);
+  document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+  document.getElementById('step-1').classList.add('active');
 }
 </script>
 {% endblock %}
