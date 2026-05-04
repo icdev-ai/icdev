@@ -64,7 +64,9 @@
     <div style="font-size:.78rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem;">Inject Timeline</div>
     {% for inj in injects %}
     <div class="inject-row" id="inject-{{ inj.inject_id[:8] }}">
-      <h4>{{ inj.title }}</h4>
+      <h4>{{ inj.title }}
+        {% if inj.get('is_aadc') %}<span style="font-size:.62rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff33;border-radius:3px;padding:.08rem .3rem;vertical-align:middle;">AADC</span>{% endif %}
+      </h4>
       <div class="ir-meta">
         {% if inj.at_minute %}⏱️ T+{{ inj.at_minute }}min{% endif %}
         {% if inj.sequence_num %}#{{ inj.sequence_num }}{% endif %}
@@ -130,6 +132,14 @@
       </div>
     </div>
 
+    <!-- Response Monitor -->
+    <div style="margin-bottom:1.2rem;">
+      <div style="font-size:.78rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem;">Response Monitor <span style="font-size:.7rem;color:#30363d;" id="resp-ts"></span></div>
+      <div id="resp-monitor" style="background:#0d1117;border:1px solid #21262d;border-radius:8px;max-height:220px;overflow-y:auto;font-size:.78rem;">
+        <div style="color:#6e7681;text-align:center;padding:1.5rem;" id="resp-empty">No responses yet</div>
+      </div>
+    </div>
+
     <!-- Team details -->
     <div style="font-size:.78rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem;">Teams</div>
     {% for team in teams %}
@@ -176,5 +186,33 @@ async function refreshLeaderboard(){
 }
 // Auto-refresh leaderboard every 10s
 setInterval(refreshLeaderboard, 10000);
+
+// Response monitor
+async function refreshResponses(){
+  const r=await fetch('/api/gameday/session/'+SESSION_ID+'/responses');
+  const d=await r.json();
+  const monitor=document.getElementById('resp-monitor');
+  const ts=document.getElementById('resp-ts');
+  ts.textContent='· updated '+new Date().toLocaleTimeString();
+  if(!d.responses||!d.responses.length){
+    monitor.innerHTML='<div style="color:#6e7681;text-align:center;padding:1.5rem;">No responses yet</div>';
+    return;
+  }
+  monitor.innerHTML=d.responses.map(resp=>{
+    const aadc=resp.is_aadc?`<span style="color:#58a6ff;font-weight:700;">AADC: ${resp.aadc_score}/100</span>`:`<span style="color:#3fb950;">Judge: ${resp.judge_pts||0}</span>`;
+    return `<div style="padding:.5rem .75rem;border-bottom:1px solid #21262d;display:flex;gap:.6rem;align-items:flex-start;">
+      <div style="flex:1;min-width:0;">
+        <div style="color:#e6edf3;font-weight:600;font-size:.78rem;">${resp.team_name||'?'} <span style="color:#6e7681;font-weight:400;">→ ${resp.inject_title||'?'}</span></div>
+        <div style="color:#8b949e;font-size:.72rem;margin:.1rem 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${resp.response_preview||''}</div>
+      </div>
+      <div style="text-align:right;white-space:nowrap;font-size:.75rem;">
+        ${aadc}<br>
+        <span style="color:#FF6B35;font-weight:700;">+${resp.total_pts||0} pts</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+refreshResponses();
+setInterval(refreshResponses, 8000);
 </script>
 {% endblock %}

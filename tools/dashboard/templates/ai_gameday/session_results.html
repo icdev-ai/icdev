@@ -65,7 +65,7 @@
     <div class="inject-replay">
       <div style="font-size:.85rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem;">Inject Replay</div>
       {% for inj in injects %}
-      {% set is_aadc = (inj.config_json | from_json).get('inject_type') == 'aadc_design_challenge' %}
+      {% set is_aadc = inj.get('is_aadc', false) %}
       <div class="replay-card">
         <h3>{{ inj.title }}
           {% if is_aadc %}<span style="font-size:.68rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.1rem .35rem;vertical-align:middle;margin-left:.4rem;">AADC</span>{% endif %}
