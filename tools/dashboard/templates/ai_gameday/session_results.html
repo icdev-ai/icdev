@@ -65,19 +65,36 @@
     <div class="inject-replay">
       <div style="font-size:.85rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem;">Inject Replay</div>
       {% for inj in injects %}
+      {% set is_aadc = (inj.config_json | from_json).get('inject_type') == 'aadc_design_challenge' %}
       <div class="replay-card">
-        <h3>{{ inj.title }} <span style="font-size:.75rem;color:#6e7681;">({{ inj.state }})</span></h3>
+        <h3>{{ inj.title }}
+          {% if is_aadc %}<span style="font-size:.68rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.1rem .35rem;vertical-align:middle;margin-left:.4rem;">AADC</span>{% endif %}
+          <span style="font-size:.75rem;color:#6e7681;">({{ inj.state }})</span>
+        </h3>
         <table class="replay-table">
-          <thead><tr><th>Team</th><th>Receipts</th><th>Judge Score</th><th>Speed Bonus</th><th>Total</th></tr></thead>
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th>Receipts</th>
+              {% if is_aadc %}<th>AADC Score</th>{% else %}<th>Judge Score</th>{% endif %}
+              <th>Speed Bonus</th>
+              <th>Total</th>
+            </tr>
+          </thead>
           <tbody>
-          {# We'll show placeholder rows — full replay needs response join data #}
+          {% set inj_scores = inject_scores.get(inj.inject_id, {}) %}
           {% for team_id, team in teams.items() %}
+          {% set s = inj_scores.get(team_id, {}) %}
           <tr>
             <td>{{ team.team_name }}</td>
-            <td style="color:#58a6ff;">{{ ai_stats.get(team_id, {}).get('receipt_total', 0) }}</td>
-            <td style="color:#3fb950;">—</td>
-            <td style="color:#FFB800;">—</td>
-            <td style="color:#FF6B35;font-weight:700;">—</td>
+            <td style="color:#58a6ff;">{{ s.get('receipt_pts', '—') }}</td>
+            {% if is_aadc %}
+            <td style="color:#58a6ff;font-weight:600;">{{ s.get('aadc_score', '—') }}{% if s.get('aadc_score') is not none and s.get('aadc_score') != '—' %}/100{% endif %}</td>
+            {% else %}
+            <td style="color:#3fb950;">{{ s.get('judge_pts', '—') }}</td>
+            {% endif %}
+            <td style="color:#FFB800;">{{ s.get('time_bonus_pts', '—') }}</td>
+            <td style="color:#FF6B35;font-weight:700;">{{ s.get('total_pts', '—') }}</td>
           </tr>
           {% endfor %}
           </tbody>
