@@ -161,6 +161,50 @@ def compute_time_bonus(time_taken_s: float | None) -> int:
 # Orchestrate: score a response end-to-end and persist
 # ---------------------------------------------------------------------------
 
+def score_aadc_design(design_id: str, required_checks: list[str]) -> dict[str, Any]:
+    """Score an AADC design challenge response by running assess_design().
+
+    Returns {judge_pts, rationale, check_results} where judge_pts is 0-100
+    based on the fraction of required_checks that pass.
+    Falls back to 0 if AADC is unavailable.
+    """
+    if not design_id:
+        return {"judge_pts": 0, "rationale": "No design_id provided", "check_results": []}
+    try:
+        from tools.agentic_ai_canvas.db.init_db import init_db as _aadc_init
+        from tools.db.storage import get_connection as _gc
+        _aadc_init()
+        conn = _gc()
+        row = conn.execute(
+            "SELECT graph_json, metadata_json FROM aadc_designs WHERE design_id = ?",
+            (design_id,),
+        ).fetchone()
+        if not row:
+            return {"judge_pts": 0, "rationale": f"Design {design_id} not found", "check_results": []}
+        from tools.agentic_ai_canvas.agentic_engine import assess_design
+        result = assess_design(row["graph_json"], json.loads(row["metadata_json"] or "{}"))
+        all_checks = result.get("checks", [])
+        if required_checks:
+            relevant = [c for c in all_checks if c.get("id") in required_checks]
+        else:
+            relevant = all_checks
+        passing = [c for c in relevant if c.get("passed")]
+        pct = len(passing) / max(len(relevant), 1)
+        judge_pts = round(pct * 100)
+        check_summary = [{"id": c["id"], "title": c.get("title", ""), "passed": c.get("passed")}
+                         for c in relevant]
+        rationale = (
+            f"AADC assessment: {len(passing)}/{len(relevant)} required checks pass "
+            f"({judge_pts}/100). "
+            + (f"Still failing: {[c['id'] for c in relevant if not c.get('passed')]}"
+               if judge_pts < 100 else "All checks green.")
+        )
+        return {"judge_pts": judge_pts, "rationale": rationale, "check_results": check_summary}
+    except Exception as exc:
+        log.warning("AADC design scorer failed: %s", exc)
+        return {"judge_pts": 0, "rationale": f"AADC scorer error: {exc}", "check_results": []}
+
+
 def score_response(
     response_id: int,
     team_id: int,
@@ -174,6 +218,7 @@ def score_response(
     max_receipt_bonus: int,
     time_taken_s: float | None,
     time_bonus_enabled: bool = True,
+    inject_type: str = "",
 ) -> dict[str, Any]:
     """Run full scoring pipeline and write result to ttx_scores."""
     receipt_pts, receipt_count = validate_receipts(
@@ -182,7 +227,26 @@ def score_response(
     receipt_evidence = "\n".join(
         f"[{r.get('tool', '?')}] call_id={r.get('call_id', '?')}" for r in receipts
     )
-    judge_result = judge_response(inject_body, response_text, rubric, receipt_evidence)
+
+    # AADC design challenge: replace LLM judge with automated compliance scoring
+    if inject_type == "aadc_design_challenge":
+        try:
+            payload = json.loads(response_text) if response_text.strip().startswith("{") else {}
+        except Exception:
+            payload = {}
+        design_id = payload.get("design_id", "")
+        required_checks = rubric.get("required_checks", [])
+        aadc_result = score_aadc_design(design_id, required_checks)
+        judge_result = {
+            "dimension_scores": {},
+            "total": aadc_result["judge_pts"],
+            "rationale": aadc_result["rationale"],
+            "confidence": 1.0,
+            "check_results": aadc_result["check_results"],
+        }
+    else:
+        judge_result = judge_response(inject_body, response_text, rubric, receipt_evidence)
+
     judge_pts = judge_result["total"]
     time_bonus = compute_time_bonus(time_taken_s) if time_bonus_enabled else 0
     total_pts = receipt_pts + judge_pts + time_bonus
