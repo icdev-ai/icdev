@@ -1491,3 +1491,210 @@ def canvas_kanban_status(design_id: str):
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)})
+
+
+# ---------------------------------------------------------------------------
+# Phase 6 — ATO Readiness + Regulatory Tracker + Design Compare + Exec Summary
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/ato/<design_id>", methods=["GET"])
+def ato_page(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    conn.close()
+    if not row:
+        return "Design not found", 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
+    result = run_ato_checklist(graph.get("nodes", []), design)
+    frameworks = list(result["by_framework"].keys())
+    return render_template(
+        "agentic_ai_canvas/ato.html",
+        design=design,
+        result=result,
+        frameworks=frameworks,
+    )
+
+
+@aadc_bp.route("/api/designs/<design_id>/ato", methods=["GET"])
+def get_ato(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
+    result = run_ato_checklist(graph.get("nodes", []), design)
+    # Persist latest report
+    rid = _uid()
+    now = _utcnow()
+    s = result["summary"]
+    try:
+        conn.execute(
+            """INSERT INTO aadc_ato_reports (id, design_id, score_pct, ato_ready, passed, failed, critical_failed, report_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (rid, design_id, s["score_pct"], 1 if s["ato_ready"] else 0,
+             s["passed"], s["failed"], s["critical_failed"], _json.dumps(result), now),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/regulatory", methods=["GET"])
+def get_regulatory(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    risks = [
+        dict(r) for r in conn.execute(
+            "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        ).fetchall()
+    ]
+    from tools.agentic_ai_canvas.regulatory_tracker import run_regulatory_analysis
+    result = run_regulatory_analysis(graph.get("nodes", []), design, risks)
+    # Persist
+    rid = _uid()
+    now = _utcnow()
+    s = result["summary"]
+    try:
+        conn.execute(
+            """INSERT INTO aadc_regulatory_gaps (id, design_id, score_pct, compliant, gaps, critical_gaps, report_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (rid, design_id, s["score_pct"], s["compliant"], s["gaps"], s["critical_gaps"], _json.dumps(result), now),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/exec-summary/<design_id>", methods=["GET"])
+def exec_summary_page(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return "Design not found", 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    assessment = None
+    arow = conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone()
+    if arow:
+        assessment = dict(arow)
+    risks = [dict(r) for r in conn.execute(
+        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+    ).fetchall()]
+    threat_model = None
+    tmrow = conn.execute(
+        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone()
+    if tmrow:
+        threat_model = dict(tmrow)
+    conn.close()
+    from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
+    from tools.agentic_ai_canvas.regulatory_tracker import run_regulatory_analysis
+    from tools.agentic_ai_canvas.exec_summary import generate_exec_summary
+    ato_result = run_ato_checklist(nodes, design)
+    reg_result = run_regulatory_analysis(nodes, design, risks)
+    summary = generate_exec_summary(design, assessment, risks, threat_model, ato_result, reg_result)
+    return render_template(
+        "agentic_ai_canvas/exec_summary.html",
+        design=design,
+        summary=summary,
+        ato=ato_result,
+        reg=reg_result,
+    )
+
+
+@aadc_bp.route("/api/designs/<design_id>/exec-summary", methods=["GET"])
+def get_exec_summary(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    assessment = None
+    arow = conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone()
+    if arow:
+        assessment = dict(arow)
+    risks = [dict(r) for r in conn.execute(
+        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+    ).fetchall()]
+    threat_model = None
+    tmrow = conn.execute(
+        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone()
+    if tmrow:
+        threat_model = dict(tmrow)
+    conn.close()
+    from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
+    from tools.agentic_ai_canvas.regulatory_tracker import run_regulatory_analysis
+    from tools.agentic_ai_canvas.exec_summary import generate_exec_summary
+    ato_result = run_ato_checklist(nodes, design)
+    reg_result = run_regulatory_analysis(nodes, design, risks)
+    result = generate_exec_summary(design, assessment, risks, threat_model, ato_result, reg_result)
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/compare", methods=["POST"])
+def compare_designs_api():
+    data = request.get_json(force=True, silent=True) or {}
+    id_a = data.get("design_a_id", "")
+    id_b = data.get("design_b_id", "")
+    if not id_a or not id_b:
+        return jsonify({"error": "design_a_id and design_b_id required"}), 400
+    conn = _conn()
+    row_a = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (id_a,)).fetchone()
+    row_b = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (id_b,)).fetchone()
+    if not row_a or not row_b:
+        conn.close()
+        return jsonify({"error": "one or both designs not found"}), 404
+    design_a = dict(row_a)
+    design_b = dict(row_b)
+    ass_a = conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (id_a,)
+    ).fetchone()
+    ass_b = conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (id_b,)
+    ).fetchone()
+    risks_a = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items WHERE design_id=?", (id_a,)).fetchall()]
+    risks_b = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items WHERE design_id=?", (id_b,)).fetchall()]
+    conn.close()
+    from tools.agentic_ai_canvas.design_compare import compare_designs
+    result = compare_designs(
+        design_a, design_b,
+        dict(ass_a) if ass_a else None,
+        dict(ass_b) if ass_b else None,
+        risks_a, risks_b,
+    )
+    result["design_a"] = {"id": id_a, "name": design_a["name"]}
+    result["design_b"] = {"id": id_b, "name": design_b["name"]}
+    return jsonify(result)

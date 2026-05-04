@@ -166,6 +166,10 @@
       <button onclick="showThreatModel()"><span>🗡</span> Threat Model</button>
       <button onclick="doOscalExport()"><span>📋</span> OSCAL Export</button>
       {% if design.id %}<a href="/agentic-ai/risks/{{ design.id }}"><span>⚠</span> Risk Register</a>{% endif %}
+      <hr class="aadc-menu-sep">
+      <button onclick="showRegulatoryTracker()"><span>📜</span> Regulatory</button>
+      {% if design.id %}<a href="/agentic-ai/ato/{{ design.id }}"><span>🏛</span> ATO Readiness</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/exec-summary/{{ design.id }}"><span>📊</span> Exec Brief</a>{% endif %}
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
       <hr class="aadc-menu-sep">
       {% if design.id %}
@@ -564,6 +568,26 @@
     </div>
     <div id="threat-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
       <div style="color:#7a8cb0;text-align:center;padding:20px;">Click Generate to run threat model analysis.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Regulatory Tracker Modal ── -->
+<div id="reg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:820px;max-height:88vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:12px 16px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">📜 Regulatory Compliance Tracker</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="runRegulatoryAnalysis()" id="btn-run-reg"
+          style="background:#4f46e5;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px;">↻ Analyze</button>
+        <button onclick="document.getElementById('reg-modal').style.display='none'"
+          style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>
+    <div id="reg-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Click Analyze to run EU AI Act / DoD AI Ethics / OMB gap analysis.</div>
     </div>
   </div>
 </div>
@@ -2186,6 +2210,113 @@ doExportCSV = function() { _emitExportEvent('export_csv'); _origExportCSV(); };
 // Load kanban badges after page ready
 if (DESIGN_ID) {
   loadKanbanBadges();
+}
+
+// ────────────────────────────────────────────────
+// PHASE 6 — Regulatory Tracker
+// ────────────────────────────────────────────────
+function showRegulatoryTracker() {
+  toggleMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  document.getElementById('reg-modal').style.display = 'flex';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/regulatory')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.gaps) renderRegModal(d); })
+    .catch(() => {});
+}
+
+function runRegulatoryAnalysis() {
+  const btn = document.getElementById('btn-run-reg');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analyzing…'; }
+  const body = document.getElementById('reg-modal-body');
+  body.innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:24px;">Running regulatory gap analysis…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/regulatory')
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Analyze'; }
+      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + d.error + '</div>'; return; }
+      renderRegModal(d);
+    })
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Analyze'; }
+      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>';
+    });
+}
+
+function renderRegModal(d) {
+  const body = document.getElementById('reg-modal-body');
+  const s = d.summary;
+  const byFw = d.by_framework || {};
+  const sevFg = {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fbbf24',LOW:'#34d399'};
+  const stBg = {compliant:'#052e16',gap:'#450a0a'};
+  const stFg = {compliant:'#4ade80',gap:'#f87171'};
+
+  // Summary bar
+  let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#eaeaea;">${s.total}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Requirements</div>
+    </div>
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#4ade80;">${s.compliant}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Compliant</div>
+    </div>
+    <div style="background:#16213e;border:1px solid ${s.gaps>0?'#ef4444':'#1e3a6e'};border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:${s.gaps>0?'#f87171':'#4ade80'};">${s.gaps}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Gaps</div>
+    </div>
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:18px;font-weight:700;color:#60a5fa;">${s.score_pct}%</div>
+      <div style="color:#7a8cb0;font-size:10px;">Score</div>
+    </div>
+  </div>`;
+
+  // Framework mini-bars
+  const fws = s.frameworks || [];
+  if (fws.length) {
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+    for (const fw of fws) {
+      const fd = byFw[fw] || {};
+      const pct = fd.total ? Math.round(fd.compliant / fd.total * 100) : 0;
+      const col = pct >= 80 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:6px 10px;min-width:100px;">
+        <div style="color:#94a3b8;font-size:9px;margin-bottom:3px;">${fw}</div>
+        <div style="font-size:14px;font-weight:700;color:${col};">${pct}%</div>
+        <div style="background:#1e293b;border-radius:2px;height:4px;margin-top:3px;">
+          <div style="background:${col};width:${pct}%;height:4px;border-radius:2px;"></div>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // Gaps table
+  const gaps = d.gaps || [];
+  if (gaps.length) {
+    html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const g of gaps) {
+      const fg = sevFg[g.severity] || '#94a3b8';
+      const bg = stBg[g.status] || '#1e293b';
+      const fc = stFg[g.status] || '#94a3b8';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:8px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="color:#475569;font-size:9px;">[${g.framework} ${g.article}]</span>
+            <span style="color:#eaeaea;font-size:11px;font-weight:500;">${g.title}</span>
+          </div>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <span style="color:${fg};font-size:9px;font-weight:700;">${g.severity}</span>
+            <span style="background:${bg};color:${fc};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${g.status === 'compliant' ? '✓ OK' : '✗ GAP'}</span>
+          </div>
+        </div>
+        <div style="color:#64748b;font-size:10px;">${g.requirement}</div>
+        ${g.gap_advice ? `<div style="color:#fbbf24;font-size:10px;margin-top:3px;">⚡ ${g.gap_advice}</div>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
 }
 
 // ────────────────────────────────────────────────
