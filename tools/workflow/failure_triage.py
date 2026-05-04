@@ -105,8 +105,16 @@ def find_recent_failures(window_hours: int = DEFAULT_WINDOW_HOURS) -> List[Dict[
     """Return kanban tasks that failed within ``window_hours``.
 
     Matches either:
-    * ``last_failure_reason`` set and ``status`` in (backlog, failed), or
+    * ``last_failure_reason`` set and ``status`` in (backlog, failed,
+      needs_decomposition), or
     * ``failure_count > 0`` for tasks returned to backlog on cooldown.
+
+    Ordering priority:
+    1. Tasks that have downstream dependents blocked on them (chain_blockers)
+       are returned first — their failure is amplified because it stalls
+       the whole dependent chain.
+    2. Then by kanban priority (critical > high > medium > low).
+    3. Finally most-recently-updated first.
     """
     try:
         from tools.db.storage import get_connection, sql_placeholder
@@ -119,14 +127,32 @@ def find_recent_failures(window_hours: int = DEFAULT_WINDOW_HOURS) -> List[Dict[
     try:
         with get_connection() as conn:
             ph = sql_placeholder(conn)
+            # blocked_dependents_count: number of tasks blocked by this one.
+            # A task is blocked if its depends_on_task_id points here AND its
+            # own status is not done/decomposed.
             sql = (
-                "SELECT id, title, description, task_type, priority, status, "
-                "       failure_count, last_failure_reason, updated_at "
-                "FROM kanban_tasks "
-                f"WHERE last_failure_reason IS NOT NULL "
-                f"  AND updated_at > {ph} "
-                f"  AND status IN ('backlog','failed','scheduled') "
-                f"ORDER BY updated_at DESC "
+                "SELECT kt.id, kt.title, kt.description, kt.task_type, "
+                "       kt.priority, kt.status, "
+                "       kt.failure_count, kt.last_failure_reason, kt.updated_at, "
+                "       (SELECT COUNT(*) FROM kanban_tasks dep "
+                "         WHERE dep.depends_on_task_id = kt.id "
+                "           AND dep.status NOT IN ('done','decomposed')) "
+                "       AS blocked_dependents_count "
+                "FROM kanban_tasks kt "
+                f"WHERE kt.last_failure_reason IS NOT NULL "
+                f"  AND kt.updated_at > {ph} "
+                f"  AND kt.status IN ('backlog','failed','scheduled','needs_decomposition') "
+                f"ORDER BY "
+                f"  CASE WHEN (SELECT COUNT(*) FROM kanban_tasks dep "
+                f"              WHERE dep.depends_on_task_id = kt.id "
+                f"                AND dep.status NOT IN ('done','decomposed')) > 0 "
+                f"       THEN 0 ELSE 1 END, "
+                f"  CASE kt.priority "
+                f"    WHEN 'critical' THEN 0 "
+                f"    WHEN 'high'     THEN 1 "
+                f"    WHEN 'medium'   THEN 2 "
+                f"    ELSE 3 END, "
+                f"  kt.updated_at DESC "
                 f"LIMIT 50"
             )
             cur = conn.execute(sql, (cutoff,))
@@ -235,7 +261,13 @@ def _deny_hit(diag: Dict[str, Any], task: Dict[str, Any]) -> Optional[str]:
 
 
 def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool, str]:
-    """Return (allow, reason). ``reason`` is human-readable even on allow."""
+    """Return (allow, reason). ``reason`` is human-readable even on allow.
+
+    Chain-blocker rule: if this task has blocked dependents, the confidence
+    threshold is relaxed from APPLY_CONFIDENCE (0.85) to 0.70 because the
+    cost of inaction is amplified — every dependent stays stalled until the
+    root cause is resolved.
+    """
     if not autofix_enabled():
         return (False, f"{AUTOFIX_ENV} is not set to true")
 
@@ -244,8 +276,11 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
         return (False, f"recommendation is {rec!r} (not 'patch')")
 
     conf = float(diag.get("confidence") or 0.0)
-    if conf < APPLY_CONFIDENCE:
-        return (False, f"confidence {conf:.2f} < threshold {APPLY_CONFIDENCE}")
+    blocked_deps = int(task.get("blocked_dependents_count") or 0)
+    effective_threshold = 0.70 if blocked_deps > 0 else APPLY_CONFIDENCE
+    if conf < effective_threshold:
+        chain_note = f" (chain-blocker: {blocked_deps} dep(s) stalled, threshold lowered to 0.70)" if blocked_deps else ""
+        return (False, f"confidence {conf:.2f} < threshold {effective_threshold}{chain_note}")
 
     ttype = (task.get("task_type") or "").lower()
     if ttype not in AUTO_APPLY_TASK_TYPES:
@@ -259,7 +294,8 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
     if not ok:
         return (False, f"rate limit hit ({count}/{MAX_APPLIES_PER_HOUR} in last hour)")
 
-    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}")
+    chain_note = f"; chain-blocker ({blocked_deps} dep(s) stalled, threshold=0.70)" if blocked_deps else ""
+    return (True, f"all gates green; rate {count}/{MAX_APPLIES_PER_HOUR}{chain_note}")
 
 
 # ---------------------------------------------------------------------------
