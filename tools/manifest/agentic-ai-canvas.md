@@ -111,6 +111,28 @@ Phase 7 — Accreditation Package Builder.
 - `build_accred_zip(design, assessment, risks, threat_model, ato, reg, red_team, exec, oscal)` → ZIP bytes
 - Assembles 8+ JSON artifacts + README cover sheet into a single downloadable ZIP.
 
+### `tools/agentic_ai_canvas/ft_linkage.py`
+Phase 2 — Fine-tuning dashboard linkage.
+- `get_fine_tuning_summary(design_id)` → summary of fine-tuning jobs linked to a design
+- Surfaces AADC assessment findings as training signal candidates in the fine-tuning dashboard.
+
+### `tools/agentic_ai_canvas/pattern_detector.py`
+Phase 8 — Architectural Pattern Detector (8 named AI design patterns).
+- `detect_patterns(nodes, edges)` → `{patterns, dominant, flags}`
+- Patterns: BASIC_RAG, AGENTIC_RAG, AUTONOMOUS_AGENT, HITL_SUPERVISED, MULTI_AGENT_ORCHESTRATOR, SAFETY_FIRST, PIPELINE_CHAIN, COGNITIVE_ARCHITECTURE
+- Returns confidence score (0-100) per pattern plus matched flags and missing-node suggestions.
+
+### `tools/agentic_ai_canvas/impact_analyzer.py`
+Phase 8 — Cascade Impact Analyzer.
+- `analyze_impact(nodes, edges)` → `{node_impacts, summary}`
+- Per-node: blast_radius (downstream count), is_spof (single point of failure), vulnerability_score (1-8), resilience_reduction (%)
+- Summary: resilience_score, critical_nodes, spofs, overall_risk_level (CRITICAL/HIGH/MEDIUM/LOW)
+
+### `tools/agentic_ai_canvas/analytics_engine.py`
+Phase 8 — Portfolio Analytics Engine (cross-design intelligence).
+- `compute_analytics(designs, assessments, pattern_reports, ato_reports, red_team_reports, lint_reports, risk_items)` → analytics dict
+- Computes: 8-week score trend, pattern distribution, compliance drift (30d), risk density by domain, ATO readiness rate, red team risk distribution, lint score distribution.
+
 ### `tools/agentic_ai_canvas/ato_readiness.py`
 Phase 6 — ATO Readiness Checker (15 items across FedRAMP / OMB M-25-21 / DoD AI Ethics / CMMC L2).
 - `run_ato_checklist(nodes, design_meta)` → `{items, summary, by_framework}`
@@ -172,6 +194,9 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/red-team/<id>` | `agentic_ai_canvas/red_team.html` |
 | `GET /agentic-ai/ato/<id>` | `agentic_ai_canvas/ato.html` |
 | `GET /agentic-ai/exec-summary/<id>` | `agentic_ai_canvas/exec_summary.html` |
+| `GET /agentic-ai/patterns/<id>` | `agentic_ai_canvas/pattern_analysis.html` |
+| `GET /agentic-ai/impact/<id>` | `agentic_ai_canvas/impact_analysis.html` |
+| `GET /agentic-ai/analytics` | `agentic_ai_canvas/analytics.html` |
 
 **API routes:**
 | Method + Route | Purpose |
@@ -222,6 +247,9 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/api/designs/<id>/red-team` | Red team adversarial analysis JSON |
 | `GET /agentic-ai/api/designs/<id>/lint` | Design lint report JSON |
 | `GET /agentic-ai/api/designs/<id>/accred-package` | Accreditation package ZIP download |
+| `GET /agentic-ai/api/designs/<id>/patterns` | Architectural pattern detection JSON |
+| `GET /agentic-ai/api/designs/<id>/impact` | Cascade impact analysis JSON |
+| `GET /agentic-ai/api/analytics` | Portfolio analytics JSON |
 
 ---
 
@@ -248,6 +276,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_lint_reports` | Phase 7 — Design lint report snapshots per design (migration 109) |
 | `aadc_ato_reports` | Phase 6 — ATO readiness report snapshots per design (migration 108) |
 | `aadc_regulatory_gaps` | Phase 6 — Regulatory gap analysis snapshots per design (migration 108) |
+| `aadc_pattern_reports` | Phase 8 — Architectural pattern detection snapshots per design (migration 110) |
+| `aadc_impact_reports` | Phase 8 — Cascade impact analysis snapshots per design (migration 110) |
 
 ---
 

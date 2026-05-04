@@ -1841,3 +1841,158 @@ def get_accred_package(design_id: str):
     resp.headers["Content-Type"] = "application/zip"
     resp.headers["Content-Disposition"] = f"attachment; filename=accred-package-{design_id}.zip"
     return resp
+
+
+# ---------------------------------------------------------------------------
+# PHASE 8 — Design Intelligence & Analytics
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/patterns/<design_id>", methods=["GET"])
+def pattern_analysis_page(design_id: str):
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return "Design not found", 404
+    design = dict(row)
+    import json as _json
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    conn.close()
+
+    from tools.agentic_ai_canvas.pattern_detector import detect_patterns
+    result = detect_patterns(nodes, edges)
+    return render_template("agentic_ai_canvas/pattern_analysis.html", design=design, result=result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/patterns", methods=["GET"])
+def get_patterns_api(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    from tools.agentic_ai_canvas.pattern_detector import detect_patterns
+    result = detect_patterns(nodes, edges)
+
+    rep_id = str(uuid.uuid4())
+    try:
+        conn.execute(
+            "INSERT INTO aadc_pattern_reports (id,design_id,dominant_pattern,pattern_json) VALUES (?,?,?,?)",
+            (rep_id, design_id, result["dominant"], _json.dumps(result)),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/impact/<design_id>", methods=["GET"])
+def impact_analysis_page(design_id: str):
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return "Design not found", 404
+    design = dict(row)
+    import json as _json
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+    conn.close()
+
+    from tools.agentic_ai_canvas.impact_analyzer import analyze_impact
+    result = analyze_impact(nodes, edges)
+    return render_template("agentic_ai_canvas/impact_analysis.html", design=design, result=result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/impact", methods=["GET"])
+def get_impact_api(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    from tools.agentic_ai_canvas.impact_analyzer import analyze_impact
+    result = analyze_impact(nodes, edges)
+
+    rep_id = str(uuid.uuid4())
+    try:
+        s = result.get("summary", {})
+        conn.execute(
+            "INSERT INTO aadc_impact_reports (id,design_id,resilience_score,spof_count,overall_risk_level,report_json) VALUES (?,?,?,?,?,?)",
+            (rep_id, design_id, s.get("resilience_score", 100),
+             len(s.get("spofs", [])), s.get("overall_risk_level", "LOW"),
+             _json.dumps(result)),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/analytics", methods=["GET"])
+def analytics_page():
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT * FROM aadc_designs ORDER BY created_at DESC").fetchall()]
+    assessments = [dict(r) for r in conn.execute("SELECT * FROM aadc_assessments").fetchall()]
+    risk_items = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
+    pattern_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, dominant_pattern FROM aadc_pattern_reports"
+    ).fetchall()]
+    ato_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, ato_ready FROM aadc_ato_reports"
+    ).fetchall()]
+    red_team_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, overall_risk FROM aadc_red_team_reports"
+    ).fetchall()]
+    lint_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, lint_score FROM aadc_lint_reports"
+    ).fetchall()]
+    conn.close()
+
+    from tools.agentic_ai_canvas.analytics_engine import compute_analytics
+    data = compute_analytics(designs, assessments, pattern_reports, ato_reports,
+                             red_team_reports, lint_reports, risk_items)
+    return render_template("agentic_ai_canvas/analytics.html", data=data)
+
+
+@aadc_bp.route("/api/analytics", methods=["GET"])
+def get_analytics_api():
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT * FROM aadc_designs").fetchall()]
+    assessments = [dict(r) for r in conn.execute("SELECT * FROM aadc_assessments").fetchall()]
+    risk_items = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
+    pattern_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, dominant_pattern FROM aadc_pattern_reports"
+    ).fetchall()]
+    ato_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, ato_ready FROM aadc_ato_reports"
+    ).fetchall()]
+    red_team_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, overall_risk FROM aadc_red_team_reports"
+    ).fetchall()]
+    lint_reports = [dict(r) for r in conn.execute(
+        "SELECT design_id, lint_score FROM aadc_lint_reports"
+    ).fetchall()]
+    conn.close()
+
+    from tools.agentic_ai_canvas.analytics_engine import compute_analytics
+    data = compute_analytics(designs, assessments, pattern_reports, ato_reports,
+                             red_team_reports, lint_reports, risk_items)
+    return jsonify(data)

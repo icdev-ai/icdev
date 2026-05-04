@@ -2520,9 +2520,11 @@ projects:
   - 'Phase 5 Governance: AI risk register, STRIDE threat model generator, portfolio
     dashboard, OSCAL component export â€” aadc-p5-01..09'
   - 'Phase 6 Lifecycle & Deployment Readiness: ATO readiness checklist, regulatory
-    tracker (EU AI Act/DoD/OMB), design comparison, executive summary report — aadc-p6-01..09'
+    tracker (EU AI Act/DoD/OMB), design comparison, executive summary report ï¿½ aadc-p6-01..09'
   - 'Phase 7 Adversarial Security: AI red team engine (12 scenarios), design linter/auto-recommendations,
-    accreditation package builder (ZIP) — aadc-p7-01..09'
+    accreditation package builder (ZIP) â€” aadc-p7-01..09'
+  - 'Phase 8 Design Intelligence: pattern detector (8 named AI patterns), cascade impact
+    analyzer (blast radius/SPOFs), portfolio analytics dashboard â€” aadc-p8-01..09'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2563,10 +2565,14 @@ projects:
       OSCAL)
     priority: high
   - key: p6
-    title: Phase 6 — Lifecycle & Deployment Readiness (ATO checklist, regulatory tracker,
+    title: Phase 6 ï¿½ Lifecycle & Deployment Readiness (ATO checklist, regulatory tracker,
       design compare, exec summary)
     priority: high
   - key: p7
-    title: Phase 7 — Adversarial Security & Accreditation (red team, design linter,
+    title: Phase 7 â€” Adversarial Security & Accreditation (red team, design linter,
       accred ZIP)
+    priority: high
+  - key: p8
+    title: Phase 8 â€” Design Intelligence & Analytics (pattern detector, impact analyzer,
+      portfolio analytics dashboard)
     priority: high

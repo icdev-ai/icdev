@@ -11,6 +11,7 @@
   <div style="display:flex;gap:10px;align-items:center;">
     <a href="/agentic-ai/templates" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">📋 Templates</a>
     <a href="/agentic-ai/snippets" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">🧩 Snippets</a>
+    <a href="/agentic-ai/analytics" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">📈 Analytics</a>
     {% if designs %}
     <button onclick="deleteAllDesigns()" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:8px 16px;border-radius:5px;font-size:13px;cursor:pointer;">🗑 Delete All</button>
     {% endif %}
@@ -92,6 +93,8 @@
       <a href="/agentic-ai/exec-summary/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">📊 Brief</a>
       <a href="/agentic-ai/red-team/{{ d.id }}" style="background:#431407;color:#fb923c;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">⚔ Red Team</a>
       <a href="/agentic-ai/api/designs/{{ d.id }}/accred-package" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">📦 Accred</a>
+      <a href="/agentic-ai/patterns/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">🔍 Patterns</a>
+      <a href="/agentic-ai/impact/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">💥 Impact</a>
       <a href="/agentic-ai/artifacts/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">Artifacts</a>
       <button onclick="showCompare('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:6px 8px;border-radius:4px;font-size:11px;cursor:pointer;" title="Compare with another design">⚖</button>
       <button onclick="deleteDesign('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:6px 8px;border-radius:4px;font-size:11px;cursor:pointer;" title="Delete">🗑</button>
