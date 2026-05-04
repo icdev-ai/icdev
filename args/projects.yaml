@@ -2525,6 +2525,8 @@ projects:
     accreditation package builder (ZIP) — aadc-p7-01..09'
   - 'Phase 8 Design Intelligence: pattern detector (8 named AI patterns), cascade impact
     analyzer (blast radius/SPOFs), portfolio analytics dashboard — aadc-p8-01..09'
+  - 'Phase 9 Unified Scorecard & Deploy Gate: 8-dimension scorecard, APPROVED/CONDITIONAL/BLOCKED
+    deploy gate with CI/CD YAML, findings inbox — aadc-p9-01..09'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2575,4 +2577,8 @@ projects:
   - key: p8
     title: Phase 8 — Design Intelligence & Analytics (pattern detector, impact analyzer,
       portfolio analytics dashboard)
+    priority: high
+  - key: p9
+    title: Phase 9 — Unified Scorecard, Deploy Gate & Findings Inbox (8-dimension health
+      score, CI/CD gate YAML, cross-analysis findings feed)
     priority: high

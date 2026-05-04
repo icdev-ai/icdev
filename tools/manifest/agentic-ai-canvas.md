@@ -133,6 +133,25 @@ Phase 8 — Portfolio Analytics Engine (cross-design intelligence).
 - `compute_analytics(designs, assessments, pattern_reports, ato_reports, red_team_reports, lint_reports, risk_items)` → analytics dict
 - Computes: 8-week score trend, pattern distribution, compliance drift (30d), risk density by domain, ATO readiness rate, red team risk distribution, lint score distribution.
 
+### `tools/agentic_ai_canvas/scorecard.py`
+Phase 9 — Unified Design Scorecard (8-dimension weighted health score).
+- `build_scorecard(design, assessment, ato_data, reg_data, red_team_data, lint_data, impact_data, risk_items)` → scorecard dict
+- Dimensions: Assessment (25%), ATO (20%), Regulatory (15%), Red Team Resilience (15%), Lint (10%), Structural Resilience (10%), Risk Posture (5%)
+- Health labels: HEALTHY (≥80) / AT_RISK (≥60) / DEGRADED (≥40) / CRITICAL (<40)
+
+### `tools/agentic_ai_canvas/deploy_gate.py`
+Phase 9 — Deployment Gate (CI/CD readiness verdict + downloadable YAML).
+- `run_deploy_gate(design, assessment, ato_data, reg_data, red_team_data, lint_data, impact_data, risk_items)` → gate dict
+- Verdicts: APPROVED / CONDITIONAL / BLOCKED
+- Hard blockers: CRITICAL unmitigated red team, ATO <40, Lint <40, Resilience CRITICAL, Assessment <40
+- `gate_yaml` field → downloadable YAML for GitLab CI / GitHub Actions pipeline integration
+
+### `tools/agentic_ai_canvas/findings_inbox.py`
+Phase 9 — Unified Findings Inbox (cross-analysis findings aggregator).
+- `aggregate_findings(designs, assessments, lint_reports, red_team_reports, ato_reports, regulatory_reports, risk_items, ...)` → {findings, summary, filters}
+- Sources: assessment findings, lint issues, red team unmitigated scenarios, ATO failures, regulatory gaps, open CRITICAL/HIGH risk items
+- Filterable by severity, source, design_id; sorted by severity descending.
+
 ### `tools/agentic_ai_canvas/ato_readiness.py`
 Phase 6 — ATO Readiness Checker (15 items across FedRAMP / OMB M-25-21 / DoD AI Ethics / CMMC L2).
 - `run_ato_checklist(nodes, design_meta)` → `{items, summary, by_framework}`
@@ -197,6 +216,9 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/patterns/<id>` | `agentic_ai_canvas/pattern_analysis.html` |
 | `GET /agentic-ai/impact/<id>` | `agentic_ai_canvas/impact_analysis.html` |
 | `GET /agentic-ai/analytics` | `agentic_ai_canvas/analytics.html` |
+| `GET /agentic-ai/scorecard/<id>` | `agentic_ai_canvas/scorecard.html` |
+| `GET /agentic-ai/deploy-gate/<id>` | `agentic_ai_canvas/deploy_gate.html` |
+| `GET /agentic-ai/findings` | `agentic_ai_canvas/findings.html` |
 
 **API routes:**
 | Method + Route | Purpose |
@@ -250,6 +272,10 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/api/designs/<id>/patterns` | Architectural pattern detection JSON |
 | `GET /agentic-ai/api/designs/<id>/impact` | Cascade impact analysis JSON |
 | `GET /agentic-ai/api/analytics` | Portfolio analytics JSON |
+| `GET /agentic-ai/api/designs/<id>/scorecard` | Unified 8-dimension scorecard JSON |
+| `GET /agentic-ai/api/designs/<id>/deploy-gate` | Deployment gate verdict JSON |
+| `GET /agentic-ai/api/designs/<id>/deploy-gate/download` | Gate check YAML download |
+| `GET /agentic-ai/api/findings` | Portfolio-wide findings feed JSON |
 
 ---
 
@@ -278,6 +304,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_regulatory_gaps` | Phase 6 — Regulatory gap analysis snapshots per design (migration 108) |
 | `aadc_pattern_reports` | Phase 8 — Architectural pattern detection snapshots per design (migration 110) |
 | `aadc_impact_reports` | Phase 8 — Cascade impact analysis snapshots per design (migration 110) |
+| `aadc_scorecard_snapshots` | Phase 9 — Unified design scorecard snapshots per design (migration 111) |
+| `aadc_deploy_gates` | Phase 9 — Deployment gate verdict snapshots per design (migration 111) |
 
 ---
 
