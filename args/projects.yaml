@@ -2527,6 +2527,8 @@ projects:
     analyzer (blast radius/SPOFs), portfolio analytics dashboard — aadc-p8-01..09'
   - 'Phase 9 Unified Scorecard & Deploy Gate: 8-dimension scorecard, APPROVED/CONDITIONAL/BLOCKED
     deploy gate with CI/CD YAML, findings inbox — aadc-p9-01..09'
+  - 'Phase 10 Design Review, Lifecycle & Monitoring: lifecycle state machine, multi-reviewer
+    workflow, portfolio score drift monitoring — aadc-p10-01..09'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2581,4 +2583,8 @@ projects:
   - key: p9
     title: Phase 9 — Unified Scorecard, Deploy Gate & Findings Inbox (8-dimension health
       score, CI/CD gate YAML, cross-analysis findings feed)
+    priority: high
+  - key: p10
+    title: Phase 10 — Design Review, Lifecycle & Monitoring (lifecycle state machine,
+      multi-reviewer workflow, portfolio score drift dashboard)
     priority: high
