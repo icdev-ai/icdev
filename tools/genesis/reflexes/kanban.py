@@ -1430,14 +1430,34 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
             )
             conn.commit()
 
+            # Chain-blocker escalation: if any tasks are blocked waiting for
+            # this one, escalate priority to critical so failure_triage picks
+            # it up first and its dependents can be unblocked sooner.
+            blocked_dep_rows = conn.execute(
+                "SELECT id FROM kanban_tasks "
+                "WHERE depends_on_task_id = ? "
+                "  AND status NOT IN ('done','decomposed')",
+                (task_id,),
+            ).fetchall()
+            blocked_dep_ids = [dict(r)["id"] for r in blocked_dep_rows]
+            if blocked_dep_ids:
+                conn.execute(
+                    "UPDATE kanban_tasks SET priority = 'critical', updated_at = ? "
+                    "WHERE id = ?",
+                    (now, task_id),
+                )
+                logger.warning(
+                    "Task %s failed with %d blocked dependent(s) %s — "
+                    "escalated priority to critical",
+                    task_id, len(blocked_dep_ids), blocked_dep_ids,
+                )
+            conn.commit()
+
             if new_count >= MAX_FAILURES_BEFORE_DECOMPOSITION:
                 logger.warning(
                     "Task %s failed %d times — flagging for decomposition",
                     task_id, new_count,
                 )
-                # Notify via Telegram so someone can decompose it.
-                # Skip for test tasks (id starts with 'test-') and when
-                # PYTEST_CURRENT_TEST env var is present, to avoid spam.
                 import os as _os
                 _is_test = (
                     task_id.startswith("test-") or
@@ -1447,12 +1467,18 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                 if not _is_test:
                     try:
                         from tools.notifications.adapters.telegram import send as tg_send
+                        chain_note = (
+                            f"\n\nWARNING: {len(blocked_dep_ids)} downstream task(s) are "
+                            f"blocked on this task: {blocked_dep_ids[:5]}"
+                            if blocked_dep_ids else ""
+                        )
                         tg_send(
                             f"DECOMPOSITION NEEDED: {task_id[:24]}",
                             f"Task failed {new_count} verification attempts. "
                             f"It is likely too big for one Claude CLI session. "
                             f"Please split it into smaller sub-tasks.\n"
-                            f"Latest reason: {reason_short[:200]}",
+                            f"Latest reason: {reason_short[:200]}"
+                            f"{chain_note}",
                             severity="warning",
                         )
                     except Exception:
