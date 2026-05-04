@@ -172,6 +172,14 @@ Phase 10 — Portfolio Monitoring Engine (score drift + alerts).
 - Per-design: current_score, baseline_score, drift, alert_level (CRITICAL/HIGH/MEDIUM/OK), last-10 history
 - Alert thresholds: CRITICAL ≥20pts drop, HIGH ≥10pts, MEDIUM ≥5pts
 
+### `tools/agentic_ai_canvas/solution_packs.py`
+Phase 5 — Solution Packs (7 pre-wired domain-specific agentic AI templates).
+- `build_packs()` → list of dicts ready for `aadc_templates` DB seeding; each includes graph_json, compliance_badges, autonomy_max, and risk register seeds
+- `recommend_pack(domain, goal, autonomy)` → pack name from quick-start routing matrix (domain × goal × autonomy → best-fit pack)
+- `SOLUTION_PACK_RISKS` — per-pack pre-seeded risk register items (PII, prompt injection, supply chain, etc.)
+- `QUICKSTART_ROUTES` — 30-entry routing matrix covering government, healthcare, technology, financial, and general domains
+- Packs: Customer Service Agent, Autonomous Coder, Knowledge Research Agent, Cybersecurity SOC Agent, Healthcare Admin Agent, Gov/Procurement Agent, Multi-Agent Research Lab
+
 ### `tools/agentic_ai_canvas/ato_readiness.py`
 Phase 6 — ATO Readiness Checker (15 items across FedRAMP / OMB M-25-21 / DoD AI Ethics / CMMC L2).
 - `run_ato_checklist(nodes, design_meta)` → `{items, summary, by_framework}`

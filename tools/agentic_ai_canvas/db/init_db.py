@@ -881,6 +881,36 @@ def _seed_snippets(conn) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Solution Pack seeding
+# ---------------------------------------------------------------------------
+
+def _seed_solution_packs(conn) -> None:
+    if conn.execute(
+        "SELECT COUNT(*) FROM aadc_templates WHERE category='solution-pack'"
+    ).fetchone()[0] > 0:
+        return
+
+    from tools.agentic_ai_canvas.solution_packs import SOLUTION_PACKS  # noqa: PLC0415
+    for p in SOLUTION_PACKS:
+        conn.execute(
+            "INSERT INTO aadc_templates "
+            "(id, name, category, description, graph_json, compliance_badges, autonomy_max, tags) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                f"sp-{_uid()}",
+                p["name"],
+                p["category"],
+                p["description"],
+                json.dumps(p["graph"]),
+                json.dumps(p["badges"]),
+                p["autonomy_max"],
+                p["tags"],
+            ),
+        )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
 
@@ -891,6 +921,7 @@ def init_db() -> None:
         conn.executescript(SCHEMA)
         _seed_templates(conn)
         _seed_snippets(conn)
+        _seed_solution_packs(conn)
     finally:
         conn.close()
 

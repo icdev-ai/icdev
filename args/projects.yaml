@@ -1,4 +1,32 @@
 projects:
+- key: aadc-sp
+  name: AADC Solution Packs — Industry-Ready Agentic AI Templates
+  description: >
+    7 pre-wired agentic AI solution packs for the Agentic AI Design Canvas.
+    Each pack ships with pre-placed nodes, wired edges, seeded risk register,
+    compliance baseline (NIST AI RMF, OWASP LLM, OMB), MITRE ATLAS scenarios,
+    and a quick-start wizard. Industries covered: Customer Service, Autonomous Coding,
+    Knowledge Research, Cybersecurity SOC, Healthcare Admin, Gov/Procurement, Multi-Agent Research.
+  task_prefix: aadc-sp-
+  default_open: true
+  briefs:
+    - 'sp1: solution_packs.py module (7 packs + risk seeds + ATLAS + quickstart routing)'
+    - 'sp2: DB seeding in init_db.py + blueprint.py routes + API endpoints'
+    - 'sp3: solution_packs.html gallery + quick_start.html wizard + templates.html update'
+    - 'sp4: icdev mirror + projects.yaml registration + V&V'
+  epics:
+    - key: sp1
+      title: Solution Pack Definitions (module + risk seeds + ATLAS)
+      priority: critical
+    - key: sp2
+      title: DB Seeding + Blueprint Routes + Apply-with-Risks API
+      priority: critical
+    - key: sp3
+      title: HTML Gallery + Quick-Start Wizard + Templates Banner
+      priority: high
+    - key: sp4
+      title: icdev Mirror + Registration + V&V Gate
+      priority: high
 - key: add_a_cmmi
   name: Add A Cmmi Project
   description: Auto-registered project for tasks with prefix 'add-a-cmmi-'. Update

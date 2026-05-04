@@ -32,6 +32,12 @@ Routes:
   GET  /agentic-ai/canvas/<id>/versions        list version history
   POST /agentic-ai/canvas/<id>/versions        save explicit version snapshot
   GET  /agentic-ai/canvas/<id>/versions/diff   diff two versions (?v1=N&v2=M)
+
+  GET  /agentic-ai/solutions                   solution packs gallery
+  GET  /agentic-ai/quick-start                 quick-start wizard (3-question router)
+  POST /agentic-ai/api/solution-packs/<pid>/apply/<did>  apply pack + seed risks
+  GET  /agentic-ai/api/solution-packs          list solution packs (JSON)
+  GET  /agentic-ai/api/quick-start/recommend   recommend pack from answers (?domain=&goal=&autonomy=)
 """
 
 from __future__ import annotations
@@ -46,6 +52,10 @@ from flask import Blueprint, Response, jsonify, render_template, request
 from tools.agentic_ai_canvas.constants import AADC_OBJECTS, FRAMEWORK_LABELS, NODE_DESCRIPTIONS
 from tools.agentic_ai_canvas.agentic_engine import assess_design
 from tools.agentic_ai_canvas import bus_subscriber, workflow
+from tools.agentic_ai_canvas.solution_packs import (
+    SOLUTION_PACK_RISKS, SOLUTION_PACK_ATLAS,
+    recommend_pack,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -2320,3 +2330,172 @@ def get_monitoring_api():
     from tools.agentic_ai_canvas.monitoring_engine import compute_monitoring
     data = compute_monitoring(designs, assessments)
     return jsonify(data)
+
+
+# ---------------------------------------------------------------------------
+# Solution Packs — gallery, quick-start wizard, apply API
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/solutions")
+def solution_packs_gallery():
+    _ensure_init()
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM aadc_templates WHERE category='solution-pack' ORDER BY name"
+        ).fetchall()
+        packs = []
+        for r in rows:
+            p = dict(r)
+            p["badges"] = json.loads(p.get("compliance_badges", "{}"))
+            p["tag_list"] = json.loads(p.get("tags", "[]"))
+            g = json.loads(p.get("graph_json", '{"nodes":[],"edges":[]}'))
+            p["node_count"] = len(g.get("nodes", []))
+            p["edge_count"] = len(g.get("edges", []))
+            p["risk_count"] = len(SOLUTION_PACK_RISKS.get(p["name"], []))
+            p["atlas_count"] = len(SOLUTION_PACK_ATLAS.get(p["name"], []))
+        packs = [dict(r) for r in rows]
+        # Re-enrich after collecting raw rows
+        for p in packs:
+            p["badges"] = json.loads(p.get("compliance_badges", "{}"))
+            p["tag_list"] = json.loads(p.get("tags", "[]"))
+            g = json.loads(p.get("graph_json", '{"nodes":[],"edges":[]}'))
+            p["node_count"] = len(g.get("nodes", []))
+            p["edge_count"] = len(g.get("edges", []))
+            p["risk_count"] = len(SOLUTION_PACK_RISKS.get(p["name"], []))
+            p["atlas_count"] = len(SOLUTION_PACK_ATLAS.get(p["name"], []))
+    finally:
+        conn.close()
+    return render_template("agentic_ai_canvas/solution_packs.html", packs=packs)
+
+
+@aadc_bp.route("/quick-start")
+def quick_start_wizard():
+    return render_template("agentic_ai_canvas/quick_start.html")
+
+
+@aadc_bp.route("/api/solution-packs", methods=["GET"])
+def list_solution_packs():
+    _ensure_init()
+    conn = _conn()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM aadc_templates WHERE category='solution-pack' ORDER BY name"
+        ).fetchall()
+        packs = []
+        for r in rows:
+            p = dict(r)
+            p["badges"] = json.loads(p.get("compliance_badges", "{}"))
+            p["tag_list"] = json.loads(p.get("tags", "[]"))
+            g = json.loads(p.get("graph_json", '{"nodes":[],"edges":[]}'))
+            p["node_count"] = len(g.get("nodes", []))
+            p["risk_seeds"] = SOLUTION_PACK_RISKS.get(p["name"], [])
+            p["atlas_scenarios"] = SOLUTION_PACK_ATLAS.get(p["name"], [])
+            packs.append(p)
+        return jsonify({"packs": packs, "total": len(packs)})
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/solution-packs/<pack_id>/apply/<design_id>", methods=["POST"])
+def apply_solution_pack(pack_id: str, design_id: str):
+    """Apply a solution pack template + seed its risk register into the design."""
+    _ensure_init()
+    conn = _conn()
+    try:
+        tmpl = conn.execute(
+            "SELECT * FROM aadc_templates WHERE id=? AND category='solution-pack'",
+            (pack_id,),
+        ).fetchone()
+        if not tmpl:
+            return jsonify({"error": "solution pack not found"}), 404
+        t = dict(tmpl)
+
+        existing = conn.execute(
+            "SELECT id FROM aadc_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        now = _utcnow()
+        if existing:
+            conn.execute(
+                "UPDATE aadc_designs SET graph_json=?, template_id=?, updated_at=? WHERE id=?",
+                (t["graph_json"], pack_id, now, design_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO aadc_designs "
+                "(id, name, description, graph_json, template_id, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (design_id, t["name"],
+                 f"Created from Solution Pack: {t['name']}",
+                 t["graph_json"], pack_id, now, now),
+            )
+
+        # Seed risk register entries (skip if already seeded for this design)
+        existing_risks = conn.execute(
+            "SELECT COUNT(*) FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        ).fetchone()[0]
+        risks_seeded = 0
+        if existing_risks == 0:
+            for seed in SOLUTION_PACK_RISKS.get(t["name"], []):
+                conn.execute(
+                    "INSERT INTO aadc_risk_items "
+                    "(id, design_id, title, description, risk_category, severity, "
+                    "likelihood, impact, status, mitigation, created_at) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        f"risk-{_uid()}",
+                        design_id,
+                        seed["title"],
+                        seed["description"],
+                        seed["risk_category"],
+                        seed["severity"],
+                        seed.get("likelihood", "MEDIUM"),
+                        seed.get("impact", "MEDIUM"),
+                        seed.get("status", "open"),
+                        seed.get("mitigation", ""),
+                        now,
+                    ),
+                )
+                risks_seeded += 1
+
+        conn.commit()
+        return jsonify({
+            "status": "applied",
+            "design_id": design_id,
+            "pack_name": t["name"],
+            "graph_json": t["graph_json"],
+            "risks_seeded": risks_seeded,
+            "atlas_scenarios": SOLUTION_PACK_ATLAS.get(t["name"], []),
+        })
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/quick-start/recommend", methods=["GET"])
+def quickstart_recommend():
+    domain   = (request.args.get("domain",   "") or "").lower().strip()
+    goal     = (request.args.get("goal",     "") or "").lower().strip()
+    autonomy = (request.args.get("autonomy", "") or "").lower().strip()
+    pack_name = recommend_pack(domain, goal, autonomy)
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT id, name, description, compliance_badges, autonomy_max, tags "
+            "FROM aadc_templates WHERE name=? AND category='solution-pack'",
+            (pack_name,),
+        ).fetchone()
+        if not row:
+            return jsonify({"pack_name": pack_name, "pack_id": None})
+        p = dict(row)
+        p["badges"] = json.loads(p.get("compliance_badges", "{}"))
+        p["tag_list"] = json.loads(p.get("tags", "[]"))
+        return jsonify({
+            "pack_name": pack_name,
+            "pack_id": p["id"],
+            "description": p["description"],
+            "autonomy_max": p["autonomy_max"],
+            "badges": p["badges"],
+        })
+    finally:
+        conn.close()
