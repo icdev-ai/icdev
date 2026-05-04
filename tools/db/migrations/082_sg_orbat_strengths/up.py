@@ -1,5 +1,8 @@
 """
-Migration 082 — ORBAT strength columns.
+Migration 082 — ORBAT strength columns + sg_orbat_strengths table.
+
+Creates:
+  sg_orbat_strengths  -- per-unit ORBAT strength snapshot (unit_name, strength, equipment)
 
 Adds (if not present):
   sg_wargames.conflict_id      TEXT  -- links a wargame to a conflict scenario
@@ -8,6 +11,22 @@ Adds (if not present):
   sg_orbat_units.strength_value INTEGER DEFAULT 0  -- numeric strength for aggregation
 """
 from tools.db.storage import get_connection
+
+_CREATE_SG_ORBAT_STRENGTHS = """
+CREATE TABLE IF NOT EXISTS sg_orbat_strengths (
+    id           TEXT PRIMARY KEY,
+    unit_name    TEXT NOT NULL,
+    unit_id      TEXT,
+    conflict_id  TEXT,
+    side         TEXT CHECK (side IN ('blue', 'red', 'neutral', NULL)),
+    strength     INTEGER DEFAULT 0,
+    equipment    TEXT,
+    status       TEXT DEFAULT 'active',
+    updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (unit_id) REFERENCES sg_orbat_units(id) ON DELETE SET NULL
+)
+"""
 
 
 def _column_exists(conn, table: str, column: str) -> bool:
@@ -18,6 +37,8 @@ def _column_exists(conn, table: str, column: str) -> bool:
 def up(conn=None) -> None:
     conn = get_connection()
     try:
+        conn.execute(_CREATE_SG_ORBAT_STRENGTHS)
+
         alterations = [
             ("sg_wargames",   "conflict_id",    "TEXT"),
             ("sg_orbat_units", "conflict_id",   "TEXT"),
@@ -37,10 +58,20 @@ def up(conn=None) -> None:
             except Exception:
                 pass
 
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sg_orbat_strengths_unit "
+            "ON sg_orbat_strengths(unit_id)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sg_orbat_strengths_conflict "
+            "ON sg_orbat_strengths(conflict_id)"
+        )
+
         conn.commit()
         print(
-            "Migration 082 up: conflict_id/side/strength_value added to "
-            "sg_orbat_units; conflict_id added to sg_wargames."
+            "Migration 082 up: sg_orbat_strengths table created; "
+            "conflict_id/side/strength_value added to sg_orbat_units; "
+            "conflict_id added to sg_wargames."
         )
     finally:
         conn.close()
