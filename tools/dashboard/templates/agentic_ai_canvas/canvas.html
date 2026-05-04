@@ -173,6 +173,10 @@
       {% if design.id %}<a href="/agentic-ai/red-team/{{ design.id }}"><span>⚔</span> Red Team</a>{% endif %}
       <button onclick="runLint()"><span>💡</span> Lint Design</button>
       {% if design.id %}<a href="/agentic-ai/api/designs/{{ design.id }}/accred-package"><span>📦</span> Accred Package</a>{% endif %}
+      <hr class="aadc-menu-sep">
+      {% if design.id %}<a href="/agentic-ai/patterns/{{ design.id }}"><span>🔍</span> Pattern Analysis</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/impact/{{ design.id }}"><span>💥</span> Impact Analysis</a>{% endif %}
+      <a href="/agentic-ai/analytics"><span>📈</span> Portfolio Analytics</a>
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
       <hr class="aadc-menu-sep">
       {% if design.id %}
