@@ -657,6 +657,7 @@
 | Seed Fde Epic E | tools\scripts\seed_fde_epic_e.py | Auto-registered: scripts/seed_fde_epic_e.py | --json | JSON |
 | Cisa Kev Importer | tools\strategos\cisa_kev_importer.py | Auto-registered: strategos/cisa_kev_importer.py | --json | JSON |
 | Wargame Exporter | tools\strategos\wargame_exporter.py | Auto-registered: strategos/wargame_exporter.py | --json | JSON |
+| Engine | tools\ttx\engine.py | TTX Engine — facade orchestrating all TTX subsystems: session lifecycle, inject dispatch, AI scoring, leaderboard, AAR. Entry point for all exercise operations via `TTXEngine()` instance methods. | TTXEngine() instance methods | dict / list[dict] |
 | Aar Generator | tools\ttx\aar_generator.py | Auto-registered: ttx/aar_generator.py | --json | JSON |
 | Ai Scorer | tools\ttx\ai_scorer.py | Auto-registered: ttx/ai_scorer.py | --json | JSON |
 | Inject Dispatcher | tools\ttx\inject_dispatcher.py | Auto-registered: ttx/inject_dispatcher.py | --json | JSON |

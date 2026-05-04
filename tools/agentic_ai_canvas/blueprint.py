@@ -353,6 +353,21 @@ def save_design(design_id: str):
         bool(result["rights_impacting"]), result["autonomy_max"]
     )
 
+    # Phase 2 — emit activity event
+    try:
+        from tools.agentic_ai_canvas.events import emit_event
+        emit_event(design_id, "save", metadata={"version": ver})
+    except Exception:
+        pass
+
+    # Phase 2 — sync agent/tool nodes to MCP registry
+    try:
+        from tools.agentic_ai_canvas.mcp_sync import sync_design_to_mcp
+        mcp_result = sync_design_to_mcp(design_id)
+        result["mcp_synced"] = mcp_result.get("synced", 0)
+    except Exception:
+        result["mcp_synced"] = 0
+
     # Create HITL workflow if needed
     wf_instance_id = workflow.maybe_create_hitl_instance(
         design_id, bool(result["safety_impacting"]), bool(result["rights_impacting"])
@@ -1128,3 +1143,351 @@ def list_simulations(design_id: str):
     ).fetchall()
     conn.close()
     return jsonify([dict(r) for r in rows])
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Risk Register
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/risks/<design_id>")
+def risks_page(design_id: str):
+    conn = _conn()
+    design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    risks = [dict(r) for r in conn.execute(
+        "SELECT * FROM aadc_risk_items WHERE design_id=? ORDER BY created_at DESC", (design_id,)
+    ).fetchall()]
+    conn.close()
+    if not design:
+        from flask import abort
+        abort(404)
+    from tools.agentic_ai_canvas.risk_register import summarize_register, RISK_CATEGORIES, SEVERITY_LEVELS, RISK_STATUSES
+    summary = summarize_register(risks)
+    return render_template(
+        "agentic_ai_canvas/risks.html",
+        design=design, risks=risks, summary=summary,
+        categories=RISK_CATEGORIES, severity_levels=SEVERITY_LEVELS, risk_statuses=RISK_STATUSES,
+    )
+
+
+@aadc_bp.route("/api/designs/<design_id>/risks", methods=["GET"])
+def list_risks(design_id: str):
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT * FROM aadc_risk_items WHERE design_id=? ORDER BY created_at DESC", (design_id,)
+    ).fetchall()
+    conn.close()
+    items = [dict(r) for r in rows]
+    from tools.agentic_ai_canvas.risk_register import summarize_register
+    return jsonify({"risks": items, "summary": summarize_register(items)})
+
+
+@aadc_bp.route("/api/designs/<design_id>/risks", methods=["POST"])
+def create_risk(design_id: str):
+    data = request.get_json(force=True, silent=True) or {}
+    rid = _uid()
+    now = _utcnow()
+    conn = _conn()
+    conn.execute(
+        """INSERT INTO aadc_risk_items
+           (id, design_id, title, description, risk_category, severity, likelihood,
+            impact, status, owner, mitigation, finding_id, node_id, created_at, updated_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (rid, design_id,
+         data.get("title", "New Risk"),
+         data.get("description", ""),
+         data.get("risk_category", "operational"),
+         data.get("severity", "MEDIUM"),
+         data.get("likelihood", "MEDIUM"),
+         data.get("impact", "MEDIUM"),
+         data.get("status", "open"),
+         data.get("owner", ""),
+         data.get("mitigation", ""),
+         data.get("finding_id", ""),
+         data.get("node_id", ""),
+         now, now),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"id": rid, "ok": True})
+
+
+@aadc_bp.route("/api/designs/<design_id>/risks/<risk_id>", methods=["PUT"])
+def update_risk(design_id: str, risk_id: str):
+    data = request.get_json(force=True, silent=True) or {}
+    fields = ["title", "description", "risk_category", "severity", "likelihood",
+              "impact", "status", "owner", "mitigation"]
+    updates = {f: data[f] for f in fields if f in data}
+    if not updates:
+        return jsonify({"ok": True})
+    set_clause = ", ".join(f"{f}=?" for f in updates)
+    conn = _conn()
+    conn.execute(
+        f"UPDATE aadc_risk_items SET {set_clause}, updated_at=? WHERE id=? AND design_id=?",
+        list(updates.values()) + [_utcnow(), risk_id, design_id],
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@aadc_bp.route("/api/designs/<design_id>/risks/<risk_id>", methods=["DELETE"])
+def delete_risk(design_id: str, risk_id: str):
+    conn = _conn()
+    conn.execute("DELETE FROM aadc_risk_items WHERE id=? AND design_id=?", (risk_id, design_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
+@aadc_bp.route("/api/designs/<design_id>/risks/import-findings", methods=["POST"])
+def import_findings_as_risks(design_id: str):
+    """Convert latest assessment findings into risk items (deduplicated by finding_id)."""
+    import json as _json
+    from tools.agentic_ai_canvas.risk_register import finding_to_risk
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT findings_json FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (design_id,)).fetchone())
+    if not row:
+        conn.close()
+        return jsonify({"imported": 0, "message": "No assessment found"})
+
+    findings = _json.loads(row.get("findings_json") or "[]")
+    existing_fids = {
+        r["finding_id"] for r in conn.execute(
+            "SELECT finding_id FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        ).fetchall()
+    }
+
+    imported = 0
+    now = _utcnow()
+    for f in findings:
+        fid = f.get("id", "")
+        if fid and fid in existing_fids:
+            continue
+        risk = finding_to_risk(f)
+        rid = _uid()
+        conn.execute(
+            """INSERT INTO aadc_risk_items
+               (id, design_id, title, description, risk_category, severity, likelihood,
+                impact, status, owner, mitigation, finding_id, node_id, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (rid, design_id, risk["title"], risk["description"], risk["risk_category"],
+             risk["severity"], risk["likelihood"], risk["impact"], risk["status"],
+             risk["owner"], risk["mitigation"], risk["finding_id"], risk["node_id"], now, now),
+        )
+        imported += 1
+
+    conn.commit()
+    conn.close()
+    return jsonify({"imported": imported})
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Threat Model
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/threat-model", methods=["POST"])
+def generate_threat_model(design_id: str):
+    import json as _json
+    from tools.agentic_ai_canvas.threat_model import generate_threat_model as _gen
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    result = _gen(graph.get("nodes", []), graph.get("edges", []))
+
+    # Persist snapshot
+    tm_id = _uid()
+    conn.execute(
+        "INSERT INTO aadc_threat_models (id, design_id, stride_json, atlas_threats, threat_count, high_count) VALUES (?,?,?,?,?,?)",
+        (tm_id, design_id, _json.dumps(result["stride"]), _json.dumps(result["atlas"]),
+         result["threat_count"], result["high_count"]),
+    )
+    conn.commit()
+    conn.close()
+    result["id"] = tm_id
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/threat-model", methods=["GET"])
+def get_latest_threat_model(design_id: str):
+    import json as _json
+
+    conn = _conn()
+    row = _row(conn.execute(
+        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone())
+    conn.close()
+    if not row:
+        return jsonify({"stride": [], "atlas": [], "threat_count": 0, "high_count": 0})
+    return jsonify({
+        **row,
+        "stride": _json.loads(row.get("stride_json") or "[]"),
+        "atlas": _json.loads(row.get("atlas_threats") or "[]"),
+    })
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — Portfolio Dashboard
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/portfolio", methods=["GET"])
+def get_portfolio():
+    from tools.agentic_ai_canvas.portfolio import aggregate_portfolio
+
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT * FROM aadc_designs ORDER BY updated_at DESC").fetchall()]
+    assessments = []
+    for d in designs:
+        row = _row(conn.execute(
+            "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+            (d["id"],),
+        ).fetchone())
+        if row:
+            assessments.append({**row, "design_id": d["id"]})
+    risks = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
+    conn.close()
+    return jsonify(aggregate_portfolio(designs, assessments, risks))
+
+
+# ---------------------------------------------------------------------------
+# Phase 5 — OSCAL Export
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/oscal", methods=["GET"])
+def export_oscal(design_id: str):
+    import json as _json
+    from tools.agentic_ai_canvas.oscal_export import export_oscal_component
+
+    conn = _conn()
+    design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    if not design:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    assessment = _row(conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone())
+    conn.close()
+
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    result = export_oscal_component(dict(design), graph, dict(assessment) if assessment else None)
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/oscal/control-coverage", methods=["GET"])
+def get_oscal_coverage(design_id: str):
+    import json as _json
+    from tools.agentic_ai_canvas.oscal_export import get_control_coverage_summary
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    conn.close()
+    if not row:
+        return jsonify({"error": "design not found"}), 404
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    return jsonify(get_control_coverage_summary(graph.get("nodes", [])))
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — Ecosystem Wiring Routes
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/canvas/<design_id>/events", methods=["POST"])
+def canvas_emit_event(design_id: str):
+    """Client-side event hook (export-JSON, export-SVG, export-drawio, export-CSV)."""
+    data = request.get_json(force=True, silent=True) or {}
+    event_type = data.get("event_type", "")
+    metadata = data.get("metadata", {})
+
+    valid_types = {
+        "save", "export_json", "export_svg", "export_drawio", "export_pdf",
+        "export_csv", "assess", "version_save", "node_add", "node_delete",
+        "edge_add", "edge_delete", "simulation_run",
+    }
+    if event_type not in valid_types:
+        return jsonify({"error": f"invalid event_type: {event_type}"}), 400
+
+    try:
+        from tools.agentic_ai_canvas.events import emit_event
+        ok = emit_event(design_id, event_type, metadata=metadata)
+    except Exception as exc:
+        return jsonify({"status": "skipped", "reason": str(exc)})
+    return jsonify({"status": "ok" if ok else "skipped"})
+
+
+@aadc_bp.route("/canvas/<design_id>/sync-mcp", methods=["POST"])
+def canvas_sync_mcp(design_id: str):
+    """Manual trigger: sync AADC agent/tool nodes to MCP tool registry."""
+    try:
+        from tools.agentic_ai_canvas.mcp_sync import sync_design_to_mcp
+        result = sync_design_to_mcp(design_id)
+    except Exception as exc:
+        return jsonify({"synced": 0, "error": str(exc)})
+    return jsonify(result)
+
+
+@aadc_bp.route("/canvas/<design_id>/ft-link", methods=["GET"])
+def canvas_ft_link(design_id: str):
+    """Export latest assessment as fine-tuning signal dataset row."""
+    try:
+        from tools.agentic_ai_canvas.ft_linkage import export_assessment_as_ft_signal
+        result = export_assessment_as_ft_signal(design_id)
+    except Exception as exc:
+        return jsonify({"datasets_created": 0, "error": str(exc)})
+    return jsonify(result)
+
+
+@aadc_bp.route("/canvas/<design_id>/kanban-status", methods=["GET"])
+def canvas_kanban_status(design_id: str):
+    """Return {node_id: {task_id, status, title}} for nodes with kanban_task_id."""
+    import json as _json
+
+    conn = _conn()
+    row = _row(conn.execute(
+        "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+    ).fetchone())
+    conn.close()
+
+    if not row:
+        return jsonify({"error": "design not found"}), 404
+
+    try:
+        graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    except (ValueError, TypeError):
+        graph = {"nodes": [], "edges": []}
+
+    # Collect nodes that have metadata.kanban_task_id
+    linked: dict[str, str] = {}
+    for node in graph.get("nodes", []):
+        meta = node.get("metadata") or {}
+        task_id = meta.get("kanban_task_id") or node.get("kanban_task_id")
+        if task_id:
+            linked[node["id"]] = task_id
+
+    if not linked:
+        return jsonify({})
+
+    # Look up kanban task statuses
+    try:
+        from tools.db.storage import get_connection as _main_conn
+        mconn = _main_conn()
+        result = {}
+        for node_id, task_id in linked.items():
+            t = mconn.execute(
+                "SELECT id, title, status FROM kanban_tasks WHERE id=? LIMIT 1",
+                (task_id,),
+            ).fetchone()
+            if t:
+                result[node_id] = {"task_id": t[0], "title": t[1], "status": t[2]}
+            else:
+                result[node_id] = {"task_id": task_id, "title": "", "status": "unknown"}
+        mconn.close()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)})

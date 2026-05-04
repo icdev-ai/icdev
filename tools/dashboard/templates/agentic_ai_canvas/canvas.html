@@ -162,7 +162,15 @@
       <hr class="aadc-menu-sep">
       <button onclick="showCoordMatrix()"><span>⊡</span> Coord. Matrix</button>
       <button onclick="showProvenance()"><span>🔗</span> Model Provenance</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="showThreatModel()"><span>🗡</span> Threat Model</button>
+      <button onclick="doOscalExport()"><span>📋</span> OSCAL Export</button>
+      {% if design.id %}<a href="/agentic-ai/risks/{{ design.id }}"><span>⚠</span> Risk Register</a>{% endif %}
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}
+      <button onclick="doSendToFineTuning()"><span>🎓</span> Send to Fine-Tuning</button>
+      {% endif %}
     </div>
   </div>
 
@@ -381,6 +389,18 @@
             style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;">
         </div>
 
+        <!-- Phase 2: Kanban task linkage -->
+        <div id="prop-kanban-wrap" style="border-top:1px solid #1e3a6e;padding-top:10px;margin-bottom:10px;">
+          <div style="color:#facc15;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">LINKED TASK</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <input id="prop-kanban-task-id" placeholder="kanban_task_id (optional)"
+              oninput="saveKanbanTaskId(this.value)"
+              style="flex:1;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;">
+            <span id="prop-kanban-badge" style="display:none;font-size:12px;cursor:pointer;" onclick="openLinkedTask()" title="Open in Kanban"></span>
+          </div>
+          <div id="prop-kanban-status-label" style="color:#7a8cb0;font-size:10px;"></div>
+        </div>
+
         <button onclick="deleteSelectedNode()"
           style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
       </div>
@@ -524,6 +544,26 @@
     </div>
     <div id="provenance-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
       <div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Threat Model Modal ── -->
+<div id="threat-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:780px;max-height:88vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">🗡 STRIDE + ATLAS Threat Model</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="generateThreatModel()" id="btn-gen-tm"
+          style="background:#4f46e5;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px;">↻ Generate</button>
+        <button onclick="document.getElementById('threat-modal').style.display='none'"
+          style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>
+    <div id="threat-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Click Generate to run threat model analysis.</div>
     </div>
   </div>
 </div>
@@ -1059,6 +1099,18 @@ function selectNode(node) {
 
   // Phase 3: model provenance panel — visible only for model nodes
   _syncProvenancePanel(node);
+
+  // Phase 2: kanban task linkage
+  const meta = node.metadata || {};
+  const linkedTaskId = meta.kanban_task_id || '';
+  document.getElementById('prop-kanban-task-id').value = linkedTaskId;
+  const kBadge = document.getElementById('prop-kanban-badge');
+  const kLabel = document.getElementById('prop-kanban-status-label');
+  kBadge.style.display = 'none';
+  kLabel.textContent = '';
+  if (linkedTaskId && DESIGN_ID) {
+    refreshKanbanBadgeForNode(node.id, linkedTaskId);
+  }
 
   render();
 }
@@ -2028,6 +2080,245 @@ function clearSimulation() {
   document.getElementById('sim-results').innerHTML = '';
 }
 
+// ────────────────────────────────────────────────
+// PHASE 2 — Kanban Badge Back-sync
+// ────────────────────────────────────────────────
+const _KANBAN_BADGE = {done:'✓',in_progress:'⟳',scheduled:'⊡',failed:'⚠',suggested:'💡',unknown:'?'};
+const _KANBAN_COLOR = {done:'#4ade80',in_progress:'#60a5fa',scheduled:'#94a3b8',failed:'#f87171',suggested:'#fbbf24',unknown:'#94a3b8'};
+
+function loadKanbanBadges() {
+  if (!DESIGN_ID) return;
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/kanban-status')
+    .then(r => r.json())
+    .then(statusMap => {
+      Object.entries(statusMap).forEach(([nodeId, info]) => {
+        const el = document.querySelector('[data-id="' + nodeId + '"]');
+        if (!el) return;
+        let badge = el.querySelector('.kanban-task-badge');
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.className = 'kanban-task-badge';
+          badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;cursor:pointer;z-index:10;';
+          badge.onclick = e => { e.stopPropagation(); window.open('/kanban','_blank'); };
+          el.style.position = 'relative';
+          el.appendChild(badge);
+        }
+        const st = info.status || 'unknown';
+        badge.textContent = (_KANBAN_BADGE[st] || '?') + ' ' + (info.task_id || '').slice(-6);
+        badge.style.background = _KANBAN_COLOR[st] || '#94a3b8';
+        badge.style.color = st === 'done' ? '#052e16' : '#fff';
+        badge.title = (info.title || info.task_id || '') + ' [' + st + ']';
+      });
+    })
+    .catch(() => {});
+}
+
+function saveKanbanTaskId(val) {
+  if (!selectedNode) return;
+  if (!selectedNode.metadata) selectedNode.metadata = {};
+  selectedNode.metadata.kanban_task_id = val.trim();
+  render();
+  if (val.trim()) refreshKanbanBadgeForNode(selectedNode.id, val.trim());
+}
+
+function refreshKanbanBadgeForNode(nodeId, taskId) {
+  const badge = document.getElementById('prop-kanban-badge');
+  const label = document.getElementById('prop-kanban-status-label');
+  if (!taskId) { badge.style.display='none'; label.textContent=''; return; }
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/kanban-status')
+    .then(r => r.json())
+    .then(map => {
+      const info = map[nodeId];
+      if (info) {
+        const st = info.status || 'unknown';
+        badge.textContent = _KANBAN_BADGE[st] || '?';
+        badge.style.color = _KANBAN_COLOR[st] || '#94a3b8';
+        badge.style.display = 'inline';
+        label.textContent = info.title || '';
+      }
+    })
+    .catch(() => {});
+}
+
+function openLinkedTask() {
+  window.open('/kanban', '_blank');
+}
+
+// ────────────────────────────────────────────────
+// PHASE 2 — Send to Fine-Tuning
+// ────────────────────────────────────────────────
+function doSendToFineTuning() {
+  document.getElementById('aadc-menu').style.display = 'none';
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  setStatus('Sending to Fine-Tuning…');
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/ft-link')
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setStatus('Fine-Tuning error: ' + d.error); return; }
+      const msg = d.datasets_created ? 'Dataset created (ID: ' + d.dataset_id + ')' : 'Dataset updated (ID: ' + d.dataset_id + ')';
+      setStatus('Fine-Tuning: ' + msg + ' · quality=' + (d.quality_signal||0).toFixed(2));
+    })
+    .catch(err => setStatus('Fine-Tuning error: ' + err));
+}
+
+// ────────────────────────────────────────────────
+// PHASE 2 — Event emission helper for exports
+// ────────────────────────────────────────────────
+function _emitExportEvent(eventType) {
+  if (!DESIGN_ID) return;
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/events', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({event_type: eventType, metadata: {ts: Date.now()}})
+  }).catch(() => {});
+}
+
+// Patch export functions to emit events
+const _origExportDrawio = doExportDrawio;
+doExportDrawio = function() { _emitExportEvent('export_drawio'); _origExportDrawio(); };
+const _origExportJSON = doExportJSON;
+doExportJSON = function() { _emitExportEvent('export_json'); _origExportJSON(); };
+const _origExportSVG = doExportSVG;
+doExportSVG = function() { _emitExportEvent('export_svg'); _origExportSVG(); };
+const _origExportCSV = doExportCSV;
+doExportCSV = function() { _emitExportEvent('export_csv'); _origExportCSV(); };
+
+// Load kanban badges after page ready
+if (DESIGN_ID) {
+  loadKanbanBadges();
+}
+
+// ────────────────────────────────────────────────
+// PHASE 5 — Threat Model
+// ────────────────────────────────────────────────
+function showThreatModel() {
+  toggleMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  document.getElementById('threat-modal').style.display = 'flex';
+  // Try loading existing threat model
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/threat-model')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.stride) renderThreatModal(d); })
+    .catch(() => {});
+}
+
+function generateThreatModel() {
+  const btn = document.getElementById('btn-gen-tm');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analyzing…'; }
+  const body = document.getElementById('threat-modal-body');
+  body.innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:24px;">Running STRIDE + ATLAS analysis…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/threat-model', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Generate'; }
+      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + d.error + '</div>'; return; }
+      renderThreatModal(d);
+    })
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Generate'; }
+      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>';
+    });
+}
+
+function renderThreatModal(d) {
+  const body = document.getElementById('threat-modal-body');
+  const stride = d.stride || [];
+  const atlas  = d.atlas_threats || [];
+  const catColor = {
+    Spoofing:'#f87171',Tampering:'#fb923c',Repudiation:'#fbbf24',
+    'Information Disclosure':'#60a5fa',DoS:'#a78bfa','Elevation of Privilege':'#f472b6'
+  };
+  const sevBg = {HIGH:'#450a0a',MEDIUM:'#422006',LOW:'#0f2721',CRITICAL:'#3b0764'};
+  const sevFg = {HIGH:'#f87171',MEDIUM:'#fbbf24',LOW:'#34d399',CRITICAL:'#c084fc'};
+
+  // Summary bar
+  let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#eaeaea;">${d.threat_count || 0}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Threats</div>
+    </div>
+    <div style="background:#16213e;border:1px solid ${(d.high_count||0)>0?'#ef4444':'#1e3a6e'};border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:${(d.high_count||0)>0?'#f87171':'#4ade80'};">${d.high_count || 0}</div>
+      <div style="color:#7a8cb0;font-size:10px;">High/Critical</div>
+    </div>
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#60a5fa;">${atlas.length}</div>
+      <div style="color:#7a8cb0;font-size:10px;">ATLAS TTPs</div>
+    </div>
+  </div>`;
+
+  // STRIDE table
+  if (stride.length) {
+    html += '<div style="color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:6px;">STRIDE Findings</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const t of stride) {
+      const cc = catColor[t.category] || '#94a3b8';
+      const bg = sevBg[t.severity] || '#1e293b';
+      const fg = sevFg[t.severity] || '#94a3b8';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:8px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="color:${cc};font-size:10px;font-weight:600;">${t.category}</span>
+          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${t.severity}</span>
+        </div>
+        <div style="color:#eaeaea;font-size:11px;font-weight:500;">${t.id} · ${t.title}</div>
+        <div style="color:#64748b;font-size:10px;margin-top:2px;">${t.description}</div>
+        ${t.affected_nodes && t.affected_nodes.length ? '<div style="color:#475569;font-size:10px;margin-top:3px;">Nodes: ' + t.affected_nodes.slice(0,3).map(n=>n.label||n.node_id).join(', ') + (t.affected_nodes.length>3?'…':'') + '</div>' : ''}
+        <div style="color:#38bdf8;font-size:10px;margin-top:3px;">Mitigation: ${t.mitigation}</div>
+      </div>`;
+    }
+    html += '</div>';
+  } else {
+    html += '<div style="color:#475569;font-size:12px;margin-bottom:12px;">No STRIDE threats detected (graph may lack AI-specific node types).</div>';
+  }
+
+  // ATLAS TTPs
+  if (atlas.length) {
+    html += '<div style="color:#94a3b8;font-size:11px;font-weight:600;margin:12px 0 6px;">MITRE ATLAS TTPs</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:3px;">';
+    for (const a of atlas) {
+      const bg = sevBg[a.severity] || '#1e293b';
+      const fg = sevFg[a.severity] || '#94a3b8';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:7px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:#a78bfa;font-size:10px;font-weight:600;">${a.tactic}</span>
+          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${a.severity}</span>
+        </div>
+        <div style="color:#eaeaea;font-size:11px;">${a.id} · ${a.title}</div>
+        <div style="color:#64748b;font-size:10px;margin-top:2px;">${a.description}</div>
+        <div style="color:#38bdf8;font-size:10px;margin-top:2px;">Mitigation: ${a.mitigation}</div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+// ────────────────────────────────────────────────
+// PHASE 5 — OSCAL Export
+// ────────────────────────────────────────────────
+function doOscalExport() {
+  toggleMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  setStatus('Generating OSCAL Component Definition…');
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/oscal')
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setStatus('OSCAL error: ' + d.error); return; }
+      const blob = new Blob([JSON.stringify(d, null, 2)], {type: 'application/json'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = 'oscal-component-' + DESIGN_ID + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      _emitExportEvent('export_oscal');
+      setStatus('OSCAL export downloaded (' + (d['component-definition']?.components?.[0]?.['control-implementations']?.[0]?.['implemented-requirements']?.length || 0) + ' controls)');
+    })
+    .catch(err => setStatus('OSCAL error: ' + err));
+}
 
 </script>
 <style>
