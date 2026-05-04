@@ -177,7 +177,6 @@ def award_ribbons(session_id: int) -> dict[str, dict | None]:
         ribbons["strategist"] = {"team_id": strat_rows["team_id"], "team_name": team["team_name"] if team else "?", "value": strat_rows["coa_pts"]}
 
     # Safety Architect — highest cumulative AADC judge_pts across design challenge injects
-    import json as _json
     safety_rows = conn.execute(
         """SELECT s.team_id, SUM(s.judge_pts) AS aadc_total
            FROM ttx_scores s
