@@ -2973,6 +2973,11 @@ def create_app() -> Flask:
         """Control Inheritance Visualizer — CSP vs customer responsibility mapping."""
         return render_template("control_inheritance.html")
 
+    @app.route("/safety")
+    def safety_monitor_page():
+        """Safety Monitor — circuit breaker states, failure counts, and system resilience."""
+        return render_template("safety_monitor/page.html")
+
     @app.route("/mosa")
     def mosa_page():
         """MOSA Compliance — 10 U.S.C. §4401 modular open systems approach assessment."""

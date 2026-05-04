@@ -159,6 +159,9 @@
       <button onclick="zoomReset()"><span>⊙</span> Reset Zoom</button>
       <hr class="aadc-menu-sep">
       <button onclick="groupSelectedNodes()"><span>⊞</span> Group Selected (Parallel)</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="showCoordMatrix()"><span>⊡</span> Coord. Matrix</button>
+      <button onclick="showProvenance()"><span>🔗</span> Model Provenance</button>
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
     </div>
   </div>
@@ -227,6 +230,10 @@
     style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;" title="Version History">⊞ Versions</button>
   <button id="btn-checkpoints" onclick="toggleCheckpoints(event)"
     style="background:#1e293b;color:#c084fc;padding:5px 10px;border:1px solid #7e22ce;border-radius:4px;cursor:pointer;font-size:12px;" title="Checkpoints & Forks">💾 Checkpoints</button>
+  <button id="btn-safety-map" onclick="toggleSafetyMap(event)"
+    style="background:#1e293b;color:#4ade80;padding:5px 10px;border:1px solid #166534;border-radius:4px;cursor:pointer;font-size:12px;" title="Safety Redundancy Map">🛡 Safety Map</button>
+  <button id="btn-simulate" onclick="toggleSimPanel(event)"
+    style="background:#1e293b;color:#fbbf24;padding:5px 10px;border:1px solid #92400e;border-radius:4px;cursor:pointer;font-size:12px;" title="Agent Behavior Simulation">▶ Simulate</button>
 
   <button onclick="saveDesign()" id="save-btn"
     style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
@@ -357,6 +364,23 @@
           </label>
         </div>
 
+        <!-- Phase 3: Model Provenance fields (visible for model nodes only) -->
+        <div id="prop-provenance-wrap" style="display:none;margin-bottom:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+          <div style="color:#a78bfa;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">MODEL PROVENANCE</div>
+          <input id="prop-model-source" placeholder="Model source (e.g. OpenAI GPT-4)"
+            oninput="saveProvenanceField('model_source',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;margin-bottom:5px;">
+          <input id="prop-model-version" placeholder="Version (e.g. gpt-4-turbo-2024)"
+            oninput="saveProvenanceField('model_version',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;margin-bottom:5px;">
+          <input id="prop-training-data" placeholder="Training data (e.g. Common Crawl)"
+            oninput="saveProvenanceField('training_data',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;margin-bottom:5px;">
+          <input id="prop-model-license" placeholder="License (e.g. Apache-2.0, MIT)"
+            oninput="saveProvenanceField('model_license',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;">
+        </div>
+
         <button onclick="deleteSelectedNode()"
           style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
       </div>
@@ -460,7 +484,70 @@
     </div>
   </div>
   <hr style="border-color:#1e3a6e;margin:10px 0;">
-  <div style="color:#7a8cb0;font-size:10px;">NIST AI RMF · OWASP LLM Top 10 · FedRAMP AI · Phase 4</div>
+  <div style="color:#7a8cb0;font-size:10px;">NIST AI RMF · OWASP LLM Top 10 · FedRAMP AI · Phase 4 · Phase 3</div>
+</div>
+
+<!-- ── Safety Map Score Badge ── -->
+<div id="safety-map-badge" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:#0f172a;border:1px solid #166534;border-radius:8px;padding:8px 18px;z-index:300;
+  box-shadow:0 4px 20px rgba(0,0,0,0.7);text-align:center;">
+  <span style="color:#4ade80;font-size:13px;font-weight:700;" id="safety-map-score-text">Safety Coverage: —%</span>
+  <span style="color:#6b7280;font-size:11px;margin-left:10px;" id="safety-map-detail"></span>
+  <button onclick="hideSafetyMap()" style="background:none;border:none;color:#6b7280;cursor:pointer;margin-left:12px;font-size:13px;">✕</button>
+</div>
+
+<!-- ── Coordination Matrix Modal ── -->
+<div id="coord-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  display:none;align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:700px;max-height:85vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">⊡ Multi-Agent Coordination Matrix</span>
+      <button onclick="document.getElementById('coord-modal').style.display='none'"
+        style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div id="coord-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Model Provenance Modal ── -->
+<div id="provenance-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:680px;max-height:85vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">🔗 Model Provenance Chain</span>
+      <button onclick="document.getElementById('provenance-modal').style.display='none'"
+        style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div id="provenance-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Simulation Panel ── -->
+<div id="sim-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:200;
+  background:#0f172a;border:1px solid #92400e;border-radius:8px;padding:0;width:340px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.7);">
+  <div style="padding:10px 14px;border-bottom:1px solid #92400e;display:flex;justify-content:space-between;align-items:center;">
+    <span style="color:#fbbf24;font-size:13px;font-weight:600;">▶ Agent Behavior Simulation</span>
+    <button onclick="toggleSimPanel()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;">✕</button>
+  </div>
+  <div style="padding:12px 14px;">
+    <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Start node</label>
+    <select id="sim-start-select"
+      style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:5px 8px;border-radius:4px;font-size:12px;margin-bottom:10px;">
+      <option value="">— select a node —</option>
+    </select>
+    <button onclick="runSimulation()"
+      style="width:100%;background:#92400e;color:#fde68a;border:none;border-radius:4px;padding:7px;cursor:pointer;font-size:12px;font-weight:600;">▶ Run Simulation</button>
+    <button onclick="clearSimulation()"
+      style="width:100%;background:#1e293b;color:#6b7280;border:1px solid #334155;border-radius:4px;padding:5px;cursor:pointer;font-size:11px;margin-top:5px;">Clear</button>
+  </div>
+  <div id="sim-results" style="max-height:340px;overflow-y:auto;padding:0 14px 12px;"></div>
 </div>
 
 <!-- ── Versions Drawer ── -->
@@ -969,6 +1056,9 @@ function selectNode(node) {
   } else {
     streamWrap.style.display = 'none';
   }
+
+  // Phase 3: model provenance panel — visible only for model nodes
+  _syncProvenancePanel(node);
 
   render();
 }
@@ -1651,6 +1741,298 @@ document.addEventListener('click', e => {
     document.getElementById('checkpoints-drawer').style.display = 'none';
     _ckptsDrawerOpen = false;
   }
+  if (!e.target.closest('#sim-panel') && !e.target.closest('#btn-simulate')) {
+    document.getElementById('sim-panel').style.display = 'none';
+    _simPanelOpen = false;
+  }
 });
+
+// ── Phase 3 State ──────────────────────────────────────────────────────────
+let _safetyMapActive = false;
+let _simPanelOpen = false;
+const _MODEL_TYPES = new Set(['llm','llm-local','embedding-model','fine-tuned-adapter','classifier','reranker','multimodal']);
+const _AGENT_TYPES = new Set(['autonomous-agent','semi-auto-agent','orchestrator','sub-agent','researcher-agent','writer-agent','analyst-agent','reviewer-agent']);
+const _SAFETY_TYPES = new Set(['guardrail','pii-detector','toxicity-filter','confidence-threshold','circuit-breaker','rate-limiter','input-sanitizer','redaction-engine','trusted-monitor','pii-field-detector']);
+const _GOV_TYPES = new Set(['hitl-gate','audit-logger','approval-workflow','caio-override','compliance-reporter','alert-manager','prompt-registry']);
+
+// ── Model Provenance ────────────────────────────────────────────────────────
+function saveProvenanceField(field, value) {
+  if (!selectedNode) return;
+  selectedNode.props = selectedNode.props || {};
+  selectedNode.props[field] = value;
+  pushHistory();
+}
+
+function _syncProvenancePanel(node) {
+  const wrap = document.getElementById('prop-provenance-wrap');
+  if (_MODEL_TYPES.has(node.type)) {
+    wrap.style.display = 'block';
+    const props = node.props || {};
+    document.getElementById('prop-model-source').value = props.model_source || '';
+    document.getElementById('prop-model-version').value = props.model_version || '';
+    document.getElementById('prop-training-data').value = props.training_data || '';
+    document.getElementById('prop-model-license').value = props.model_license || '';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+function showProvenance() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  toggleMenu();
+  const modal = document.getElementById('provenance-modal');
+  modal.style.display = 'flex';
+  document.getElementById('provenance-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/provenance')
+    .then(r => r.json())
+    .then(data => renderProvenanceModal(data))
+    .catch(() => { document.getElementById('provenance-modal-body').innerHTML = '<div style="color:#f87171;padding:20px;">Failed to load provenance.</div>'; });
+}
+
+function renderProvenanceModal(data) {
+  const chain = data.chain || [];
+  const flags = data.flags || [];
+  let html = '';
+  if (!chain.length) {
+    html = '<div style="color:#7a8cb0;text-align:center;padding:20px;">No model nodes in this design.</div>';
+  } else {
+    html = `<div style="color:#94a3b8;font-size:11px;margin-bottom:12px;">${chain.length} model node(s) · ${flags.length} flag(s)</div>`;
+    for (const entry of chain) {
+      const hasSource = !!entry.model_source;
+      html += `<div style="background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;">${entry.type}</span>
+          <span style="color:#eaeaea;font-size:12px;font-weight:600;">${entry.label}</span>
+          ${!hasSource ? '<span style="color:#f59e0b;font-size:10px;">⚠ no source</span>' : ''}
+        </div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
+          <span style="color:#64748b;">Source</span><span style="color:#cbd5e1;">${entry.model_source || '—'}</span>
+          <span style="color:#64748b;">Version</span><span style="color:#cbd5e1;">${entry.model_version || '—'}</span>
+          <span style="color:#64748b;">Training data</span><span style="color:#cbd5e1;">${entry.training_data || '—'}</span>
+          <span style="color:#64748b;">License</span><span style="color:#cbd5e1;">${entry.model_license || '—'}</span>
+        </div>
+      </div>`;
+    }
+  }
+  if (flags.length) {
+    html += '<div style="color:#94a3b8;font-size:11px;margin:12px 0 6px;">Compliance Flags</div>';
+    for (const f of flags) {
+      const color = f.severity === 'WARN' ? '#f97316' : f.severity === 'INFO' ? '#38bdf8' : '#94a3b8';
+      html += `<div style="background:#1e293b;border-left:3px solid ${color};padding:7px 10px;border-radius:0 4px 4px 0;margin-bottom:5px;font-size:11px;">
+        <span style="color:${color};font-weight:600;">${f.severity}</span>
+        <span style="color:#cbd5e1;margin-left:6px;">${f.message}</span>
+      </div>`;
+    }
+  }
+  document.getElementById('provenance-modal-body').innerHTML = html;
+}
+
+// ── Safety Redundancy Map ───────────────────────────────────────────────────
+function toggleSafetyMap(e) {
+  if (e) e.stopPropagation();
+  if (_safetyMapActive) {
+    hideSafetyMap();
+  } else {
+    activateSafetyMap();
+  }
+}
+
+function activateSafetyMap() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  _safetyMapActive = true;
+  document.getElementById('btn-safety-map').style.background = '#14532d';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/safety-redundancy')
+    .then(r => r.json())
+    .then(data => applySafetyOverlay(data))
+    .catch(() => { _safetyMapActive = false; setStatus('Safety map failed'); });
+}
+
+function applySafetyOverlay(data) {
+  const protected_ids = new Set((data.protected_agents || []).map(a => a.id));
+  const unprotected_ids = new Set((data.unprotected_agents || []).map(a => a.id));
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    const nid = el.dataset.id;
+    const ntype = el.dataset.type || '';
+    el.style.removeProperty('outline');
+    el.style.removeProperty('outline-offset');
+    if (protected_ids.has(nid)) {
+      el.style.outline = '3px solid #22c55e';
+      el.style.outlineOffset = '3px';
+    } else if (unprotected_ids.has(nid)) {
+      el.style.outline = '3px solid #ef4444';
+      el.style.outlineOffset = '3px';
+    } else if (_SAFETY_TYPES.has(ntype) || _GOV_TYPES.has(ntype)) {
+      el.style.outline = '2px solid #3b82f6';
+      el.style.outlineOffset = '3px';
+    }
+  });
+  const badge = document.getElementById('safety-map-badge');
+  badge.style.display = 'block';
+  document.getElementById('safety-map-score-text').textContent = 'Safety Coverage: ' + data.score + '%';
+  document.getElementById('safety-map-detail').textContent =
+    data.protected_agents.length + ' protected · ' + data.unprotected_agents.length + ' unprotected';
+}
+
+function hideSafetyMap() {
+  _safetyMapActive = false;
+  document.getElementById('btn-safety-map').style.background = '#1e293b';
+  document.getElementById('safety-map-badge').style.display = 'none';
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    el.style.removeProperty('outline');
+    el.style.removeProperty('outline-offset');
+  });
+}
+
+// ── Coordination Matrix ─────────────────────────────────────────────────────
+function showCoordMatrix() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  toggleMenu();
+  const modal = document.getElementById('coord-modal');
+  modal.style.display = 'flex';
+  document.getElementById('coord-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/coordination-matrix')
+    .then(r => r.json())
+    .then(data => renderCoordMatrix(data))
+    .catch(() => { document.getElementById('coord-modal-body').innerHTML = '<div style="color:#f87171;padding:20px;">Failed to load matrix.</div>'; });
+}
+
+function renderCoordMatrix(data) {
+  const agents = data.agents || [];
+  if (!agents.length) {
+    document.getElementById('coord-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">No agent nodes in this design.</div>';
+    return;
+  }
+  const topologyColors = { mesh: '#10b981', 'hub-spoke': '#f59e0b', pipeline: '#3b82f6', hierarchical: '#8b5cf6', single: '#94a3b8', none: '#475569' };
+  const tcolor = topologyColors[data.topology] || '#94a3b8';
+  const hubLabels = (data.hub_nodes || []).map(h => h.label).join(', ');
+  const isoLabels = (data.isolated_agents || []).map(a => a.label).join(', ');
+
+  let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <span style="background:${tcolor}22;border:1px solid ${tcolor};color:${tcolor};padding:3px 10px;border-radius:12px;font-size:11px;">
+      Topology: ${data.topology}
+    </span>
+    ${hubLabels ? `<span style="color:#94a3b8;font-size:11px;">Hub: ${hubLabels}</span>` : ''}
+    ${isoLabels ? `<span style="color:#f87171;font-size:11px;">Isolated: ${isoLabels}</span>` : ''}
+  </div>`;
+
+  html += '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;">';
+  // Header row
+  html += '<tr><th style="background:#1e293b;padding:6px 10px;color:#64748b;"></th>';
+  for (const a of agents) html += `<th style="background:#1e293b;padding:6px 8px;color:#94a3b8;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;">${a.label}</th>`;
+  html += '</tr>';
+  for (let i = 0; i < agents.length; i++) {
+    html += `<tr><td style="background:#1e293b;padding:6px 10px;color:#94a3b8;white-space:nowrap;font-weight:600;">${agents[i].label}</td>`;
+    for (let j = 0; j < agents.length; j++) {
+      const cell = data.matrix[i][j];
+      const bg = cell === 'direct' ? '#1d4ed8' : cell === 'indirect' ? '#1e3a6e' : cell === 'self' ? '#1e293b' : '#0f172a';
+      const txt = cell === 'direct' ? '●' : cell === 'indirect' ? '◌' : cell === 'self' ? '—' : '';
+      const color = cell === 'direct' ? '#93c5fd' : cell === 'indirect' ? '#475569' : '#334155';
+      html += `<td style="background:${bg};text-align:center;padding:6px 12px;color:${color};border:1px solid #1e293b;">${txt}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table></div>';
+  html += '<div style="color:#475569;font-size:10px;margin-top:10px;">● direct edge &nbsp; ◌ indirect (via intermediary)</div>';
+  document.getElementById('coord-modal-body').innerHTML = html;
+}
+
+// ── Simulation ──────────────────────────────────────────────────────────────
+function toggleSimPanel(e) {
+  if (e) e.stopPropagation();
+  _simPanelOpen = !_simPanelOpen;
+  const panel = document.getElementById('sim-panel');
+  panel.style.display = _simPanelOpen ? 'block' : 'none';
+  if (_simPanelOpen) {
+    _populateSimStartSelect();
+    document.getElementById('checkpoints-drawer').style.display = 'none';
+    _ckptsDrawerOpen = false;
+  }
+}
+
+function _populateSimStartSelect() {
+  const sel = document.getElementById('sim-start-select');
+  sel.innerHTML = '<option value="">— select a node —</option>';
+  for (const n of (graph.nodes || [])) {
+    const opt = document.createElement('option');
+    opt.value = n.id;
+    opt.textContent = (n.label || n.id) + ' [' + (n.type || '?') + ']';
+    sel.appendChild(opt);
+  }
+}
+
+function runSimulation() {
+  if (!DESIGN_ID) { saveDesign(); return; }
+  const startId = document.getElementById('sim-start-select').value;
+  if (!startId) { alert('Select a start node.'); return; }
+  document.getElementById('sim-results').innerHTML = '<div style="color:#7a8cb0;font-size:11px;padding:8px 0;">Running…</div>';
+  // Clear existing highlights
+  document.querySelectorAll('.aadc-node').forEach(el => el.classList.remove('sim-active', 'sim-halted', 'sim-filtered'));
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/simulate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({start_node_id: startId}),
+  })
+  .then(r => r.json())
+  .then(data => renderSimResults(data))
+  .catch(() => { document.getElementById('sim-results').innerHTML = '<div style="color:#f87171;font-size:11px;padding:8px 0;">Simulation failed.</div>'; });
+}
+
+function renderSimResults(data) {
+  const trace = data.trace || [];
+  const decisions = data.decisions || [];
+  const status = data.status || 'complete';
+
+  // Animate node highlights
+  trace.forEach((step, idx) => {
+    setTimeout(() => {
+      const el = document.querySelector(`.aadc-node[data-id="${step.node_id}"]`);
+      if (!el) return;
+      if (step.outcome === 'halted') el.classList.add('sim-halted');
+      else if (step.outcome === 'filtered') el.classList.add('sim-filtered');
+      else el.classList.add('sim-active');
+    }, idx * 120);
+  });
+
+  let html = `<div style="color:${status==='halted'?'#f97316':status==='complete'?'#4ade80':'#94a3b8'};font-size:11px;font-weight:600;padding:6px 0;border-bottom:1px solid #1e293b;margin-bottom:6px;">
+    ${status==='halted' ? '⏸ Halted at: '+data.halted_by_label : status==='complete' ? '✅ Completed' : '⚠ '+status}
+    &nbsp;(${data.steps_count} steps)
+  </div>`;
+
+  for (const step of trace) {
+    const oc = step.outcome;
+    const dot = oc==='halted' ? '🔴' : oc==='filtered' ? '🟡' : '🟢';
+    html += `<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:11px;">
+      <span style="color:#475569;min-width:22px;text-align:right;">${step.step}.</span>
+      <span>${dot}</span>
+      <span style="color:#eaeaea;">${step.node_label}</span>
+      <span style="color:#475569;font-size:10px;">[${step.node_type}]</span>
+    </div>`;
+  }
+
+  if (decisions.length) {
+    html += '<div style="color:#94a3b8;font-size:10px;margin-top:8px;border-top:1px solid #1e293b;padding-top:6px;">Decisions</div>';
+    for (const d of decisions) {
+      const color = d.type==='halt' ? '#f97316' : '#38bdf8';
+      html += `<div style="font-size:10px;color:${color};padding:2px 0;">${d.type==='halt'?'⏸':'🔵'} ${d.node_label}: ${d.reason}</div>`;
+    }
+  }
+
+  document.getElementById('sim-results').innerHTML = html;
+  setStatus('Simulation complete — ' + data.steps_count + ' steps');
+}
+
+function clearSimulation() {
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    el.classList.remove('sim-active', 'sim-halted', 'sim-filtered');
+  });
+  document.getElementById('sim-results').innerHTML = '';
+}
+
+
 </script>
+<style>
+.sim-active   { box-shadow: 0 0 0 3px #22c55e, 0 0 12px #22c55e88 !important; }
+.sim-halted   { box-shadow: 0 0 0 3px #f97316, 0 0 12px #f9731688 !important; }
+.sim-filtered { box-shadow: 0 0 0 3px #fbbf24, 0 0 12px #fbbf2488 !important; }
+</style>
 {% endblock %}
