@@ -263,9 +263,23 @@
   white-space: nowrap;
 }
 .sg-cve-table td.cve-title { white-space: normal; max-width: 320px; }
+.cvss-critical{ color: #b91c1c; font-weight: 700; }
 .cvss-high   { color: #ef4444; font-weight: 700; }
 .cvss-medium { color: #f97316; font-weight: 700; }
 .cvss-low    { color: #22c55e; font-weight: 700; }
+.sev-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin-right: 4px;
+}
+.sev-critical { background: rgba(185,28,28,.2); color: #fca5a5; border: 1px solid rgba(185,28,28,.4); }
+.sev-high     { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
+.sev-medium   { background: rgba(249,115,22,.15); color: #f97316; border: 1px solid rgba(249,115,22,.3); }
+.sev-low      { background: rgba(34,197,94,.12); color: #22c55e; border: 1px solid rgba(34,197,94,.3); }
+.kev-badge {
+  display: inline-block; padding: 1px 6px; border-radius: 3px;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em;
+  background: rgba(239,68,68,.2); color: #f87171; border: 1px solid rgba(239,68,68,.4);
+}
 .cve-status-badge {
   display: inline-block;
   padding: 1px 7px;
@@ -733,9 +747,15 @@ const CVE_COUNT         = document.getElementById('sg-cve-count');
 const CVE_EMPTY         = document.getElementById('sg-cve-empty');
 
 function cvssClass(score) {
+  if (score >= 9.0) return 'cvss-critical';
   if (score >= 7.0) return 'cvss-high';
   if (score >= 4.0) return 'cvss-medium';
   return 'cvss-low';
+}
+function sevBadge(sev) {
+  if (!sev) return '';
+  const s = sev.toLowerCase();
+  return `<span class="sev-badge sev-${s}">${s}</span>`;
 }
 
 function cveAge(publishedAt) {
@@ -762,10 +782,12 @@ function renderCveFeed(items) {
     const cls   = r.cvss_score != null ? cvssClass(r.cvss_score) : '';
     const st    = (r.status || 'new').toLowerCase();
     const age   = cveAge(r.published_date);
+    const kev   = r.is_kev ? '<span class="kev-badge">KEV</span>' : '';
+    const sev   = sevBadge(r.severity);
     return `<tr>
       <td style="font-family:monospace;color:var(--sg-cyan)">${r.cve_id || '—'}</td>
-      <td class="cve-title">${title || '—'}</td>
-      <td class="${cls}">${cvss}</td>
+      <td class="cve-title">${kev}${title || '—'}</td>
+      <td class="${cls}">${sev}${cvss}</td>
       <td><span class="cve-status-badge cve-status-${st}">${st}</span></td>
       <td style="color:var(--sg-text-dim)">${age}</td>
     </tr>`;
