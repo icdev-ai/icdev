@@ -38,6 +38,42 @@ Cross-canvas event bus integration.
 - `publish_design_saved(design_id, name)` — emits `aadc.design_saved`
 - `publish_agent_flagged(design_id, agent_label, level)` — emits `aadc.agent_flagged`
 
+### `tools/agentic_ai_canvas/checkpoint_manager.py`
+Phase 4 — Checkpoint/fork service (LangGraph pattern).
+- `save_checkpoint(design_id, graph_json, label, node_id)` → checkpoint dict
+- `list_checkpoints(design_id)` → list of checkpoint dicts
+- `get_checkpoint(checkpoint_id)` → checkpoint dict or None
+- `restore_checkpoint(design_id, checkpoint_id)` → restores live graph to snapshot
+- `fork_design(design_id, checkpoint_id, new_name)` → creates independent forked design
+- `delete_checkpoint(design_id, checkpoint_id)` → removes checkpoint
+
+### `tools/agentic_ai_canvas/parallel_graph.py`
+Phase 4 — Parallel execution group service.
+- `create_group(design_id, node_ids, label, color)` → group dict
+- `list_groups(design_id)` → list of group dicts
+- `update_group(design_id, group_id, node_ids, label)` → updated group dict
+- `delete_group(design_id, group_id)` → status dict
+- `validate_parallel_paths(nodes, edges)` → list of structural warnings
+
+### `tools/agentic_ai_canvas/observability_nodes.py`
+Phase 4 — Observability node assessment (Haystack/OTel pattern).
+- `check_observability_coverage(nodes, edges)` → (findings, score or None)
+- `get_observability_coverage_map(nodes, edges)` → per-agent trace/span/metrics coverage
+
+### `tools/agentic_ai_canvas/a2a_sandbox.py`
+Phase 4 — A2A bridge + sandbox-exec assessment.
+- `check_a2a_sandbox(nodes, edges)` → (findings, score or None)
+
+### `tools/agentic_ai_canvas/safety_extensions.py`
+Phase 4 — Trusted monitor + PII field-level safety checks.
+- `check_safety_extensions(nodes, edges)` → (findings, score or None)
+
+### `tools/agentic_ai_canvas/safety_layer.py`
+Circuit breaker safety layer — in-process singleton per design.
+- `record_event(design_id, event_type, detail, node_id)` — log anomaly/success/reset
+- `get_status(design_id)` → circuit state dict
+- `reset_circuit(design_id)` → manual reset
+
 ### `tools/agentic_ai_canvas/blueprint.py`
 Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 
@@ -68,6 +104,16 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `POST /agentic-ai/api/designs/<id>/snippets/<sid>` | Insert snippet into design graph |
 | `GET /agentic-ai/api/designs/<id>/artifacts` | List generated artifacts |
 | `POST /agentic-ai/api/designs/<id>/artifacts` | Generate model_card / system_card / ai_bom |
+| `GET /agentic-ai/api/designs/<id>/checkpoints` | List checkpoints |
+| `POST /agentic-ai/api/designs/<id>/checkpoints` | Save current graph as checkpoint |
+| `POST /agentic-ai/api/designs/<id>/checkpoints/<cid>/restore` | Restore design to checkpoint |
+| `POST /agentic-ai/api/designs/<id>/checkpoints/<cid>/fork` | Fork new design from checkpoint |
+| `DELETE /agentic-ai/api/designs/<id>/checkpoints/<cid>` | Delete checkpoint |
+| `GET /agentic-ai/api/designs/<id>/parallel-groups` | List parallel groups |
+| `POST /agentic-ai/api/designs/<id>/parallel-groups` | Create parallel group |
+| `PUT /agentic-ai/api/designs/<id>/parallel-groups/<gid>` | Update group |
+| `DELETE /agentic-ai/api/designs/<id>/parallel-groups/<gid>` | Delete group |
+| `POST /agentic-ai/api/designs/<id>/validate-parallel` | Validate fork/join structure |
 
 ---
 
@@ -76,7 +122,7 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | Table | Purpose |
 |-------|---------|
 | `aadc_designs` | Design metadata (name, domain, classification, graph_json) |
-| `aadc_assessments` | Per-assessment snapshots (NIST/OWASP scores, findings, ATLAS) |
+| `aadc_assessments` | Per-assessment snapshots (NIST/OWASP/Phase4 scores, findings, ATLAS) |
 | `aadc_templates` | 12 built-in + user custom templates with full graph JSON |
 | `aadc_snippets` | 12 reusable subgraph patterns |
 | `aadc_artifacts` | Generated model cards, system cards, AI BOMs (markdown) |
@@ -84,6 +130,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_loop_links` | Maps design_id → loop_id for Kanban/loop_engine tracking |
 | `aadc_audit_log` | Append-only audit trail (NIST AU-2) |
 | `aadc_design_tags` | Tag associations for designs |
+| `aadc_checkpoints` | Phase 4 — checkpoint/fork state snapshots (migration 105) |
+| `aadc_parallel_groups` | Phase 4 — named parallel execution swim-lanes (migration 105) |
 
 ---
 
