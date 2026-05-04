@@ -20,9 +20,7 @@ from datetime import datetime, timezone
 from tools.agentic_ai_canvas.constants import (
     AGENT_NODES,
     ATLAS_THREAT_MAP,
-    EXECUTION_NODES,
     NIST_AI_RMF_CHECKS,
-    OBSERVABILITY_NODES,
     OWASP_LLM_CHECKS,
     OUTPUT_NODES,
     P4_EXECUTION_CHECKS,

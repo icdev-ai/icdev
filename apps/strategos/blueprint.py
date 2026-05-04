@@ -2420,19 +2420,7 @@ def strategos_api_cyber_infra():
 
 @_bp.route("/api/cyber/attack-heatmap")
 def strategos_api_cyber_heatmap():
-    # MITRE ATT&CK heatmap derived from conflict events
-    _TACTICS = [
-        {"id": "TA0001", "label": "Initial Access",      "techniques": [("T1190", "Exploit Public-Facing App"), ("T1133", "External Remote Services"), ("T1566", "Phishing")]},
-        {"id": "TA0002", "label": "Execution",           "techniques": [("T1059", "Command Scripting Interpreter"), ("T1203", "Exploitation for Client Execution")]},
-        {"id": "TA0003", "label": "Persistence",         "techniques": [("T1098", "Account Manipulation"), ("T1543", "Create/Modify System Process")]},
-        {"id": "TA0005", "label": "Defense Evasion",     "techniques": [("T1070", "Indicator Removal"), ("T1036", "Masquerading")]},
-        {"id": "TA0006", "label": "Credential Access",   "techniques": [("T1110", "Brute Force"), ("T1555", "Credentials from Password Stores")]},
-        {"id": "TA0007", "label": "Discovery",           "techniques": [("T1046", "Network Service Scan"), ("T1083", "File & Directory Discovery")]},
-        {"id": "TA0010", "label": "Exfiltration",        "techniques": [("T1041", "Exfil Over C2"), ("T1048", "Exfil Over Alt Protocol")]},
-        {"id": "TA0040", "label": "Impact",              "techniques": [("T1486", "Data Encrypted for Impact"), ("T1499", "Endpoint DoS"), ("T1491", "Defacement")]},
-    ]
-
-    # Count observed techniques from DB
+    # Count observed techniques from sg_conflict_events
     raw_ids = _safe_fetch(
         "SELECT technique_ids FROM sg_conflict_events "
         "WHERE event_type = 'cyber_op' AND technique_ids IS NOT NULL"
@@ -2444,13 +2432,34 @@ def strategos_api_cyber_heatmap():
             if tid:
                 observed[tid] = observed.get(tid, 0) + 1
 
-    result = []
-    for tactic in _TACTICS:
-        cells = []
-        for tid, name in tactic["techniques"]:
-            cells.append({"technique_id": tid, "name": name, "count": observed.get(tid, 0)})
-        result.append({"id": tactic["id"], "label": tactic["label"], "cells": cells})
-    return jsonify({"tactics": result})
+    # Load all tactics + techniques from sg_attack_techniques (live data)
+    tech_rows = _safe_fetch(
+        "SELECT DISTINCT tactic_id, tactic_name, technique_id, technique_name "
+        "FROM sg_attack_techniques ORDER BY tactic_id, technique_id"
+    )
+    data_source = "live" if tech_rows else "static"
+
+    # Build tactic→techniques map; de-duplicate technique_id per tactic
+    tactic_order: list = []
+    tactic_map: dict = {}
+    seen_per_tactic: dict = {}
+    for r in tech_rows:
+        tid_tac = r["tactic_id"]
+        if tid_tac not in tactic_map:
+            tactic_order.append(tid_tac)
+            tactic_map[tid_tac] = {"id": tid_tac, "label": r["tactic_name"], "cells": []}
+            seen_per_tactic[tid_tac] = set()
+        tech_id = r["technique_id"]
+        if tech_id not in seen_per_tactic[tid_tac]:
+            seen_per_tactic[tid_tac].add(tech_id)
+            tactic_map[tid_tac]["cells"].append({
+                "technique_id": tech_id,
+                "name": r["technique_name"],
+                "count": observed.get(tech_id, 0),
+            })
+
+    result = [tactic_map[t] for t in tactic_order]
+    return jsonify({"tactics": result, "data_source": data_source, "technique_count": len(tech_rows)})
 
 
 @_bp.route("/api/cyber/timeline")

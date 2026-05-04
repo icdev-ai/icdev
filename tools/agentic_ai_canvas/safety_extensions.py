@@ -8,7 +8,7 @@ Rules:
 
 from __future__ import annotations
 
-from tools.agentic_ai_canvas.constants import AGENT_NODES, P4_SAFETY_EXT_CHECKS
+from tools.agentic_ai_canvas.constants import P4_SAFETY_EXT_CHECKS
 
 
 def _build_adjacency(edges: list[dict]) -> dict[str, set[str]]:
