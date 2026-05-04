@@ -159,6 +159,7 @@ class TTXEngine:
         ).fetchone()
         cfg = json.loads(inj["config_json"] or "{}") if inj else {}
         scoring = cfg.get("scoring", {})
+        inject_type = cfg.get("inject_type", "")
 
         result = score_response(
             response_id=response_id,
@@ -173,6 +174,7 @@ class TTXEngine:
             max_receipt_bonus=scoring.get("max_receipt_bonus", 150),
             time_taken_s=time_taken_s,
             time_bonus_enabled=scoring.get("time_bonus", True),
+            inject_type=inject_type,
         )
         # Recompute leaderboard after each submission
         compute_leaderboard(session_id)

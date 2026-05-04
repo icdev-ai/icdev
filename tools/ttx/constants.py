@@ -20,6 +20,7 @@ RIBBON_DEFS = {
     "ai_innovator":    {"icon": "🤖", "label": "AI Innovator",    "desc": "Most AI receipts + highest quality"},
     "doctrine_scholar":{"icon": "📚", "label": "Doctrine Scholar","desc": "Highest LLM judge score"},
     "strategist":      {"icon": "🎯", "label": "Strategist",      "desc": "Highest COA inject score"},
+    "safety_architect": {"icon": "🛡️", "label": "Safety Architect", "desc": "Highest AADC compliance score across design challenges"},
 }
 
 # ICDEV tool slugs that produce scoreable receipts
@@ -34,4 +35,7 @@ SCOREABLE_TOOLS = (
     "finetune.deploy",
     "knowledge.search",
     "genesis.run",
+    "aadc.assess",
+    "aadc.threat_model",
+    "aadc.recommend",
 )
