@@ -23,6 +23,15 @@ One developer built this. Imagine what your team could do with it.
 
 ---
 
+## What's New in 1.2.22
+
+- **AADC Solution Packs** — 7 pre-wired agentic AI templates added to the Agentic AI Design Canvas. Each pack ships with pre-placed nodes, wired edges, a seeded risk register, compliance baseline, MITRE ATLAS scenario mappings, and a quick-start wizard. Packs: Customer Service Agent, Autonomous Coder, Knowledge Research Agent, Cybersecurity SOC Agent, Healthcare Admin Agent, Gov/Procurement Agent, Multi-Agent Research Lab. See [Agentic AI Design Canvas](#agentic-ai-design-canvas) below.
+- **Autonomous Coder — Live Sample App** — A fully working agentic AI application ships at `/autonomous-coder/`. Multi-agent pipeline: Task Spec → Input Sanitizer → Orchestrator → Planner Agent → Schema Enforcer → Coder Agent → Schema Enforcer → Validator Agent → Audit Logger. Three backends: ICDEV LLM router, Ollama, or offline stub. CLI: `python -m apps.autonomous_coder.main "task"`. Validated via E2E build — quicksort generated and scored 95/100 in ~81s against Claude Sonnet.
+- **Lesson-Learned LL-001/LL-002 applied universally** — E2E build of Autonomous Coder surfaced two universal risks now applied to all 7 solution packs: **LL-001** — Schema Enforcer nodes added at every LLM→agent handoff to catch structured-output non-compliance before it reaches downstream consumers; **LL-002** — circuit breaker `max_duration_s` defaulted to 300s (from 120s) for multi-step LLM pipelines that routinely take 80–110s per run. Both risks added to each pack's risk register.
+- **Sample Applications gallery** — `/agentic-ai/` now shows a Sample Applications section alongside the Solution Packs and design templates. Autonomous Coder is the first entry; more sample apps link directly to their `/autonomous-coder/`-style routes.
+
+---
+
 ## What's New in 1.2.21
 
 - **Ask any canvas** — natural-language Q&A over the knowledge graph of each of the 7 design canvases: NDC (Network), SDC (Security), PDC (Pipeline), BDC (Boundary), DDC (Data), ODC (Observability), IDC (Infrastructure). Every canvas has a `/<canvas>/ask` page and `/<canvas>/api/ask` POST endpoint. See [Ask Any Canvas](#ask-any-canvas).
@@ -762,6 +771,8 @@ python tools/dashboard/app.py
 | `/ato-package` | ATO package: SSP, POAM, STIG, SBOM, OSCAL artifact management |
 | `/cato` | Continuous ATO monitoring: evidence freshness, control drift alerts |
 | `/lineage` | Data lineage: column-level traceability, PII classification |
+| `/agentic-ai/` | Agentic AI Design Canvas: 7 design templates + 7 solution packs + quick-start wizard + compliance baseline gallery |
+| `/autonomous-coder/` | Autonomous Coder: live agentic AI app — Planner→Coder→Validator pipeline, 3 LLM backends, circuit breaker, audit log |
 | `/studio/workflows` | ICDEV Studio: low-code workflow canvas |
 | `/studio/marketplace` | ICDEV Studio: marketplace integration |
 | `/network/canvas` | Network Design Canvas: topology builder, drag-and-drop, cloud architecture diagrams |
@@ -942,6 +953,50 @@ Visual CI/CD pipeline design tool with drag-and-drop stage composition:
 - Export to GitLab CI and GitHub Actions YAML
 - Compliance gate integration — security scan and approval stages auto-inserted based on impact level
 - Template library for common patterns (TDD, DevSecOps, cATO continuous monitoring)
+
+---
+
+## Agentic AI Design Canvas
+
+Visual design and simulation environment for agentic AI systems — build, assess, and harden multi-agent architectures before writing code.
+
+| Capability | Description |
+|------------|-------------|
+| **7 Design Templates** | Pre-built patterns: Autonomous Agent, Multi-Agent Pipeline, RAG Agent, Human-in-the-Loop, Event-Driven, Hybrid Memory, Federated Multi-Agent |
+| **7 Solution Packs** | Domain-specific pre-wired architectures (see below) — each ships production-ready with nodes, edges, risk register, compliance baseline, ATLAS scenarios, and quick-start wizard |
+| **Drag-and-Drop Canvas** | 40+ node types: LLM, sub-agent, orchestrator, circuit-breaker, schema-enforcer, input-sanitizer, vector-DB, knowledge-graph, audit-logger, HITL-gate, MCP-gateway, and more |
+| **Risk Register** | Per-design risk items with severity/likelihood/impact scoring, NIST AI RMF categories, and auto-seeded risks per pack |
+| **Compliance Badges** | Live assessment scores: NIST AI RMF %, OWASP LLM Top 10 %, MITRE ATLAS coverage, OMB M-25-21/M-26-04 compliance status |
+| **Quick-Start Wizard** | 3-question wizard (domain × goal × autonomy) → recommended solution pack |
+| **Sample Applications** | Gallery of fully working apps built from the canvas — Autonomous Coder is the first; each links to its live `/app-name/` route |
+| **MITRE ATLAS Scenarios** | Pre-assigned adversarial ML techniques per pack for red-team planning |
+
+### Solution Packs
+
+| Pack | Autonomy | Key Nodes | Domain |
+|------|:--------:|-----------|--------|
+| **Customer Service Agent** | L1 | Input Sanitizer → PII Detector → LLM → Confidence Gate → HITL → CRM Tool Chain | Enterprise support |
+| **Autonomous Coder** | L4 | Orchestrator → Planner → Schema Enforcer → Coder → Schema Enforcer → Validator → Audit Logger | Software engineering |
+| **Knowledge Research Agent** | L3 | LLM Reasoner → Schema Enforcer → Confidence Gate → KG + Vector DB + Web Search | Research / IT service desk |
+| **Cybersecurity SOC Agent** | L3 | Drift Detector → Anomaly Classifier → SOC Agent → Circuit Breaker + Rate Limiter → SIEM | Security operations |
+| **Healthcare Admin Agent** | L2 | PHI Detector → Clinical LLM → Schema Enforcer → Admin Agent → Clinician HITL | HIPAA / prior auth |
+| **Gov/Procurement Agent** | L2 | CUI Guardrail → Gov LLM (IL4/IL5) → Schema Enforcer → Orch → FAR Compliance → CO Review | DoD / Federal acquisition |
+| **Multi-Agent Research Lab** | L4 | Fork → Domain Agents A/B/C → Schema Enforcer → Synthesis Join → Research KG + Evidence Store | Autonomous research |
+
+Every pack includes **LL-001** (Schema Enforcer at each LLM→agent handoff) and **LL-002** (circuit breaker default 300s) applied as lessons-learned from the Autonomous Coder E2E build.
+
+```bash
+# Dashboard
+python tools/dashboard/app.py
+# → http://localhost:5050/agentic-ai/
+
+# Launch Autonomous Coder sample app
+# → http://localhost:5050/autonomous-coder/
+
+# CLI
+python -m apps.autonomous_coder.main "write a binary search function" --backend stub
+python -m apps.autonomous_coder.main "implement quicksort" --backend icdev --out quicksort.py
+```
 
 ---
 
