@@ -55,7 +55,7 @@
 {% else %}
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
   {% for d in designs %}
-  <div style="background:#16213e;border:1px solid {% if d.safety_impacting or d.rights_impacting %}#f59e0b{% else %}#1e3a6e{% endif %};border-radius:8px;padding:16px;position:relative;">
+  <div data-design-id="{{ d.id }}" data-design-name="{{ d.name|e }}" style="background:#16213e;border:1px solid {% if d.safety_impacting or d.rights_impacting %}#f59e0b{% else %}#1e3a6e{% endif %};border-radius:8px;padding:16px;position:relative;">
     {% if d.safety_impacting or d.rights_impacting %}
     <div style="position:absolute;top:10px;right:10px;background:#f59e0b22;border:1px solid #f59e0b;border-radius:3px;padding:2px 6px;font-size:10px;color:#f59e0b;">
       ⚠ {% if d.safety_impacting %}SAFETY{% endif %}{% if d.rights_impacting %} RIGHTS{% endif %}-IMPACTING
@@ -88,7 +88,10 @@
       <a href="/agentic-ai/canvas/{{ d.id }}" style="flex:1;background:#6366f1;color:#fff;padding:6px 10px;border-radius:4px;text-decoration:none;text-align:center;font-size:11px;">Edit</a>
       <a href="/agentic-ai/assessments/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">Assess</a>
       <a href="/agentic-ai/risks/{{ d.id }}" style="background:#431407;color:#fb923c;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">⚠ Risks</a>
+      <a href="/agentic-ai/ato/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">🏛 ATO</a>
+      <a href="/agentic-ai/exec-summary/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">📊 Brief</a>
       <a href="/agentic-ai/artifacts/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">Artifacts</a>
+      <button onclick="showCompare('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:6px 8px;border-radius:4px;font-size:11px;cursor:pointer;" title="Compare with another design">⚖</button>
       <button onclick="deleteDesign('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:6px 8px;border-radius:4px;font-size:11px;cursor:pointer;" title="Delete">🗑</button>
     </div>
     <div style="color:#5a6e8c;font-size:10px;margin-top:8px;">Updated {{ d.updated_at[:10] }}</div>
@@ -227,5 +230,103 @@ function deleteAllDesigns() {
     })
     .catch(function(e) { alert('Delete all failed: ' + e); });
 }
+
+// ── Phase 6: Design Compare ────────────────────────────────────────────────
+let _compareAId = null, _compareAName = '';
+
+function showCompare(idA, nameA) {
+  _compareAId = idA;
+  _compareAName = nameA;
+  const modal = document.getElementById('compare-modal');
+  const sel = document.getElementById('compare-select-b');
+  sel.innerHTML = '<option value="">Select second design…</option>';
+  // Populate from visible design cards (data attributes)
+  document.querySelectorAll('[data-design-id]').forEach(el => {
+    if (el.dataset.designId !== idA) {
+      const opt = document.createElement('option');
+      opt.value = el.dataset.designId;
+      opt.textContent = el.dataset.designName || el.dataset.designId;
+      sel.appendChild(opt);
+    }
+  });
+  document.getElementById('compare-modal-title').textContent = 'Compare: ' + nameA;
+  document.getElementById('compare-result').innerHTML = '';
+  modal.style.display = 'flex';
+}
+
+function runCompare() {
+  const idB = document.getElementById('compare-select-b').value;
+  if (!idB) { alert('Select a second design.'); return; }
+  const resultDiv = document.getElementById('compare-result');
+  resultDiv.innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Comparing…</div>';
+  fetch('/agentic-ai/api/designs/compare', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({design_a_id: _compareAId, design_b_id: idB})
+  })
+    .then(r => r.json())
+    .then(d => renderCompareResult(d))
+    .catch(err => { resultDiv.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>'; });
+}
+
+function renderCompareResult(d) {
+  const div = document.getElementById('compare-result');
+  const na = (d.design_a || {}).name || 'Design A';
+  const nb = (d.design_b || {}).name || 'Design B';
+  const sc = d.score_delta || {};
+  const nd = d.node_delta || {};
+  const rd = d.risk_delta || {};
+  const ad = d.autonomy_delta || {};
+  const diffColor = n => n > 0 ? '#4ade80' : n < 0 ? '#f87171' : '#94a3b8';
+  const diffStr  = n => (n > 0 ? '+' : '') + n;
+
+  let html = `<div style="color:#4ade80;font-size:12px;font-weight:600;padding:8px 0;border-bottom:1px solid #1e293b;margin-bottom:10px;">${d.verdict}</div>`;
+
+  // Score table
+  html += `<div style="color:#94a3b8;font-size:10px;font-weight:600;text-transform:uppercase;margin-bottom:6px;">Scores</div>
+  <table style="width:100%;border-collapse:collapse;font-size:11px;margin-bottom:12px;">
+    <thead><tr style="background:#0f172a;">
+      <th style="padding:5px 8px;color:#7a8cb0;text-align:left;">Metric</th>
+      <th style="padding:5px 8px;color:#7a8cb0;text-align:right;">${na}</th>
+      <th style="padding:5px 8px;color:#7a8cb0;text-align:right;">${nb}</th>
+      <th style="padding:5px 8px;color:#7a8cb0;text-align:right;">Δ</th>
+    </tr></thead>
+    <tbody>
+      <tr><td style="padding:4px 8px;color:#94a3b8;">Overall</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${sc.overall_a}%</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${sc.overall_b}%</td><td style="padding:4px 8px;color:${diffColor(sc.overall_diff)};text-align:right;">${diffStr(sc.overall_diff)}%</td></tr>
+      <tr><td style="padding:4px 8px;color:#94a3b8;">NIST AI RMF</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${sc.nist_a}%</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${sc.nist_b}%</td><td style="padding:4px 8px;color:${diffColor(sc.nist_diff)};text-align:right;">${diffStr(sc.nist_diff)}%</td></tr>
+      <tr><td style="padding:4px 8px;color:#94a3b8;">OWASP LLM</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${sc.owasp_a}%</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${sc.owasp_b}%</td><td style="padding:4px 8px;color:${diffColor(sc.owasp_diff)};text-align:right;">${diffStr(sc.owasp_diff)}%</td></tr>
+      <tr><td style="padding:4px 8px;color:#94a3b8;">Open Risks</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${rd.open_a}</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${rd.open_b}</td><td style="padding:4px 8px;color:${diffColor(rd.open_a - rd.open_b)};text-align:right;">${diffStr(rd.open_b - rd.open_a)}</td></tr>
+      <tr><td style="padding:4px 8px;color:#94a3b8;">Nodes</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${nd.count_a}</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">${nd.count_b}</td><td style="padding:4px 8px;color:${diffColor(nd.count_b - nd.count_a)};text-align:right;">${diffStr(nd.count_b - nd.count_a)}</td></tr>
+      <tr><td style="padding:4px 8px;color:#94a3b8;">Autonomy L</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">L${ad.a_max}</td><td style="padding:4px 8px;color:#eaeaea;text-align:right;">L${ad.b_max}</td><td style="padding:4px 8px;color:${diffColor(ad.diff)};text-align:right;">${diffStr(ad.diff)}</td></tr>
+    </tbody>
+  </table>`;
+
+  // Node delta
+  if (nd.added_to_b && nd.added_to_b.length) {
+    html += `<div style="color:#4ade80;font-size:10px;margin-bottom:4px;">+ Added in ${nb}: ${nd.added_to_b.slice(0,5).join(', ')}${nd.added_to_b.length>5?' …':''}</div>`;
+  }
+  if (nd.removed_from_b && nd.removed_from_b.length) {
+    html += `<div style="color:#f87171;font-size:10px;margin-bottom:4px;">− Removed in ${nb}: ${nd.removed_from_b.slice(0,5).join(', ')}${nd.removed_from_b.length>5?' …':''}</div>`;
+  }
+
+  div.innerHTML = html;
+}
 </script>
+
+<!-- ── Design Compare Modal ── -->
+<div id="compare-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;width:580px;max-height:85vh;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:12px 16px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <span id="compare-modal-title" style="color:#eaeaea;font-size:14px;font-weight:600;">⚖ Compare Designs</span>
+      <button onclick="document.getElementById('compare-modal').style.display='none'" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div style="padding:14px 16px;border-bottom:1px solid #1e3a6e;display:flex;gap:8px;align-items:center;flex-shrink:0;">
+      <select id="compare-select-b" style="flex:1;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:6px 8px;border-radius:4px;font-size:12px;">
+        <option value="">Select second design…</option>
+      </select>
+      <button onclick="runCompare()" style="background:#4f46e5;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600;">Compare</button>
+    </div>
+    <div id="compare-result" style="padding:16px;overflow-y:auto;flex:1;"></div>
+  </div>
+</div>
 {% endblock %}

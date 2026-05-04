@@ -94,6 +94,27 @@ Phase 3 — Agent behavior simulation engine (BFS trace).
 - `simulate_execution(nodes, edges, start_node_id, input_payload, max_steps=50)` → `{trace, decisions, halted_by, steps_count, status}`
 - Halts at hitl-gate / approval-workflow / circuit-breaker nodes; marks filter nodes as "filtered" but continues.
 
+### `tools/agentic_ai_canvas/ato_readiness.py`
+Phase 6 — ATO Readiness Checker (15 items across FedRAMP / OMB M-25-21 / DoD AI Ethics / CMMC L2).
+- `run_ato_checklist(nodes, design_meta)` → `{items, summary, by_framework}`
+- Domain-filtered: safety_impacting and rights_impacting items only appear when relevant.
+
+### `tools/agentic_ai_canvas/regulatory_tracker.py`
+Phase 6 — Regulatory Gap Analysis (14 reqs: EU AI Act / DoD AI Ethics / OMB M-25-21 / OMB M-26-04).
+- `run_regulatory_analysis(nodes, design_meta, risk_items)` → `{gaps, summary, by_framework}`
+- Checks node presence, risk register population, provenance documentation, name/description.
+
+### `tools/agentic_ai_canvas/design_compare.py`
+Phase 6 — Two-design comparison engine.
+- `compare_designs(design_a, design_b, assessment_a, assessment_b, risks_a, risks_b)` → delta dict
+- Fields: node_delta, score_delta (overall/nist/owasp), risk_delta, autonomy_delta, verdict.
+
+### `tools/agentic_ai_canvas/exec_summary.py`
+Phase 6 — Executive Summary Report generator.
+- `generate_exec_summary(design, assessment, risks, threat_model, ato_result, reg_result)` → summary dict
+- Combined posture score: 50% assessment + 30% ATO + 20% regulatory.
+- Posture ratings: EXCELLENT / GOOD / FAIR / POOR / UNRATED.
+
 ### `tools/agentic_ai_canvas/risk_register.py`
 Phase 5 — Risk register CRUD + finding importer.
 - `finding_to_risk(finding)` → draft risk item dict from assessment finding
@@ -131,6 +152,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/canvas/<id>/assessments` | `agentic_ai_canvas/assessments.html` |
 | `GET /agentic-ai/canvas/<id>/artifacts` | `agentic_ai_canvas/artifacts.html` |
 | `GET /agentic-ai/risks/<id>` | `agentic_ai_canvas/risks.html` |
+| `GET /agentic-ai/ato/<id>` | `agentic_ai_canvas/ato.html` |
+| `GET /agentic-ai/exec-summary/<id>` | `agentic_ai_canvas/exec_summary.html` |
 
 **API routes:**
 | Method + Route | Purpose |
@@ -174,6 +197,10 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/api/portfolio` | Portfolio analytics (all designs) |
 | `GET /agentic-ai/api/designs/<id>/oscal` | Export OSCAL 1.1 Component Definition JSON |
 | `GET /agentic-ai/api/designs/<id>/oscal/control-coverage` | NIST 800-53 control coverage summary |
+| `GET /agentic-ai/api/designs/<id>/ato` | ATO readiness checklist JSON |
+| `GET /agentic-ai/api/designs/<id>/regulatory` | Regulatory gap analysis JSON |
+| `GET /agentic-ai/api/designs/<id>/exec-summary` | Executive summary report JSON |
+| `POST /agentic-ai/api/designs/compare` | Compare two designs side-by-side |
 
 ---
 
@@ -196,6 +223,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_agent_simulations` | Phase 3 — agent behavior simulation traces (migration 106) |
 | `aadc_risk_items` | Phase 5 — risk register items per design (migration 107) |
 | `aadc_threat_models` | Phase 5 — STRIDE + ATLAS threat model snapshots per design (migration 107) |
+| `aadc_ato_reports` | Phase 6 — ATO readiness report snapshots per design (migration 108) |
+| `aadc_regulatory_gaps` | Phase 6 — Regulatory gap analysis snapshots per design (migration 108) |
 
 ---
 
