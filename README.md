@@ -6,6 +6,7 @@
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
   <img src="https://img.shields.io/badge/canvases-7-00acc1" alt="Design Canvases">
+  <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
 </p>
 
 # ICDEV™ — Intelligent Certified Development Platform
