@@ -84,11 +84,12 @@
     </div>
     {% endif %}
 
-    <div style="display:flex;gap:8px;">
-      <a href="/agentic-ai/canvas/{{ d.id }}" style="flex:1;background:#6366f1;color:#fff;padding:6px 12px;border-radius:4px;text-decoration:none;text-align:center;font-size:12px;">Edit</a>
-      <a href="/agentic-ai/assessments/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border-radius:4px;text-decoration:none;font-size:12px;">Assessment</a>
-      <a href="/agentic-ai/artifacts/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border-radius:4px;text-decoration:none;font-size:12px;">Artifacts</a>
-      <button onclick="deleteDesign('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:6px 10px;border-radius:4px;font-size:12px;cursor:pointer;" title="Delete">🗑</button>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <a href="/agentic-ai/canvas/{{ d.id }}" style="flex:1;background:#6366f1;color:#fff;padding:6px 10px;border-radius:4px;text-decoration:none;text-align:center;font-size:11px;">Edit</a>
+      <a href="/agentic-ai/assessments/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">Assess</a>
+      <a href="/agentic-ai/risks/{{ d.id }}" style="background:#431407;color:#fb923c;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">⚠ Risks</a>
+      <a href="/agentic-ai/artifacts/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">Artifacts</a>
+      <button onclick="deleteDesign('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e1e2e;color:#ef4444;border:1px solid #ef444466;padding:6px 8px;border-radius:4px;font-size:11px;cursor:pointer;" title="Delete">🗑</button>
     </div>
     <div style="color:#5a6e8c;font-size:10px;margin-top:8px;">Updated {{ d.updated_at[:10] }}</div>
   </div>
@@ -96,7 +97,117 @@
 </div>
 {% endif %}
 
+{% if designs %}
+<!-- Portfolio Dashboard section -->
+<div style="margin-top:28px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <h3 style="margin:0;color:#94a3b8;font-size:13px;font-weight:600;letter-spacing:0.05em;">PORTFOLIO ANALYTICS</h3>
+    <button onclick="loadPortfolio()" id="portfolio-btn"
+      style="background:#1e293b;color:#7ab3f0;border:1px solid #334155;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px;">↻ Refresh</button>
+  </div>
+  <div id="portfolio-panel" style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <div style="color:#475569;font-size:12px;text-align:center;padding:8px;">Loading portfolio analytics…</div>
+  </div>
+</div>
+
+<!-- Threat Model + OSCAL quick-access bar -->
+<div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:12px 16px;font-size:12px;color:#94a3b8;flex:1;min-width:200px;">
+    <span style="color:#eaeaea;font-weight:600;">🗡 Threat Modeling</span><br>
+    <span style="font-size:11px;">Open a design canvas and click <b>Threat Model</b> in the AADC menu to generate STRIDE + ATLAS threats.</span>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:12px 16px;font-size:12px;color:#94a3b8;flex:1;min-width:200px;">
+    <span style="color:#eaeaea;font-weight:600;">📋 OSCAL Export</span><br>
+    <span style="font-size:11px;">Open a design and click <b>OSCAL Export</b> in the AADC menu to download a NIST 800-53 Component Definition JSON.</span>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:12px 16px;font-size:12px;color:#94a3b8;flex:1;min-width:200px;">
+    <span style="color:#eaeaea;font-weight:600;">⚠ Risk Register</span><br>
+    <span style="font-size:11px;">Click <b>⚠ Risks</b> on any design card to manage risk items. Import findings from the latest assessment in one click.</span>
+  </div>
+</div>
+{% endif %}
+
 <script>
+function loadPortfolio() {
+  document.getElementById('portfolio-panel').innerHTML = '<div style="color:#475569;font-size:12px;text-align:center;padding:8px;">Loading…</div>';
+  fetch('/agentic-ai/api/portfolio')
+    .then(r => r.json())
+    .then(data => renderPortfolio(data))
+    .catch(() => { document.getElementById('portfolio-panel').innerHTML = '<div style="color:#f87171;font-size:12px;padding:8px;">Failed to load portfolio.</div>'; });
+}
+
+function renderPortfolio(d) {
+  const hcolor = d.portfolio_health === 'AT_RISK' ? '#ef4444' : d.portfolio_health === 'COMPLIANT' ? '#10b981' : d.portfolio_health === 'IMPROVING' ? '#f59e0b' : '#94a3b8';
+  const bands = d.compliance_bands || {};
+  const total = d.total_designs || 1;
+  const greenPct = Math.round((bands.green || 0) / total * 100);
+  const amberPct = Math.round((bands.amber || 0) / total * 100);
+  const redPct   = Math.round((bands.red || 0) / total * 100);
+
+  let html = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px;">
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:700;color:${hcolor};">${d.portfolio_health.replace('_',' ')}</div>
+      <div style="color:#475569;font-size:10px;">Portfolio Health</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:700;color:#6366f1;">${d.avg_score}%</div>
+      <div style="color:#475569;font-size:10px;">Avg Score</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:700;color:${d.critical_open_risks>0?'#ef4444':'#10b981'};">${d.open_risks}</div>
+      <div style="color:#475569;font-size:10px;">Open Risks</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:700;color:${d.safety_impacting_count>0?'#f59e0b':'#10b981'};">${d.safety_impacting_count}</div>
+      <div style="color:#475569;font-size:10px;">Safety-Impacting</div>
+    </div>
+    <div style="text-align:center;">
+      <div style="font-size:22px;font-weight:700;color:#94a3b8;">${d.scored_designs}/${d.total_designs}</div>
+      <div style="color:#475569;font-size:10px;">Assessed</div>
+    </div>
+  </div>`;
+
+  // Compliance heatmap bar
+  html += `<div style="margin-bottom:10px;">
+    <div style="color:#475569;font-size:10px;margin-bottom:4px;">Compliance Distribution</div>
+    <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;">
+      ${greenPct ? `<div style="width:${greenPct}%;background:#10b981;" title="${bands.green} compliant"></div>` : ''}
+      ${amberPct ? `<div style="width:${amberPct}%;background:#f59e0b;" title="${bands.amber} improving"></div>` : ''}
+      ${redPct   ? `<div style="width:${redPct}%;background:#ef4444;" title="${bands.red} non-compliant"></div>` : ''}
+      ${(100-greenPct-amberPct-redPct)>0 ? `<div style="flex:1;background:#1e293b;"></div>` : ''}
+    </div>
+    <div style="display:flex;gap:12px;margin-top:5px;font-size:10px;color:#475569;">
+      <span>🟢 ${bands.green||0} compliant (&ge;70%)</span>
+      <span>🟡 ${bands.amber||0} improving (50–70%)</span>
+      <span>🔴 ${bands.red||0} non-compliant (&lt;50%)</span>
+      ${bands.unscored ? `<span>⬜ ${bands.unscored} unscored</span>` : ''}
+    </div>
+  </div>`;
+
+  // Top 5 designs
+  if (d.design_scores && d.design_scores.length) {
+    html += '<div style="color:#475569;font-size:10px;margin-bottom:6px;">Top Designs</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const ds of d.design_scores.slice(0, 5)) {
+      const sc = ds.score;
+      const c = sc >= 70 ? '#10b981' : sc >= 50 ? '#f59e0b' : '#ef4444';
+      html += `<div style="display:flex;align-items:center;gap:8px;font-size:11px;">
+        <a href="/agentic-ai/canvas/${ds.id}" style="color:#eaeaea;text-decoration:none;min-width:180px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${ds.name}</a>
+        <div style="flex:1;background:#0f172a;height:4px;border-radius:2px;overflow:hidden;">
+          <div style="width:${sc}%;background:${c};height:4px;"></div>
+        </div>
+        <span style="color:${c};min-width:36px;text-align:right;">${sc.toFixed(1)}%</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('portfolio-panel').innerHTML = html;
+}
+
+// Auto-load portfolio on page load
+if (document.getElementById('portfolio-panel')) loadPortfolio();
+
 function deleteDesign(id, name) {
   if (!confirm('Delete "' + name + '"?\nThis cannot be undone.')) return;
   fetch('/agentic-ai/api/designs/' + id, { method: 'DELETE' })

@@ -10,7 +10,7 @@
 ## Tools
 
 ### `tools/agentic_ai_canvas/db/init_db.py`
-Initialize AADC database — creates 9 tables, seeds 12 templates and 12 snippets.
+Initialize AADC database — creates 15 tables, seeds 12 templates and 12 snippets.
 ```bash
 python tools/agentic_ai_canvas/db/init_db.py
 ```
@@ -94,6 +94,29 @@ Phase 3 — Agent behavior simulation engine (BFS trace).
 - `simulate_execution(nodes, edges, start_node_id, input_payload, max_steps=50)` → `{trace, decisions, halted_by, steps_count, status}`
 - Halts at hitl-gate / approval-workflow / circuit-breaker nodes; marks filter nodes as "filtered" but continues.
 
+### `tools/agentic_ai_canvas/risk_register.py`
+Phase 5 — Risk register CRUD + finding importer.
+- `finding_to_risk(finding)` → draft risk item dict from assessment finding
+- `risk_score(severity, likelihood)` → int 1–25 composite score
+- `summarize_register(risk_items)` → `{total, open, critical_open, by_severity, by_status, residual_risk}`
+
+### `tools/agentic_ai_canvas/threat_model.py`
+Phase 5 — STRIDE + ATLAS threat model generator.
+- `generate_threat_model(nodes, edges)` → `{stride, atlas_threats, threat_count, high_count, stride_summary}`
+- 11 STRIDE rules across 6 categories; ATLAS TTPs mapped per node type.
+- `_stride_summary(threats)` → `{category: count}`
+
+### `tools/agentic_ai_canvas/portfolio.py`
+Phase 5 — Portfolio analytics aggregator (cross-design).
+- `aggregate_portfolio(designs, assessments, risk_items)` → `{total_designs, avg_score, compliance_bands, open_risks, critical_open_risks, portfolio_health, ...}`
+- Health states: `AT_RISK` / `COMPLIANT` / `IMPROVING` / `NON_COMPLIANT`.
+
+### `tools/agentic_ai_canvas/oscal_export.py`
+Phase 5 — OSCAL 1.1 Component Definition export.
+- `export_oscal_component(design, graph, assessment)` → OSCAL Component Definition dict (serialize to JSON)
+- `get_control_coverage_summary(nodes)` → `{controls_covered, families, control_ids}`
+- Maps 25 node types to NIST SP 800-53 Rev 5 controls.
+
 ### `tools/agentic_ai_canvas/blueprint.py`
 Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 
@@ -107,6 +130,7 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/snippets` | `agentic_ai_canvas/snippets.html` |
 | `GET /agentic-ai/canvas/<id>/assessments` | `agentic_ai_canvas/assessments.html` |
 | `GET /agentic-ai/canvas/<id>/artifacts` | `agentic_ai_canvas/artifacts.html` |
+| `GET /agentic-ai/risks/<id>` | `agentic_ai_canvas/risks.html` |
 
 **API routes:**
 | Method + Route | Purpose |
@@ -140,6 +164,16 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `PUT /agentic-ai/api/designs/<id>/nodes/<nid>/provenance` | Save provenance fields to a node |
 | `POST /agentic-ai/api/designs/<id>/simulate` | Run BFS simulation + persist trace |
 | `GET /agentic-ai/api/designs/<id>/simulations` | List recent simulation runs |
+| `GET /agentic-ai/api/designs/<id>/risks` | List risk items |
+| `POST /agentic-ai/api/designs/<id>/risks` | Create risk item |
+| `PUT /agentic-ai/api/designs/<id>/risks/<rid>` | Update risk item |
+| `DELETE /agentic-ai/api/designs/<id>/risks/<rid>` | Delete risk item |
+| `POST /agentic-ai/api/designs/<id>/risks/import-findings` | Import findings from latest assessment as risks |
+| `GET /agentic-ai/api/designs/<id>/threat-model` | Get latest threat model |
+| `POST /agentic-ai/api/designs/<id>/threat-model` | Generate + persist STRIDE + ATLAS threat model |
+| `GET /agentic-ai/api/portfolio` | Portfolio analytics (all designs) |
+| `GET /agentic-ai/api/designs/<id>/oscal` | Export OSCAL 1.1 Component Definition JSON |
+| `GET /agentic-ai/api/designs/<id>/oscal/control-coverage` | NIST 800-53 control coverage summary |
 
 ---
 
@@ -160,6 +194,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_parallel_groups` | Phase 4 — named parallel execution swim-lanes (migration 105) |
 | `aadc_safety_graphs` | Phase 3 — safety redundancy snapshots per design (migration 106) |
 | `aadc_agent_simulations` | Phase 3 — agent behavior simulation traces (migration 106) |
+| `aadc_risk_items` | Phase 5 — risk register items per design (migration 107) |
+| `aadc_threat_models` | Phase 5 — STRIDE + ATLAS threat model snapshots per design (migration 107) |
 
 ---
 

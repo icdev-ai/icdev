@@ -1,8 +1,3 @@
-# CUI // SP-CTI
-#
-# Auto-managed by tools/project/kanban_project_sync.py
-# Human edits to name/description/briefs are preserved.
-
 projects:
 - key: add_a_cmmi
   name: Add A Cmmi Project
@@ -2518,6 +2513,8 @@ projects:
   - 'Phase 4 Competitive Edge: checkpoint/fork, HITL Gate node, parallel exec graph,
     observability trace nodes, memory enrichment, streaming toggle, A2A/sandbox nodes,
     PII+trusted-monitor safety nodes — aadc-p4-01..11'
+  - 'Phase 5 Governance: AI risk register, STRIDE threat model generator, portfolio
+    dashboard, OSCAL component export — aadc-p5-01..09'
   epics:
   - key: c1
     title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
@@ -2538,7 +2535,8 @@ projects:
     title: V&V (E2E tests, companion sync, coherence gate)
     priority: critical
   - key: p1
-    title: Phase 1 — Canvas Parity (undo/redo, multi-select, copy/paste, exports, legend, diff)
+    title: Phase 1 — Canvas Parity (undo/redo, multi-select, copy/paste, exports,
+      legend, diff)
     priority: critical
   - key: p2
     title: Phase 2 — Ecosystem Wiring (Genesis, MCP, activity feed, fine-tuning, Kanban)
@@ -2547,5 +2545,10 @@ projects:
     title: Phase 3 — AADC-Unique (safety graph, coord matrix, provenance, simulation)
     priority: high
   - key: p4
-    title: Phase 4 — Competitive Edge (checkpoint/fork, HITL Gate node, parallel exec graph, observability nodes, memory enrichment, streaming, A2A/sandbox, PII guardrails)
+    title: Phase 4 — Competitive Edge (checkpoint/fork, HITL Gate node, parallel exec
+      graph, observability nodes, memory enrichment, streaming, A2A/sandbox, PII guardrails)
+    priority: high
+  - key: p5
+    title: Phase 5 — Governance & Reporting (risk register, threat model, portfolio,
+      OSCAL)
     priority: high
