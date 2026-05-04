@@ -128,7 +128,6 @@ def validate_parallel_paths(nodes: list[dict], edges: list[dict]) -> list[dict]:
         adj.setdefault(e["source"], []).append(e["target"])
         radj.setdefault(e["target"], []).append(e["source"])
 
-    node_map = {n["id"]: n for n in nodes}
     warnings: list[dict] = []
 
     for node in nodes:

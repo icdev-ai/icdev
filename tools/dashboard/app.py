@@ -1170,7 +1170,7 @@ def create_app() -> Flask:
         PUT body {channel: "slack"} persists to args/kanban_notify.json.
         """
         import os as _os
-        from flask import jsonify as _jnc, request as _req
+        from flask import jsonify as _jnc
 
         def _load_settings():
             if _NOTIFY_SETTINGS_PATH.exists():
