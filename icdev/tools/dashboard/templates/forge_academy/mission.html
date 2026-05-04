@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block title %}{{ mission.title }} — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/codemirror.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/dracula.css') }}">
+<style>
+:root {
+  --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88;
+  --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25);
+}
+.fa-mission-layout { display:grid; grid-template-columns:280px 1fr; min-height:calc(100vh - 60px); }
+/* Sidebar */
+.fa-sidebar {
+  background:#0d1221; border-right:1px solid var(--fa-border);
+  padding:1.2rem; overflow-y:auto; position:sticky; top:60px; max-height:calc(100vh - 60px);
+}
+.fa-sidebar-title {
+  font-size:.65rem; text-transform:uppercase; letter-spacing:.2em;
+  color:var(--fa-orange); margin:0 0 1rem;
+}
+.fa-mission-title { font-size:1rem; font-weight:800; margin:0 0 .3rem; }
+.fa-mission-meta { font-size:.72rem; color:var(--text-secondary); margin:0 0 1.2rem; }
+.fa-step-nav { list-style:none; padding:0; margin:0; }
+.fa-step-nav li {
+  padding:.55rem .7rem; border-radius:6px; cursor:pointer;
+  font-size:.78rem; transition:all .15s; display:flex; gap:.5rem; align-items:center;
+  margin-bottom:.2rem; border:1px solid transparent;
+}
+.fa-step-nav li:hover { background:rgba(255,255,255,.04); }
+.fa-step-nav li.active { background:rgba(255,107,53,.1); border-color:var(--fa-orange); }
+.fa-step-nav li.done { color:var(--fa-green); }
+.fa-step-nav li .step-num {
+  font-size:.62rem; width:18px; height:18px; border-radius:50%;
+  display:flex; align-items:center; justify-content:center;
+  background:rgba(255,255,255,.07); flex-shrink:0; font-weight:700;
+}
+.fa-step-nav li.done .step-num { background:var(--fa-green); color:#0a0a14; }
+.fa-step-nav li.active .step-num { background:var(--fa-orange); color:#fff; }
+/* XP bar in sidebar */
+.fa-xp-mini { margin-top:auto; padding-top:1rem; border-top:1px solid var(--fa-border); }
+.fa-xp-mini-bar { height:4px; background:rgba(255,255,255,.07); border-radius:2px; overflow:hidden; }
+.fa-xp-mini-fill { height:100%; background:linear-gradient(90deg,var(--fa-orange),var(--fa-gold)); border-radius:2px; }
+/* Main content */
+.fa-main { padding:1.5rem 2rem; overflow-y:auto; }
+.fa-step-header { margin-bottom:1.5rem; }
+.fa-step-num { font-size:.65rem; color:var(--fa-orange); text-transform:uppercase; letter-spacing:.15em; margin:0 0 .3rem; }
+.fa-step-title { font-size:1.4rem; font-weight:800; margin:0 0 .8rem; }
+.fa-step-content {
+  background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
+  padding:1.5rem; margin-bottom:1.2rem; line-height:1.7;
+}
+.fa-step-content h1,.fa-step-content h2,.fa-step-content h3 { color:var(--fa-cyan); }
+.fa-step-content code {
+  background:rgba(0,0,0,.3); border:1px solid var(--fa-border);
+  padding:1px 5px; border-radius:3px; font-size:.85em;
+}
+.fa-step-content pre { background:rgba(0,0,0,.4); border:1px solid var(--fa-border); border-radius:6px; padding:1rem; overflow-x:auto; }
+/* Coding step */
+.fa-code-layout { display:grid; grid-template-rows:auto 1fr auto; gap:.8rem; }
+.fa-editor-wrap {
+  background:#0a0f1a; border:1px solid var(--fa-border); border-radius:8px;
+  overflow:hidden; min-height:300px;
+}
+.fa-editor-wrap .CodeMirror { height:300px; font-size:.85rem; font-family:'Courier New',monospace; }
+.fa-output-panel {
+  background:#060910; border:1px solid var(--fa-border); border-radius:8px;
+  padding:.8rem 1rem; min-height:80px; font-family:monospace; font-size:.8rem;
+  white-space:pre-wrap; overflow-y:auto; max-height:200px; color:#ccc;
+}
+.fa-output-panel.passed { border-color:var(--fa-green); color:var(--fa-green); }
+.fa-output-panel.failed { border-color:#FF2D55; color:#ff6b6b; }
+.fa-controls { display:flex; gap:.7rem; align-items:center; flex-wrap:wrap; }
+.fa-btn-run {
+  background:var(--fa-orange); color:#fff; border:none; border-radius:6px;
+  padding:.5rem 1.2rem; font-size:.82rem; font-weight:700; cursor:pointer;
+  transition:opacity .15s; letter-spacing:.04em;
+}
+.fa-btn-run:hover { opacity:.85; }
+.fa-btn-run:disabled { opacity:.5; cursor:not-allowed; }
+.fa-btn-next {
+  background:linear-gradient(135deg,var(--fa-green),#00b860); color:#0a0a14;
+  border:none; border-radius:6px; padding:.5rem 1.2rem; font-size:.82rem;
+  font-weight:700; cursor:pointer; display:none;
+}
+.fa-btn-hint {
+  background:transparent; border:1px solid var(--fa-border); color:var(--text-secondary);
+  border-radius:6px; padding:.5rem 1rem; font-size:.78rem; cursor:pointer; margin-left:auto;
+}
+.fa-btn-hint:hover { border-color:var(--fa-cyan); color:var(--fa-cyan); }
+.fa-hint-panel {
+  background:rgba(0,212,255,.06); border:1px solid rgba(0,212,255,.2);
+  border-radius:8px; padding:1rem; font-size:.82rem; line-height:1.5;
+  color:var(--fa-cyan); display:none; margin-top:.6rem;
+}
+/* Guided step */
+.fa-guided-step { }
+/* Mission complete overlay */
+.fa-complete-banner {
+  background:linear-gradient(135deg,rgba(0,255,136,.15),rgba(0,212,255,.05));
+  border:1px solid rgba(0,255,136,.4); border-radius:12px;
+  padding:2rem; text-align:center; margin-top:1rem;
+}
+.fa-complete-banner h2 { color:var(--fa-green); font-size:1.5rem; margin:0 0 .5rem; }
+@keyframes slideInRight {
+  from { transform:translateX(40px); opacity:0; }
+  to   { transform:translateX(0);    opacity:1; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fa-mission-layout">
+  <!-- Sidebar -->
+  <div class="fa-sidebar">
+    <div class="fa-sidebar-title">◈ Mission</div>
+    <div class="fa-mission-title">{{ mission.title }}</div>
+    <div class="fa-mission-meta">
+      Tier {{ mission.tier }} · {{ mission.mission_type|capitalize }} · ~{{ mission.estimated_minutes }}m
+      · <span style="color:var(--fa-gold)">+{{ mission.xp_reward }} XP</span>
+    </div>
+
+    <ul class="fa-step-nav" id="step-nav">
+      {% for step in mission.steps %}
+      {% set s_state = step_states.get(step.id, 'pending') %}
+      <li class="{% if loop.first %}active{% endif %} {% if s_state=='completed' %}done{% endif %}"
+          data-step-idx="{{ loop.index0 }}" onclick="goStep({{ loop.index0 }})">
+        <span class="step-num">{% if s_state=='completed' %}✓{% else %}{{ loop.index }}{% endif %}</span>
+        <span>{{ step.title }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+
+    {% if fa_user %}
+    <div class="fa-xp-mini">
+      <div style="font-size:.65rem;color:var(--text-secondary);margin-bottom:.4rem;">
+        {{ fa_user.xp|default(0) }} XP · {{ level_ctx.level.label if level_ctx and level_ctx.level else 'Recruit' }}
+      </div>
+      <div class="fa-xp-mini-bar">
+        <div class="fa-xp-mini-fill" style="width:{{ level_ctx.pct if level_ctx else 0 }}%"></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="margin-top:1rem;">
+      <a href="/academy/missions" style="font-size:.72rem;color:var(--text-secondary);">← All Missions</a>
+    </div>
+  </div>
+
+  <!-- Main step area -->
+  <div class="fa-main" id="step-main">
+    {% set steps = mission.steps %}
+    {% if steps %}
+    {% for step in steps %}
+    <div class="fa-step-pane" id="step-pane-{{ loop.index0 }}"
+         style="{% if not loop.first %}display:none;{% endif %}">
+      <div class="fa-step-header">
+        <div class="fa-step-num">Step {{ loop.index }} of {{ steps|length }}</div>
+        <div class="fa-step-title">{{ step.title }}</div>
+      </div>
+
+      {% set stype = step.step_type|default('coding') %}
+
+      {% if stype == 'coding' %}
+      {% include "forge_academy/partials/_step_coding.html" %}
+      {% elif stype == 'configure' %}
+      {% include "forge_academy/partials/_step_configure.html" %}
+      {% elif stype == 'verify' %}
+      {% include "forge_academy/partials/_step_verify.html" %}
+      {% elif stype == 'reflect' %}
+      {% include "forge_academy/partials/_step_reflect.html" %}
+      {% elif stype == 'watch' %}
+      {% include "forge_academy/partials/_step_watch.html" %}
+      {% elif stype == 'deploy' %}
+      {% include "forge_academy/partials/_step_deploy.html" %}
+      {% elif stype == 'design' %}
+      {% include "forge_academy/partials/_step_design.html" %}
+      {% else %}
+      {% include "forge_academy/partials/_step_coding.html" %}
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="padding:3rem;text-align:center;color:var(--text-secondary);">
+      No steps found for this mission. Content is being authored.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+const STEPS = {{ mission.steps | tojson }};
+const MISSION = {{ mission | tojson }};
+const FA_USER_ID = {{ fa_user.id if fa_user else 'null' }};
+let currentStep = 0;
+let hintsUsed = 0;
+let startTime = Date.now();
+
+function goStep(idx) {
+  document.querySelectorAll('.fa-step-pane').forEach((p,i) => p.style.display = i===idx ? '' : 'none');
+  document.querySelectorAll('#step-nav li').forEach((li,i) => {
+    li.classList.toggle('active', i===idx);
+  });
+  currentStep = idx;
+  startTime = Date.now();
+  hintsUsed = 0;
+}
+
+async function runCode(stepIdx) {
+  const ta = document.getElementById('code-editor-' + stepIdx);
+  const code = (window.editors && window.editors[stepIdx])
+    ? window.editors[stepIdx].getValue()
+    : (ta ? ta.value : '');
+  const btn = document.getElementById('run-btn-' + stepIdx);
+  const out = document.getElementById('output-' + stepIdx);
+  btn.disabled = true;
+  btn.textContent = '⚙ Running...';
+  out.className = 'fa-output-panel';
+  out.textContent = 'Executing...';
+  try {
+    const resp = await fetch('/api/academy/code/run', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({code, test_code: STEPS[stepIdx].test_code || ''})
+    });
+    const d = await resp.json();
+    out.textContent = (d.stdout || '') + (d.stderr ? '\n\nSTDERR:\n' + d.stderr : '');
+    out.className = 'fa-output-panel ' + (d.passed ? 'passed' : 'failed');
+    if (d.passed) {
+      await submitStep(stepIdx, code, true);
+      document.getElementById('next-btn-' + stepIdx).style.display = 'inline-block';
+    }
+  } catch(e) {
+    out.textContent = 'Error: ' + e.message;
+    out.className = 'fa-output-panel failed';
+  }
+  btn.disabled = false;
+  btn.textContent = '▶ Run';
+}
+
+function showXPToast(xp, label) {
+  const t = document.createElement('div');
+  t.style.cssText = 'position:fixed;bottom:1.5rem;right:1.5rem;background:linear-gradient(135deg,#12192b,#1a2540);border:1px solid rgba(255,107,53,.5);border-radius:10px;padding:.9rem 1.4rem;font-size:.88rem;font-weight:700;color:#FF6B35;z-index:9999;box-shadow:0 4px 24px rgba(0,0,0,.5);display:flex;gap:.7rem;align-items:center;animation:slideInRight .3s ease';
+  t.innerHTML = '<span style="font-size:1.3rem;">⬡</span><div><div style="font-size:1.1rem">+' + xp + ' XP</div><div style="font-size:.72rem;color:#aaa;font-weight:400">' + (label||'Step Complete') + '</div></div>';
+  document.body.appendChild(t);
+  setTimeout(() => { t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, 2800);
+}
+
+async function submitStep(stepIdx, submission, passed) {
+  if (!FA_USER_ID) return;
+  const step = STEPS[stepIdx];
+  const elapsed = Math.round((Date.now() - startTime) / 1000);
+  const isLast = stepIdx === STEPS.length - 1;
+  try {
+    const resp = await fetch('/api/academy/step/submit', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        step_id: step.id,
+        mission_id: MISSION.id,
+        mission_slug: MISSION.slug,
+        submission: submission,
+        passed: passed,
+        hints_used: hintsUsed,
+        elapsed_seconds: elapsed,
+        base_xp: step.xp_partial || 50,
+        step_type: step.step_type || 'coding',
+        skill_tag: step.skill_tag || '',
+        mission_complete: isLast,
+        mission_xp: MISSION.xp_reward || 100,
+      })
+    });
+    const d = await resp.json();
+    if (d.ok && d.xp_event) {
+      const xp = d.xp_event.xp_awarded || d.xp_event.xp || (step.xp_partial || 50);
+      showXPToast(xp, elapsed < 90 ? '⚡ Speed Bonus!' : 'Step Complete');
+      if (d.xp_event.level_up) {
+        setTimeout(() => showXPToast(0, '🎖 Rank Up: ' + d.xp_event.level_up), 1000);
+      }
+    }
+  } catch(e) { /* non-blocking */ }
+  // Mark nav item done
+  const navItems = document.querySelectorAll('#step-nav li');
+  if (navItems[stepIdx]) navItems[stepIdx].classList.add('done');
+}
+
+async function getHint(stepIdx) {
+  const step = STEPS[stepIdx];
+  const panel = document.getElementById('hint-panel-' + stepIdx);
+  panel.style.display = 'block';
+  panel.textContent = '⚙ FORGE Sensei is analyzing...';
+  hintsUsed++;
+  const code = (window.editors && window.editors[stepIdx])
+    ? window.editors[stepIdx].getValue()
+    : '';
+  const designIdEl = document.getElementById('design-id-' + stepIdx);
+  const designId = designIdEl ? designIdEl.value.trim() : '';
+  try {
+    const resp = await fetch('/api/academy/coach/hint', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        mission_slug: MISSION.slug,
+        question: 'I need a hint for: ' + step.title,
+        context: code.substring(0, 300),
+        design_id: designId,
+      })
+    });
+    const d = await resp.json();
+    panel.innerHTML = '<strong style="color:var(--fa-orange)">FORGE Sensei</strong> (−10 XP)<br><br>' + (d.hint || 'Keep analyzing the requirements.');
+  } catch(e) {
+    panel.textContent = 'Hint unavailable. Trust your training.';
+  }
+}
+
+function nextStep(idx) {
+  if (idx + 1 < STEPS.length) {
+    goStep(idx + 1);
+  } else {
+    // Mission complete
+    document.getElementById('step-main').innerHTML = `
+      <div class="fa-complete-banner">
+        <div style="font-size:3rem;">🎯</div>
+        <h2>Mission Complete</h2>
+        <p>Outstanding performance, Operative. XP awarded and skills logged.</p>
+        <div style="display:flex;gap:.8rem;justify-content:center;margin-top:1rem;">
+          <a href="/academy/missions" class="fa-btn-run" style="text-decoration:none;display:inline-block;padding:.6rem 1.5rem;">Next Mission</a>
+          <a href="/academy" class="btn" style="font-size:.85rem;">← Hub</a>
+        </div>
+      </div>`;
+  }
+}
+
+// Initialize CodeMirror if available
+// Load CodeMirror dynamically so it's available before DOMContentLoaded fires
+(function() {
+  function loadScript(src, cb) {
+    var s = document.createElement('script'); s.src = src; s.onload = cb; document.head.appendChild(s);
+  }
+  var base = "{{ url_for('static', filename='vendor/codemirror/') }}";
+  loadScript(base + 'codemirror.js', function() {
+    loadScript(base + 'python.js', function() { document.dispatchEvent(new Event('codemirror-ready')); });
+  });
+})();
+
+window.editors = {};
+document.addEventListener('codemirror-ready', function() {
+  document.querySelectorAll('.fa-cm-target').forEach(function(ta) {
+    const idx = ta.dataset.stepIdx;
+    const cm = CodeMirror.fromTextArea(ta, {
+      mode: 'python', theme: 'dracula',
+      lineNumbers: true, indentUnit: 4, tabSize: 4,
+      lineWrapping: false, autofocus: idx == 0,
+    });
+    cm.setSize(null, 300);
+    window.editors[idx] = cm;
+  });
+});
+</script>
+{% endblock %}

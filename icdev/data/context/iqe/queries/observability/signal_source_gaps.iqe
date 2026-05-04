@@ -1,0 +1,9 @@
+# Intent: Find techniques that have no signal source assigned (signal_source == null),
+#         meaning the detection infrastructure cannot produce telemetry for the technique
+#         regardless of rule quality — signal onboarding is required before rule authoring.
+# Expected violation shape: rows where signal_source == null; each row represents a
+#   technique with no telemetry path into the detection pipeline.
+
+foreach t in odc_coverage
+  where t.signal_source == null
+  select t.technique_id, t.tactic_id, t.signal_source, t.coverage_state, t.severity

@@ -1,0 +1,2618 @@
+projects:
+- key: aadc-sp
+  name: AADC Solution Packs — Industry-Ready Agentic AI Templates
+  description: >
+    7 pre-wired agentic AI solution packs for the Agentic AI Design Canvas.
+    Each pack ships with pre-placed nodes, wired edges, seeded risk register,
+    compliance baseline (NIST AI RMF, OWASP LLM, OMB), MITRE ATLAS scenarios,
+    and a quick-start wizard. Industries covered: Customer Service, Autonomous Coding,
+    Knowledge Research, Cybersecurity SOC, Healthcare Admin, Gov/Procurement, Multi-Agent Research.
+  task_prefix: aadc-sp-
+  default_open: true
+  briefs:
+    - 'sp1: solution_packs.py module (7 packs + risk seeds + ATLAS + quickstart routing)'
+    - 'sp2: DB seeding in init_db.py + blueprint.py routes + API endpoints'
+    - 'sp3: solution_packs.html gallery + quick_start.html wizard + templates.html update'
+    - 'sp4: icdev mirror + projects.yaml registration + V&V'
+  epics:
+    - key: sp1
+      title: Solution Pack Definitions (module + risk seeds + ATLAS)
+      priority: critical
+    - key: sp2
+      title: DB Seeding + Blueprint Routes + Apply-with-Risks API
+      priority: critical
+    - key: sp3
+      title: HTML Gallery + Quick-Start Wizard + Templates Banner
+      priority: high
+    - key: sp4
+      title: icdev Mirror + Registration + V&V Gate
+      priority: high
+- key: add_a_cmmi
+  name: Add A Cmmi Project
+  description: Auto-registered project for tasks with prefix 'add-a-cmmi-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: add-a-cmmi-
+  default_open: true
+  briefs: []
+  epics:
+  - key: l
+    title: L
+    priority: medium
+  - key: a1
+    title: A1
+    priority: medium
+  - key: a2
+    title: A2
+    priority: medium
+  - key: a3
+    title: A3
+    priority: medium
+  - key: b1
+    title: B1
+    priority: medium
+  - key: b2
+    title: B2
+    priority: medium
+  - key: b3
+    title: B3
+    priority: medium
+  - key: c1
+    title: C1
+    priority: medium
+  - key: c2
+    title: C2
+    priority: medium
+  - key: c3
+    title: C3
+    priority: medium
+  - key: d1
+    title: D1
+    priority: medium
+  - key: d2
+    title: D2
+    priority: medium
+  - key: d3
+    title: D3
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: aisg
+  name: AI Skills Gap — Zero-to-AI Enablement Platform
+  description: 'Strategic initiative to close the AI skills gap for government agencies
+    and commercial companies. ICDEV becomes the vehicle that enables development teams
+    with no AI expertise to build, deploy, and govern AI systems — shortening the
+    AI journey from months to days. Four phases: (A) Zero-to-AI onboarding (wizard,
+    role views, explain-this), (B) Guided AI curriculum (pattern library, learning
+    paths, institutional memory), (C) No-code customization (visual agent builder,
+    autotune fine-tuning, graduated trust), (D) Workforce multiplier metrics (ROI
+    dashboard, skills gap tracker, talent retention).
+
+    '
+  task_prefix: aisg-
+  default_open: true
+  briefs:
+  - 'Phase A: Launchpad wizard + role-based views + explain-this — aisg-a1-01..05,
+    aisg-a2-01..05, aisg-a3-01..03'
+  - 'Phase B: AI pattern library + learning paths + institutional memory — aisg-b1-01..07,
+    aisg-b2-01..04, aisg-b3-01..03'
+  - 'Phase C: Visual agent builder + autotune fine-tuning + Genesis graduated trust
+    — aisg-c1-01..04, aisg-c2-01..04, aisg-c3-01..04'
+  - 'Phase D: AI ROI dashboard + skills gap tracker + talent retention package —
+    aisg-d1-01..03, aisg-d2-01..03, aisg-d3-01..02'
+  - 'V&V: companion sync + coherence gate + Playwright E2E all 10 pages — aisg-vv-01..02'
+  epics:
+  - key: a1
+    title: Phase A — Launchpad Wizard (5-question setup, 30-day sprint seeder)
+    priority: critical
+  - key: a2
+    title: Phase A — Role-Based Dashboard Views (Builder/Compliance/Executive/PM)
+    priority: critical
+  - key: a3
+    title: Phase A — Explain This Decision (plain-English AI decision translator)
+    priority: high
+  - key: b1
+    title: Phase B — AI Pattern Library (4 pre-built agent patterns + CLI deploy)
+    priority: critical
+  - key: b2
+    title: Phase B — In-Platform Learning Paths (3 progressive tracks)
+    priority: high
+  - key: b3
+    title: Phase B — Institutional Memory Capture (handoff/onboarding package)
+    priority: high
+  - key: c1
+    title: Phase C — Visual Agent Builder (drag-and-drop FORGE goal generator)
+    priority: high
+  - key: c2
+    title: Phase C — AutoTune Fine-Tuning (thumbs-up/down, business metrics)
+    priority: high
+  - key: c3
+    title: Phase C — Genesis Graduated Trust (observer/advisor/executor/full)
+    priority: high
+  - key: d1
+    title: Phase D — AI ROI Dashboard (hours saved, action breakdown, weekly trend)
+    priority: high
+  - key: d2
+    title: Phase D — Skills Gap Tracker (maturity score, usage heatmap, next steps)
+    priority: high
+  - key: d3
+    title: Phase D — Talent Retention Package (AI profile encode/import)
+    priority: high
+  - key: vv
+    title: Final V&V (companion sync + coherence + Playwright E2E all 10 pages)
+    priority: critical
+  - key: bte
+    title: BTE
+    priority: medium
+  - key: decaudit
+    title: DECAUDIT
+    priority: medium
+  - key: defi
+    title: DEFI
+    priority: medium
+  - key: factor
+    title: FACTOR
+    priority: medium
+  - key: intltick
+    title: INTLTICK
+    priority: medium
+  - key: llmfac
+    title: LLMFAC
+    priority: medium
+  - key: magent
+    title: MAGENT
+    priority: medium
+  - key: newssig
+    title: NEWSSIG
+    priority: medium
+  - key: qfix
+    title: QFIX
+    priority: medium
+- key: fdt
+  name: FathomDesk — TradingAgents Adaptation
+  description: 'Five-phase adaptation of tauricresearch/tradingagents patterns into
+    FathomDesk. Phase A: quick fixes (yfinance retry, date-aware fetch, creative domain
+    alias). Phase B: LLM factory + international tickers (TSX/Tokyo/HK via yfinance
+    fallback). Phase C: multi-agent analyst panel (4 agents + Bull/Bear debate + Risk
+    Manager) + SEC 17a-4 / CFTC / MiFID II decision audit trail. Phase D: event-driven
+    backtesting engine (FIFO P&L, Sharpe, Calmar) + news sentiment → Oracle confidence
+    weighting. Phase E: Fama-French factor model + DeFi/on-chain asset coverage. All
+    phases reuse existing data_gateway.py, signal_generator.py, backtester.py, broker_adapter.py,
+    constants.py, INTaaS reasoner, trap detector, tax-lot FIFO, and ICDEV LLM router.'
+  task_prefix: fdt-
+  default_open: true
+  briefs:
+  - 'Phase A: yfinance rate-limit retry + date-aware fetch audit + creative domain
+    alias — fdt-qfix-01..04'
+  - 'Phase B: LLM factory (per-agent provider override) + international tickers —
+    fdt-llmfac-01..04, fdt-intltick-01..02'
+  - 'Phase C: 4 analyst agents + Bull/Bear debate + Risk Manager + decision audit
+    trail — fdt-magent-01..10, fdt-decaudit-01..03'
+  - 'Phase D: event-driven backtester (Sharpe/Calmar/drawdown) + news sentiment signal
+    — fdt-bte-01..06, fdt-newssig-01..03'
+  - 'Phase E: Fama-French 3-factor + momentum/mean-reversion + DeFi coverage — fdt-factor-01..05,
+    fdt-defi-01..02'
+  epics:
+  - key: qfix
+    title: Phase A — Quick Fixes (yfinance retry, date anchor, creative alias)
+    priority: high
+  - key: llmfac
+    title: Phase B — LLM Provider Factory (per-agent override)
+    priority: high
+  - key: intltick
+    title: Phase B — International Ticker Support (TSX/Tokyo/HK)
+    priority: medium
+  - key: magent
+    title: Phase C — Multi-Agent Analyst Panel (4 agents + debate + risk manager)
+    priority: critical
+  - key: decaudit
+    title: Phase C — Decision Audit Trail (SEC 17a-4 / CFTC / MiFID II)
+    priority: high
+  - key: bte
+    title: Phase D — Backtesting Engine (event-driven, FIFO P&L, Sharpe/Calmar)
+    priority: high
+  - key: newssig
+    title: Phase D — News Sentiment Signal (Oracle confidence weighting)
+    priority: medium
+  - key: factor
+    title: Phase E — Fama-French Factor Model + Momentum/Mean-Reversion
+    priority: medium
+  - key: defi
+    title: Phase E — DeFi/On-Chain Asset Coverage
+    priority: low
+  - key: ais
+    title: AIS
+    priority: medium
+  - key: bbot
+    title: BBOT
+    priority: medium
+  - key: cve
+    title: CVE
+    priority: medium
+  - key: dw
+    title: DW
+    priority: medium
+  - key: geoint
+    title: GEOINT
+    priority: medium
+  - key: octi
+    title: OCTI
+    priority: medium
+  - key: sigint
+    title: SIGINT
+    priority: medium
+  - key: socmint
+    title: SOCMINT
+    priority: medium
+- key: sgx
+  name: Sgx Project
+  description: Auto-registered project for tasks with prefix 'sgx-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: sgx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: ais
+    title: AIS
+    priority: medium
+  - key: bbot
+    title: BBOT
+    priority: medium
+  - key: cve
+    title: CVE
+    priority: medium
+  - key: dw
+    title: DW
+    priority: medium
+  - key: octi
+    title: OCTI
+    priority: medium
+  - key: geoint
+    title: GEOINT
+    priority: medium
+  - key: sigint
+    title: SIGINT
+    priority: medium
+  - key: socmint
+    title: SOCMINT
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+- key: oracle
+  name: Oracle Project
+  description: Auto-registered project for tasks with prefix 'oracle-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: oracle-
+  default_open: true
+  briefs: []
+  epics:
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: dedup
+    title: DEDUP
+    priority: medium
+  - key: matchfn
+    title: MATCHFN
+    priority: medium
+  - key: parallel
+    title: PARALLEL
+    priority: medium
+  - key: relgraph
+    title: RELGRAPH
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wiki
+    title: WIKI
+    priority: medium
+- key: ob1
+  name: OB1 Memory Enhancements
+  description: 'Five patterns adapted from OB1 (Open Brain): (1) SHA-256 content_fingerprint
+    dedup on memory_entries; (2) entity relationship graph (supports/contradicts/supersedes)
+    + memory lint reflex; (3) match_thoughts PostgreSQL function + structured metadata
+    columns; (4) parallel embedding + metadata extraction in memory_write.py; (5)
+    wiki compiler 4-phase pipeline in Genesis v2.'
+  task_prefix: ob1-
+  default_open: true
+  briefs:
+  - 'Dedup: content_fingerprint column + SHA-256 upsert in memory_write.py — ob1-dedup'
+  - 'Relationships: memory_entity_relationships table + lint reflex — ob1-relgraph'
+  - 'Search: match_thoughts PG function + metadata columns — ob1-matchfn'
+  - 'Parallel: asyncio.gather for embed+metadata in memory_write.py — ob1-parallel'
+  - 'Wiki: 4-phase knowledge compiler Genesis reflex — ob1-wiki'
+  epics:
+  - key: dedup
+    title: SHA-256 Content Fingerprint Deduplication
+    priority: high
+  - key: relgraph
+    title: Entity Relationship Graph + Memory Lint Reflex
+    priority: high
+  - key: matchfn
+    title: match_thoughts PG Function + Metadata Columns
+    priority: medium
+  - key: parallel
+    title: Parallel Embedding + Metadata Extraction
+    priority: medium
+  - key: wiki
+    title: Wiki Compiler 4-Phase Genesis Reflex
+    priority: medium
+  - key: vv
+    title: V&V — Coherence, Companion, Health Check
+    priority: high
+  - key: viz
+    title: VIZ
+    priority: medium
+- key: kv
+  name: Kanban Task Visibility
+  description: 'Surface in-progress task health on the Kanban board: attempt count
+    badge, live time-in-flight counter, stale-reaper countdown bar, last-killed reason,
+    and fix failure_count to increment on reaper kills so the field is meaningful.'
+  task_prefix: kv-
+  default_open: true
+  briefs:
+  - 'API: add attempt_count + current_attempt_started_at + last_reaped_reason to task
+    response — kv-viz-01'
+  - 'UI: attempt badge + time-in-flight + reaper bar + last-killed line on in_progress
+    card — kv-viz-02'
+  - 'Fix: increment failure_count on stale-reaper kills — kv-viz-03'
+  - 'V&V: Playwright smoke test — kv-viz-04'
+  epics:
+  - key: viz
+    title: In-Progress Card Visibility
+    priority: high
+  - key: autoclose
+    title: AUTOCLOSE
+    priority: medium
+  - key: multidep
+    title: MULTIDEP
+    priority: medium
+- key: km
+  name: Kanban Maintenance
+  description: 'Two-phase Kanban engine hardening: (1) auto-close sweep for decomposed
+    parent tasks that get stuck when all children complete — requires manual DB
+    fix today; (2) multi-parent dependency support via junction table, replacing the
+    single depends_on_task_id scalar with a full DAG + DFS cycle detection.'
+  task_prefix: km-
+  default_open: true
+  briefs:
+  - 'Auto-close sweep: audit stuck parents, implement recursive close + backfill —
+    km-autoclose-01/02'
+  - 'Multi-parent deps: junction table migration, DFS cycle check, scheduler + UI
+    badge — km-multidep-01/02'
+  epics:
+  - key: autoclose
+    title: Decomposed Parent Auto-Close Sweep
+    priority: high
+  - key: multidep
+    title: Multi-Parent Dependency (Junction Table)
+    priority: medium
+  - key: e1
+    title: E1
+    priority: medium
+  - key: e2
+    title: E2
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wrap
+    title: WRAP
+    priority: medium
+- key: fde
+  name: FathomDesk — Epic E (Light Theme + Per-Page Voice Override)
+  description: 'Two cross-cutting UX improvements that complete the FathomDesk Phases
+    2-6 backlog. E1: light CSS theme using existing --bg-*/--text-* CSS variable hooks,
+    toggled from Settings → Profile. E2: per-page reading voice override (voice_overrides
+    JSON column on ad_profiles) so users can pin e.g. quant voice on /signals but
+    pm-tone on /portfolio.
+
+    '
+  task_prefix: fde-
+  default_open: true
+  briefs:
+  - 'E1 Light theme: CSS variables pass + base.html toggle + profile route — fde-e1-01..03'
+  - 'E2 Voice override: migration + get_voice_for_page() + settings UI + route —
+    fde-e2-01..04'
+  - 'Wrap: manifest + coherence + companion + feature docs — fde-wrap-01, fde-vv-01'
+  epics:
+  - key: e1
+    title: Light Theme
+    priority: high
+  - key: e2
+    title: Per-Page Voice Override
+    priority: medium
+  - key: wrap
+    title: Wrap — Manifest, Coherence, Docs
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: high
+  - key: cost
+    title: COST
+    priority: medium
+  - key: floor
+    title: FLOOR
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: sync
+    title: SYNC
+    priority: medium
+- key: fd
+  name: FathomDesk — Backtest Schema + Risk Floors + Cost Optimizer
+  description: 'Three paperclip-inspired improvements: (1) canonical BacktestResult
+    dataclass in constants.py so all 13 strategy types emit identical artifacts; (2)
+    per-strategy Sharpe/drawdown floor config wired as Gate 0 in preflight.py; (3)
+    weekly cost_optimizer Genesis reflex auditing LLM token spend across all agents.'
+  task_prefix: fd-
+  default_open: true
+  briefs:
+  - 'Backtest schema: BacktestResult dataclass + STRATEGY_TYPES + institutional memory
+    artifacts — fd-schema-01/02'
+  - 'Risk floor: fathomdesk_strategy_floors.yaml + Gate 0 in preflight.py + tests
+    — fd-floor-01/02/03'
+  - 'Cost optimizer: Genesis reflex (weekly, 168h) + daemon registration — fd-cost-01/02'
+  - 'Gate: manifest sync + companion sync + coherence + V&V — fd-sync-01, fd-vv-01'
+  epics:
+  - key: schema
+    title: BacktestResult Schema + Institutional Memory
+    priority: high
+  - key: floor
+    title: Per-Strategy Risk Floor (Gate 0)
+    priority: high
+  - key: cost
+    title: Cost Optimizer Genesis Reflex
+    priority: medium
+  - key: sync
+    title: Manifest + Companion Sync
+    priority: medium
+  - key: vv
+    title: V&V Sign-Off
+    priority: high
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
+- key: sg
+  name: STRATEGOS — Geospatial War Intelligence & Simulation Platform
+  description: 'Conflict-agnostic geospatial war intelligence child app: 8-domain
+    coverage (land/sea/cyber/air/space/information/EW/economic), Ghost Track transponder-off
+    prediction, I&W pre-war indicator engine, War Game simulation (Lanchester/Blotto/Nash),
+    7-agent OODA agentic loop, RAG+KG-powered HITL War Council briefs. Air-gap native
+    (Ollama LLM, PMTiles offline maps, PyPI-only). Ukraine theater Phase 1, Pacific
+    theater Phase 2. Extensible via Theater abstraction layer for any future conflict.'
+  task_prefix: sg-
+  default_open: true
+  briefs:
+  - 'Foundation: theater abstraction + DB migration + war KG schema + Flask blueprint
+    — sg-foundation-01..06'
+  - 'Import: 9 air-gap data importers (ACLED/Oryx/AIS/STIX/FAO/OSM/TLE/GDELT/baselines)
+    — sg-import-01..09'
+  - 'Viz: Leaflet+PMTiles map + frontline animation + domain layer controls + KG explorer
+    — sg-viz-01..04'
+  - Land+Sea+Cyber+Space+Info+EW+Econ domain modules (parallel) — sg-land/sea/cyber/space/info/ew/econ
+  - 'Ghost Track: behavioral profiler + 4 detectors + dead reckoning + classifier
+    + HITL — sg-ghost-01..07'
+  - 'I&W Engine: 6 PMESII-PT scorers + Bayesian updater + GBM classifier + DTW matcher
+    + Weibull — sg-iw-01..10'
+  - 'War Game: Lanchester + Blotto + Nash + Monte Carlo COA + 36 Stratagems — sg-game-01..05'
+  - 'Agents: 7-agent OODA loop (Intel/Pattern/Maritime/Cyber/Space/Info/Strategy)
+    — sg-agent-01..06'
+  - 'RAG (GATED on RAG-KG bridge): doctrine corpus + historical events + upgrade stubs
+    — sg-rag-01..06'
+  - 'Pacific: PLAN ORBAT + A2AD rings + amphibious analyzer + Taiwan Strait + militia
+    classifier — sg-pacific-01..06'
+  - 'Digital Twin: formalize Ghost Track/I&W/War Game as managed twins + cross-canvas
+    event bus (NDC->cyber, FathomDesk->war-endurance) + awareness engine indexing
+    — sg-twin-01..07'
+  - 'Cyber Extension: NVD CVE ingest + CISA KEV + MITRE ATT&CK live sync + Shodan
+    InternetDB + CVE-to-infra join + daily Genesis reflex — sg-cyber-ext-01..09'
+  epics:
+  - key: foundation
+    title: Theater Abstraction + DB + KG Schema + Blueprint
+    priority: critical
+  - key: import
+    title: Air-Gap Data Import Pipeline (9 Sources)
+    priority: critical
+  - key: viz
+    title: Geospatial Visualization Layer (Leaflet + D3 + Cytoscape)
+    priority: high
+  - key: land
+    title: Land Domain — Troops, Frontline, Logistics
+    priority: high
+  - key: sea
+    title: Maritime Domain — AIS, Naval ORBAT, Kalibr, USV
+    priority: high
+  - key: cyber
+    title: Cyber Domain — ATT&CK, Kill Chain, Correlation
+    priority: high
+  - key: space
+    title: Space Domain — TLE, GPS Jamming, ASAT, ISR
+    priority: high
+  - key: info
+    title: Information/Cognitive Domain — GDELT, NLP, Narratives
+    priority: high
+  - key: ew
+    title: EW + Economic Domains — Jamming Zones, Supply Chain
+    priority: medium
+  - key: ghost
+    title: Ghost Track — Transponder-Off Prediction + Classification
+    priority: critical
+  - key: iw
+    title: I&W Engine — Pre-War Indicators + Exercise Classifier
+    priority: critical
+  - key: game
+    title: War Game Engine — Lanchester/Blotto/Nash/COA
+    priority: high
+  - key: agent
+    title: Agentic OODA Loop — 7 Agents + Orchestrator
+    priority: high
+  - key: rag
+    title: RAG Integration (GATED — awaits RAG-KG bridge)
+    priority: high
+  - key: pacific
+    title: Pacific Theater Extension — PLAN/A2AD/Taiwan/Militia
+    priority: medium
+  - key: sc
+    title: Supply Chain Intelligence — DIB, War Endurance, Sanctions, Humanitarian
+    priority: high
+  - key: oracle
+    title: STRATEGOS Intelligence Oracle — 5 War Intelligence Lenses
+    priority: critical
+  - key: reflex
+    title: War Intelligence Reflexes — 8 Autonomous Collection + Synthesis Reflexes
+    priority: high
+  - key: analyst
+    title: Analyst Workbench — PIR/CCIR, Brief Generator, Signal Engine, ORBAT
+    priority: high
+  - key: core
+    title: CORE
+    priority: medium
+  - key: twin
+    title: Digital Twin Integration — Ghost Track + I&W + War Game + Cross-Canvas
+      Bus
+    priority: high
+  - key: cyber-ext
+    title: Cyber Extension — NVD/KEV/ATT&CK Ingest + Shodan + Dynamic Heatmap
+    priority: high
+- key: sc-core
+  name: Supply Chain Core Promotion
+  description: 'Promote tools/supply_chain/ to true ICDEV core: domain-agnostic DB
+    schema (migration 048), pluggable scoring profiles (it_scrm/war_economy/govcon),
+    MCP tool updates. Enables FathomDesk + STRATEGOS + CPMP to share one supply chain
+    engine.'
+  task_prefix: sc-
+  default_open: true
+  briefs:
+  - 'Migration 048: extend DB CHECK constraints for war_economy + govcon domain types'
+  - 'Scoring profiles: tools/supply_chain/profiles/ — it_scrm.py + war_economy.py
+    + govcon stub'
+  - Manifest + MCP + companion sync + coherence gate
+  epics:
+  - key: core
+    title: Supply Chain Core — Migration + Profiles + Manifest
+    priority: critical
+  - key: db
+    title: DB
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: erb
+    title: ERB
+    priority: medium
+  - key: portdiag
+    title: PORTDIAG
+    priority: medium
+  - key: wizard
+    title: WIZARD
+    priority: medium
+- key: nmig
+  name: Network Device Migration Workflow
+  description: Vendor-agnostic network device migration workflow (chassis swap, peering
+    add/change/move) — physical port mapping, compatibility checklist, config conversion,
+    SVG port diagram, cutover planner, ERB/CCB package generation, and SOP approval
+    flow.
+  task_prefix: nmig-
+  default_open: true
+  briefs:
+  - 'DB schema: 6 mc_net_* tables — nmig-db-01 (done)'
+  - 'Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01
+    (done)'
+  - 'Blueprint: 23 network-migration API + page routes — nmig-engine-02 (done)'
+  - 'UI: 8-step wizard (device/config/ports/compat/diff/test/cutover/ERB) — nmig-wizard-01/02/03
+    (done)'
+  - 'Port diagram: SVG front-panel chassis view — nmig-portdiag-01 (done)'
+  - 'ERB/CCB: print template + SOP approval flow — nmig-erb-01 (done)'
+  epics:
+  - key: db
+    title: DB Schema
+    priority: high
+  - key: engine
+    title: Migration Engine
+    priority: high
+  - key: wizard
+    title: 8-Step Wizard UI
+    priority: high
+  - key: portdiag
+    title: Physical Port Diagram
+    priority: medium
+  - key: erb
+    title: ERB/CCB Package & Approval
+    priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: cq
+    title: CQ
+    priority: medium
+  - key: pa
+    title: PA
+    priority: medium
+  - key: ph
+    title: PH
+    priority: medium
+  - key: pi
+    title: PI
+    priority: medium
+  - key: pl
+    title: PL
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+- key: mi
+  name: Migration Intelligence Engine
+  description: Autonomous migration opportunity discovery and planning aligned to
+    enterprise technical goals (5-10 year horizon). Canvas cross-scan, goal management,
+    7R strategy generation, wave-based roadmaps, wishlist/budget lifecycle tracking,
+    and Genesis reflex.
+  task_prefix: mi-
+  default_open: true
+  briefs:
+  - 'DB schema: 8 mi_* tables (goals, opps, strategies, roadmaps, wishlist, budget
+    cycles, scans) — mi-db-01 (done)'
+  - 'Goal manager: CRUD + NL chat parsing (air-gap conditional) — mi-goal-01 (done)'
+  - 'Opportunity scanner: NDC EOL, topology, MDC cross-canvas — mi-scan-01 (done)'
+  - 'Strategy generator: 7R + roadmap builder — mi-strat-01 (done)'
+  - 'Migration manager: 8-stage pipeline + daemon + CLI — mi-mgr-01 (done)'
+  - 'Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API —
+    mi-api-01 (done)'
+  - 'Dashboard UI: index.html with tabbed goals/opps/roadmaps/wishlist/chat — mi-ui-01
+    (done)'
+  - 'Genesis reflex: migration_intel.py autonomous 24h scan — mi-reflex-01 (done)'
+  epics:
+  - key: db
+    title: DB Schema
+    priority: high
+  - key: goal
+    title: Goal Manager
+    priority: high
+  - key: scan
+    title: Opportunity Scanner
+    priority: high
+  - key: strat
+    title: Strategy Generator
+    priority: medium
+  - key: mgr
+    title: Migration Manager
+    priority: high
+  - key: api
+    title: Flask Blueprint
+    priority: high
+  - key: ui
+    title: Dashboard UI
+    priority: medium
+  - key: reflex
+    title: Genesis Reflex
+    priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: cq
+    title: CQ
+    priority: medium
+  - key: pa
+    title: PA
+    priority: medium
+  - key: ph
+    title: PH
+    priority: medium
+  - key: pi
+    title: PI
+    priority: medium
+  - key: pl
+    title: PL
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+- key: ndc
+  name: Ndc Project
+  description: Auto-registered project for tasks with prefix 'ndc-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: ndc-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cq
+    title: CQ
+    priority: medium
+  - key: pi
+    title: PI
+    priority: medium
+  - key: pa
+    title: PA
+    priority: medium
+  - key: ph
+    title: PH
+    priority: medium
+  - key: pl
+    title: PL
+    priority: medium
+  - key: ux
+    title: UX
+    priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: bdc
+    title: BDC
+    priority: medium
+  - key: bus
+    title: BUS
+    priority: medium
+  - key: compliance
+    title: COMPLIANCE
+    priority: medium
+  - key: ddc
+    title: DDC
+    priority: medium
+  - key: e2e
+    title: E2E
+    priority: medium
+  - key: odc
+    title: ODC
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: cvo
+  name: Canvas Orchestration
+  description: 'Cross-canvas event bus and unified compliance health: NDC->SDC topology
+    hook, PDC->SDC threat refresh, BDC ISA expiry alerting, DDC lineage UI with PII
+    markers, ODC MITRE ingestion + Sigma generation, and a unified /canvas-compliance
+    page showing green/yellow/red compliance status across all 7 canvases.'
+  task_prefix: cvo-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bus
+    title: Cross-Canvas Event Bus
+    priority: high
+  - key: bdc
+    title: BDC ISA Expiry Alerting
+    priority: high
+  - key: ddc
+    title: DDC Lineage UI + PII Markers
+    priority: medium
+  - key: odc
+    title: ODC MITRE + Sigma Generation
+    priority: medium
+  - key: compliance
+    title: Unified /canvas-compliance Page
+    priority: high
+  - key: e2e
+    title: E2E Selenium + V&V Gate
+    priority: critical
+  - key: vv
+    title: V&V Gate
+    priority: critical
+  - key: idc
+    title: IDC
+    priority: medium
+- key: cvp
+  name: Canvas Parity
+  description: Bring BDC, DDC, ODC, and IDC to parity with NDC/SDC/PDC. Adds simulation
+    registry entries and canvas_versions YAML for all 4 canvases. IDC gets full Terraform
+    + Ansible IaC generation (the only canvas currently lacking IaC output). E2E Selenium
+    lifecycle tests for each canvas.
+  task_prefix: cvp-
+  default_open: true
+  briefs: []
+  epics:
+  - key: bdc
+    title: BDC Registry + Versioning
+    priority: high
+  - key: ddc
+    title: DDC Registry + Versioning
+    priority: high
+  - key: odc
+    title: ODC Registry + Versioning
+    priority: high
+  - key: idc
+    title: IDC Registry + IaC Generation
+    priority: high
+  - key: e2e
+    title: Canvas E2E Lifecycle Tests
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: critical
+- key: ad712
+  name: FathomDesk 7.12
+  description: 'Completes the deferred work from Phase 7.10-7.5C: ad_trap_events insert
+    path (table exists, write path missing), trap history API + Genesis reflex + UI
+    panel, and live broker limit/stop orders (Phase 7.5C stub completion via Alpaca
+    API).'
+  task_prefix: ad712-
+  default_open: true
+  briefs: []
+  epics:
+  - key: trap
+    title: Trap Events Write Path + API + UI
+    priority: high
+  - key: broker
+    title: Live Broker Limit/Stop Orders
+    priority: high
+  - key: e2e
+    title: E2E Selenium Test
+    priority: high
+  - key: vv
+    title: V&V Gate
+    priority: critical
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: gap
+    title: GAP
+    priority: medium
+  - key: mfst
+    title: MFST
+    priority: medium
+- key: cdh
+  name: Code Health
+  description: 'Systematic cleanup of 1,014 open oracle predictions: fix CRITICAL
+    import regression (stale FathomDesk reference in awareness tooling), repair 3
+    broken test files, register 219 unlisted tools in manifest shards, and add 360
+    unlisted routes to start.md Pages: line.'
+  task_prefix: cdh-
+  default_open: true
+  briefs: []
+  epics:
+  - key: fix
+    title: Critical Fixes (import regression + broken tests)
+    priority: critical
+  - key: mfst
+    title: Manifest + Routes Registration
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: critical
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: gap
+    title: Oracle Gap Tasks (orphan_db_table, tool_not_in_manifest, route_no_e2e)
+    priority: medium
+- key: ndchat
+  name: NDC Chat Context Bridge
+  description: 'NDC canvas AI chat context system: backend context/message persistence
+    endpoints, unified Q&A + topology routing in ai-chat, JS context-init + history
+    restore in canvas.html, and V&V lifecycle tests.'
+  task_prefix: ndchat-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: Backend Chat Context API (POST /ai-context, GET messages)
+    priority: high
+  - key: impl02
+    title: Unified /ai-chat Q&A + Topology Routing
+    priority: high
+  - key: impl03
+    title: JS Context Init + History Restore
+    priority: high
+  - key: vv01
+    title: V&V — Syntax, Coherence, Companion, Live Endpoints
+    priority: critical
+- key: osv
+  name: OSV Scanner Integration
+  description: OSV-Scanner binary wrapper, integration into health_check.py and secure.py,
+    security_gates.yaml entry, and V&V sign-off.
+  task_prefix: osv-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: OSV-Scanner Binary Wrapper
+    priority: high
+  - key: impl02
+    title: Integrate into health_check + secure.py
+    priority: high
+  - key: vv01
+    title: V&V — Syntax, Coherence, Companion, Health Check
+    priority: critical
+  - key: p2
+    title: P2
+    priority: medium
+- key: fdao
+  name: FathomDesk Reflex Observer
+  description: 'FathomDesk reflex observability layer: reflex_observations table,
+    observe() wrapper wired into Genesis scheduler, V&V end-to-end tests.'
+  task_prefix: fdao-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: reflex_observations Table + observe() Function
+    priority: high
+  - key: impl02
+    title: Wire observe() into Genesis Scheduler Dispatch
+    priority: high
+  - key: vv01
+    title: V&V — End-to-End Observer + API Route
+    priority: critical
+  - key: p2
+    title: P2
+    priority: medium
+- key: fdobb
+  name: FathomDesk OpenBB Gateway
+  description: 'Unified data gateway for FathomDesk: data_gateway.py with yfinance
+    fallback, wired into blueprint + options routes, openbb_refresh Genesis reflex,
+    V&V sign-off.'
+  task_prefix: fdobb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl02
+    title: data_gateway.py Skeleton + Methods
+    priority: high
+  - key: impl03
+    title: Wire data_gateway into blueprint + options + reflex
+    priority: high
+  - key: vv01
+    title: V&V — Import, Fallback, Reflex Dry-Run, Coherence
+    priority: critical
+  - key: p2
+    title: P2
+    priority: medium
+- key: zbx
+  name: Zerobox Sandbox Coverage
+  description: 'OPT-58 sandbox coverage audit: classify all user-input modules in
+    sandbox-coverage.md, Zerobox credential proxy wrapper, V&V coherence + companion
+    sync gate.'
+  task_prefix: zbx-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl01
+    title: OPT-58 Audit — Classify User-Input Modules
+    priority: high
+  - key: impl02
+    title: Zerobox Credential Proxy Wrapper
+    priority: high
+  - key: vv01
+    title: V&V — Coherence Gate + Companion Sync
+    priority: critical
+  - key: impl
+    title: IMPL
+    priority: medium
+  - key: p2
+    title: P2
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: fdhmd
+  name: FathomDesk Signal Decay
+  description: 'Hippo memory decay for FathomDesk: Migration 017 signal_decay_weight
+    on ad_signals, signal_decay.py Hippo formula, wire decay into trap sweep + signal
+    ranking, V&V unit tests.'
+  task_prefix: fdhmd-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: Signal Decay Implementation (Migration + Formula + Wiring)
+    priority: high
+  - key: vv
+    title: V&V — Unit Tests, Trap Sweep Smoke, Coherence
+    priority: critical
+  - key: p2
+    title: P2
+    priority: medium
+- key: hmd
+  name: Memory System Hippo Decay
+  description: 'Hippo memory decay for the core memory system: decay_weight column
+    on memory_entries, memory_write.py initial weight, hybrid_search.py decay scoring,
+    V&V tests.'
+  task_prefix: hmd-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: Decay Weight Implementation (Migration + Write + Search)
+    priority: high
+  - key: vv
+    title: V&V — Formula Tests, Coherence, Companion Sync
+    priority: critical
+  - key: p2
+    title: P2
+    priority: medium
+- key: fdmlt
+  name: FathomDesk Signal Tuner
+  description: Multi-asset signal threshold extraction + tuner/backtester in fathomdesk_signal_tuner_reflex.py,
+    weekly Genesis reflex, V&V unit tests + reflex dry-run.
+  task_prefix: fdmlt-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: Signal Threshold + Tuner + Backtester
+    priority: high
+  - key: vv
+    title: V&V — Unit Tests, Reflex Dry-Run, Coherence
+    priority: critical
+  - key: p2
+    title: P2
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+- key: pgt
+  name: PostgreSQL Textsearch
+  description: BM25 <@> operator path in storage.py translate_sql(), FTS5-parity hybrid_search.py
+    tests, V&V coherence + companion + query parity smoke test.
+  task_prefix: pgt-
+  default_open: true
+  briefs: []
+  epics:
+  - key: impl
+    title: BM25 translate_sql() Path
+    priority: high
+  - key: test
+    title: FTS5-Parity Unit Tests
+    priority: high
+  - key: vv
+    title: V&V — Coherence, Companion, Query Parity
+    priority: critical
+  - key: guard
+    title: GUARD
+    priority: medium
+- key: task_kb
+  name: Task Kb Project
+  description: Auto-registered project for tasks with prefix 'task-kb-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: task-kb-
+  default_open: true
+  briefs: []
+  epics:
+  - key: guard
+    title: GUARD
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: l0
+    title: L0 — Foundation
+    priority: medium
+  - key: l1
+    title: L1 — Parsers / Ingestion
+    priority: medium
+  - key: l2
+    title: L2 — Router / Dispatch
+    priority: medium
+  - key: l3
+    title: L3 — Core Agent / Engine
+    priority: medium
+  - key: l4
+    title: L4 — Artifacts / Output
+    priority: medium
+  - key: l5
+    title: L5 — Dashboard UI
+    priority: medium
+  - key: l6
+    title: L6 — Integrations
+    priority: medium
+  - key: l7
+    title: L7 — Validation / Gate
+    priority: medium
+- key: plan_dtwin_pdc_pipeline
+  name: Plan Dtwin Pdc Pipeline Project
+  description: Auto-registered project for tasks with prefix 'plan-dtwin-pdc-pipeline-'.
+    Update name and description to reflect the project purpose.
+  task_prefix: plan-dtwin-pdc-pipeline-
+  default_open: true
+  briefs: []
+  epics:
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: l0
+    title: L0 — Foundation
+    priority: medium
+  - key: l1
+    title: L1 — Parsers / Ingestion
+    priority: medium
+  - key: l2
+    title: L2 — Router / Dispatch
+    priority: medium
+  - key: l3
+    title: L3 — Core Agent / Engine
+    priority: medium
+  - key: l4
+    title: L4 — Artifacts / Output
+    priority: medium
+  - key: l5
+    title: L5 — Dashboard UI
+    priority: medium
+  - key: l6
+    title: L6 — Integrations
+    priority: medium
+  - key: l7
+    title: L7 — Validation / Gate
+    priority: medium
+- key: sim-chat
+  name: TFW Simulation Chat Workbench
+  description: 'Canvas-agnostic simulation engine at /simulate/chat — upload any
+    diagram (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows
+    with color-coded Mermaid diagrams, troubleshoot auth and routing issues, and generate
+    compliance artifacts (PPSM, DFD, CIS, ISA, POA&M, OSCAL). Covers all 7 canvases:
+    NDC, SDC, EDA, DDC, PDC, BDC, IDC. 35 dependency-chained tasks across 7 layers.
+
+    '
+  task_prefix: sim-
+  default_open: true
+  briefs: []
+  epics:
+  - key: l0
+    title: L0 — Foundation (canvas registry, schema, DB)
+    priority: critical
+  - key: l1
+    title: L1 — Diagram Parsers (Mermaid, draw.io, Visio, image, PDF)
+    priority: high
+  - key: l2
+    title: L2 — Format Router (diagram_ingestor)
+    priority: high
+  - key: l3
+    title: L3 — Chat Agent (EXPLAIN / TROUBLESHOOT / REFINE + session)
+    priority: critical
+  - key: l4
+    title: L4 — Artifact Generators (PPSM, DFD, CIS, ISA, POA&M, OSCAL, bundle)
+    priority: high
+  - key: l5
+    title: L5 — Dashboard UI (/simulate/chat, upload, chat, Mermaid renderer)
+    priority: high
+  - key: l6
+    title: L6 — Integrations (evidence, poam, diff, spec)
+    priority: medium
+  - key: l7
+    title: L7 — Validation (E2E Selenium, coherence gate)
+    priority: critical
+  - key: bdc
+    title: BDC
+    priority: medium
+  - key: ce
+    title: CE
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: ndc
+    title: NDC
+    priority: medium
+  - key: tfw
+    title: TFW
+    priority: medium
+- key: digital-twin
+  name: Digital Twin Roadmap
+  description: 'Per-canvas digital-twin implementation across 8 epics, 86 dependency-chained
+    kanban tasks.
+
+    '
+  task_prefix: dt-
+  default_open: true
+  briefs:
+  - label: Inspiration brief — pattern + ICDEV mapping
+    path: /docs/briefs/digital-twin-inspiration-brief.md
+  - label: Full market scan + per-canvas plan
+    path: /docs/briefs/digital-twin-market-canvas-implementation-plan.md
+  epics:
+  - key: iqe
+    title: IQE AI Assist — NL→IQE Translation
+    priority: critical
+  - key: ndc
+    title: NDC Path Reachability Analysis
+    priority: critical
+  - key: ce
+    title: Creative Engine — Digital Twin Domain Fix
+    priority: high
+  - key: bdc
+    title: BDC cATO Twin (Phase 1)
+    priority: critical
+  - key: idc-iac
+    title: IDC IaC Generation
+    priority: high
+  - key: idc-twin
+    title: IDC IaC Twin (Phase 1)
+    priority: high
+  - key: pdc
+    title: PDC Pipeline Twin
+    priority: medium
+  - key: sdc
+    title: SDC Attack Path Twin
+    priority: medium
+  - key: odc
+    title: ODC MITRE Coverage Twin
+    priority: medium
+  - key: ddc
+    title: DDC Lineage Adapter
+    priority: low
+  - key: tfw
+    title: NDC Traffic Flow Walkthrough
+    priority: critical
+  - key: coach
+    title: COACH
+    priority: medium
+  - key: confirm
+    title: CONFIRM
+    priority: medium
+  - key: intake
+    title: INTAKE
+    priority: medium
+  - key: scorer
+    title: SCORER
+    priority: medium
+  - key: wrap
+    title: WRAP
+    priority: medium
+- key: fathomdesk-7-6
+  name: FathomDesk 7.6 — AI-Assisted Options
+  description: 'LLM-interpretation + deterministic-selection hybrid: intent parser,
+    strategy scorer, strike/expiry picker, pre-flight gates, confirm-to-execute modal,
+    and a position-coach daemon reflex. LLM stays on interpretation + explanation;
+    rules engine owns selection + strike picking (NIST AU auditable).
+
+    '
+  task_prefix: ad76-
+  default_open: true
+  briefs:
+  - label: Phase 7.6 brief — scope + safety boundaries
+    path: /docs/briefs/phase-7.6-ai-options-assist.md
+  epics:
+  - key: intake
+    title: Intent parser (LLM + rule fallback)
+    priority: high
+  - key: scorer
+    title: Deterministic strategy + strike + expiry picker
+    priority: critical
+  - key: confirm
+    title: Pre-flight gates + confirm-to-execute modal
+    priority: critical
+  - key: coach
+    title: Position coach daemon + LLM recommendations
+    priority: high
+  - key: wrap
+    title: Registration + feature doc + E2E
+    priority: high
+  - key: compare
+    title: COMPARE
+    priority: medium
+  - key: prob
+    title: PROB
+    priority: medium
+- key: fathomdesk-7-7
+  name: FathomDesk 7.7 — Probability & Compare
+  description: 'OptionStrat-inspired upgrades on top of 7.6''s proposal flow: (1)
+    Probability-of-profit + price-cone overlay on the payoff chart (Monte Carlo on
+    IV-implied lognormal), and (2) side-by-side compare so the top-3 alternates from
+    build_proposal get first-class UI. Fully deterministic — no new LLM calls.
+
+    '
+  task_prefix: ad77-
+  default_open: true
+  briefs:
+  - label: Phase 7.7 brief — probability + compare
+    path: /docs/briefs/phase-7.7-probability-compare.md
+  epics:
+  - key: prob
+    title: POP + price cone overlay
+    priority: critical
+  - key: compare
+    title: Side-by-side strategy comparison
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+  - key: patterns
+    title: PATTERNS
+    priority: medium
+  - key: primitives
+    title: PRIMITIVES
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+- key: fathomdesk-7-9
+  name: FathomDesk 7.9 — TA Foundation
+  description: 'Candlestick 1D chart + Volume Profile (HVN/LVN/POC/VA) + algorithmic
+    S/R clusters + reversal pattern detectors (double top/bottom, triple top/bottom,
+    rising + falling wedge). Layer 1 primitives that the trap engine (7.10) and news-on-chart
+    overlay (7.11) both build on. No LLM — pure deterministic TA math.
+
+    '
+  task_prefix: ad79-
+  default_open: true
+  briefs:
+  - label: Phase 7.9 brief — TA foundation
+    path: /docs/briefs/phase-7.9-ta-foundation.md
+  epics:
+  - key: primitives
+    title: Swings, Volume Profile, S/R clusters
+    priority: critical
+  - key: patterns
+    title: Double, triple, wedge detectors
+    priority: critical
+  - key: ui
+    title: Candlestick chart + overlays on /analysis
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+  - key: p2
+    title: P2
+    priority: medium
+- key: fathomdesk-7-10
+  name: FathomDesk 7.10 — Trap Detection
+  description: 'Blocked on 7.9. Macro liquidity-trap regime detector feeding Oracle
+    + preflight; technical bull/bear trap detector built on 7.9''s S/R + swing primitives;
+    coach + alerts + Genesis wiring for autonomous actions. Trap coach never moves
+    positions — only notifies.
+
+    '
+  task_prefix: ad710-
+  default_open: true
+  briefs:
+  - label: Phase 7.10 brief — trap detection
+    path: /docs/briefs/phase-7.10-trap-detection.md
+  epics:
+  - key: macro
+    title: Liquidity trap regime detector
+    priority: high
+  - key: technical
+    title: Bull/bear trap detector
+    priority: critical
+  - key: integration
+    title: Coach + Genesis + preflight wiring
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+- key: fathomdesk-7-11
+  name: FathomDesk 7.11 — News 2.0
+  description: 'Blocked on 7.9 (uses the chart layer for news-on-price overlays).
+    Categorized /news tabs (not one firehose list); per-category pattern analyzer
+    with append-only audit table; Genesis reflex for autonomous actions (alerts +
+    scenario auto-spawn + Pulse digest). Genesis never places orders — signals only.
+
+    '
+  task_prefix: ad711-
+  default_open: true
+  briefs:
+  - label: Phase 7.11 brief — news 2.0
+    path: /docs/briefs/phase-7.11-news-2.md
+  epics:
+  - key: cat
+    title: Category tabs + news-on-chart overlay
+    priority: high
+  - key: pattern
+    title: Pattern analyzer + ad_news_patterns
+    priority: critical
+  - key: genesis
+    title: Genesis reflex for autonomous actions
+    priority: high
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+  - key: portfolio
+    title: PORTFOLIO
+    priority: medium
+  - key: pricing
+    title: PRICING
+    priority: medium
+  - key: share
+    title: SHARE
+    priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: data
+    title: DATA
+    priority: medium
+  - key: ivr
+    title: IVR
+    priority: medium
+  - key: pgm
+    title: PGM
+    priority: medium
+  - key: profile
+    title: PROFILE
+    priority: medium
+  - key: sog
+    title: SOG
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
+- key: fathomdesk-7-8
+  name: FathomDesk 7.8 — Greeks Deep Dive + Quick Wins
+  description: 'Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer + time-T
+    payoff slider (not just expiry intrinsic); (2) portfolio net Greeks aggregation
+    card; (3) shareable trade URLs. No new LLM calls; all deterministic.
+
+    '
+  task_prefix: ad78-
+  default_open: true
+  briefs:
+  - label: Phase 7.8 brief — BS pricer, portfolio greeks, share
+    path: /docs/briefs/phase-7.8-greeks-share.md
+  epics:
+  - key: pricing
+    title: Black-Scholes pricer + time-T payoff
+    priority: critical
+  - key: portfolio
+    title: Portfolio net Greeks
+    priority: high
+  - key: share
+    title: Shareable trade URLs
+    priority: medium
+  - key: wrap
+    title: Registration + docs + E2E
+    priority: high
+  - key: ai
+    title: AI
+    priority: medium
+  - key: data
+    title: DATA
+    priority: medium
+  - key: ivr
+    title: IVR
+    priority: medium
+  - key: pgm
+    title: PGM
+    priority: medium
+  - key: profile
+    title: PROFILE
+    priority: medium
+  - key: sog
+    title: SOG
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
+  - key: p2
+    title: P2
+    priority: medium
+- key: opts-greeks
+  name: FathomDesk — Options Greeks Engine
+  description: '7-epic expansion: rho completeness, IV Rank/Percentile, Greek-profile
+    strategy ranking, Greek-aware AI intent + coach, Greek visualizations (heatmap,
+    time-decay slider, P&L attribution), second-order Greeks (Vanna/Charm/Volga),
+    and Portfolio Greek Manager (targets, hedges, IV skew + term structure). Each
+    phase gated by CodeLens + Coherence + Selenium E2E.
+
+    '
+  task_prefix: og-
+  default_open: true
+  briefs:
+  - label: Options Greeks 6-phase brief
+    path: /docs/briefs/opts-greeks-brief.md
+  epics:
+  - key: data
+    title: Phase 1 — Greek Data Completeness (rho + chain display)
+    priority: critical
+  - key: ivr
+    title: Phase 2 — IV Rank/Percentile
+    priority: critical
+  - key: profile
+    title: Phase 3 — Greek Profile + Strategy Ranking
+    priority: high
+  - key: ai
+    title: Phase 4 — Greek-Aware AI Intent + Coach
+    priority: high
+  - key: viz
+    title: Phase 5 — Greek Visualizations
+    priority: medium
+  - key: sog
+    title: Phase 6a — Second-Order Greeks (Vanna/Charm/Volga)
+    priority: high
+  - key: pgm
+    title: Phase 6b — Portfolio Greek Manager + Harmonization
+    priority: medium
+  - key: betf
+    title: BETF
+    priority: medium
+  - key: cimp
+    title: CIMP
+    priority: medium
+  - key: crd
+    title: CRD
+    priority: medium
+  - key: fisc
+    title: FISC
+    priority: medium
+  - key: qeqt
+    title: QEQT
+    priority: medium
+  - key: subsidy
+    title: SUBSIDY
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: xar
+    title: XAR
+    priority: medium
+  - key: p2
+    title: P2
+    priority: medium
+  - key: int
+    title: INT
+    priority: medium
+- key: fdm-macro
+  name: FathomDesk — Macro Intelligence Expansion
+  description: '8-phase macro signal expansion: credit market foundation (IG/BBB OAS
+    + SOFR funding stress), QE/QT phase detector, bond ETF technicals, cross-asset
+    rotation engine (Gold/S&P, Copper/Gold, TLT/SPY ratios + multi-signal exit confirmation),
+    fiscal/Treasury supply pressure, credit impulse & fallen-angel risk, sector policy
+    tailwind scoring (IRA/CHIPS/NDAA), and full FathomDesk UI integration. Each phase
+    gated by CodeLens + Coherence + Selenium E2E.
+
+    '
+  task_prefix: fdm-
+  default_open: true
+  briefs:
+  - label: Macro Intelligence analysis + evaluation
+    path: /docs/briefs/fdm-macro-intelligence-plan.md
+  epics:
+  - key: crd
+    title: Phase 1 — Credit Market Foundation (IG/BBB OAS + SOFR)
+    priority: critical
+  - key: qeqt
+    title: Phase 2 — QE/QT Phase Detector
+    priority: critical
+  - key: betf
+    title: Phase 3 — Bond ETF Technicals (TLT/HYG/LQD/AGG)
+    priority: high
+  - key: xar
+    title: Phase 4 — Cross-Asset Rotation Engine
+    priority: critical
+  - key: fisc
+    title: Phase 5 — Fiscal/Treasury Supply Pressure
+    priority: high
+  - key: cimp
+    title: Phase 6 — Credit Impulse & Credit Cycle
+    priority: high
+  - key: subsidy
+    title: Phase 7 — Sector Policy Tailwind Scoring
+    priority: medium
+  - key: ui
+    title: Phase 8 — FathomDesk UI Integration
+    priority: critical
+  - key: int
+    title: INT
+    priority: medium
+  - key: api
+    title: API
+    priority: medium
+  - key: hook
+    title: HOOK
+    priority: medium
+  - key: ingester
+    title: INGESTER
+    priority: medium
+  - key: install
+    title: INSTALL
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: ragkg
+  name: RAG-KG Bridge
+  description: Connect the existing RAG pipeline (rag_chunks, hybrid_search.py) to
+    the Knowledge Graph (kg_nodes, kg_edges) so retrieved chunks are enriched with
+    entity relationships. Supports greenfield (RAG+KG from scratch) and brownfield
+    (existing RAG, KG only via resumable backfill). Includes source_chunk_id back-ref
+    for stale-node invalidation, tier filter, no-LLM NER fallback, tenant isolation,
+    classification boundary enforcement, disambiguation sweep, and unified /api/rag-kg/search
+    endpoint.
+  task_prefix: ragkg-
+  default_open: true
+  briefs:
+  - 'Schema: source_chunk_id on kg_nodes + kg_node_ids on rag_chunks + backfill cursor
+    — ragkg-schema-01'
+  - 'Ingester: rag_to_kg_ingester.py — backfill, tier filter, no-LLM NER, passthrough
+    mode — ragkg-ingester-01/02'
+  - 'Hook: post-ingest trigger + stale-node invalidation in ingestion_manager.py —
+    ragkg-hook-01'
+  - 'API: /api/rag-kg/search unified retrieval (classification-safe, pgvector/SQLite
+    aware) — ragkg-api-01'
+  - 'V&V: greenfield + brownfield smoke tests, coherence, companion — ragkg-vv-01'
+  epics:
+  - key: schema
+    title: DB Migration (source_chunk_id + kg_node_ids + backfill cursor)
+    priority: high
+  - key: ingester
+    title: Core Ingester + Disambiguation Sweep
+    priority: high
+  - key: hook
+    title: Post-Ingest Hook + Stale-Node Invalidation
+    priority: high
+  - key: api
+    title: Unified /api/rag-kg/search Endpoint
+    priority: medium
+  - key: vv
+    title: V&V Sign-Off
+    priority: critical
+  - key: install
+    title: pip install icdev — Greenfield/Brownfield Setup Wizard
+    priority: high
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: registry
+    title: REGISTRY
+    priority: medium
+  - key: version
+    title: VERSION
+    priority: medium
+- key: pkgbuild
+  name: pip install icdev — Full Package Audit & Fix
+  description: Ensure pip install icdev ships the entire ICDEV framework (all 78+
+    tools/subsystems) except marketplace modules, untethered child apps, and runtime
+    state. Introduce args/package_exclusions.yaml as the single exclusion registry
+    so pyproject.toml, MANIFEST.in, and sync_package_tree.py never drift apart. Fix
+    version mismatch (1.2.23 vs 1.2.21), restore incorrectly excluded core subsystems
+    (pulse, govcon, proposal_genesis, rfx, autoresearch, scout, creative), and wire
+    icdev setup --rag-kg into the post-install flow.
+  task_prefix: pkgbuild-
+  default_open: true
+  briefs:
+  - 'Exclusion registry: args/package_exclusions.yaml — authoritative list (marketplace/child_app/runtime_state)
+    — pkgbuild-registry-01'
+  - 'pyproject.toml + MANIFEST.in + sync_package_tree.py: derive from registry, restore
+    wrongly excluded core modules — pkgbuild-fix-01'
+  - 'Version sync: _version.py == pyproject.toml == changelog — pkgbuild-version-01'
+  - 'Wheel smoke test: build wheel, inspect contents, confirm core modules present
+    + excluded absent — pkgbuild-vv-01'
+  epics:
+  - key: registry
+    title: Package Exclusion Registry (args/package_exclusions.yaml)
+    priority: high
+  - key: fix
+    title: pyproject.toml + MANIFEST.in + sync_package_tree.py Fix
+    priority: high
+  - key: version
+    title: Version Mismatch Fix
+    priority: medium
+  - key: vv
+    title: Wheel Smoke Test + V&V Gate
+    priority: critical
+  - key: buyback
+    title: BUYBACK
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: lens
+    title: LENS
+    priority: medium
+  - key: pcr
+    title: PCR
+    priority: medium
+  - key: pillar
+    title: PILLAR
+    priority: medium
+  - key: scorer
+    title: SCORER
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: vix
+    title: VIX
+    priority: medium
+- key: fdmm
+  name: FathomDesk — Machine Momentum (CTA + Buyback + VIX)
+  description: 'Three-axis machine momentum engine for FathomDesk: (1) CTA Positioning
+    Estimator (price-only DB weighting model, ADX, Donchian, vol-deleveraging); (2)
+    Buyback Tracker (SEC EDGAR 8-K, blackout window calendar, buyback yield); (3)
+    VIX regime integration (vol-doom-loop detection, regime modifiers); (4) MachineConviction
+    unified 3-axis scorer; (5) CTAMomentumLens (new Oracle lens); (6) 10th confluence
+    pillar; (7) /machine-momentum dashboard heatmap page.
+
+    '
+  task_prefix: fdmm-
+  default_open: true
+  briefs:
+  - 'Core: cta_positioning.py + ADX + Donchian + vol-deleveraging — fdmm-core-01..05'
+  - 'Buyback: DB migration + buyback_tracker.py + blackout wiring — fdmm-buyback-01..04'
+  - 'VIX: regime enum extension + scorer wiring — fdmm-vix-01..02'
+  - 'Scorer: MachineConviction dataclass + machine_momentum_scorer.py — fdmm-scorer-01..03'
+  - 'Lens: CTAMomentumLens + runner.py registration — fdmm-lens-01..03'
+  - 'Pillar: 10th confluence pillar module + confluence_scorer.py wiring — fdmm-pillar-01..02'
+  - 'UI: /machine-momentum dashboard (7-component gate) — fdmm-ui-01..06'
+  - 'V&V: coherence + companion + E2E Selenium — fdmm-vv-01..02'
+  epics:
+  - key: core
+    title: CTA Positioning Engine (price-only score + ADX + Donchian + vol-deleveraging)
+    priority: critical
+  - key: buyback
+    title: Buyback Tracker (SEC EDGAR + blackout window calendar)
+    priority: high
+  - key: vix
+    title: VIX Regime Integration (doom-loop detection + scorer modifiers)
+    priority: high
+  - key: scorer
+    title: MachineConviction Unified 3-Axis Scorer
+    priority: critical
+  - key: lens
+    title: CTAMomentumLens — Oracle Lens (analyze→score→propose)
+    priority: high
+  - key: pillar
+    title: 10th Confluence Pillar — machine_momentum_aligned
+    priority: high
+  - key: ui
+    title: /machine-momentum Dashboard Heatmap Page (7-component gate)
+    priority: high
+  - key: vv
+    title: V&V Sign-Off (coherence + companion + E2E)
+    priority: critical
+  - key: pcr
+    title: Put/Call Ratio — 11th Confluence Pillar
+    priority: high
+  - key: des
+    title: DES
+    priority: medium
+  - key: rgp
+    title: RGP
+    priority: medium
+  - key: ttd
+    title: TTD
+    priority: medium
+- key: nwa
+  name: nWave Methodology Adaptation — Theater Detector + Rigor Profiles + DES Audit
+  description: 'Three nWave-inspired quality improvements for ICDEV: (1) Testing Theater
+    Detector — 8 anti-pattern checks (tautological assertions, mock-dominated, fixture
+    theater, assertion-free, hardcoded oracles, smoke-masquerade, always-green, spec
+    drift) wired into icdev-test; (2) Rigor Gate Profiles — IL2/IL4/IL5/IL6 quality
+    tiers mapped to adjustable gate thresholds in args/il_tier_profiles.yaml, evaluator
+    in tools/quality/rigor_gates.py, wired into icdev-build; (3) DES Execution Audit
+    Trail — migration 065 + tools/kanban/des_audit_logger.py logging every kanban
+    dispatch, completion, and verification gate decision (NIST AU-2/AU-3 compliance).'
+  task_prefix: nwa-
+  default_open: true
+  briefs:
+  - 'Theater Detector: TheaterDetectionResult dataclass + theater_detector.py (8 checks)
+    + test_orchestrator wire + security_gates + skill update — nwa-ttd-01..08'
+  - 'Rigor Profiles: il_tier_profiles.yaml + tools/quality/rigor_gates.py + icdev-build
+    wire + security_gates + project_defaults — nwa-rgp-01..08'
+  - 'DES Audit Trail: migration 065 + tools/kanban/des_audit_logger.py + pre_tool_use
+    + conftest + kanban reflex wire + kanban API wire — nwa-des-01..09'
+  epics:
+  - key: ttd
+    title: Testing Theater Detector (8 anti-patterns → icdev-test)
+    priority: high
+  - key: rgp
+    title: Rigor Gate Profiles (IL2/IL4/IL5/IL6 → icdev-build)
+    priority: high
+  - key: des
+    title: DES Execution Audit Trail (migration 065 → kanban scheduler)
+    priority: critical
+  - key: regfore
+    title: REGFORE
+    priority: medium
+  - key: techrad
+    title: TECHRAD
+    priority: medium
+  - key: univ
+    title: UNIV
+    priority: medium
+  - key: usage
+    title: USAGE
+    priority: medium
+  - key: voc
+    title: VOC
+    priority: medium
+  - key: winloss
+    title: WINLOSS
+    priority: medium
+  - key: api
+    title: API
+    priority: medium
+  - key: chat
+    title: CHAT
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: meta
+    title: META
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+- key: wne
+  name: Workflow Narrative Engine
+  task_prefix: wne-
+  default_open: true
+  description: 'General-purpose engine that turns any Workflow Studio DAG into an
+    executive export pack: narrative summary, 3-COA comparison, phased budget, ROI
+    model, and slide outline. Built on existing chat_manager.py so end users interact
+    via a guided chat at /studio/narrate (no Claude CLI required). Depends on wfs-schema-01
+    (narrative_context YAML block) and wfs-decomp-01 (composite node + sub_steps).
+    First template: ai_ml_transformation.yaml — 5-phase defense contractor AI/ML
+    workforce transformation with full training resource taxonomy (free/self-paced/ILT/OJT
+    including AWS SkillBuilder and DeepLearning.ai).
+
+    '
+  briefs:
+  - 'Epic meta: narrative_context spec + ai_ml_transformation.yaml template — wne-meta-01..02'
+  - 'Epic core: context_builder + narrative_generator + coa_builder + roi_calculator
+    + export_pack — wne-core-01..05'
+  - 'Epic chat: wne_sessions DB + chat_engine state machine + /studio/narrate UI +
+    API routes — wne-chat-01..04'
+  - 'Epic api: Studio toolbar Generate Narrative Pack button — wne-api-01'
+  - 'Epic vv: unit tests + E2E chat→generate→export — wne-vv-01..02'
+  epics:
+  - key: meta
+    title: Schema + Template (narrative_context + ai_ml_transformation.yaml)
+    priority: high
+  - key: core
+    title: Engine Modules (context_builder, narrative, COA, ROI, export_pack)
+    priority: critical
+  - key: chat
+    title: WNE Chat Interface (/studio/narrate — end-user, no Claude CLI)
+    priority: critical
+  - key: api
+    title: Studio Toolbar Integration
+    priority: medium
+  - key: vv
+    title: V&V — Unit Tests + E2E Gate
+    priority: critical
+  - key: decomp
+    title: DECOMP
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: studio
+    title: STUDIO
+    priority: medium
+- key: wfs
+  name: Workflow Studio — People, Tools & Process Integration
+  task_prefix: wfs-
+  default_open: true
+  description: 'Upgrade the Workflow Studio visual editor (/studio/workflows) from
+    a tool-only DAG to a three-tier node model: Tool nodes (automated Python scripts,
+    existing), Human Gate nodes (teal, requires a named role + optional SOP/doc template),
+    and Approval Gate nodes (amber, configurable policy: any_one/all/majority). Roles
+    pulled live from /workflow-teams (wf_team_members) so the two pages stay in sync
+    without merging. YAML template schema extended with node_type, role, human_required,
+    approval_policy, doc_template fields. template_linter.py updated to validate node
+    types. 14 existing templates get explicit node_type: tool markers; requirements_intake
+    and ato_acceleration get sample human+approval gate nodes to demonstrate the full
+    model.
+
+    '
+  briefs:
+  - 'Epic schema: YAML schema spec + linter update + sample human/approval gates in
+    2 templates — wfs-schema-01..02'
+  - 'Epic api: /api/studio/roles + /api/studio/doc-templates endpoints in studio.py
+    — wfs-api-01..02'
+  - 'Epic studio: node_type field + 3 visual styles (CSS+JS) + extended config modal
+    — wfs-studio-01..04'
+  - 'Epic decomp: composite node type + sub_steps YAML + drill-down canvas navigation
+    stack — wfs-decomp-01..05'
+  - 'Epic vv: linter gate + companion sync + coherence + Playwright smoke — wfs-vv-01..02'
+  epics:
+  - key: schema
+    title: YAML Schema Extension (node_type + role + approval_policy + doc_template)
+    priority: high
+  - key: api
+    title: Studio API Endpoints (roles + doc-templates)
+    priority: high
+  - key: studio
+    title: Studio JS + CSS — 3-Tier Node Model + Extended Config Modal
+    priority: critical
+  - key: decomp
+    title: Node Decomposition — Composite Type + Sub-Steps + Drill-Down Navigation
+    priority: high
+  - key: vv
+    title: V&V — Linter Gate + Companion Sync + Coherence + Smoke Test
+    priority: critical
+- key: wf
+  name: HITL Workflow Management
+  task_prefix: wf-
+  default_open: true
+  description: 'Unified HITL (Human-In-The-Loop) approval layer for all ICDEV canvases,
+    modules, and child apps. Policy-driven workflow templates, team management (2+
+    members, customizable roles), structured feedback with kickback cycles, per-stage
+    document conformance (checklist/form/SOP), citation/sourcing for all AI-generated
+    outputs (source, section, page, excerpt), external steps (email/Jira/SNOW/GitHub/Confluence/SharePoint),
+    and a Genesis reflex to aggregate feedback into improvement signals.
+
+    '
+  briefs:
+  - 'Epic db: DB migration 078 + seed templates — wf-db-01..05'
+  - 'Epic core: WorkflowEngine + HITLGate + team/template managers — wf-core-01..05'
+  - 'Epic fb: Feedback capture + Genesis aggregation reflex — wf-fb-01..02'
+  - 'Epic team: Notification layer (review request, kickback, approval) — wf-team-01'
+  - 'Epic doc: Per-stage document conformance (checklist/form/SOP) + citation/sourcing
+    — wf-doc-01..04'
+  - 'Epic ext: External steps (email/Jira/SNOW/GitHub/Confluence/SharePoint) + polling
+    reflex — wf-ext-01..07'
+  - 'Epic api: Flask blueprint (all routes incl. webhook callback) + .env flags —
+    wf-api-01..02'
+  - 'Epic ui: HITL queue page + Team management page + external step status + nav
+    — wf-ui-01..03'
+  - 'Epic intg: Canvas hooks + child app inheritance + coherence check — wf-intg-01..03'
+  - 'Epic vv: Unit tests + API tests + manifest + companion + feature doc — wf-vv-01..04'
+  epics:
+  - key: db
+    title: DB Foundation — Migration 078 + Seed Templates
+    priority: critical
+  - key: core
+    title: Core Engine — WorkflowEngine, HITLGate, Team & Template Managers
+    priority: critical
+  - key: fb
+    title: Feedback System — Capture + Genesis Aggregation Reflex
+    priority: high
+  - key: team
+    title: Notification Layer (Internal)
+    priority: high
+  - key: doc
+    title: Document Conformance + Citation/Sourcing
+    priority: high
+  - key: ext
+    title: External Steps — Email, Jira/SNOW/GitHub Tickets, Confluence/SharePoint
+      Wiki
+    priority: high
+  - key: api
+    title: Flask Blueprint — All API Routes + Webhook Callback
+    priority: high
+  - key: ui
+    title: Dashboard UI — HITL Queue + Team Management + External Step Status
+    priority: medium
+  - key: intg
+    title: Canvas & Child App Integration Hooks
+    priority: medium
+  - key: vv
+    title: V&V — Tests, Manifest, Companion Sync, Feature Doc
+    priority: medium
+  - key: regfore
+    title: REGFORE
+    priority: medium
+  - key: techrad
+    title: TECHRAD
+    priority: medium
+  - key: univ
+    title: UNIV
+    priority: medium
+  - key: usage
+    title: USAGE
+    priority: medium
+  - key: voc
+    title: VOC
+    priority: medium
+  - key: winloss
+    title: WINLOSS
+    priority: medium
+- key: pint
+  name: Product Intelligence — 5 New Engines + Universal Orchestrator
+  description: 'Build five new product-discovery engines and one universal orchestrator
+    that calls all eight. New engines: (1) Regulatory Foresight — scans proposed
+    legislation (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub,
+    DoD DARS) before mandates land; (2) Usage Analytics — instruments dashboard
+    routes and CLI invocations to reveal actual feature adoption; (3) Win/Loss Intelligence
+    — correlates GovCon proposal outcomes with ICDEV feature presence to surface
+    roadmap priorities; (4) Voice of Customer (VOC) — JTBD synthesis from first-party
+    support tickets, NPS verbatims, and debrief documents; (5) Technology Radar —
+    tracks adopt/trial/assess/hold ring movements for frameworks and tools. Universal
+    Orchestrator (tools/product_intel/ orchestrator.py) invokes all eight engines
+    in sequence, runs the federation router, stores a consolidated run record, and
+    exposes --run-all and --daemon modes.'
+  task_prefix: pint-
+  default_open: true
+  briefs:
+  - 'Regulatory Foresight: config + migration 066 + source_scanner + foresight_engine
+    + cross-register + tests — pint-regfore-01..09'
+  - 'Usage Analytics: config + migration 067 + event_collector + analytics_engine
+    + dashboard wire + tests — pint-usage-01..08'
+  - 'Win/Loss Intelligence: config + migration 068 + pattern_analyzer + win_loss_engine
+    + cross-register + tests — pint-winloss-01..08'
+  - 'VOC Engine: config + migration 069 + transcript_ingestor + voc_engine + cross-register
+    + tests — pint-voc-01..08'
+  - 'Tech Radar: config + migration 070 + source_scanner + radar_engine + cross-register
+    + tests — pint-techrad-01..08'
+  - 'Universal Orchestrator: config + migration 071 + engine_registry + orchestrator
+    + federation wire + hook + conftest + tests — pint-univ-01..10'
+  epics:
+  - key: regfore
+    title: Regulatory Foresight Engine (proposed legislation scanner)
+    priority: critical
+  - key: usage
+    title: Usage Analytics Engine (feature adoption telemetry)
+    priority: high
+  - key: winloss
+    title: Win/Loss Intelligence Engine (GovCon outcome correlation)
+    priority: high
+  - key: voc
+    title: Voice of Customer Engine (JTBD first-party synthesis)
+    priority: high
+  - key: techrad
+    title: Technology Radar Engine (adopt/trial/assess/hold tracker)
+    priority: medium
+  - key: univ
+    title: Universal Product Intelligence Orchestrator (all 8 engines)
+    priority: critical
+- key: wf
+  name: HITL Workflow Management
+  task_prefix: wf-
+  default_open: true
+  description: 'Unified HITL (Human-In-The-Loop) approval layer for all ICDEV canvases,
+    modules, and child apps. Policy-driven workflow templates, team management (2+
+    members, customizable roles), structured feedback with kickback cycles, per-stage
+    document conformance (checklist/form/SOP/standard), AI citation/sourcing, external
+    step integration (email/Jira/SNOW/GitHub/Confluence/SharePoint), document ingestion
+    (PDF/DOCX/HTML/MD/TXT) for report generation with section-routing RAG.
+
+    '
+  briefs:
+  - 'Epic db: DB migrations 078+079+080 + seed templates — wf-db-01..05'
+  - 'Epic core: WorkflowEngine + HITLGate + team/template managers — wf-core-01..05'
+  - 'Epic fb: Feedback capture + Genesis aggregation reflex — wf-fb-01..02'
+  - 'Epic team: Notification layer (internal) — wf-team-01'
+  - 'Epic doc: Document conformance + citation/sourcing + report generation — wf-doc-01..04'
+  - 'Epic ext: External steps (email/Jira/SNOW/GitHub/Confluence/SharePoint) — wf-ext-01..07'
+  - 'Epic api: Flask blueprint (42 routes incl. webhook + report endpoints) — wf-api-01..02'
+  - 'Epic ui: HITL queue + Team management + file ingestion + report generation UI
+    — wf-ui-01..03'
+  - 'Epic intg: Canvas hooks + child app inheritance + coherence check — wf-intg-01..03'
+  - 'Epic vv: Unit tests (56 pass) + manifest + companion sync + feature doc — wf-vv-01..04'
+  epics:
+  - key: db
+    title: DB Foundation — Migrations 078+079+080 + Seed Templates
+    priority: critical
+  - key: core
+    title: Core Engine — WorkflowEngine, HITLGate, Team & Template Managers
+    priority: critical
+  - key: fb
+    title: Feedback System — Capture + Genesis Aggregation Reflex
+    priority: high
+  - key: team
+    title: Notification Layer (Internal)
+    priority: high
+  - key: doc
+    title: Document Conformance + Citation/Sourcing + Report Generation
+    priority: high
+  - key: ext
+    title: External Steps — Email, Jira/SNOW/GitHub Tickets, Wiki
+    priority: high
+  - key: api
+    title: Flask Blueprint — 42 API Routes + Webhook Callback
+    priority: high
+  - key: ui
+    title: Dashboard UI — HITL Queue + Team Management + Report Generation
+    priority: medium
+  - key: intg
+    title: Canvas & Child App Integration Hooks
+    priority: medium
+  - key: vv
+    title: V&V — Tests, Manifest, Companion Sync, Feature Doc
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: rc
+    title: RC
+    priority: medium
+- key: mdo
+  name: Strategos Multi-Domain Operations — Airspace COP
+  description: 'Expands Strategos beyond maritime AIS to a full Multi-Domain Common
+    Operating Picture at /strategos/airspace. Adds 4 new OSINT/open-data domains:
+    ADS-B aircraft (OpenSky Network), UAS/drone tracks (FAA DroneZone + OSINT), satellite
+    passes (CelesTrak TLE), and ground vehicle events (GDELT/Oryx). New DB tables:
+    sg_aircraft_tracks, sg_uas_tracks, sg_satellite_passes, sg_ground_vehicle_events.
+    New importers: adsb_importer.py, tle_importer.py, uas_importer.py, ground_vehicle_importer.py.
+    Multi-layer Leaflet COP page with domain toggles, animated aircraft/UAS tracks,
+    satellite ground-track overlays, and right-click → STRATEGOS Chat for all entity
+    types.'
+  task_prefix: mdo-
+  default_open: true
+  briefs:
+  - 'DB: migration 083 — 4 new sg_* tables — mdo-db-01'
+  - 'Import: adsb_importer + tle_importer + uas_importer + ground_vehicle_importer
+    — mdo-import-01..04'
+  - 'API: /strategos/airspace page + 5 API routes — mdo-api-01..02'
+  - 'UI: airspace.html multi-domain COP (Leaflet, 4 layer groups, toolbar, sidebar)
+    — mdo-ui-01..02'
+  - 'RC: right-click handlers for 4 new entity types + chat templates — mdo-rc-01'
+  - 'RAG: StrategosRAG extended for 4 new tables — mdo-rag-01'
+  - 'VV: import smoke test + route verification + companion sync — mdo-vv-01..02'
+  epics:
+  - key: db
+    title: DB Migration 083 — 4 Multi-Domain Tables
+    priority: critical
+  - key: import
+    title: Data Importers (ADS-B / TLE / UAS / Ground Vehicle)
+    priority: critical
+  - key: api
+    title: Flask Routes — Page + 5 API Endpoints
+    priority: high
+  - key: ui
+    title: Airspace COP UI — Multi-Layer Leaflet + Sidebar
+    priority: high
+  - key: rc
+    title: Right-Click Handlers + STRATEGOS Chat Entity Templates
+    priority: high
+  - key: rag
+    title: StrategosRAG — 4 New Domain Tables
+    priority: medium
+  - key: vv
+    title: V&V — Import Smoke + Routes + Companion Sync
+    priority: critical
+  - key: ai
+    title: AI
+    priority: medium
+  - key: exp
+    title: EXP
+    priority: medium
+  - key: mc
+    title: MC
+    priority: medium
+  - key: orbat
+    title: ORBAT
+    priority: medium
+  - key: sig
+    title: SIG
+    priority: medium
+  - key: te
+    title: TE
+    priority: medium
+- key: wge
+  name: Wargame Dashboard — 6 Enhancements
+  description: 'Six enhancements to /strategos/wargame: (1) Turn Engine — advance-turn
+    mechanic with Lanchester step + Blotto + OODA delta + turn log. (2) AI Strategic
+    Advisor — war_council + strategy_agent assessment panel. (3) ORBAT Pre-population
+    — seed Lanchester b0/r0 from sg_orbat_units.strength. (4) Monte Carlo Lanchester
+    — 500-iter stochastic attrition with p5/p50/p95 confidence bands. (5) Signal
+    feed → OODA refresh — 30s poll of sg_prioritized_signals, flash changed OODA
+    domains. (6) Export to Intel Brief — bundle scenario state into sg_intelligence_briefs.'
+  task_prefix: wge-
+  default_open: true
+  briefs:
+  - 'Epic te: Turn Engine — sg_wargame_turns migration + advance_turn() + blueprint
+    routes + UI controls + turn log'
+  - 'Epic ai: AI Strategic Advisor — wargame_advisor.py wrapping strategy_agent
+    + blueprint + assessment panel'
+  - 'Epic orbat: ORBAT Pre-pop — wargame_orbat.py + seed route + Load from ORBAT
+    button in Lanchester tab'
+  - 'Epic mc: Monte Carlo Lanchester — lanchester_monte_carlo() in ooda.py + blueprint
+    + confidence band chart'
+  - 'Epic sig: Signal→OODA Refresh — /ooda/live route + 30s frontend poll + domain
+    flash'
+  - 'Epic exp: Export to Brief — wargame_exporter.py + blueprint + Export button
+    + brief link toast'
+  - 'Epic vv: V&V — manifest + companion sync + feature docs'
+  epics:
+  - key: te
+    title: Turn Engine — advance-turn mechanic + turn log
+    priority: critical
+  - key: ai
+    title: AI Strategic Advisor — war_council + strategy_agent panel
+    priority: high
+  - key: orbat
+    title: ORBAT Pre-population — seed Lanchester from sg_orbat_units
+    priority: medium
+  - key: mc
+    title: Monte Carlo Lanchester — stochastic confidence bands
+    priority: high
+  - key: sig
+    title: Signal→OODA Refresh — live poll + domain flash
+    priority: medium
+  - key: exp
+    title: Export to Intel Brief — bundle scenario into sg_intelligence_briefs
+    priority: medium
+  - key: vv
+    title: V&V — manifest + companion sync + feature docs
+    priority: low
+  - key: api
+    title: API
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: js
+    title: JS
+    priority: medium
+  - key: nav
+    title: NAV
+    priority: medium
+  - key: rc
+    title: RC
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+- key: sgc
+  name: Strategos Chat � Context-Aware Intelligence Assistant
+  description: 'Floating chat panel on all Strategos pages powered by the existing
+    ChatManager. Strategos-domain system prompt (tactical analyst persona) + StrategosRAG
+    over sg_conflict_events, sg_orbat_units, sg_intelligence_briefs, sg_corpus_documents.
+    Right-click context menus on vessels (maritime), KG nodes, and ORBAT/wargame units
+    inject entity data as the opening message. Reuses ChatManager/SSEManager entirely
+    � new code is: strategos_chat.py (domain layer), 3 API routes, _chat_panel.html,
+    strategos-chat.js, and per-page right-click handlers.'
+  task_prefix: sgc-
+  default_open: true
+  briefs:
+  - 'Epic core: STRATEGOS_SYSTEM_PROMPT + StrategosRAG + context factory � sgc-core-01..02'
+  - 'Epic api: 3 blueprint routes (init/inject/poll) + tests � sgc-api-01..02'
+  - 'Epic ui: floating panel HTML + CSS + base.html injection � sgc-ui-01..03'
+  - 'Epic js: strategos-chat.js (open/close, init, send, poll, render, entity injection)
+    � sgc-js-01..04'
+  - 'Epic rc: right-click context menu component + maritime/KG/ORBAT handlers �
+    sgc-rc-01..04'
+  - 'Epic nav: Strategos nav dropdown link � sgc-nav-01'
+  - 'Epic vv: manifest + companion sync + feature docs � sgc-vv-01..03'
+  epics:
+  - key: core
+    title: Domain Layer � System Prompt + RAG + Context Factory
+    priority: critical
+  - key: api
+    title: API Routes � init / inject / poll
+    priority: critical
+  - key: ui
+    title: Floating Panel � HTML + CSS + base.html injection
+    priority: high
+  - key: js
+    title: strategos-chat.js � panel logic + polling + rendering
+    priority: high
+  - key: rc
+    title: Right-Click Handlers � maritime / KG / ORBAT
+    priority: high
+  - key: nav
+    title: Nav Link � Strategos dropdown
+    priority: medium
+  - key: vv
+    title: V&V � manifest + companion + docs
+    priority: low
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
+- key: sg-roadmap
+  name: Strategos Military Feature Roadmap
+  description: 'Four-phase roadmap of military analyst features for the Strategos
+    intelligence platform. Phase 1: CCIR Trigger Engine + INTSUM Auto-Generator +
+    Commander Dashboard + War Endurance widget. Phase 2: IPB Canvas + I&W Board +
+    F3EAD Targeting + BDA Module. Phase 3: OPORD Generator + Red Cell + METT-TC. Phase
+    4: Sync Matrix + ISR Planner + Confidence Decay.'
+  task_prefix: sg-
+  default_open: true
+  briefs:
+  - 'Phase 1: CCIR trigger + INTSUM + Commander Dashboard + endurance — sg-s1-01..10'
+  - 'Phase 2: IPB Canvas + I&W Board + F3EAD + BDA — sg-s2-01..12'
+  - 'Phase 3: OPORD + Red Cell + METT-TC — sg-s3-01..09'
+  - 'Phase 4: Sync Matrix + ISR Planner + Confidence Decay — sg-s4-01..06'
+  epics:
+  - key: s1
+    title: Phase 1 — CCIR Trigger + INTSUM + Commander Dashboard
+    priority: critical
+  - key: s2
+    title: Phase 2 — IPB Canvas + I&W Board + F3EAD + BDA
+    priority: high
+  - key: s3
+    title: Phase 3 — OPORD Generator + Red Cell + METT-TC
+    priority: medium
+  - key: s4
+    title: Phase 4 — Sync Matrix + ISR Planner + Confidence Decay
+    priority: low
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
+- key: aadc
+  name: Agentic AI Design Canvas
+  description: 'Purpose-built visual design canvas (the 10th ICDEV canvas) for architecting,
+    governing, and assessing Agentic AI systems — LLM pipelines, RAG architectures,
+    multi-agent orchestrators, MCP server clusters. Fills the gap created by OMB M-25-21,
+    OMB M-26-04, NIST AI RMF, and DoD AI Ethics requirements. Integrates HITL + loop-engine
+    workflow, 12 ready-made solution templates, 12 reusable snippets, and compliance
+    assessment across NIST AI RMF / OWASP LLM Top 10 / OMB M-25-21 / NIST AI 600-1
+    / MITRE ATLAS.
+
+    '
+  task_prefix: aadc-
+  default_open: true
+  briefs:
+  - 'Epic c1: Core foundation — module, DB, engine, templates, JS/CSS, registration
+    — aadc-c1-01..07'
+  - 'Epic w1: Workflow engine — HITL templates, workflow.py, launcher.py, event
+    bus — aadc-w1-01..07'
+  - 'Epic t1: Templates gallery — 12 built-in solution architectures — aadc-t1-01..06'
+  - 'Epic s1: Snippets library — 12 reusable subgraph patterns — aadc-s1-01..05'
+  - 'Epic a1: Assessment engine — NIST AI RMF, OWASP LLM Top 10, artifacts — aadc-a1-01..07'
+  - 'Epic v1: V&V — E2E tests, companion sync, coherence gate — aadc-v1-01..03'
+  - 'Phase 1 Canvas Parity: undo/redo, multi-select, copy/paste, draw.io+PDF+CSV export,
+    compliance legend, version diff — aadc-p1-01..11'
+  - 'Phase 2 Ecosystem Wiring: Genesis reflex, MCP registry, activity feed, fine-tuning
+    linkage, Kanban back-sync — aadc-p2-01..07'
+  - 'Phase 3 AADC-Unique: safety redundancy graph, coordination matrix, model provenance,
+    agent simulation — aadc-p3-01..09'
+  - 'Phase 4 Competitive Edge: checkpoint/fork, HITL Gate node, parallel exec graph,
+    observability trace nodes, memory enrichment, streaming toggle, A2A/sandbox nodes,
+    PII+trusted-monitor safety nodes — aadc-p4-01..11'
+  - 'Phase 5 Governance: AI risk register, STRIDE threat model generator, portfolio
+    dashboard, OSCAL component export — aadc-p5-01..09'
+  - 'Phase 6 Lifecycle & Deployment Readiness: ATO readiness checklist, regulatory
+    tracker (EU AI Act/DoD/OMB), design comparison, executive summary report � aadc-p6-01..09'
+  - 'Phase 7 Adversarial Security: AI red team engine (12 scenarios), design linter/auto-recommendations,
+    accreditation package builder (ZIP) — aadc-p7-01..09'
+  - 'Phase 8 Design Intelligence: pattern detector (8 named AI patterns), cascade impact
+    analyzer (blast radius/SPOFs), portfolio analytics dashboard — aadc-p8-01..09'
+  - 'Phase 9 Unified Scorecard & Deploy Gate: 8-dimension scorecard, APPROVED/CONDITIONAL/BLOCKED
+    deploy gate with CI/CD YAML, findings inbox — aadc-p9-01..09'
+  - 'Phase 10 Design Review, Lifecycle & Monitoring: lifecycle state machine, multi-reviewer
+    workflow, portfolio score drift monitoring — aadc-p10-01..09'
+  epics:
+  - key: c1
+    title: Core Foundation (module, DB, engine, HTML, JS/CSS, registration)
+    priority: critical
+  - key: w1
+    title: Workflow Engine Integration (HITL + loop-engine + event bus)
+    priority: critical
+  - key: t1
+    title: Templates Gallery (12 built-in agentic AI solution architectures)
+    priority: high
+  - key: s1
+    title: Snippets Library (12 reusable subgraph patterns)
+    priority: high
+  - key: a1
+    title: Assessment Engine + Artifacts (NIST AI RMF, OWASP, model cards)
+    priority: high
+  - key: v1
+    title: V&V (E2E tests, companion sync, coherence gate)
+    priority: critical
+  - key: p1
+    title: Phase 1 — Canvas Parity (undo/redo, multi-select, copy/paste, exports,
+      legend, diff)
+    priority: critical
+  - key: p2
+    title: Phase 2 — Ecosystem Wiring (Genesis, MCP, activity feed, fine-tuning,
+      Kanban)
+    priority: high
+  - key: p3
+    title: Phase 3 — AADC-Unique (safety graph, coord matrix, provenance, simulation)
+    priority: high
+  - key: p4
+    title: Phase 4 — Competitive Edge (checkpoint/fork, HITL Gate node, parallel
+      exec graph, observability nodes, memory enrichment, streaming, A2A/sandbox,
+      PII guardrails)
+    priority: high
+  - key: p5
+    title: Phase 5 — Governance & Reporting (risk register, threat model, portfolio,
+      OSCAL)
+    priority: high
+  - key: p6
+    title: Phase 6 � Lifecycle & Deployment Readiness (ATO checklist, regulatory tracker,
+      design compare, exec summary)
+    priority: high
+  - key: p7
+    title: Phase 7 — Adversarial Security & Accreditation (red team, design linter,
+      accred ZIP)
+    priority: high
+  - key: p8
+    title: Phase 8 — Design Intelligence & Analytics (pattern detector, impact analyzer,
+      portfolio analytics dashboard)
+    priority: high
+  - key: p9
+    title: Phase 9 — Unified Scorecard, Deploy Gate & Findings Inbox (8-dimension health
+      score, CI/CD gate YAML, cross-analysis findings feed)
+    priority: high
+  - key: p10
+    title: Phase 10 — Design Review, Lifecycle & Monitoring (lifecycle state machine,
+      multi-reviewer workflow, portfolio score drift dashboard)
+    priority: high

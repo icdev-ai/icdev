@@ -1484,7 +1484,10 @@ def create_app() -> Flask:
 
     # ---- Autonomous Coder Blueprint ----
     try:
-        from apps.autonomous_coder.blueprint import ac_bp as _ac_bp
+        try:
+            from icdev.apps.autonomous_coder.blueprint import ac_bp as _ac_bp
+        except ImportError:
+            from apps.autonomous_coder.blueprint import ac_bp as _ac_bp
         app.register_blueprint(_ac_bp)
         app.logger.info("Autonomous Coder blueprint registered at /autonomous-coder")
     except Exception as _exc:

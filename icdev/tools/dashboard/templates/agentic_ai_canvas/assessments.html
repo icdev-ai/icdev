@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}AADC Assessment — {{ design.name }}{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">📊 Assessment — {{ design.name }}</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">NIST AI RMF + OWASP LLM Top 10 + OMB M-25-21 compliance results</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/agentic-ai/canvas/{{ design.id }}" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Canvas</a>
+    <button onclick="runAssessment()" style="background:#6366f1;color:#fff;padding:8px 16px;border-radius:5px;border:none;cursor:pointer;font-size:13px;">▶ Re-Assess</button>
+  </div>
+</div>
+
+{% if assessments %}
+{% set a = assessments[0] %}
+<!-- Score cards -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:32px;font-weight:700;color:{% if a.score >= 70 %}#10b981{% elif a.score >= 50 %}#f59e0b{% else %}#ef4444{% endif %};">{{ a.score|round(1) }}%</div>
+    <div style="color:#7a8cb0;font-size:11px;">Overall Score</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:32px;font-weight:700;color:{% if a.nist_rmf_score >= 70 %}#10b981{% elif a.nist_rmf_score >= 50 %}#f59e0b{% else %}#ef4444{% endif %};">{{ a.nist_rmf_score|round(1) }}%</div>
+    <div style="color:#7a8cb0;font-size:11px;">NIST AI RMF</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:32px;font-weight:700;color:{% if a.owasp_score >= 70 %}#10b981{% elif a.owasp_score >= 50 %}#f59e0b{% else %}#ef4444{% endif %};">{{ a.owasp_score|round(1) }}%</div>
+    <div style="color:#7a8cb0;font-size:11px;">OWASP LLM Top 10</div>
+  </div>
+  <div style="background:#16213e;border:1px solid {% if a.safety_impacting or a.rights_impacting %}#f59e0b{% else %}#1e3a6e{% endif %};border-radius:8px;padding:14px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:{% if a.safety_impacting or a.rights_impacting %}#f59e0b{% else %}#10b981{% endif %};">L{{ a.autonomy_max }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Max Autonomy Level</div>
+    {% if a.safety_impacting %}<div style="color:#f59e0b;font-size:10px;">⚠ Safety-Impacting</div>{% endif %}
+    {% if a.rights_impacting %}<div style="color:#f59e0b;font-size:10px;">⚠ Rights-Impacting</div>{% endif %}
+  </div>
+</div>
+
+<!-- Findings -->
+{% if a.findings %}
+<h3 style="color:#eaeaea;margin:0 0 12px;">Findings ({{ a.findings|length }})</h3>
+<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+  {% for f in a.findings %}
+  <div style="background:#16213e;border-left:3px solid {% if f.severity == 'CRITICAL' %}#ef4444{% elif f.severity == 'HIGH' %}#f97316{% else %}#f59e0b{% endif %};border-radius:0 6px 6px 0;padding:12px 16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+      <strong style="color:#eaeaea;font-size:13px;">{{ f.title }}</strong>
+      <span style="background:{% if f.severity == 'CRITICAL' %}#450a0a{% elif f.severity == 'HIGH' %}#431407{% else %}#422006{% endif %};
+            color:{% if f.severity == 'CRITICAL' %}#fca5a5{% elif f.severity == 'HIGH' %}#fdba74{% else %}#fde68a{% endif %};
+            padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;">{{ f.severity }}</span>
+    </div>
+    <div style="color:#7a8cb0;font-size:12px;margin-bottom:6px;">{{ f.detail }}</div>
+    {% if f.recommendation %}
+    <div style="color:#4ade80;font-size:11px;">→ {{ f.recommendation }}</div>
+    {% endif %}
+    <div style="color:#5a6e8c;font-size:10px;margin-top:4px;">{{ f.framework }}{% if f.category %} · {{ f.category }}{% endif %}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div style="background:#052e16;border:1px solid #166534;border-radius:6px;padding:16px;text-align:center;color:#4ade80;margin-bottom:24px;">
+  ✓ No findings — design passes all compliance checks
+</div>
+{% endif %}
+
+<!-- MITRE ATLAS threats -->
+{% if a.atlas %}
+<h3 style="color:#eaeaea;margin:0 0 12px;">MITRE ATLAS Threat Surface ({{ a.atlas|length }} techniques)</h3>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;">
+  {% for t in a.atlas %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+    <div style="color:#a5b4fc;font-size:12px;font-weight:600;">{{ t.technique }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">{{ t.node_label }} ({{ t.node_type }})</div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% else %}
+<div style="text-align:center;padding:40px;background:#16213e;border:1px solid #1e3a6e;border-radius:8px;color:#7a8cb0;">
+  No assessments yet. Click Re-Assess to run the first assessment.
+</div>
+{% endif %}
+
+<script>
+function runAssessment() {
+  fetch('/agentic-ai/api/designs/{{ design.id }}/assess', {method:'POST'})
+    .then(r => r.json()).then(() => location.reload());
+}
+</script>
+{% endblock %}

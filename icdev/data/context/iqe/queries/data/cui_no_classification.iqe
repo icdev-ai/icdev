@@ -1,0 +1,9 @@
+# Intent: Find lineage edges that carry data with no classification label, indicating
+#         CUI flowing through the pipeline without the required marking. Unclassified
+#         edges break the CUI traceability chain mandated for IL4/IL5 ATO compliance.
+# Expected violation shape: rows where classification == null;
+#   each row is an untagged lineage edge that must receive a classification before ATO.
+
+foreach e in data.lineage.edges
+  where e.classification == null
+  select e.id, e.source_node_id, e.target_node_id, e.column_name, e.classification

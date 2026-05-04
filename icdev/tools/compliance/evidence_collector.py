@@ -297,6 +297,15 @@ def collect_evidence(
     required_total = sum(1 for r in results.values() if r["required"])
     coverage_pct = round(frameworks_with_evidence / len(results) * 100, 1) if results else 0
 
+    try:
+        from tools.aisg.roi_tracker import emit_roi_event
+        emit_roi_event(
+            "evidence_collect",
+            f"Evidence collected for project {project_id} ({coverage_pct}% coverage)",
+            triggered_by="evidence_collector",
+        )
+    except Exception:
+        pass
     return {
         "project_id": project_id,
         "collected_at": datetime.now(timezone.utc).isoformat(),

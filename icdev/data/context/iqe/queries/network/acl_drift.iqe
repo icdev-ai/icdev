@@ -1,0 +1,8 @@
+# Intent: Surface ACL rules whose current configuration has diverged from the
+#         approved policy baseline, requiring remediation before the next ATO review.
+# Expected violation shape: rows where status == "drift" — each row maps to a device
+#   and rule_id that must be re-aligned to the policy template before sign-off.
+
+foreach a in network.acl_rules
+  where a.status == "drift"
+  select a.device, a.acl_name, a.rule_id, a.action, a.status

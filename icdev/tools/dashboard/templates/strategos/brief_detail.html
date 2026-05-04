@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}{{ brief.title }} — Strategos Brief{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem">
+    <div>
+        <h1 style="margin-bottom:.25rem">{{ brief.title }}</h1>
+        <div style="font-size:.8rem;color:var(--text-secondary)">
+            <span style="background:{% if brief.brief_type=='sitrep' %}#1a3a5c{% elif brief.brief_type=='iir' %}#3a1a2e{% elif brief.brief_type=='warnord' %}#1a3a1a{% else %}#2e2a1a{% endif %};color:#ddd;padding:.15rem .5rem;border-radius:4px;font-family:monospace">
+                {{ brief.brief_type | upper }}
+            </span>
+            &nbsp;&nbsp;{{ brief.created_at[:16] | replace('T', ' ') }} UTC
+            {% if brief.sio_confidence is not none %}
+            &nbsp;&nbsp;SIO Conf: <span style="color:{% if brief.sio_confidence >= 0.7 %}#10b981{% elif brief.sio_confidence >= 0.4 %}#f59e0b{% else %}#e94560{% endif %}">
+                {{ (brief.sio_confidence * 100) | round(1) }}%
+            </span>
+            {% endif %}
+        </div>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap">
+        <a href="/strategos/briefs" style="font-size:.85rem;color:var(--text-secondary)">&#8592; All Briefs</a>
+        <a href="/api/strategos/briefs/{{ brief.id }}/export?format=pdf" target="_blank"
+            style="padding:.35rem .75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;font-size:.8rem;color:var(--text-secondary);text-decoration:none">
+            &#8595; Export PDF
+        </a>
+        <a href="/api/strategos/briefs/{{ brief.id }}/export?format=md" target="_blank"
+            style="padding:.35rem .75rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;font-size:.8rem;color:var(--text-secondary);text-decoration:none">
+            &#8595; Export .md
+        </a>
+        {% if not brief.analyst_reviewed %}
+        <button onclick="document.getElementById('approve-panel').style.display='block'"
+            style="padding:.35rem .75rem;background:#10b981;color:#fff;border:none;border-radius:6px;font-size:.8rem;cursor:pointer">
+            &#10003; Approve
+        </button>
+        {% else %}
+        <span style="padding:.35rem .75rem;background:#10b981;color:#fff;border-radius:6px;font-size:.8rem">
+            &#10003; Reviewed by {{ brief.reviewed_by or 'analyst' }}
+        </span>
+        {% endif %}
+    </div>
+</div>
+
+{# ── Reviewed banner ── #}
+{% if brief.analyst_reviewed %}
+<div class="card" style="background:#0d2b1a;border-left:4px solid #10b981;margin-bottom:1rem;padding:.75rem 1rem">
+    <strong style="color:#10b981;font-size:.85rem">Analyst Approved</strong>
+    <span style="color:var(--text-secondary);font-size:.82rem;margin-left:.75rem">
+        by {{ brief.reviewed_by or 'analyst' }} at {{ brief.reviewed_at[:16] | replace('T',' ') }} UTC
+    </span>
+    {% if brief.annotations %}
+    <p style="margin:.5rem 0 0;font-size:.85rem;color:var(--text-secondary)">
+        <strong>Annotations:</strong> {{ brief.annotations }}
+    </p>
+    {% endif %}
+</div>
+{% endif %}
+
+{# ── Approve Panel ── #}
+<div id="approve-panel" style="display:none;margin-bottom:1rem">
+    <div class="card" style="border-left:4px solid #10b981">
+        <h4 style="margin-top:0;color:#10b981">Approve Brief</h4>
+        <div style="display:flex;flex-direction:column;gap:.6rem">
+            <div>
+                <label style="font-size:.83rem;color:var(--text-secondary);display:block;margin-bottom:.25rem">Reviewed By</label>
+                <input id="ap-reviewer" type="text" value="analyst"
+                    style="padding:.35rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary);width:220px">
+            </div>
+            <div>
+                <label style="font-size:.83rem;color:var(--text-secondary);display:block;margin-bottom:.25rem">Annotations (optional)</label>
+                <textarea id="ap-annotations" rows="3" placeholder="Notes, caveats, dissemination limits…"
+                    style="width:100%;max-width:540px;padding:.35rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary);font-size:.85rem;resize:vertical;box-sizing:border-box"></textarea>
+            </div>
+            <div id="ap-error" style="color:#e94560;font-size:.82rem;display:none"></div>
+            <div style="display:flex;gap:.5rem">
+                <button onclick="submitApprove()"
+                    style="padding:.4rem .9rem;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">
+                    Confirm Approval
+                </button>
+                <button onclick="document.getElementById('approve-panel').style.display='none'"
+                    style="padding:.4rem .9rem;background:var(--card-bg);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:.85rem;color:var(--text-secondary)">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Brief content ── #}
+<div class="card" style="line-height:1.65">
+    {% if content_html %}
+    <div class="brief-content">{{ content_html | safe }}</div>
+    {% else %}
+    <pre style="white-space:pre-wrap;font-family:inherit;font-size:.875rem;color:var(--text-primary);margin:0">{{ brief.content_md }}</pre>
+    {% endif %}
+</div>
+
+<style>
+.brief-content h1 { font-size:1.4rem; border-bottom:2px solid var(--border); padding-bottom:.3rem; margin-bottom:.8rem; }
+.brief-content h2 { font-size:1.1rem; color:var(--accent-blue); margin-top:1.5rem; margin-bottom:.5rem; }
+.brief-content h3 { font-size:.95rem; color:var(--text-secondary); margin-top:1rem; }
+.brief-content table { border-collapse:collapse; width:100%; margin:.8em 0; font-size:.875rem; }
+.brief-content th, .brief-content td { border:1px solid var(--border); padding:.4rem .75rem; text-align:left; }
+.brief-content th { background:var(--table-header-bg,#1e1e2e); font-weight:600; }
+.brief-content blockquote { border-left:4px solid #e94560; padding:.4rem .8rem; background:rgba(233,69,96,.08); margin:.6rem 0; }
+.brief-content code { background:var(--code-bg,#1e1e2e); padding:2px 5px; border-radius:3px; font-size:.82rem; }
+.brief-content ul, .brief-content ol { padding-left:1.4rem; }
+.brief-content li { margin:.2rem 0; }
+.brief-content strong:first-child { color:var(--text-primary); }
+</style>
+
+<script>
+async function submitApprove() {
+    const reviewer = document.getElementById('ap-reviewer').value.trim() || 'analyst';
+    const annotations = document.getElementById('ap-annotations').value.trim();
+    const errEl = document.getElementById('ap-error');
+    errEl.style.display = 'none';
+
+    try {
+        const r = await fetch('/api/strategos/briefs/{{ brief.id }}/approve', {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ reviewed_by: reviewer, annotations })
+        });
+        const data = await r.json();
+        if (!r.ok) { errEl.textContent = data.error || 'Server error.'; errEl.style.display = 'block'; return; }
+        window.location.reload();
+    } catch(e) {
+        errEl.textContent = 'Network error: ' + e.message;
+        errEl.style.display = 'block';
+    }
+}
+</script>
+{% endblock %}

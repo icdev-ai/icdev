@@ -1,0 +1,175 @@
+{
+  "id": "vert-migration",
+  "name": "Application & Cloud Migration",
+  "slug": "migration",
+  "description": "Application and cloud migration, modernization, and re-platforming. Covers 7Rs migration strategy (rehost, refactor, rearchitect, retain, retire, relocate, repurchase), data migration, database migration, legacy modernization, and GovCloud / DoD cloud migration.",
+  "keywords": [
+    "cloud migration",
+    "application migration",
+    "data migration",
+    "database migration",
+    "lift and shift",
+    "rehost",
+    "refactor",
+    "rearchitect",
+    "repurchase",
+    "retire",
+    "retain",
+    "relocate",
+    "legacy modernization",
+    "application modernization",
+    "re-platform",
+    "cloud adoption",
+    "AWS migration",
+    "Azure migration",
+    "GCP migration",
+    "GovCloud migration",
+    "DoD cloud",
+    "DISA cloud",
+    "FedRAMP migration",
+    "migration assessment",
+    "migration wave planning",
+    "cutover",
+    "rollback",
+    "migration testing",
+    "ETL migration",
+    "schema migration",
+    "microservices migration",
+    "containerization"
+  ],
+  "regulatory_bodies": [
+    "DISA",
+    "CISA",
+    "FedRAMP",
+    "DoD_CIO",
+    "OMB",
+    "NIST"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.SE",
+      "cs.DC",
+      "cs.DB",
+      "cs.PL"
+    ],
+    "ieee": [
+      "cloud migration",
+      "application modernization",
+      "legacy system migration",
+      "software re-engineering"
+    ],
+    "acm": [
+      "software engineering",
+      "cloud computing",
+      "database systems",
+      "systems migration"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/aws",
+      "r/azure",
+      "r/googlecloud",
+      "r/devops",
+      "r/sysadmin",
+      "r/cloudcomputing",
+      "r/kubernetes"
+    ],
+    "stackexchange": [
+      "stackoverflow.com",
+      "serverfault.com",
+      "dba.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": []
+  },
+  "review_sites": {
+    "g2": [
+      "cloud-migration-software",
+      "application-modernization-tools",
+      "database-migration-software",
+      "data-migration-software",
+      "application-migration-tools"
+    ],
+    "capterra": [
+      "cloud-migration-software",
+      "data-migration-software",
+      "application-modernization-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "cloud-migration",
+      "migration",
+      "database-migration",
+      "application-migration",
+      "modernization",
+      "schema-migration",
+      "data-migration"
+    ],
+    "awesome_lists": [
+      "awesome-aws",
+      "awesome-cloud-native"
+    ],
+    "package_registries": {
+      "pypi": [
+        "alembic",
+        "flyway",
+        "boto3",
+        "azure-mgmt-compute",
+        "google-cloud-storage"
+      ],
+      "npm": [
+        "db-migrate",
+        "knex"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "cloud migration strategy",
+      "DoD cloud migration",
+      "FedRAMP migration",
+      "legacy modernization government",
+      "application migration best practices",
+      "GovCloud adoption",
+      "DISA cloud authorization"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F8/65",
+      "G06F16/27",
+      "H04L67/1097"
+    ],
+    "keywords": [
+      "cloud migration method",
+      "automated application migration",
+      "database migration system",
+      "workload migration"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "FedRAMP",
+    "DISA_STIG",
+    "DISA_IL4",
+    "DISA_IL5",
+    "CMMC_2",
+    "NIST_800_146"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "cloud migration strategy",
+      "application modernization tutorial",
+      "AWS migration hub",
+      "Azure migrate",
+      "database migration guide"
+    ],
+    "manual_urls": []
+  }
+}

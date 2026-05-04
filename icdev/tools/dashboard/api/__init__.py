@@ -215,6 +215,9 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.ato_package import ato_package_api
     _mount(ato_package_api, v1_prefix="/api/v1/ato-package")
 
+    from tools.dashboard.api.ato_compliance import ato_compliance_api
+    _mount(ato_compliance_api, v1_prefix="/api/v1/ato-compliance")
+
     from tools.dashboard.api.oracle import oracle_api
     _mount_inline(oracle_api)   # inline routes: /api/oracle/*
 
@@ -263,6 +266,12 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("options_api skipped: %s", exc)
 
+    try:
+        from tools.dashboard.api.quality_scores import quality_scores_api
+        _mount_inline(quality_scores_api)   # inline routes: /api/quality-scores/*
+    except Exception as exc:
+        logger.warning("quality_scores_api skipped: %s", exc)
+
     # ------------------------------------------------------------------ #
     #  Optional blueprints — graceful skip on ImportError                 #
     # ------------------------------------------------------------------ #
@@ -277,6 +286,12 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         _mount_inline(rag_eval_api)
     except ImportError as exc:
         logger.debug("rag_eval_api skipped: %s", exc)
+
+    try:
+        from tools.knowledge_graph.blueprint import rag_kg_api
+        _mount_inline(rag_kg_api)
+    except ImportError as exc:
+        logger.debug("rag_kg_api skipped: %s", exc)
 
     try:
         from tools.dashboard.api.sre import sre_api
@@ -314,6 +329,23 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
             _mount(proposal_genesis_api, v1_prefix="/api/v1/proposal-genesis")
         except ImportError as exc:
             logger.debug("proposal_genesis_api skipped: %s", exc)
+
+    # AISG explain translator — /api/explain/<event_id>
+    try:
+        from tools.aisg.blueprint import bp as aisg_bp
+        _mount_inline(aisg_bp)
+        logger.info("AISG explain blueprint registered at /api/explain/<event_id>")
+    except Exception as exc:
+        logger.warning("AISG explain blueprint skipped: %s", exc)
+
+    # HITL Workflow — opt-in via ICDEV_HITL_ENABLED=true
+    try:
+        from tools.workflow_hitl.blueprint import create_wf_blueprint
+        wf_bp = create_wf_blueprint()
+        _mount(wf_bp, v1_prefix="/api/v1/wf")
+        logger.info("HITL Workflow API registered at /api/v1/wf/")
+    except Exception as exc:
+        logger.warning("HITL Workflow API skipped: %s", exc)
 
     # Safety Monitor — circuit breaker API at /safety/circuit-breaker
     try:

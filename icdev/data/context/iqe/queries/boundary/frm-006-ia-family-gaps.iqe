@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-006
+-- Title: FedRAMP Moderate — Identification & Authentication (IA) Family Gaps
+-- Framework: FedRAMP Moderate
+-- Category: control-family
+-- Severity: high
+-- Description: IA-family controls (MFA, credential management, authenticator
+--   assurance) are required for FedRAMP Moderate and frequently fail
+--   automated assessment. Surface all non-satisfied IA controls.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

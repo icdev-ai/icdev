@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}Scenario Builder — AI GameDay{% endblock %}
+{% block extra_css %}
+<style>
+.sb-wrap{display:grid;grid-template-columns:380px 1fr;gap:0;height:calc(100vh - 120px);}
+.sb-form{background:#161b22;border-right:1px solid #21262d;overflow-y:auto;padding:1.2rem;}
+.sb-preview{background:#0d1117;overflow-y:auto;padding:1.2rem;}
+.sb-title{font-size:1.1rem;font-weight:700;color:#FF6B35;margin:0 0 1rem;}
+.field-group{margin-bottom:1rem;}
+.field-label{font-size:.78rem;color:#6e7681;display:block;margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.04em;}
+.sb-input{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.55rem .8rem;border-radius:6px;font-size:.88rem;box-sizing:border-box;}
+.sb-input:focus{outline:none;border-color:#FF6B35;}
+.sb-select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.55rem .8rem;border-radius:6px;font-size:.88rem;}
+.sb-textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.6rem .8rem;border-radius:6px;font-size:.85rem;min-height:80px;resize:vertical;box-sizing:border-box;}
+.sb-textarea:focus{outline:none;border-color:#FF6B35;}
+.inject-item{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:.8rem 1rem;margin-bottom:.6rem;cursor:move;}
+.inject-item h4{margin:0 0 .3rem;font-size:.85rem;color:#e6edf3;}
+.inject-item .ii-meta{font-size:.75rem;color:#6e7681;}
+.add-inject-btn{width:100%;background:transparent;border:1px dashed #30363d;color:#6e7681;padding:.6rem;border-radius:6px;cursor:pointer;font-size:.85rem;transition:all .2s;margin-bottom:1rem;}
+.add-inject-btn:hover{border-color:#FF6B35;color:#FF6B35;}
+.save-btn{background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.7rem;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;width:100%;}
+.save-btn:hover{opacity:.85;}
+.yaml-preview{font-family:'Courier New',monospace;font-size:.78rem;color:#8b949e;white-space:pre-wrap;line-height:1.6;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:1rem;max-height:calc(100vh - 180px);overflow-y:auto;}
+.section-sep{border:none;border-top:1px solid #21262d;margin:1rem 0;}
+.inject-modal{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.7);display:none;z-index:1000;justify-content:center;align-items:flex-start;padding-top:60px;}
+.inject-modal-inner{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.5rem;width:580px;max-height:80vh;overflow-y:auto;}
+.inject-modal-inner h3{color:#e6edf3;margin:0 0 1rem;font-size:1rem;}
+</style>
+{% endblock %}
+{% block content %}
+<div style="background:#161b22;border-bottom:1px solid #21262d;padding:.8rem 1.5rem;display:flex;align-items:center;gap:1rem;">
+  <h1 style="font-size:1.1rem;font-weight:700;color:#FF6B35;margin:0;">🏗️ Scenario Builder</h1>
+  <span style="flex:1;"></span>
+  <a href="/gameday/scenarios" style="font-size:.82rem;color:#6e7681;text-decoration:none;">← Scenario Manager</a>
+</div>
+<div class="sb-wrap">
+  <!-- Left: form -->
+  <div class="sb-form">
+    <div class="sb-title">Scenario Definition</div>
+
+    <div class="field-group">
+      <label class="field-label">Scenario Name</label>
+      <input id="sc-name" class="sb-input" placeholder="DRP GameDay 2026" oninput="updatePreview()">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
+      <div class="field-group">
+        <label class="field-label">Slug</label>
+        <input id="sc-slug" class="sb-input" placeholder="drp_gameday" oninput="updatePreview()">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Session Mode</label>
+        <select id="sc-mode" class="sb-select" onchange="updatePreview()">
+          <option value="live">Live (synchronized)</option>
+          <option value="async">Async (self-paced)</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
+      <div class="field-group">
+        <label class="field-label">Duration (minutes)</label>
+        <input id="sc-duration" class="sb-input" type="number" value="120" min="30" max="480" oninput="updatePreview()">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Max Teams</label>
+        <input id="sc-teams" class="sb-input" type="number" value="8" min="2" max="20" oninput="updatePreview()">
+      </div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Description</label>
+      <textarea id="sc-desc" class="sb-textarea" placeholder="Short description of this exercise..." oninput="updatePreview()"></textarea>
+    </div>
+
+    <hr class="section-sep">
+    <div class="sb-title" style="font-size:.9rem;">Injects</div>
+
+    <div id="inject-list"></div>
+    <button class="add-inject-btn" onclick="openInjectModal()">+ Add Inject</button>
+
+    <hr class="section-sep">
+    <button class="save-btn" onclick="saveScenario()">💾 Save Scenario</button>
+    <div id="save-result" style="font-size:.82rem;margin-top:.6rem;display:none;"></div>
+  </div>
+
+  <!-- Right: YAML preview -->
+  <div class="sb-preview">
+    <div style="font-size:.78rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem;">YAML Preview</div>
+    <div class="yaml-preview" id="yaml-out"># Fill in the form to generate YAML...</div>
+  </div>
+</div>
+
+<!-- Inject modal -->
+<div class="inject-modal" id="inject-modal">
+  <div class="inject-modal-inner">
+    <h3>Add Inject</h3>
+    <div class="field-group">
+      <label class="field-label">Inject Title</label>
+      <input id="inj-title" class="sb-input" placeholder="System Outage — Primary DC Offline">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;">
+      <div class="field-group">
+        <label class="field-label">Type</label>
+        <select id="inj-type" class="sb-select">
+          {% for t in inject_types %}<option value="{{ t.id }}">{{ t.icon }} {{ t.label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="field-group">
+        <label class="field-label">At Minute (live)</label>
+        <input id="inj-minute" class="sb-input" type="number" placeholder="15" min="1">
+      </div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Body (Markdown)</label>
+      <textarea id="inj-body" class="sb-textarea" style="min-height:120px;" placeholder="## Your Inject\n\nDescribe the situation..."></textarea>
+    </div>
+    <div class="field-group">
+      <label class="field-label">AI Tools Allowed (select multiple)</label>
+      <div style="display:flex;flex-wrap:wrap;gap:.4rem;">
+        {% for tool in ai_tools %}
+        <label style="font-size:.78rem;color:#8b949e;display:flex;align-items:center;gap:.3rem;cursor:pointer;">
+          <input type="checkbox" value="{{ tool.slug }}" class="inj-tool-cb"> {{ tool.icon }} {{ tool.label }}
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.6rem;">
+      <div class="field-group">
+        <label class="field-label">Base Pts</label>
+        <input id="inj-base-pts" class="sb-input" type="number" value="100">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Receipt Bonus/call</label>
+        <input id="inj-receipt-bonus" class="sb-input" type="number" value="50">
+      </div>
+      <div class="field-group">
+        <label class="field-label">Max Receipt Bonus</label>
+        <input id="inj-max-receipt" class="sb-input" type="number" value="150">
+      </div>
+    </div>
+    <div style="display:flex;gap:.8rem;margin-top:.5rem;">
+      <button onclick="addInject()" style="background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.6rem 1.4rem;border-radius:6px;font-size:.88rem;font-weight:600;cursor:pointer;">Add Inject</button>
+      <button onclick="closeModal()" style="background:#21262d;color:#8b949e;border:1px solid #30363d;padding:.6rem 1.2rem;border-radius:6px;cursor:pointer;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let injects=[];
+
+function openInjectModal(){document.getElementById('inject-modal').style.display='flex';}
+function closeModal(){document.getElementById('inject-modal').style.display='none';}
+
+function addInject(){
+  const title=document.getElementById('inj-title').value.trim();
+  if(!title){alert('Title required');return;}
+  const tools=[...document.querySelectorAll('.inj-tool-cb:checked')].map(c=>c.value);
+  const id='inject-'+String(injects.length+1).padStart(2,'0')+'-'+title.toLowerCase().replace(/[^a-z0-9]/g,'-').slice(0,20);
+  injects.push({
+    id,title,
+    inject_type:document.getElementById('inj-type').value,
+    at_minute:parseInt(document.getElementById('inj-minute').value)||null,
+    sequence:injects.length+1,
+    body_md:document.getElementById('inj-body').value,
+    ai_tools_allowed:tools,
+    scoring:{
+      base_pts:parseInt(document.getElementById('inj-base-pts').value)||100,
+      receipt_bonus_per_call:parseInt(document.getElementById('inj-receipt-bonus').value)||50,
+      max_receipt_bonus:parseInt(document.getElementById('inj-max-receipt').value)||150,
+      time_bonus:true,
+    }
+  });
+  renderInjectList();
+  updatePreview();
+  closeModal();
+  document.getElementById('inj-title').value='';document.getElementById('inj-body').value='';
+  document.querySelectorAll('.inj-tool-cb').forEach(c=>c.checked=false);
+}
+
+function removeInject(idx){injects.splice(idx,1);renderInjectList();updatePreview();}
+
+function renderInjectList(){
+  document.getElementById('inject-list').innerHTML=injects.map((inj,i)=>`
+    <div class="inject-item" draggable="true" ondragstart="dragStart(event,${i})" ondrop="drop(event,${i})" ondragover="e=>e.preventDefault()">
+      <h4>${inj.title} <button onclick="removeInject(${i})" style="float:right;background:transparent;border:none;color:#f85149;cursor:pointer;font-size:.8rem;">✕</button></h4>
+      <div class="ii-meta">T+${inj.at_minute||'?'}min · Seq ${inj.sequence} · ${inj.ai_tools_allowed.length} tools · ${inj.scoring.base_pts}+${inj.scoring.max_receipt_bonus} pts</div>
+    </div>`).join('');
+}
+
+let dragSrc=null;
+function dragStart(e,i){dragSrc=i;}
+function drop(e,i){
+  e.preventDefault();
+  const tmp=injects.splice(dragSrc,1)[0];
+  injects.splice(i,0,tmp);
+  injects.forEach((inj,n)=>inj.sequence=n+1);
+  renderInjectList();updatePreview();
+}
+
+function updatePreview(){
+  const name=document.getElementById('sc-name').value||'Unnamed Scenario';
+  const slug=document.getElementById('sc-slug').value||'scenario';
+  const mode=document.getElementById('sc-mode').value;
+  const duration=document.getElementById('sc-duration').value||120;
+  const teams=document.getElementById('sc-teams').value||8;
+  const desc=document.getElementById('sc-desc').value||'';
+  let yaml=`# CUI // SP-CTI\nname: "${name}"\nversion: "1.0"\nsession_mode: ${mode}\nduration_minutes: ${duration}\nmax_teams: ${teams}\nclassification: "CUI // SP-CTI"\n`;
+  if(desc)yaml+=`\ndescription: >\n  ${desc.replace(/\n/g,'\n  ')}\n`;
+  yaml+='\nroles: []  # Define roles here\n\ninjects:\n';
+  injects.forEach(inj=>{
+    yaml+=`  - id: ${inj.id}\n    title: "${inj.title}"\n`;
+    if(inj.at_minute)yaml+=`    at_minute: ${inj.at_minute}\n`;
+    yaml+=`    sequence: ${inj.sequence}\n`;
+    if(inj.ai_tools_allowed.length)yaml+=`    ai_tools_allowed:\n${inj.ai_tools_allowed.map(t=>`      - ${t}`).join('\n')}\n`;
+    yaml+=`    scoring:\n      base_pts: ${inj.scoring.base_pts}\n      receipt_bonus_per_call: ${inj.scoring.receipt_bonus_per_call}\n      max_receipt_bonus: ${inj.scoring.max_receipt_bonus}\n      time_bonus: ${inj.scoring.time_bonus}\n`;
+  });
+  document.getElementById('yaml-out').textContent=yaml;
+}
+
+async function saveScenario(){
+  const name=document.getElementById('sc-name').value.trim();
+  const slug=document.getElementById('sc-slug').value.trim();
+  if(!name||!slug){alert('Name and slug required');return;}
+  const yaml=document.getElementById('yaml-out').textContent;
+  const r=await fetch('/api/gameday/scenarios',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,slug,yaml_content:yaml})});
+  const d=await r.json();
+  const res=document.getElementById('save-result');
+  res.style.display='block';
+  res.style.color=d.ok?'#3fb950':'#f85149';
+  res.textContent=d.ok?`Saved! Slug: ${d.slug}`:'Error: '+(d.error||'Save failed');
+}
+
+updatePreview();
+</script>
+{% endblock %}

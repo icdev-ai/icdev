@@ -1,0 +1,9 @@
+# Intent: Find attack-graph edges that are both unencrypted and unauthenticated,
+#         representing trust-boundary crossings with no transport or identity controls.
+# Expected violation shape: rows where encrypted == false and authenticated == false;
+#   each row is a boundary-crossing edge lacking cryptographic and identity protection.
+
+foreach e in attack.edges
+  where e.encrypted == false
+  where e.authenticated == false
+  select e.snapshot_id, e.component_id, e.source, e.target, e.encrypted, e.authenticated, e.risk_score

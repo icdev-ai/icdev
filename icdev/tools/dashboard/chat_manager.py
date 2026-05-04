@@ -863,6 +863,10 @@ class ChatManager:
             )
             conn.commit()
             conn.close()
+            with self._lock:
+                _ctx = self._contexts.get(context_id)
+                if _ctx:
+                    _ctx.dirty_version += 1
         except sqlite3.OperationalError as exc:
             logger.debug("DB message insert skipped: %s", exc)
 

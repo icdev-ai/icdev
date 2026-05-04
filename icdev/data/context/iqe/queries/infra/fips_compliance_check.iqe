@@ -1,0 +1,10 @@
+# Intent: Find CUI-classified resources whose configuration does not reference FIPS mode,
+#         indicating potential use of non-FIPS-validated cryptographic modules in violation
+#         of NIST SP 800-131A and FedRAMP SC-13 (Cryptographic Protection) requirements.
+# Expected violation shape: rows where classification == "CUI" and config lacks "fips";
+#   each row is a CUI resource that must be reconfigured with a FIPS-validated module.
+
+foreach r in infra.resources
+  where r.classification == "CUI"
+  where not r.config contains "fips"
+  select r.id, r.resource_name, r.csp, r.region, r.resource_type, r.classification

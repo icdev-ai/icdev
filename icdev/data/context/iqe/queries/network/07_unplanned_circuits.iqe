@@ -1,0 +1,7 @@
+# IQE-NDC-007: Circuits not yet in active install status
+# Planned or unknown-status circuits may represent shadow IT or stale records.
+# Use: circuit lifecycle governance, CMDB reconciliation, billing audit.
+
+foreach c in network.circuits
+where c.install_status != "active"
+select c.circuit_id, c.carrier, c.install_status, c.circuit_type, c.contract_end

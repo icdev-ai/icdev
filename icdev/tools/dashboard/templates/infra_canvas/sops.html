@@ -1,0 +1,558 @@
+<!-- CUI // SP-CTI — IDC Standard Operating Procedures -->
+{% extends "base.html" %}
+{% block title %}SOPs — Infrastructure Design Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .sop-toolbar{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);gap:12px;flex-wrap:wrap;}
+  .sop-toolbar h1{margin:0;font-size:20px;font-weight:700;color:var(--text);}
+  .sop-search{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+  .sop-search input,.sop-search select{background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-size:13px;}
+  .sop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(440px,1fr));gap:16px;padding:20px;}
+  .sop-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:10px;position:relative;}
+  .sop-card:hover{border-color:#00bcd4;}
+  .sop-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .sop-title{font-weight:700;font-size:14px;color:var(--text);line-height:1.3;}
+  .sop-badges{display:flex;gap:5px;flex-wrap:wrap;flex-shrink:0;}
+  .badge-cat{background:#0f3460;color:#7ab6d4;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600;text-transform:uppercase;}
+  .badge-status-draft{background:#444;color:#ccc;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .badge-status-pending_review{background:#6a3d00;color:#f39c12;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .badge-status-approved{background:#0a3d2e;color:#2ecc71;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .badge-status-rejected{background:#4a0a0a;color:#e74c3c;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .badge-status-archived{background:#2a2a2a;color:#888;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;text-transform:uppercase;}
+  .sop-desc{font-size:12px;color:var(--text-dim);line-height:1.5;}
+  .sop-nist{font-size:11px;color:#4db6ac;}
+  .sop-meta{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;color:var(--text-dim);}
+  .sop-meta span{display:flex;align-items:center;gap:3px;}
+  .sop-tags{display:flex;gap:4px;flex-wrap:wrap;}
+  .tag-pill{background:var(--bg3);border:1px solid var(--border);color:var(--text-dim);border-radius:10px;padding:1px 8px;font-size:10px;}
+  .sop-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+  .btn-xs{padding:3px 10px;font-size:11px;border-radius:4px;border:none;cursor:pointer;font-weight:600;}
+  .btn-view{background:var(--bg3);color:var(--text);border:1px solid var(--border);}
+  .btn-edit{background:#00838f;color:#fff;}
+  .btn-transition{background:#0078d4;color:#fff;}
+  .btn-delete{background:transparent;color:#e74c3c;border:1px solid #e74c3c;}
+  .version-badge{position:absolute;top:10px;right:10px;font-size:10px;color:var(--text-dim);background:var(--bg3);border-radius:10px;padding:1px 7px;}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--text-dim);}
+  .empty-state h3{font-size:18px;margin-bottom:8px;}
+  .sop-back{display:inline-block;padding:6px 16px;background:#0f3460;color:#7a8cb0;border-radius:6px;text-decoration:none;font-size:12px;margin:16px 20px 0;}
+  .sop-back:hover{background:#1e3a6e;color:#eaeaea;}
+
+  /* Modal */
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;}
+  .modal-overlay.active{display:flex;}
+  .modal{background:var(--bg1);border:1px solid var(--border);border-radius:10px;width:min(820px,96vw);max-height:92vh;overflow-y:auto;padding:24px;}
+  .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+  .modal-header h2{margin:0;font-size:18px;color:var(--text);}
+  .modal-close{background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;padding:0 4px;}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .form-full{grid-column:1/-1;}
+  .form-group{display:flex;flex-direction:column;gap:4px;}
+  .form-group label{font-size:12px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;}
+  .form-group input,.form-group select,.form-group textarea{background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;width:100%;box-sizing:border-box;}
+  .form-group textarea{resize:vertical;min-height:72px;font-family:inherit;}
+  .steps-list{display:flex;flex-direction:column;gap:10px;margin-top:4px;}
+  .step-row{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;display:flex;flex-direction:column;gap:6px;}
+  .step-row-header{display:flex;justify-content:space-between;align-items:center;}
+  .step-num-label{font-size:11px;font-weight:700;color:#00bcd4;}
+  .btn-remove-step{background:none;border:none;color:#e74c3c;cursor:pointer;font-size:14px;}
+  .step-field label{font-size:10px;font-weight:600;color:var(--text-dim);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:2px;}
+  .step-field textarea{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:6px 8px;font-size:12px;width:100%;box-sizing:border-box;min-height:46px;resize:vertical;font-family:inherit;}
+  .btn-add-step{background:var(--bg3);border:1px dashed var(--border);color:var(--text-dim);border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;width:100%;margin-top:4px;}
+  .modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border);}
+  .btn-primary{background:#00838f;color:#fff;border:none;border-radius:6px;padding:8px 18px;font-size:13px;cursor:pointer;font-weight:600;}
+  .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px 18px;font-size:13px;cursor:pointer;}
+
+  /* Detail modal */
+  .detail-section{margin-bottom:18px;}
+  .detail-label{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;}
+  .detail-value{font-size:13px;color:var(--text);line-height:1.6;}
+  .steps-detail{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:12px;}
+  .steps-detail li{border:1px solid var(--border);border-radius:6px;padding:12px;background:var(--bg2);}
+  .step-detail-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .step-badge{background:#00838f;color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+  .step-action{font-size:13px;color:var(--text);line-height:1.5;flex:1;}
+  .step-party{font-size:11px;color:#7ab6d4;margin-top:4px;}
+  .step-party span{font-weight:700;color:var(--text-dim);}
+  .step-outcome{font-size:11px;color:#4db6ac;margin-top:3px;}
+  .step-outcome span{font-weight:700;color:var(--text-dim);}
+  .step-verification{font-size:11px;color:#f39c12;margin-top:3px;}
+  .step-verification span{font-weight:700;color:var(--text-dim);}
+
+  /* Transition modal */
+  .workflow-diagram{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
+  .wf-node{border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;}
+  .wf-node.active{border-color:#00bcd4;color:#00bcd4;}
+  .wf-arrow{color:var(--text-dim);font-size:12px;}
+  .transition-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+  .btn-submit{background:#0078d4;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;font-weight:600;}
+  .btn-approve{background:#27ae60;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;font-weight:600;}
+  .btn-reject{background:#e74c3c;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;font-weight:600;}
+  .btn-archive{background:#555;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;font-weight:600;}
+  .btn-reopen{background:#e67e22;color:#fff;border:none;border-radius:6px;padding:7px 16px;font-size:13px;cursor:pointer;font-weight:600;}
+</style>
+
+<a class="sop-back" href="/infra">&#x2190; Infrastructure Canvas</a>
+
+<div class="sop-toolbar">
+  <div>
+    <h1>&#x1f4cb; Infrastructure SOPs</h1>
+    <div style="font-size:12px;color:var(--text-dim);margin-top:2px;">Standard Operating Procedures — change management, capacity planning, cloud account onboarding — NIST CM-3 / CP-2 / AC-2</div>
+  </div>
+  <div class="sop-search">
+    <input type="text" id="searchInput" placeholder="Search SOPs…" oninput="filterSOPs()"/>
+    <select id="categoryFilter" onchange="filterSOPs()">
+      <option value="">All Categories</option>
+      <option value="infra_change_management">Change Management</option>
+      <option value="capacity_planning">Capacity Planning</option>
+      <option value="cloud_account_onboarding">Cloud Onboarding</option>
+      <option value="patch_management">Patch Management</option>
+      <option value="disaster_recovery">Disaster Recovery</option>
+      <option value="access_management">Access Management</option>
+      <option value="general">General</option>
+    </select>
+    <select id="statusFilter" onchange="filterSOPs()">
+      <option value="">All Statuses</option>
+      <option value="draft">Draft</option>
+      <option value="pending_review">Pending Review</option>
+      <option value="approved">Approved</option>
+      <option value="rejected">Rejected</option>
+      <option value="archived">Archived</option>
+    </select>
+    <button class="btn-xs btn-edit" onclick="openCreateModal()" style="padding:6px 14px;font-size:13px;">+ New SOP</button>
+  </div>
+</div>
+
+<div class="sop-grid" id="sopGrid">
+  {% if sops %}
+    {% for sop in sops %}
+    <div class="sop-card"
+         data-id="{{ sop.id }}"
+         data-title="{{ sop.title|lower }}"
+         data-category="{{ sop.category }}"
+         data-status="{{ sop.status }}">
+      <div class="version-badge">v{{ sop.version }}</div>
+      <div class="sop-card-header">
+        <div class="sop-title">{{ sop.title }}</div>
+        <div class="sop-badges">
+          <span class="badge-cat">{{ sop.category|replace('_',' ') }}</span>
+          <span class="badge-status-{{ sop.status }}">{{ sop.status|replace('_',' ') }}</span>
+        </div>
+      </div>
+      <div class="sop-desc">{{ sop.description }}</div>
+      {% if sop.nist_controls %}
+      <div class="sop-nist">NIST: {{ sop.nist_controls|join(', ') }}</div>
+      {% endif %}
+      <div class="sop-meta">
+        {% if sop.owner %}<span>&#x1f464; {{ sop.owner }}</span>{% endif %}
+        {% if sop.steps %}<span>{{ sop.steps|length }} steps</span>{% endif %}
+        {% if sop.approved_at %}<span>Approved {{ sop.approved_at[:10] }}</span>{% endif %}
+      </div>
+      {% if sop.tags %}
+      <div class="sop-tags">
+        {% for tag in sop.tags %}<span class="tag-pill">{{ tag }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      <div class="sop-actions">
+        <button class="btn-xs btn-view" onclick="viewSOP('{{ sop.id }}')">View</button>
+        <button class="btn-xs btn-edit" onclick="editSOP('{{ sop.id }}')">Edit</button>
+        <button class="btn-xs btn-transition" onclick="openTransitionModal('{{ sop.id }}', '{{ sop.status }}', {{ sop.title|tojson }})">Workflow</button>
+        <button class="btn-xs btn-delete" onclick="deleteSOP('{{ sop.id }}', {{ sop.title|tojson }})">Delete</button>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty-state" style="grid-column:1/-1;">
+    <h3>No SOPs yet</h3>
+    <p>Create Standard Operating Procedures for infrastructure change management, capacity planning reviews, and cloud account onboarding.</p>
+    <button class="btn-xs btn-edit" onclick="openCreateModal()" style="padding:8px 20px;font-size:13px;">+ New SOP</button>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Create / Edit Modal -->
+<div class="modal-overlay" id="sopFormModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="formModalTitle">New SOP</h2>
+      <button class="modal-close" onclick="closeModal('sopFormModal')">&times;</button>
+    </div>
+    <input type="hidden" id="formSopId"/>
+    <div class="form-grid">
+      <div class="form-group form-full">
+        <label>Title</label>
+        <input type="text" id="fTitle" placeholder="e.g. Infrastructure Change Management"/>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="fCategory">
+          <option value="infra_change_management">Change Management</option>
+          <option value="capacity_planning">Capacity Planning</option>
+          <option value="cloud_account_onboarding">Cloud Onboarding</option>
+          <option value="patch_management">Patch Management</option>
+          <option value="disaster_recovery">Disaster Recovery</option>
+          <option value="access_management">Access Management</option>
+          <option value="general">General</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Version</label>
+        <input type="text" id="fVersion" placeholder="1.0" value="1.0"/>
+      </div>
+      <div class="form-group form-full">
+        <label>Description</label>
+        <textarea id="fDescription" placeholder="What does this SOP address?"></textarea>
+      </div>
+      <div class="form-group form-full">
+        <label>Purpose</label>
+        <textarea id="fPurpose" placeholder="Why does this SOP exist?"></textarea>
+      </div>
+      <div class="form-group form-full">
+        <label>Scope</label>
+        <textarea id="fScope" placeholder="What systems / teams / environments does this cover?"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Owner</label>
+        <input type="text" id="fOwner" placeholder="e.g. Platform Engineering"/>
+      </div>
+      <div class="form-group">
+        <label>Reviewer</label>
+        <input type="text" id="fReviewer" placeholder="e.g. Security Engineering"/>
+      </div>
+      <div class="form-group">
+        <label>Approver</label>
+        <input type="text" id="fApprover" placeholder="e.g. CISO / ISSO"/>
+      </div>
+      <div class="form-group">
+        <label>Effective Date</label>
+        <input type="date" id="fEffectiveDate"/>
+      </div>
+      <div class="form-group">
+        <label>Review Interval (days)</label>
+        <input type="number" id="fReviewInterval" value="365" min="30"/>
+      </div>
+      <div class="form-group">
+        <label>NIST Controls (comma-separated)</label>
+        <input type="text" id="fNist" placeholder="e.g. CM-3, CP-2, AC-2"/>
+      </div>
+      <div class="form-group">
+        <label>Tags (comma-separated)</label>
+        <input type="text" id="fTags" placeholder="e.g. change-management, iac, cab"/>
+      </div>
+      <div class="form-group form-full">
+        <label>Steps</label>
+        <div class="steps-list" id="sopStepsList"></div>
+        <button type="button" class="btn-add-step" onclick="addStep()">+ Add Step</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('sopFormModal')">Cancel</button>
+      <button class="btn-primary" onclick="saveSOP()">Save SOP</button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="modal-overlay" id="sopDetailModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="detailTitle">SOP Detail</h2>
+      <button class="modal-close" onclick="closeModal('sopDetailModal')">&times;</button>
+    </div>
+    <div id="detailBody"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('sopDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Workflow Transition Modal -->
+<div class="modal-overlay" id="sopTransitionModal">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <h2>Approval Workflow</h2>
+      <button class="modal-close" onclick="closeModal('sopTransitionModal')">&times;</button>
+    </div>
+    <div id="transitionBody"></div>
+    <div class="modal-footer">
+      <button class="btn-secondary" onclick="closeModal('sopTransitionModal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUS_LABELS = {
+  draft: 'Draft',
+  pending_review: 'Pending Review',
+  approved: 'Approved',
+  rejected: 'Rejected',
+  archived: 'Archived',
+};
+
+let _allSOPs = [...document.querySelectorAll('.sop-card')].map(c => ({
+  el: c,
+  title: c.dataset.title,
+  category: c.dataset.category,
+  status: c.dataset.status,
+}));
+
+function filterSOPs(){
+  const q = document.getElementById('searchInput').value.toLowerCase();
+  const cat = document.getElementById('categoryFilter').value;
+  const st = document.getElementById('statusFilter').value;
+  _allSOPs.forEach(({el,title,category,status}) => {
+    const vis = (!q || title.includes(q))
+             && (!cat || category === cat)
+             && (!st || status === st);
+    el.style.display = vis ? '' : 'none';
+  });
+}
+
+function closeModal(id){ document.getElementById(id).classList.remove('active'); }
+function openModal(id){ document.getElementById(id).classList.add('active'); }
+
+// ── Steps builder ─────────────────────────────────────────────────────────────
+function addStep(step={}){
+  const list = document.getElementById('sopStepsList');
+  const idx = list.children.length + 1;
+  const row = document.createElement('div');
+  row.className = 'step-row';
+  row.innerHTML = `
+    <div class="step-row-header">
+      <span class="step-num-label">Step ${idx}</span>
+      <button type="button" class="btn-remove-step" onclick="this.closest('.step-row').remove();reindexSteps()">&#x2715;</button>
+    </div>
+    <div class="step-field">
+      <label>Action</label>
+      <textarea class="step-action-txt">${escHtml(step.action||'')}</textarea>
+    </div>
+    <div class="step-field">
+      <label>Responsible Party</label>
+      <textarea class="step-party-txt" style="min-height:32px;">${escHtml(step.responsible_party||'')}</textarea>
+    </div>
+    <div class="step-field">
+      <label>Expected Outcome</label>
+      <textarea class="step-outcome-txt">${escHtml(step.expected_outcome||'')}</textarea>
+    </div>
+    <div class="step-field">
+      <label>Verification</label>
+      <textarea class="step-verification-txt">${escHtml(step.verification||'')}</textarea>
+    </div>`;
+  list.appendChild(row);
+}
+
+function reindexSteps(){
+  document.querySelectorAll('#sopStepsList .step-row').forEach((row,i) => {
+    row.querySelector('.step-num-label').textContent = `Step ${i+1}`;
+  });
+}
+
+function collectSteps(){
+  return [...document.querySelectorAll('#sopStepsList .step-row')].map(row => ({
+    action: row.querySelector('.step-action-txt').value.trim(),
+    responsible_party: row.querySelector('.step-party-txt').value.trim(),
+    expected_outcome: row.querySelector('.step-outcome-txt').value.trim(),
+    verification: row.querySelector('.step-verification-txt').value.trim(),
+  })).filter(s => s.action);
+}
+
+function escHtml(s){ const d=document.createElement('div');d.textContent=s;return d.innerHTML; }
+
+// ── Create modal ──────────────────────────────────────────────────────────────
+function openCreateModal(){
+  document.getElementById('formModalTitle').textContent = 'New SOP';
+  document.getElementById('formSopId').value = '';
+  document.getElementById('fTitle').value = '';
+  document.getElementById('fCategory').value = 'general';
+  document.getElementById('fVersion').value = '1.0';
+  document.getElementById('fDescription').value = '';
+  document.getElementById('fPurpose').value = '';
+  document.getElementById('fScope').value = '';
+  document.getElementById('fOwner').value = '';
+  document.getElementById('fReviewer').value = '';
+  document.getElementById('fApprover').value = '';
+  document.getElementById('fEffectiveDate').value = '';
+  document.getElementById('fReviewInterval').value = '365';
+  document.getElementById('fNist').value = '';
+  document.getElementById('fTags').value = '';
+  document.getElementById('sopStepsList').innerHTML = '';
+  openModal('sopFormModal');
+}
+
+// ── Edit SOP ──────────────────────────────────────────────────────────────────
+function editSOP(id){
+  fetch(`/infra/api/sops/${id}`)
+    .then(r=>r.json()).then(sop=>{
+      document.getElementById('formModalTitle').textContent = 'Edit SOP';
+      document.getElementById('formSopId').value = sop.id;
+      document.getElementById('fTitle').value = sop.title||'';
+      document.getElementById('fCategory').value = sop.category||'general';
+      document.getElementById('fVersion').value = sop.version||'1.0';
+      document.getElementById('fDescription').value = sop.description||'';
+      document.getElementById('fPurpose').value = sop.purpose||'';
+      document.getElementById('fScope').value = sop.scope||'';
+      document.getElementById('fOwner').value = sop.owner||'';
+      document.getElementById('fReviewer').value = sop.reviewer||'';
+      document.getElementById('fApprover').value = sop.approver||'';
+      document.getElementById('fEffectiveDate').value = (sop.effective_date||'').slice(0,10);
+      document.getElementById('fReviewInterval').value = sop.review_interval_days||365;
+      document.getElementById('fNist').value = (sop.nist_controls||[]).join(', ');
+      document.getElementById('fTags').value = (sop.tags||[]).join(', ');
+      document.getElementById('sopStepsList').innerHTML = '';
+      (sop.steps||[]).forEach(s=>addStep(s));
+      openModal('sopFormModal');
+    });
+}
+
+// ── Save SOP ──────────────────────────────────────────────────────────────────
+function saveSOP(){
+  const id = document.getElementById('formSopId').value;
+  const nistRaw = document.getElementById('fNist').value;
+  const tagsRaw = document.getElementById('fTags').value;
+  const payload = {
+    title: document.getElementById('fTitle').value.trim(),
+    category: document.getElementById('fCategory').value,
+    version: document.getElementById('fVersion').value.trim(),
+    description: document.getElementById('fDescription').value.trim(),
+    purpose: document.getElementById('fPurpose').value.trim(),
+    scope: document.getElementById('fScope').value.trim(),
+    owner: document.getElementById('fOwner').value.trim(),
+    reviewer: document.getElementById('fReviewer').value.trim(),
+    approver: document.getElementById('fApprover').value.trim(),
+    effective_date: document.getElementById('fEffectiveDate').value,
+    review_interval_days: parseInt(document.getElementById('fReviewInterval').value)||365,
+    nist_controls: nistRaw ? nistRaw.split(',').map(s=>s.trim()).filter(Boolean) : [],
+    tags: tagsRaw ? tagsRaw.split(',').map(s=>s.trim()).filter(Boolean) : [],
+    steps: collectSteps(),
+  };
+  if(!payload.title){ alert('Title is required.'); return; }
+  const url = id ? `/infra/api/sops/${id}` : '/infra/api/sops';
+  const method = id ? 'PUT' : 'POST';
+  fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .then(r=>r.json()).then(()=>location.reload());
+}
+
+// ── View SOP detail ───────────────────────────────────────────────────────────
+function viewSOP(id){
+  fetch(`/infra/api/sops/${id}`)
+    .then(r=>r.json()).then(sop=>{
+      document.getElementById('detailTitle').textContent = sop.title;
+      let html = `
+        <div class="detail-section" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+          <span class="badge-cat">${escHtml((sop.category||'').replace(/_/g,' '))}</span>
+          <span class="badge-status-${sop.status}">${escHtml((STATUS_LABELS[sop.status]||sop.status))}</span>
+          <span style="font-size:11px;color:var(--text-dim);">v${escHtml(sop.version||'1.0')}</span>
+          ${sop.owner?`<span style="font-size:12px;color:var(--text-dim);">&#x1f464; ${escHtml(sop.owner)}</span>`:''}
+        </div>`;
+      if(sop.description) html+=`
+        <div class="detail-section">
+          <div class="detail-label">Description</div>
+          <div class="detail-value">${escHtml(sop.description)}</div>
+        </div>`;
+      if(sop.purpose) html+=`
+        <div class="detail-section">
+          <div class="detail-label">Purpose</div>
+          <div class="detail-value">${escHtml(sop.purpose)}</div>
+        </div>`;
+      if(sop.scope) html+=`
+        <div class="detail-section">
+          <div class="detail-label">Scope</div>
+          <div class="detail-value">${escHtml(sop.scope)}</div>
+        </div>`;
+      const meta = [];
+      if(sop.reviewer) meta.push(`Reviewer: ${escHtml(sop.reviewer)}`);
+      if(sop.approver) meta.push(`Approver: ${escHtml(sop.approver)}`);
+      if(sop.approved_at) meta.push(`Approved: ${escHtml(sop.approved_at.slice(0,10))}`);
+      if(sop.review_interval_days) meta.push(`Review every ${sop.review_interval_days}d`);
+      if(meta.length) html+=`
+        <div class="detail-section">
+          <div class="sop-meta" style="flex-wrap:wrap;gap:10px;">
+            ${meta.map(m=>`<span style="font-size:12px;color:var(--text-dim);">${m}</span>`).join('')}
+          </div>
+        </div>`;
+      if(sop.nist_controls&&sop.nist_controls.length) html+=`
+        <div class="detail-section">
+          <div class="detail-label">NIST Controls</div>
+          <div class="sop-nist">${sop.nist_controls.map(c=>`<span class="tag-pill" style="color:#4db6ac;">${escHtml(c)}</span>`).join(' ')}</div>
+        </div>`;
+      if(sop.tags&&sop.tags.length) html+=`
+        <div class="detail-section">
+          <div class="sop-tags">${sop.tags.map(t=>`<span class="tag-pill">${escHtml(t)}</span>`).join('')}</div>
+        </div>`;
+      if(sop.steps&&sop.steps.length){
+        html += `<div class="detail-section"><div class="detail-label">Steps (${sop.steps.length})</div><ol class="steps-detail">`;
+        sop.steps.forEach((s,i)=>{
+          html += `<li>
+            <div class="step-detail-header">
+              <div class="step-badge">${i+1}</div>
+              <div class="step-action">${escHtml(s.action)}</div>
+            </div>
+            ${s.responsible_party?`<div class="step-party"><span>Responsible:</span> ${escHtml(s.responsible_party)}</div>`:''}
+            ${s.expected_outcome?`<div class="step-outcome"><span>Expected:</span> ${escHtml(s.expected_outcome)}</div>`:''}
+            ${s.verification?`<div class="step-verification"><span>Verification:</span> ${escHtml(s.verification)}</div>`:''}
+          </li>`;
+        });
+        html += '</ol></div>';
+      }
+      document.getElementById('detailBody').innerHTML = html;
+      openModal('sopDetailModal');
+    });
+}
+
+// ── Workflow transition modal ─────────────────────────────────────────────────
+const TRANSITIONS = {
+  draft: [{label:'Submit for Review', next:'pending_review', cls:'btn-submit'}],
+  pending_review: [
+    {label:'Approve', next:'approved', cls:'btn-approve'},
+    {label:'Reject', next:'rejected', cls:'btn-reject'},
+  ],
+  rejected: [{label:'Reopen as Draft', next:'draft', cls:'btn-reopen'}],
+  approved: [{label:'Archive', next:'archived', cls:'btn-archive'}],
+  archived: [],
+};
+
+let _currentTransitionId = '';
+
+function openTransitionModal(id, currentStatus, title){
+  _currentTransitionId = id;
+  const actions = TRANSITIONS[currentStatus] || [];
+  const wfNodes = ['draft','pending_review','approved'];
+  const wfHtml = wfNodes.map(s =>
+    `<span class="wf-node${s===currentStatus?' active':''}">${STATUS_LABELS[s]}</span>`
+  ).join('<span class="wf-arrow">&#x2192;</span>');
+  let btnsHtml = '';
+  if(actions.length){
+    btnsHtml = actions.map(a =>
+      `<button class="${a.cls}" onclick="doTransition('${a.next}')">${a.label}</button>`
+    ).join('');
+  } else {
+    btnsHtml = `<p style="color:var(--text-dim);font-size:13px;">No transitions available from <strong>${STATUS_LABELS[currentStatus]||currentStatus}</strong>.</p>`;
+  }
+  document.getElementById('transitionBody').innerHTML = `
+    <div style="margin-bottom:12px;font-size:13px;color:var(--text-dim);">SOP: <strong style="color:var(--text);">${escHtml(title)}</strong></div>
+    <div class="detail-label">Current Status</div>
+    <div class="workflow-diagram">${wfHtml}</div>
+    <div class="detail-label" style="margin-bottom:8px;">Available Actions</div>
+    <div class="transition-btns">${btnsHtml}</div>`;
+  openModal('sopTransitionModal');
+}
+
+function doTransition(newStatus){
+  if(!_currentTransitionId) return;
+  fetch(`/infra/api/sops/${_currentTransitionId}/transition`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status: newStatus}),
+  }).then(r=>r.json()).then(res=>{
+    if(res.error){ alert('Error: ' + res.error); return; }
+    location.reload();
+  });
+}
+
+// ── Delete SOP ────────────────────────────────────────────────────────────────
+function deleteSOP(id, title){
+  if(!confirm(`Delete SOP "${title}"? This cannot be undone.`)) return;
+  fetch(`/infra/api/sops/${id}`, {method:'DELETE'})
+    .then(()=>location.reload());
+}
+</script>
+{% endblock %}

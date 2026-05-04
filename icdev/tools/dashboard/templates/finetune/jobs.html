@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Training Jobs — Fine-Tuning — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <span><a href="/">Home</a></span> &gt; <span><a href="/finetune">Fine-Tuning</a></span> &gt; <span>Training Jobs</span>
+    </nav>
+
+    <h1>Training Jobs</h1>
+    <p class="text-muted">Fine-tuning training jobs across all providers (D-FT-20). Click a job for details, loss curve, and events.</p>
+
+    <div class="table-container">
+        <table id="tbl-jobs">
+            <thead>
+                <tr>
+                    <th>Job ID</th>
+                    <th>Dataset</th>
+                    <th>Provider</th>
+                    <th>Base Model</th>
+                    <th>Status</th>
+                    <th>LoRA Rank</th>
+                    <th>Epochs</th>
+                    <th>Steps</th>
+                    <th>Duration</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for job in jobs %}
+                <tr>
+                    <td><a href="/finetune/jobs/{{ job.id }}">{{ job.id[:12] }}...</a></td>
+                    <td>{{ job.dataset_id[:12] }}...</td>
+                    <td>{{ job.provider }}</td>
+                    <td>{{ job.base_model }}</td>
+                    <td>
+                        {% if job.status == 'completed' %}
+                        <span style="color:#4caf50;font-weight:bold;">{{ job.status }}</span>
+                        {% elif job.status in ['training', 'preparing', 'exporting', 'evaluating'] %}
+                        <span style="color:#ff9800;font-weight:bold;">{{ job.status }}</span>
+                        {% elif job.status == 'failed' %}
+                        <span style="color:#f44336;font-weight:bold;">{{ job.status }}</span>
+                        {% elif job.status == 'canceled' %}
+                        <span style="color:#999;">{{ job.status }}</span>
+                        {% else %}
+                        <span style="color:#607d8b;">{{ job.status }}</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ job.lora_rank }}</td>
+                    <td>{{ job.epochs }}</td>
+                    <td>{{ job.total_steps|default(0) }}</td>
+                    <td>{{ job.training_duration_seconds|default(0) }}s</td>
+                    <td>{{ job.created_at|default('--') }}</td>
+                </tr>
+                {% endfor %}
+                {% if not jobs %}
+                <tr><td colspan="10" style="text-align:center;color:#999;">No training jobs.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

@@ -1,0 +1,478 @@
+{% extends "studio/base_studio.html" %}
+
+{% block studio_content %}
+<div class="studio-container studio-container--full">
+
+  <!-- Header: breadcrumb + workflow name + status badge -->
+  <div class="studio-header">
+    <div class="studio-header__left">
+      <div class="studio-header__icon">&#128221;</div>
+      <div>
+        <div class="studio-header__title">
+          <nav class="wne-breadcrumb" aria-label="breadcrumb">
+            <a href="/" class="wne-breadcrumb__link">Home</a>
+            <span class="wne-breadcrumb__sep">&#8250;</span>
+            <a href="/studio" class="wne-breadcrumb__link">Studio</a>
+            <span class="wne-breadcrumb__sep">&#8250;</span>
+            <span class="wne-breadcrumb__current" id="wne-workflow-name">Narrative Pack</span>
+          </nav>
+        </div>
+        <div class="studio-header__subtitle">AI-driven executive narrative — Brief, COA, Budget, ROI, Slides</div>
+      </div>
+    </div>
+    <div class="studio-header__actions">
+      <span class="studio-badge studio-badge--neutral" id="wne-status-badge">Collecting</span>
+    </div>
+  </div>
+
+  <!-- Two-panel layout -->
+  <div class="wne-layout">
+
+    <!-- Left panel (60%): chat conversation -->
+    <div class="wne-chat-panel">
+      <div class="studio-card studio-card--glass wne-chat-card">
+
+        <div class="studio-card__header">
+          <div class="studio-card__header-title">Conversation</div>
+          <span class="studio-badge studio-badge--accent" id="wne-chat-status">Ready</span>
+        </div>
+
+        <!-- Messages -->
+        <div class="wne-messages" id="wne-messages">
+          <div class="wne-msg wne-msg--system">
+            <div class="wne-msg__avatar">&#129302;</div>
+            <div class="wne-msg__body">
+              <div class="wne-msg__text">
+                Hello! I'll guide you through building your narrative pack.<br><br>
+                Tell me about your program — organization name, what you're modernizing, timeline, and team size. I'll collect context and generate your executive brief, COA comparison, budget, ROI, and slide outline.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="wne-input-area">
+          <textarea class="studio-input studio-input--lg wne-textarea" id="wne-input"
+                    placeholder="Type your response here..."
+                    rows="3"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();WNEChat.send();}"></textarea>
+          <div class="studio-flex studio-items-center studio-justify-end studio-mt-2">
+            <span class="wne-hint" id="wne-send-hint">Enter to send &nbsp;&middot;&nbsp; Shift+Enter for newline</span>
+            <button class="studio-btn studio-btn--primary" id="wne-send-btn" onclick="WNEChat.send()">
+              Send &#8594;
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right panel (40%): live preview pane -->
+    <div class="wne-preview-panel">
+      <div class="studio-card studio-card--glass wne-preview-card">
+
+        <div class="studio-card__header">
+          <div class="studio-card__header-title">Live Preview</div>
+        </div>
+
+        <!-- Artifact tabs -->
+        <div class="studio-tabs wne-artifact-tabs" id="wne-artifact-tabs">
+          <button class="studio-tab studio-tab--active" data-artifact="exec_brief" onclick="WNEChat.switchArtifact(this)">Brief</button>
+          <button class="studio-tab" data-artifact="coa_comparison" onclick="WNEChat.switchArtifact(this)">COA</button>
+          <button class="studio-tab" data-artifact="budget_table" onclick="WNEChat.switchArtifact(this)">Budget</button>
+          <button class="studio-tab" data-artifact="roi_analysis" onclick="WNEChat.switchArtifact(this)">ROI</button>
+          <button class="studio-tab" data-artifact="slide_outline" onclick="WNEChat.switchArtifact(this)">Slides</button>
+        </div>
+
+        <!-- Preview content -->
+        <div class="wne-preview-body" id="wne-preview-body">
+          <div class="wne-preview-waiting" id="wne-preview-waiting">
+            <div class="wne-preview-waiting__icon">&#128203;</div>
+            <div class="wne-preview-waiting__text">Waiting for context...</div>
+            <div class="wne-preview-waiting__sub">Answer the questions on the left to begin generating your narrative pack.</div>
+          </div>
+          <div class="wne-preview-content" id="wne-preview-content" style="display:none;">
+            <pre class="wne-artifact-pre" id="wne-artifact-text"></pre>
+          </div>
+          <div class="wne-preview-generating" id="wne-preview-generating" style="display:none;">
+            <div class="studio-spinner"></div>
+            <div style="margin-top:0.75rem;color:#666;font-size:0.9rem;">Generating artifacts&hellip;</div>
+          </div>
+        </div>
+
+        <!-- Export button -->
+        <div class="wne-export-bar" id="wne-export-bar" style="display:none;">
+          <button class="studio-btn studio-btn--primary studio-btn--lg wne-export-btn"
+                  onclick="WNEChat.downloadPack()">
+            &#128229; Download Full Pack (.zip)
+          </button>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /.wne-layout -->
+
+</div>
+
+<style>
+/* WNE Narrate — scoped layout styles */
+.wne-layout {
+  display: flex;
+  gap: 1.25rem;
+  align-items: flex-start;
+  min-height: 600px;
+}
+
+.wne-chat-panel  { flex: 0 0 60%; min-width: 0; }
+.wne-preview-panel { flex: 0 0 calc(40% - 1.25rem); min-width: 0; }
+
+.wne-chat-card,
+.wne-preview-card {
+  display: flex;
+  flex-direction: column;
+  height: 680px;
+}
+
+/* Messages */
+.wne-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wne-msg { display: flex; gap: 0.75rem; align-items: flex-start; }
+.wne-msg--user { flex-direction: row-reverse; }
+
+.wne-msg__avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--studio-primary, #1565c0);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.wne-msg--user .wne-msg__avatar { background: var(--studio-accent, #6200ea); }
+.wne-msg--system .wne-msg__avatar { background: #455a64; }
+
+.wne-msg__body { max-width: 85%; }
+.wne-msg__text {
+  background: #f5f5f5;
+  border-radius: 12px 12px 12px 2px;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #212121;
+  white-space: pre-wrap;
+}
+.wne-msg--user .wne-msg__text {
+  background: var(--studio-primary, #1565c0);
+  color: #fff;
+  border-radius: 12px 12px 2px 12px;
+}
+
+/* Input area */
+.wne-input-area {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--studio-border, #e0e0e0);
+}
+.wne-textarea { width: 100%; resize: none; }
+.wne-hint { font-size: 0.78rem; color: #9e9e9e; margin-right: 0.75rem; }
+
+/* Preview panel */
+.wne-artifact-tabs { border-bottom: 1px solid var(--studio-border, #e0e0e0); padding: 0 1rem; }
+.wne-preview-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  position: relative;
+}
+
+.wne-preview-waiting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  text-align: center;
+  color: #9e9e9e;
+  gap: 0.5rem;
+}
+.wne-preview-waiting__icon { font-size: 2.5rem; }
+.wne-preview-waiting__text { font-size: 1rem; font-weight: 600; color: #757575; }
+.wne-preview-waiting__sub  { font-size: 0.85rem; max-width: 240px; }
+
+.wne-preview-generating {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.wne-artifact-pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: #212121;
+  margin: 0;
+  font-family: inherit;
+}
+
+/* Export bar */
+.wne-export-bar {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--studio-border, #e0e0e0);
+  display: flex;
+  justify-content: center;
+}
+.wne-export-btn { width: 100%; }
+
+/* Breadcrumb */
+.wne-breadcrumb { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+.wne-breadcrumb__link { color: var(--studio-primary, #1565c0); text-decoration: none; }
+.wne-breadcrumb__link:hover { text-decoration: underline; }
+.wne-breadcrumb__sep { color: #bdbdbd; }
+.wne-breadcrumb__current { color: #424242; font-weight: 600; }
+
+/* Status badge color variants */
+#wne-status-badge[data-status="collecting"]  { background: #e3f2fd; color: #1565c0; }
+#wne-status-badge[data-status="confirming"]  { background: #e8f5e9; color: #2e7d32; }
+#wne-status-badge[data-status="generating"]  { background: #fff3e0; color: #e65100; }
+#wne-status-badge[data-status="reviewing"]   { background: #f3e5f5; color: #6a1b9a; }
+
+@media (max-width: 900px) {
+  .wne-layout { flex-direction: column; }
+  .wne-chat-panel, .wne-preview-panel { flex: none; width: 100%; }
+  .wne-chat-card, .wne-preview-card { height: auto; min-height: 420px; }
+}
+</style>
+
+<script>
+var WNEChat = (function() {
+  var _sessionId = null;
+  var _status = 'collecting';
+  var _activeArtifact = 'exec_brief';
+  var _pollTimer = null;
+  var _artifactCache = {};
+
+  // Status label map
+  var STATUS_LABELS = {
+    collecting:  'Collecting',
+    confirming:  'Confirming',
+    generating:  'Generating',
+    reviewing:   'Reviewing',
+    done:        'Reviewing'
+  };
+
+  function _setStatus(s) {
+    _status = s;
+    var badge = document.getElementById('wne-status-badge');
+    badge.textContent = STATUS_LABELS[s] || s;
+    badge.setAttribute('data-status', s);
+
+    if (s === 'generating') {
+      _showGenerating();
+      _startPoll();
+    } else if (s === 'reviewing' || s === 'done') {
+      _stopPoll();
+      _loadArtifact(_activeArtifact);
+      document.getElementById('wne-export-bar').style.display = 'flex';
+    }
+  }
+
+  function _appendMessage(role, text) {
+    var msgs = document.getElementById('wne-messages');
+    var div = document.createElement('div');
+    div.className = 'wne-msg wne-msg--' + (role === 'user' ? 'user' : 'assistant');
+    var avatarChar = role === 'user' ? '&#128100;' : '&#129302;';
+    div.innerHTML = '<div class="wne-msg__avatar">' + avatarChar + '</div>'
+      + '<div class="wne-msg__body"><div class="wne-msg__text"></div></div>';
+    div.querySelector('.wne-msg__text').textContent = text;
+    msgs.appendChild(div);
+    msgs.scrollTop = msgs.scrollHeight;
+  }
+
+  function _setChatStatus(msg) {
+    document.getElementById('wne-chat-status').textContent = msg;
+  }
+
+  function _showGenerating() {
+    document.getElementById('wne-preview-waiting').style.display = 'none';
+    document.getElementById('wne-preview-content').style.display = 'none';
+    document.getElementById('wne-preview-generating').style.display = 'flex';
+  }
+
+  function _showContent(text) {
+    document.getElementById('wne-preview-waiting').style.display = 'none';
+    document.getElementById('wne-preview-generating').style.display = 'none';
+    document.getElementById('wne-artifact-text').textContent = text;
+    document.getElementById('wne-preview-content').style.display = 'block';
+  }
+
+  function _initSession() {
+    // Check URL for existing session_id
+    var params = new URLSearchParams(window.location.search);
+    var sid = params.get('session_id');
+    if (sid) {
+      _sessionId = sid;
+      _setChatStatus('Resumed');
+      _fetchStatus();
+      return;
+    }
+    fetch('/api/wne/session', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      _sessionId = d.session_id || d.id;
+      if (d.status) _setStatus(d.status);
+      if (d.first_question) _appendMessage('assistant', d.first_question);
+      // Update URL without reload
+      if (_sessionId && window.history && window.history.replaceState) {
+        var url = new URL(window.location.href);
+        url.searchParams.set('session_id', _sessionId);
+        window.history.replaceState({}, '', url.toString());
+      }
+      if (d.workflow_name) {
+        document.getElementById('wne-workflow-name').textContent = d.workflow_name;
+      }
+      _setChatStatus('Session started');
+    })
+    .catch(function(e) {
+      _setChatStatus('Session error');
+      _appendMessage('assistant', 'Could not connect to the WNE service. Please refresh and try again.');
+    });
+  }
+
+  function send() {
+    var input = document.getElementById('wne-input');
+    var text = input.value.trim();
+    if (!text) return;
+    if (!_sessionId) {
+      _setChatStatus('Session not ready — please wait...');
+      return;
+    }
+    _appendMessage('user', text);
+    input.value = '';
+    document.getElementById('wne-send-btn').disabled = true;
+    _setChatStatus('Sending...');
+
+    fetch('/api/wne/' + _sessionId + '/message', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({message: text})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      document.getElementById('wne-send-btn').disabled = false;
+      if (d.reply) _appendMessage('assistant', d.reply);
+      if (d.status) _setStatus(d.status);
+      _setChatStatus('');
+      if (d.workflow_name) {
+        document.getElementById('wne-workflow-name').textContent = d.workflow_name;
+      }
+    })
+    .catch(function(e) {
+      document.getElementById('wne-send-btn').disabled = false;
+      _setChatStatus('Send failed');
+      _appendMessage('assistant', 'Sorry, there was an error. Please try again.');
+    });
+  }
+
+  function _fetchStatus() {
+    if (!_sessionId) return;
+    fetch('/api/wne/' + _sessionId + '/status')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.status) _setStatus(d.status);
+      })
+      .catch(function() {});
+  }
+
+  function _startPoll() {
+    if (_pollTimer) return;
+    _pollTimer = setInterval(function() {
+      if (!_sessionId) return;
+      fetch('/api/wne/' + _sessionId + '/status')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.status && d.status !== 'generating') {
+            _setStatus(d.status);
+          }
+        })
+        .catch(function() {});
+    }, 2000);
+  }
+
+  function _stopPoll() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  }
+
+  function _loadArtifact(type) {
+    if (_artifactCache[type]) { _showContent(_artifactCache[type]); return; }
+    if (!_sessionId) return;
+    fetch('/api/wne/' + _sessionId + '/artifact?type=' + type)
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var text = d.content || d.text || '';
+        if (type === 'exec_brief' && text) {
+          // Show only first section in preview
+          var firstSection = text.split('\n\n## ')[0];
+          text = firstSection;
+        }
+        _artifactCache[type] = text || '(No content yet)';
+        _showContent(_artifactCache[type]);
+      })
+      .catch(function() {
+        _showContent('(Could not load artifact)');
+      });
+  }
+
+  function switchArtifact(btn) {
+    document.querySelectorAll('.wne-artifact-tabs .studio-tab').forEach(function(t) {
+      t.classList.remove('studio-tab--active');
+    });
+    btn.classList.add('studio-tab--active');
+    _activeArtifact = btn.getAttribute('data-artifact');
+    if (_status === 'reviewing' || _status === 'done') {
+      _loadArtifact(_activeArtifact);
+    }
+  }
+
+  function downloadPack() {
+    if (!_sessionId) return;
+    var btn = document.querySelector('.wne-export-btn');
+    if (btn) btn.textContent = 'Preparing...';
+    fetch('/api/wne/' + _sessionId + '/artifact?type=zip_bundle')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var url = d.download_url || d.url || d.link || d.file_url;
+        if (url) {
+          var a = document.createElement('a');
+          a.href = url;
+          a.download = '';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        }
+        if (btn) btn.innerHTML = '&#128229; Download Full Pack (.zip)';
+      })
+      .catch(function() {
+        if (btn) btn.innerHTML = '&#128229; Download Full Pack (.zip)';
+      });
+  }
+
+  document.addEventListener('DOMContentLoaded', _initSession);
+
+  return { send: send, switchArtifact: switchArtifact, downloadPack: downloadPack };
+})();
+</script>
+{% endblock %}

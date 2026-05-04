@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-001
+-- Title: FedRAMP Moderate — All Unsatisfied Controls
+-- Framework: FedRAMP Moderate
+-- Category: gap-analysis
+-- Severity: high
+-- Description: Surface every control in the FedRAMP Moderate baseline that is
+--   not yet satisfied in the latest compliance twin snapshot. Use this to
+--   prioritise remediation work and drive the continuous ATO dashboard.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.project_id, ctrl.score

@@ -269,3 +269,21 @@ class AcceptanceReport(BaseModel):
     criteria: List[AcceptanceCriterionResult] = []
     page_checks: List[UIPageCheckResult] = []
     timestamp: str = ""
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Theater detection types
+# ────────────────────────────────────────────────────────────────────────────
+
+_TheaterSeverity = Literal["none", "warn", "block"]
+
+
+class TheaterDetectionResult(BaseModel):
+    """Result of a theater-pattern antipattern scan on a single file."""
+
+    file_path: str = ""
+    antipatterns_found: List[str] = []
+    severity: _TheaterSeverity = "none"
+    details: Dict[str, Any] = {}
+    passed: bool = False
+    duration_ms: int = 0

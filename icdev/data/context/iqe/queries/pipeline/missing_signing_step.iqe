@@ -1,0 +1,10 @@
+# Intent: Find build-runner nodes that produce binaries without code signing
+#         enabled, allowing unsigned artifacts to reach downstream consumers and
+#         failing SLSA Build L2+ and NIST SA-12 supply chain integrity controls.
+# Expected violation shape: rows where node_type == "build-runner" and signing_enabled == "false";
+#   each row is an unsigned build node requiring a signing gate before artifact publication.
+
+foreach n in pipeline.nodes
+  where n.node_type == "build-runner"
+  where n.signing_enabled == "false"
+  select n.pipeline_id, n.snapshot_id, n.id, n.signing_enabled

@@ -1,0 +1,173 @@
+{
+  "id": "vert-knowledge-graph",
+  "name": "Knowledge Graph & Semantic Technologies",
+  "slug": "knowledge_graph",
+  "description": "Knowledge graphs, graph-based RAG (GraphRAG), entity extraction, ontology engineering, graph neural networks, semantic reasoning, KG completion, and KG-augmented LLM architectures for enterprise AI systems.",
+  "keywords": [
+    "knowledge graph",
+    "GraphRAG",
+    "graph RAG",
+    "entity extraction",
+    "relation extraction",
+    "ontology",
+    "semantic web",
+    "graph neural network",
+    "GNN",
+    "knowledge graph embedding",
+    "KG completion",
+    "link prediction",
+    "graph database",
+    "Neo4j",
+    "property graph",
+    "RDF",
+    "SPARQL",
+    "knowledge representation",
+    "graph-based retrieval",
+    "entity disambiguation",
+    "coreference resolution",
+    "graph foundation model",
+    "KG-augmented LLM",
+    "ontology-driven fine-tuning",
+    "cybersecurity knowledge graph",
+    "compliance knowledge graph",
+    "MITRE ATT&CK graph",
+    "D3FEND",
+    "supply chain graph",
+    "digital thread graph"
+  ],
+  "regulatory_bodies": [
+    "NIST",
+    "CISA",
+    "MITRE",
+    "W3C",
+    "ISO"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.CL",
+      "cs.LG",
+      "cs.IR",
+      "cs.DB"
+    ],
+    "ieee": [
+      "knowledge graph",
+      "semantic web",
+      "graph neural network",
+      "entity extraction",
+      "ontology engineering"
+    ],
+    "acm": [
+      "knowledge representation",
+      "information retrieval",
+      "natural language processing",
+      "graph databases"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/MachineLearning",
+      "r/LanguageTechnology",
+      "r/semanticweb",
+      "r/Neo4j",
+      "r/knowledge_graph",
+      "r/LocalLLaMA",
+      "r/graphdatabases"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/knowledge-graph",
+      "stackoverflow.com/questions/tagged/neo4j",
+      "ai.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": []
+  },
+  "review_sites": {
+    "g2": [
+      "graph-databases",
+      "knowledge-management",
+      "semantic-search"
+    ],
+    "capterra": [
+      "knowledge-management-software",
+      "graph-database-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "knowledge-graph",
+      "graphrag",
+      "graph-rag",
+      "entity-extraction",
+      "ontology",
+      "graph-neural-network",
+      "knowledge-graph-embedding",
+      "neo4j",
+      "link-prediction",
+      "relation-extraction"
+    ],
+    "awesome_lists": [
+      "awesome-knowledge-graph",
+      "Awesome-GraphRAG",
+      "awesome-graph-neural-networks",
+      "KG-LLM-Papers"
+    ],
+    "package_registries": {
+      "pypi": [
+        "neo4j",
+        "rdflib",
+        "networkx",
+        "torch-geometric",
+        "dgl",
+        "spacy",
+        "rebel-model"
+      ],
+      "npm": [],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "knowledge graph LLM",
+      "GraphRAG enterprise",
+      "graph foundation model",
+      "ontology AI",
+      "KG completion benchmark",
+      "cybersecurity knowledge graph"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F16/36",
+      "G06N3/04",
+      "G06N5/02",
+      "G06F40/30"
+    ],
+    "keywords": [
+      "knowledge graph construction",
+      "graph-based information retrieval",
+      "ontology-driven reasoning",
+      "entity relationship extraction"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "FedRAMP",
+    "CMMC",
+    "MITRE_ATTACK",
+    "MITRE_D3FEND"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "GraphRAG tutorial",
+      "knowledge graph LLM",
+      "Neo4j GraphRAG",
+      "graph neural network RAG",
+      "enterprise knowledge graph"
+    ],
+    "manual_urls": []
+  }
+}

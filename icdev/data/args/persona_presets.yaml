@@ -1,0 +1,517 @@
+_schema_version: 1
+_default_persona: retail
+_global_defaults:
+  expertise_level: intermediate
+  jargon_level: standard
+  time_horizon: long_term
+  risk_tolerance: moderate
+  currency: USD
+  locale: en-US
+  theme: dark
+  beginner_mode_enabled: false
+  hidden_pages: []
+  hidden_cards: []
+  featured_pages:
+  - /portfolio
+  - /signals
+  - /market
+  voice: pm
+  flags: {}
+personas:
+  retail:
+    display_name: Casual Investor
+    description: I invest for myself when I have time. Plain English, please.
+    icon: 🌱
+    expertise_level: beginner
+    jargon_level: plain
+    beginner_mode_enabled: true
+    time_horizon: long_term
+    risk_tolerance: moderate
+    voice: rookie
+    hidden_pages:
+    - /strategist
+    - /oracle
+    - /scenarios
+    - /graph
+    - /risk
+    - /clients
+    - /api-keys
+    hidden_cards:
+    - pf-risk-metrics
+    - market-stagflation
+    - market-deflation
+    - market-5y5y
+    - market-composite-detail
+    - radar-families
+    - radar-horizons
+    - adv-experts
+    - strat-narrative
+    featured_pages:
+    - /today
+    - /lessons
+    - /portfolio
+    - /watchlist
+    - /analysis
+    - /news
+    onboarding:
+      welcome: Welcome! Start with /today — it reads your portfolio and gives you a plain-English
+        list of what to do this morning.
+      first_task: Open /today — your morning coffee companion.
+    alert_defaults:
+    - name: SPY drops 5% in a day
+      rule_type: price_pct_change
+      subject: SPY
+      comparison: lt
+      threshold: -5
+      lookback_minutes: 1440
+      cooldown_minutes: 1440
+      severity: warning
+    - name: Watchlist average composite drops below 40
+      rule_type: composite_score
+      subject: WATCHLIST_AVG
+      comparison: lt
+      threshold: 40
+      severity: info
+  student:
+    display_name: Student / Learning
+    description: I'm learning how markets work. Show me the why behind every signal.
+    icon: 🎓
+    expertise_level: beginner
+    jargon_level: plain
+    beginner_mode_enabled: true
+    time_horizon: long_term
+    risk_tolerance: conservative
+    voice: rookie
+    hidden_pages:
+    - /orders
+    - /alerts
+    - /strategist
+    - /scenarios
+    - /clients
+    - /api-keys
+    hidden_cards:
+    - pf-risk-metrics
+    - market-composite-detail
+    - oracle-convergence
+    - adv-experts
+    featured_pages:
+    - /today
+    - /lessons
+    - /analysis
+    - /evolution
+    - /portfolio
+    - /news
+    onboarding:
+      welcome: Welcome! You're in safe paper-trading mode — no real money, no risk. Start with
+        /today to see what FathomDesk thinks you should focus on, then try /analysis on a familiar
+        stock.
+      first_task: Open /today, then pick a rule that fired and follow the 'Go there' link.
+    flags:
+      sandbox_mode: true
+      explain_mode: true
+      glossary_auto_tooltips: true
+    alert_defaults:
+    - name: Weekly digest of biggest moves
+      rule_type: composite_score
+      subject: WATCHLIST_TOP
+      comparison: gt
+      threshold: 70
+      cooldown_minutes: 10080
+      severity: info
+  passive:
+    display_name: Long-Term Investor
+    description: I buy index funds and rebalance occasionally. Tell me when to act.
+    icon: 📈
+    expertise_level: intermediate
+    jargon_level: plain
+    beginner_mode_enabled: false
+    time_horizon: long_term
+    risk_tolerance: moderate
+    voice: pm
+    hidden_pages:
+    - /signals
+    - /oracle
+    - /scenarios
+    - /advisor
+    - /clients
+    - /api-keys
+    hidden_cards:
+    - signals-queue
+    - market-heatmap
+    - radar-horizons
+    featured_pages:
+    - /rebalance
+    - /portfolio
+    - /strategist
+    - /watchlist
+    onboarding:
+      welcome: Welcome. Start with /rebalance — set your target allocation (60/40, three-fund,
+        permanent portfolio, etc.) and FathomDesk tracks drift, tax-loss opportunities, and rebalance
+        suggestions.
+      first_task: Open /rebalance and pick a template (60/40 / Three-Fund / Permanent Portfolio)
+        or type your own.
+    alert_defaults:
+    - name: Quarterly rebalance reminder
+      rule_type: composite_score
+      subject: SPY
+      comparison: any
+      cooldown_minutes: 129600
+      severity: info
+    - name: Portfolio drift > 5% from target
+      rule_type: composite_score
+      subject: PORTFOLIO_DRIFT
+      comparison: gt
+      threshold: 5
+      severity: warning
+  pro_trader:
+    display_name: Active Trader
+    description: I trade weekly to monthly on signals and confluence. Show me everything.
+    icon: ⚡
+    expertise_level: expert
+    jargon_level: technical
+    beginner_mode_enabled: false
+    time_horizon: swing
+    risk_tolerance: aggressive
+    voice: pm
+    hidden_pages:
+    - /progression
+    - /challenges
+    - /leagues
+    hidden_cards: []
+    featured_pages:
+    - /signals
+    - /analysis
+    - /alerts
+    - /orders
+    onboarding:
+      welcome: Welcome. All capabilities visible. Start by configuring alert rules in /alerts
+        and reviewing the signal queue.
+      first_task: Open /alerts and create a rule for one of your top tickers.
+    alert_defaults:
+    - name: High-conviction BUY confluence (composite > 75)
+      rule_type: composite_score
+      subject: WATCHLIST_ANY
+      comparison: gt
+      threshold: 75
+      severity: warning
+    - name: Signal direction flip on watchlist
+      rule_type: signal_direction
+      subject: WATCHLIST_ANY
+      comparison: flip
+      severity: warning
+    - name: Macro regime change
+      rule_type: regime_change
+      subject: null
+      comparison: any
+      severity: critical
+  quant:
+    display_name: Quant / Systematic
+    description: I want raw data, APIs, and factor exposures. Skip the narrative.
+    icon: 🧮
+    expertise_level: expert
+    jargon_level: technical
+    beginner_mode_enabled: false
+    time_horizon: swing
+    risk_tolerance: aggressive
+    voice: technical
+    hidden_pages:
+    - /advisor
+    - /scenarios
+    - /today
+    - /rebalance
+    - /clients
+    - /lessons
+    - /progression
+    - /challenges
+    - /leagues
+    hidden_cards:
+    - pf-reading
+    - market-reading
+    - signals-reading
+    - news-reading
+    - radar-reading
+    - oracle-reading
+    - evo-reading
+    - adv-reading
+    - strat-reading
+    - wl-reading
+    - strat-narrative
+    featured_pages:
+    - /signals
+    - /analysis
+    - /evolution
+    - /oracle
+    - /api-keys
+    onboarding:
+      welcome: Welcome. CSV bulk exports at /api/*/export.csv. JSON at /api/* (browser inspector
+        for full schema). API tokens land with Pro tier.
+      first_task: Download a heatmap snapshot from /api/market/heatmap/export.csv to your notebook.
+    flags:
+      api_first: true
+      compact_layout: true
+    alert_defaults:
+    - name: Composite score crosses gate threshold
+      rule_type: composite_score
+      subject: WATCHLIST_ANY
+      comparison: gt
+      threshold: 65
+      severity: info
+    - name: News impact > |3| over 6h on watched ticker
+      rule_type: news_impact
+      subject: WATCHLIST_ANY
+      comparison: abs_gt
+      threshold: 3
+      lookback_minutes: 360
+      severity: warning
+  advisor:
+    display_name: Financial Advisor
+    description: I manage multiple client portfolios. I need white-label, suitability, and shareable
+      summaries.
+    icon: 👔
+    expertise_level: expert
+    jargon_level: standard
+    beginner_mode_enabled: false
+    time_horizon: long_term
+    risk_tolerance: moderate
+    voice: pm
+    hidden_pages:
+    - /progression
+    - /challenges
+    - /leagues
+    hidden_cards: []
+    featured_pages:
+    - /clients
+    - /portfolio
+    - /strategist
+    - /advisor
+    - /alerts
+    onboarding:
+      welcome: Welcome. Start with /clients to see your client roster + generate a shareable
+        PDF brief for any of them. White-label branding is in Settings → Workspace.
+      first_task: Open /clients, generate a share link, and email it to a client.
+    flags:
+      white_label_eligible: true
+      multi_client_eligible: true
+      compliance_audit_visible: true
+    alert_defaults:
+    - name: Macro regime change (notify all clients)
+      rule_type: regime_change
+      subject: null
+      comparison: any
+      severity: critical
+    - name: Client portfolio drawdown > 5%
+      rule_type: composite_score
+      subject: PORTFOLIO_DRAWDOWN
+      comparison: lt
+      threshold: -5
+      severity: warning
+  day_trader:
+    display_name: Day Trader
+    description: Sub-minute decisions on tick data. Real-time infrastructure required.
+    icon: 🔥
+    expertise_level: expert
+    jargon_level: technical
+    beginner_mode_enabled: false
+    time_horizon: intraday
+    risk_tolerance: aggressive
+    voice: technical
+    hidden_pages:
+    - /strategist
+    - /oracle
+    - /scenarios
+    - /rebalance
+    - /clients
+    - /api-keys
+    - /lessons
+    - /progression
+    - /challenges
+    - /leagues
+    hidden_cards:
+    - pf-reading
+    - strat-narrative
+    featured_pages:
+    - /signals
+    - /analysis
+    - /alerts
+    - /orders
+    onboarding:
+      welcome: 'Welcome. Heads up: real-time tick / L2 / hot-key infrastructure ships in Phase
+        6. For now you have minute-bar data — useful for research but not execution-grade for
+        scalping.'
+      first_task: Set up a few price-move alerts on /alerts for your most-watched tickers.
+    flags:
+      requires_realtime: true
+      compact_layout: true
+      keyboard_shortcuts_visible: true
+    alert_defaults:
+    - name: Price drops > 1% in 5 min
+      rule_type: price_pct_change
+      subject: WATCHLIST_ANY
+      comparison: lt
+      threshold: -1
+      lookback_minutes: 5
+      cooldown_minutes: 5
+      severity: warning
+  family_office:
+    display_name: Family Office
+    description: Multi-asset portfolios across generations. Tax-aware, conservative, alt-friendly.
+    icon: 🏛️
+    expertise_level: expert
+    jargon_level: standard
+    beginner_mode_enabled: false
+    time_horizon: long_term
+    risk_tolerance: conservative
+    voice: pm
+    hidden_pages:
+    - /scenarios
+    - /api-keys
+    - /progression
+    - /challenges
+    - /leagues
+    hidden_cards: []
+    featured_pages:
+    - /portfolio
+    - /strategist
+    - /advisor
+    onboarding:
+      welcome: Welcome. Multi-asset, alt-investment tracking, and tax-aware reporting ship in
+        Phase 6. Equities + ETFs work today; fixed income, private credit, real estate, and
+        tax-lot harvesting are deferred.
+      first_task: Generate a Portfolio Brief PDF to share with stakeholders.
+    flags:
+      requires_multi_asset: true
+      white_label_eligible: true
+      multi_client_eligible: true
+    alert_defaults:
+    - name: Macro regime change
+      rule_type: regime_change
+      subject: null
+      comparison: any
+      severity: warning
+    - name: Portfolio drawdown > 3% (conservative threshold)
+      rule_type: composite_score
+      subject: PORTFOLIO_DRAWDOWN
+      comparison: lt
+      threshold: -3
+      severity: warning
+card_id_reference:
+- today-header
+- today-how-it-works
+- rebalance-targets
+- rebalance-plan
+- rebalance-tax-loss
+- pf-stat-grid
+- pf-reading
+- pf-chart-vs-spy
+- pf-risk-metrics
+- pf-holdings
+- market-stat-grid
+- market-stagflation
+- market-deflation
+- market-5y5y
+- market-composite-detail
+- market-reading
+- market-heatmap
+- market-supply-chain
+- signals-stat-grid
+- signals-reading
+- signals-queue
+- news-stat-grid
+- news-reading
+- news-regime-watch
+- news-emerging-watch
+- news-list
+- radar-stat-grid
+- radar-reading
+- radar-composite
+- radar-families
+- radar-horizons
+- radar-precursors
+- oracle-stat-grid
+- oracle-reading
+- oracle-convergence
+- oracle-predictions
+- evo-stat-grid
+- evo-reading
+- evo-signal-chart
+- evo-analyst-chart
+- evo-regime-chart
+- evo-debate-chart
+- evo-table
+- evo-portfolio-timeline
+- adv-stat-grid
+- adv-reading
+- adv-analyze
+- adv-context
+- adv-experts
+- adv-forecast
+- adv-cis
+- adv-recommendations
+- adv-roster
+- strat-stat-grid
+- strat-reading
+- strat-narrative
+- strat-tier-donut
+- strat-sector-bar
+- strat-value-table
+- strat-holdings
+- wl-stat-grid
+- wl-reading
+- wl-table
+- al-stat-grid
+- al-form
+- al-rules-table
+- al-log
+voice_presets:
+  pm:
+    description: PM-style — current Reading tone. Concise, technical-but-narrative, assumes
+      Sharpe/beta literacy.
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: true
+    profile_format: full
+  rookie:
+    description: Plain-English. Strips ratio jargon, replaces with comparative phrasing. Adds
+      glossary popovers.
+    omit_metrics:
+    - sharpe
+    - sortino
+    - calmar
+    - alpha_annual_pct
+    - beta
+    - vol_annual_pct
+    rephrase:
+      Sharpe: risk-adjusted return
+      Sortino: downside-adjusted return
+      Alpha: extra return vs the market
+      Beta: how much your book moves with the market
+      drawdown: biggest loss from a recent peak
+      composite score: signal strength
+      outperformance: doing better than SPY
+    add_glossary: true
+    show_considerations: true
+    profile_format: simplified
+  technical:
+    description: Quant/expert. Raw numbers, minimal prose, omits PM-style narrative profile.
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: false
+    profile_format: compact
+  quant:
+    description: Quant/systematic. Metric-heavy, no narrative softening. Same rendering
+      as technical but exposed as a selectable voice override for quant-persona users.
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: false
+    profile_format: compact
+  standard:
+    description: Same as 'pm' currently. Reserved for future divergence (e.g., advisor-tone
+      variant).
+    omit_metrics: []
+    rephrase: {}
+    add_glossary: false
+    show_considerations: true
+    profile_format: full

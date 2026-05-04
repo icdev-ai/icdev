@@ -1,0 +1,8 @@
+# Intent: Surface BGP sessions that are not in the "established" state to detect
+#         misconfigured or flapping peering sessions across the NDC topology.
+# Expected violation shape: rows where session_state != "established" — each row
+#   identifies a peer pair requiring investigation (wrong AS, auth failure, etc.).
+
+foreach p in network.bgp_peers
+  where p.session_state != "established"
+  select p.device, p.peer_ip, p.local_as, p.remote_as, p.session_state

@@ -1,0 +1,9 @@
+# Intent: Identify critical-severity MITRE techniques that have zero coverage,
+#         prioritizing the highest-impact blind spots for immediate remediation.
+# Expected violation shape: rows where severity == "critical" and coverage_state == "none";
+#   each row is a critical technique with no detection — maximum risk exposure.
+
+foreach t in odc_coverage
+  where t.severity == "critical"
+  where t.coverage_state == "none"
+  select t.technique_id, t.tactic_id, t.signal_source, t.coverage_state, t.severity

@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Intelligence Briefs — Strategos{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Intelligence Briefs <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">CUI // SP-CTI</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&#8592; Strategos</a>
+</div>
+
+{% if error %}
+<div class="card" style="border-left:4px solid #e94560;margin-bottom:1rem">
+    <p style="color:#e94560;margin:0">{{ error }}</p>
+</div>
+{% endif %}
+
+<div style="display:flex;gap:.75rem;align-items:center;margin-bottom:1rem;flex-wrap:wrap">
+    <form method="get" style="display:flex;gap:.5rem;align-items:center">
+        <label style="font-size:.85rem;color:var(--text-secondary)">Type:</label>
+        <select name="type" onchange="this.form.submit()" style="padding:.35rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary);font-size:.85rem">
+            <option value="" {% if not selected_type %}selected{% endif %}>All</option>
+            {% for bt in brief_types %}
+            <option value="{{ bt }}" {% if selected_type == bt %}selected{% endif %}>{{ bt | upper }}</option>
+            {% endfor %}
+        </select>
+    </form>
+    <button onclick="document.getElementById('new-brief-modal').style.display='flex'"
+        style="margin-left:auto;padding:.4rem .9rem;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.85rem">
+        + New Brief
+    </button>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden">
+    {% if briefs %}
+    <table style="width:100%;border-collapse:collapse">
+        <thead>
+            <tr style="background:var(--table-header-bg,#1e1e2e);font-size:.8rem;color:var(--text-secondary)">
+                <th style="padding:.6rem 1rem;text-align:left">Type</th>
+                <th style="padding:.6rem 1rem;text-align:left">Title</th>
+                <th style="padding:.6rem 1rem;text-align:left">Created</th>
+                <th style="padding:.6rem 1rem;text-align:left">SIO Conf.</th>
+                <th style="padding:.6rem 1rem;text-align:left">Reviewed</th>
+                <th style="padding:.6rem 1rem;text-align:left">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for b in briefs %}
+        <tr style="border-top:1px solid var(--border);font-size:.875rem;cursor:context-menu"
+            data-brief-id="{{ b.id }}"
+            data-brief-title="{{ b.title | e }}"
+            data-brief-type="{{ b.brief_type }}">
+            <td style="padding:.6rem 1rem">
+                <span style="background:{% if b.brief_type=='sitrep' %}#1a3a5c{% elif b.brief_type=='iir' %}#3a1a2e{% elif b.brief_type=='warnord' %}#1a3a1a{% else %}#2e2a1a{% endif %};color:#ddd;padding:.15rem .5rem;border-radius:4px;font-size:.75rem;font-family:monospace">
+                    {{ b.brief_type | upper }}
+                </span>
+            </td>
+            <td style="padding:.6rem 1rem">
+                <a href="/strategos/briefs/{{ b.id }}" style="color:var(--accent-blue)">{{ b.title }}</a>
+            </td>
+            <td style="padding:.6rem 1rem;color:var(--text-secondary);white-space:nowrap">{{ b.created_at[:16] | replace('T',' ') }}</td>
+            <td style="padding:.6rem 1rem;color:var(--text-secondary)">
+                {% if b.sio_confidence is not none %}
+                    <span style="color:{% if b.sio_confidence >= 0.7 %}#10b981{% elif b.sio_confidence >= 0.4 %}#f59e0b{% else %}#e94560{% endif %}">
+                        {{ (b.sio_confidence * 100) | round(1) }}%
+                    </span>
+                {% else %}—{% endif %}
+            </td>
+            <td style="padding:.6rem 1rem">
+                {% if b.analyst_reviewed %}
+                <span style="color:#10b981;font-size:.8rem">&#10003; {{ b.reviewed_by or 'analyst' }}</span>
+                {% else %}
+                <span style="color:var(--text-muted);font-size:.8rem">Pending</span>
+                {% endif %}
+            </td>
+            <td style="padding:.6rem 1rem">
+                <a href="/strategos/briefs/{{ b.id }}" style="font-size:.8rem;color:var(--accent-blue);margin-right:.5rem">View</a>
+                <a href="/api/strategos/briefs/{{ b.id }}/export?format=pdf" style="font-size:.8rem;color:var(--text-secondary)" target="_blank">Export</a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:.875rem">
+        No intelligence briefs yet.
+        <a href="#" onclick="document.getElementById('new-brief-modal').style.display='flex'" style="color:var(--accent-blue)">Generate the first one.</a>
+    </div>
+    {% endif %}
+</div>
+
+{# ── New Brief Modal ── #}
+<div id="new-brief-modal"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
+    <div class="card" style="width:min(560px,95vw);max-height:90vh;overflow-y:auto;padding:1.5rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+            <h3 style="margin:0">Generate Intelligence Brief</h3>
+            <button onclick="document.getElementById('new-brief-modal').style.display='none'"
+                style="background:none;border:none;color:var(--text-secondary);font-size:1.3rem;cursor:pointer">&times;</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:.75rem">
+            <div>
+                <label style="font-size:.85rem;color:var(--text-secondary);display:block;margin-bottom:.3rem">Brief Type *</label>
+                <select id="nb-type" style="width:100%;padding:.4rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary)">
+                    {% for bt in brief_types %}
+                    <option value="{{ bt }}">{{ bt | upper }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label style="font-size:.85rem;color:var(--text-secondary);display:block;margin-bottom:.3rem">Title *</label>
+                <input id="nb-title" type="text" placeholder="e.g. SITREP — Black Sea — 27 APR 2026"
+                    style="width:100%;padding:.4rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary);box-sizing:border-box">
+            </div>
+            <div>
+                <label style="font-size:.85rem;color:var(--text-secondary);display:block;margin-bottom:.3rem">SIO Confidence (0–1, optional)</label>
+                <input id="nb-conf" type="number" min="0" max="1" step="0.01" placeholder="e.g. 0.72"
+                    style="width:100%;padding:.4rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary);box-sizing:border-box">
+            </div>
+            <div>
+                <label style="font-size:.85rem;color:var(--text-secondary);display:block;margin-bottom:.3rem">Context JSON (optional)</label>
+                <textarea id="nb-ctx" rows="5" placeholder='{"situation": "...", "key_events": [...]}'
+                    style="width:100%;padding:.4rem .6rem;border-radius:6px;border:1px solid var(--border);background:var(--card-bg);color:var(--text-primary);font-family:monospace;font-size:.8rem;box-sizing:border-box;resize:vertical"></textarea>
+            </div>
+            <div id="nb-error" style="color:#e94560;font-size:.82rem;display:none"></div>
+            <button onclick="submitNewBrief()"
+                style="padding:.5rem 1rem;background:#e94560;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:.875rem">
+                Generate &amp; Save
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+async function submitNewBrief() {
+    const type = document.getElementById('nb-type').value;
+    const title = document.getElementById('nb-title').value.trim();
+    const confRaw = document.getElementById('nb-conf').value.trim();
+    const ctxRaw = document.getElementById('nb-ctx').value.trim();
+    const errEl = document.getElementById('nb-error');
+    errEl.style.display = 'none';
+
+    if (!title) { errEl.textContent = 'Title is required.'; errEl.style.display = 'block'; return; }
+
+    let ctx = {};
+    if (ctxRaw) {
+        try { ctx = JSON.parse(ctxRaw); } catch(e) { errEl.textContent = 'Context JSON is invalid.'; errEl.style.display = 'block'; return; }
+    }
+
+    const payload = { brief_type: type, title, context: ctx };
+    if (confRaw) payload.sio_confidence = parseFloat(confRaw);
+
+    try {
+        const r = await fetch('/api/strategos/briefs', { method: 'POST',
+            headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+        const data = await r.json();
+        if (!r.ok) { errEl.textContent = data.error || 'Server error.'; errEl.style.display = 'block'; return; }
+        window.location.href = '/strategos/briefs/' + data.id;
+    } catch(e) {
+        errEl.textContent = 'Network error: ' + e.message;
+        errEl.style.display = 'block';
+    }
+}
+
+// Right-click brief rows → Ask STRATEGOS
+document.querySelectorAll('tr[data-brief-id]').forEach(function(el) {
+  el.addEventListener('contextmenu', function(e) {
+    e.preventDefault();
+    if (typeof window.sgChat === 'undefined') return;
+    window.sgChat.showMenu(e.clientX, e.clientY, {
+      type: 'intel_brief',
+      brief_id: el.dataset.briefId,
+      label: el.dataset.briefTitle || 'Intel Brief',
+      brief_type: el.dataset.briefType || 'N/A',
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<!-- CUI // SP-CTI — ERB/CCB Change Request Package — Print-Optimized -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ERB/CCB Change Request — {{ package.change_summary.src_device | default('Network Migration') }}</title>
+<style>
+:root { --accent: #27ae60; --text: #1a1a2e; --border: #c8d6e5; --bg-section: #f8fafc; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 11pt; color: var(--text); margin: 0; padding: 0; background: #fff; }
+
+/* CUI Banner */
+.cui-banner { background: #1a2e5a; color: #fff; text-align: center; font-size: 10pt; font-weight: bold; padding: 5px; letter-spacing: 1px; }
+
+.doc-header { padding: 24px 40px 16px; border-bottom: 2px solid var(--accent); }
+.doc-title { font-size: 20pt; font-weight: bold; color: #1a2e5a; margin: 0 0 4px; }
+.doc-subtitle { font-size: 10pt; color: #555; margin: 0 0 12px; }
+.doc-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 9pt; }
+.doc-meta-item { background: var(--bg-section); border: 1px solid var(--border); border-radius: 4px; padding: 6px 10px; }
+.doc-meta-item .lbl { color: #666; font-size: 8pt; text-transform: uppercase; }
+.doc-meta-item .val { font-weight: bold; color: #1a2e5a; }
+
+.section { padding: 20px 40px; border-bottom: 1px solid var(--border); }
+.section-title { font-size: 13pt; font-weight: bold; color: #1a2e5a; margin: 0 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--accent); display: flex; align-items: center; gap: 8px; }
+.section-num { background: var(--accent); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 10pt; font-weight: bold; flex-shrink: 0; }
+
+.risk-box { display: inline-block; padding: 4px 12px; border-radius: 4px; font-size: 11pt; font-weight: bold; }
+.risk-LOW { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.risk-MEDIUM { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+.risk-HIGH { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 10px; }
+th { background: #1a2e5a; color: #fff; text-align: left; padding: 6px 8px; font-size: 8.5pt; }
+td { padding: 5px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tr:nth-child(even) td { background: var(--bg-section); }
+
+.badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 8pt; font-weight: bold; text-transform: uppercase; }
+.badge-pass { background: #d4edda; color: #155724; }
+.badge-fail { background: #f8d7da; color: #721c24; }
+.badge-warn { background: #fff3cd; color: #856404; }
+.badge-na { background: #e2e3e5; color: #6c757d; }
+.badge-mapped { background: #d4edda; color: #155724; }
+
+.spec-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.spec-card { background: var(--bg-section); border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+.spec-card h4 { margin: 0 0 8px; font-size: 10pt; color: #1a2e5a; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.spec-row { display: flex; justify-content: space-between; font-size: 8.5pt; padding: 2px 0; }
+.spec-row .lbl { color: #666; }
+.spec-row .val { font-weight: bold; }
+
+.sig-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 12px; }
+.sig-box { border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+.sig-title { font-size: 9pt; font-weight: bold; color: #1a2e5a; margin-bottom: 4px; }
+.sig-line { border-bottom: 1px solid #888; margin: 24px 0 4px; }
+.sig-label { font-size: 8pt; color: #666; }
+
+.footer { padding: 12px 40px; background: var(--bg-section); border-top: 1px solid var(--border); display: flex; justify-content: space-between; font-size: 8pt; color: #666; }
+
+@media print {
+  .no-print { display: none !important; }
+  .section { page-break-inside: avoid; }
+  .section-title { page-break-after: avoid; }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+</style>
+</head>
+<body>
+<div class="cui-banner">CUI // SP-CTI — CONTROLLED UNCLASSIFIED INFORMATION</div>
+
+<div class="no-print" style="background:#1a2e5a;padding:10px 40px;display:flex;justify-content:space-between;align-items:center">
+  <span style="color:#fff;font-size:12pt;font-weight:bold">ERB/CCB Change Request Package</span>
+  <button onclick="window.print()" style="background:#27ae60;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-size:11pt;font-weight:bold">Print / Save as PDF</button>
+</div>
+
+<div class="doc-header">
+  <div class="doc-title">Engineering Review &amp; Change Control Board</div>
+  <div class="doc-title" style="font-size:14pt;color:#27ae60;margin-bottom:8px">Network Device Migration Change Request</div>
+  <div class="doc-subtitle">{{ package.change_summary.src_device | default('Source Device') }} → {{ package.change_summary.tgt_device | default('Target Device') }}</div>
+  <div class="doc-meta">
+    <div class="doc-meta-item"><div class="lbl">Change ID</div><div class="val">{{ session_id }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Requestor</div><div class="val">{{ package.change_summary.requestor | default('—') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Change Type</div><div class="val">{{ package.change_summary.change_type | default('Router Chassis Replacement') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Source Device</div><div class="val">{{ package.change_summary.src_device | default('—') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Target Device</div><div class="val">{{ package.change_summary.tgt_device | default('—') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Site</div><div class="val">{{ package.change_summary.src_site | default('—') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Maintenance Window Start</div><div class="val">{{ package.change_summary.mw_start | default('TBD') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Maintenance Window End</div><div class="val">{{ package.change_summary.mw_end | default('TBD') }}</div></div>
+    <div class="doc-meta-item"><div class="lbl">Generated</div><div class="val">{{ package.change_summary.generated_at | default('') }}</div></div>
+  </div>
+</div>
+
+<!-- Section 1: Change Summary -->
+<div class="section">
+  <div class="section-title"><span class="section-num">1</span> Change Summary &amp; Business Justification</div>
+  <p style="font-size:10pt;line-height:1.5;margin:0 0 10px">{{ package.change_summary.business_justification | default('No justification provided.') }}</p>
+  {% if package.change_summary.src_model and package.change_summary.tgt_model %}
+  <div class="spec-two-col">
+    <div class="spec-card">
+      <h4>Source: {{ package.change_summary.src_model | default('') }}</h4>
+      <div class="spec-row"><span class="lbl">Device Name</span><span class="val">{{ package.change_summary.src_device | default('—') }}</span></div>
+      <div class="spec-row"><span class="lbl">Vendor/Model</span><span class="val">{{ package.change_summary.src_model | default('—') }}</span></div>
+    </div>
+    <div class="spec-card">
+      <h4>Target: {{ package.change_summary.tgt_model | default('') }}</h4>
+      <div class="spec-row"><span class="lbl">Device Name</span><span class="val">{{ package.change_summary.tgt_device | default('—') }}</span></div>
+      <div class="spec-row"><span class="lbl">Vendor/Model</span><span class="val">{{ package.change_summary.tgt_model | default('—') }}</span></div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Section 2: Impact Analysis -->
+<div class="section">
+  <div class="section-title"><span class="section-num">2</span> Impact Analysis</div>
+  {% set ia = package.impact_analysis | default({}) %}
+  <table>
+    <tr><th>Parameter</th><th>Value</th></tr>
+    <tr><td>Circuits Affected</td><td><strong>{{ ia.circuits_affected | default(0) }}</strong></td></tr>
+    <tr><td>Customer-Facing</td><td>{{ 'Yes' if ia.customer_facing else 'No' }}</td></tr>
+    <tr><td>Estimated Outage Window</td><td>{{ ia.estimated_outage_min | default('TBD') }} min</td></tr>
+    <tr><td>Optic Replacements Required</td><td>{{ ia.optic_changes | default(0) }}</td></tr>
+    <tr><td>BGP Sessions Affected</td><td>{{ ia.bgp_sessions | default(0) }}</td></tr>
+    <tr><td>MPLS LSPs Affected</td><td>{{ ia.mpls_tunnels | default(0) }}</td></tr>
+  </table>
+</div>
+
+<!-- Section 3: Risk Assessment -->
+<div class="section">
+  <div class="section-title"><span class="section-num">3</span> Risk Assessment</div>
+  {% set ra = package.risk_assessment | default({}) %}
+  <p style="margin:0 0 10px">
+    Risk Tier: <span class="risk-box risk-{{ ra.tier | default('LOW') }}">{{ ra.tier | default('LOW') }}</span>
+  </p>
+  {% if ra.factors %}
+  <table>
+    <thead><tr><th>Risk Factor</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for factor in ra.factors %}
+    <tr><td>{{ factor.factor | default('—') }}</td><td>{{ factor.detail | default('—') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<!-- Section 4: Port Mapping Table -->
+{% if package.port_mapping %}
+<div class="section">
+  <div class="section-title"><span class="section-num">4</span> Port Mapping Table</div>
+  <table>
+    <thead><tr><th>Source Interface</th><th>Speed</th><th>Source Optic</th><th>Target Interface</th><th>Target Optic</th><th>IP Address</th><th>Cable ID</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for row in package.port_mapping %}
+    <tr>
+      <td><code>{{ row.source_if | default('—') }}</code></td>
+      <td>{{ row.speed_gbps | default('—') }}{% if row.speed_gbps %}G{% endif %}</td>
+      <td>{{ row.optic_old | default(row.optic_type) | default('—') }}</td>
+      <td><code>{{ row.target_if | default('—') }}</code></td>
+      <td>{% if row.optic_change %}<strong>{{ row.optic_new | default('?') }}</strong> (change){% else %}{{ row.optic_old | default('—') }}{% endif %}</td>
+      <td>{{ row.ip_address | default('—') }}</td>
+      <td>{{ row.cable_id | default('—') }}</td>
+      <td><span class="badge badge-{{ row.status | default('pending') }}">{{ row.status | default('pending') }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Section 5: Compatibility Matrix -->
+{% if package.compatibility_matrix %}
+<div class="section">
+  <div class="section-title"><span class="section-num">5</span> Compatibility Matrix</div>
+  <table>
+    <thead><tr><th>Category</th><th>Check</th><th>Expected</th><th>Actual</th><th>Status</th><th>Severity</th></tr></thead>
+    <tbody>
+    {% for row in package.compatibility_matrix %}
+    <tr>
+      <td style="text-transform:capitalize">{{ row.category | default('—') }}</td>
+      <td>{{ row.item | default('—') }}</td>
+      <td style="font-size:8pt;color:#555">{{ row.expected | default('—') }}</td>
+      <td style="font-size:8pt">{{ row.actual | default('—') }}</td>
+      <td><span class="badge badge-{{ row.status | default('na') }}">{{ (row.status | default('—')) | upper }}</span></td>
+      <td style="color:{% if row.severity=='CAT1' %}#721c24{% elif row.severity=='CAT2' %}#856404{% else %}#555{% endif %}">{{ row.severity | default('—') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Section 6: Test Plan Summary -->
+{% if package.test_plan %}
+<div class="section">
+  <div class="section-title"><span class="section-num">6</span> Test Plan Summary</div>
+  {% set tp = package.test_plan | default({}) %}
+  <table style="margin-bottom:12px">
+    <tr><th>Phase</th><th>Test Cases</th><th>Executed</th><th>Passed</th><th>Failed</th></tr>
+    <tr>
+      <td>Pre-Migration</td>
+      <td>{{ tp.pre_count | default(0) }}</td>
+      <td>{{ tp.pre_executed | default(0) }}</td>
+      <td>{{ tp.pre_passed | default(0) }}</td>
+      <td>{{ tp.pre_failed | default(0) }}</td>
+    </tr>
+    <tr>
+      <td>Cutover Smoke Tests</td>
+      <td>{{ tp.cutover_count | default(0) }}</td>
+      <td>{{ tp.cutover_executed | default(0) }}</td>
+      <td>{{ tp.cutover_passed | default(0) }}</td>
+      <td>{{ tp.cutover_failed | default(0) }}</td>
+    </tr>
+    <tr>
+      <td>Post-Migration (24h)</td>
+      <td>{{ tp.post_count | default(0) }}</td>
+      <td>{{ tp.post_executed | default(0) }}</td>
+      <td>{{ tp.post_passed | default(0) }}</td>
+      <td>{{ tp.post_failed | default(0) }}</td>
+    </tr>
+  </table>
+</div>
+{% endif %}
+
+<!-- Section 7: Cutover Sequence -->
+{% if package.cutover_sequence %}
+<div class="section">
+  <div class="section-title"><span class="section-num">7</span> Cutover Sequence</div>
+  <table>
+    <thead><tr><th>#</th><th>Circuit / Interface</th><th>Drain Action</th><th>Rollback Action</th><th>Est. Duration</th></tr></thead>
+    <tbody>
+    {% for step in package.cutover_sequence %}
+    <tr>
+      <td style="text-align:center;font-weight:bold">{{ step.seq_no | default(loop.index) }}</td>
+      <td><code>{{ step.circuit_id | default(step.interface) | default('—') }}</code></td>
+      <td style="font-size:8pt">{{ step.action | default('—') }}</td>
+      <td style="font-size:8pt">{{ step.rollback_action | default('—') }}</td>
+      <td>{{ step.duration_min | default('—') }} min</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Section 8: Rollback Plan -->
+<div class="section">
+  <div class="section-title"><span class="section-num">8</span> Rollback Plan</div>
+  {% set rp = package.rollback_plan | default({}) %}
+  <p style="font-size:10pt;line-height:1.5;margin:0 0 8px">{{ rp.description | default('Keep source device racked and powered for 30 days post-cutover. Reconnect cables to source to restore service.') }}</p>
+  <table>
+    <tr><th>Parameter</th><th>Criteria</th></tr>
+    <tr><td>Max Packet Loss</td><td>{{ rp.max_packet_loss | default('&lt; 0.1%') }}</td></tr>
+    <tr><td>Max BGP Reconvergence</td><td>{{ rp.max_reconvergence_sec | default('&lt; 60s') }}</td></tr>
+    <tr><td>Rollback Trigger</td><td>{{ rp.rollback_trigger | default('Any CAT1 alarm or BGP session failure for > 5 min') }}</td></tr>
+    <tr><td>Source Device Retention</td><td>{{ rp.retention_days | default(30) }} days</td></tr>
+  </table>
+</div>
+
+<!-- Section 9: Go/No-Go Criteria -->
+<div class="section">
+  <div class="section-title"><span class="section-num">9</span> Go / No-Go Criteria</div>
+  <table>
+    <thead><tr><th>Criterion</th><th>Threshold</th><th>Pre-Change Status</th></tr></thead>
+    <tbody>
+      <tr><td>All CAT1 compatibility blockers resolved</td><td>0 open blockers</td><td>—</td></tr>
+      <tr><td>Pre-migration baseline tests pass</td><td>100% pass rate</td><td>—</td></tr>
+      <tr><td>BGP table baseline captured</td><td>Snapshot taken</td><td>—</td></tr>
+      <tr><td>Maintenance window approved</td><td>ERB/CCB approval</td><td>—</td></tr>
+      <tr><td>NOC on standby</td><td>NOC Lead confirmed</td><td>—</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Section 10: Approval Signatures -->
+<div class="section">
+  <div class="section-title"><span class="section-num">10</span> Approval Signatures</div>
+  {% if package.approvals %}
+  <table style="margin-bottom:12px">
+    <thead><tr><th>Role</th><th>Name</th><th>Status</th><th>Date</th><th>Comments</th></tr></thead>
+    <tbody>
+    {% for appr in package.approvals %}
+    <tr>
+      <td>{{ appr.role | default('—') }}</td>
+      <td>{{ appr.name | default('—') }}</td>
+      <td><span class="badge badge-{{ 'pass' if appr.status=='approved' else 'warn' }}">{{ appr.status | default('pending') }}</span></td>
+      <td>{{ appr.date | default('—') }}</td>
+      <td>{{ appr.comments | default('') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <div class="sig-grid">
+    <div class="sig-box">
+      <div class="sig-title">NOC Lead</div>
+      <div class="sig-line"></div>
+      <div class="sig-label">Name / Date</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-title">Network Architect</div>
+      <div class="sig-line"></div>
+      <div class="sig-label">Name / Date</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-title">Change Manager</div>
+      <div class="sig-line"></div>
+      <div class="sig-label">Name / Date</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>CUI // SP-CTI — CONTROLLED UNCLASSIFIED INFORMATION — Handle per CUI Policy</span>
+  <span>Generated by ICDEV™ Network Migration Workflow — {{ package.change_summary.generated_at | default('') }}</span>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "id": "044_memory_embedding_vector",
+  "description": "Alter memory_entries.embedding from bytea to vector(1536) for pgvector match_memories support",
+  "created": "2026-04-26",
+  "targets": ["icdev.db"],
+  "adrs": ["D179"]
+}

@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+# MBSE Digital Thread Workflow — Import → Trace → Generate → Sync → Assess
+description: "MBSE digital thread: SysML import, traceability, code generation, DES compliance"
+category: mbse
+steps:
+  - id: import_sysml
+    name: "SysML Import"
+    tool: "tools/mbse/xmi_parser.py"
+    description: "Parse Cameo SysML v1.6 XMI exports"
+
+  - id: import_doors
+    name: "DOORS Import"
+    tool: "tools/mbse/reqif_parser.py"
+    required: false
+    description: "Parse DOORS NG ReqIF 1.2 exports"
+
+  - id: trace
+    name: "Digital Thread"
+    tool: "tools/mbse/digital_thread.py"
+    depends_on: [import_sysml, import_doors]
+    description: "Build end-to-end traceability (req→model→code→test)"
+
+  - id: generate
+    name: "Model-to-Code"
+    tool: "tools/mbse/model_code_generator.py"
+    depends_on: [import_sysml]
+    description: "Generate code scaffolding from SysML models"
+
+  - id: sync
+    name: "Model-Code Sync"
+    tool: "tools/mbse/sync_engine.py"
+    depends_on: [generate]
+    description: "Bidirectional sync with SHA-256 drift detection"
+
+  - id: control_map
+    name: "Model-NIST Mapping"
+    tool: "tools/mbse/model_control_mapper.py"
+    depends_on: [import_sysml]
+    description: "Map SysML elements to NIST 800-53 controls"
+
+  - id: des_assess
+    name: "DES Compliance"
+    tool: "tools/mbse/des_assessor.py"
+    depends_on: [trace, sync, control_map]
+    description: "DoDI 5000.87 Digital Engineering Strategy assessment"

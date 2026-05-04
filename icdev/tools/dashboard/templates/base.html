@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme_pref or 'dark' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +10,104 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
     {% block head %}{% endblock %}
     {% block extra_css %}{% endblock %}
+    <script>
+    // Apply theme before render to prevent FOUC
+    (function() {
+        var serverTheme = document.documentElement.getAttribute('data-theme');
+        var stored = localStorage.getItem('icdev-theme');
+        var theme = serverTheme && serverTheme !== 'dark' ? serverTheme : (stored || 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
+    <style>
+    /* ExplainPanel — collapsible slide-out (aisg-a3-01) */
+    #explain-panel {
+        position: fixed;
+        top: 0;
+        right: -440px;
+        width: 420px;
+        height: 100vh;
+        background: var(--bg-secondary, #1a1a2e);
+        border-left: 1px solid var(--border-color, #2a2a4a);
+        box-shadow: -4px 0 24px rgba(0,0,0,.4);
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;
+        transition: right 0.3s ease;
+        overflow: hidden;
+    }
+    #explain-panel.open { right: 0; }
+    #explain-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color, #2a2a4a);
+        flex-shrink: 0;
+        background: var(--bg-tertiary, #12122a);
+    }
+    #explain-panel-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary, #888);
+        font-size: 1.25rem;
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    #explain-panel-close:hover {
+        background: var(--border-color, #2a2a4a);
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        color: var(--text-primary, #e0e0e0);
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+    #explain-panel-loading {
+        display: none;
+        text-align: center;
+        padding: 32px 0;
+        color: var(--text-secondary, #888);
+        font-style: italic;
+    }
+    #explain-panel-content pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--bg-tertiary, #12122a);
+        padding: 10px 12px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    .btn-explain {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: 1px solid var(--accent-blue-light, #8ab4ff);
+        color: var(--accent-blue-light, #8ab4ff);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .btn-explain:hover {
+        background: var(--accent-blue-light, #8ab4ff);
+        color: #0a0a1a;
+    }
+    </style>
 </head>
 <body data-auto-refresh="true">
     <!-- Skip to main content (accessibility) -->
@@ -41,6 +139,7 @@
                     <li><a href="/kanban">Task Board</a></li>
                     <li><a href="/batch">Batch</a></li>
                     <li><a href="/simulation">Simulation</a></li>
+                    <li><a href="/simulate/chat">Simulate Chat</a></li>
                 </ul>
             </li>
 
@@ -97,26 +196,40 @@
                 </ul>
             </li>
 
+            {% if hitl_enabled %}
+            <!-- HITL Workflow Management -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/workflow' in request.path %}active{% endif %}">Workflow</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/workflow/">HITL Queue</a></li>
+                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             {% if not airgap_mode %}
             <!-- Genesis (all apps) -->
             <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>
             <li><a href="/oracle" class="{% if '/oracle' in request.path %}active{% endif %}">Oracle</a></li>
             <!-- FathomDesk — Trading & Market Intelligence -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/fathomdesk', '/news', '/options', '/machine-momentum'] %}active{% endif %}" style="color:#8ab4ff;font-weight:600;">FathomDesk</a>
+                <a href="#" class="{% if request.path in ['/fathomdesk', '/news', '/options', '/analysis', '/machine-momentum', '/quality-scores'] %}active{% endif %}" style="color:#8ab4ff;font-weight:600;">FathomDesk</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/fathomdesk">Trading Desk</a></li>
                     <li><a href="/news">News</a></li>
                     <li><a href="/options">Options</a></li>
+                    <li><a href="/analysis">Market Analysis</a></li>
                     <li><a href="/machine-momentum">Machine Momentum</a></li>
+                    <li><a href="/quality-scores">Quality Scores</a></li>
                 </ul>
             </li>
             {% endif %}
 
             <!-- Build & Dev -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/dev-profiles', '/phases', '/translations', '/finetune', '/diagrams'] %}active{% endif %}">Build</a>
+                <a href="#" class="{% if request.path in ['/dev-profiles', '/phases', '/translations', '/finetune', '/diagrams', '/ai-wizard'] %}active{% endif %}">Build</a>
                 <ul class="nav-dropdown-menu">
+                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
                     <li><a href="/dev-profiles">Dev Profiles</a></li>
                     <li><a href="/phases">Phases</a></li>
                     <li><a href="/translations">Translations</a></li>
@@ -249,7 +362,53 @@
             </li>
             {% endif %}
 
+            {% if academy_enabled %}
+            <!-- FORGE Academy -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/academy' in request.path %}active{% endif %}" style="color:#10b981;">Academy</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/academy" style="color:#FF6B35;font-weight:600;">⬡ FORGE Academy</a></li>
+                    <li><a href="/academy/missions">Missions</a></li>
+                    <li><a href="/academy/skill-tree">Skill Tree</a></li>
+                    <li><a href="/academy/achievements">Achievements</a></li>
+                    <li><a href="/academy/leaderboard">Leaderboard</a></li>
+                    <li><a href="/academy/guild">Guild</a></li>
+                    <li><a href="/academy/arena" style="color:#FF6B35;">⚡ Arena</a></li>
+                    <li><a href="/academy/workflow-builder" style="color:#00D4FF;">⬡ Workflow Builder</a></li>
+                    <li><a href="/academy/profile">Profile Setup</a></li>
+                    <li><a href="/academy/oracle">Oracle Insights</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if gameday_enabled %}
+            <!-- AI GameDay TTX Platform -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/gameday' in request.path %}active{% endif %}" style="color:#f59e0b;">GameDay</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/gameday" style="color:#FFB800;font-weight:600;">🎮 Hub</a></li>
+                    <li><a href="/gameday/scenarios">Scenarios</a></li>
+                    <li><a href="/gameday/scenarios/builder">Scenario Builder</a></li>
+                    <li><a href="/gameday/simulation" style="color:#a78bfa;">⚡ Simulation</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            {% if aadc_enabled %}
+            <!-- Agentic AI Design Canvas (AADC) -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/agentic-ai' in request.path %}active{% endif %}" style="color:#a5b4fc;">Agentic AI</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/agentic-ai/">Dashboard</a></li>
+                    <li><a href="/agentic-ai/canvas/new">New Design</a></li>
+                    <li><a href="/agentic-ai/templates">Templates</a></li>
+                    <li><a href="/agentic-ai/snippets">Snippets</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Strategos — Strategic Intelligence Operations -->
+            {% if strategos_enabled %}
             <li class="nav-dropdown">
                 <a href="#" class="{% if '/strategos' in request.path %}active{% endif %}" style="color:#f59e0b;font-weight:600;">Strategos</a>
                 <ul class="nav-dropdown-menu">
@@ -261,8 +420,28 @@
                     <li><a href="/strategos/wargame">Wargame</a></li>
                     <li><a href="/strategos/kg">Knowledge Graph</a></li>
                     <li><a href="/strategos/hitl">HITL Queue</a></li>
+                    <li><a href="/strategos/pir" style="color:#fb923c">&#9670; PIR / CCIR / EEI</a></li>
+                    <li><a href="/strategos/maritime" style="color:#22d3ee">&#9670; Maritime Tracking</a></li>
+                    <li><a href="/strategos/airspace" style="color:#3b82f6">&#9670; Multi-Domain COP</a></li>
                     <li><a href="/strategos/cyber" style="color:#ef4444">&#9670; Cyber Dashboard</a></li>
                     <li><a href="/strategos/simulate">Simulate</a></li>
+                    <li><a href="/strategos/supply" style="color:#e94560">&#9670; DIB Supply Chain</a></li>
+                    <li><a href="/strategos/war-council" style="color:#f59e0b">&#9670; War Council</a></li>
+                    <li><a href="/strategos/osint">OSINT Panel</a></li>
+                    <li><a href='/strategos/darkweb' style='color:#a855f7'>&#9670; Dark Web Monitor</a></li>
+                    <li><a href='/strategos/commander' style='color:#e94560;font-weight:600'>&#9670; Commander Dashboard</a></li>
+                    <li><a href='/strategos/intsum' style='color:#06b6d4'>&#9670; INTSUM Generator</a></li>
+                    <li><a href='/strategos/ipb' style='color:#3b82f6'>&#9670; IPB Canvas</a></li>
+                    <li><a href='/strategos/indicators' style='color:#f59e0b'>&#9670; I&amp;W Indicators</a></li>
+                    <li><a href='/strategos/f3ead' style='color:#e94560'>&#9670; F3EAD Targeting</a></li>
+                    <li><a href='/strategos/bda' style='color:#10b981'>&#9670; BDA</a></li>
+                    <li><a href='/strategos/opord' style='color:#8b5cf6'>&#9670; OPORD Generator</a></li>
+                    <li><a href='/strategos/red-cell' style='color:#e94560'>&#9670; Red Cell</a></li>
+                    <li><a href='/strategos/mett-tc' style='color:#06b6d4'>&#9670; METT-TC</a></li>
+                    <li><a href='/strategos/sync-matrix' style='color:#f97316'>&#9670; Sync Matrix</a></li>
+                    <li><a href='/strategos/isr-planner' style='color:#a855f7'>&#9670; ISR Planner</a></li>
+                    <li><a href='/strategos/sources' style='color:#34d399'>&#9670; Source Registry</a></li>
+                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600">&#9670; Intelligence Chat</a></li>
                     <li>
                         <a href="/strategos/briefs" style="color:#a78bfa">&#9670; Intel Briefs
                             <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
@@ -270,6 +449,7 @@
                     </li>
                 </ul>
             </li>
+            {% endif %}
 
             <!-- Canvas Compliance (Cross-Canvas Integration) -->
             <li>
@@ -301,13 +481,15 @@
 
             <!-- Utility -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/notifications', '/profile'] %}active{% endif %}">More</a>
+                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/ai-wizard', '/ai-patterns', '/notifications', '/profile'] %}active{% endif %}">More</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/usage">Usage</a></li>
                     <li><a href="/notifications">Notifications</a></li>
                     <li><a href="/quick-paths">Quick Paths</a></li>
                     <li><a href="/profile">Profile &amp; Settings</a></li>
                     <li><a href="/wizard" style="color: var(--accent-blue-light);">Get Started</a></li>
+                    <li><a href="/ai-wizard" style="color: var(--accent-blue-light);">AI Launchpad Wizard</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
                 </ul>
             </li>
 
@@ -323,6 +505,10 @@
             </a>
             <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
             {% endif %}
+            <button id="theme-toggle" onclick="ICDEV.toggleTheme()" title="Toggle light/dark theme"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">
+                <span id="theme-icon">☀</span>
+            </button>
             <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
                     style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
             <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
@@ -350,11 +536,50 @@
     <!-- Notification container for toasts -->
     <div class="notification-container" id="notification-container" aria-live="polite"></div>
 
+    <!-- ExplainPanel — collapsible slide-out (aisg-a3-01) -->
+    <div id="explain-panel" role="complementary" aria-label="Event explanation panel" aria-hidden="true">
+        <div id="explain-panel-header">
+            <h3>&#10067; Explain</h3>
+            <button id="explain-panel-close" onclick="window.closeExplain()" aria-label="Close explanation panel">&times;</button>
+        </div>
+        <div id="explain-panel-body">
+            <div id="explain-panel-loading">Loading explanation&hellip;</div>
+            <div id="explain-panel-content"></div>
+        </div>
+    </div>
+
     <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
     {% include "includes/assistant_widget.html" ignore missing %}
+    <!-- STRATEGOS floating chat panel (only on Strategos pages) -->
+    {% if '/strategos' in request.path %}
+    {% include "strategos/_chat_panel.html" ignore missing %}
+    {% endif %}
 
     <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
     <script>window.ROUTE_MODULE_MAP = {{ route_module_map|default({})|tojson }};</script>
+    <script>
+    // Theme toggle (FDE E1)
+    window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleTheme = function() {
+        var html = document.documentElement;
+        var cur = html.getAttribute('data-theme') || 'dark';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('icdev-theme', next);
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = next === 'light' ? '🌙' : '☀';
+        fetch('/profile/api/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({theme: next})
+        }).catch(function(){});
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = theme === 'light' ? '🌙' : '☀';
+    });
+    </script>
 
     <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
     <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
@@ -376,7 +601,68 @@
     <script defer src="{{ url_for('static', filename='js/chat-renderers.js') }}"></script>
     <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
     <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
+    {% if '/strategos' in request.path %}
+    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
+    <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
+    {% block extra_js %}{% endblock %}
+    <script>
+    // ExplainPanel — aisg-a3-01
+    (function() {
+        var _panel = null;
+        function getPanel() { return _panel || (_panel = document.getElementById('explain-panel')); }
+
+        window.showExplain = function(eventId) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            if (loading) loading.style.display = 'block';
+            if (content) content.innerHTML = '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+            fetch('/api/explain/' + encodeURIComponent(eventId))
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(data) {
+                    if (loading) loading.style.display = 'none';
+                    if (content) {
+                        content.innerHTML = typeof data.html === 'string'
+                            ? data.html
+                            : '<pre>' + (data.explanation || data.text || JSON.stringify(data, null, 2)) + '</pre>';
+                    }
+                })
+                .catch(function() {
+                    if (loading) loading.style.display = 'none';
+                    if (content) content.innerHTML = '<p style="color:#e94560">Failed to load explanation.</p>';
+                });
+        };
+
+        window.closeExplain = function() {
+            var p = getPanel();
+            if (!p) return;
+            p.classList.remove('open');
+            p.setAttribute('aria-hidden', 'true');
+        };
+
+        window.showExplainHtml = function(title, htmlContent) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            var titleEl = document.getElementById('explain-panel-title');
+            if (loading) loading.style.display = 'none';
+            if (titleEl && title) titleEl.textContent = title;
+            if (content) content.innerHTML = htmlContent || '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') window.closeExplain();
+        });
+    })();
+    </script>
     <script>
     (function() {
         function refreshBriefsBadge() {

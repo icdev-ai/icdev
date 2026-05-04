@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-003
+-- Title: FedRAMP Moderate — Partially Satisfied Controls
+-- Framework: FedRAMP Moderate
+-- Category: gap-analysis
+-- Severity: moderate
+-- Description: Controls that are partially implemented represent the most
+--   impactful near-term remediation opportunity — they are already resourced
+--   and need a targeted effort to cross the threshold to fully satisfied.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.status == 'partially_satisfied'
+select ctrl.control_id, ctrl.score, ctrl.project_id, ctrl.evidence_ref

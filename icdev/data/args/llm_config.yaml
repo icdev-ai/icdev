@@ -202,7 +202,7 @@ models:
 
   qwen3-local:
     provider: ollama
-    model_id: "qwen3.5:latest"
+    model_id: "qwen3.5:9b"
     max_output_tokens: 32768
     supports_thinking: true
     supports_tools: true
@@ -335,6 +335,34 @@ routing:
   agent_monitor:
     chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
     effort: low
+
+  agent_mbse:
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    effort: max
+
+  agent_modernization:
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    effort: high
+
+  agent_requirements_analyst:
+    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    effort: high
+
+  agent_supply_chain:
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: medium
+
+  agent_simulation:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: high
+
+  agent_gateway:
+    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
+    effort: low
+
+  agent_devsecops:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: high
 
   task_decomposition:
     chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, qwen3-local]
@@ -480,6 +508,11 @@ routing:
     chain: [qwen3-local, codestral-local, llama-local, claude-sonnet]
     effort: medium
 
+  chat_response:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    effort: low
+    disable_thinking: true
+
   default:
     chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
     effort: medium
@@ -497,10 +530,11 @@ agent_effort_defaults:
   knowledge-agent: medium
   monitor-agent: low
   mbse-agent: high
-  modernization-agent: medium
-  requirements-agent: medium
+  modernization-agent: high
+  requirements-analyst-agent: high
   supply-chain-agent: medium
   simulation-agent: high
+  gateway-agent: low
   devsecops-agent: high
 
 # -----------------------------------------------------------------------
@@ -618,15 +652,20 @@ two_tier:
   planner_functions:
     - agent_architect
     - agent_orchestrator
+    - agent_mbse
+    - agent_modernization
+    - agent_requirements_analyst
     - task_decomposition
     - child_app
     - saas_proxy
 
-  # Worker tier emptied — functions fall through to normal chain routing,
-  # which starts with claude-sonnet (Anthropic direct). No qwen3 draft step.
-  # Reason: qwen3.5 thinking-mode timeouts + Sonnet reliability preferred.
-  # To restore draft → review behavior, move functions back into this list.
-  worker_functions: []
+  # Worker tier: qwen3 drafts → Claude reviews/corrects (two-step build pattern).
+  # Restored 2026-04-30: thinking-mode timeouts resolved (think=False in provider;
+  # GPU now active on RTX 4060 Ti with qwen3.5:9b — ~53s latency acceptable).
+  worker_functions:
+    - code_generation        # qwen3 drafts code → Claude reviews for correctness
+    - bdd_preview            # qwen3 drafts BDD specs → Claude tightens acceptance criteria
+    - narrative_generation   # qwen3 drafts narrative → Claude refines voice/structure
 
   scanner_functions:
     - agent_monitor
@@ -637,12 +676,13 @@ two_tier:
     - pulse_draft          # Drafting uses gemma3 (no thinking mode issues)
     - pulse_rewrite        # Rewriting uses qwen3.5 (think:false via provider)
     - codebase_query       # Phase 69: codebase assistant widget (D-CA-5)
+    - wg_rewrite           # Claude override via function_model_overrides below
 
   # Per-function model overrides (scanner tier)
   # Override tier1_model for specific functions
   function_model_overrides:
     pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
-    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting
+    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
     pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
 
 # -----------------------------------------------------------------------
@@ -690,6 +730,20 @@ token_budgets:
       monthly_usd: 20.00
     monitor-agent:
       monthly_usd: 10.00
+    mbse-agent:
+      monthly_usd: 40.00
+    modernization-agent:
+      monthly_usd: 50.00
+    requirements-analyst-agent:
+      monthly_usd: 30.00
+    supply-chain-agent:
+      monthly_usd: 20.00
+    simulation-agent:
+      monthly_usd: 40.00
+    gateway-agent:
+      monthly_usd: 5.00
+    devsecops-agent:
+      monthly_usd: 30.00
     # Scanner-tier agents (Ollama-only, zero cloud cost) — generous caps
     genesis-daemon:
       monthly_usd: 5.00           # mostly Ollama, minimal cloud

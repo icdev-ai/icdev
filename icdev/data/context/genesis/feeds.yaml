@@ -1,0 +1,95 @@
+# CUI // SP-CTI
+# Genesis Ingest Reflex — knowledge feeds for continuous learning
+#
+# RSS/Atom/JSON feeds monitored for new publications that
+# should be ingested into the ICDEV™ knowledge graph.
+#
+# Classification: CUI // SP-CTI
+
+feeds:
+  # ── NIST Publications ────────────────────────────────────────────
+  - name: NIST NVD (CVE)
+    url: "https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss-analyzed.xml"
+    type: rss
+    category: vulnerability
+    ingest_to: knowledge_graph
+    priority: high
+
+  - name: NIST CSRC Publications
+    url: "https://csrc.nist.gov/CSRC/media/feeds/new-publications/rss.xml"
+    type: rss
+    category: compliance
+    ingest_to: knowledge_graph
+    priority: high
+
+  - name: NIST SP 800 Series
+    url: "https://csrc.nist.gov/CSRC/media/feeds/special-publications/800-series/rss.xml"
+    type: rss
+    category: compliance
+    ingest_to: knowledge_graph
+    priority: high
+
+  # ── CISA ─────────────────────────────────────────────────────────
+  - name: CISA Advisories
+    url: "https://www.cisa.gov/cybersecurity-advisories/all.xml"
+    type: rss
+    category: security_advisory
+    ingest_to: knowledge_graph
+    priority: high
+
+  - name: CISA KEV (Known Exploited)
+    url: "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    type: json
+    category: vulnerability
+    ingest_to: enrichment_cache
+    priority: critical
+
+  - name: CISA Secure by Design
+    url: "https://www.cisa.gov/topics/cybersecurity-best-practices/secure-by-design/rss.xml"
+    type: rss
+    category: secure_by_design
+    ingest_to: knowledge_graph
+    priority: medium
+
+  # ── DoD / FedRAMP ────────────────────────────────────────────────
+  - name: FedRAMP Updates
+    url: "https://www.fedramp.gov/rss.xml"
+    type: rss
+    category: compliance
+    ingest_to: knowledge_graph
+    priority: high
+
+  - name: DISA STIGs
+    url: "https://public.cyber.mil/stigs/downloads/"
+    type: html_scrape
+    category: compliance
+    ingest_to: knowledge_graph
+    priority: medium
+    scrape_pattern: "STIG.*\\.zip"
+
+  # ── Industry / Research ──────────────────────────────────────────
+  - name: MITRE ATT&CK Updates
+    url: "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json"
+    type: json
+    category: threat_intelligence
+    ingest_to: knowledge_graph
+    priority: medium
+    check_interval_hours: 168  # Weekly
+
+  - name: OWASP News
+    url: "https://owasp.org/feed.xml"
+    type: rss
+    category: security
+    ingest_to: knowledge_graph
+    priority: medium
+
+  # ── SAM.gov (via existing bridge) ────────────────────────────────
+  - name: SAM.gov Opportunities
+    type: sam_bridge
+    category: market_intelligence
+    ingest_to: pulse_demand
+    priority: medium
+    notes: "Uses existing tools/pulse/engine/sam_bridge.py"
+
+# Ingest frequency: every 4h
+# Output: knowledge graph nodes + GKP compliance_knowledge artifacts

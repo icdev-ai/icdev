@@ -1,0 +1,11 @@
+# Intent: Detect CUI-classified resources deployed outside FedRAMP GovCloud boundaries.
+#         AWS GovCloud regions use the "us-gov-" prefix; Azure Government uses "usgov".
+#         CUI data must remain within authorized boundaries per NIST SP 800-60 and
+#         FedRAMP authorization scope — non-GovCloud deployments risk ATO revocation.
+# Expected violation shape: rows where classification == "CUI" and region is non-GovCloud;
+#   each row is a potential data-residency or boundary violation requiring immediate review.
+
+foreach r in infra.resources
+  where r.classification == "CUI"
+  where not r.region startswith "us-gov" and not r.region startswith "usgov"
+  select r.id, r.resource_name, r.csp, r.region, r.classification

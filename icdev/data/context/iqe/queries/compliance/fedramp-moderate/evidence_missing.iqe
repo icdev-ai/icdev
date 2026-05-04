@@ -1,0 +1,9 @@
+# Intent: Find controls with an empty implementation description, indicating missing
+#         compliance evidence artifacts that would block FedRAMP Moderate authorization
+#         package review by the AO and FedRAMP PMO.
+# Expected violation shape: rows where implementation_description == "";
+#   each row maps to a control requiring an evidence artifact before ATO submission.
+
+foreach c in compliance.controls
+  where c.implementation_description == ""
+  select c.project_id, c.control_id, c.family, c.title, c.implementation_status

@@ -1,0 +1,66 @@
+# CUI // SP-CTI
+# Requirements Intake Workflow — Intake → Gaps → Readiness → Decompose → Trace
+description: "Requirements intake: conversational capture, gap detection, SAFe decomposition, traceability"
+category: requirements
+steps:
+  - id: intake
+    name: "Requirements Intake"
+    tool: "tools/requirements/intake_engine.py"
+    description: "Conversational requirements capture"
+
+  - id: spec_quality
+    name: "Spec Quality Check"
+    tool: "tools/requirements/spec_quality_checker.py"
+    depends_on: [intake]
+    description: "Validate spec against quality checklist"
+
+  - id: gaps
+    name: "Gap Detection"
+    tool: "tools/requirements/gap_detector.py"
+    depends_on: [intake]
+    description: "AI-powered gap and ambiguity detection"
+
+  - id: readiness
+    name: "Readiness Scoring"
+    tool: "tools/requirements/readiness_scorer.py"
+    depends_on: [gaps]
+    description: "5-dimension readiness assessment"
+
+  - id: stakeholder_review
+    name: "Stakeholder Review"
+    node_type: "human"
+    role: "stakeholder"
+    human_required: true
+    depends_on: [readiness]
+    description: "Human stakeholder sign-off on readiness assessment"
+
+  - id: decompose
+    name: "SAFe Decomposition"
+    tool: "tools/requirements/decomposition_engine.py"
+    depends_on: [stakeholder_review]
+    description: "Decompose into Epic > Feature > Story"
+
+  - id: boundary
+    name: "ATO Boundary Impact"
+    tool: "tools/requirements/boundary_analyzer.py"
+    depends_on: [decompose]
+    description: "Assess ATO boundary impact (GREEN/YELLOW/ORANGE/RED)"
+
+  - id: trace
+    name: "Build Traceability"
+    tool: "tools/requirements/traceability_builder.py"
+    depends_on: [decompose]
+    description: "Build full RTM: req > model > code > test > control"
+
+  - id: crb_approval
+    name: "CRB Approval Gate"
+    node_type: "approval"
+    approval_policy: "unanimous"
+    depends_on: [boundary, trace]
+    description: "Change Review Board unanimous approval before baselining"
+
+  - id: baselined
+    name: "Baseline Requirements"
+    tool: "tools/requirements/requirements_baseliner.py"
+    depends_on: [spec_quality, crb_approval]
+    description: "Baseline approved requirements set with RTM and boundary assessment"

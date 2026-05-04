@@ -1,0 +1,31 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ SRE Automation Configuration
+
+slo:
+  default_window_days: 30
+  alert_threshold_warning: 0.3
+  alert_threshold_critical: 0.1
+  burn_rate_alert_multiplier: 2.0
+
+runbooks:
+  max_executions_per_hour: 3
+  default_risk_level: green
+  auto_execute_green: true
+  auto_execute_yellow: false
+  auto_execute_orange: false
+  step_timeout_seconds: 300
+
+incidents:
+  auto_create_from_alerts: true
+  auto_escalate_sev1: true
+  escalation_timeout_minutes: 15
+  postmortem_required_severity: [sev1, sev2]
+  mttr_targets:
+    sev1: 900     # 15 minutes
+    sev2: 3600    # 1 hour
+    sev3: 14400   # 4 hours
+    sev4: 86400   # 24 hours
+
+air_gap:
+  enabled: true   # All operations are local SQLite
+  notes: "SRE module is 100% air-gap compatible. No external dependencies."

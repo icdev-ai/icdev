@@ -1,0 +1,10 @@
+# Intent: Surface AC-2 (Account Management) controls not fully implemented across
+#         FedRAMP Moderate boundary projects, identifying gaps in account lifecycle
+#         compliance that must be closed before ATO authorization.
+# Expected violation shape: rows where family == "AC" and implementation_status != "implemented";
+#   each row maps to an account management control gap requiring remediation.
+
+foreach c in compliance.controls
+  where c.family == "AC"
+  where c.implementation_status != "implemented"
+  select c.project_id, c.control_id, c.title, c.implementation_status, c.responsible_role

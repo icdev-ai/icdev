@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}Player Console — AI GameDay{% endblock %}
+{% block extra_css %}
+<style>
+.pc-header{background:#161b22;border-bottom:1px solid #30363d;padding:.8rem 1.5rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
+.pc-header h1{font-size:1.1rem;font-weight:700;color:#FF6B35;margin:0;}
+.pc-layout{display:grid;grid-template-columns:1fr 280px;gap:0;height:calc(100vh - 160px);}
+.pc-main{overflow-y:auto;padding:1.2rem 1.5rem;}
+.pc-aside{background:#0d1117;border-left:1px solid #21262d;overflow-y:auto;padding:1rem;}
+.persona-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem;margin-bottom:1.2rem;}
+.persona-card h3{color:#FF6B35;margin:0 0 .5rem;font-size:.9rem;}
+.persona-field{font-size:.8rem;color:#8b949e;margin:.2rem 0;}
+.persona-field strong{color:#e6edf3;}
+.inject-feed{min-height:200px;}
+.inject-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem;margin-bottom:1rem;}
+.inject-card h3{color:#e6edf3;margin:0 0 .5rem;font-size:1rem;}
+.inject-card .ic-meta{font-size:.78rem;color:#6e7681;margin-bottom.8rem;}
+.inject-body{font-size:.88rem;color:#c9d1d9;line-height:1.6;border-left:3px solid #FF6B35;padding-left:1rem;margin:.8rem 0;}
+.inject-waiting{text-align:center;color:#6e7681;padding:3rem;border:1px dashed #21262d;border-radius:10px;}
+.timer{font-size:1.2rem;font-weight:700;color:#FFB800;font-family:monospace;}
+.timer.urgent{color:#f85149;}
+.ai-tool-btn{display:inline-flex;align-items:center;gap:.4rem;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.4rem .8rem;border-radius:6px;font-size:.8rem;cursor:pointer;margin:.3rem .3rem 0 0;transition:all .2s;text-decoration:none;}
+.ai-tool-btn:hover{border-color:#FF6B35;color:#FF6B35;}
+.ai-tool-btn.used{border-color:#3fb950;color:#3fb950;background:#1f3020;}
+.gd-textarea{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.8rem;border-radius:6px;font-size:.88rem;line-height:1.5;box-sizing:border-box;min-height:140px;resize:vertical;}
+.gd-textarea:focus{outline:none;border-color:#FF6B35;}
+.submit-btn{background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.65rem 1.6rem;border-radius:6px;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:.7rem;transition:opacity .2s;}
+.submit-btn:hover{opacity:.85;}
+.submit-btn:disabled{opacity:.4;cursor:not-allowed;}
+.score-flash{background:#1f3020;border:1px solid #3fb950;border-radius:8px;padding:.8rem 1rem;font-size:.88rem;color:#3fb950;display:none;margin-top:.8rem;}
+.mini-lb{font-size:.8rem;}
+.mini-lb tr td{padding:.3rem .4rem;border-bottom:1px solid #21262d;}
+.join-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem;margin-bottom:1.2rem;}
+.join-panel h3{color:#e6edf3;margin:0 0 .8rem;font-size:.9rem;}
+.gd-input{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.5rem .7rem;border-radius:6px;font-size:.88rem;box-sizing:border-box;margin-bottom:.5rem;}
+.gd-input:focus{outline:none;border-color:#FF6B35;}
+.gd-select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.5rem .7rem;border-radius:6px;font-size:.88rem;}
+.receipt-list{background:#0d1117;border-radius:6px;padding:.5rem;margin:.5rem 0;font-size:.75rem;color:#6e7681;max-height:80px;overflow-y:auto;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="pc-header">
+  <h1>🎮 AI GameDay — Player Console</h1>
+  <span style="color:#6e7681;font-size:.85rem;">{{ session.scenario_slug.replace('_',' ').title() }}</span>
+  <span style="color:#58a6ff;font-size:.85rem;font-family:monospace;font-weight:700;">{{ session.join_code }}</span>
+  <span style="flex:1;"></span>
+  <a href="/gameday/leaderboard/{{ session.session_id }}" target="_blank" style="font-size:.82rem;color:#6e7681;text-decoration:none;">📊 Full Leaderboard ↗</a>
+</div>
+
+<div class="pc-layout">
+  <!-- Main: injects + response form -->
+  <div class="pc-main">
+    <!-- Join panel (shown until team/player set) -->
+    <div class="join-panel" id="join-panel">
+      <h3>Join a Team</h3>
+      <input id="team-code-input" class="gd-input" placeholder="Team Code (from team leader)" maxlength="6" style="text-transform:uppercase;">
+      <input id="player-name-input" class="gd-input" placeholder="Your Name">
+      <select id="role-select" class="gd-select" style="margin-bottom:.6rem;">
+        <option value="">-- Select Your Role --</option>
+        {% for role in roles %}
+        <option value="{{ role.id }}">{{ role.icon }} {{ role.label }}</option>
+        {% endfor %}
+      </select>
+      <button onclick="joinTeam()" style="background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.55rem 1.2rem;border-radius:6px;font-size:.88rem;font-weight:600;cursor:pointer;width:100%;margin-top:.3rem;">Join Team</button>
+      <div id="join-error" style="color:#f85149;font-size:.8rem;margin-top:.4rem;display:none;"></div>
+    </div>
+
+    <!-- Active inject feed -->
+    <div class="inject-feed" id="inject-feed">
+      <div class="inject-waiting" id="waiting-msg">
+        <div style="font-size:1.5rem;margin-bottom:.5rem;">⏳</div>
+        <div>Waiting for the facilitator to start the session and dispatch injects...</div>
+        <div style="font-size:.8rem;color:#6e7681;margin-top:.5rem;">This page auto-refreshes every 5 seconds.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sidebar: persona + leaderboard -->
+  <div class="pc-aside">
+    <!-- Persona card (populated after join) -->
+    <div class="persona-card" id="persona-display" style="display:none;">
+      <h3 id="persona-role-label">Role Brief</h3>
+      <div id="persona-fields"></div>
+      <div id="persona-brief" style="margin-top:.6rem;font-size:.8rem;color:#8b949e;font-style:italic;line-height:1.5;border-top:1px solid #21262d;padding-top:.6rem;"></div>
+    </div>
+
+    <!-- Mini leaderboard -->
+    <div style="font-size:.75rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">Leaderboard</div>
+    <div style="background:#161b22;border:1px solid #21262d;border-radius:8px;overflow:hidden;margin-bottom:1rem;">
+      <table class="mini-lb" style="width:100%;border-collapse:collapse;" id="mini-lb">
+        <tbody><tr><td style="text-align:center;color:#6e7681;padding:1rem;">Loading...</td></tr></tbody>
+      </table>
+    </div>
+
+    <!-- AI Tool Quick Links -->
+    <div style="font-size:.75rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem;">AI Tools</div>
+    {% for tool in ai_tools %}
+    <a class="ai-tool-btn" href="{{ tool.endpoint }}" target="_blank" data-slug="{{ tool.slug }}">{{ tool.icon }} {{ tool.label }}</a>
+    {% endfor %}
+    <div style="font-size:.72rem;color:#6e7681;margin-top:.5rem;">Click a tool, then submit your receipt token to earn bonus points.</div>
+  </div>
+</div>
+
+<script>
+const SESSION_ID={{ session.session_id }};
+let myTeamId=null, myMemberId=null, myPersona=null;
+let usedTools=[], pendingReceiptId=null;
+let injectTimers={};
+const startTimes={};
+
+// Restore from sessionStorage
+const stored=sessionStorage.getItem('gd_player_'+SESSION_ID);
+if(stored){const p=JSON.parse(stored);myTeamId=p.teamId;myMemberId=p.memberId;myPersona=p.persona;showPersona();document.getElementById('join-panel').style.display='none';}
+
+async function joinTeam(){
+  const code=document.getElementById('team-code-input').value.trim().toUpperCase();
+  const name=document.getElementById('player-name-input').value.trim();
+  const role=document.getElementById('role-select').value;
+  const err=document.getElementById('join-error');
+  err.style.display='none';
+  if(!code||!name||!role){err.textContent='All fields required';err.style.display='block';return;}
+  const r=await fetch('/api/gameday/team/join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({team_code:code,player_name:name,role_id:role})});
+  const d=await r.json();
+  if(d.ok){
+    myTeamId=d.team.team_id;myMemberId=d.member.member_id;myPersona=d.member;
+    sessionStorage.setItem('gd_player_'+SESSION_ID,JSON.stringify({teamId:myTeamId,memberId:myMemberId,persona:myPersona}));
+    document.getElementById('join-panel').style.display='none';
+    showPersona();
+  }else{err.textContent=d.error||'Failed';err.style.display='block';}
+}
+
+function showPersona(){
+  if(!myPersona)return;
+  const el=document.getElementById('persona-display');
+  el.style.display='block';
+  const persona=typeof myPersona.persona_json==='string'?JSON.parse(myPersona.persona_json||'{}'):myPersona.persona_json||{};
+  document.getElementById('persona-role-label').textContent='🎖️ '+myPersona.role_id.replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
+  const fields=document.getElementById('persona-fields');
+  const skip=['role_id','player_name','generated_by','role_brief'];
+  fields.innerHTML=Object.entries(persona).filter(([k])=>!skip.includes(k)).slice(0,6).map(([k,v])=>`<div class="persona-field"><strong>${k.replace(/_/g,' ')}:</strong> ${v}</div>`).join('');
+  document.getElementById('persona-brief').textContent=persona.role_brief||'';
+}
+
+async function fetchInjects(){
+  const r=await fetch('/api/gameday/session/'+SESSION_ID+'/injects?state=dispatched');
+  const d=await r.json();
+  renderInjects(d.injects||[]);
+}
+
+function renderInjects(injects){
+  const feed=document.getElementById('inject-feed');
+  if(!injects.length){
+    document.getElementById('waiting-msg').style.display='block';
+    return;
+  }
+  document.getElementById('waiting-msg').style.display='none';
+  injects.forEach(inj=>{
+    if(document.getElementById('inj-'+inj.inject_id.slice(0,8)))return;
+    const card=document.createElement('div');
+    card.className='inject-card';
+    card.id='inj-'+inj.inject_id.slice(0,8);
+    if(!startTimes[inj.inject_id])startTimes[inj.inject_id]=Date.now();
+    const cfg=typeof inj.config_json==='string'?JSON.parse(inj.config_json||'{}'):inj.config_json||{};
+    const tools=(cfg.ai_tools_allowed||[]).join(',');
+    const isAADC = cfg.inject_type === 'aadc_design_challenge';
+    const responsePanel = isAADC
+      ? `<div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:1rem;margin-top:.8rem;">
+           <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:#58a6ff;margin-bottom:.7rem;">🛡 AADC Design Submission</div>
+           <a href="/agentic-ai/canvas" target="_blank" style="display:inline-flex;align-items:center;gap:.4rem;background:linear-gradient(135deg,#0a84ff,#0055cc);color:#fff;text-decoration:none;border-radius:6px;padding:.45rem 1rem;font-size:.8rem;font-weight:700;margin-bottom:.8rem;">Open AADC Canvas ↗</a>
+           <div style="font-size:.78rem;color:#6e7681;margin:.6rem 0 .3rem;">Design ID (from canvas Save):</div>
+           <input id="design-id-${inj.inject_id.slice(0,8)}" class="gd-input" placeholder="d_abc123..." style="font-family:monospace;">
+           <div style="font-size:.78rem;color:#6e7681;margin:.6rem 0 .3rem;">Notes (what you changed / fixed):</div>
+           <textarea class="gd-textarea" id="response-${inj.inject_id.slice(0,8)}" placeholder='{"design_id":"d_abc123","notes":"Fixed: added input-sanitizer, pii-detector, audit-logger"}'></textarea>
+         </div>`
+      : `<textarea class="gd-textarea" id="response-${inj.inject_id.slice(0,8)}" placeholder="Write your team's response here. Reference the AI tool outputs you used..."></textarea>`;
+    card.innerHTML=`
+      <h3>${inj.title}${isAADC?' <span style="font-size:.72rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.15rem .4rem;vertical-align:middle;">AADC Design Challenge</span>':''}</h3>
+      <div class="ic-meta">⏱️ <span id="timer-${inj.inject_id.slice(0,8)}" class="timer">00:00</span> elapsed${inj.at_minute?' · dispatched at T+'+inj.at_minute+'min':''}</div>
+      <div class="inject-body">${(inj.body_md||'').replace(/\n/g,'<br>').replace(/##/g,'<strong>').replace(/\*\*/g,'')}</div>
+      <div style="margin-top:.8rem;">
+        <div style="font-size:.78rem;color:#6e7681;margin-bottom:.3rem;">AI Tools available for this inject:</div>
+        ${tools?tools.split(',').map(t=>`<button class="ai-tool-btn" onclick="linkTool('${inj.inject_id}','${t.trim()}')">${t.trim()}</button>`).join(''):'<span style="color:#6e7681;font-size:.8rem;">Any ICDEV tool</span>'}
+      </div>
+      <div style="margin-top:.8rem;">
+        <div style="font-size:.78rem;color:#6e7681;margin-bottom:.3rem;">Receipts logged:</div>
+        <div class="receipt-list" id="receipts-${inj.inject_id.slice(0,8)}">No receipts yet</div>
+      </div>
+      ${responsePanel}
+      <button class="submit-btn" onclick="submitResponse('${inj.inject_id}',${isAADC})">${isAADC?'🛡 Submit Design':'Submit Response'}</button>
+      <div class="score-flash" id="score-${inj.inject_id.slice(0,8)}"></div>`;
+    feed.appendChild(card);
+    startTimer(inj.inject_id);
+  });
+}
+
+function startTimer(injectId){
+  const key=injectId.slice(0,8);
+  if(injectTimers[key])return;
+  injectTimers[key]=setInterval(()=>{
+    const elapsed=Math.floor((Date.now()-startTimes[injectId])/1000);
+    const mm=String(Math.floor(elapsed/60)).padStart(2,'0');
+    const ss=String(elapsed%60).padStart(2,'0');
+    const el=document.getElementById('timer-'+key);
+    if(el){el.textContent=mm+':'+ss;if(elapsed>600)el.classList.add('urgent');}
+  },1000);
+}
+
+const _receipts={};
+async function linkTool(injectId, toolSlug){
+  if(!myTeamId){alert('Join a team first!');return;}
+  const r=await fetch('/api/gameday/api-log',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({session_id:SESSION_ID,team_id:myTeamId,tool_slug:toolSlug,endpoint:toolSlug,result_payload:Date.now()})});
+  const d=await r.json();
+  if(d.ok){
+    const key=injectId.slice(0,8);
+    if(!_receipts[key])_receipts[key]=[];
+    _receipts[key].push({call_id:d.call_id,tool:toolSlug,result_hash:d.result_hash});
+    const rcEl=document.getElementById('receipts-'+key);
+    if(rcEl)rcEl.innerHTML=_receipts[key].map(r=>`<div>✓ ${r.tool} — <code>${r.call_id.slice(0,8)}…</code></div>`).join('');
+    document.querySelectorAll(`.ai-tool-btn[onclick*="${toolSlug}"]`).forEach(b=>b.classList.add('used'));
+  }
+}
+
+async function submitResponse(injectId, isAADC=false){
+  if(!myTeamId){alert('Join a team first!');return;}
+  const key=injectId.slice(0,8);
+  let text;
+  if(isAADC){
+    const designId=(document.getElementById('design-id-'+key)||{}).value?.trim()||'';
+    const notes=document.getElementById('response-'+key).value.trim();
+    if(!designId){alert('Paste your Design ID from the AADC canvas first!');return;}
+    text=JSON.stringify({design_id:designId,notes:notes||'Design submission'});
+  }else{
+    text=document.getElementById('response-'+key).value.trim();
+    if(!text){alert('Write your response first!');return;}
+  }
+  const timeTaken=Math.floor((Date.now()-startTimes[injectId])/1000);
+  const r=await fetch('/api/gameday/response',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({team_id:myTeamId,inject_id:injectId,session_id:SESSION_ID,response_text:text,receipts:_receipts[key]||[],time_taken_s:timeTaken})});
+  const d=await r.json();
+  const scoreEl=document.getElementById('score-'+key);
+  if(d.ok){
+    scoreEl.style.display='block';
+    const aadc_score=d.aadc_score!=null?` · AADC: ${d.aadc_score}/100`:'';
+    scoreEl.innerHTML=`✅ Submitted! Receipts: +${d.receipt_pts} · AI Judge: +${d.judge_pts} · Speed: +${d.time_bonus_pts}${aadc_score} · <strong>Total: ${d.total_pts} pts</strong>`;
+    document.querySelector(`#inj-${key} .submit-btn`).disabled=true;
+  }else{
+    scoreEl.style.display='block';scoreEl.style.background='#2d1b1b';scoreEl.style.borderColor='#f85149';scoreEl.style.color='#f85149';
+    scoreEl.textContent='Error: '+(d.error||'Submission failed');
+  }
+}
+
+// Poll for new injects every 5s
+fetchInjects();
+setInterval(fetchInjects,5000);
+
+// Leaderboard poll
+async function refreshLb(){
+  const r=await fetch('/api/gameday/session/'+SESSION_ID+'/leaderboard');
+  const d=await r.json();
+  document.getElementById('mini-lb').querySelector('tbody').innerHTML=
+    d.leaderboard.slice(0,5).map((row,i)=>`<tr><td style="color:#6e7681;">${i+1}</td><td style="color:#e6edf3;font-weight:600;">${row.team_name}</td><td style="text-align:right;color:#FF6B35;font-weight:700;">${row.total_score}</td></tr>`).join('')||
+    '<tr><td colspan="3" style="text-align:center;color:#6e7681;">No scores yet</td></tr>';
+}
+refreshLb();
+setInterval(refreshLb,10000);
+</script>
+{% endblock %}

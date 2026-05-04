@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-010
+-- Title: FedRAMP Moderate — Controls Below 80% Score Threshold
+-- Framework: FedRAMP Moderate
+-- Category: scoring
+-- Severity: moderate
+-- Description: Controls scoring below 0.8 are at risk of slipping to
+--   partially_satisfied or not_satisfied on the next assessment cycle.
+--   Proactive remediation prevents last-minute ATO renewal failures.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.score < 0.8 and ctrl.status != 'not_applicable'
+select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id

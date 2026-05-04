@@ -19,6 +19,7 @@ steps:
     inject_project_id: false
     args:
       project-dir: "tools/"
+    depends_on: [scaffold]
     required: false
     description: "Run linter on project code"
 
@@ -46,7 +47,7 @@ steps:
   - id: terraform
     name: "Generate Terraform IaC"
     tool: "tools/infra/terraform_generator.py"
-    depends_on: []
+    depends_on: [scaffold]
     required: false
     description: "Generate infrastructure as code"
 
@@ -58,6 +59,6 @@ steps:
       dir: "."
       platform: auto
       dry-run: true
-    depends_on: []
+    depends_on: [e2e, terraform]
     required: false
     description: "Generate CI/CD pipeline configuration"

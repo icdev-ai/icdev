@@ -139,6 +139,28 @@ class MigrationRunner:
             return migrations
 
         for entry in sorted(self.migrations_dir.iterdir()):
+            # Flat SQL file: NNN_description.sql
+            if entry.is_file() and entry.suffix == ".sql":
+                flat_match = re.match(r"^(\d{3})_(.+)\.sql$", entry.name)
+                if flat_match:
+                    version = flat_match.group(1)
+                    name = flat_match.group(2)
+                    migrations.append(
+                        {
+                            "version": version,
+                            "name": name,
+                            "dir": None,
+                            "flat_sql": entry,
+                            "has_up_sql": True,
+                            "has_up_py": False,
+                            "has_down_sql": False,
+                            "has_down_py": False,
+                            "meta": {},
+                            "checksum": self._file_checksum(entry),
+                        }
+                    )
+                continue
+
             if not entry.is_dir():
                 continue
             # Match NNN_description pattern
@@ -258,13 +280,13 @@ class MigrationRunner:
         """
         version = migration["version"]
         name = migration["name"]
-        mdir = migration["dir"]
+        mdir = migration.get("dir")
 
         logger.info("Applying migration %s (%s)...", version, name)
 
         if dry_run:
-            up_sql = mdir / "up.sql"
-            if up_sql.exists():
+            up_sql = migration.get("flat_sql") or (mdir / "up.sql" if mdir else None)
+            if up_sql and up_sql.exists():
                 sql = up_sql.read_text(encoding="utf-8")
                 filtered = self._filter_sql(sql)
                 return {
@@ -281,15 +303,25 @@ class MigrationRunner:
 
         try:
             # SQL migration
-            up_sql = mdir / "up.sql"
-            if up_sql.exists():
+            up_sql = migration.get("flat_sql") or (mdir / "up.sql" if mdir else None)
+            if up_sql and up_sql.exists():
                 sql = up_sql.read_text(encoding="utf-8")
                 filtered = self._filter_sql(sql)
-                conn.executescript(filtered)
+                try:
+                    conn.executescript(filtered)
+                except Exception as table_exc:
+                    if "already exists" in str(table_exc).lower():
+                        logger.warning(
+                            "Migration %s: object already exists — graceful guard active: %s",
+                            version,
+                            table_exc,
+                        )
+                    else:
+                        raise
 
             # Python migration
-            up_py = mdir / "up.py"
-            if up_py.exists() and not up_sql.exists():
+            up_py = (mdir / "up.py") if mdir else None
+            if up_py and up_py.exists() and not (up_sql and up_sql.exists()):
                 spec = importlib.util.spec_from_file_location(f"migration_{version}_up", str(up_py))
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)

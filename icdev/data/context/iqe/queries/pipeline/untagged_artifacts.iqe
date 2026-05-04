@@ -1,0 +1,10 @@
+# Intent: Surface artifact-publisher nodes that push build outputs without a
+#         version tag, preventing reproducible builds and breaking SLSA provenance
+#         chains from tracing published artifacts back to their source pipeline run.
+# Expected violation shape: rows where node_type == "artifact-publisher" and artifact_tag == null;
+#   each row is an unversioned artifact push that blocks supply chain traceability.
+
+foreach n in pipeline.nodes
+  where n.node_type == "artifact-publisher"
+  where n.artifact_tag == null
+  select n.pipeline_id, n.snapshot_id, n.id, n.node_type

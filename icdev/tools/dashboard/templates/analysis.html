@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% block title %}Market Analysis — Macro Intelligence{% endblock %}
+{% block extra_css %}
+<style>
+  .an-page { padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .an-page h1 { font-size: 1.4rem; font-weight: 700; color: var(--text-primary, #e0e0f0); margin: 0 0 20px; }
+
+  /* Collapsible macro panel */
+  .macro-panel {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a40);
+    border-radius: 8px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    transition: all 0.2s ease;
+  }
+  .macro-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    cursor: pointer;
+    user-select: none;
+    border-bottom: 1px solid var(--border-color, #2a2a40);
+  }
+  .macro-panel-header:hover { background: rgba(255,255,255,0.03); }
+  .macro-panel-title {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-secondary, #a0a0b8);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .macro-panel-summary {
+    font-size: 0.8rem;
+    color: var(--text-muted, #6c6c80);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .macro-panel-toggle {
+    font-size: 0.75rem;
+    color: var(--text-dim, #4a4a60);
+    transition: transform 0.2s;
+  }
+  .macro-panel.collapsed .macro-panel-toggle { transform: rotate(-90deg); }
+  .macro-panel.collapsed .macro-panel-body { display: none; }
+  .macro-panel.collapsed .macro-panel-header { border-bottom: none; }
+
+  .macro-panel-body { padding: 16px; }
+
+  /* Badge grid */
+  .macro-badges {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .macro-badge {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 140px;
+  }
+  .macro-badge-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted, #6c6c80);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+  }
+  .macro-badge-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 5px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+  }
+  .macro-badge-value .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* QE/QT colors */
+  .badge-expanding  { background: rgba(40,167,69,0.15);  color: #4cda7a; border: 1px solid rgba(40,167,69,0.35); }
+  .badge-expanding  .dot { background: #4cda7a; }
+  .badge-neutral    { background: rgba(108,117,125,0.15); color: #9ba4af; border: 1px solid rgba(108,117,125,0.35); }
+  .badge-neutral    .dot { background: #9ba4af; }
+  .badge-contracting { background: rgba(220,53,69,0.15);  color: #f06375; border: 1px solid rgba(220,53,69,0.35); }
+  .badge-contracting .dot { background: #f06375; }
+
+  /* Credit stress: same palette but labeled differently */
+  .badge-accelerating { background: rgba(40,167,69,0.15);  color: #4cda7a; border: 1px solid rgba(40,167,69,0.35); }
+  .badge-accelerating .dot { background: #4cda7a; }
+
+  /* Rotation signal */
+  .badge-green      { background: rgba(40,167,69,0.15);  color: #4cda7a; border: 1px solid rgba(40,167,69,0.35); }
+  .badge-green      .dot { background: #4cda7a; }
+  .badge-yellow     { background: rgba(255,193,7,0.15);  color: #ffd740; border: 1px solid rgba(255,193,7,0.35); }
+  .badge-yellow     .dot { background: #ffd740; }
+  .badge-red        { background: rgba(220,53,69,0.15);  color: #f06375; border: 1px solid rgba(220,53,69,0.35); }
+  .badge-red        .dot { background: #f06375; }
+  .badge-orange     { background: rgba(255,140,0,0.15);  color: #ffaa44; border: 1px solid rgba(255,140,0,0.35); }
+  .badge-orange     .dot { background: #ffaa44; }
+  .badge-unknown    { background: rgba(108,117,125,0.12); color: #9ba4af; border: 1px solid rgba(108,117,125,0.3); }
+  .badge-unknown    .dot { background: #9ba4af; }
+
+  /* Score bar */
+  .macro-score-wrap { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .macro-score-label { font-size: 0.75rem; color: var(--text-muted, #6c6c80); white-space: nowrap; }
+  .macro-score-bar {
+    flex: 1; height: 6px;
+    background: var(--bg-input, #0f1829);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .macro-score-fill {
+    height: 100%; border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+  .macro-score-val { font-size: 0.75rem; font-weight: 700; color: var(--text-secondary, #a0a0b8); white-space: nowrap; }
+
+  /* Summary text */
+  .macro-summary-text {
+    font-size: 0.78rem;
+    color: var(--text-muted, #6c6c80);
+    line-height: 1.5;
+    border-top: 1px solid var(--border-color, #2a2a40);
+    padding-top: 10px;
+    margin-top: 4px;
+  }
+
+  /* Refresh footer */
+  .macro-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 0.7rem;
+    color: var(--text-dim, #4a4a60);
+  }
+  .macro-footer button {
+    background: none;
+    border: 1px solid var(--border-color, #2a2a40);
+    color: var(--text-muted, #6c6c80);
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    cursor: pointer;
+  }
+  .macro-footer button:hover { background: rgba(255,255,255,0.05); }
+
+  /* Loading / error states */
+  .macro-loading { color: var(--text-dim, #4a4a60); font-size: 0.78rem; padding: 8px 0; }
+  .macro-error   { color: #f06375; font-size: 0.78rem; padding: 8px 0; }
+
+  /* Placeholder content below the panel */
+  .an-placeholder {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a40);
+    border-radius: 8px;
+    padding: 40px;
+    text-align: center;
+    color: var(--text-dim, #4a4a60);
+    font-size: 0.85rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="an-page">
+  <h1>Market Analysis</h1>
+
+  <!-- Macro Intelligence Panel -->
+  <div class="macro-panel" id="macroPanelEl">
+    <div class="macro-panel-header" id="macroPanelHeader">
+      <span class="macro-panel-title">Macro Intelligence</span>
+      <span class="macro-panel-summary" id="macroPanelSummaryLine">Loading…</span>
+      <span class="macro-panel-toggle">&#9660;</span>
+    </div>
+    <div class="macro-panel-body" id="macroPanelBody">
+      <div id="macroPanelContent">
+        <div class="macro-loading">Fetching macro regime data…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Placeholder for future analysis modules -->
+  <div class="an-placeholder">
+    Additional analysis modules will appear here.
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  var REFRESH_MS = 10 * 60 * 1000; // 10 minutes
+  var refreshTimer = null;
+  var lastFetch = null;
+
+  // ── Badge helpers ────────────────────────────────────────────────────────
+  function qeqtClass(phase) {
+    if (!phase) return "badge-neutral";
+    var p = phase.toUpperCase();
+    if (p === "EXPANDING") return "badge-expanding";
+    if (p === "CONTRACTING") return "badge-contracting";
+    return "badge-neutral";
+  }
+
+  function creditClass(label) {
+    if (!label) return "badge-neutral";
+    var l = label.toUpperCase();
+    if (l === "ACCELERATING") return "badge-accelerating";
+    if (l === "CONTRACTING") return "badge-contracting";
+    return "badge-neutral";
+  }
+
+  function rotationClass(regime) {
+    if (!regime) return "badge-unknown";
+    var r = regime.toUpperCase();
+    if (r.startsWith("GREEN") || r.startsWith("EXPANSION") || r.startsWith("GOLDILOCKS")) return "badge-green";
+    if (r.startsWith("YELLOW") || r.startsWith("REFLATION") || r.startsWith("INFLATION")) return "badge-yellow";
+    if (r.startsWith("STAGFLATION")) return "badge-orange";
+    if (r.startsWith("RED") || r.startsWith("DEFLATION") || r.startsWith("LIQUIDITY_TRAP")) return "badge-red";
+    return "badge-unknown";
+  }
+
+  function scoreColor(score) {
+    if (score === null || score === undefined) return "#9ba4af";
+    if (score >= 60) return "#4cda7a";
+    if (score >= 30) return "#ffd740";
+    return "#f06375";
+  }
+
+  function badgeHtml(cssClass, text) {
+    return '<span class="macro-badge-value ' + cssClass + '"><span class="dot"></span>' +
+           escHtml(text || "—") + '</span>';
+  }
+
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  function render(data) {
+    var qeqt    = data.qeqt_phase    || "NEUTRAL";
+    var credit  = data.credit_stress || "NEUTRAL";
+    var rotation = data.rotation_signal || "UNKNOWN";
+    var score   = data.macro_score;
+    var summary = data.summary || "";
+    var fetched = data.fetched_at ? new Date(data.fetched_at).toLocaleTimeString() : "—";
+
+    var scoreBar = "";
+    if (score !== null && score !== undefined) {
+      scoreBar = '<div class="macro-score-wrap">' +
+        '<span class="macro-score-label">Macro Score</span>' +
+        '<div class="macro-score-bar"><div class="macro-score-fill" style="width:' + score + '%;background:' + scoreColor(score) + '"></div></div>' +
+        '<span class="macro-score-val">' + score + ' / 100</span>' +
+        '</div>';
+    }
+
+    var summaryBlock = summary
+      ? '<div class="macro-summary-text">' + escHtml(summary) + '</div>'
+      : "";
+
+    var html = '<div class="macro-badges">' +
+      '<div class="macro-badge">' +
+        '<span class="macro-badge-label">QE / QT Phase</span>' +
+        badgeHtml(qeqtClass(qeqt), qeqt) +
+      '</div>' +
+      '<div class="macro-badge">' +
+        '<span class="macro-badge-label">Credit Stress</span>' +
+        badgeHtml(creditClass(credit), credit) +
+      '</div>' +
+      '<div class="macro-badge">' +
+        '<span class="macro-badge-label">Rotation Signal</span>' +
+        badgeHtml(rotationClass(rotation), rotation) +
+      '</div>' +
+    '</div>' +
+    scoreBar +
+    summaryBlock +
+    '<div class="macro-footer">' +
+      '<span>Last updated: ' + escHtml(fetched) + '</span>' +
+      '<button id="macroRefreshBtn" onclick="window._macroRefresh()">&#8635; Refresh</button>' +
+    '</div>';
+
+    document.getElementById("macroPanelContent").innerHTML = html;
+
+    // Update collapsed summary line
+    var summaryLine = qeqt + " &nbsp;·&nbsp; Credit: " + credit + " &nbsp;·&nbsp; " + rotation;
+    if (score !== null && score !== undefined) summaryLine += " &nbsp;·&nbsp; Score: " + score;
+    document.getElementById("macroPanelSummaryLine").innerHTML = summaryLine;
+
+    lastFetch = new Date();
+  }
+
+  // ── Fetch ────────────────────────────────────────────────────────────────
+  function fetchIntelligence() {
+    fetch("/api/macro/intelligence")
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) {
+          document.getElementById("macroPanelContent").innerHTML =
+            '<div class="macro-error">Error: ' + escHtml(data.error) + '</div>';
+        } else {
+          render(data);
+        }
+      })
+      .catch(function (err) {
+        document.getElementById("macroPanelContent").innerHTML =
+          '<div class="macro-error">Failed to load macro data: ' + escHtml(String(err)) + '</div>';
+      });
+  }
+
+  // Expose for the refresh button
+  window._macroRefresh = function () {
+    document.getElementById("macroPanelContent").innerHTML = '<div class="macro-loading">Refreshing…</div>';
+    fetchIntelligence();
+    clearInterval(refreshTimer);
+    refreshTimer = setInterval(fetchIntelligence, REFRESH_MS);
+  };
+
+  // ── Collapse / expand ────────────────────────────────────────────────────
+  document.getElementById("macroPanelHeader").addEventListener("click", function () {
+    var panel = document.getElementById("macroPanelEl");
+    panel.classList.toggle("collapsed");
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  fetchIntelligence();
+  refreshTimer = setInterval(fetchIntelligence, REFRESH_MS);
+})();
+</script>
+{% endblock scripts %}

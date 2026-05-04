@@ -124,13 +124,17 @@
     function createRow(e) {
         var tr = document.createElement('tr');
         var sourceBadge = '<span class="source-badge ' + (e.source || '') + '">' + (e.source || '') + '</span>';
+        var explainBtn = e.id
+            ? '<button class="btn btn-sm btn-explain" onclick="window.showExplain(' + e.id + ')" style="padding:2px 8px;font-size:0.75rem;">? Explain</button>'
+            : '';
         tr.innerHTML =
             '<td style="white-space:nowrap;font-size:0.8rem;">' + (e.created_at || '') + '</td>' +
             '<td>' + sourceBadge + '</td>' +
             '<td>' + escapeHtml(e.event_type || '') + '</td>' +
             '<td>' + escapeHtml(e.actor_or_agent || '') + '</td>' +
             '<td>' + escapeHtml(e.summary || '') + '</td>' +
-            '<td>' + escapeHtml(e.project_id || '') + '</td>';
+            '<td>' + escapeHtml(e.project_id || '') + '</td>' +
+            '<td>' + explainBtn + '</td>';
         return tr;
     }
 

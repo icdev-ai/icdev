@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Scenario Manager — AI GameDay{% endblock %}
+{% block extra_css %}
+<style>
+.sm-header{background:#161b22;border-bottom:1px solid #30363d;padding:1rem 2rem;display:flex;align-items:center;gap:1rem;}
+.sm-header h1{font-size:1.1rem;font-weight:700;color:#FF6B35;margin:0;}
+.sm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;padding:1.5rem 2rem;}
+.sc-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem;transition:border-color .2s;}
+.sc-card:hover{border-color:#FF6B35;}
+.sc-card h3{color:#e6edf3;margin:0 0 .5rem;font-size:.95rem;}
+.sc-card .sc-meta{font-size:.78rem;color:#6e7681;margin-bottom:.8rem;display:flex;gap:.8rem;flex-wrap:wrap;}
+.sc-badge{background:#21262d;color:#8b949e;font-size:.7rem;padding:.15rem .5rem;border-radius:10px;display:inline-block;}
+.sc-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.4rem .8rem;border-radius:6px;font-size:.78rem;cursor:pointer;text-decoration:none;display:inline-block;transition:all .2s;margin-right:.4rem;}
+.sc-btn:hover{border-color:#FF6B35;color:#FF6B35;}
+.sc-btn.primary{background:linear-gradient(135deg,#FF6B35,#cc4a1a);border-color:transparent;color:#fff;}
+.section-hd{padding:.5rem 2rem .3rem;border-bottom:1px solid #21262d;font-size:.78rem;color:#6e7681;text-transform:uppercase;letter-spacing:.06em;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="sm-header">
+  <h1>📦 Scenario Manager</h1>
+  <span style="flex:1;"></span>
+  <a href="/gameday/scenarios/builder" style="background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.55rem 1.2rem;border-radius:6px;font-size:.85rem;font-weight:600;cursor:pointer;text-decoration:none;">+ Build Scenario</a>
+  <a href="/gameday" style="font-size:.82rem;color:#6e7681;text-decoration:none;margin-left:.8rem;">← Hub</a>
+</div>
+
+<div class="section-hd" style="margin-top:.5rem;">Built-in Scenarios (YAML packs)</div>
+<div class="sm-grid">
+  {% for sc in file_scenarios %}
+  <div class="sc-card">
+    {% if sc.get('error') %}
+    <h3 style="color:#f85149;">⚠ {{ sc.slug }}</h3>
+    <div style="font-size:.8rem;color:#6e7681;">Failed to load scenario pack</div>
+    {% else %}
+    <h3>{{ sc.name }}</h3>
+    <div class="sc-meta">
+      <span class="sc-badge">{{ sc.session_mode }}</span>
+      <span>📋 {{ sc.inject_count }} injects</span>
+      <span>⏱️ {{ sc.duration_minutes }}min</span>
+    </div>
+    <a class="sc-btn primary" href="/gameday" onclick="localStorage.setItem('preselect_scenario','{{ sc.slug }}')">🚀 Launch</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <div style="color:#6e7681;font-size:.88rem;">No scenario YAML packs found in scenarios/ directory.</div>
+  {% endfor %}
+</div>
+
+{% if db_scenarios %}
+<div class="section-hd">Authored Scenarios (Builder)</div>
+<div class="sm-grid">
+  {% for sc in db_scenarios %}
+  <div class="sc-card">
+    <h3>{{ sc.name }}</h3>
+    <div class="sc-meta">
+      <span class="sc-badge">custom</span>
+      <span>{{ sc.created_at[:10] }}</span>
+    </div>
+    <span class="sc-btn">Slug: {{ sc.slug }}</span>
+    <a class="sc-btn" href="/gameday/scenarios/builder?edit={{ sc.scenario_id }}">✏ Edit</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Future scenario packs teaser -->
+<div class="section-hd" style="margin-top:1rem;">Roadmap</div>
+<div class="sm-grid">
+  {% set roadmap = [
+    {'name': 'DRP GameDay', 'mode': 'live', 'desc': 'Disaster Recovery — primary DC offline, failover race'},
+    {'name': 'COOP Tabletop', 'mode': 'async', 'desc': 'Continuity of Operations — mission essential functions'},
+    {'name': 'Red Team Hunt', 'mode': 'live', 'desc': 'Threat hunting — detect and contain an APT'},
+    {'name': 'IR Sprint', 'mode': 'live', 'desc': 'Incident Response — ransomware containment under fire'},
+    {'name': 'Supply Chain Attack', 'mode': 'async', 'desc': 'Compromised dependency — assess and remediate'},
+  ] %}
+  {% for sc in roadmap %}
+  <div class="sc-card" style="opacity:.5;border-style:dashed;">
+    <h3 style="color:#6e7681;">{{ sc.name }}</h3>
+    <div class="sc-meta">
+      <span class="sc-badge">{{ sc.mode }}</span>
+    </div>
+    <div style="font-size:.8rem;color:#6e7681;">{{ sc.desc }}</div>
+    <div style="font-size:.72rem;color:#30363d;margin-top:.6rem;">Coming soon — add a YAML pack to scenarios/</div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

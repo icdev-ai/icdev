@@ -1,0 +1,255 @@
+# ICDEV™ Classification Profiles
+# Defines what each classification level enables/disables across the platform.
+# Projects declare their classification in icdev.yaml or at init time.
+# Default: public (opt-in to CUI, not opt-out)
+#
+# To add a new classification level:
+#   1. Add a new profile entry below
+#   2. No code changes needed — classification_resolver.py reads this file
+#
+# Decision: Classification is per-project, set at creation time (not global).
+
+# ============================================================
+# Supported classification levels
+# ============================================================
+levels:
+  - public
+  - fouo
+  - cui
+  - cui_sp_cti
+  - secret
+  - itar
+
+# ============================================================
+# Default classification for new projects
+# ============================================================
+default_level: public
+
+# ============================================================
+# Profile definitions
+# ============================================================
+profiles:
+  public:
+    display_name: "Public / Unclassified"
+    description: "No classification markings. Open-source or commercial projects."
+    impact_levels: ["IL2"]
+    banner:
+      enabled: false
+      text: ""
+    file_header:
+      enabled: false
+      text: ""
+    docker_labels:
+      enabled: false
+    k8s_labels:
+      enabled: false
+    compliance:
+      auto_frameworks: []
+      cui_markings_required: false
+      sbom_required: true
+      stig_required: false
+    security_gates:
+      enforce_cui_marking_gate: false
+      enforce_classification_gate: false
+      enforce_nist_800_171: false
+      enforce_cmmc: false
+    tools:
+      include_classification_manager: false
+      include_cui_marker: false
+      include_fips199_categorizer: false
+    generation:
+      strip_cui_headers: true
+      strip_cui_docker_labels: true
+      strip_cui_k8s_labels: true
+      strip_classification_tools: true
+
+  fouo:
+    display_name: "FOUO (For Official Use Only)"
+    description: "Legacy pre-CUI marking. Minimal handling requirements."
+    impact_levels: ["IL2", "IL4"]
+    banner:
+      enabled: true
+      text: "FOUO"
+    file_header:
+      enabled: true
+      text: "# FOUO — For Official Use Only"
+    docker_labels:
+      enabled: true
+    k8s_labels:
+      enabled: true
+    compliance:
+      auto_frameworks: []
+      cui_markings_required: false
+      sbom_required: true
+      stig_required: false
+    security_gates:
+      enforce_cui_marking_gate: false
+      enforce_classification_gate: true
+      enforce_nist_800_171: false
+      enforce_cmmc: false
+    tools:
+      include_classification_manager: true
+      include_cui_marker: false
+      include_fips199_categorizer: false
+    generation:
+      strip_cui_headers: true
+      strip_cui_docker_labels: true
+      strip_cui_k8s_labels: true
+      strip_classification_tools: false
+
+  cui:
+    display_name: "CUI (Controlled Unclassified Information)"
+    description: "Standard CUI marking without specified subcategory."
+    impact_levels: ["IL4", "IL5"]
+    banner:
+      enabled: true
+      text: "CUI"
+    file_header:
+      enabled: true
+      text: "# CUI"
+    docker_labels:
+      enabled: true
+    k8s_labels:
+      enabled: true
+    compliance:
+      auto_frameworks:
+        - "nist_800_171"
+        - "fedramp_moderate"
+      cui_markings_required: true
+      sbom_required: true
+      stig_required: true
+    security_gates:
+      enforce_cui_marking_gate: true
+      enforce_classification_gate: true
+      enforce_nist_800_171: true
+      enforce_cmmc: false
+    tools:
+      include_classification_manager: true
+      include_cui_marker: true
+      include_fips199_categorizer: true
+    generation:
+      strip_cui_headers: false
+      strip_cui_docker_labels: false
+      strip_cui_k8s_labels: false
+      strip_classification_tools: false
+
+  cui_sp_cti:
+    display_name: "CUI // SP-CTI"
+    description: "CUI with Specified subcategory: Controlled Technical Information."
+    impact_levels: ["IL4", "IL5"]
+    banner:
+      enabled: true
+      text: "CUI // SP-CTI"
+    file_header:
+      enabled: true
+      text: |-
+        # CUI // SP-CTI
+        # Controlled by: Department of Defense
+        # CUI Category: CTI
+        # Distribution: D
+    docker_labels:
+      enabled: true
+    k8s_labels:
+      enabled: true
+    compliance:
+      auto_frameworks:
+        - "nist_800_171"
+        - "fedramp_moderate"
+        - "cmmc_l2"
+      cui_markings_required: true
+      sbom_required: true
+      stig_required: true
+    security_gates:
+      enforce_cui_marking_gate: true
+      enforce_classification_gate: true
+      enforce_nist_800_171: true
+      enforce_cmmc: true
+    tools:
+      include_classification_manager: true
+      include_cui_marker: true
+      include_fips199_categorizer: true
+    generation:
+      strip_cui_headers: false
+      strip_cui_docker_labels: false
+      strip_cui_k8s_labels: false
+      strip_classification_tools: false
+
+  secret:
+    display_name: "SECRET"
+    description: "Classified information requiring SIPR network and NSA Type 1 encryption."
+    impact_levels: ["IL6"]
+    banner:
+      enabled: true
+      text: "SECRET // NOFORN"
+    file_header:
+      enabled: true
+      text: |-
+        # SECRET // NOFORN
+        # Classified by: Department of Defense
+        # Declassify on: 20360101
+    docker_labels:
+      enabled: true
+    k8s_labels:
+      enabled: true
+    compliance:
+      auto_frameworks:
+        - "nist_800_171"
+        - "fedramp_high"
+        - "cmmc_l3"
+        - "cnssi_1253"
+      cui_markings_required: true
+      sbom_required: true
+      stig_required: true
+    security_gates:
+      enforce_cui_marking_gate: true
+      enforce_classification_gate: true
+      enforce_nist_800_171: true
+      enforce_cmmc: true
+    tools:
+      include_classification_manager: true
+      include_cui_marker: true
+      include_fips199_categorizer: true
+    generation:
+      strip_cui_headers: false
+      strip_cui_docker_labels: false
+      strip_cui_k8s_labels: false
+      strip_classification_tools: false
+
+  itar:
+    display_name: "ITAR (International Traffic in Arms Regulations)"
+    description: "Export-controlled defense articles and services."
+    impact_levels: ["IL4", "IL5"]
+    banner:
+      enabled: true
+      text: "ITAR CONTROLLED"
+    file_header:
+      enabled: true
+      text: |-
+        # ITAR CONTROLLED
+        # This document contains technical data controlled under ITAR (22 CFR 120-130)
+        # Export or transfer to foreign persons requires prior authorization
+    docker_labels:
+      enabled: true
+    k8s_labels:
+      enabled: true
+    compliance:
+      auto_frameworks:
+        - "nist_800_171"
+        - "fedramp_moderate"
+      cui_markings_required: true
+      sbom_required: true
+      stig_required: true
+    security_gates:
+      enforce_cui_marking_gate: true
+      enforce_classification_gate: true
+      enforce_nist_800_171: true
+      enforce_cmmc: false
+    tools:
+      include_classification_manager: true
+      include_cui_marker: true
+      include_fips199_categorizer: true
+    generation:
+      strip_cui_headers: false
+      strip_cui_docker_labels: false
+      strip_cui_k8s_labels: false
+      strip_classification_tools: false

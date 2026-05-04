@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}AI GameDay — Hub{% endblock %}
+{% block extra_css %}
+<style>
+.gd-hero{background:linear-gradient(135deg,#0d1117 0%,#161b22 50%,#1a1f2e 100%);border-bottom:2px solid #FF6B35;padding:2.5rem 2rem 2rem;text-align:center;}
+.gd-hero h1{font-size:2.4rem;font-weight:800;color:#FF6B35;letter-spacing:-.03em;margin:0 0 .5rem;}
+.gd-hero p{color:#8b949e;font-size:1rem;max-width:600px;margin:0 auto;}
+.gd-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.2rem;padding:1.5rem 2rem;}
+.session-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.2rem;transition:border-color .2s;}
+.session-card:hover{border-color:#FF6B35;}
+.session-card .sc-mode{font-size:.72rem;background:#21262d;color:#8b949e;padding:.15rem .5rem;border-radius:12px;display:inline-block;margin-bottom:.5rem;}
+.session-card h3{margin:.3rem 0 .5rem;font-size:1rem;color:#e6edf3;}
+.session-card .sc-meta{font-size:.8rem;color:#6e7681;display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:.8rem;}
+.session-card .sc-code{font-family:monospace;font-size:1.2rem;font-weight:700;color:#58a6ff;letter-spacing:.08em;}
+.session-card .sc-state{display:inline-block;font-size:.72rem;padding:.15rem .5rem;border-radius:12px;font-weight:600;}
+.state-active{background:#1f6030;color:#3fb950;}
+.state-pending{background:#302010;color:#FFB800;}
+.state-ended{background:#21262d;color:#6e7681;}
+.join-form{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.5rem 2rem;max-width:480px;margin:0 auto 2rem;}
+.join-form h3{color:#e6edf3;margin:0 0 1rem;}
+.gd-input{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.6rem .9rem;border-radius:6px;font-size:.95rem;box-sizing:border-box;}
+.gd-input:focus{outline:none;border-color:#FF6B35;}
+.gd-btn{background:linear-gradient(135deg,#FF6B35,#cc4a1a);color:#fff;border:none;padding:.65rem 1.4rem;border-radius:6px;font-size:.95rem;font-weight:600;cursor:pointer;width:100%;margin-top:.7rem;transition:opacity .2s;}
+.gd-btn:hover{opacity:.85;}
+.gd-btn-outline{background:transparent;border:1px solid #30363d;color:#8b949e;padding:.5rem 1rem;border-radius:6px;font-size:.85rem;cursor:pointer;text-decoration:none;display:inline-block;transition:all .2s;}
+.gd-btn-outline:hover{border-color:#FF6B35;color:#FF6B35;}
+.section-hd{display:flex;align-items:center;justify-content:space-between;padding:.5rem 2rem .3rem;border-bottom:1px solid #21262d;margin-bottom:.5rem;}
+.section-hd h2{font-size:1rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin:0;}
+.create-panel{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:1.5rem 2rem;margin:0 2rem 1.5rem;}
+.create-panel h3{color:#e6edf3;margin:0 0 1rem;}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem;}
+.form-label{font-size:.8rem;color:#6e7681;margin-bottom:.3rem;display:block;}
+.gd-select{width:100%;background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.6rem .9rem;border-radius:6px;font-size:.9rem;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="gd-hero">
+  <h1>🎮 AI GameDay</h1>
+  <p>Competitive tabletop exercises where teams score points by <em>actually using AI</em> — not just knowing the answers.</p>
+</div>
+
+<!-- Join a session -->
+<div style="padding:1.5rem 2rem 0;">
+  <div class="join-form">
+    <h3>Join a Session</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;">
+      <div>
+        <label class="form-label">Session Code</label>
+        <input id="join-session-code" class="gd-input" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:.1em;">
+      </div>
+      <div>
+        <label class="form-label">Team Name</label>
+        <input id="join-team-name" class="gd-input" placeholder="Team Alpha">
+      </div>
+    </div>
+    <button class="gd-btn" onclick="joinSession()">Join Session</button>
+    <div id="join-error" style="color:#f85149;font-size:.82rem;margin-top:.5rem;display:none;"></div>
+  </div>
+</div>
+
+<!-- Create new session -->
+<div class="section-hd" style="margin-top:1rem;">
+  <h2>Create New Session</h2>
+</div>
+<div class="create-panel">
+  <div class="form-row">
+    <div>
+      <label class="form-label">Scenario</label>
+      <select id="create-scenario" class="gd-select">
+        {% for s in scenarios %}<option value="{{ s }}">{{ s.replace('_',' ').title() }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Session Mode</label>
+      <select id="create-mode" class="gd-select">
+        <option value="">Auto (from scenario)</option>
+        <option value="live">Live (synchronized)</option>
+        <option value="async">Async (self-paced)</option>
+      </select>
+    </div>
+  </div>
+  <div class="form-row">
+    <div>
+      <label class="form-label">Facilitator Name</label>
+      <input id="create-facilitator" class="gd-input" placeholder="Your Name">
+    </div>
+  </div>
+  <button class="gd-btn" style="max-width:200px;" onclick="createSession()">Launch Session</button>
+  <div id="create-result" style="margin-top:.8rem;font-size:.88rem;color:#3fb950;display:none;"></div>
+</div>
+
+<!-- Active sessions -->
+{% if active_sessions or pending_sessions %}
+<div class="section-hd">
+  <h2>Active Sessions</h2>
+</div>
+<div class="gd-grid">
+  {% for s in active_sessions + pending_sessions %}
+  <div class="session-card">
+    <span class="sc-mode">{{ s.session_mode }}</span>
+    <span class="sc-state {{ 'state-' + s.state }}" style="float:right;">{{ s.state }}</span>
+    <h3>{{ s.scenario_slug.replace('_',' ').title() }}</h3>
+    <div class="sc-meta">
+      <span>🎭 {{ s.facilitator_name }}</span>
+      <span>⏱️ {{ s.duration_minutes }}min</span>
+    </div>
+    <div>Join Code: <span class="sc-code">{{ s.join_code }}</span></div>
+    <div style="margin-top:.8rem;display:flex;gap:.6rem;flex-wrap:wrap;">
+      <a href="/gameday/session/{{ s.session_id }}/facilitate" class="gd-btn-outline">🎮 Facilitate</a>
+      <a href="/gameday/leaderboard/{{ s.session_id }}" class="gd-btn-outline">📊 Leaderboard</a>
+      <a href="/gameday/session/{{ s.session_id }}/simulate" class="gd-btn-outline" style="color:#a78bfa;border-color:#a78bfa;">⚡ Simulate</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Past sessions -->
+{% if past_sessions %}
+<div class="section-hd" style="margin-top:1rem;">
+  <h2>Past Sessions</h2>
+</div>
+<div class="gd-grid">
+  {% for s in past_sessions %}
+  <div class="session-card" style="opacity:.7;">
+    <span class="sc-mode">{{ s.session_mode }}</span>
+    <span class="sc-state state-ended" style="float:right;">ended</span>
+    <h3>{{ s.scenario_slug.replace('_',' ').title() }}</h3>
+    <div class="sc-meta">
+      <span>🎭 {{ s.facilitator_name }}</span>
+      <span>{{ s.ended_at[:10] if s.ended_at else '' }}</span>
+    </div>
+    <a href="/gameday/session/{{ s.session_id }}/results" class="gd-btn-outline">📋 View AAR</a>
+    <a href="/gameday/session/{{ s.session_id }}/simulate" class="gd-btn-outline" style="color:#a78bfa;border-color:#7c3aed;">⚡ Replay</a>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<script>
+async function joinSession(){
+  const code=document.getElementById('join-session-code').value.trim().toUpperCase();
+  const team=document.getElementById('join-team-name').value.trim();
+  const err=document.getElementById('join-error');
+  err.style.display='none';
+  if(!code||!team){err.textContent='Enter session code and team name';err.style.display='block';return;}
+  const r=await fetch('/api/gameday/session/join',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_code:code,team_name:team})});
+  const d=await r.json();
+  if(d.ok){window.location='/gameday/session/'+d.session.session_id+'/play';}
+  else{err.textContent=d.error||'Failed to join';err.style.display='block';}
+}
+
+async function createSession(){
+  const slug=document.getElementById('create-scenario').value;
+  const mode=document.getElementById('create-mode').value;
+  const facilitator=document.getElementById('create-facilitator').value.trim()||'Facilitator';
+  const res=document.getElementById('create-result');
+  const body={scenario_slug:slug,facilitator_name:facilitator};
+  if(mode)body.session_mode=mode;
+  const r=await fetch('/api/gameday/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(d.ok){
+    res.textContent='Session created! Join code: '+d.session.join_code;
+    res.style.display='block';
+    setTimeout(()=>window.location='/gameday/session/'+d.session.session_id+'/facilitate',1500);
+  }else{res.style.color='#f85149';res.textContent=d.error||'Failed';res.style.display='block';}
+}
+</script>
+{% endblock %}

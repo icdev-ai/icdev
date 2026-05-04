@@ -1,0 +1,219 @@
+{
+  "id": "vert-osint-intelligence",
+  "name": "OSINT Intelligence & Multiperspectivity",
+  "slug": "osint_intelligence",
+  "description": "Open-source intelligence platforms, news analysis, bias detection, multiperspectivity engines, fact-checking automation, critical thinking AI, collaborative intelligence analysis. Covers journalists, analysts, researchers, government intelligence consumers, media literacy educators, and civic tech organizations.",
+  "keywords": [
+    "OSINT",
+    "open source intelligence",
+    "multiperspectivity",
+    "bias detection",
+    "media bias",
+    "news intelligence",
+    "fact checking",
+    "Ground.news",
+    "AllSides",
+    "Ad Fontes Media",
+    "Media Bias Fact Check",
+    "sentiment analysis",
+    "NLP",
+    "natural language processing",
+    "multi-language analysis",
+    "Socratic reasoning",
+    "critical thinking",
+    "collaborative analysis",
+    "news aggregation",
+    "source credibility",
+    "information warfare",
+    "disinformation detection",
+    "misinformation",
+    "narrative analysis",
+    "media literacy",
+    "perspective diversity",
+    "echo chamber",
+    "filter bubble",
+    "geopolitical intelligence",
+    "threat assessment",
+    "social media intelligence",
+    "SOCMINT",
+    "HUMINT",
+    "structured analytic techniques",
+    "analysis of competing hypotheses",
+    "cognitive bias mitigation",
+    "entity extraction",
+    "knowledge graph",
+    "event detection",
+    "claim verification",
+    "cross-referencing",
+    "provenance tracking"
+  ],
+  "regulatory_bodies": [
+    "FTC",
+    "FCC",
+    "EU_DSA",
+    "EU_AI_Act",
+    "UNESCO",
+    "ODNI",
+    "CISA"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.CL",
+      "cs.IR",
+      "cs.AI",
+      "cs.SI",
+      "cs.CY",
+      "cs.LG"
+    ],
+    "ieee": [
+      "natural language processing",
+      "information retrieval",
+      "social media analysis",
+      "misinformation detection"
+    ],
+    "acm": [
+      "information retrieval",
+      "natural language processing",
+      "social computing",
+      "web mining",
+      "fact verification"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/OSINT",
+      "r/IntelligenceAnalysis",
+      "r/journalism",
+      "r/MediaBias",
+      "r/FactChecking",
+      "r/neutralnews",
+      "r/geopolitics",
+      "r/MachineLearning",
+      "r/LanguageTechnology"
+    ],
+    "stackexchange": [
+      "datascience.stackexchange.com",
+      "ai.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": [
+      "osintframework.com",
+      "bellingcat.com"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "media-monitoring-software",
+      "social-media-analytics-software",
+      "competitive-intelligence-software",
+      "news-aggregation-software"
+    ],
+    "capterra": [
+      "media-monitoring-software",
+      "sentiment-analysis-tools",
+      "competitive-intelligence-software"
+    ],
+    "trustpilot": [
+      "ground.news",
+      "allsides.com"
+    ]
+  },
+  "open_source": {
+    "github_topics": [
+      "osint",
+      "fact-checking",
+      "bias-detection",
+      "news-analysis",
+      "sentiment-analysis",
+      "misinformation",
+      "disinformation",
+      "nlp",
+      "knowledge-graph",
+      "named-entity-recognition",
+      "claim-detection",
+      "media-bias",
+      "multiperspectivity",
+      "news-aggregator"
+    ],
+    "awesome_lists": [
+      "awesome-osint",
+      "awesome-nlp",
+      "awesome-sentiment-analysis",
+      "awesome-knowledge-graph",
+      "awesome-misinformation"
+    ],
+    "package_registries": {
+      "pypi": [
+        "newspaper3k",
+        "spacy",
+        "transformers",
+        "textblob",
+        "vaderSentiment",
+        "flair",
+        "langdetect",
+        "polyglot",
+        "gdelt",
+        "newsapi-python",
+        "factcheck"
+      ],
+      "npm": [
+        "compromise",
+        "natural",
+        "sentiment",
+        "rss-parser"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "OSINT regulation",
+      "media bias legislation",
+      "disinformation countermeasures",
+      "EU Digital Services Act enforcement",
+      "AI content moderation",
+      "deepfake regulation",
+      "foreign influence operations",
+      "election integrity",
+      "media literacy mandate"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F16",
+      "G06F40",
+      "G06N20"
+    ],
+    "keywords": [
+      "bias detection system",
+      "fact verification method",
+      "news credibility scoring",
+      "sentiment classification",
+      "multi-source intelligence fusion",
+      "narrative detection"
+    ]
+  },
+  "compliance_frameworks": [
+    "EU_AI_Act",
+    "EU_DSA",
+    "NIST_AI_RMF",
+    "ISO_42001",
+    "GDPR",
+    "CCPA"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "OSINT techniques 2026",
+      "media bias detection AI",
+      "multiperspectivity news analysis",
+      "fact checking automation",
+      "critical thinking AI tools",
+      "disinformation detection NLP",
+      "Ground.news review",
+      "AllSides media bias"
+    ],
+    "manual_urls": []
+  }
+}

@@ -1,0 +1,9 @@
+# Intent: Detect resources whose configuration signals an expired TLS/SSL certificate,
+#         preventing silent encryption-in-transit failures from persisting across the
+#         authorization boundary undetected between continuous monitoring cycles.
+# Expected violation shape: rows where config contains "cert_expired";
+#   each row is a resource with an expired certificate requiring immediate rotation.
+
+foreach r in infra.resources
+  where r.config contains "cert_expired"
+  select r.id, r.resource_name, r.csp, r.region, r.resource_type

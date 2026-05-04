@@ -1,0 +1,8 @@
+# IQE-NDC-009: Open STIG findings (all severities)
+# STIG = DoD Security Technical Implementation Guide. Required for ATO.
+# Use: RMF Step 4 assessment, POAM entries, daily security posture review.
+
+foreach f in network.compliance_findings
+where f.regime == "stig"
+where f.status == "open"
+select f.rule_id, f.severity, f.title, f.affected_entity, f.affected_type
