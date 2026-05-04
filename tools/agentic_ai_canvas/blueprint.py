@@ -1698,3 +1698,146 @@ def compare_designs_api():
     result["design_a"] = {"id": id_a, "name": design_a["name"]}
     result["design_b"] = {"id": id_b, "name": design_b["name"]}
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Phase 7 — Red Team, Design Linter, Accreditation Package
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/red-team/<design_id>", methods=["GET"])
+def red_team_page(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    conn.close()
+    if not row:
+        return "Design not found", 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    from tools.agentic_ai_canvas.red_team import run_red_team
+    result = run_red_team(graph.get("nodes", []), graph.get("edges", []))
+    return render_template(
+        "agentic_ai_canvas/red_team.html",
+        design=design,
+        result=result,
+    )
+
+
+@aadc_bp.route("/api/designs/<design_id>/red-team", methods=["GET"])
+def get_red_team(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    from tools.agentic_ai_canvas.red_team import run_red_team
+    result = run_red_team(graph.get("nodes", []), graph.get("edges", []))
+    # Persist
+    rid = _uid()
+    now = _utcnow()
+    s = result["summary"]
+    try:
+        conn.execute(
+            """INSERT INTO aadc_red_team_reports
+               (id, design_id, overall_risk, applicable, unmitigated, critical_unmitigated,
+                avg_exploitability, report_json, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (rid, design_id, s["overall_risk"], s["applicable"], s["unmitigated"],
+             s["critical_unmitigated"], s["avg_exploitability"], _json.dumps(result), now),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/lint", methods=["GET"])
+def get_lint(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    from tools.agentic_ai_canvas.auto_recommend import lint_design
+    result = lint_design(graph.get("nodes", []), graph.get("edges", []), design)
+    # Persist
+    rid = _uid()
+    now = _utcnow()
+    s = result["summary"]
+    try:
+        conn.execute(
+            """INSERT INTO aadc_lint_reports
+               (id, design_id, lint_score, total_issues, critical_issues, report_json, created_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (rid, design_id, s["lint_score"], s["total"], s["critical"], _json.dumps(result), now),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/accred-package", methods=["GET"])
+def get_accred_package(design_id: str):
+    import json as _json
+    conn = _conn()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    assessment = None
+    arow = conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (design_id,)
+    ).fetchone()
+    if arow:
+        assessment = dict(arow)
+
+    risks = [dict(r) for r in conn.execute(
+        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+    ).fetchall()]
+
+    threat_model = None
+    tmrow = conn.execute(
+        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (design_id,)
+    ).fetchone()
+    if tmrow:
+        threat_model = dict(tmrow)
+
+    conn.close()
+
+    from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
+    from tools.agentic_ai_canvas.regulatory_tracker import run_regulatory_analysis
+    from tools.agentic_ai_canvas.exec_summary import generate_exec_summary
+    from tools.agentic_ai_canvas.red_team import run_red_team
+    from tools.agentic_ai_canvas.oscal_export import export_oscal_component
+    from tools.agentic_ai_canvas.accred_package import build_accred_zip
+
+    ato_data = run_ato_checklist(nodes, design)
+    reg_data = run_regulatory_analysis(nodes, design, risks)
+    red_team_data = run_red_team(nodes, edges)
+    exec_data = generate_exec_summary(design, assessment, risks, threat_model, ato_data, reg_data)
+    oscal_data = export_oscal_component(design, graph, assessment)
+
+    zip_bytes = build_accred_zip(
+        design, assessment, risks, threat_model,
+        ato_data, reg_data, red_team_data, exec_data, oscal_data,
+    )
+
+    from flask import make_response
+    resp = make_response(zip_bytes)
+    resp.headers["Content-Type"] = "application/zip"
+    resp.headers["Content-Disposition"] = f"attachment; filename=accred-package-{design_id}.zip"
+    return resp
