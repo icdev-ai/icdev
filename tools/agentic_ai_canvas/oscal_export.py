@@ -12,13 +12,6 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from tools.agentic_ai_canvas.constants import (
-    AGENT_NODES,
-    GOVERNANCE_NODES,
-    MODEL_NODES,
-    SAFETY_NODES,
-    TOOL_MCP_NODES,
-)
 
 # Node type → list of NIST 800-53 controls implemented
 _NODE_CONTROL_MAP: dict[str, list[str]] = {

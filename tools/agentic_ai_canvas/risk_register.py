@@ -7,8 +7,6 @@ Risk items track: category, severity, likelihood, impact, status, mitigation.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 RISK_CATEGORIES = {
     "operational": "Operational Risk",
     "compliance": "Compliance Risk",
