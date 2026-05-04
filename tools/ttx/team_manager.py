@@ -1,5 +1,18 @@
 # CUI // SP-CTI
-"""TTX Engine — team formation and roster management."""
+"""TTX Engine — team formation and roster management.
+
+Primary purpose: Create and manage teams and player rosters within a TTX (Tabletop
+Exercise) game session. Writes to ttx_teams and ttx_team_members DB tables.
+
+Public interface:
+  create_team(session_id, team_name)       -> dict  — create team, returns row with join_code
+  get_team(team_id)                        -> dict|None
+  get_team_by_code(team_code)              -> dict|None
+  list_teams(session_id)                   -> list[dict]
+  add_member(team_id, player_name, role_id, persona=None) -> dict
+  list_members(team_id)                    -> list[dict]
+  update_team_score(team_id, delta)        -> None  — increment/decrement total_score
+"""
 
 from __future__ import annotations
 

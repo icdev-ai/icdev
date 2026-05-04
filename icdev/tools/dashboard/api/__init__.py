@@ -315,6 +315,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         except ImportError as exc:
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
+    # Safety Monitor — circuit breaker API at /safety/circuit-breaker
+    try:
+        from tools.dashboard.api.safety_monitor import safety_monitor_api
+        _mount(safety_monitor_api, v1_prefix="/safety")
+        logger.info("Safety Monitor API registered at /safety/")
+    except Exception as exc:
+        logger.warning("Safety Monitor API skipped: %s", exc)
+
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook

@@ -74,6 +74,26 @@ Circuit breaker safety layer — in-process singleton per design.
 - `get_status(design_id)` → circuit state dict
 - `reset_circuit(design_id)` → manual reset
 
+### `tools/agentic_ai_canvas/safety_redundancy.py`
+Phase 3 — Safety redundancy graph analysis.
+- `analyze_safety_redundancy(nodes, edges)` → `{score, protected_agents, unprotected_agents, coverage_map, safety_chains, total_agents}`
+- Protected = agent with at least one safety/governance predecessor upstream. Score = protected / total × 100.
+
+### `tools/agentic_ai_canvas/coordination_matrix.py`
+Phase 3 — Multi-agent coordination matrix builder.
+- `build_coordination_matrix(nodes, edges)` → `{agents, matrix, topology, hub_nodes, isolated_agents}`
+- Topology: mesh / hub-spoke / pipeline / hierarchical / single / none.
+
+### `tools/agentic_ai_canvas/model_provenance.py`
+Phase 3 — Model provenance chain tracker.
+- `extract_provenance_chain(nodes)` → list of `{node_id, label, type, model_source, training_data, model_version, model_license}`
+- `get_compliance_flags(chain)` → flags for proprietary models, GPL licenses, missing training data.
+
+### `tools/agentic_ai_canvas/simulation_engine.py`
+Phase 3 — Agent behavior simulation engine (BFS trace).
+- `simulate_execution(nodes, edges, start_node_id, input_payload, max_steps=50)` → `{trace, decisions, halted_by, steps_count, status}`
+- Halts at hitl-gate / approval-workflow / circuit-breaker nodes; marks filter nodes as "filtered" but continues.
+
 ### `tools/agentic_ai_canvas/blueprint.py`
 Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 
@@ -114,6 +134,12 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `PUT /agentic-ai/api/designs/<id>/parallel-groups/<gid>` | Update group |
 | `DELETE /agentic-ai/api/designs/<id>/parallel-groups/<gid>` | Delete group |
 | `POST /agentic-ai/api/designs/<id>/validate-parallel` | Validate fork/join structure |
+| `GET /agentic-ai/api/designs/<id>/safety-redundancy` | Analyze + cache safety coverage |
+| `GET /agentic-ai/api/designs/<id>/coordination-matrix` | Build N×N agent coordination matrix |
+| `GET /agentic-ai/api/designs/<id>/provenance` | Extract model provenance chain + flags |
+| `PUT /agentic-ai/api/designs/<id>/nodes/<nid>/provenance` | Save provenance fields to a node |
+| `POST /agentic-ai/api/designs/<id>/simulate` | Run BFS simulation + persist trace |
+| `GET /agentic-ai/api/designs/<id>/simulations` | List recent simulation runs |
 
 ---
 
@@ -132,6 +158,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_design_tags` | Tag associations for designs |
 | `aadc_checkpoints` | Phase 4 — checkpoint/fork state snapshots (migration 105) |
 | `aadc_parallel_groups` | Phase 4 — named parallel execution swim-lanes (migration 105) |
+| `aadc_safety_graphs` | Phase 3 — safety redundancy snapshots per design (migration 106) |
+| `aadc_agent_simulations` | Phase 3 — agent behavior simulation traces (migration 106) |
 
 ---
 

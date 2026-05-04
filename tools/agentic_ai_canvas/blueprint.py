@@ -963,3 +963,168 @@ def validate_parallel_paths(design_id: str):
     edges = data.get("edges", [])
     warnings = _validate(nodes, edges)
     return jsonify({"warnings": warnings, "count": len(warnings)})
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Safety Redundancy Graph
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/safety-redundancy", methods=["GET"])
+def get_safety_redundancy(design_id: str):
+    from tools.agentic_ai_canvas.safety_redundancy import analyze_safety_redundancy
+    import json as _json
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    conn.close()
+    if not row:
+        return jsonify({"error": "design not found"}), 404
+
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    result = analyze_safety_redundancy(graph.get("nodes", []), graph.get("edges", []))
+
+    # Persist snapshot
+    conn2 = _conn()
+    conn2.execute(
+        "INSERT INTO aadc_safety_graphs (id, design_id, score, protected_count, unprotected_count, analysis_json) VALUES (?,?,?,?,?,?)",
+        (_uid(), design_id, result["score"], len(result["protected_agents"]),
+         len(result["unprotected_agents"]), _json.dumps(result)),
+    )
+    conn2.commit()
+    conn2.close()
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Multi-Agent Coordination Matrix
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/coordination-matrix", methods=["GET"])
+def get_coordination_matrix(design_id: str):
+    from tools.agentic_ai_canvas.coordination_matrix import build_coordination_matrix
+    import json as _json
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    conn.close()
+    if not row:
+        return jsonify({"error": "design not found"}), 404
+
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    result = build_coordination_matrix(graph.get("nodes", []), graph.get("edges", []))
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Model Provenance Chain
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/provenance", methods=["GET"])
+def get_provenance(design_id: str):
+    from tools.agentic_ai_canvas.model_provenance import extract_provenance_chain, get_compliance_flags
+    import json as _json
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    conn.close()
+    if not row:
+        return jsonify({"error": "design not found"}), 404
+
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    chain = extract_provenance_chain(graph.get("nodes", []))
+    flags = get_compliance_flags(chain)
+    return jsonify({"chain": chain, "flags": flags, "count": len(chain)})
+
+
+@aadc_bp.route("/api/designs/<design_id>/nodes/<node_id>/provenance", methods=["PUT"])
+def update_node_provenance(design_id: str, node_id: str):
+    import json as _json
+
+    data = request.get_json(force=True, silent=True) or {}
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    updated = False
+    for n in nodes:
+        if n["id"] == node_id:
+            props = n.get("props") or {}
+            for field in ("model_source", "training_data", "model_version", "model_license"):
+                if field in data:
+                    props[field] = data[field]
+            n["props"] = props
+            updated = True
+            break
+
+    if not updated:
+        conn.close()
+        return jsonify({"error": "node not found"}), 404
+
+    graph["nodes"] = nodes
+    conn.execute(
+        "UPDATE aadc_designs SET graph_json=?, updated_at=? WHERE id=?",
+        (_json.dumps(graph), _utcnow(), design_id),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "node_id": node_id})
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Agent Behavior Simulation
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/api/designs/<design_id>/simulate", methods=["POST"])
+def run_simulation(design_id: str):
+    from tools.agentic_ai_canvas.simulation_engine import simulate_execution
+    import json as _json
+
+    data = request.get_json(force=True, silent=True) or {}
+    start_node_id = data.get("start_node_id", "")
+    input_payload = data.get("input_payload", {})
+
+    conn = _conn()
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    if not row:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+
+    graph = _json.loads(row.get("graph_json") or '{"nodes":[],"edges":[]}')
+    result = simulate_execution(
+        graph.get("nodes", []),
+        graph.get("edges", []),
+        start_node_id,
+        input_payload,
+    )
+
+    sim_id = _uid()
+    conn.execute(
+        """INSERT INTO aadc_agent_simulations
+           (id, design_id, start_node_id, input_payload, trace_json, decisions_json,
+            status, steps_count, halted_by, halted_by_label)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (sim_id, design_id, start_node_id, _json.dumps(input_payload),
+         _json.dumps(result["trace"]), _json.dumps(result["decisions"]),
+         result["status"], result["steps_count"],
+         result.get("halted_by", ""), result.get("halted_by_label", "")),
+    )
+    conn.commit()
+    conn.close()
+    result["sim_id"] = sim_id
+    return jsonify(result)
+
+
+@aadc_bp.route("/api/designs/<design_id>/simulations", methods=["GET"])
+def list_simulations(design_id: str):
+    conn = _conn()
+    rows = conn.execute(
+        "SELECT id, start_node_id, status, steps_count, halted_by, halted_by_label, created_at "
+        "FROM aadc_agent_simulations WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
+        (design_id,),
+    ).fetchall()
+    conn.close()
+    return jsonify([dict(r) for r in rows])
