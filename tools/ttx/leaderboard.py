@@ -176,4 +176,31 @@ def award_ribbons(session_id: int) -> dict[str, dict | None]:
         ).fetchone()
         ribbons["strategist"] = {"team_id": strat_rows["team_id"], "team_name": team["team_name"] if team else "?", "value": strat_rows["coa_pts"]}
 
+    # Safety Architect — highest cumulative AADC judge_pts across design challenge injects
+    import json as _json
+    safety_rows = conn.execute(
+        """SELECT s.team_id, SUM(s.judge_pts) AS aadc_total
+           FROM ttx_scores s
+           JOIN ttx_injects i ON i.inject_id = s.inject_id
+           WHERE i.session_id = ?
+           GROUP BY s.team_id ORDER BY aadc_total DESC LIMIT 1""",
+        (session_id,),
+    ).fetchone()
+    if safety_rows:
+        # Only award if at least one AADC design challenge inject exists in this session
+        aadc_exists = conn.execute(
+            """SELECT 1 FROM ttx_injects
+               WHERE session_id = ? AND config_json LIKE '%aadc_design_challenge%' LIMIT 1""",
+            (session_id,),
+        ).fetchone()
+        if aadc_exists:
+            team = conn.execute(
+                "SELECT team_name FROM ttx_teams WHERE team_id = ?", (safety_rows["team_id"],)
+            ).fetchone()
+            ribbons["safety_architect"] = {
+                "team_id": safety_rows["team_id"],
+                "team_name": team["team_name"] if team else "?",
+                "value": safety_rows["aadc_total"],
+            }
+
     return ribbons
