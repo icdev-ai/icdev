@@ -1844,7 +1844,8 @@ def api_cyber_cve():
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = _safe_fetch(
-        f"SELECT cve_id, title, cvss_score, status, created_at AS published_date "  # nosec: B608
+        f"SELECT cve_id, title, cvss_score, severity, is_kev, kev_due_date, "  # nosec: B608
+        f"status, created_at AS published_date "
         f"FROM sg_cve_feed {where} ORDER BY created_at DESC LIMIT {ph}",
         params + [limit],
     )
