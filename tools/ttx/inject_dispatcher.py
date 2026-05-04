@@ -30,6 +30,7 @@ def seed_injects(session_id: int, scenario: dict) -> list[dict[str, Any]]:
         inject_id = str(uuid.uuid4())
         scoring = inj.get("scoring", {})
         config = {
+            "inject_type": inj.get("inject_type", "standard"),
             "ai_tools_allowed": inj.get("ai_tools_allowed", []),
             "resources": inj.get("resources", []),
             "scoring": {
@@ -54,7 +55,7 @@ def seed_injects(session_id: int, scenario: dict) -> list[dict[str, Any]]:
                 inj.get("body_md", inj.get("body", "")),
                 inj.get("at_minute"),
                 inj.get("sequence"),
-                inj.get("depends_on"),
+                inj.get("depends_on_slug") or inj.get("depends_on"),
                 json.dumps(config),
                 _now(),
             ),

@@ -273,7 +273,7 @@ def score_response(
     )
     conn.commit()
 
-    return {
+    out: dict[str, Any] = {
         "receipt_pts": receipt_pts,
         "receipt_count": receipt_count,
         "judge_pts": judge_pts,
@@ -281,3 +281,6 @@ def score_response(
         "total_pts": total_pts,
         "rationale": judge_result.get("rationale", ""),
     }
+    if inject_type == "aadc_design_challenge":
+        out["aadc_score"] = judge_pts
+    return out

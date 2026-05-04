@@ -142,7 +142,7 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "likelihood": "HIGH",
             "impact": "MEDIUM",
             "status": "open",
-            "mitigation": "Configure token-budget node with hard ceiling; trigger circuit breaker when threshold exceeded.",
+            "mitigation": "Set circuit breaker max_tokens ceiling; monitor via audit logger; alert on >80% budget consumed.",
         },
         {
             "title": "Supply Chain Risk via MCP Tool Calls",
@@ -153,6 +153,28 @@ SOLUTION_PACK_RISKS: dict[str, list[dict]] = {
             "impact": "HIGH",
             "status": "open",
             "mitigation": "Allowlist MCP tool targets; run sandbox-exec for all code execution; SBOM generated on every build.",
+        },
+        {
+            # LL-001: Discovered during E2E build 2026-05-04
+            "title": "LLM Structured Output Non-Compliance",
+            "description": "LLM agents required to return JSON (planner steps, validator verdict) consistently return prose or code instead, causing JSON parse failures and fallback degradation. Observed in 3/3 live runs against Claude Sonnet.",
+            "risk_category": "model",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Add structured-output-enforcer node between each agent pair; use function-calling / tool_use mode instead of freeform JSON prompts; or add a JSON repair layer before downstream consumption.",
+        },
+        {
+            # LL-002: Discovered during E2E build 2026-05-04
+            "title": "LLM Response Latency Exceeds Safety Timeout",
+            "description": "Each full pipeline run (Sanitize → Plan → Code → Validate) against Claude Sonnet took 80–110s. Default circuit breaker max_duration_s=120 is too low, causing premature trip on the third LLM call in slow-network environments.",
+            "risk_category": "operational",
+            "severity": "MEDIUM",
+            "likelihood": "HIGH",
+            "impact": "MEDIUM",
+            "status": "open",
+            "mitigation": "Set max_duration_s=300 as production default; expose as config parameter; show elapsed time in audit log so operators can tune per environment.",
         },
     ],
     "Knowledge Research Agent": [

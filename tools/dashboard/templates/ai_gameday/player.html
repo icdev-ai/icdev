@@ -162,8 +162,19 @@ function renderInjects(injects){
     if(!startTimes[inj.inject_id])startTimes[inj.inject_id]=Date.now();
     const cfg=typeof inj.config_json==='string'?JSON.parse(inj.config_json||'{}'):inj.config_json||{};
     const tools=(cfg.ai_tools_allowed||[]).join(',');
+    const isAADC = cfg.inject_type === 'aadc_design_challenge';
+    const responsePanel = isAADC
+      ? `<div style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:1rem;margin-top:.8rem;">
+           <div style="font-size:.72rem;text-transform:uppercase;letter-spacing:.1em;color:#58a6ff;margin-bottom:.7rem;">🛡 AADC Design Submission</div>
+           <a href="/agentic-ai/canvas" target="_blank" style="display:inline-flex;align-items:center;gap:.4rem;background:linear-gradient(135deg,#0a84ff,#0055cc);color:#fff;text-decoration:none;border-radius:6px;padding:.45rem 1rem;font-size:.8rem;font-weight:700;margin-bottom:.8rem;">Open AADC Canvas ↗</a>
+           <div style="font-size:.78rem;color:#6e7681;margin:.6rem 0 .3rem;">Design ID (from canvas Save):</div>
+           <input id="design-id-${inj.inject_id.slice(0,8)}" class="gd-input" placeholder="d_abc123..." style="font-family:monospace;">
+           <div style="font-size:.78rem;color:#6e7681;margin:.6rem 0 .3rem;">Notes (what you changed / fixed):</div>
+           <textarea class="gd-textarea" id="response-${inj.inject_id.slice(0,8)}" placeholder='{"design_id":"d_abc123","notes":"Fixed: added input-sanitizer, pii-detector, audit-logger"}'></textarea>
+         </div>`
+      : `<textarea class="gd-textarea" id="response-${inj.inject_id.slice(0,8)}" placeholder="Write your team's response here. Reference the AI tool outputs you used..."></textarea>`;
     card.innerHTML=`
-      <h3>${inj.title}</h3>
+      <h3>${inj.title}${isAADC?' <span style="font-size:.72rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.15rem .4rem;vertical-align:middle;">AADC Design Challenge</span>':''}</h3>
       <div class="ic-meta">⏱️ <span id="timer-${inj.inject_id.slice(0,8)}" class="timer">00:00</span> elapsed${inj.at_minute?' · dispatched at T+'+inj.at_minute+'min':''}</div>
       <div class="inject-body">${(inj.body_md||'').replace(/\n/g,'<br>').replace(/##/g,'<strong>').replace(/\*\*/g,'')}</div>
       <div style="margin-top:.8rem;">
@@ -174,8 +185,8 @@ function renderInjects(injects){
         <div style="font-size:.78rem;color:#6e7681;margin-bottom:.3rem;">Receipts logged:</div>
         <div class="receipt-list" id="receipts-${inj.inject_id.slice(0,8)}">No receipts yet</div>
       </div>
-      <textarea class="gd-textarea" id="response-${inj.inject_id.slice(0,8)}" placeholder="Write your team's response here. Reference the AI tool outputs you used..."></textarea>
-      <button class="submit-btn" onclick="submitResponse('${inj.inject_id}')">Submit Response</button>
+      ${responsePanel}
+      <button class="submit-btn" onclick="submitResponse('${inj.inject_id}',${isAADC})">${isAADC?'🛡 Submit Design':'Submit Response'}</button>
       <div class="score-flash" id="score-${inj.inject_id.slice(0,8)}"></div>`;
     feed.appendChild(card);
     startTimer(inj.inject_id);
@@ -210,11 +221,19 @@ async function linkTool(injectId, toolSlug){
   }
 }
 
-async function submitResponse(injectId){
+async function submitResponse(injectId, isAADC=false){
   if(!myTeamId){alert('Join a team first!');return;}
   const key=injectId.slice(0,8);
-  const text=document.getElementById('response-'+key).value.trim();
-  if(!text){alert('Write your response first!');return;}
+  let text;
+  if(isAADC){
+    const designId=(document.getElementById('design-id-'+key)||{}).value?.trim()||'';
+    const notes=document.getElementById('response-'+key).value.trim();
+    if(!designId){alert('Paste your Design ID from the AADC canvas first!');return;}
+    text=JSON.stringify({design_id:designId,notes:notes||'Design submission'});
+  }else{
+    text=document.getElementById('response-'+key).value.trim();
+    if(!text){alert('Write your response first!');return;}
+  }
   const timeTaken=Math.floor((Date.now()-startTimes[injectId])/1000);
   const r=await fetch('/api/gameday/response',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({team_id:myTeamId,inject_id:injectId,session_id:SESSION_ID,response_text:text,receipts:_receipts[key]||[],time_taken_s:timeTaken})});
@@ -222,7 +241,8 @@ async function submitResponse(injectId){
   const scoreEl=document.getElementById('score-'+key);
   if(d.ok){
     scoreEl.style.display='block';
-    scoreEl.innerHTML=`✅ Submitted! Receipts: +${d.receipt_pts} · AI Judge: +${d.judge_pts} · Speed: +${d.time_bonus_pts} · <strong>Total: ${d.total_pts} pts</strong>`;
+    const aadc_score=d.aadc_score!=null?` · AADC: ${d.aadc_score}/100`:'';
+    scoreEl.innerHTML=`✅ Submitted! Receipts: +${d.receipt_pts} · AI Judge: +${d.judge_pts} · Speed: +${d.time_bonus_pts}${aadc_score} · <strong>Total: ${d.total_pts} pts</strong>`;
     document.querySelector(`#inj-${key} .submit-btn`).disabled=true;
   }else{
     scoreEl.style.display='block';scoreEl.style.background='#2d1b1b';scoreEl.style.borderColor='#f85149';scoreEl.style.color='#f85149';
