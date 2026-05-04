@@ -1054,6 +1054,8 @@ _DB_CALL_PATTERNS = re.compile(
     r"|_build_\w+\(|_resolve_\w+\(|_lookup_\w+\("
     # Known external-data sources — not our DB, but real dynamic data
     r"|yf\.Ticker|yfinance|fetch_latest_quote|requests\.get\("
+    # Cookie reads are a valid key-value storage layer (e.g. theme preferences)
+    r"|\.cookies\.get\(|set_cookie\("
     r")",
     re.IGNORECASE,
 )
