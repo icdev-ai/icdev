@@ -173,6 +173,8 @@
       {% include "forge_academy/partials/_step_watch.html" %}
       {% elif stype == 'deploy' %}
       {% include "forge_academy/partials/_step_deploy.html" %}
+      {% elif stype == 'design' %}
+      {% include "forge_academy/partials/_step_design.html" %}
       {% else %}
       {% include "forge_academy/partials/_step_coding.html" %}
       {% endif %}
@@ -289,13 +291,16 @@ async function getHint(stepIdx) {
   const code = (window.editors && window.editors[stepIdx])
     ? window.editors[stepIdx].getValue()
     : '';
+  const designIdEl = document.getElementById('design-id-' + stepIdx);
+  const designId = designIdEl ? designIdEl.value.trim() : '';
   try {
     const resp = await fetch('/api/academy/coach/hint', {
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({
         mission_slug: MISSION.slug,
         question: 'I need a hint for: ' + step.title,
-        context: code.substring(0, 300)
+        context: code.substring(0, 300),
+        design_id: designId,
       })
     });
     const d = await resp.json();
