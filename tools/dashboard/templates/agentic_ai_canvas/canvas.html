@@ -177,6 +177,10 @@
       {% if design.id %}<a href="/agentic-ai/patterns/{{ design.id }}"><span>🔍</span> Pattern Analysis</a>{% endif %}
       {% if design.id %}<a href="/agentic-ai/impact/{{ design.id }}"><span>💥</span> Impact Analysis</a>{% endif %}
       <a href="/agentic-ai/analytics"><span>📈</span> Portfolio Analytics</a>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}<a href="/agentic-ai/scorecard/{{ design.id }}"><span>🎯</span> Scorecard</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/deploy-gate/{{ design.id }}"><span>🚦</span> Deploy Gate</a>{% endif %}
+      <a href="/agentic-ai/findings"><span>📬</span> Findings Inbox</a>
       <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
       <hr class="aadc-menu-sep">
       {% if design.id %}

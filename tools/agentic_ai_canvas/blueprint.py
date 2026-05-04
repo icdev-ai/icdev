@@ -1996,3 +1996,203 @@ def get_analytics_api():
     data = compute_analytics(designs, assessments, pattern_reports, ato_reports,
                              red_team_reports, lint_reports, risk_items)
     return jsonify(data)
+
+
+# ---------------------------------------------------------------------------
+# PHASE 9 — Unified Scorecard, Deployment Gate & Findings Inbox
+# ---------------------------------------------------------------------------
+
+def _load_all_gate_data(conn, design_id: str) -> tuple:
+    """Load all analysis data needed for scorecard and deploy gate."""
+    import json as _json
+
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        return None, None, None, None, None, None, None, None
+
+    design = dict(row)
+    graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    assessment = None
+    arow = conn.execute(
+        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        (design_id,),
+    ).fetchone()
+    if arow:
+        assessment = dict(arow)
+
+    risks = [dict(r) for r in conn.execute(
+        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+    ).fetchall()]
+
+    from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
+    from tools.agentic_ai_canvas.regulatory_tracker import run_regulatory_analysis
+    from tools.agentic_ai_canvas.red_team import run_red_team
+    from tools.agentic_ai_canvas.auto_recommend import lint_design
+    from tools.agentic_ai_canvas.impact_analyzer import analyze_impact
+
+    ato_data = run_ato_checklist(nodes, design)
+    reg_data = run_regulatory_analysis(nodes, design, risks)
+    red_team_data = run_red_team(nodes, edges)
+    lint_data = lint_design(nodes, edges, design)
+    impact_data = analyze_impact(nodes, edges)
+
+    return design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data
+
+
+@aadc_bp.route("/scorecard/<design_id>", methods=["GET"])
+def scorecard_page(design_id: str):
+    conn = _conn()
+    design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data = \
+        _load_all_gate_data(conn, design_id)
+    conn.close()
+    if design is None:
+        return "Design not found", 404
+
+    from tools.agentic_ai_canvas.scorecard import build_scorecard
+    sc = build_scorecard(design, assessment, ato_data, reg_data, red_team_data,
+                         lint_data, impact_data, risks)
+    return render_template("agentic_ai_canvas/scorecard.html", sc=sc)
+
+
+@aadc_bp.route("/api/designs/<design_id>/scorecard", methods=["GET"])
+def get_scorecard_api(design_id: str):
+    import json as _json
+    conn = _conn()
+    design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data = \
+        _load_all_gate_data(conn, design_id)
+    if design is None:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+
+    from tools.agentic_ai_canvas.scorecard import build_scorecard
+    sc = build_scorecard(design, assessment, ato_data, reg_data, red_team_data,
+                         lint_data, impact_data, risks)
+
+    rep_id = str(uuid.uuid4())
+    try:
+        conn.execute(
+            "INSERT INTO aadc_scorecard_snapshots (id,design_id,overall_score,health,snapshot_json) VALUES (?,?,?,?,?)",
+            (rep_id, design_id, sc["overall_score"], sc["health"], _json.dumps(sc)),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(sc)
+
+
+@aadc_bp.route("/deploy-gate/<design_id>", methods=["GET"])
+def deploy_gate_page(design_id: str):
+    conn = _conn()
+    design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data = \
+        _load_all_gate_data(conn, design_id)
+    conn.close()
+    if design is None:
+        return "Design not found", 404
+
+    from tools.agentic_ai_canvas.deploy_gate import run_deploy_gate
+    gate = run_deploy_gate(design, assessment, ato_data, reg_data, red_team_data,
+                           lint_data, impact_data, risks)
+    return render_template("agentic_ai_canvas/deploy_gate.html", gate=gate)
+
+
+@aadc_bp.route("/api/designs/<design_id>/deploy-gate", methods=["GET"])
+def get_deploy_gate_api(design_id: str):
+    import json as _json
+    conn = _conn()
+    design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data = \
+        _load_all_gate_data(conn, design_id)
+    if design is None:
+        conn.close()
+        return jsonify({"error": "design not found"}), 404
+
+    from tools.agentic_ai_canvas.deploy_gate import run_deploy_gate
+    gate = run_deploy_gate(design, assessment, ato_data, reg_data, red_team_data,
+                           lint_data, impact_data, risks)
+
+    rep_id = str(uuid.uuid4())
+    try:
+        conn.execute(
+            "INSERT INTO aadc_deploy_gates (id,design_id,verdict,blocker_count,warning_count,gate_json) VALUES (?,?,?,?,?,?)",
+            (rep_id, design_id, gate["verdict"],
+             len(gate["blockers"]), len(gate["warnings"]), _json.dumps(gate)),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify(gate)
+
+
+@aadc_bp.route("/api/designs/<design_id>/deploy-gate/download", methods=["GET"])
+def download_deploy_gate(design_id: str):
+    conn = _conn()
+    design, assessment, risks, ato_data, reg_data, red_team_data, lint_data, impact_data = \
+        _load_all_gate_data(conn, design_id)
+    conn.close()
+    if design is None:
+        return "Design not found", 404
+
+    from tools.agentic_ai_canvas.deploy_gate import run_deploy_gate
+    from flask import make_response
+    gate = run_deploy_gate(design, assessment, ato_data, reg_data, red_team_data,
+                           lint_data, impact_data, risks)
+    resp = make_response(gate["gate_yaml"])
+    resp.headers["Content-Type"] = "application/yaml"
+    resp.headers["Content-Disposition"] = f"attachment; filename=gate-check-{design_id}.yaml"
+    return resp
+
+
+@aadc_bp.route("/findings", methods=["GET"])
+def findings_inbox_page():
+    from flask import request
+    severity_f = request.args.get("severity") or None
+    source_f = request.args.get("source") or None
+    design_f = request.args.get("design_id") or None
+
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT id, name FROM aadc_designs").fetchall()]
+    assessments = [dict(r) for r in conn.execute("SELECT * FROM aadc_assessments").fetchall()]
+    lint_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_lint_reports").fetchall()]
+    red_team_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_red_team_reports").fetchall()]
+    ato_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_ato_reports").fetchall()]
+    reg_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_regulatory_gaps").fetchall()]
+    risk_items = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
+    conn.close()
+
+    from tools.agentic_ai_canvas.findings_inbox import aggregate_findings
+    result = aggregate_findings(
+        designs, assessments, lint_reports, red_team_reports,
+        ato_reports, reg_reports, risk_items,
+        severity_filter=severity_f, source_filter=source_f, design_filter=design_f,
+    )
+    return render_template("agentic_ai_canvas/findings.html", result=result)
+
+
+@aadc_bp.route("/api/findings", methods=["GET"])
+def get_findings_api():
+    from flask import request
+    severity_f = request.args.get("severity") or None
+    source_f = request.args.get("source") or None
+    design_f = request.args.get("design_id") or None
+
+    conn = _conn()
+    designs = [dict(r) for r in conn.execute("SELECT id, name FROM aadc_designs").fetchall()]
+    assessments = [dict(r) for r in conn.execute("SELECT * FROM aadc_assessments").fetchall()]
+    lint_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_lint_reports").fetchall()]
+    red_team_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_red_team_reports").fetchall()]
+    ato_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_ato_reports").fetchall()]
+    reg_reports = [dict(r) for r in conn.execute("SELECT * FROM aadc_regulatory_gaps").fetchall()]
+    risk_items = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items").fetchall()]
+    conn.close()
+
+    from tools.agentic_ai_canvas.findings_inbox import aggregate_findings
+    result = aggregate_findings(
+        designs, assessments, lint_reports, red_team_reports,
+        ato_reports, reg_reports, risk_items,
+        severity_filter=severity_f, source_filter=source_f, design_filter=design_f,
+    )
+    return jsonify(result)
