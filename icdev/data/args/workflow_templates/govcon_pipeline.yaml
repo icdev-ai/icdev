@@ -1,0 +1,59 @@
+# CUI // SP-CTI
+# GovCon Intelligence Pipeline — Scan → Extract → Map → Draft → Comply → Track
+description: "GovCon pipeline: SAM.gov scan, requirement extraction, capability mapping, response drafting"
+category: govcon
+steps:
+  - id: scan
+    name: "SAM.gov Scan"
+    tool: "tools/govcon/sam_scanner.py"
+    description: "Poll SAM.gov Opportunities API"
+
+  - id: extract
+    name: "Requirement Extraction"
+    tool: "tools/govcon/requirement_extractor.py"
+    depends_on: [scan]
+    description: "Extract shall/must/will statements from RFPs"
+
+  - id: questions
+    name: "RFP Question Generation"
+    tool: "tools/govcon/question_generator.py"
+    depends_on: [extract]
+    description: "Auto-generate strategic RFP questions"
+
+  - id: map
+    name: "Capability Mapping"
+    tool: "tools/govcon/capability_mapper.py"
+    depends_on: [extract]
+    description: "Map requirements to ICDEV™ capabilities"
+
+  - id: gaps
+    name: "Gap Analysis"
+    tool: "tools/govcon/gap_analyzer.py"
+    depends_on: [map]
+    description: "Identify unmet requirements + recommendations"
+
+  - id: compliance
+    name: "Compliance Matrix"
+    tool: "tools/govcon/compliance_populator.py"
+    depends_on: [map]
+    description: "Auto-populate L/M/N compliance matrix"
+
+  - id: draft
+    name: "Response Drafting"
+    tool: "tools/govcon/response_drafter.py"
+    depends_on: [map, gaps]
+    description: "Two-tier LLM proposal section drafting"
+
+  - id: awards
+    name: "Award Tracking"
+    tool: "tools/govcon/award_tracker.py"
+    depends_on: [scan]
+    required: false
+    description: "Track SAM.gov award notices"
+
+  - id: competitors
+    name: "Competitor Profiling"
+    tool: "tools/govcon/competitor_profiler.py"
+    depends_on: [awards]
+    required: false
+    description: "Aggregate competitor intelligence"

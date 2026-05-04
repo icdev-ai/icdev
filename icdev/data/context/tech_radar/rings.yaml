@@ -1,0 +1,271 @@
+# CUI // SP-CTI
+# ICDEV™ — Technology Radar Ring Definitions and Seed Entries
+#
+# Rings follow the Thoughtworks Technology Radar model (ADOPT → TRIAL → ASSESS → HOLD).
+# Entry criteria encode the composite score ranges and compat requirements from
+# args/tech_radar_config.yaml scoring weights.
+#
+# Seed entries: 10 canonical tools with current ring classification.
+# Scores are illustrative bootstraps — engine overwrites on first scan.
+#
+# Classification: CUI // SP-CTI
+
+classification: "CUI // SP-CTI"
+
+# ── Ring Definitions ──────────────────────────────────────────────────────────
+
+rings:
+  adopt:
+    label: "ADOPT"
+    description: >
+      Strong recommendation. Proven in ICDEV™ production use, air-gap compatible,
+      IL4/IL5 evidence present, minimal risk. Default choice for new projects.
+    entry_criteria:
+      composite_score_min: 0.80
+      ecosystem_maturity_min: 0.75
+      airgap_compat_min: 0.70
+      il_compliance_min: 0.65
+      required_flags:
+        - offline_install_available
+        - no_critical_cves_last_90d
+    exit_to: trial
+    exit_condition: "composite_score drops below 0.70 for 2+ consecutive scans"
+
+  trial:
+    label: "TRIAL"
+    description: >
+      Worth pursuing in a controlled project. Technology shows promise; not yet
+      battle-tested in all ICDEV™ IL4/IL5 deployment contexts. Evaluate before
+      broad adoption.
+    entry_criteria:
+      composite_score_min: 0.60
+      composite_score_max: 0.79
+      ecosystem_maturity_min: 0.55
+      airgap_compat_min: 0.50
+      il_compliance_min: 0.40
+      required_flags:
+        - offline_install_available
+    exit_to_adopt_condition: "composite_score ≥ 0.80 for 2+ consecutive scans"
+    exit_to_assess_condition: "composite_score drops below 0.60 for 2+ consecutive scans"
+
+  assess:
+    label: "ASSESS"
+    description: >
+      Explore with intent. Promising signals but insufficient ICDEV™ integration
+      evidence or air-gap validation. Suitable for R&D spikes; do not ship to
+      production IL4/IL5 environments without further evaluation.
+    entry_criteria:
+      composite_score_min: 0.40
+      composite_score_max: 0.59
+      ecosystem_maturity_min: 0.30
+      airgap_compat_min: 0.30
+      il_compliance_min: 0.20
+      required_flags: []
+    exit_to_trial_condition: "composite_score ≥ 0.60 for 2+ consecutive scans"
+    exit_to_hold_condition: "composite_score drops below 0.40 or critical CVE discovered"
+
+  hold:
+    label: "HOLD"
+    description: >
+      Proceed with caution. Do not start new use. Existing usage should be
+      migrated away. Triggers: critical unpatched CVEs, abandoned upstream,
+      IL compliance failure, or poor air-gap story.
+    entry_criteria:
+      composite_score_max: 0.39
+      trigger_conditions:
+        - critical_cve_unpatched
+        - upstream_archived_or_abandoned
+        - il_compliance_failed
+        - no_offline_install_path
+    exit_to_assess_condition: "blocking condition resolved AND composite_score ≥ 0.40"
+
+# ── Seed Entries ──────────────────────────────────────────────────────────────
+# Fields per entry:
+#   name, ring, category, description, scores (bootstrap), flags, rationale
+# Scores will be overwritten by the first live scan.
+
+entries:
+  - name: rspack
+    ring: trial
+    category: build_tooling
+    language_ecosystem: typescript
+    description: "Rust-based web bundler, drop-in webpack replacement. 10–20× faster cold builds."
+    scores:
+      ecosystem_maturity: 0.68
+      icdev_fit: 0.70
+      airgap_compat: 0.72
+      il_compliance: 0.45
+      composite: 0.67
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Selected in ADR (memory: project_rust_migration_tools). Adopt rspack now per
+      project guidance. In trial pending air-gap npm mirror resolution
+      (memory: feedback_no_npm_airgap) — promotes to adopt once npm mirror ships.
+
+  - name: ast-grep
+    ring: trial
+    category: sast_code_intel
+    language_ecosystem: rust
+    description: "Structural code search and linting using AST patterns. SAST candidate for ICDEV™ pipelines."
+    scores:
+      ecosystem_maturity: 0.62
+      icdev_fit: 0.73
+      airgap_compat: 0.75
+      il_compliance: 0.50
+      composite: 0.65
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      SAST candidate per project_rust_migration_tools memory. Rust binary distribution
+      enables air-gap use. Trial until integrated into coherence_checker pipeline.
+
+  - name: Hypothesis
+    ring: adopt
+    category: testing
+    language_ecosystem: python
+    description: "Property-based testing library for Python. Generates edge-case inputs automatically."
+    scores:
+      ecosystem_maturity: 0.88
+      icdev_fit: 0.82
+      airgap_compat: 0.90
+      il_compliance: 0.72
+      composite: 0.84
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Mature PyPI package, installable air-gap via PyPI mirror, no external runtime.
+      Fits ICDEV™ TDD/BDD mandate. Adopt for all Python tool testing.
+
+  - name: uv
+    ring: adopt
+    category: package_management
+    language_ecosystem: python
+    description: "Extremely fast Python package installer and resolver written in Rust (Astral)."
+    scores:
+      ecosystem_maturity: 0.75
+      icdev_fit: 0.85
+      airgap_compat: 0.88
+      il_compliance: 0.65
+      composite: 0.79
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Single binary, no Python runtime required for install. Air-gap friendly.
+      Significant CI/CD speed improvement over pip for ICDEV™ pipelines.
+      Composite at boundary — treat as adopt given strong airgap_compat and icdev_fit.
+
+  - name: ruff
+    ring: adopt
+    category: linting_formatting
+    language_ecosystem: python
+    description: "Extremely fast Python linter and formatter written in Rust, replacing flake8/black/isort."
+    scores:
+      ecosystem_maturity: 0.82
+      icdev_fit: 0.88
+      airgap_compat: 0.90
+      il_compliance: 0.68
+      composite: 0.83
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Single binary, PyPI installable. Already in widespread DoD-adjacent Python
+      projects. Replaces three tools (flake8, black, isort) reducing dep surface.
+
+  - name: Playwright
+    ring: adopt
+    category: e2e_testing
+    language_ecosystem: python
+    description: "Microsoft browser automation library for end-to-end UI testing."
+    scores:
+      ecosystem_maturity: 0.85
+      icdev_fit: 0.90
+      airgap_compat: 0.70
+      il_compliance: 0.65
+      composite: 0.78
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Official E2E test framework for ICDEV™ per CLAUDE.md guardrail. MCP server
+      integrated. Browser binaries downloadable for air-gap pre-staging.
+      Adopted; Selenium remains for legacy headless Chrome flows (e2e_selenium memory).
+
+  - name: Trivy
+    ring: adopt
+    category: vulnerability_scanning
+    language_ecosystem: go
+    description: "Aqua Security container and filesystem vulnerability scanner. SBOM generation support."
+    scores:
+      ecosystem_maturity: 0.84
+      icdev_fit: 0.86
+      airgap_compat: 0.85
+      il_compliance: 0.80
+      composite: 0.84
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Single binary, offline DB download supported. SBOM output aligns with ICDEV™
+      NIST 800-53 supply chain controls. Strong FedRAMP/CMMC evidence base.
+
+  - name: OpenTelemetry
+    ring: adopt
+    category: observability
+    language_ecosystem: python
+    description: "CNCF graduated observability framework: traces, metrics, logs with vendor-neutral SDKs."
+    scores:
+      ecosystem_maturity: 0.87
+      icdev_fit: 0.85
+      airgap_compat: 0.78
+      il_compliance: 0.82
+      composite: 0.84
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      CNCF graduated project. IL4/IL5 deployments reference OTel for NIST AU log
+      controls. Python SDK pip-installable air-gap. Collector available as binary.
+
+  - name: Terraform
+    ring: adopt
+    category: iac
+    language_ecosystem: go
+    description: "HashiCorp IaC tool for multi-cloud infrastructure provisioning (BSL license post-1.5)."
+    scores:
+      ecosystem_maturity: 0.90
+      icdev_fit: 0.88
+      airgap_compat: 0.82
+      il_compliance: 0.85
+      composite: 0.87
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Primary IaC tool per CLAUDE.md and cicd_config.yaml. BSL license acceptable
+      for internal Gov/DoD use. Provider binaries cacheable for air-gap.
+      GovCloud provider support documented. Strong IL4/IL5 deployment evidence.
+
+  - name: Ansible
+    ring: adopt
+    category: configuration_management
+    language_ecosystem: python
+    description: "Red Hat agentless configuration management and orchestration via SSH/WinRM."
+    scores:
+      ecosystem_maturity: 0.91
+      icdev_fit: 0.86
+      airgap_compat: 0.87
+      il_compliance: 0.88
+      composite: 0.88
+    flags:
+      offline_install_available: true
+      no_critical_cves_last_90d: true
+    rationale: >
+      Primary config management tool per CLAUDE.md and deployment_profiles.yaml.
+      Agentless — no target-side binary install. PyPI installable air-gap.
+      DISA STIG Ansible content available. Highest IL compliance score in seed set.

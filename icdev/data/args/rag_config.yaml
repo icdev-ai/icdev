@@ -1,0 +1,204 @@
+enabled_sources:
+- innovation_signals
+- innovation_solutions
+- innovation_trends
+- creative_pain_points
+- creative_feature_gaps
+- creative_specs
+- creative_trends
+- research_dossiers
+- research_challenges
+- research_forecasts
+- compliance_artifacts
+- anvil_critique_findings
+- memory_entries
+- audit_trail
+- ai_telemetry
+- agent_memory
+- code_quality_metrics
+- pdf_documents
+- idc_designs
+- idc_assessments
+- ndc_designs
+- ndc_compliance
+- network_devices
+- network_intelligence_analyses
+- ndc_configs
+- ndc_documents
+- sdc_designs
+- sdc_assessments
+- bdc_designs
+- bdc_assessments
+- pdc_designs
+- pdc_compliance
+- odc_designs
+- odc_assessments
+- ddc_designs
+- ddc_assessments
+- experiment_results
+- experiment_candidates
+- icdev_codebase_files
+- icdev_skills
+- icdev_mcp_servers
+- icdev_canvas_modules
+- icdev_goals
+- icdev_tools
+- icdev_a2a_agents
+- icdev_dashboard_routes
+- icdev_reflexes
+- icdev_db_tables
+- icdev_tool_categories
+rag:
+  auto_indexer:
+    cui_boundary_enforcement: true
+    enabled: false
+    excluded_dirs:
+    - .git
+    - node_modules
+    - __pycache__
+    - .venv
+    - .tmp
+    max_file_size_mb: 10
+    scan_interval_seconds: 300
+    watch_extensions:
+    - .md
+    - .txt
+    - .py
+    - .yaml
+    - .yml
+    - .json
+    - .pdf
+  child_app:
+    copy_to_children: true
+    critique_history_federation: true
+    parent_cache_ttl_seconds: 3600
+  chunking:
+    chunk_size_tokens: 2000
+    overlap_pct: 0.1
+    short_threshold_tokens: 500
+  critique_integration:
+    enabled: true
+    max_critique_context_chars: 3000
+    source_types:
+    - anvil_critique_sessions
+    - compliance_artifacts
+    - innovation_signals
+  embedding:
+    batch_size: 20
+    cache_ttl_seconds: 300
+    dimensions: 768
+  enabled: true
+  evaluation:
+    crag:
+      abstention_reward: true
+      enabled: true
+      penalize_hallucination: true
+      popularity_tiers:
+        head_min_frequency: 100
+        torso_min_frequency: 10
+      scoring_mode: both
+    enabled: true
+    llm_judge_model: qwen3-local
+    metrics:
+    - ndcg_at_k
+    - mrr
+    - context_precision
+    - faithfulness
+    - answer_relevancy
+    test_set_path: data/rag/evaluation_set.json
+  ingestion:
+    batch_schedule_minutes: 60
+    batch_sources:
+    - audit_trail
+    - ai_telemetry
+    - mbse_model_elements
+    - supply_chain_dependencies
+    - agent_memory
+    - code_quality_metrics
+    - innovation_trends
+    - creative_trends
+    dedup_enabled: true
+    realtime_sources:
+    - innovation_signals
+    - innovation_solutions
+    - creative_pain_points
+    - creative_feature_gaps
+    - creative_specs
+    - research_dossiers
+    - research_challenges
+    - research_forecasts
+    - compliance_artifacts
+    - memory_entries
+    - anvil_critique_sessions
+  injection:
+    citation_enabled: true
+    citation_instruction: true
+    citation_validation: true
+    enabled: true
+    function_denylist:
+    - attachment_analysis
+    injection_position: system
+    injection_top_k: 5
+    max_injection_chars: 4000
+  label_weights:
+    fact_single:
+      bm25_weight: 0.2
+      rrf_k: 60
+    reasoning:
+      bm25_weight: 0.15
+      rrf_k: 40
+    summary:
+      bm25_weight: 0.3
+      rrf_k: 60
+    unanswerable:
+      bm25_weight: 0.5
+      rrf_k: 80
+  pdf:
+    anthropic:
+      api_key: env:ANTHROPIC_API_KEY
+      model: claude-sonnet-4-20250514
+    enabled: true
+    extract_images: false
+    google:
+      api_key: env:GOOGLE_API_KEY
+      model: gemini-2.0-flash
+    max_file_size_mb: 50
+    max_pages: 200
+    provider_chain:
+    - anthropic
+    - google
+    - vision_llava
+    - pypdf_text
+    vision_llava:
+      model: llava:latest
+  provenance:
+    enabled: true
+    record_query_content: false
+  rerank:
+    bge_model: bge-reranker-v2-m3
+    enabled: false
+    llm_model: qwen3-local
+    max_chunk_preview_chars: 400
+    method: bge
+    rerank_weight: 0.6
+  retention:
+    hot_days: 30
+    warm_compression: float16
+    warm_days: 365
+  retrieval:
+    bm25_boost_weight: 0.3
+    final_top_k: 5
+    fusion_method: rrf
+    min_score_threshold: 0.1
+    rrf_k: 60
+    time_decay_enabled: true
+    vector_top_k: 50
+  vector_store:
+    backend: auto
+    chromadb:
+      persist_dir: data/rag/chromadb/
+    faiss:
+      index_dir: data/rag/faiss/
+      index_type: IVF256_HNSW32
+    sqlite:
+      db_path: data/rag/rag_vectors.db

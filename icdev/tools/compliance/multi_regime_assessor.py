@@ -38,6 +38,7 @@ ASSESSOR_REGISTRY = {
     "iso_27001": ("iso27001_assessor", "ISO27001Assessor"),
     "nist_800_207": ("nist_800_207_assessor", "NIST800207Assessor"),
     "mosa": ("mosa_assessor", "MOSAAssessor"),
+    "cmmi_level3": ("cmmi_level3_assessor", "CMMILevel3Assessor"),
 }
 
 # Existing assessors (not using BaseAssessor pattern)

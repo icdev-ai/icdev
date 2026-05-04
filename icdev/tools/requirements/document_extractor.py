@@ -230,7 +230,7 @@ def _extract_pdf_pages_via_vision(file_path):
             continue
 
         # Page has no/little text — try vision extraction via page rendering
-        # Attempt to render page to image using pdf2image or fitz
+        # Attempt to render page to image using pdf2image
         page_image_b64 = None
         media_type = "image/png"
 

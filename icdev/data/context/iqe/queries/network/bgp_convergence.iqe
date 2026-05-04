@@ -1,0 +1,8 @@
+# Intent: Flag BGP sessions whose last measured convergence time exceeded 30 seconds,
+#         indicating suboptimal timer tuning or route-reflector overload in the NDC.
+# Expected violation shape: rows where convergence_sec > 30 — each row identifies a
+#   peer requiring BFD tuning, hold-time reduction, or route-reflector rebalancing.
+
+foreach p in network.bgp_peers
+  where p.convergence_sec > 30
+  select p.device, p.peer_ip, p.local_as, p.remote_as, p.convergence_sec

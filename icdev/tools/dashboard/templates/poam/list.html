@@ -1,0 +1,452 @@
+{# CUI // SP-CTI #}
+{% extends "base.html" %}
+{% block title %}POA&M - ICDEV™ Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumbs">
+        <a href="/">Home</a>
+        <span class="separator">/</span>
+        <span class="current">POA&amp;M</span>
+    </div>
+    <h1>Plan of Action &amp; Milestones (POA&amp;M)
+        <span class="help-icon" data-glossary="POA&M" title="Plan of Action & Milestones — NIST RMF weakness register requiring approval and remediation tracking">?</span>
+    </h1>
+    <p class="subtitle">Review and approve canvas findings for remediation. Aggregated from all 7 design canvases.</p>
+</div>
+
+<!-- Stat bar -->
+<div class="stat-bar" id="poam-stat-bar">
+    <div class="stat-bar-item"><div class="stat-bar-value blue" id="stat-total">--</div><div class="stat-bar-label">Total</div></div>
+    <div class="stat-bar-item"><div class="stat-bar-value yellow" id="stat-pending">--</div><div class="stat-bar-label">Pending Decision</div></div>
+    <div class="stat-bar-item"><div class="stat-bar-value green" id="stat-approved">--</div><div class="stat-bar-label">Approved for Remediation</div></div>
+    <div class="stat-bar-item"><div class="stat-bar-value red" id="stat-cat1">--</div><div class="stat-bar-label">CAT1 (Critical)</div></div>
+</div>
+
+<!-- Filter bar -->
+<div style="display:flex; gap:12px; align-items:center; margin: 16px 0; flex-wrap:wrap;">
+    <select id="filter-canvas" onchange="loadFindings()" style="padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+        <option value="">All Canvases</option>
+        <option value="security">Security Canvas</option>
+        <option value="infra">Infra Canvas</option>
+        <option value="observability">Observability Canvas</option>
+        <option value="boundary">Boundary Canvas</option>
+        <option value="data">Data Canvas</option>
+        <option value="network">Network Canvas</option>
+        <option value="pipeline">Pipeline Canvas</option>
+        <option value="tfw_simulation">&#x1F4CA; Simulation</option>
+    </select>
+    <select id="filter-severity" onchange="loadFindings()" style="padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+        <option value="">All Severities</option>
+        <option value="CAT1">CAT1 (Critical)</option>
+        <option value="CAT2">CAT2 (High)</option>
+        <option value="CAT3">CAT3 (Medium)</option>
+    </select>
+    <select id="filter-decision" onchange="loadFindings()" style="padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+        <option value="">All Decisions</option>
+        <option value="pending" selected>Pending</option>
+        <option value="approved">Approved</option>
+        <option value="declined">Declined</option>
+        <option value="accepted_risk">Accepted Risk</option>
+        <option value="remediated">Remediated</option>
+    </select>
+    <button class="btn" onclick="document.getElementById('filter-canvas').value=''; document.getElementById('filter-severity').value=''; document.getElementById('filter-decision').value=''; loadFindings();" style="padding:8px 14px;">Clear Filters</button>
+    <button class="btn btn-primary" onclick="openSimImportModal()" style="padding:8px 14px; margin-left:auto;" title="Import findings from a simulation session">&#x1F4CA; Import from Simulation</button>
+    <!-- OPT-68 Pattern 4: saved filter presets -->
+    <select id="poam-preset-dropdown" aria-label="Saved filter presets"
+            style="padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+        <option value="">-- presets --</option>
+    </select>
+    <button class="btn" id="poam-preset-save" type="button" title="Save current filters as a preset" style="padding:8px 14px;">Save</button>
+    <button class="btn" id="poam-preset-delete" type="button" title="Delete selected preset" style="padding:8px 14px;">Delete</button>
+    <span style="margin-left:auto; color:var(--text-dim); font-size:13px;" id="showing-count">Loading...</span>
+</div>
+
+<div class="table-container">
+    <div class="table-header">
+        <h2>Canvas Findings</h2>
+        <span class="text-muted" id="result-count">--</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Severity</th>
+                <th>Canvas</th>
+                <th>Rule</th>
+                <th>Title</th>
+                <th>Affected Entity</th>
+                <th>Decision</th>
+                <th style="text-align:right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="findings-tbody">
+            <tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">Loading findings...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Decision Modal -->
+<div id="decision-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:600px; border:1px solid var(--border); max-height:90vh; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);">
+            <h3 id="modal-title" style="margin:0;">Record Decision</h3>
+            <button class="btn btn-sm" onclick="closeModal()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+            <div id="modal-finding-detail" style="background:var(--bg-code); padding:14px; border-radius:8px; margin-bottom:16px; font-size:13px; line-height:1.6;"></div>
+            <input type="hidden" id="modal-finding-hash">
+            <input type="hidden" id="modal-decision">
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Rationale <span id="rationale-required" style="color:var(--red,#e94560); display:none;">(required)</span></label>
+                <textarea id="modal-rationale" rows="4" placeholder="Why this decision? Cite controls, threat model, etc." style="width:100%; padding:10px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); resize:vertical;"></textarea>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" onclick="closeModal()" style="padding:8px 16px;">Cancel</button>
+                <button class="btn btn-primary" id="modal-confirm-btn" onclick="confirmDecision()" style="padding:8px 16px;">Confirm</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.sev-CAT1 { background: rgba(233, 69, 96, 0.18); color: #ff6b6b; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+.sev-CAT2 { background: rgba(255, 152, 0, 0.18); color: #ffa726; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+.sev-CAT3 { background: rgba(255, 235, 59, 0.12); color: #ffd54f; padding: 3px 8px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+.dec-pending { background: rgba(158, 158, 158, 0.15); color: #b0bec5; padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+.dec-approved { background: rgba(76, 175, 80, 0.18); color: #66bb6a; padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+.dec-declined { background: rgba(96, 125, 139, 0.18); color: #90a4ae; padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+.dec-accepted_risk { background: rgba(255, 152, 0, 0.18); color: #ffa726; padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+.dec-remediated { background: rgba(33, 150, 243, 0.18); color: #42a5f5; padding: 3px 8px; border-radius: 4px; font-size: 11px; }
+.poam-action-btn { padding: 4px 10px; font-size: 11px; margin-left: 4px; border-radius: 4px; cursor: pointer; border: 1px solid var(--border); background: var(--bg-code); color: var(--text-primary); }
+.poam-action-btn:hover { background: var(--accent-blue); border-color: var(--accent-blue); color: white; }
+.poam-action-btn.approve:hover { background: #2e7d32; border-color: #2e7d32; }
+.poam-action-btn.decline:hover { background: #455a64; border-color: #455a64; }
+.poam-action-btn.risk:hover { background: #ef6c00; border-color: #ef6c00; }
+.poam-action-btn.remediate:hover { background: #1976d2; border-color: #1976d2; }
+.poam-action-btn.attach-plan:hover { background: #6a1b9a; border-color: #6a1b9a; }
+.poam-action-btn.file-issue { border-color: #0d47a1; color: #64b5f6; }
+.poam-action-btn.file-issue:hover { background: #0d47a1; border-color: #0d47a1; color: white; }
+</style>
+
+<script>
+// CUI // SP-CTI - POA&M findings approval workflow
+let CURRENT_FINDINGS = [];
+
+async function loadFindings() {
+    const canvas = document.getElementById('filter-canvas').value;
+    const severity = document.getElementById('filter-severity').value;
+    const decision = document.getElementById('filter-decision').value;
+    const params = new URLSearchParams();
+    if (canvas) params.set('canvas', canvas);
+    if (severity) params.set('severity', severity);
+    if (decision) params.set('decision', decision);
+    params.set('include_remediated', 'true');
+
+    const tbody = document.getElementById('findings-tbody');
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">Loading findings...</td></tr>';
+
+    try {
+        const r = await fetch('/api/poam?' + params.toString());
+        const data = await r.json();
+        CURRENT_FINDINGS = data.findings || [];
+        renderFindings(CURRENT_FINDINGS);
+        document.getElementById('result-count').textContent =
+            CURRENT_FINDINGS.length + ' finding' + (CURRENT_FINDINGS.length !== 1 ? 's' : '');
+        document.getElementById('showing-count').textContent =
+            'Showing ' + CURRENT_FINDINGS.length + ' of ' + (data.total || 0);
+    } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:32px; color:var(--red);">Error loading: ' + e.message + '</td></tr>';
+    }
+    loadSummary();
+}
+
+function renderFindings(findings) {
+    const tbody = document.getElementById('findings-tbody');
+    if (!findings.length) {
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="7" style="text-align:center; padding:32px; color:var(--text-dim);">No findings match the current filters.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = findings.map(f => `
+        <tr>
+            <td><span class="sev-${escapeHtml(f.severity)}">${escapeHtml(f.severity)}</span></td>
+            <td><span class="text-muted">${f.canvas_source === 'tfw_simulation' ? '&#x1F4CA; ' : ''}${escapeHtml(f.canvas_label || f.canvas_source)}</span></td>
+            <td><code style="font-size:11px;">${escapeHtml(f.rule_id || '-')}</code></td>
+            <td>${escapeHtml(f.title)}</td>
+            <td><code style="font-size:11px;">${escapeHtml(f.affected_entity || '-')}</code></td>
+            <td>
+                <span class="dec-${escapeHtml(f.decision)}">${escapeHtml(f.decision)}</span>
+                ${f.decision_by ? `<div style="font-size:10px; color:var(--text-dim); margin-top:2px;">${escapeHtml(f.decision_by)}</div>` : ''}
+            </td>
+            <td style="text-align:right; white-space:nowrap;">
+                <button class="poam-action-btn approve" onclick="openModal('${f.finding_hash}', 'approved')" title="Approve for remediation">Approve</button>
+                <button class="poam-action-btn decline" onclick="openModal('${f.finding_hash}', 'declined')" title="Decline (rationale required)">Decline</button>
+                <button class="poam-action-btn risk" onclick="openModal('${f.finding_hash}', 'accepted_risk')" title="Accept risk (rationale required)">Accept Risk</button>
+                <button class="poam-action-btn remediate" onclick="openModal('${f.finding_hash}', 'remediated')" title="Mark as remediated">Remediated</button>
+                <button class="poam-action-btn attach-plan" onclick="attachPlan('${f.finding_hash}')" title="Attach built-in or custom remediation plan">Attach Plan</button>
+                <button class="poam-action-btn file-issue" onclick="fileGithubIssue('${f.finding_hash}')" title="File GitHub issue for this finding">File Issue</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+async function loadSummary() {
+    try {
+        const r = await fetch('/api/poam/summary');
+        const s = await r.json();
+        document.getElementById('stat-total').textContent = s.total || 0;
+        document.getElementById('stat-pending').textContent = (s.by_decision && s.by_decision.pending) || 0;
+        document.getElementById('stat-approved').textContent = (s.by_decision && s.by_decision.approved) || 0;
+        document.getElementById('stat-cat1').textContent = (s.by_severity && s.by_severity.CAT1) || 0;
+    } catch (e) { /* ignore */ }
+}
+
+function openModal(findingHash, decision) {
+    const finding = CURRENT_FINDINGS.find(f => f.finding_hash === findingHash);
+    if (!finding) return;
+    document.getElementById('modal-finding-hash').value = findingHash;
+    document.getElementById('modal-decision').value = decision;
+    const labels = {
+        approved: 'Approve Remediation',
+        declined: 'Decline Finding',
+        accepted_risk: 'Accept Risk',
+        remediated: 'Mark as Remediated'
+    };
+    document.getElementById('modal-title').textContent = labels[decision] || 'Record Decision';
+    document.getElementById('modal-finding-detail').innerHTML =
+        `<div><span class="sev-${finding.severity}">${finding.severity}</span> &nbsp;<strong>${escapeHtml(finding.title)}</strong></div>` +
+        `<div style="margin-top:6px; color:var(--text-dim);">Canvas: ${escapeHtml(finding.canvas_label)} &nbsp;|&nbsp; Rule: <code>${escapeHtml(finding.rule_id || '-')}</code></div>` +
+        (finding.affected_entity ? `<div style="margin-top:4px; color:var(--text-dim);">Affected: <code>${escapeHtml(finding.affected_entity)}</code></div>` : '') +
+        (finding.description ? `<div style="margin-top:8px;">${escapeHtml(finding.description)}</div>` : '');
+    document.getElementById('modal-rationale').value = finding.decision_rationale || '';
+    document.getElementById('rationale-required').style.display =
+        (decision === 'declined' || decision === 'accepted_risk') ? 'inline' : 'none';
+    document.getElementById('decision-modal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('decision-modal').style.display = 'none';
+}
+
+async function confirmDecision() {
+    const findingHash = document.getElementById('modal-finding-hash').value;
+    const decision = document.getElementById('modal-decision').value;
+    const rationale = document.getElementById('modal-rationale').value.trim();
+    if ((decision === 'declined' || decision === 'accepted_risk') && !rationale) {
+        alert('Rationale is required for ' + decision);
+        return;
+    }
+    const btn = document.getElementById('modal-confirm-btn');
+    btn.disabled = true; btn.textContent = 'Saving...';
+    try {
+        const r = await fetch(`/api/poam/${findingHash}/decision`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({decision, rationale})
+        });
+        if (!r.ok) {
+            const err = await r.json();
+            throw new Error(err.error || 'Failed');
+        }
+        closeModal();
+        loadFindings();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false; btn.textContent = 'Confirm';
+    }
+}
+
+function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function attachPlan(findingHash) {
+    if (!confirm('Attach built-in remediation plan to this finding? (Existing GitHub issue links will be preserved.)')) return;
+    try {
+        const r = await fetch(`/api/poam/${findingHash}/attach_plan`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({}),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            alert('Attach plan failed: ' + (data.error || r.statusText));
+            return;
+        }
+        alert('Plan attached to ' + (data.rule_id || findingHash));
+        loadFindings();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function fileGithubIssue(findingHash) {
+    if (!confirm('File a GitHub issue for this finding? Make sure a plan is already attached.')) return;
+    const btn = event.currentTarget;
+    if (btn) { btn.disabled = true; btn.textContent = 'Filing...'; }
+    try {
+        const r = await fetch(`/api/poam/${findingHash}/file_github_issue`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({}),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            alert('File issue failed: ' + (data.error || r.statusText) + (data.stderr ? '\n' + data.stderr : ''));
+            return;
+        }
+        alert('GitHub issue filed: ' + data.github_url);
+        loadFindings();
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = 'File Issue'; }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Import from Simulation modal
+// ---------------------------------------------------------------------------
+async function openSimImportModal() {
+    const modal = document.getElementById('sim-import-modal');
+    const select = document.getElementById('sim-session-select');
+    const statusEl = document.getElementById('sim-import-status');
+    statusEl.textContent = '';
+    select.innerHTML = '<option value="">Loading sessions...</option>';
+    modal.style.display = 'flex';
+    try {
+        const r = await fetch('/api/poam/simulation-sessions');
+        const data = await r.json();
+        const sessions = data.sessions || [];
+        if (!sessions.length) {
+            select.innerHTML = '<option value="">No simulation sessions found</option>';
+            return;
+        }
+        select.innerHTML = '<option value="">-- select a session --</option>' +
+            sessions.map(s => {
+                const label = [
+                    s.canvas_type ? s.canvas_type.toUpperCase() : '',
+                    s.mode ? s.mode : '',
+                    s.created_at ? s.created_at.slice(0, 16).replace('T', ' ') : '',
+                    s.run_count ? `(${s.run_count} run${s.run_count !== 1 ? 's' : ''})` : '',
+                    s.topology_id ? `topo:${s.topology_id.slice(0, 8)}` : '',
+                ].filter(Boolean).join(' · ');
+                return `<option value="${escapeHtml(s.id)}">${escapeHtml(label)} — ${escapeHtml(s.id.slice(0, 12))}</option>`;
+            }).join('');
+    } catch (e) {
+        select.innerHTML = `<option value="">Error: ${escapeHtml(e.message)}</option>`;
+    }
+}
+
+function closeSimImportModal() {
+    document.getElementById('sim-import-modal').style.display = 'none';
+}
+
+async function confirmSimImport() {
+    const sessionId = document.getElementById('sim-session-select').value;
+    if (!sessionId) { alert('Please select a simulation session.'); return; }
+    const btn = document.getElementById('sim-import-confirm-btn');
+    const statusEl = document.getElementById('sim-import-status');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    statusEl.textContent = '';
+    try {
+        const r = await fetch('/api/poam/import-from-simulation', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sessionId}),
+        });
+        const data = await r.json();
+        if (!r.ok) {
+            statusEl.style.color = 'var(--red, #e94560)';
+            statusEl.textContent = 'Error: ' + (data.error || r.statusText);
+            return;
+        }
+        statusEl.style.color = 'var(--green, #66bb6a)';
+        statusEl.textContent = `Imported ${data.inserted} finding${data.inserted !== 1 ? 's' : ''} (${data.skipped} skipped — already present).`;
+        setTimeout(() => { closeSimImportModal(); loadFindings(); }, 1500);
+    } catch (e) {
+        statusEl.style.color = 'var(--red, #e94560)';
+        statusEl.textContent = 'Error: ' + e.message;
+    } finally {
+        btn.disabled = false; btn.textContent = 'Import';
+    }
+}
+
+// Initial load — honor ?severity=CAT1, ?canvas=X, ?decision=Y query params
+// so deep links from index.html ("Firing Alerts" → /poam?severity=CAT1) land
+// on a pre-filtered view instead of the default.
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        var params = new URLSearchParams(window.location.search);
+        var sev = params.get('severity');
+        var canvas = params.get('canvas');
+        var decision = params.get('decision');
+        if (sev) {
+            var sevEl = document.getElementById('filter-severity');
+            if (sevEl) sevEl.value = sev;
+        }
+        if (canvas) {
+            var canEl = document.getElementById('filter-canvas');
+            if (canEl) canEl.value = canvas;
+        }
+        if (decision) {
+            var decEl = document.getElementById('filter-decision');
+            if (decEl) decEl.value = decision;
+        }
+    } catch (e) { /* params optional */ }
+    loadFindings();
+
+    // OPT-68 Pattern 4: saved filter presets
+    var selectEl = document.getElementById('poam-preset-dropdown');
+    if (selectEl && window.ICDEV && ICDEV.filterPresets) {
+        var presets = ICDEV.filterPresets.init({
+            key: 'poam-filters-v1',
+            selectEl: selectEl,
+            getCurrent: function() {
+                return {
+                    canvas: document.getElementById('filter-canvas').value,
+                    severity: document.getElementById('filter-severity').value,
+                    decision: document.getElementById('filter-decision').value,
+                };
+            },
+            onApply: function(state) {
+                document.getElementById('filter-canvas').value = state.canvas || '';
+                document.getElementById('filter-severity').value = state.severity || '';
+                document.getElementById('filter-decision').value = state.decision || '';
+                loadFindings();
+            },
+        });
+        var saveBtn = document.getElementById('poam-preset-save');
+        var delBtn = document.getElementById('poam-preset-delete');
+        if (saveBtn) saveBtn.addEventListener('click', function() { presets.save(); });
+        if (delBtn) delBtn.addEventListener('click', function() {
+            if (presets.deleteCurrent()) { /* refresh happens inside */ }
+        });
+    }
+});
+</script>
+<script src="{{ url_for('static', filename='js/filter_presets.js') }}"></script>
+
+<!-- Simulation Import Modal -->
+<div id="sim-import-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1001; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:540px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);">
+            <h3 style="margin:0;">&#x1F4CA; Import from Simulation</h3>
+            <button class="btn btn-sm" onclick="closeSimImportModal()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+            <p style="color:var(--text-dim); font-size:13px; margin:0 0 14px;">Select a simulation session to import its findings into POA&amp;M with <code>source=tfw_simulation</code>. Already-imported findings are skipped.</p>
+            <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Simulation Session</label>
+            <select id="sim-session-select" style="width:100%; padding:10px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); margin-bottom:14px;">
+                <option value="">-- select a session --</option>
+            </select>
+            <div id="sim-import-status" style="font-size:13px; min-height:18px; margin-bottom:12px;"></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end;">
+                <button class="btn" onclick="closeSimImportModal()" style="padding:8px 16px;">Cancel</button>
+                <button class="btn btn-primary" id="sim-import-confirm-btn" onclick="confirmSimImport()" style="padding:8px 16px;">Import</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

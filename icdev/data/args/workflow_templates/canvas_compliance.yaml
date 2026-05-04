@@ -1,0 +1,139 @@
+# CUI // SP-CTI
+# Canvas Compliance Workflow — Assess all 9 canvases (parallel) → Aggregate → Multi-Regime → Crosswalk → Unified Report
+description: "Cross-canvas compliance: assess all 9 design canvases in parallel, aggregate scores, run multi-regime framework assessment with ADR D113 crosswalk deduplication, and generate a unified compliance report"
+category: canvas_compliance
+version: "1.1"
+
+steps:
+  # ── Phase 1: Parallel canvas assessments (all 9 run concurrently — no depends_on) ──────────────
+
+  - id: assess_sdc
+    name: "Security Design Canvas Assessment"
+    tool: "tools/security_canvas/security_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "STRIDE + NIST 800-53 threat-model assessment across all SDC designs; scores risk_score column in security_canvas.db"
+
+  - id: assess_ndc
+    name: "Network Design Canvas Assessment"
+    tool: "tools/network/routes/compliance.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "Network topology, segmentation, and NMS-adapter compliance check across all NDC designs"
+
+  - id: assess_idc
+    name: "Infrastructure Design Canvas Assessment"
+    tool: "tools/infra_canvas/infra_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "CSP mapping (AWS/Azure/GCP/OCI/IBM/on-prem) and infrastructure posture assessment for all IDC designs"
+
+  - id: assess_bdc
+    name: "Boundary Design Canvas Assessment"
+    tool: "tools/boundary_canvas/boundary_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "Boundary isolation, ISA controls, and interconnection assessment for all BDC designs (rules: BDC-BND-001, BDC-ISA-001)"
+
+  - id: assess_pdc
+    name: "Pipeline Design Canvas Assessment"
+    tool: "tools/pipeline/constants.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "CI/CD pipeline DevSecOps gate and export-format compliance check for all PDC designs"
+
+  - id: assess_odc
+    name: "Observability Design Canvas Assessment"
+    tool: "tools/observability_canvas/observability_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "MITRE detection coverage, log aggregation, and SIEM integration assessment for all ODC designs"
+
+  - id: assess_ddc
+    name: "Data Design Canvas Assessment"
+    tool: "tools/data_canvas/data_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "Data classification (CUI/PII/PHI/SECRET), encryption, and access-control zone assessment for all DDC designs"
+
+  - id: assess_qdc
+    name: "Quality Design Canvas Assessment"
+    tool: "tools/qdc_canvas/qdc_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "Unified Quality Score (UQS) across 5 dimensions + SA11 gate verification for all QDC designs"
+
+  - id: assess_mdc
+    name: "Migration Design Canvas Assessment"
+    tool: "tools/migration_canvas/migration_engine.py"
+    inject_project_id: true
+    args:
+      assess: true
+    description: "7Rs migration readiness scoring (rehost/refactor/rearchitect/retain/retire/relocate/repurchase) for all MDC designs"
+
+  # ── Phase 2: Aggregate all canvas scores into unified project readiness ────────────────────────
+
+  - id: aggregate
+    name: "Aggregate Canvas Scores"
+    tool: "tools/canvas/orchestrator.py"
+    inject_project_id: true
+    args:
+      aggregate: true
+    depends_on:
+      - assess_sdc
+      - assess_ndc
+      - assess_idc
+      - assess_bdc
+      - assess_pdc
+      - assess_odc
+      - assess_ddc
+      - assess_qdc
+      - assess_mdc
+    description: "Aggregate compliance scores from all 9 canvases into a single unified project readiness score; gates on min_score ≥ 70, CAT I = 0"
+
+  # ── Phase 3: Multi-regime compliance assessment (informed by canvas posture) ─────────────────
+
+  - id: multi_regime
+    name: "Multi-Regime Compliance Assessment"
+    tool: "tools/compliance/multi_regime_assessor.py"
+    inject_project_id: true
+    depends_on: [aggregate]
+    description: "Assess all applicable compliance frameworks (FedRAMP Moderate/High, CMMC L2/L3, NIST 800-53, CJIS, HIPAA, HITRUST, SOC 2, PCI DSS, ISO 27001, NIST 800-207 ZTA, MOSA) using canvas scores as posture evidence"
+
+  # ── Phase 4: Crosswalk deduplication + optional AI audit (run in parallel) ───────────────────
+
+  - id: crosswalk
+    name: "Control Crosswalk Deduplication"
+    tool: "tools/compliance/crosswalk_engine.py"
+    inject_project_id: true
+    args:
+      coverage: true
+    depends_on: [multi_regime]
+    description: "Compute minimal NIST 800-53 Rev 5 control set satisfying all detected frameworks via crosswalk deduplication (ADR D113 dual-hub model)"
+
+  - id: ai_transparency
+    name: "AI Transparency Audit"
+    tool: "tools/compliance/ai_transparency_audit.py"
+    inject_project_id: true
+    depends_on: [multi_regime]
+    required: false
+    description: "Cross-framework AI transparency audit (NIST AI RMF, MITRE ATLAS, OWASP LLM Top 10, OWASP Agentic AI) — skipped when no AI components detected"
+
+  # ── Phase 5: Unified compliance report with per-canvas posture overlay ────────────────────────
+
+  - id: report
+    name: "Generate Unified Compliance Report"
+    tool: "tools/compliance/compliance_status.py"
+    inject_project_id: true
+    args:
+      canvas-overlay: true
+    depends_on: [crosswalk, ai_transparency]
+    description: "Generate comprehensive compliance report: per-canvas posture heatmap, multi-regime coverage matrix, minimal control set, open POA&M items, and ATO readiness summary"

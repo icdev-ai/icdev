@@ -1,0 +1,340 @@
+{% extends "studio/base_studio.html" %}
+
+{% block studio_content %}
+<div class="studio-container">
+
+  <!-- Header -->
+  <div class="studio-header">
+    <div class="studio-header__left">
+      <div class="studio-header__icon">&#128640;</div>
+      <div>
+        <div class="studio-header__title">App Builder</div>
+        <div class="studio-header__subtitle">Describe what you need — ICDEV™ builds it for you</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Layout: Chat + Preview -->
+  <div class="ab-layout">
+    <!-- Left: Conversational Input -->
+    <div class="ab-chat">
+      <div class="studio-card studio-card--glass" style="height:100%;display:flex;flex-direction:column;">
+        <div class="studio-card__header">
+          <div class="studio-card__header-title">Describe Your App</div>
+          <span class="studio-badge studio-badge--accent" id="ab-status">Ready</span>
+        </div>
+
+        <!-- Chat Messages -->
+        <div class="ab-messages" id="ab-messages">
+          <div class="ab-msg ab-msg--system">
+            <div class="ab-msg__avatar">&#129302;</div>
+            <div class="ab-msg__body">
+              <div class="ab-msg__text">
+                Tell me what application you need. Be as specific or as vague as you like — I'll extract the requirements and configure everything automatically.<br><br>
+                <strong>Try something like:</strong><br>
+                <em>"I need an app that tracks CDRL deliverables for my Navy contract, sends alerts when due dates approach, and generates CPARS-ready reports"</em>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="ab-input-area">
+          <textarea class="studio-input studio-input--lg ab-textarea" id="ab-input"
+                    placeholder="Describe your app here..."
+                    rows="3"
+                    onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();AppBuilder.submit();}"></textarea>
+          <div class="studio-flex studio-items-center studio-justify-between studio-mt-2">
+            <div class="studio-flex studio-gap-2">
+              <button class="studio-btn studio-btn--ghost studio-btn--sm ab-example"
+                      onclick="AppBuilder.useExample(0)">Contract Tracker</button>
+              <button class="studio-btn studio-btn--ghost studio-btn--sm ab-example"
+                      onclick="AppBuilder.useExample(1)">Compliance Hub</button>
+              <button class="studio-btn studio-btn--ghost studio-btn--sm ab-example"
+                      onclick="AppBuilder.useExample(2)">Security Scanner</button>
+            </div>
+            <button class="studio-btn studio-btn--primary" id="ab-submit-btn"
+                    onclick="AppBuilder.submit()">
+              Analyze &#8594;
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Blueprint Preview -->
+    <div class="ab-preview" id="ab-preview" style="display:none;">
+      <div class="studio-card studio-card--glass" style="height:100%;display:flex;flex-direction:column;">
+        <div class="studio-card__header">
+          <div class="studio-card__header-title">Blueprint Preview</div>
+          <button class="studio-btn studio-btn--primary" id="ab-build-btn"
+                  onclick="AppBuilder.build()" disabled>
+            &#128296; Build App
+          </button>
+        </div>
+
+        <div class="studio-card__body" style="overflow-y:auto;flex:1;">
+          <!-- App Name -->
+          <div class="studio-form-group">
+            <label class="studio-label">App Name</label>
+            <input type="text" class="studio-input" id="ab-app-name" placeholder="my-app"
+                   onchange="AppBuilder.updateName(this.value)">
+          </div>
+
+          <!-- Classification -->
+          <div class="studio-form-group">
+            <label class="studio-label">Classification / Impact Level</label>
+            <div class="ab-il-selector" id="ab-il-selector">
+              <button class="ab-il-btn" data-il="IL2" onclick="AppBuilder.setIL('IL2')">IL2<br><small>Public</small></button>
+              <button class="ab-il-btn ab-il-btn--active" data-il="IL4" onclick="AppBuilder.setIL('IL4')">IL4<br><small>CUI</small></button>
+              <button class="ab-il-btn" data-il="IL5" onclick="AppBuilder.setIL('IL5')">IL5<br><small>CUI/DoD</small></button>
+              <button class="ab-il-btn" data-il="IL6" onclick="AppBuilder.setIL('IL6')">IL6<br><small>SECRET</small></button>
+            </div>
+          </div>
+
+          <!-- Purpose -->
+          <div class="studio-form-group">
+            <label class="studio-label">Detected Purpose</label>
+            <div class="studio-badge studio-badge--accent" id="ab-purpose" style="font-size:0.85rem;">-</div>
+          </div>
+
+          <!-- Capability Map -->
+          <div class="studio-form-group">
+            <label class="studio-label">Capabilities <span class="studio-text-muted" id="ab-cap-count">(0 enabled)</span></label>
+            <div class="ab-cap-grid" id="ab-cap-grid">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Agents -->
+          <div class="studio-form-group">
+            <label class="studio-label">Agents</label>
+            <div id="ab-agents">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast Container -->
+<div class="studio-toast-container" id="studio-toasts"></div>
+
+<style>
+  /* App Builder specific styles */
+  .ab-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--studio-space-6);
+    min-height: calc(100vh - 200px);
+  }
+  .ab-layout:has(#ab-preview[style*="display: block"]),
+  .ab-layout:has(#ab-preview:not([style*="display:none"])):not(:has(#ab-preview[style*="display: none"])) {
+    grid-template-columns: 1fr 1fr;
+  }
+  @media (max-width: 1024px) {
+    .ab-layout { grid-template-columns: 1fr !important; }
+  }
+
+  .ab-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--studio-space-4) var(--studio-space-6);
+    display: flex;
+    flex-direction: column;
+    gap: var(--studio-space-4);
+  }
+
+  .ab-msg {
+    display: flex;
+    gap: var(--studio-space-3);
+    animation: studioSlideUp var(--studio-duration-normal) var(--studio-ease);
+  }
+
+  .ab-msg__avatar {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--studio-radius-md);
+    background: var(--studio-bg-elevated);
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .ab-msg--user .ab-msg__avatar {
+    background: var(--studio-gradient-primary);
+  }
+
+  .ab-msg__body {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ab-msg__text {
+    font-size: var(--studio-text-sm);
+    color: var(--studio-text-secondary);
+    line-height: 1.7;
+    background: var(--studio-bg-elevated);
+    padding: var(--studio-space-3) var(--studio-space-4);
+    border-radius: var(--studio-radius-md);
+    border: 1px solid var(--studio-border);
+  }
+
+  .ab-msg--user .ab-msg__text {
+    background: var(--studio-accent-glow);
+    border-color: var(--studio-border-accent);
+    color: var(--studio-text-primary);
+  }
+
+  .ab-msg--system .ab-msg__text em {
+    color: var(--studio-accent-light);
+    font-style: italic;
+  }
+
+  .ab-input-area {
+    padding: var(--studio-space-4) var(--studio-space-6);
+    border-top: 1px solid var(--studio-border);
+  }
+
+  .ab-textarea {
+    resize: none;
+    min-height: 60px;
+  }
+
+  .ab-example {
+    font-size: var(--studio-text-xs) !important;
+    color: var(--studio-text-muted) !important;
+    border: 1px dashed var(--studio-border) !important;
+  }
+
+  .ab-example:hover {
+    border-color: var(--studio-accent) !important;
+    color: var(--studio-accent-light) !important;
+  }
+
+  /* Impact Level Selector */
+  .ab-il-selector {
+    display: flex;
+    gap: var(--studio-space-2);
+  }
+
+  .ab-il-btn {
+    flex: 1;
+    font-family: var(--studio-font);
+    font-size: var(--studio-text-xs);
+    font-weight: 600;
+    color: var(--studio-text-muted);
+    background: var(--studio-bg-input);
+    border: 1px solid var(--studio-border);
+    border-radius: var(--studio-radius-sm);
+    padding: var(--studio-space-2) var(--studio-space-3);
+    cursor: pointer;
+    text-align: center;
+    transition: all var(--studio-duration-fast) var(--studio-ease);
+  }
+
+  .ab-il-btn small {
+    display: block;
+    font-weight: 400;
+    color: var(--studio-text-muted);
+    margin-top: 2px;
+  }
+
+  .ab-il-btn:hover {
+    border-color: var(--studio-border-hover);
+    color: var(--studio-text-primary);
+  }
+
+  .ab-il-btn--active {
+    border-color: var(--studio-accent);
+    background: var(--studio-accent-glow);
+    color: var(--studio-accent-light);
+  }
+
+  /* Capability Grid */
+  .ab-cap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--studio-space-2);
+  }
+
+  .ab-cap-item {
+    display: flex;
+    align-items: center;
+    gap: var(--studio-space-2);
+    padding: var(--studio-space-2) var(--studio-space-3);
+    background: var(--studio-bg-input);
+    border: 1px solid var(--studio-border);
+    border-radius: var(--studio-radius-sm);
+    cursor: pointer;
+    transition: all var(--studio-duration-fast) var(--studio-ease);
+    font-size: var(--studio-text-xs);
+    color: var(--studio-text-muted);
+  }
+
+  .ab-cap-item:hover {
+    border-color: var(--studio-border-hover);
+  }
+
+  .ab-cap-item--on {
+    border-color: var(--studio-accent);
+    background: var(--studio-accent-glow);
+    color: var(--studio-accent-light);
+  }
+
+  .ab-cap-toggle {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid var(--studio-border-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    flex-shrink: 0;
+  }
+
+  .ab-cap-item--on .ab-cap-toggle {
+    background: var(--studio-accent);
+    border-color: var(--studio-accent);
+    color: white;
+  }
+
+  /* Agent cards */
+  .ab-agent {
+    display: flex;
+    align-items: center;
+    gap: var(--studio-space-3);
+    padding: var(--studio-space-2) var(--studio-space-3);
+    background: var(--studio-bg-elevated);
+    border: 1px solid var(--studio-border-subtle);
+    border-radius: var(--studio-radius-sm);
+    margin-bottom: var(--studio-space-2);
+    font-size: var(--studio-text-xs);
+  }
+
+  .ab-agent__name {
+    font-weight: 600;
+    color: var(--studio-text-primary);
+    min-width: 90px;
+  }
+
+  .ab-agent__role {
+    color: var(--studio-text-muted);
+    flex: 1;
+  }
+
+  .ab-agent__port {
+    font-family: var(--studio-font-mono);
+    color: var(--studio-accent-light);
+    font-size: 0.7rem;
+  }
+</style>
+
+<script src="/static/js/app-builder.js"></script>
+{% endblock %}

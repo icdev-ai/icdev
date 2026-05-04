@@ -1,0 +1,15 @@
+# Genesis (Additional)
+
+> Shard of `tools/manifest.md`. See index at `tools/manifest.md`.
+
+## Genesis (Additional)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Goal Template Generator | tools/genesis/goal_template_generator.py | Generate goal templates from GKP artifacts | --json | Goal templates |
+| Goal Learner | tools/genesis/goal_learner.py | Detect novel problem-solving not covered by existing goals, auto-generate FORGE goal files with version history and quality scoring | --scan --json | Generated goal markdown files + DB records |
+| Synthesize Reflex | tools/genesis/reflexes/synthesize.py | Synthesize reflex: tool-chain pattern detection | --json | Pattern results |
+| cATO Monitor Reflex | tools/genesis/reflexes/cato_monitor.py | 6-hour continuous compliance monitoring reflex — discovers *.iqe queries under context/iqe/queries/compliance/, executes them via IQE Executor, and triggers POAM generation for new violations; scanner-tier, air-gap safe | IQE query files (auto-discovered) | Compliance violations + triggered POAM records |
+| Canvas Indexer Reflex | tools/genesis/reflexes/canvas_indexer.py | Genesis daemon reflex that indexes 5 canvases (PDC/BDC/DDC/ODC/IDC) from SQLite sidecars into kg_nodes/kg_edges every 6 hours; exports success metrics as JSON | `run(config, trust)` called by Genesis daemon | JSON metrics dict {indexed_count, duration_ms} |
+| Oracle Triage Reflex | tools/genesis/reflexes/oracle_triage.py | Deterministically promote/dismiss Oracle-suggested kanban tasks using file-exists (tool_not_in_manifest), Flask-route grep (route_not_listed), and migration-check (orphan_db_table) verifiers; no-lens heuristics for RCA/V&V/FR cards; runs every 3h after awareness cycle | `--run [--dry-run] [--json]` / `run(config, trust)` | JSON summary {promoted, dismissed, skipped, errors} |
+| AADC Reflex | tools/genesis/reflexes/aadc_reflex.py | Genesis daemon reflex that scores the latest AADC design against 5 compliance frameworks (NIST AI RMF, OWASP LLM Top 10, OMB M-25-21, MITRE ATLAS, autonomy level), writes an assessment to aadc_assessments, emits a memory insight on regression, and creates a Kanban suggestion when gaps are found | `run(payload, ctx)` called by Genesis daemon | JSON result {design_id, scored, gaps, kanban_task_id} |
+

@@ -1,0 +1,10 @@
+# Intent: Detect PII-bearing columns (SSN) flowing through the pipeline without a CUI
+#         classification tag. All PII must be marked CUI or higher before transmission
+#         within an IL4 boundary per NIST SP 800-122 and DoD CUI policy.
+# Expected violation shape: rows where column_name contains "ssn" and classification != "CUI";
+#   each row is an unprotected PII-bearing edge requiring immediate CUI classification.
+
+foreach e in data.lineage.edges
+  where e.column_name contains "ssn"
+  where e.classification != "CUI"
+  select e.id, e.source_node_id, e.target_node_id, e.column_name, e.classification

@@ -1,0 +1,8 @@
+# Intent: Surface attack-graph edges whose destination carries an IL5 classification,
+#         indicating lateral movement that crosses the IL4 → IL5 trust boundary.
+# Expected violation shape: rows where target_il_level >= 5;
+#   each row is a lateral-movement edge reaching an IL5-classified asset.
+
+foreach e in attack.edges
+  where e.target_il_level >= 5
+  select e.snapshot_id, e.component_id, e.source, e.target, e.risk_score, e.target_il_level

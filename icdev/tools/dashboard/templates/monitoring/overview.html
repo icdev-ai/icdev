@@ -180,6 +180,7 @@ flowchart TD
                 <th>Duration (s)</th>
                 <th>Escalated To</th>
                 <th>Created</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -198,9 +199,10 @@ flowchart TD
                 <td>{{ event.duration_seconds or '—' }}</td>
                 <td>{{ event.escalated_to or '—' }}</td>
                 <td class="text-muted">{{ event.created_at }}</td>
+                <td><button class="btn btn-sm btn-explain" onclick="showExplain({{ event.id }})">Explain</button></td>
             </tr>
             {% else %}
-            <tr class="empty-row"><td colspan="7">No self-healing events recorded</td></tr>
+            <tr class="empty-row"><td colspan="8">No self-healing events recorded</td></tr>
             {% endfor %}
         </tbody>
     </table>

@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import sys
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -31,6 +32,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.strategos import tier_resolver  # noqa: E402
 
 PROMPT_DIR = BASE_DIR / ".tmp" / "kanban"
 WORKTREE_BASE = BASE_DIR / ".tmp" / "worktrees"
@@ -59,10 +61,14 @@ def _count_pending_prompts() -> int:
 
     Previously counted all .md files, which blocked queue promotion when
     stale prompt files lingered from crashed/completed tasks.
+
+    Globs all *.md files (not just task-*.md) because the scheduler may
+    write prompt files named by task ID directly (e.g. sg-import-ds-vault.md).
+    The stem is always the task ID regardless of any prefix.
     """
     if not PROMPT_DIR.exists():
         return 0
-    prompt_files = list(PROMPT_DIR.glob("task-*.md"))
+    prompt_files = list(PROMPT_DIR.glob("*.md"))
     if not prompt_files:
         return 0
     # Only count prompts whose task is still in_progress
@@ -70,7 +76,7 @@ def _count_pending_prompts() -> int:
     try:
         count = 0
         for pf in prompt_files:
-            task_id = pf.stem  # e.g. "task-abc123"
+            task_id = pf.stem  # stem IS the task ID (e.g. "sg-import-ds-vault" or "task-abc123")
             row = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
             if row and dict(row)["status"] == "in_progress":
                 count += 1
@@ -89,8 +95,9 @@ def _count_pending_prompts() -> int:
         conn.close()
 
 
-# Max tasks to auto-promote per cycle (prevents flooding)
-MAX_AUTO_PROMOTE = 2
+# Max tasks to auto-promote per cycle — matches MAX_IN_PROGRESS so a full
+# batch fills all available slots in one cycle rather than two.
+MAX_AUTO_PROMOTE = 3
 # Max in-progress tasks at any time (prevents pile-up)
 MAX_IN_PROGRESS = 3
 # Max seconds a Claude CLI subprocess can run before being killed
@@ -465,6 +472,26 @@ def _create_worktree(task_id: str) -> Optional[str]:
                 capture_output=True, text=True, timeout=10)
         _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
                 capture_output=True, text=True, timeout=10)
+    else:
+        # worktree_path doesn't exist but branch may still exist from a prior
+        # _reset_broken_worktree whose `git branch -D` failed silently (e.g.
+        # Windows file-lock left the ref in a bad state, or another worktree
+        # held it). Without this cleanup, `git worktree add -b` fails with
+        # "already exists" and _create_worktree returns None, forcing every
+        # subsequent dispatch into BASE_DIR — causing the coherence loop.
+        _stale = _sp.run(
+            ["git", "rev-parse", "--verify", branch_name],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        if _stale.returncode == 0:
+            logger.warning(
+                "Stale branch %s found without worktree dir — pruning before recreate",
+                branch_name,
+            )
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
 
     try:
         # Create a new branch from HEAD for this task
@@ -493,6 +520,21 @@ def _create_worktree(task_id: str) -> Optional[str]:
             logger.warning(
                 "Worktree dir created for %s but .git file is missing — "
                 "treating as failed registration and cleaning up",
+                task_id,
+            )
+            import shutil as _shutil
+            _shutil.rmtree(worktree_path, ignore_errors=True)
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            return None
+        # Verify structural completeness: tools/manifest.md must exist in the
+        # worktree. A partial Windows checkout (rmtree file-lock failures) can
+        # leave an empty dir with only .git; coherence then fails on every
+        # dispatch with "no tools/manifest.md", looping until self_debug fires.
+        if not (worktree_path / "tools" / "manifest.md").exists():
+            logger.warning(
+                "Worktree dir created for %s but tools/manifest.md is missing "
+                "(partial checkout) — cleaning up so next dispatch rebuilds clean",
                 task_id,
             )
             import shutil as _shutil
@@ -958,25 +1000,28 @@ def _get_due_tasks() -> list:
     conn = get_connection()
     try:
         # Native task dependency gating — a task is blocked if ANY of its
-        # declared dependencies (scalar OR junction table) are not yet done.
-        # Junction table (kanban_task_deps) is authoritative for multi-parent;
-        # scalar depends_on_task_id is checked as fallback for compat.
-        dep_clause = (
-            "("
-            "  NOT EXISTS (SELECT 1 FROM kanban_task_deps d "
-            "              WHERE d.task_id = kt.id) "
-            "  AND (kt.depends_on_task_id IS NULL "
-            "       OR EXISTS (SELECT 1 FROM kanban_tasks dep "
-            "                  WHERE dep.id = kt.depends_on_task_id "
-            "                    AND dep.status = 'done'))"
-            "  OR ("
-            "  EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
-            "  AND NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
-            "                  JOIN kanban_tasks p ON p.id = d2.depends_on_id "
-            "                  WHERE d2.task_id = kt.id AND p.status != 'done')"
-            "  )"
-            ")"
+        # declared dependencies (scalar AND/OR junction table) are not yet done.
+        # A task may have BOTH a scalar depends_on_task_id AND junction rows.
+        # Both must be satisfied. 'decomposed' counts as done (parent was split;
+        # it will never reach 'done' directly so dependents must not wait for it).
+        #
+        # Scalar dep check: always applied when depends_on_task_id is set.
+        # Junction dep check: when kanban_task_deps rows exist, ALL must be done.
+        # A task without either dependency is always eligible.
+        _scalar_dep_ok = (
+            "(kt.depends_on_task_id IS NULL "
+            " OR EXISTS (SELECT 1 FROM kanban_tasks dep "
+            "            WHERE dep.id = kt.depends_on_task_id "
+            "             AND dep.status IN ('done', 'decomposed')))"
         )
+        _junction_dep_ok = (
+            "(NOT EXISTS (SELECT 1 FROM kanban_task_deps d WHERE d.task_id = kt.id) "
+            " OR NOT EXISTS (SELECT 1 FROM kanban_task_deps d2 "
+            "                JOIN kanban_tasks p ON p.id = d2.depends_on_id "
+            "                WHERE d2.task_id = kt.id "
+            "                 AND p.status NOT IN ('done', 'decomposed')))"
+        )
+        dep_clause = f"({_scalar_dep_ok} AND {_junction_dep_ok})"
 
         # Always pick up scheduled-and-due tasks.
         # Chain-priority (2026-04-15): tasks with depends_on_task_id IS NOT NULL
@@ -989,7 +1034,7 @@ def _get_due_tasks() -> list:
             "WHERE kt.status = 'scheduled' "
             "  AND kt.scheduled_at IS NOT NULL "
             "  AND kt.scheduled_at <= datetime('now') "
-            f"  AND {dep_clause} "  # nosec B608 -- internal constant
+            f"  AND {dep_clause} "  # nosec B608
             "ORDER BY "
             "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
             "CASE kt.priority "
@@ -1045,19 +1090,19 @@ def _get_due_tasks() -> list:
         if slots <= 0:
             return result
 
-        # Backlog cooldown: skip tasks updated in the last 10 minutes
-        # (prevents rapid-fire retry of recently failed tasks).
-        # Exception: tasks with reset_count > 0 were explicitly reset by
-        # _reset_to_backlog() which back-dates updated_at by 11 minutes,
-        # so they pass the cooldown naturally.
+        # Backlog cooldown: skip tasks updated in the last 2 minutes
+        # (prevents rapid-fire retry of recently failed tasks; 2 min aligns
+        # with the 60s scheduler cycle and keeps parallel slots filling fast).
+        # Tasks with fc≥5 are quarantined by the stale-reaper sweep and will
+        # not appear here (status='suggested' after the sweep).
         backlog = conn.execute(
             "SELECT kt.* FROM kanban_tasks kt "
             "WHERE kt.status = 'backlog' "
             "  AND (kt.updated_at IS NULL "
-            "       OR kt.updated_at <= datetime('now', '-10 minutes')) "
+            "       OR kt.updated_at <= datetime('now', '-2 minutes')) "
             "  AND (kt.last_failure_reason IS NULL "
             "       OR kt.last_failure_reason NOT LIKE ?) "
-            f"  AND {dep_clause} "  # nosec B608 -- internal constant
+            f"  AND {dep_clause} "  # nosec B608
             "ORDER BY "
             "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
             "CASE kt.priority "
@@ -1385,14 +1430,34 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
             )
             conn.commit()
 
+            # Chain-blocker escalation: if any tasks are blocked waiting for
+            # this one, escalate priority to critical so failure_triage picks
+            # it up first and its dependents can be unblocked sooner.
+            blocked_dep_rows = conn.execute(
+                "SELECT id FROM kanban_tasks "
+                "WHERE depends_on_task_id = ? "
+                "  AND status NOT IN ('done','decomposed')",
+                (task_id,),
+            ).fetchall()
+            blocked_dep_ids = [dict(r)["id"] for r in blocked_dep_rows]
+            if blocked_dep_ids:
+                conn.execute(
+                    "UPDATE kanban_tasks SET priority = 'critical', updated_at = ? "
+                    "WHERE id = ?",
+                    (now, task_id),
+                )
+                logger.warning(
+                    "Task %s failed with %d blocked dependent(s) %s — "
+                    "escalated priority to critical",
+                    task_id, len(blocked_dep_ids), blocked_dep_ids,
+                )
+            conn.commit()
+
             if new_count >= MAX_FAILURES_BEFORE_DECOMPOSITION:
                 logger.warning(
                     "Task %s failed %d times — flagging for decomposition",
                     task_id, new_count,
                 )
-                # Notify via Telegram so someone can decompose it.
-                # Skip for test tasks (id starts with 'test-') and when
-                # PYTEST_CURRENT_TEST env var is present, to avoid spam.
                 import os as _os
                 _is_test = (
                     task_id.startswith("test-") or
@@ -1402,12 +1467,18 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
                 if not _is_test:
                     try:
                         from tools.notifications.adapters.telegram import send as tg_send
+                        chain_note = (
+                            f"\n\nWARNING: {len(blocked_dep_ids)} downstream task(s) are "
+                            f"blocked on this task: {blocked_dep_ids[:5]}"
+                            if blocked_dep_ids else ""
+                        )
                         tg_send(
                             f"DECOMPOSITION NEEDED: {task_id[:24]}",
                             f"Task failed {new_count} verification attempts. "
                             f"It is likely too big for one Claude CLI session. "
                             f"Please split it into smaller sub-tasks.\n"
-                            f"Latest reason: {reason_short[:200]}",
+                            f"Latest reason: {reason_short[:200]}"
+                            f"{chain_note}",
                             severity="warning",
                         )
                     except Exception:
@@ -1473,19 +1544,36 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
             "WHERE t.id = ?",
             (task_id,),
         ).fetchone()
+        if not row:
+            conn.close()
+            return True, None
+        row = dict(row)
+
+        # Check scalar dep
+        parent_id = row.get("depends_on_task_id")
+        if parent_id:
+            parent_status = row.get("parent_status")
+            if parent_status not in ("done", "decomposed"):
+                conn.close()
+                return False, f"parent {parent_id} status={parent_status!r}"
+
+        # Check junction deps — any undone junction parent blocks
+        unmet = conn.execute(
+            "SELECT d.depends_on_id, p.status "
+            "FROM kanban_task_deps d "
+            "JOIN kanban_tasks p ON p.id = d.depends_on_id "
+            "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
+            (task_id,),
+        ).fetchone()
         conn.close()
+        if unmet:
+            unmet = dict(unmet)
+            return False, (
+                f"junction dep {unmet['depends_on_id']!r} status={unmet['status']!r}"
+            )
     except Exception:
         return True, None  # fail-open on DB error
-    if not row:
-        return True, None
-    row = dict(row)
-    parent_id = row.get("depends_on_task_id")
-    if not parent_id:
-        return True, None
-    parent_status = row.get("parent_status")
-    if parent_status == "done":
-        return True, None
-    return False, f"parent {parent_id} status={parent_status!r}"
+    return True, None
 
 
 def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") -> Optional[str]:
@@ -1540,6 +1628,17 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
             # --- Path 2: depends_on_task_id linkage (manually created tasks) ---
             parent_id = row_d.get("depends_on_task_id")
             if not parent_id:
+                # --- Path 3: ID naming-convention ({parent}-d{N}) ---
+                # Delegate to the canonical state_machine implementation which
+                # handles this case — covers tasks where subtasks chain to each
+                # other but none explicitly declares depends_on_task_id=parent.
+                try:
+                    from tools.kanban.state_machine import auto_close_by_naming_convention
+                    result = auto_close_by_naming_convention(child_task_id, conn, actor=actor)
+                    if result and result.applied:
+                        return result.task_id
+                except Exception as _e:
+                    logger.debug("_auto_close_decomposed_parent path-3 failed: %s", _e)
                 return None
 
             parent_status_row = conn.execute(
@@ -1640,6 +1739,26 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 )
                 return
 
+        # HITL gate: block in_progress→done when a HITL approval is pending
+        if new_status == "done" and os.getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
+            try:
+                from tools.workflow_hitl.gate import HITLGate
+                pending = HITLGate().get_pending(task_id)
+                if pending:
+                    logger.info(
+                        "_move_task: HITL gate active for %s — not advancing to done (approval: %s)",
+                        task_id, pending["id"],
+                    )
+                    conn.close()
+                    _record_status_transition(
+                        task_id, prior_status, "HITL_PENDING",
+                        actor=actor,
+                        reason=f"HITL gate: approval {pending['id']} stage={pending.get('stage')} pending",
+                    )
+                    return
+            except ImportError:
+                pass  # HITL module not installed — gate is no-op
+
         now = _utcnow_iso()
         sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
         vals = [new_status, now]
@@ -1695,11 +1814,11 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             if rolled_back:
                 placeholders = ",".join("?" * len(rolled_back))
                 conn.execute(
-                    f"UPDATE kanban_tasks SET status='backlog', "  # nosec B608
-                    f"scheduled_at=NULL, "
-                    f"updated_at=?, failure_count=0, "
-                    f"last_failure_reason=?, last_failure_at=NULL "
-                    f"WHERE id IN ({placeholders})",
+                    "UPDATE kanban_tasks SET status='backlog', "
+                    "scheduled_at=NULL, "
+                    "updated_at=?, failure_count=0, "
+                    "last_failure_reason=?, last_failure_at=NULL "
+                    f"WHERE id IN ({placeholders})",  # nosec B608
                     (now, f"cascade: parent {task_id} demoted from done", *rolled_back),
                 )
                 conn.commit()
@@ -1760,12 +1879,22 @@ def _detect_orphan_done_tasks() -> list[dict]:
     try:
         conn = get_connection()
         try:
-            rows = conn.execute(
+            # Scalar dep orphans: done task whose depends_on_task_id parent isn't done
+            scalar_rows = conn.execute(
                 "SELECT t.id AS id, t.depends_on_task_id AS parent_id, "
                 "       p.status AS parent_status "
                 "FROM kanban_tasks t "
                 "JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.status = 'done' AND p.status != 'done'"
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
+            ).fetchall()
+            # Junction dep orphans: done task with at least one unfinished junction parent
+            junction_rows = conn.execute(
+                "SELECT DISTINCT t.id AS id, d.depends_on_id AS parent_id, "
+                "       p.status AS parent_status "
+                "FROM kanban_tasks t "
+                "JOIN kanban_task_deps d ON d.task_id = t.id "
+                "JOIN kanban_tasks p ON p.id = d.depends_on_id "
+                "WHERE t.status = 'done' AND p.status NOT IN ('done', 'decomposed')"
             ).fetchall()
         finally:
             conn.close()
@@ -1773,24 +1902,27 @@ def _detect_orphan_done_tasks() -> list[dict]:
         logger.warning("orphan-done sweep: DB error %s", exc)
         return []
 
+    seen: set[str] = set()
     orphans: list[dict] = []
-    for r in rows:
+    for r in list(scalar_rows) + list(junction_rows):
         d = dict(r)
-        orphans.append({
-            "id": d["id"],
-            "parent_id": d["parent_id"],
-            "parent_status": d.get("parent_status"),
-        })
+        if d["id"] not in seen:
+            seen.add(d["id"])
+            orphans.append({
+                "id": d["id"],
+                "parent_id": d["parent_id"],
+                "parent_status": d.get("parent_status"),
+            })
 
     for o in orphans:
         logger.warning(
-            "ORPHAN-DONE detected: %s was done but parent %s is %r \u2014 rolling back to scheduled",
+            "ORPHAN-DONE detected: %s was done but parent %s is %r \u2014 rolling back to backlog",
             o["id"], o["parent_id"], o["parent_status"],
         )
-        # _move_task will cascade-rollback any descendants of o["id"]
-        # that were in_progress/backlog.
+        # Roll back to backlog (not scheduled) \u2014 parent is not done so this
+        # task must wait for the dependency chain to complete before re-scheduling.
         _move_task(
-            o["id"], "scheduled",
+            o["id"], "backlog",
             actor="orphan_sweep",
             reason=f"parent {o['parent_id']} status={o['parent_status']!r} at sweep",
         )
@@ -2059,6 +2191,14 @@ def _claude_code_available() -> bool:
 # can treat them uniformly.
 _running: Dict[str, Any] = {}
 
+# Semaphore counter for EXEC_OLLAMA_LOCAL concurrent dispatch limit.
+_ollama_running_count: int = 0
+
+# Task IDs dispatched synchronously via Ollama (already completed when added).
+# The reflex run() checks this to mark them done immediately rather than
+# routing through the in_progress polling loop.
+_ollama_completed: set = set()
+
 
 class _LLMTaskHandle:
     """Popen-compatible handle around a threaded LLMRouter.invoke() call.
@@ -2134,9 +2274,11 @@ _FAILURE_COACHING = {
         "not hallucinate paths. Use Read to confirm before mentioning a file."
     ),
     "ruff_issues": (
-        "Previous run left ruff lint errors (F401 unused imports, etc). "
-        "Before finishing, run: python -m ruff check --fix <modified_files> "
-        "and remove any remaining unused imports/variables."
+        "Previous run left ruff lint errors that ruff --fix could not auto-resolve. "
+        "The SPECIFIC errors are listed in the 'Reason' field above. "
+        "For each file:line:col:code listed, open the file and manually fix that issue. "
+        "After fixing, verify with: python -m ruff check <modified_files>. "
+        "Do NOT just run ruff --fix again — those were already tried and did not help."
     ),
     "bandit_security": (
         "Previous run introduced a medium+ security issue (bandit). Avoid: "
@@ -2256,6 +2398,19 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
 
         _tag_task_source(task_id, "genesis_scheduler")
 
+        # Write instruction to a temp file and pipe via stdin to avoid the
+        # Windows 32767-char command-line length limit (WinError 206).
+        # Claude auto-detects non-TTY stdout and enters non-interactive mode.
+        import tempfile as _tempfile
+        _instr_tmp = _tempfile.NamedTemporaryFile(
+            mode="w", suffix="_instr.txt", delete=False,
+            dir=str(BASE_DIR / ".tmp"),
+            encoding="utf-8", errors="replace",
+        )
+        _instr_tmp.write(instruction)
+        _instr_tmp.close()
+        _stdin_fh = open(_instr_tmp.name, "r", encoding="utf-8", errors="replace")
+
         proc = subprocess.Popen(
             [
                 claude_cli,
@@ -2264,19 +2419,35 @@ def _dispatch_via_claude_cli(task: dict, prompt_path: str, instruction: str,
                 "50",
                 "--output-format",
                 "text",
-                "-p",
-                instruction,
             ],
             cwd=work_dir,
+            stdin=_stdin_fh,
             stdout=log_fh,
             stderr=subprocess.STDOUT,
             env=env,
         )
+        _stdin_fh.close()  # subprocess inherits the fd; close our handle
+        # Clean up temp instruction file after 5 min (process has read it by then)
+        import threading as _threading
+        import os as _os2
+
+        def _cleanup_instr(path, delay=300.0):
+            import time
+            time.sleep(delay)
+            try:
+                _os2.unlink(path)
+            except Exception:
+                pass
+
+        _threading.Thread(
+            target=_cleanup_instr, args=(_instr_tmp.name,), daemon=True
+        ).start()
+
         _running[task_id] = proc
         _dispatch_times[task_id] = datetime.now(timezone.utc)
         print(f"  Kanban: dispatched {task_id} to claude CLI (PID {proc.pid})")
-    except FileNotFoundError:
-        print(f"  Kanban: claude CLI not found at {claude_cli}")
+    except FileNotFoundError as e:
+        print(f"  Kanban: claude dispatch error for {task_id}: {e}")
     except Exception as e:
         print(f"  Kanban: claude dispatch error for {task_id}: {e}")
 
@@ -2383,6 +2554,125 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     print(f"  Kanban: dispatched {task_id} via LLMRouter (no Claude CLI)")
 
 
+def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
+    """Trigger a GitLab CI pipeline for the given task (EXEC_GITLAB tier).
+
+    POSTs to the pipeline trigger endpoint with TASK_ID, TASK_DESCRIPTION,
+    TASK_TYPE, and LLM_PROVIDER=ollama. Stores the returned pipeline_id in
+    the task row. Returns True on HTTP 201, False on any error.
+    """
+    import os as _os
+    try:
+        import requests as _requests
+    except ImportError:
+        logger.warning("kanban: requests library not available — cannot dispatch via GitLab")
+        return False
+
+    gitlab_url = _os.getenv("GITLAB_URL", "").rstrip("/")
+    project_id = _os.getenv("GITLAB_PROJECT_ID", "")
+    trigger_token = _os.getenv("GITLAB_TRIGGER_TOKEN", "")
+
+    if not gitlab_url or not project_id or not trigger_token:
+        logger.warning(
+            "kanban: GITLAB_URL / GITLAB_PROJECT_ID / GITLAB_TRIGGER_TOKEN not set"
+        )
+        return False
+
+    path = f"/api/v4/projects/{project_id}/trigger/pipeline"
+    url = urllib.parse.urljoin(gitlab_url + "/", path.lstrip("/"))
+
+    payload = {
+        "token": trigger_token,
+        "ref": "main",
+        "variables[TASK_ID]": task_id,
+        "variables[TASK_DESCRIPTION]": task_desc,
+        "variables[TASK_TYPE]": task_type,
+        "variables[LLM_PROVIDER]": "ollama",
+    }
+
+    try:
+        resp = _requests.post(url, data=payload, timeout=10)
+    except _requests.RequestException as exc:
+        logger.warning("kanban: GitLab pipeline trigger failed for %s: %s", task_id, exc)
+        return False
+
+    if resp.status_code == 201:
+        pipeline_id = str(resp.json().get("id", ""))
+        pipeline_web_url = resp.json().get("web_url", "")
+        try:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
+            )
+            conn.commit()
+        except Exception as _db_exc:
+            logger.warning("kanban: failed to store pipeline_id for %s: %s", task_id, _db_exc)
+        logger.info("kanban: GitLab pipeline %s triggered for task %s", pipeline_id, task_id)
+        return True
+
+    logger.warning(
+        "kanban: GitLab pipeline trigger returned %d for %s", resp.status_code, task_id
+    )
+    return False
+
+
+def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:
+    """Run an Ollama-backed anvil script directly for the EXEC_OLLAMA_LOCAL tier.
+
+    Executes tools/anvil/{task_type}.py synchronously with LLM_PROVIDER=ollama.
+    A module-level semaphore (_ollama_running_count) limits concurrent Ollama
+    dispatches to OLLAMA_MAX_CONCURRENT (default 1) to avoid VRAM contention.
+    Returns True on success (returncode==0), False on semaphore limit, timeout,
+    or subprocess failure.
+    """
+    import os as _os
+
+    global _ollama_running_count
+
+    _max_concurrent = int(_os.getenv("OLLAMA_MAX_CONCURRENT", "1"))
+    if _ollama_running_count >= _max_concurrent:
+        logger.warning(
+            "kanban: Ollama concurrency limit %d reached, skipping %s",
+            _max_concurrent,
+            task_id,
+        )
+        return False
+
+    anvil_script = f"tools/anvil/{task_type}.py"
+    env = {**_os.environ, "LLM_PROVIDER": "ollama"}
+
+    _ollama_running_count += 1
+    try:
+        result = subprocess.run(
+            [sys.executable, anvil_script, "--json", "--", task_desc],
+            env=env,
+            capture_output=True,
+            timeout=600,
+            cwd=str(BASE_DIR),
+        )
+        if result.returncode != 0:
+            stderr_snippet = result.stderr.decode("utf-8", errors="replace")[:500]
+            logger.warning(
+                "kanban: Ollama local dispatch failed for %s (exit %d): %s",
+                task_id,
+                result.returncode,
+                stderr_snippet,
+            )
+            return False
+        _dispatch_times[task_id] = datetime.now(timezone.utc)
+        logger.info("kanban: dispatched %s via Ollama local anvil (%s)", task_id, anvil_script)
+        return True
+    except subprocess.TimeoutExpired:
+        logger.warning("kanban: Ollama local dispatch timed out for %s", task_id)
+        return False
+    except Exception as exc:
+        logger.warning("kanban: Ollama local dispatch error for %s: %s", task_id, exc)
+        return False
+    finally:
+        _ollama_running_count -= 1
+
+
 def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     """Check if a gap task is already resolved BEFORE dispatching Claude.
 
@@ -2445,6 +2735,20 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     return False, ""
 
 
+def _set_executor_type(task_id: str, executor_type: str) -> None:
+    """Stamp executor_type on the task row so the UI badge is accurate."""
+    try:
+        conn = get_connection()
+        conn.execute(
+            "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
+            (executor_type, task_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -2472,11 +2776,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             _move_task(task_id, "done")
         except Exception:
             pass
-        _send_notification({"id": task_id, "title": title,
-                            "task_type": task.get("task_type", "chore"),
-                            "priority": task.get("priority", "medium")},
-                           event="done")
-        return
+        return  # No notification — false-positive resolves are scheduler noise
 
     prompt_text = Path(prompt_path).read_text(encoding="utf-8")
 
@@ -2510,10 +2810,72 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     instruction = _build_instruction(task_id, title, prompt_text, prompt_path)
     task_log = PROMPT_DIR / f"{task_id}.log"
 
-    if _claude_code_available():
-        _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
-    else:
-        _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
+    try:
+        import yaml as _yaml  # noqa: PLC0415
+        _cfg_path = BASE_DIR / "args" / "strategos_config.yaml"
+        with open(_cfg_path, encoding="utf-8") as _f:
+            _sc = _yaml.safe_load(_f) or {}
+        _fallback_chain = _sc.get("executor", {}).get(
+            "fallback_chain", ["claude_cli", "gitlab", "ollama_local"]
+        )
+    except Exception:
+        _fallback_chain = ["claude_cli", "gitlab", "ollama_local"]
+
+    task_desc = task.get("description", task.get("title", ""))
+    task_type = task.get("task_type", "chore")
+
+    dispatched = False
+    for tier in _fallback_chain:
+        if tier == "claude_cli":
+            if _claude_code_available():
+                _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
+                _set_executor_type(task_id, "claude_cli")
+                dispatched = True
+                break
+        elif tier == "gitlab":
+            ok = _dispatch_gitlab(task_id, task_desc, task_type)
+            if ok:
+                _dispatch_times[task_id] = datetime.now(timezone.utc)
+                _set_executor_type(task_id, "gitlab")
+                print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
+                dispatched = True
+                break
+        elif tier == "ollama_local":
+            ok = _dispatch_ollama_local(task_id, task_desc, task_type)
+            if ok:
+                _set_executor_type(task_id, "ollama_local")
+                _ollama_completed.add(task_id)
+                print(f"  Kanban: dispatched {task_id} via Ollama local")
+                dispatched = True
+                break
+
+    if not dispatched:
+        if _fallback_chain and _fallback_chain[-1] == "ollama_local":
+            _no_exec_reason = (
+                "no executor available: internet=False, "
+                "gitlab=unreachable, ollama=unreachable"
+            )
+            try:
+                _conn = get_connection()
+                _conn.execute(
+                    "UPDATE kanban_tasks SET last_failure_reason = ?, "
+                    "updated_at = ? WHERE id = ?",
+                    (_no_exec_reason, _utcnow_iso(), task_id),
+                )
+                _conn.commit()
+                _conn.close()
+            except Exception as _lfr_exc:
+                logger.warning(
+                    "kanban: failed to set last_failure_reason for %s: %s",
+                    task_id, _lfr_exc,
+                )
+            _move_task(task_id, "suggested", actor="scheduler", reason=_no_exec_reason)
+            print(
+                f"  Kanban: {task_id} NO EXECUTOR — "
+                "moved to suggested (no internet, gitlab, or ollama available)"
+            )
+        else:
+            _dispatch_via_llm_router(task, prompt_path, instruction, work_dir, task_log)
 
 
 # OPT-76 — phantom-completion guard. Regex matches plausible repo-relative
@@ -3396,12 +3758,20 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         manifest_text = "\n".join(chunks)
                 except Exception:
                     pass
-                if not manifest_text:
-                    parts = [
-                        (BASE_DIR / "tools" / "manifest.md").read_text(
-                            encoding="utf-8"
+                if not manifest_text or tool_path not in manifest_text:
+                    # Fallback to working-tree shards when the kanban branch
+                    # either has no manifest files or is missing the specific
+                    # entry (entry may have been committed to main, not the
+                    # feature branch, which is the typical case post-merge).
+                    parts = []
+                    try:
+                        parts.append(
+                            (BASE_DIR / "tools" / "manifest.md").read_text(
+                                encoding="utf-8"
+                            )
                         )
-                    ]
+                    except Exception:
+                        pass
                     shard_dir = BASE_DIR / "tools" / "manifest"
                     if shard_dir.is_dir():
                         for shard in shard_dir.glob("*.md"):
@@ -3646,6 +4016,19 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
     work_dir = _worktrees.get(task_id)
     if work_dir and Path(work_dir).exists():
         cwd = str(work_dir)
+    elif work_dir:
+        # Worktree path recorded but directory is gone (deleted by a prior
+        # _reset_broken_worktree or Windows rmtree). Falling back to BASE_DIR
+        # would validate the wrong directory and could incorrectly mark the
+        # task done. Return the worktree-missing signal so auto_remediate
+        # can prune git state and let the next dispatch rebuild from HEAD.
+        _empty: Dict[str, Any] = {
+            "codelens_passed": None, "ruff_issues": 0, "bandit_issues": 0,
+            "coherence_passed": None, "e2e_ran": False, "e2e_passed": None,
+            "companion_synced": False, "modified_files": 0, "modified_py": 0,
+            "budget_sec": 0, "elapsed_sec": 0,
+        }
+        return False, "worktree missing on disk — rebuild required", _empty
     else:
         cwd = str(BASE_DIR)
 
@@ -3818,6 +4201,10 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
     """
     verified, reason = _run_verify_checks(task_id, claude_output)
     metrics: Dict[str, Any] = {}
+    # Bypass completions made no code changes — post-task validation (coherence/E2E)
+    # would run against the unmodified base codebase and any pre-existing issue
+    # would incorrectly block the task. Skip it entirely for bypass tasks.
+    _is_bypass = "bypass" in reason.lower()
     if verified:
         specific_ok, specific_reason = _verify_task_specific(task_id)
         if not specific_ok:
@@ -3825,7 +4212,7 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
             reason = f"{reason} | {specific_reason}"
         else:
             reason = f"{reason} | {specific_reason}"
-    if verified:
+    if verified and not _is_bypass:
         validation_ok, validation_reason, metrics = _run_post_task_validation(task_id)
         if not validation_ok:
             verified = False
@@ -3838,15 +4225,35 @@ def _run_full_verification(task_id: str, claude_output: str) -> Tuple[bool, str,
 # Track when each task was dispatched: {task_id: datetime}
 _dispatch_times: Dict[str, datetime] = {}
 
+# Current executor tier — updated once per scheduler cycle
+_current_exec_tier: Optional[str] = None
+
+_SILENT_DISPATCH_THRESHOLD = 5 * 60  # 5 min — no log file content yet = never dispatched
+
+
+def _task_log_is_empty(tid: str) -> bool:
+    """Return True if the task's .tmp/kanban/<id>.log is absent or has no content."""
+    log_path = Path(__file__).resolve().parent.parent.parent / ".tmp" / "kanban" / f"{tid}.log"
+    try:
+        return not log_path.exists() or log_path.stat().st_size == 0
+    except Exception:
+        return False
+
+
 def _reap_stale_in_progress() -> None:
     """Periodic reaper: reset in_progress tasks not tracked in _running.
 
-    Catches two failure modes that survive past startup-recovery:
+    Catches three failure modes that survive past startup-recovery:
       1. Process died mid-run after dispatch (PID gone, DB still in_progress).
       2. Verification gate left the task in_progress with 'human review needed'
          instead of resetting to backlog.
+      3. Silent dispatch failure — task promoted to in_progress but subprocess
+         never started (execution_id still NULL, log file empty). Fast-reaped
+         after _SILENT_DISPATCH_THRESHOLD (5 min) so the board never shows a
+         ghost in_progress for more than one scheduler cycle window.
 
-    Threshold: updated_at older than 2× the task's normal timeout (≥30 min).
+    Normal threshold: 2× task timeout (30–80 min).
+    Silent-dispatch threshold: 5 min (log empty + not in _running).
     Only resets tasks NOT currently in _running to avoid killing live agents.
     """
     try:
@@ -3890,31 +4297,54 @@ def _reap_stale_in_progress() -> None:
                 continue
 
             age_seconds = (now - updated_at).total_seconds()
-            threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
+
+            # Fast-reap silent dispatch: task is not in _running AND log file
+            # is still empty — subprocess never wrote a single byte, so it
+            # never actually started. Use a short 5-min window instead of the
+            # normal 2× budget to catch these within the next cycle or two.
+            if _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
+                threshold = _SILENT_DISPATCH_THRESHOLD
+                reap_label = "silent-dispatch (no log output)"
+            else:
+                threshold = _get_task_timeout(tid) * 2  # 2× normal budget = 30–80 min
+                reap_label = "no live subprocess"
 
             if age_seconds < threshold:
                 continue  # task is recent enough — let it run
 
             now_iso = now.isoformat()
+            # Check current failure count before incrementing — if this
+            # reap would bring fc to ≥5, escalate to 'suggested' for HITL
+            # review instead of infinite backlog retry (fc≥5 quarantine).
+            fc_row = conn.execute(
+                "SELECT COALESCE(failure_count, 0) FROM kanban_tasks WHERE id = ?",
+                (tid,),
+            ).fetchone()
+            new_fc = (fc_row[0] if fc_row else 0) + 1
+            next_status = "suggested" if new_fc >= 5 else "backlog"
             reason = (
                 f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
-                f"with no live subprocess (threshold={threshold / 60:.0f} min). "
-                "Automatically reset to backlog for re-dispatch."
+                f"with {reap_label} (threshold={threshold / 60:.0f} min). "
+                + (
+                    f"fc={new_fc}>=5 - escalated to suggested for HITL review."
+                    if next_status == "suggested"
+                    else "Automatically reset to backlog for re-dispatch."
+                )
             )
             conn.execute(
                 "UPDATE kanban_tasks SET "
-                "  status = 'backlog', "
+                "  status = ?, "
                 "  failure_count = COALESCE(failure_count, 0) + 1, "
                 "  last_failure_reason = ?, "
                 "  last_failure_at = ?, "
                 "  updated_at = ? "
                 "WHERE id = ? AND status = 'in_progress'",
-                (reason, now_iso, now_iso, tid),
+                (next_status, reason, now_iso, now_iso, tid),
             )
             reaped.append(tid)
             print(
                 f"  Kanban: stale-reaper reset {tid} "
-                f"(in_progress {age_seconds / 60:.0f} min, no subprocess)"
+                f"(in_progress {age_seconds / 60:.0f} min, {reap_label}) -> {next_status}"
             )
 
         if reaped:
@@ -3961,7 +4391,7 @@ def _startup_recover_stale_in_progress() -> None:
                 "last_failure_reason=?, updated_at=? WHERE id=?",
                 (reason, now_iso, tid),
             )
-            print(f"  Kanban: startup-recovery reset {tid} in_progress → backlog")
+            print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
         conn.commit()
         conn.close()
     except Exception as exc:
@@ -4252,6 +4682,40 @@ def _check_completed():
                             _cleanup_worktree(task_id)
                             del _worktrees[task_id]
                         continue
+
+                # guard-cwd: if the worktree was deleted between dispatch and
+                # verification (Windows file-lock cleanup, concurrent sweep,
+                # etc.), rebuild it now so validation runs in the right dir.
+                # Acceptance criterion: cwd_exists=false + is_worktree_path=true
+                # → trigger rebuild immediately before the verification gate.
+                _wt_path = _worktrees.get(task_id)
+                if _wt_path:
+                    _wt = Path(_wt_path)
+                    _is_wt = ".tmp" in _wt.parts and "worktrees" in _wt.parts
+                    if _is_wt and not _wt.exists():
+                        logger.warning(
+                            "guard-cwd: worktree missing for %s (%s) "
+                            "— rebuilding before verification",
+                            task_id, _wt_path,
+                        )
+                        print(
+                            f"  Kanban: {task_id} worktree missing "
+                            f"— rebuilding before verification"
+                        )
+                        _rebuilt = _create_worktree(task_id)
+                        if _rebuilt:
+                            _worktrees[task_id] = _rebuilt
+                            logger.info(
+                                "guard-cwd: worktree rebuilt at %s for %s",
+                                _rebuilt, task_id,
+                            )
+                        else:
+                            logger.warning(
+                                "guard-cwd: worktree rebuild failed for %s "
+                                "— verification will use BASE_DIR",
+                                task_id,
+                            )
+                            del _worktrees[task_id]
 
                 # VERIFICATION GATE — prevent false positives.
                 # Batch 4 atomic-ish wrap (2026-04-15): verify first, then
@@ -4860,6 +5324,12 @@ def _decompose_one_task(task: dict) -> None:
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Kanban Executor Reflex."""
+    global _current_exec_tier
+    tier = tier_resolver.resolve_tiers().exec_tier
+    if tier != _current_exec_tier:
+        logger.info("Executor tier changed to %s", tier)
+        _current_exec_tier = tier
+
     # 0a. Orphan-done sweep — roll back any done task whose parent isn't done.
     # Defense-in-depth against manual SQL / spurious automation that marked
     # a row done while its prerequisite work hadn't completed. See memory
@@ -4974,7 +5444,24 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     f"verification gate). Agent likely died before completion "
                     f"or self-reported via an external path."
                 )
-                _record_failure_and_maybe_flag(tid, reason)
+                # Run self_debug FIRST so signature_count is incremented
+                # before we decide the target state — quarantine to
+                # 'suggested' takes precedence over backlog/needs_decomposition.
+                try:
+                    from tools.workflow.self_debug import check_and_diagnose as _cad
+                    _sd_work_dir = str(BASE_DIR)
+                    _cad(tid, reason, _sd_work_dir)
+                except Exception as _sd_exc:
+                    logger.warning(
+                        "silent-cleanup self_debug call failed for %s: %s",
+                        tid, _sd_exc,
+                    )
+                new_target = _record_failure_and_maybe_flag(tid, reason)
+                if new_target == "needs_decomposition" and cur_status != "needs_decomposition":
+                    _move_task(
+                        tid, "needs_decomposition",
+                        actor="silent-cleanup", reason=reason,
+                    )
                 # Bump failure count + persist reason explicitly so
                 # failure_triage's recency window picks it up.
                 try:
@@ -5040,17 +5527,22 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 except Exception:
                     pass
 
-                # Hand off to the self_debug reflex — it tracks recurrences
-                # across runs and will quarantine if the signature repeats.
-                try:
-                    from tools.workflow.self_debug import check_and_diagnose
-                    work_dir = str(BASE_DIR)
-                    check_and_diagnose(tid, reason, work_dir)
-                except Exception as _sd_exc:
-                    logger.warning(
-                        "silent-cleanup self_debug call failed for %s: %s",
-                        tid, _sd_exc,
-                    )
+        # Stale cleanup happened — defer promotion to the next cycle so the
+        # quarantine state written by check_and_diagnose has time to settle
+        # before the scheduler considers the task eligible for re-dispatch.
+        if stale_info:
+            print(f"  Kanban: stale-cleanup finished ({len(stale_info)} task(s)) "
+                  f"— deferring promotion to next cycle")
+            return {
+                "success": True,
+                "metric_value": len(completed),
+                "details": {
+                    "status": "stale_cleanup",
+                    "cleaned": [t for t, _ in stale_info],
+                    "completed_this_cycle": completed,
+                    "telegram_commands": len(tg_results),
+                },
+            }
 
     if _running:
         print(f"  Kanban: {len(_running)} task(s) executing in claude, waiting...")
@@ -5134,74 +5626,79 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     processed = []
     errors = 0
+    decomposed_this_cycle = []
 
-    # Only dispatch ONE task at a time to claude
-    task = due_tasks[0]
+    for task in due_tasks:
+        # Pre-dispatch complexity gate: score the task before spending any tokens.
+        # If it looks too big for a single session (score ≥ 7) decompose it now
+        # instead of letting it fail and waste a full 900s agent run.
+        _cscore = _complexity_score(task)
+        if _cscore >= 7:
+            logger.info(
+                "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
+                task["id"], _cscore,
+            )
+            print(
+                f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
+                f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
+            )
+            try:
+                _decompose_one_task(task)
+            except Exception as _pd_exc:
+                logger.warning(
+                    "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
+                    task["id"], _pd_exc,
+                )
+            else:
+                # Decomposed successfully — skip dispatch for this task;
+                # children will be picked up next cycle. Continue to next task.
+                decomposed_this_cycle.append(task["id"])
+                continue
 
-    # Pre-dispatch complexity gate: score the task before spending any tokens.
-    # If it looks too big for a single session (score ≥ 7) decompose it now
-    # instead of letting it fail and waste a full 900s agent run.
-    _cscore = _complexity_score(task)
-    if _cscore >= 7:
-        logger.info(
-            "pre-dispatch: %s complexity score %d ≥ 7 — decomposing upfront",
-            task["id"], _cscore,
-        )
-        print(
-            f"  Kanban: pre-dispatch complexity gate triggered for {task['id']!r} "
-            f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
-        )
         try:
-            _decompose_one_task(task)
-        except Exception as _pd_exc:
-            logger.warning(
-                "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
-                task["id"], _pd_exc,
-            )
-        else:
-            # Decomposed successfully — skip dispatch this cycle; children will
-            # be picked up next cycle.
-            return {
-                "success": True,
-                "metric_value": 0,
-                "details": {
-                    "status": "pre_dispatch_decomposed",
-                    "task_id": task["id"],
-                    "complexity_score": _cscore,
-                },
-            }
+            # Write prompt file first (low risk)
+            prompt_path = _write_prompt_file(task)
 
-    try:
-        # Write prompt file first (low risk)
-        prompt_path = _write_prompt_file(task)
+            # Dispatch to claude CLI — only move to in_progress AFTER
+            # subprocess is confirmed running, so tasks don't get stuck
+            # in in_progress when dispatch fails.
+            _dispatch_to_claude(task, prompt_path)
 
-        # Dispatch to claude CLI — only move to in_progress AFTER
-        # subprocess is confirmed running, so tasks don't get stuck
-        # in in_progress when dispatch fails.
-        _dispatch_to_claude(task, prompt_path)
-
-        if task["id"] in _running:
-            # Subprocess launched successfully — now move to in_progress
-            _move_task(task["id"], "in_progress")
-            _send_notification(task)
-            processed.append(
-                {
-                    "id": task["id"],
-                    "title": task["title"],
-                    "prompt_file": prompt_path,
-                }
-            )
-            print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
-        else:
-            # Dispatch failed — leave task in backlog, clean up prompt
+            if task["id"] in _ollama_completed:
+                # Synchronous Ollama dispatch — completed immediately, mark done
+                _ollama_completed.discard(task["id"])
+                _move_task(task["id"], "done")
+                _send_notification(task, event="done")
+                processed.append(
+                    {
+                        "id": task["id"],
+                        "title": task["title"],
+                        "prompt_file": prompt_path,
+                    }
+                )
+                print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
+            elif task["id"] in _running:
+                # Async Claude/LLM subprocess launched — move to in_progress
+                _move_task(task["id"], "in_progress")
+                _send_notification(task)
+                processed.append(
+                    {
+                        "id": task["id"],
+                        "title": task["title"],
+                        "prompt_file": prompt_path,
+                    }
+                )
+                print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress -> dispatched")
+            else:
+                # Dispatch failed — leave task in backlog, clean up prompt
+                errors += 1
+                prompt_file = Path(prompt_path)
+                if prompt_file.exists():
+                    prompt_file.unlink()
+                print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
+        except Exception as e:
             errors += 1
-            prompt_file = Path(prompt_path)
-            if prompt_file.exists():
-                prompt_file.unlink()
-            print(f"  Kanban: {task['id']} dispatch failed — staying in backlog")
-    except Exception as e:
-        errors += 1
-        print(f"  Kanban error: {task['id']}: {e}")
+            print(f"  Kanban error: {task['id']}: {e}")
 
     return {
         "success": errors == 0,
@@ -5210,6 +5707,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "tasks_activated": len(processed),
             "telegram_commands": len(tg_results),
             "completed_this_cycle": completed,
+            "decomposed_this_cycle": decomposed_this_cycle,
             "errors": errors,
             "tasks": processed,
         },

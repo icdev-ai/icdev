@@ -1,0 +1,8 @@
+# Intent: Detect VLANs with fewer than two active trunk ports, indicating missing
+#         redundancy or incomplete deployment across NDC sites.
+# Expected violation shape: rows where active_ports < 2 — each row is a VLAN whose
+#   coverage gap risks service disruption on single-link or abandoned segments.
+
+foreach v in network.vlans
+  where v.active_ports < 2
+  select v.vlan_id, v.name, v.active_ports, v.site, v.tagged_devices

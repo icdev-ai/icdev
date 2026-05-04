@@ -1,0 +1,9 @@
+# Intent: Identify pipeline nodes flagged as having parallel execution conflicts —
+#         stages that share a write path, deployment target, or lock and are
+#         scheduled to run concurrently, risking data corruption or race conditions.
+# Expected violation shape: rows where parallel_conflict == "true";
+#   each row is a node with a detected stage-overlap that must be sequenced or guarded.
+
+foreach n in pipeline.nodes
+  where n.parallel_conflict == "true"
+  select n.pipeline_id, n.snapshot_id, n.id, n.node_type, n.parallel_conflict

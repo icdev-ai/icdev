@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Impact Analysis — {{ design.name }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="/agentic-ai/canvas/{{ design.id }}" class="btn btn-sm btn-outline-secondary">← Canvas</a>
+    <div>
+      <h4 class="mb-0">💥 Cascade Impact Analysis</h4>
+      <small class="text-muted">{{ design.name }} &middot; {{ design.domain or 'unspecified' }}</small>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      <span class="badge fs-6 px-3 py-2
+        {% if result.summary.overall_risk_level == 'CRITICAL' %}bg-danger
+        {% elif result.summary.overall_risk_level == 'HIGH' %}bg-warning text-dark
+        {% elif result.summary.overall_risk_level == 'MEDIUM' %}bg-info text-dark
+        {% else %}bg-success{% endif %}">
+        {{ result.summary.overall_risk_level }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card text-center h-100">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold
+            {% if result.summary.resilience_score >= 80 %}text-success
+            {% elif result.summary.resilience_score >= 60 %}text-warning
+            {% else %}text-danger{% endif %}">
+            {{ result.summary.resilience_score }}%
+          </div>
+          <div class="text-muted small">Resilience Score</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center h-100 {{ 'border-danger' if result.summary.spofs else '' }}">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold {{ 'text-danger' if result.summary.spofs else 'text-success' }}">
+            {{ result.summary.spofs | length }}
+          </div>
+          <div class="text-muted small">Single Points of Failure</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center h-100">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-primary">{{ result.summary.node_count }}</div>
+          <div class="text-muted small">Nodes</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center h-100">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-secondary">{{ result.summary.edge_count }}</div>
+          <div class="text-muted small">Edges</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SPOF alert -->
+  {% if result.summary.spofs %}
+  <div class="alert alert-danger d-flex align-items-center gap-2 mb-3">
+    <strong>⚠ Single Points of Failure detected</strong> —
+    removing any of these nodes disconnects the design graph:
+    <span class="ms-1">
+      {% for sid in result.summary.spofs %}
+      <span class="badge bg-danger me-1">{{ sid[:12] }}</span>
+      {% endfor %}
+    </span>
+  </div>
+  {% endif %}
+
+  <!-- Node impact table -->
+  <div class="card">
+    <div class="card-header fw-semibold py-2">Node Impact Rankings</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Node</th>
+            <th>Type</th>
+            <th>Blast Radius</th>
+            <th>Vulnerability</th>
+            <th>Resilience Reduction</th>
+            <th>SPOF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ni in result.node_impacts %}
+          <tr class="{{ 'table-danger' if ni.is_spof else '' }}">
+            <td class="text-muted">{{ loop.index }}</td>
+            <td>
+              <span title="{{ ni.node_id }}">{{ ni.label }}</span>
+            </td>
+            <td><code class="small">{{ ni.type }}</code></td>
+            <td>
+              <span class="badge
+                {% if ni.blast_radius >= 5 %}bg-danger
+                {% elif ni.blast_radius >= 2 %}bg-warning text-dark
+                {% else %}bg-success{% endif %}">
+                {{ ni.blast_radius }}
+              </span>
+            </td>
+            <td>
+              <div class="progress" style="height:8px;width:80px">
+                <div class="progress-bar
+                  {% if ni.vulnerability_score >= 7 %}bg-danger
+                  {% elif ni.vulnerability_score >= 4 %}bg-warning
+                  {% else %}bg-success{% endif %}"
+                  style="width:{{ (ni.vulnerability_score / 8 * 100)|round(0)|int }}%"></div>
+              </div>
+              <small class="text-muted">{{ ni.vulnerability_score }}/8</small>
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="progress flex-grow-1" style="height:8px">
+                  <div class="progress-bar bg-danger" style="width:{{ ni.resilience_reduction }}%"></div>
+                </div>
+                <small class="text-muted">{{ ni.resilience_reduction }}%</small>
+              </div>
+            </td>
+            <td>
+              {% if ni.is_spof %}
+              <span class="badge bg-danger">SPOF</span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

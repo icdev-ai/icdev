@@ -1,0 +1,8 @@
+# IQE-NDC-003: Open CAT1 compliance findings
+# CAT1 = critical severity per DISA STIG/FISMA. Must be remediated immediately.
+# Use: daily compliance dashboard, ATO gate, POA&M generation.
+
+foreach f in network.compliance_findings
+where f.severity == "CAT1"
+where f.status == "open"
+select f.rule_id, f.regime, f.title, f.affected_entity, f.affected_type

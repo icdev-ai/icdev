@@ -1,0 +1,10 @@
+# Intent: Surface lineage edges with a missing lineage type, indicating a break in
+#         data provenance tracking. Edges without a lineage_type cannot be traced back
+#         to their source transformation, which blocks CUI lineage audits and ATO
+#         evidence package completeness checks.
+# Expected violation shape: rows where lineage_type == "";
+#   each row is a provenance-broken edge requiring a lineage type assignment.
+
+foreach e in data.lineage.edges
+  where e.lineage_type == ""
+  select e.id, e.source_node_id, e.target_node_id, e.classification, e.lineage_type

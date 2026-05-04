@@ -1,0 +1,10 @@
+# Intent: Identify CUI-classified cloud resources with monthly cost exceeding $500,
+#         surfacing candidates for right-sizing or migration to lower-cost GovCloud
+#         tiers before the next FedRAMP cost-justification review.
+# Expected violation shape: rows where classification == "CUI" and cost_per_month > 500;
+#   each row is a high-spend CUI resource requiring a formal cost-justification review.
+
+foreach r in infra.resources
+  where r.classification == "CUI"
+  where r.cost_per_month > 500
+  select r.id, r.resource_name, r.csp, r.region, r.cost_per_month, r.classification

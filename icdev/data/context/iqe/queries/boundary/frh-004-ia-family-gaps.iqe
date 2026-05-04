@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-004
+-- Title: FedRAMP High — Identification & Authentication (IA) Family Gaps
+-- Framework: FedRAMP High
+-- Category: control-family
+-- Severity: critical
+-- Description: FedRAMP High adds PIV/CAC requirements (IA-2(12)), hardware
+--   tokens, and stricter authenticator management. All IA gaps must be
+--   resolved before IL4/IL5 authorization can proceed.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.control_id starts_with 'IA' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

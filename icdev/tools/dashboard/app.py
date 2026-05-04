@@ -40,6 +40,7 @@ from flask import (
     redirect,
     url_for,
     send_from_directory,
+    make_response,
 )  # noqa: E402
 
 from tools.dashboard.config import (  # noqa: E402
@@ -61,6 +62,10 @@ from tools.dashboard.findings_aggregator import (  # noqa: E402
 )
 # P1.1: Centralized API blueprint registration (replaces 50+ individual imports)
 from tools.dashboard.api import register_api_blueprints  # noqa: E402
+try:
+    from tools.usage_analytics.event_collector import track_request as _track_request
+except ImportError:
+    _track_request = None
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
@@ -81,6 +86,7 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
     }
 )
 # Legacy canvas feature flags (derived from env — registration handled by _CANVAS_DEFS loop below)
+_HAS_STRATEGOS = os.environ.get("ICDEV_STRATEGOS_ENABLED", "true").lower() in ("true", "1", "yes")
 _HAS_NETWORK = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
 _HAS_PIPELINE = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
 _HAS_SECURITY_CANVAS = os.environ.get("ICDEV_SECURITY_ENABLED", "false").lower() in ("true", "1", "yes")
@@ -140,6 +146,7 @@ _CANVAS_DEFS = [
     ("ddc", "ICDEV_DDC_ENABLED", "tools.data_canvas.blueprint", "create_data_canvas_blueprint"),
     ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
     ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
+    ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -159,6 +166,34 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
         except Exception as _exc:
             logging.getLogger("icdev.dashboard").warning(
                 "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
+            )
+
+# ── Application Modules (conditional registration) ─────────────────────────
+_APP_FLAGS: dict[str, bool] = {}
+_APP_BLUEPRINTS: dict[str, object] = {}
+
+_APP_DEFS = [
+    ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
+    ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
+    ("gameday",       "ICDEV_GAMEDAY_ENABLED",         "apps.ai_gameday.blueprint",     "bp"),
+]
+
+for _key, _env, _mod, _attr in _APP_DEFS:
+    _enabled = os.environ.get(_env, "false").lower() in ("true", "1", "yes")
+    _APP_FLAGS[_key] = False
+    if _enabled:
+        try:
+            import importlib as _il
+            _m = _il.import_module(_mod)
+            _bp = getattr(_m, _attr, None)
+            if callable(_bp) and not hasattr(_bp, "name"):
+                _bp = _bp()
+            if _bp:
+                _APP_BLUEPRINTS[_key] = _bp
+                _APP_FLAGS[_key] = True
+        except Exception as _exc:
+            logging.getLogger("icdev.dashboard").warning(
+                "App module %s import failed (%s): %s", _key, _mod, _exc
             )
 
 # ---------------------------------------------------------------------------
@@ -1064,6 +1099,115 @@ def create_app() -> Flask:
             "tasks": tasks,
         })
 
+    @app.route("/api/kanban/recent-events")
+    def api_kanban_recent_events():
+        """GET /api/kanban/recent-events — Last 24h kanban task events from notifications.
+
+        Returns done/failed/in_progress/unverified events with validation gate detail.
+        Used by the Projects in Flight panel on the home dashboard.
+        """
+        from tools.db.storage import get_connection as _gc
+        from datetime import timedelta as _td
+        from flask import jsonify as _j2
+
+        limit = min(int(flask_request.args.get("limit", 30)), 100)
+        since_hours = int(flask_request.args.get("hours", 24))
+
+        try:
+            cutoff = (datetime.now(timezone.utc) - _td(hours=since_hours)).isoformat()
+            with _gc() as conn:
+                rows = conn.execute(
+                    "SELECT id, title, message, severity, created_at "
+                    "FROM notifications "
+                    "WHERE source = 'genesis.kanban' "
+                    "  AND created_at > ? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (cutoff, limit),
+                ).fetchall()
+            events = []
+            for r in rows:
+                d = dict(r)
+                title = d.get("title") or ""
+                # Parse event type from title: "Task {event}: {task_title}"
+                event_type = "unknown"
+                task_title = title
+                if title.upper().startswith("UNVERIFIED"):
+                    event_type = "unverified"
+                    task_title = title
+                elif title.startswith("Task "):
+                    rest = title[5:]
+                    colon = rest.find(":")
+                    if colon != -1:
+                        event_type = rest[:colon].strip().lower()
+                        task_title = rest[colon + 1:].strip()
+                events.append({
+                    "id": d["id"],
+                    "title": task_title,
+                    "event_type": event_type,
+                    "message": (d.get("message") or "")[:600],
+                    "severity": d.get("severity") or "info",
+                    "created_at": d["created_at"],
+                })
+            return _j2({"events": events})
+        except Exception as exc:
+            return _j2({"events": [], "error": str(exc)})
+
+    _NOTIFY_SETTINGS_PATH = Path("args/kanban_notify.json")
+    _NOTIFY_CHANNELS = [
+        {"id": "telegram",   "label": "Telegram",   "env_keys": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]},
+        {"id": "slack",      "label": "Slack",      "env_keys": ["SLACK_BOT_TOKEN", "SLACK_WEBHOOK_URL"]},
+        {"id": "teams",      "label": "MS Teams",   "env_keys": ["TEAMS_WEBHOOK_URL"]},
+        {"id": "email",      "label": "Email",      "env_keys": ["SMTP_HOST", "EMAIL_HOST"]},
+        {"id": "webhook",    "label": "Webhook",    "env_keys": ["WEBHOOK_URL"]},
+        {"id": "mattermost", "label": "Mattermost", "env_keys": ["MATTERMOST_WEBHOOK_URL", "MATTERMOST_URL"]},
+    ]
+
+    @app.route("/api/kanban/notify-channel", methods=["GET", "PUT"])
+    def api_kanban_notify_channel():
+        """GET/PUT /api/kanban/notify-channel — Read or set the active notification channel.
+
+        GET returns {available: [{id, label, configured}], current}.
+        PUT body {channel: "slack"} persists to args/kanban_notify.json.
+        """
+        import os as _os
+        from flask import jsonify as _jnc
+
+        def _load_settings():
+            if _NOTIFY_SETTINGS_PATH.exists():
+                try:
+                    import json as _j
+                    return _j.loads(_NOTIFY_SETTINGS_PATH.read_text(encoding="utf-8"))
+                except Exception:
+                    pass
+            return {"current": "telegram"}
+
+        def _save_settings(settings):
+            _NOTIFY_SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            import json as _j
+            _NOTIFY_SETTINGS_PATH.write_text(
+                _j.dumps(settings, indent=2), encoding="utf-8"
+            )
+
+        if flask_request.method == "PUT":
+            body = flask_request.get_json(silent=True) or {}
+            channel = body.get("channel", "").strip()
+            valid_ids = {ch["id"] for ch in _NOTIFY_CHANNELS}
+            if channel not in valid_ids:
+                return _jnc({"error": f"Unknown channel: {channel}"}), 400
+            settings = _load_settings()
+            settings["current"] = channel
+            _save_settings(settings)
+            return _jnc({"ok": True, "current": channel})
+
+        # GET
+        settings = _load_settings()
+        current = settings.get("current", "telegram")
+        available = []
+        for ch in _NOTIFY_CHANNELS:
+            configured = any(_os.environ.get(k) for k in ch["env_keys"])
+            available.append({"id": ch["id"], "label": ch["label"], "configured": configured})
+        return _jnc({"available": available, "current": current})
+
     # Role-based view configuration
     ROLE_VIEWS = {
         "pm": {
@@ -1132,16 +1276,19 @@ def create_app() -> Flask:
         except ImportError:
             _route_map = {}
 
+        theme_pref = flask_request.cookies.get("icdev_theme", "dark")
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
             "cui_banner_enabled": CUI_BANNER_ENABLED,
             "cui_designation": CUI_DESIGNATION,
             "current_role": role,
+            "theme_pref": theme_pref,
             "role_config": role_config,
             "ROLE_VIEWS": ROLE_VIEWS,
             "current_user": current_user,
             "byok_enabled": BYOK_ENABLED,
+            "strategos_enabled": _HAS_STRATEGOS,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
             "network_enabled": _HAS_NETWORK,
             "pipeline_enabled": _HAS_PIPELINE,
@@ -1153,7 +1300,11 @@ def create_app() -> Flask:
             "canvas_kg_enabled": _HAS_CANVAS_KG,
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
+            "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "canvas_flags": _CANVAS_FLAGS,
+            "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
+            "academy_enabled": _APP_FLAGS.get("forge_academy", False),
+            "gameday_enabled": _APP_FLAGS.get("gameday", False),
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
         }
@@ -1275,6 +1426,73 @@ def create_app() -> Flask:
         app.logger.info("Migration Intelligence blueprint registered at /migration-intel")
     except Exception as _exc:
         app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
+
+    # ---- Strategos Blueprint ----
+    if _HAS_STRATEGOS:
+        try:
+            from apps.strategos.blueprint import (
+                create_strategos_blueprint,
+                create_strategos_api_blueprint,
+            )
+            _sg_bp = create_strategos_blueprint()
+            if _sg_bp:
+                app.register_blueprint(_sg_bp, url_prefix="/strategos")
+                app.logger.info("Strategos blueprint registered at /strategos")
+            _sg_api_bp = create_strategos_api_blueprint()
+            if _sg_api_bp:
+                app.register_blueprint(_sg_api_bp, url_prefix="/api/strategos")
+                app.logger.info("Strategos API blueprint registered at /api/strategos")
+        except Exception as _exc:
+            app.logger.warning("Strategos blueprint failed to register: %s", _exc)
+    else:
+        app.logger.info("Strategos disabled (ICDEV_STRATEGOS_ENABLED=false)")
+
+    # ---- TA Patterns Blueprint ----
+    try:
+        from tools.trading.ta.blueprint import create_ta_blueprint
+        _ta_bp = create_ta_blueprint()
+        if _ta_bp:
+            app.register_blueprint(_ta_bp)
+            app.logger.info("TA Patterns blueprint registered at /api/ta/patterns")
+    except Exception as _exc:
+        app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
+
+    # ---- App Module Blueprints (_APP_DEFS — page blueprints for workflow, academy, etc.) ----
+    for _ak, _abp in _APP_BLUEPRINTS.items():
+        try:
+            app.register_blueprint(_abp)
+            app.logger.info("App module %s registered", _ak)
+        except Exception as _exc:
+            app.logger.warning("App module %s registration failed: %s", _ak, _exc)
+
+    # ---- HITL Workflow API Blueprint (always registered when importable; gated per-route) ----
+    try:
+        from tools.workflow_hitl.blueprint import create_wf_blueprint
+        _wf_bp = create_wf_blueprint()
+        app.register_blueprint(_wf_bp, url_prefix="/api/wf")
+        app.logger.info("HITL Workflow API blueprint registered at /api/wf")
+    except Exception as _exc:
+        app.logger.warning("HITL Workflow API blueprint failed to register: %s", _exc)
+
+    # ---- AISG Setup Wizard Blueprint ----
+    try:
+        from tools.aisg.blueprint import bp as _aisg_bp
+        app.register_blueprint(_aisg_bp)
+        app.logger.info("AISG Wizard blueprint registered at /ai-wizard")
+    except Exception as _exc:
+        app.logger.warning("AISG Wizard blueprint failed to register: %s", _exc)
+
+    # ---- Autonomous Coder Blueprint ----
+    try:
+        try:
+            from icdev.apps.autonomous_coder.blueprint import ac_bp as _ac_bp
+        except ImportError:
+            from apps.autonomous_coder.blueprint import ac_bp as _ac_bp
+        app.register_blueprint(_ac_bp)
+        app.logger.info("Autonomous Coder blueprint registered at /autonomous-coder")
+    except Exception as _exc:
+        app.logger.warning("Autonomous Coder blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -2339,10 +2557,28 @@ def create_app() -> Flask:
 
     # ---- Profile routes (D172, D175-D178) ----
 
+    @app.route("/settings")
+    def settings_redirect():
+        return redirect(url_for("profile_page"))
+
     @app.route("/profile")
     def profile_page():
         """User profile page with BYOK key management."""
         return render_template("profile.html")
+
+    @app.route("/profile/api/theme", methods=["GET", "POST"])
+    def profile_theme():
+        """Get or set the user's theme preference (stored as a cookie)."""
+        if flask_request.method == "POST":
+            data = flask_request.get_json(silent=True) or {}
+            theme = data.get("theme", "dark")
+            if theme not in ("dark", "light"):
+                theme = "dark"
+            resp = make_response(jsonify({"theme": theme}))
+            resp.set_cookie("icdev_theme", theme, max_age=60 * 60 * 24 * 365, samesite="Lax")
+            return resp
+        theme = flask_request.cookies.get("icdev_theme", "dark")
+        return jsonify({"theme": theme})
 
     @app.route("/profile/api/keys")
     def profile_api_keys():
@@ -3330,6 +3566,11 @@ def create_app() -> Flask:
     def ato_package_page():
         """ATO Package Builder — wizard to assemble SSP/SAR/POAM/SBOM package."""
         return render_template("ato_package.html")
+
+    @app.route("/ato-compliance")
+    def ato_compliance_page():
+        """ATO Compliance Dashboard — control tracking, RMF stages, artifact readiness, crosswalk."""
+        return render_template("ato_compliance.html")
 
     @app.route("/analytics")
     def analytics_page():
@@ -6307,6 +6548,49 @@ def create_app() -> Flask:
         except Exception as e:
             return jsonify({"status": "error", "error": str(e)}), 500
 
+    # ── MCP Monitor status ───────────────────────────────────────────
+    @app.route("/api/mcp/status", methods=["GET"])
+    def api_mcp_status():
+        """GET /api/mcp/status — snapshot of the MCP tool registry and wrapper activity."""
+        import time as _t
+        from collections import Counter as _Counter
+
+        try:
+            from tools.mcp.tool_registry import TOOL_REGISTRY
+        except Exception:
+            TOOL_REGISTRY = {}
+
+        # Category breakdown
+        cats = _Counter(v.get("category", "unknown") for v in TOOL_REGISTRY.values())
+        top_cats = [{"name": k, "count": v} for k, v in cats.most_common(8)]
+
+        # MCP debug log activity
+        log_path = BASE_DIR / ".tmp" / "mcp_debug.log"
+        log_age_secs = None
+        wrapper_starts = 0
+        error_count = 0
+        if log_path.exists():
+            log_age_secs = int(_t.time() - log_path.stat().st_mtime)
+            try:
+                with open(log_path, encoding="utf-8", errors="ignore") as _f:
+                    today = str(datetime.now(timezone.utc).date())
+                    for line in _f:
+                        if "MCP wrapper started" in line and today in line:
+                            wrapper_starts += 1
+                        if "ERROR" in line or "Exception" in line:
+                            error_count += 1
+            except Exception:
+                pass
+
+        return jsonify({
+            "tool_count": len(TOOL_REGISTRY),
+            "category_count": len(cats),
+            "top_categories": top_cats,
+            "log_age_secs": log_age_secs,
+            "wrapper_starts_today": wrapper_starts,
+            "error_count": error_count,
+        })
+
     # ── Page Agent Copilot API ───────────────────────────────────────
     # Inspired by alibaba/page-agent: text-based DOM navigation + AI copilot
 
@@ -8097,6 +8381,7 @@ def create_app() -> Flask:
                 "scheduled": counts.get("scheduled", 0),
                 "backlog": counts.get("backlog", 0),
                 "failed": counts.get("failed", 0),
+                "needs_decomp": counts.get("needs_decomposition", 0),
                 "pct": pct,
             })
         in_flight_rows = conn.execute(
@@ -8329,6 +8614,41 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("fathomdesk.html", ticker=ticker)
 
+    @app.route("/analysis")
+    def analysis_page():
+        """Market Analysis — Macro Intelligence, IV Skew & Term Structure."""
+        return render_template("analysis.html")
+
+    @app.route("/quality-scores")
+    def quality_scores_page():
+        """Quality Scores — PE/NAV mispricing dashboard."""
+        return render_template("quality_scores.html")
+
+    @app.route("/api/macro/intelligence")
+    def api_macro_intelligence():
+        """Return macro regime badges for the /analysis page panel."""
+        try:
+            from tools.trading.data.macro_data import fetch_macro_context
+            ctx = fetch_macro_context()
+            return jsonify({
+                "qeqt_phase": ctx.get("qeqt_phase", "NEUTRAL"),
+                "credit_stress": ctx.get("credit_impulse", {}).get("label", "NEUTRAL"),
+                "rotation_signal": ctx.get("regime", "UNKNOWN"),
+                "macro_score": ctx.get("macro_score"),
+                "summary": ctx.get("summary", ""),
+                "fetched_at": ctx.get("fetched_at"),
+            })
+        except Exception as exc:
+            return jsonify({
+                "qeqt_phase": "NEUTRAL",
+                "credit_stress": "NEUTRAL",
+                "rotation_signal": "UNKNOWN",
+                "macro_score": None,
+                "summary": "",
+                "fetched_at": None,
+                "error": str(exc),
+            }), 200
+
     @app.route("/api/trading/market")
     def api_trading_market():
         """Return macro context snapshot including qeqt_phase for FathomDesk overlay."""
@@ -8419,6 +8739,47 @@ def create_app() -> Flask:
             return jsonify({"events": events})
         except Exception as exc:
             return jsonify({"events": [], "error": str(exc)})
+
+    @app.route("/fathomdesk/api/reflex-observations")
+    def fathomdesk_api_reflex_observations():
+        """Return recent reflex execution records."""
+        from flask import request as _req
+        try:
+            limit = min(int(_req.args.get("limit", 50)), 200)
+        except (ValueError, TypeError):
+            limit = 50
+        try:
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            ph = "%s" if getattr(conn, "_dialect", "sqlite") == "postgresql" else "?"
+            try:
+                rows = conn.execute(
+                    f"SELECT id, reflex_name, started_at, duration_ms, status "  # nosec B608
+                    f"FROM reflex_observations "
+                    f"ORDER BY started_at DESC LIMIT {ph}",
+                    [limit],
+                ).fetchall()
+            finally:
+                conn.close()
+            observations = []
+            for r in rows:
+                row = dict(r) if hasattr(r, "keys") else {
+                    "id": r[0], "reflex_name": r[1], "started_at": r[2],
+                    "duration_ms": r[3], "status": r[4],
+                }
+                observations.append({
+                    "id": row["id"],
+                    "reflex_name": row["reflex_name"],
+                    "started_at": row["started_at"],
+                    "duration_ms": row["duration_ms"],
+                    "success": row["status"] == "done",
+                })
+            return jsonify({"observations": observations})
+        except Exception as exc:
+            return jsonify({"observations": [], "error": str(exc)})
+
+    if _track_request is not None:
+        _track_request(app)
 
     return app
 

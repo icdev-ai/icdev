@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-004
+-- Title: FedRAMP Moderate — Controls Scoring Below 50%
+-- Framework: FedRAMP Moderate
+-- Category: scoring
+-- Severity: high
+-- Description: Controls with a compliance score below 0.5 represent significant
+--   risk to the authorisation boundary. Continuous monitoring should flag these
+--   for immediate POA&M action.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.score < 0.5
+select ctrl.control_id, ctrl.score, ctrl.implementation_status, ctrl.project_id

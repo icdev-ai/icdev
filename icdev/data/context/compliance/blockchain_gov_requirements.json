@@ -1,0 +1,291 @@
+{
+  "framework_id": "blockchain_gov",
+  "framework_name": "Government Blockchain Security Requirements",
+  "version": "1.0.0",
+  "description": "Blockchain-specific security requirements for government supply chain provenance, crosswalked to NIST 800-53 Rev 5",
+  "families": {
+    "BC-CRYPTO": {
+      "name": "Blockchain Cryptography",
+      "description": "FIPS-validated cryptographic operations for blockchain",
+      "requirements": [
+        {
+          "id": "BC-CRYPTO-01",
+          "title": "FIPS 140-2/3 Validated Cryptographic Modules",
+          "description": "All cryptographic operations must use FIPS 140-2 or 140-3 validated modules",
+          "nist_controls": ["SC-12", "SC-13", "IA-7"],
+          "severity": "critical",
+          "check_type": "fips_validation"
+        },
+        {
+          "id": "BC-CRYPTO-02",
+          "title": "HSM for Key Storage (IL5+)",
+          "description": "Private keys for blockchain identities must be stored in hardware security modules for IL5 and above",
+          "nist_controls": ["SC-12", "SC-17"],
+          "severity": "critical",
+          "check_type": "hsm_configured",
+          "condition": "impact_level >= IL5"
+        },
+        {
+          "id": "BC-CRYPTO-03",
+          "title": "Approved Cryptographic Algorithms",
+          "description": "Only NIST-approved algorithms (AES-256, SHA-256+, ECDSA P-256/P-384, RSA-3072+)",
+          "nist_controls": ["SC-13"],
+          "severity": "high",
+          "check_type": "algorithm_allowlist"
+        },
+        {
+          "id": "BC-CRYPTO-04",
+          "title": "Key Rotation Policy",
+          "description": "Cryptographic keys must have defined rotation schedules",
+          "nist_controls": ["SC-12", "SC-17"],
+          "severity": "medium",
+          "check_type": "key_rotation"
+        },
+        {
+          "id": "BC-CRYPTO-05",
+          "title": "Certificate Lifecycle Management",
+          "description": "X.509 certificates for TLS and identity must have monitored expiration",
+          "nist_controls": ["SC-17", "IA-5"],
+          "severity": "high",
+          "check_type": "cert_expiry"
+        }
+      ]
+    },
+    "BC-ACCESS": {
+      "name": "Blockchain Access Control",
+      "description": "Identity and access management for permissioned blockchain",
+      "requirements": [
+        {
+          "id": "BC-ACCESS-01",
+          "title": "MSP Identity Management",
+          "description": "All participants must be enrolled through a Membership Service Provider with verified identity",
+          "nist_controls": ["AC-2", "IA-2", "IA-5"],
+          "severity": "critical",
+          "check_type": "msp_enrollment"
+        },
+        {
+          "id": "BC-ACCESS-02",
+          "title": "Endorsement Policy Enforcement",
+          "description": "All chaincodes must have explicit endorsement policies requiring multi-org approval",
+          "nist_controls": ["AC-3", "AC-6"],
+          "severity": "critical",
+          "check_type": "endorsement_policy"
+        },
+        {
+          "id": "BC-ACCESS-03",
+          "title": "Channel Access Control Lists",
+          "description": "Channel ACLs must restrict read/write access to authorized organizations",
+          "nist_controls": ["AC-3", "AC-4"],
+          "severity": "high",
+          "check_type": "channel_acl"
+        },
+        {
+          "id": "BC-ACCESS-04",
+          "title": "Least Privilege for Chaincode Invocation",
+          "description": "Chaincode invocation policies must follow least privilege principle",
+          "nist_controls": ["AC-6"],
+          "severity": "medium",
+          "check_type": "invoke_policy"
+        },
+        {
+          "id": "BC-ACCESS-05",
+          "title": "Organization Role Separation",
+          "description": "Admin, peer, client, and orderer roles must be separated per organization",
+          "nist_controls": ["AC-5", "AC-6"],
+          "severity": "high",
+          "check_type": "role_separation"
+        }
+      ]
+    },
+    "BC-AUDIT": {
+      "name": "Blockchain Audit & Accountability",
+      "description": "Immutable ledger audit trail requirements",
+      "requirements": [
+        {
+          "id": "BC-AUDIT-01",
+          "title": "Immutable Transaction Ledger",
+          "description": "All transactions must be recorded in an immutable, append-only ledger",
+          "nist_controls": ["AU-2", "AU-3", "AU-10"],
+          "severity": "critical",
+          "check_type": "ledger_immutability"
+        },
+        {
+          "id": "BC-AUDIT-02",
+          "title": "Transaction Logging",
+          "description": "All chaincode invocations must be logged with actor identity, timestamp, and function name",
+          "nist_controls": ["AU-3", "AU-12"],
+          "severity": "high",
+          "check_type": "tx_logging"
+        },
+        {
+          "id": "BC-AUDIT-03",
+          "title": "Block Integrity Verification",
+          "description": "Block hashes must be verified to detect tampering",
+          "nist_controls": ["SI-7", "AU-10"],
+          "severity": "critical",
+          "check_type": "block_verification"
+        },
+        {
+          "id": "BC-AUDIT-04",
+          "title": "Non-Repudiation",
+          "description": "Transaction submissions must be cryptographically signed for non-repudiation",
+          "nist_controls": ["AU-10"],
+          "severity": "high",
+          "check_type": "tx_signing"
+        },
+        {
+          "id": "BC-AUDIT-05",
+          "title": "Audit Trail Export",
+          "description": "Transaction history must be exportable for compliance reporting",
+          "nist_controls": ["AU-6", "AU-7"],
+          "severity": "medium",
+          "check_type": "audit_export"
+        }
+      ]
+    },
+    "BC-DATA": {
+      "name": "Blockchain Data Protection",
+      "description": "Data handling, privacy, and residency requirements",
+      "requirements": [
+        {
+          "id": "BC-DATA-01",
+          "title": "Private Data Collections for CUI",
+          "description": "CUI data must use private data collections, not public channel state",
+          "nist_controls": ["AC-16", "SC-28"],
+          "severity": "critical",
+          "check_type": "private_collections"
+        },
+        {
+          "id": "BC-DATA-02",
+          "title": "Data Residency Enforcement",
+          "description": "Blockchain data must reside in approved regions (GovCloud for IL4+)",
+          "nist_controls": ["MP-4", "SI-12"],
+          "severity": "high",
+          "check_type": "data_residency"
+        },
+        {
+          "id": "BC-DATA-03",
+          "title": "Hash-Only On-Chain Storage",
+          "description": "Only SHA-256 integrity proofs stored on-chain, never plaintext CUI",
+          "nist_controls": ["SC-28", "AC-16"],
+          "severity": "critical",
+          "check_type": "hash_only"
+        },
+        {
+          "id": "BC-DATA-04",
+          "title": "Private Data Purge Policy",
+          "description": "Private data collections must have defined purge/retention policies",
+          "nist_controls": ["SI-12"],
+          "severity": "medium",
+          "check_type": "purge_policy"
+        },
+        {
+          "id": "BC-DATA-05",
+          "title": "State Database Encryption",
+          "description": "CouchDB/LevelDB state databases must be encrypted at rest",
+          "nist_controls": ["SC-28"],
+          "severity": "high",
+          "check_type": "state_encryption"
+        }
+      ]
+    },
+    "BC-NET": {
+      "name": "Blockchain Network Security",
+      "description": "Network protection for blockchain infrastructure",
+      "requirements": [
+        {
+          "id": "BC-NET-01",
+          "title": "Mutual TLS Authentication",
+          "description": "All peer-to-peer and peer-to-orderer communication must use mutual TLS",
+          "nist_controls": ["SC-8", "SC-23", "IA-3"],
+          "severity": "critical",
+          "check_type": "mutual_tls"
+        },
+        {
+          "id": "BC-NET-02",
+          "title": "Peer Network Isolation",
+          "description": "Peer nodes must be isolated in dedicated network segments",
+          "nist_controls": ["SC-7"],
+          "severity": "high",
+          "check_type": "peer_isolation"
+        },
+        {
+          "id": "BC-NET-03",
+          "title": "Orderer Service Security",
+          "description": "Orderer nodes must be protected from unauthorized access and DoS",
+          "nist_controls": ["SC-5", "SC-7"],
+          "severity": "high",
+          "check_type": "orderer_security"
+        },
+        {
+          "id": "BC-NET-04",
+          "title": "Gossip Protocol Security",
+          "description": "Fabric gossip protocol must use TLS and organization-scoped messaging",
+          "nist_controls": ["SC-8", "AC-4"],
+          "severity": "medium",
+          "check_type": "gossip_security"
+        },
+        {
+          "id": "BC-NET-05",
+          "title": "External Connectivity Restrictions",
+          "description": "Blockchain nodes must not have unrestricted internet access",
+          "nist_controls": ["SC-7", "AC-4"],
+          "severity": "high",
+          "check_type": "external_access"
+        }
+      ]
+    },
+    "BC-GOVERN": {
+      "name": "Blockchain Governance",
+      "description": "Consortium governance and change management",
+      "requirements": [
+        {
+          "id": "BC-GOVERN-01",
+          "title": "Consortium Governance Policy",
+          "description": "Multi-organization governance with defined voting/approval processes",
+          "nist_controls": ["CM-2", "CM-3"],
+          "severity": "high",
+          "check_type": "governance_policy"
+        },
+        {
+          "id": "BC-GOVERN-02",
+          "title": "Chaincode Approval Lifecycle",
+          "description": "Chaincode deployment must follow install→approve→commit workflow with multi-org approval",
+          "nist_controls": ["CM-3", "CM-5", "SA-10"],
+          "severity": "critical",
+          "check_type": "chaincode_lifecycle"
+        },
+        {
+          "id": "BC-GOVERN-03",
+          "title": "Configuration Change Control",
+          "description": "Channel and network configuration changes must be approved and audited",
+          "nist_controls": ["CM-3", "CM-5"],
+          "severity": "high",
+          "check_type": "config_change_control"
+        },
+        {
+          "id": "BC-GOVERN-04",
+          "title": "Chaincode Version Control",
+          "description": "All chaincode versions must be tracked with immutable deployment history",
+          "nist_controls": ["CM-2", "SA-10"],
+          "severity": "medium",
+          "check_type": "version_control"
+        },
+        {
+          "id": "BC-GOVERN-05",
+          "title": "Smart Contract Security Review",
+          "description": "All chaincode must pass security audit before deployment approval",
+          "nist_controls": ["SA-11", "SA-15"],
+          "severity": "critical",
+          "check_type": "security_review"
+        }
+      ]
+    }
+  },
+  "total_requirements": 30,
+  "severity_distribution": {
+    "critical": 11,
+    "high": 13,
+    "medium": 6
+  }
+}

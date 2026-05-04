@@ -1,0 +1,324 @@
+<!-- CUI // SP-CTI — PDC Pipeline Twin: Pre-Merge What-If Simulation -->
+{% extends "base.html" %}
+{% block title %}Pipeline Twin — {{ pipeline.name }} — ICDEV™{% endblock %}
+{% block content %}
+<style>
+  .twin-header { padding: 20px 30px 12px; border-bottom: 1px solid #1e3a6e; }
+  .twin-header h1 { font-size: 20px; margin: 0 0 4px; }
+  .twin-header p  { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .twin-back { color: #3498db; text-decoration: none; font-size: 12px; display: inline-block; margin-bottom: 8px; }
+  .twin-back:hover { color: #5dade2; }
+
+  .twin-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 30px; }
+  @media (max-width: 900px) { .twin-layout { grid-template-columns: 1fr; } }
+
+  .twin-panel { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 18px; }
+  .twin-panel h2 { font-size: 14px; font-weight: 600; color: #eaeaea; margin: 0 0 12px; border-bottom: 1px solid #1e3a6e; padding-bottom: 8px; }
+
+  .snap-list { list-style: none; padding: 0; margin: 0 0 12px; max-height: 160px; overflow-y: auto; }
+  .snap-item { display: flex; align-items: center; justify-content: space-between;
+               padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;
+               border: 1px solid transparent; margin-bottom: 4px; transition: all .15s; }
+  .snap-item:hover  { border-color: #3498db; background: #0f3460; }
+  .snap-item.active { border-color: #3498db; background: #0f3460; }
+  .snap-item .snap-meta { color: #5a6e8c; font-size: 11px; }
+
+  .btn { padding: 7px 16px; border: none; border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 600; transition: .15s; }
+  .btn-primary  { background: #3498db; color: #fff; }
+  .btn-primary:hover  { background: #2980b9; }
+  .btn-success  { background: #27ae60; color: #fff; }
+  .btn-success:hover  { background: #229954; }
+  .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+  .twin-textarea { width: 100%; background: #0f3460; border: 1px solid #1e3a6e; color: #eaeaea;
+                   border-radius: 5px; padding: 10px; font-family: monospace; font-size: 12px;
+                   resize: vertical; box-sizing: border-box; }
+  .twin-textarea:focus { outline: none; border-color: #3498db; }
+
+  .verdict-banner { display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+                    border-radius: 8px; margin-bottom: 16px; font-size: 14px; font-weight: 600; }
+  .verdict-pass { background: #0d3d1e; border: 1px solid #27ae60; color: #2ecc71; }
+  .verdict-warn { background: #3d2e0d; border: 1px solid #f39c12; color: #f39c12; }
+  .verdict-fail { background: #3d0d0d; border: 1px solid #e74c3c; color: #e74c3c; }
+  .verdict-icon { font-size: 22px; }
+
+  .finding-list { list-style: none; padding: 0; margin: 0; }
+  .finding-item { padding: 8px 12px; border-radius: 5px; margin-bottom: 6px;
+                  border-left: 3px solid #7a8cb0; background: #0f3460; font-size: 12px; }
+  .finding-item.critical { border-left-color: #e74c3c; }
+  .finding-item.high     { border-left-color: #e67e22; }
+  .finding-item.medium   { border-left-color: #f1c40f; }
+  .finding-title { font-weight: 600; margin-bottom: 3px; }
+  .finding-rec   { color: #7a8cb0; font-size: 11px; }
+  .badge { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .badge-critical { background: #c0392b; color: #fff; }
+  .badge-high     { background: #d35400; color: #fff; }
+  .badge-medium   { background: #b7950b; color: #fff; }
+  .badge-pass     { background: #1e8449; color: #fff; }
+
+  .slsa-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+  .slsa-level { font-size: 24px; font-weight: 700; color: #3498db; }
+
+  .diff-table { width: 100%; font-size: 12px; border-collapse: collapse; margin-top: 8px; }
+  .diff-table th { text-align: left; color: #7a8cb0; padding: 4px 8px; border-bottom: 1px solid #1e3a6e; }
+  .diff-table td { padding: 4px 8px; }
+  .diff-add { color: #2ecc71; }
+  .diff-rem { color: #e74c3c; }
+
+  .compliance-row { display: flex; gap: 16px; margin-bottom: 10px; }
+  .compliance-stat { text-align: center; }
+  .compliance-stat .val { font-size: 22px; font-weight: 700; }
+  .compliance-stat .lbl { font-size: 10px; color: #7a8cb0; }
+  .val-pass { color: #2ecc71; }
+  .val-fail { color: #e74c3c; }
+
+  .spinner { display: none; width: 18px; height: 18px; border: 3px solid #1e3a6e;
+             border-top-color: #3498db; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .hint { font-size: 11px; color: #5a6e8c; margin-top: 6px; }
+  #simResults { display: none; }
+</style>
+
+<div class="twin-header">
+  <a href="/devops/" class="twin-back">← Pipeline Canvas</a>
+  <h1>Pipeline Twin — {{ pipeline.name }}</h1>
+  <p>Pre-merge what-if simulation. Snapshot the current state, then paste a proposed delta graph to get a PASS / WARN / FAIL verdict before merging.</p>
+</div>
+
+<div class="twin-layout">
+
+  <!-- LEFT: snapshot + delta input -->
+  <div>
+    <div class="twin-panel" style="margin-bottom:16px;">
+      <h2>1. Baseline Snapshot</h2>
+      {% if snapshots %}
+      <ul class="snap-list" id="snapList">
+        {% for s in snapshots %}
+        <li class="snap-item {% if loop.first %}active{% endif %}" data-id="{{ s.id }}" onclick="selectSnap(this,'{{ s.id }}')">
+          <span>{{ s.label }}</span>
+          <span class="snap-meta">{{ s.node_count }}n · {{ s.created_at[:10] }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:#5a6e8c;font-size:12px;">No snapshots yet — take one below.</p>
+      {% endif %}
+      <button class="btn btn-primary btn-sm" onclick="takeSnapshot()">Take Snapshot Now</button>
+      <span id="snapSpinner" class="spinner" style="display:inline-block;vertical-align:middle;margin-left:8px;"></span>
+      <p class="hint">A snapshot freezes the current pipeline DAG. Use it as the baseline for your next simulation.</p>
+    </div>
+
+    <div class="twin-panel">
+      <h2>2. Delta Graph (Proposed Change)</h2>
+      <p class="hint" style="margin-bottom:8px;">Paste the full <code>{"nodes":[…],"edges":[…]}</code> JSON of the <em>proposed</em> pipeline. You can copy it from the canvas editor (Export → JSON).</p>
+      <textarea id="deltaInput" class="twin-textarea" rows="12"
+        placeholder='{"nodes":[{"id":"n1","type":"cicd-gitlab","label":"GitLab CI"},{"id":"n2","type":"scan-semgrep","label":"Semgrep SAST"}],"edges":[{"id":"e1","source":"n1","target":"n2"}]}'></textarea>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+        <button class="btn btn-success" onclick="runSimulation()">Run Simulation</button>
+        <span id="simSpinner" class="spinner"></span>
+      </div>
+      <p id="simError" style="color:#e74c3c;font-size:12px;margin-top:6px;display:none;"></p>
+    </div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div>
+    <div id="simResults" class="twin-panel">
+      <h2>3. Simulation Results</h2>
+
+      <div id="verdictBanner" class="verdict-banner"></div>
+
+      <div id="diffSection" style="margin-bottom:16px;display:none;">
+        <strong style="font-size:12px;color:#7a8cb0;">DAG DIFF</strong>
+        <table class="diff-table">
+          <thead><tr><th>Change</th><th>Count</th></tr></thead>
+          <tbody id="diffBody"></tbody>
+        </table>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <strong style="font-size:12px;color:#7a8cb0;">SLSA LEVEL</strong>
+        <div class="slsa-row" style="margin-top:6px;">
+          <span class="slsa-level" id="slsaLevel">—</span>
+          <span style="font-size:12px;color:#7a8cb0;">achieved</span>
+        </div>
+        <div id="slsaEvidence" style="font-size:11px;color:#5a6e8c;"></div>
+      </div>
+
+      <div style="margin-bottom:16px;">
+        <strong style="font-size:12px;color:#7a8cb0;">COMPLIANCE</strong>
+        <div class="compliance-row" id="complianceRow" style="margin-top:6px;"></div>
+      </div>
+
+      <div>
+        <strong style="font-size:12px;color:#7a8cb0;">ANTI-PATTERNS</strong>
+        <ul class="finding-list" id="antiFindingList" style="margin-top:8px;"></ul>
+        <p id="antiNone" style="font-size:12px;color:#2ecc71;display:none;">No anti-patterns detected.</p>
+      </div>
+
+      <div id="compFindingsSection" style="margin-top:12px;display:none;">
+        <strong style="font-size:12px;color:#7a8cb0;">COMPLIANCE FAILURES</strong>
+        <ul class="finding-list" id="compFindingList" style="margin-top:8px;"></ul>
+      </div>
+
+      <p class="hint" style="margin-top:16px;" id="simId"></p>
+    </div>
+
+    <div class="twin-panel" id="noResultsHint" style="color:#5a6e8c;font-size:13px;text-align:center;padding:40px 20px;">
+      Run a simulation to see results here.
+    </div>
+  </div>
+
+</div>
+
+<script>
+const PIPELINE_ID = "{{ pipeline.id }}";
+let selectedSnapId = {% if snapshots %}"{{ snapshots[0].id }}"{% else %}null{% endif %};
+
+function selectSnap(el, snapId) {
+  document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  selectedSnapId = snapId;
+}
+
+async function takeSnapshot() {
+  const spinner = document.getElementById('snapSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const r = await fetch(`/devops/api/pipelines/${PIPELINE_ID}/twin/snapshot`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({label: 'manual-' + new Date().toISOString().slice(0,10)})
+    });
+    const data = await r.json();
+    if (!r.ok) { alert('Snapshot failed: ' + (data.error || r.status)); return; }
+    // Prepend to list
+    const ul = document.getElementById('snapList') || (() => {
+      const p = document.querySelector('.twin-panel');
+      const newUl = document.createElement('ul');
+      newUl.id = 'snapList'; newUl.className = 'snap-list';
+      p.insertBefore(newUl, p.querySelector('button'));
+      return newUl;
+    })();
+    const li = document.createElement('li');
+    li.className = 'snap-item active';
+    li.dataset.id = data.id;
+    li.onclick = () => selectSnap(li, data.id);
+    li.innerHTML = `<span>${data.label}</span><span class="snap-meta">${data.node_count}n · ${data.created_at.slice(0,10)}</span>`;
+    ul.prepend(li);
+    document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+    li.classList.add('active');
+    selectedSnapId = data.id;
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function runSimulation() {
+  const raw = document.getElementById('deltaInput').value.trim();
+  const errEl = document.getElementById('simError');
+  errEl.style.display = 'none';
+  if (!raw) { errEl.textContent = 'Paste a delta graph JSON first.'; errEl.style.display='block'; return; }
+
+  let deltaGraph;
+  try { deltaGraph = JSON.parse(raw); }
+  catch(e) { errEl.textContent = 'Invalid JSON: ' + e.message; errEl.style.display='block'; return; }
+
+  const spinner = document.getElementById('simSpinner');
+  spinner.style.display = 'inline-block';
+
+  try {
+    const body = { delta_graph: deltaGraph };
+    if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
+    const r = await fetch(`/devops/api/pipelines/${PIPELINE_ID}/twin/simulate`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || ('HTTP ' + r.status); errEl.style.display='block'; return; }
+    renderResults(data);
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+function renderResults(d) {
+  document.getElementById('simResults').style.display = 'block';
+  document.getElementById('noResultsHint').style.display = 'none';
+
+  // Verdict banner
+  const verdictEl = document.getElementById('verdictBanner');
+  const icons = { pass: '✅', warn: '⚠️', fail: '❌' };
+  const labels = { pass: 'PASS — Delta is safe to merge', warn: 'WARN — Review findings before merging', fail: 'FAIL — Critical issues block merge' };
+  verdictEl.className = 'verdict-banner verdict-' + d.verdict;
+  verdictEl.innerHTML = `<span class="verdict-icon">${icons[d.verdict] || '❓'}</span><span>${labels[d.verdict] || d.verdict.toUpperCase()}</span>`;
+
+  // Diff
+  const diff = d.diff || {};
+  if (diff.node_delta !== undefined) {
+    document.getElementById('diffSection').style.display = 'block';
+    document.getElementById('diffBody').innerHTML = `
+      <tr><td class="diff-add">+ Nodes added</td><td>${(diff.added_nodes||[]).length}</td></tr>
+      <tr><td class="diff-rem">- Nodes removed</td><td>${(diff.removed_nodes||[]).length}</td></tr>
+      <tr><td class="diff-add">+ Edges added</td><td>${(diff.added_edges||[]).length}</td></tr>
+      <tr><td class="diff-rem">- Edges removed</td><td>${(diff.removed_edges||[]).length}</td></tr>
+    `;
+  }
+
+  // SLSA
+  const slsa = d.slsa || {};
+  document.getElementById('slsaLevel').textContent = 'L' + (slsa.achieved_level ?? '0');
+  const ev = slsa.evidence || {};
+  const evKeys = Object.keys(ev).filter(k => ev[k]);
+  document.getElementById('slsaEvidence').textContent = evKeys.length
+    ? 'Evidence: ' + evKeys.join(', ')
+    : 'No SLSA evidence detected in delta';
+
+  // Compliance summary
+  const comp = d.compliance || {};
+  document.getElementById('complianceRow').innerHTML = `
+    <div class="compliance-stat"><div class="val val-pass">${comp.passed ?? 0}</div><div class="lbl">Passed</div></div>
+    <div class="compliance-stat"><div class="val val-fail">${comp.failed ?? 0}</div><div class="lbl">Failed</div></div>
+    <div class="compliance-stat"><div class="val" style="color:#3498db">${comp.total ?? 0}</div><div class="lbl">Total</div></div>
+  `;
+
+  // Anti-patterns
+  const antiList = document.getElementById('antiFindingList');
+  const antiNone = document.getElementById('antiNone');
+  antiList.innerHTML = '';
+  const aps = d.antipatterns || [];
+  if (aps.length === 0) {
+    antiNone.style.display = 'block';
+  } else {
+    antiNone.style.display = 'none';
+    aps.forEach(ap => {
+      const li = document.createElement('li');
+      li.className = 'finding-item ' + (ap.severity || '');
+      li.innerHTML = `<div class="finding-title">${ap.id} — ${ap.title}<span class="badge badge-${ap.severity}">${ap.severity}</span></div>
+        <div class="finding-rec">${ap.recommendation || ''}</div>`;
+      antiList.appendChild(li);
+    });
+  }
+
+  // Compliance failures
+  const compFindings = (comp.findings || []);
+  const compSec = document.getElementById('compFindingsSection');
+  const compList = document.getElementById('compFindingList');
+  compList.innerHTML = '';
+  if (compFindings.length > 0) {
+    compSec.style.display = 'block';
+    compFindings.forEach(f => {
+      const li = document.createElement('li');
+      li.className = 'finding-item ' + (f.severity || '').toLowerCase().replace('cat','').replace('1','critical').replace('2','high').replace('3','medium');
+      li.innerHTML = `<div class="finding-title">${f.rule_id} — ${f.title}<span class="badge badge-${(f.severity||'').toLowerCase()}">${f.severity}</span></div>
+        <div class="finding-rec">Category: ${f.category || ''} · Frameworks: ${(f.frameworks||[]).join(', ')}</div>`;
+      compList.appendChild(li);
+    });
+  } else {
+    compSec.style.display = 'none';
+  }
+
+  document.getElementById('simId').textContent = `Simulation ID: ${d.id}`;
+}
+</script>
+{% endblock %}

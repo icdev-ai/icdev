@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Session Results — AI GameDay{% endblock %}
+{% block extra_css %}
+<style>
+.res-header{background:#161b22;border-bottom:1px solid #30363d;padding:1rem 2rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;}
+.res-header h1{font-size:1.2rem;font-weight:700;color:#FF6B35;margin:0;}
+.res-grid{display:grid;grid-template-columns:1fr 320px;gap:1.5rem;padding:1.5rem 2rem;}
+.podium{display:flex;align-items:flex-end;justify-content:center;gap:.5rem;height:160px;margin-bottom:2rem;}
+.podium-bar{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:90px;}
+.podium-block{border-radius:6px 6px 0 0;display:flex;align-items:center;justify-content:center;font-size:1.2rem;font-weight:800;width:80px;}
+.podium-name{font-size:.8rem;color:#e6edf3;text-align:center;margin-top:.3rem;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.podium-score{font-size:.85rem;color:#6e7681;text-align:center;}
+.ribbon-grid{display:grid;grid-template-columns:1fr 1fr;gap:.6rem;margin-bottom:1.5rem;}
+.ribbon-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.8rem 1rem;text-align:center;}
+.ribbon-icon{font-size:1.5rem;}
+.ribbon-label{font-size:.75rem;color:#6e7681;display:block;margin:.2rem 0;}
+.ribbon-winner{font-size:.9rem;color:#FFB800;font-weight:700;}
+.ai-stat-row{display:flex;justify-content:space-between;align-items:center;padding:.4rem .5rem;border-bottom:1px solid #21262d;font-size:.82rem;}
+.inject-replay{margin-top:1.5rem;}
+.replay-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:1rem;margin-bottom:.8rem;}
+.replay-card h3{color:#e6edf3;font-size:.9rem;margin:0 0 .5rem;}
+.replay-table{width:100%;border-collapse:collapse;font-size:.8rem;}
+.replay-table th{background:#21262d;color:#6e7681;padding:.3rem .6rem;text-align:left;}
+.replay-table td{padding:.3rem .6rem;border-bottom:1px solid #21262d;color:#c9d1d9;}
+.aar-block{background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:1rem;font-size:.8rem;color:#8b949e;white-space:pre-wrap;line-height:1.5;max-height:400px;overflow-y:auto;margin-top:1rem;}
+.dl-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.5rem 1rem;border-radius:6px;font-size:.82rem;cursor:pointer;text-decoration:none;display:inline-block;transition:all .2s;}
+.dl-btn:hover{border-color:#FF6B35;color:#FF6B35;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="res-header">
+  <h1>📋 After-Action Report</h1>
+  <span style="color:#6e7681;font-size:.85rem;">{{ session.scenario_slug.replace('_',' ').title() }}</span>
+  <span style="flex:1;"></span>
+  <a href="/api/gameday/session/{{ session.session_id }}/aar" class="dl-btn" download="aar-session-{{ session.session_id }}.md">⬇ Download AAR</a>
+  <a href="/gameday" class="dl-btn">← Hub</a>
+</div>
+
+<div class="res-grid">
+  <div>
+    <!-- Podium -->
+    {% if leaderboard %}
+    <div class="podium">
+      {% set top3 = leaderboard[:3] %}
+      {% set max_pts = top3[0].total_score if top3 else 1 %}
+      {# Reorder: 2nd | 1st | 3rd #}
+      {% for idx in [1, 0, 2] %}
+      {% if idx < top3|length %}
+      {% set row = top3[idx] %}
+      {% set heights = [110, 150, 80] %}
+      {% set colors = ['#c0c0c0', 'linear-gradient(180deg,#FFB800,#FF6B35)', '#cd7f32'] %}
+      <div class="podium-bar">
+        <div class="podium-block" style="height:{{ heights[idx] }}px;background:{{ colors[idx] }};color:{% if idx==1 %}#0d1117{% else %}#fff{% endif %};">
+          {{ '🥇' if idx==0 else ('🥈' if idx==1 else '🥉') }}
+        </div>
+        <div class="podium-name">{{ row.team_name }}</div>
+        <div class="podium-score">{{ row.total_score }} pts</div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Inject Replay -->
+    <div class="inject-replay">
+      <div style="font-size:.85rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem;">Inject Replay</div>
+      {% for inj in injects %}
+      {% set is_aadc = inj.get('is_aadc', false) %}
+      <div class="replay-card">
+        <h3>{{ inj.title }}
+          {% if is_aadc %}<span style="font-size:.68rem;background:#0a84ff22;color:#58a6ff;border:1px solid #0a84ff44;border-radius:4px;padding:.1rem .35rem;vertical-align:middle;margin-left:.4rem;">AADC</span>{% endif %}
+          <span style="font-size:.75rem;color:#6e7681;">({{ inj.state }})</span>
+        </h3>
+        <table class="replay-table">
+          <thead>
+            <tr>
+              <th>Team</th>
+              <th>Receipts</th>
+              {% if is_aadc %}<th>AADC Score</th>{% else %}<th>Judge Score</th>{% endif %}
+              <th>Speed Bonus</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% set inj_scores = inject_scores.get(inj.inject_id, {}) %}
+          {% for team_id, team in teams.items() %}
+          {% set s = inj_scores.get(team_id, {}) %}
+          <tr>
+            <td>{{ team.team_name }}</td>
+            <td style="color:#58a6ff;">{{ s.get('receipt_pts', '—') }}</td>
+            {% if is_aadc %}
+            <td style="color:#58a6ff;font-weight:600;">{{ s.get('aadc_score', '—') }}{% if s.get('aadc_score') is not none and s.get('aadc_score') != '—' %}/100{% endif %}</td>
+            {% else %}
+            <td style="color:#3fb950;">{{ s.get('judge_pts', '—') }}</td>
+            {% endif %}
+            <td style="color:#FFB800;">{{ s.get('time_bonus_pts', '—') }}</td>
+            <td style="color:#FF6B35;font-weight:700;">{{ s.get('total_pts', '—') }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- AAR markdown -->
+    <div style="margin-top:1.5rem;">
+      <div style="font-size:.85rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.6rem;">Full AAR</div>
+      <div class="aar-block">{{ aar_md }}</div>
+    </div>
+  </div>
+
+  <!-- Right sidebar -->
+  <div>
+    <!-- Ribbons -->
+    <div style="font-size:.82rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.8rem;">Category Ribbons</div>
+    <div class="ribbon-grid">
+      {% for ribbon_id, winner in ribbons.items() %}
+      {% set defn = ribbon_defs[ribbon_id] %}
+      <div class="ribbon-card">
+        <div class="ribbon-icon">{{ defn.icon }}</div>
+        <span class="ribbon-label">{{ defn.label }}</span>
+        {% if winner %}<div class="ribbon-winner">{{ winner.team_name }}</div>
+        {% else %}<div style="color:#6e7681;font-size:.8rem;">—</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Final leaderboard -->
+    <div style="font-size:.82rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin:.8rem 0 .6rem;">Final Rankings</div>
+    {% for row in leaderboard %}
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.7rem 1rem;margin-bottom:.5rem;display:flex;align-items:center;gap:.8rem;">
+      <div style="font-size:1.1rem;font-weight:800;color:{% if row.rank==1 %}#FFB800{% elif row.rank==2 %}#c0c0c0{% elif row.rank==3 %}#cd7f32{% else %}#30363d{% endif %};">
+        {{ '🥇' if row.rank==1 else ('🥈' if row.rank==2 else ('🥉' if row.rank==3 else row.rank)) }}
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:.88rem;font-weight:600;color:#e6edf3;">{{ row.team_name }}</div>
+        <div style="font-size:.75rem;color:#6e7681;">Receipts: {{ row.receipt_pts }} · Judge: {{ row.judge_pts }}</div>
+      </div>
+      <div style="font-size:1.1rem;font-weight:700;color:#FF6B35;">{{ row.total_score }}</div>
+    </div>
+    {% endfor %}
+
+    <!-- AI Usage -->
+    <div style="font-size:.82rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.06em;margin:1rem 0 .6rem;">AI Usage by Team</div>
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;overflow:hidden;">
+      {% for team_id, stats in ai_stats.items() %}
+      <div class="ai-stat-row">
+        <span style="color:#e6edf3;">{{ teams.get(team_id, {}).get('team_name', 'Team') }}</span>
+        <span style="color:#58a6ff;">{{ stats.receipt_total }} receipts</span>
+      </div>
+      <div style="font-size:.72rem;color:#6e7681;padding:.2rem .5rem .5rem;border-bottom:1px solid #21262d;">
+        {{ stats.tools|join(', ') or 'No tools logged' }}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}

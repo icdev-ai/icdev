@@ -1,0 +1,8 @@
+# Intent: Flag detection rules with a false-positive rate exceeding 10% (fp_rate > 0.1),
+#         which degrade analyst trust and cause alert fatigue across the SOC.
+# Expected violation shape: rows where fp_rate > 0.1; each row is a technique-signal pair
+#   producing excessive noise — candidates for rule tuning or signal enrichment.
+
+foreach t in odc_coverage
+  where t.fp_rate > 0.1
+  select t.technique_id, t.tactic_id, t.signal_source, t.coverage_state, t.fp_rate

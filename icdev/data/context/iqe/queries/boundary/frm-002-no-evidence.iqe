@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRM-002
+-- Title: FedRAMP Moderate — Controls Missing Evidence
+-- Framework: FedRAMP Moderate
+-- Category: evidence-gap
+-- Severity: high
+-- Description: Identify controls that have no evidence reference. A control
+--   without evidence cannot be certified as satisfied, regardless of status.
+--   These are immediate blockers for an ATO package submission.
+
+foreach ctrl in framework('FedRAMP Moderate').controls
+where ctrl.evidence_ref is null
+select ctrl.control_id, ctrl.implementation_status, ctrl.project_id

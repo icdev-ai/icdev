@@ -1,0 +1,18 @@
+sources:
+  - win_loss_records    # Proposal Genesis DB table
+  - debrief_uploads     # tools/voc/uploads/ dir, shared with VOC engine
+
+analysis:
+  min_outcomes_for_pattern: 5       # need ≥5 wins or losses to trust a pattern
+  feature_correlation_threshold: 0.60
+  auto_signal_threshold: 0.70
+
+output:
+  top_k_features: 10
+
+scheduling:
+  quiet_hours:
+    enabled: true
+    start: "22:00"
+    end: "06:00"
+    timezone: "US/Eastern"

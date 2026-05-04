@@ -9,18 +9,10 @@
 
 {% block content %}
 <style>
-  .sg-hero { padding: 18px 30px 8px; }
-  .sg-hero h1 { font-size: 20px; margin: 0 0 3px; }
-  .sg-hero p  { color: #7a8cb0; font-size: 12px; margin: 0 0 10px; }
-  .sg-controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  .sg-controls label { font-size: 12px; color: #aab; display: flex; align-items: center; gap: 5px; cursor: pointer; }
-  .sg-controls select { background: #0f1e36; border: 1px solid #1e3a6e; color: #eaeaea; border-radius: 4px; padding: 4px 8px; font-size: 12px; }
-  .sg-controls button { background: #0f3460; border: 1px solid #27ae60; color: #27ae60; border-radius: 5px; padding: 5px 14px; font-size: 12px; cursor: pointer; }
-  .sg-controls button:hover { background: #1a4a80; }
 
-  #dib-map { height: 480px; border-radius: 6px; overflow: hidden; margin: 0 30px 14px; }
+  #dib-map { height: 480px; border-radius: 6px; overflow: hidden; margin: 0 0 14px; }
 
-  .sg-layout { display: flex; gap: 14px; padding: 0 30px 20px; }
+  .sg-layout { display: flex; gap: 14px; padding: 0 0 20px; }
   .sg-cp { flex: 1.8; }
   .sg-legend { flex: 0 0 200px; }
 
@@ -53,24 +45,31 @@
   .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: #aab; }
   .ld { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .lline { width: 22px; height: 2px; flex-shrink: 0; }
+  /* Keep nav dropdowns above Leaflet map panes */
+  .nav-dropdown-menu { z-index: 1100 !important; }
+  .navbar, .sub-nav  { z-index: 1050 !important; }
 </style>
 
-<div class="sg-hero">
-  <h1>Defense Industrial Base — Supply Chain</h1>
-  <p>Factory → Depot → Logistics → Unit · PRODUCES and DEPENDS_ON_SUPPLY graph · Critical-path targeting priority</p>
-  <div class="sg-controls">
-    <label><input type="checkbox" id="show-ukraine" checked> Ukraine / NATO</label>
-    <label><input type="checkbox" id="show-russia"  checked> Russia</label>
-    <label><input type="checkbox" id="show-iran"    checked> Iran</label>
-    <label><input type="checkbox" id="show-edges"   checked> Supply edges</label>
-    <select id="map-style">
-      <option value="dark">Dark</option>
-      <option value="satellite">Satellite</option>
-      <option value="terrain">Terrain</option>
-    </select>
-    <button onclick="syncGraph()">Sync Graph</button>
-    <span id="sync-status" style="font-size:11px;color:#7a8cb0"></span>
+<div class="page-header page-header--compact">
+  <div>
+    <h1>DIB Supply Chain <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Defense Industrial Base</span></h1>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem">CUI // SP-CTI &nbsp;|&nbsp; Factory → Depot → Logistics → Unit · Critical-path targeting priority</div>
   </div>
+  <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<div class="sg-controls" style="padding: 0 0 0.75rem; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-ukraine" checked> Ukraine / NATO</label>
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-russia"  checked> Russia</label>
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-iran"    checked> Iran</label>
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-edges"   checked> Supply edges</label>
+  <select id="map-style" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;padding:4px 8px;font-size:12px;">
+    <option value="dark">Dark</option>
+    <option value="satellite">Satellite</option>
+    <option value="terrain">Terrain</option>
+  </select>
+  <button onclick="syncGraph()" class="btn btn-sm" style="font-size:12px;padding:4px 12px;">Sync Graph</button>
+  <span id="sync-status" style="font-size:11px;color:var(--text-muted)"></span>
 </div>
 
 <div id="dib-map"></div>

@@ -1,0 +1,677 @@
+{% extends "base.html" %}
+{% block title %}News{% endblock %}
+{% block page_title %}News Intelligence{% endblock %}
+{% block content %}
+<!-- News Reading -->
+<div class="card" id="news-reading-card" data-card-id="news-reading">
+    <h3 style="display:flex;align-items:center;gap:10px" data-help="news.reading">
+        <span>📖 News Reading</span>
+        <span id="news-reading-mood" style="font-weight:400"></span>
+    </h3>
+    <div id="news-reading-body"><div style="opacity:0.6;padding:8px">Generating reading…</div></div>
+</div>
+
+<!-- Cross-Signal Divergences -->
+<div class="card" id="divergence-panel" style="border-left:4px solid #a371f7;display:none">
+    <h3 style="color:#a371f7">Cross-Signal Divergences</h3>
+    <div id="divergence-list" style="font-size:0.85rem"></div>
+</div>
+
+<!-- Regime Watch -->
+<div class="card" id="regime-watch" style="border-left:4px solid #f85149;display:none">
+    <h3 style="color:#f85149" data-help="news.regime_watch">Regime Watch</h3>
+    <div id="regime-clusters"></div>
+</div>
+
+<!-- Emerging Clusters -->
+<div class="card" id="emerging-watch" style="border-left:4px solid #d29922;display:none">
+    <h3 style="color:#d29922" data-help="news.emerging_watch">Emerging Clusters</h3>
+    <div id="emerging-clusters"></div>
+</div>
+
+<!-- Search bar -->
+<div style="margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem">
+    <input id="news-search" type="text" placeholder="Search headlines, tickers, source…"
+           oninput="applySearch(this.value)"
+           style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:0.85rem;padding:6px 10px;outline:none">
+    <button onclick="applySearch('');document.getElementById('news-search').value=''"
+            style="background:none;border:1px solid #30363d;border-radius:6px;color:#8b949e;cursor:pointer;font-size:0.75rem;padding:5px 10px">✕ Clear</button>
+</div>
+
+<!-- Category Tab Bar -->
+<div style="margin-bottom:0">
+    <div id="tab-row" style="display:flex;gap:0;border-bottom:2px solid #30363d;margin-bottom:1rem">
+        <button class="cat-tab active" data-tab="all"          onclick="switchTab('all')">All           <span class="tab-badge" id="tbadge-all">0</span></button>
+        <button class="cat-tab"        data-tab="macro"        onclick="switchTab('macro')">Macro         <span class="tab-badge" id="tbadge-macro">0</span></button>
+        <button class="cat-tab"        data-tab="geopolitical" onclick="switchTab('geopolitical')">Geopolitical  <span class="tab-badge" id="tbadge-geopolitical">0</span></button>
+        <button class="cat-tab"        data-tab="earnings"     onclick="switchTab('earnings')">Earnings      <span class="tab-badge" id="tbadge-earnings">0</span></button>
+        <button class="cat-tab"        data-tab="regulatory"   onclick="switchTab('regulatory')">Regulatory    <span class="tab-badge" id="tbadge-regulatory">0</span></button>
+        <button class="cat-tab"        data-tab="sector"       onclick="switchTab('sector')">Sector        <span class="tab-badge" id="tbadge-sector">0</span></button>
+        <button class="cat-tab"        data-tab="corporate"    onclick="switchTab('corporate')">Corporate     <span class="tab-badge" id="tbadge-corporate">0</span></button>
+    </div>
+</div>
+
+<!-- Tab Panes -->
+{% for cat in ['all','macro','geopolitical','earnings','regulatory','sector','corporate'] %}
+<div class="cat-pane" id="pane-{{ cat }}" style="display:{% if cat == 'all' %}block{% else %}none{% endif %}">
+    <!-- Category summary card (cat-02) -->
+    {% if cat != 'all' %}
+    <div id="cat-summary-{{ cat }}" class="cat-summary-card" style="display:none"></div>
+    {% endif %}
+    <!-- News list card -->
+    <div class="card">
+        <h3 style="display:flex;align-items:center;gap:10px">
+            <span id="pane-title-{{ cat }}">{% if cat == 'all' %}Latest News{% else %}{{ cat|capitalize }} News{% endif %}</span>
+            <span style="font-size:0.8rem;opacity:0.7" id="news-total-{{ cat }}"></span>
+            <a class="btn-export" data-help="news.export_csv"
+               style="margin-left:auto;text-decoration:none;font-size:11px;padding:4px 8px"
+               href="/api/news/export.csv{% if cat != 'all' %}?category={{ cat }}{% endif %}"
+               title="Download news with classification, cluster, and aggregate impact">⬇ CSV</a>
+        </h3>
+        <div id="news-list-{{ cat }}" style="max-height:600px;overflow-y:auto"></div>
+    </div>
+</div>
+{% endfor %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+<style>
+/* Tab bar */
+.cat-tab {
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #8b949e;
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: 8px 14px;
+    margin-bottom: -2px;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.cat-tab:hover { color: #c9d1d9; }
+.cat-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; font-weight: 600; }
+.tab-badge {
+    display: inline-block;
+    background: #30363d;
+    color: #8b949e;
+    border-radius: 10px;
+    font-size: 10px;
+    padding: 1px 5px;
+    margin-left: 4px;
+    min-width: 18px;
+    text-align: center;
+}
+.cat-tab.active .tab-badge { background: rgba(88,166,255,0.15); color: #58a6ff; }
+
+/* Category summary card */
+.cat-summary-card {
+    margin-bottom: 1rem;
+    padding: 0.75rem 1rem;
+    background: rgba(88,166,255,0.04);
+    border: 1px solid #30363d;
+    border-radius: 6px;
+}
+.cat-summary-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 70px;
+}
+.cat-summary-stat-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #c9d1d9;
+    line-height: 1.2;
+}
+.cat-summary-stat-label {
+    font-size: 0.68rem;
+    color: #8b949e;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* Entity chips */
+.ent-chip { display:inline-block; padding:2px 7px; border-radius:10px; font-size:10.5px; margin-right:4px; margin-bottom:2px; border:1px solid transparent; }
+.ent-chip.ct { background:rgba(88,166,255,0.12); color:#58a6ff; border-color:rgba(88,166,255,0.3); }
+.ent-chip.co { background:rgba(210,153,34,0.12); color:#d29922; border-color:rgba(210,153,34,0.3); }
+.ent-chip.tk { background:rgba(63,185,80,0.12); color:#3fb950; border-color:rgba(63,185,80,0.3); }
+.ent-chip.ev { background:rgba(248,81,73,0.12); color:#f85149; border-color:rgba(248,81,73,0.3); }
+.ent-chip.pc { background:rgba(163,113,247,0.12); color:#a371f7; border-color:rgba(163,113,247,0.3); }
+
+/* Analyze (INTaaS) panel */
+.panel-analyze {
+    background:rgba(139,92,246,0.08);
+    border-left:3px solid #8b5cf6;
+    border-radius:4px;
+}
+.panel-analyze::before {
+    content:"▾ Analyze (INTaaS)"; display:block;
+    font-size:10px; font-weight:600; color:#8b5cf6;
+    margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;
+}
+
+/* Trace Impact panel */
+.panel-trace {
+    background:rgba(25,118,210,0.08);
+    border-left:3px solid #1976d2;
+    border-radius:4px;
+}
+.panel-trace::before {
+    content:"▾ Trace Impact (Supply Chain)"; display:block;
+    font-size:10px; font-weight:600; color:#58a6ff;
+    margin-bottom:6px; letter-spacing:0.5px; text-transform:uppercase;
+}
+.tbl th, .tbl td { padding:3px 6px; border-bottom:1px solid rgba(255,255,255,0.05); }
+.tbl th { text-align:left; font-weight:600; opacity:0.7; }
+
+/* Search highlight */
+#news-search:focus { border-color:#58a6ff; }
+</style>
+<script>
+const CATEGORIES = ['all','macro','geopolitical','earnings','regulatory','sector','corporate'];
+let currentTab = 'all';
+let allNews = [];
+let searchQuery = '';
+
+// Chart.js sparkline registry — keyed by category
+const _sparklineCharts = {};
+
+// Fire after base.html's helpers are defined
+loadReading('/api/news/reading', 'news-reading-body', 'news-reading-mood');
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(tab) {
+    if (tab === currentTab) return;
+    document.getElementById('pane-' + currentTab).style.display = 'none';
+    document.querySelector('.cat-tab[data-tab="' + currentTab + '"]').classList.remove('active');
+    currentTab = tab;
+    document.getElementById('pane-' + tab).style.display = 'block';
+    document.querySelector('.cat-tab[data-tab="' + tab + '"]').classList.add('active');
+    renderPane(tab, allNews);
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+function applySearch(q) {
+    searchQuery = q.toLowerCase().trim();
+    CATEGORIES.forEach(cat => renderPane(cat, allNews));
+    updateBadges(allNews);
+}
+
+function matchesSearch(item) {
+    if (!searchQuery) return true;
+    const hay = [item.title, item.source, item.category,
+        ...((() => { try { return typeof item.mentioned_tickers === 'string' ? JSON.parse(item.mentioned_tickers) : (item.mentioned_tickers || []); } catch { return []; } })())
+    ].join(' ').toLowerCase();
+    return hay.includes(searchQuery);
+}
+
+// ── Data loading ───────────────────────────────────────────────────────────
+function loadNews() {
+    fetch('/api/news')
+        .then(r => r.json())
+        .then(data => {
+            allNews = Array.isArray(data) ? data : (data.items || []);
+            updateBadges(allNews);
+            CATEGORIES.forEach(cat => renderPane(cat, allNews));
+            loadCategorySummaries();
+        })
+        .catch(err => {
+            document.getElementById('news-list-all').innerHTML =
+                `<p style="color:#f85149">Error loading news: ${err.message}</p>`;
+        });
+}
+
+function renderPane(cat, items) {
+    const catFiltered = cat === 'all' ? items : items.filter(i => (i.category || '').toLowerCase() === cat);
+    const filtered = catFiltered.filter(matchesSearch);
+    const listEl = document.getElementById('news-list-' + cat);
+    const totalEl = document.getElementById('news-total-' + cat);
+    if (!listEl) return;
+    if (totalEl) totalEl.textContent = searchQuery ? `(${filtered.length} of ${catFiltered.length})` : `(${filtered.length} items)`;
+    if (!filtered.length) {
+        listEl.innerHTML = '<p style="opacity:0.5">' + (searchQuery ? 'No matching items' : 'No news items found') + '</p>';
+        return;
+    }
+    listEl.innerHTML = filtered.map(item => buildNewsRow(item)).join('');
+}
+
+function updateBadges(items) {
+    const counts = {};
+    items.forEach(item => {
+        if (!matchesSearch(item)) return;
+        const cat = (item.category || 'general').toLowerCase();
+        counts[cat] = (counts[cat] || 0) + 1;
+    });
+    const allCount = items.filter(matchesSearch).length;
+    const allBadge = document.getElementById('tbadge-all');
+    if (allBadge) allBadge.textContent = allCount;
+    ['macro','geopolitical','earnings','regulatory','sector','corporate'].forEach(cat => {
+        const el = document.getElementById('tbadge-' + cat);
+        if (el) el.textContent = counts[cat] || 0;
+    });
+}
+
+// ── Category summary cards (cat-02) ───────────────────────────────────────
+function loadCategorySummaries() {
+    ['macro','geopolitical','earnings','regulatory','sector','corporate'].forEach(cat => {
+        const el = document.getElementById('cat-summary-' + cat);
+        if (!el) return;
+        fetch('/api/news/category-summary/' + cat)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (!data) return;
+                el.style.display = 'block';
+                el.innerHTML = buildCategorySummaryHTML(cat, data);
+                renderSparkline(cat, data.sparkline || []);
+            })
+            .catch(() => {});
+    });
+}
+
+function buildCategorySummaryHTML(cat, data) {
+    const count24h = (data.count_24h != null) ? data.count_24h : '—';
+    const patternCount = (data.pattern_count != null) ? data.pattern_count : '—';
+
+    // Derive overall sentiment from sparkline net values
+    const nets = (data.sparkline || []).map(d => d.net);
+    const totalNet = nets.reduce((a, b) => a + b, 0);
+    const sentimentColor = totalNet > 0 ? '#3fb950' : totalNet < 0 ? '#f85149' : '#8b949e';
+    const sentimentLabel = totalNet > 0 ? 'Bullish' : totalNet < 0 ? 'Bearish' : 'Neutral';
+
+    return `
+    <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+        <div style="flex:1;min-width:0">
+            <div style="font-weight:600;color:#c9d1d9;margin-bottom:6px;text-transform:capitalize;font-size:0.9rem">
+                ${cat} — 7-day Sentiment
+                <span style="color:${sentimentColor};font-size:0.8rem;font-weight:400;margin-left:6px">${sentimentLabel}</span>
+            </div>
+            <div style="position:relative;height:48px">
+                <canvas id="sparkline-${cat}" height="48" style="display:block"></canvas>
+            </div>
+        </div>
+        <div style="display:flex;gap:1.25rem;align-items:center;flex-shrink:0">
+            <div class="cat-summary-stat">
+                <span class="cat-summary-stat-value">${count24h}</span>
+                <span class="cat-summary-stat-label">24h items</span>
+            </div>
+            <div class="cat-summary-stat">
+                <span class="cat-summary-stat-value">—</span>
+                <span class="cat-summary-stat-label">Patterns</span>
+            </div>
+        </div>
+    </div>`;
+}
+
+function renderSparkline(cat, sparklineData) {
+    const canvas = document.getElementById('sparkline-' + cat);
+    if (!canvas || !window.Chart) return;
+
+    // Destroy previous instance if switching back to a tab
+    if (_sparklineCharts[cat]) {
+        _sparklineCharts[cat].destroy();
+        delete _sparklineCharts[cat];
+    }
+
+    const labels = sparklineData.map(d => d.date ? d.date.slice(5) : '');  // MM-DD
+    const values = sparklineData.map(d => d.net);
+
+    // Color each point: green for positive, red for negative, gray for zero
+    const pointColors = values.map(v => v > 0 ? '#3fb950' : v < 0 ? '#f85149' : '#8b949e');
+
+    // Line gradient fill: bullish green or bearish red based on net sum
+    const totalNet = values.reduce((a, b) => a + b, 0);
+    const lineColor = totalNet > 0 ? '#3fb950' : totalNet < 0 ? '#f85149' : '#8b949e';
+
+    _sparklineCharts[cat] = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                data: values,
+                borderColor: lineColor,
+                borderWidth: 1.5,
+                pointBackgroundColor: pointColors,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                tension: 0.3,
+                fill: true,
+                backgroundColor: totalNet >= 0
+                    ? 'rgba(63,185,80,0.08)'
+                    : 'rgba(248,81,73,0.08)',
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => {
+                            const v = ctx.raw;
+                            return `Net: ${v >= 0 ? '+' : ''}${v}`;
+                        }
+                    },
+                    backgroundColor: '#161b22',
+                    titleColor: '#8b949e',
+                    bodyColor: '#c9d1d9',
+                    borderColor: '#30363d',
+                    borderWidth: 1,
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                    ticks: { color: '#8b949e', font: { size: 9 }, maxRotation: 0 },
+                    border: { display: false },
+                },
+                y: {
+                    grid: { color: 'rgba(48,54,61,0.5)' },
+                    ticks: { color: '#8b949e', font: { size: 9 }, maxTicksLimit: 4 },
+                    border: { display: false },
+                }
+            }
+        }
+    });
+}
+
+// ── News row builder ───────────────────────────────────────────────────────
+function buildNewsRow(item) {
+    const impact = item.impact_level || 'low';
+    const impactColor = impact === 'high' ? '#f85149' : impact === 'medium' ? '#d29922' : '#8b949e';
+    const dir = item.net_direction || 'neutral';
+    const dirIcon = dir === 'bullish' ? '&#9650;' : dir === 'bearish' ? '&#9660;' : '&#9644;';
+    const dirColor = dir === 'bullish' ? '#3fb950' : dir === 'bearish' ? '#f85149' : '#8b949e';
+    const cat = item.category || 'general';
+    const tickers = (() => {
+        try {
+            const t = typeof item.mentioned_tickers === 'string' ? JSON.parse(item.mentioned_tickers) : (item.mentioned_tickers || []);
+            return t.slice(0, 5).join(', ');
+        } catch { return ''; }
+    })();
+    const firstTicker = (() => {
+        try {
+            const t = typeof item.mentioned_tickers === 'string' ? JSON.parse(item.mentioned_tickers) : (item.mentioned_tickers || []);
+            return t[0] || '';
+        } catch { return ''; }
+    })();
+    const timeAgo = item.published_at ? new Date(item.published_at).toLocaleString() : '';
+    return `
+    <div style="border-bottom:1px solid #30363d;padding:0.75rem 0">
+        <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.25rem">
+            <span style="background:#30363d;padding:2px 8px;border-radius:4px;font-size:0.75rem">${cat}</span>
+            <span style="color:${impactColor};font-size:0.75rem;font-weight:bold">${impact.toUpperCase()}</span>
+            <span style="color:${dirColor};font-size:0.9rem">${dirIcon}</span>
+            <span style="opacity:0.5;font-size:0.75rem;margin-left:auto">${item.source || ''} &middot; ${timeAgo}</span>
+        </div>
+        <a href="${item.link || '#'}" target="_blank" style="color:#58a6ff;text-decoration:none;font-weight:500">${item.title || 'Untitled'}</a>
+        ${tickers ? `<div style="font-size:0.75rem;margin-top:4px;opacity:0.7">Tickers: ${tickers}</div>` : ''}
+        <div style="margin-top:0.5rem;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+            <button onclick="analyzeItem('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#8b5cf6;color:#fff;border:none;border-radius:4px">Analyze</button>
+            <button onclick="traceImpact('${item.id}', this)" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#1976d2;color:#fff;border:none;border-radius:4px" title="Walk the Knowledge Graph: extract countries/commodities/tickers from this headline and aggregate supply-chain impact across every exposed ticker.">🔗 Trace Impact</button>
+            ${firstTicker ? `<button onclick="location.href='/fathomdesk?ticker='+encodeURIComponent('${firstTicker}')+'&amp;highlight='+encodeURIComponent('${item.id}')" style="font-size:0.75rem;padding:2px 8px;cursor:pointer;background:#0d7377;color:#fff;border:none;border-radius:4px" title="View this news event on the FathomDesk chart">📈 Show on chart</button>` : ''}
+            <span id="msg-${item.id}" style="font-size:0.75rem;display:none"></span>
+        </div>
+        <div id="intel-${item.id}" class="panel-analyze" style="display:none;margin-top:0.5rem;padding:0.75rem;font-size:0.8rem"></div>
+        <div id="impact-${item.id}" class="panel-trace" style="display:none;margin-top:0.5rem;padding:0.75rem;font-size:0.8rem"></div>
+    </div>`;
+}
+
+// ── Clusters ───────────────────────────────────────────────────────────────
+function loadClusters() {
+    fetch('/api/news/clusters')
+        .then(r => r.json())
+        .then(data => {
+            const clusters = Array.isArray(data) ? data : (data.clusters || []);
+            renderClusters(clusters);
+        })
+        .catch(() => {});
+}
+
+function renderClusters(clusters) {
+    const regime = clusters.filter(c => c.status === 'regime');
+    const emerging = clusters.filter(c => c.status === 'emerging' || c.status === 'cluster');
+
+    const regimeDiv = document.getElementById('regime-watch');
+    const regimeList = document.getElementById('regime-clusters');
+    if (regime.length) {
+        regimeDiv.style.display = 'block';
+        regimeList.innerHTML = regime.map(c => {
+            const ids = (() => { try { return JSON.parse(c.item_ids || '[]'); } catch { return []; } })();
+            return `<div style="margin-bottom:0.5rem"><strong>${c.category || 'general'}</strong> ${c.scenario_key ? '(' + c.scenario_key + ')' : ''} &mdash; ${ids.length} items, score: ${(c.cumulative_score || 0)|0}</div>`;
+        }).join('');
+    } else {
+        regimeDiv.style.display = 'none';
+    }
+
+    const emergingDiv = document.getElementById('emerging-watch');
+    const emergingList = document.getElementById('emerging-clusters');
+    if (emerging.length) {
+        emergingDiv.style.display = 'block';
+        emergingList.innerHTML = emerging.map(c => {
+            const ids = (() => { try { return JSON.parse(c.item_ids || '[]'); } catch { return []; } })();
+            return `<div style="margin-bottom:0.5rem"><strong>${c.category || 'general'}</strong> ${c.scenario_key ? '(' + c.scenario_key + ')' : ''} &mdash; ${ids.length} items, score: ${(c.cumulative_score || 0)|0}</div>`;
+        }).join('');
+    } else {
+        emergingDiv.style.display = 'none';
+    }
+}
+
+// ── Divergences ────────────────────────────────────────────────────────────
+function loadDivergences() {
+    fetch('/api/news/divergences')
+        .then(r => r.json())
+        .then(data => {
+            const divs = data.divergences || [];
+            const panel = document.getElementById('divergence-panel');
+            const list = document.getElementById('divergence-list');
+            if (divs.length) {
+                panel.style.display = 'block';
+                list.innerHTML = divs.map(d => `<div style="margin-bottom:0.25rem;color:#c9d1d9">&#9888; ${d}</div>`).join('');
+            } else {
+                panel.style.display = 'none';
+            }
+        })
+        .catch(() => {});
+}
+
+// ── Trace Impact ───────────────────────────────────────────────────────────
+const _traceState = {};
+
+function traceImpact(newsId, btn) {
+    const panel = document.getElementById('impact-' + newsId);
+    const state = _traceState[newsId] || (_traceState[newsId] = {});
+
+    if (state.controller) {
+        try { state.controller.abort(); } catch (_) {}
+        state.controller = null;
+    }
+
+    if (panel.style.display === 'block') {
+        panel.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = '🔗 Trace Impact';
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Tracing…';
+    panel.style.display = 'block';
+    panel.innerHTML = '<div style="opacity:0.7">Extracting entities and cascading through Knowledge Graph… (~3s)</div>';
+
+    const controller = new AbortController();
+    state.controller = controller;
+
+    fetch(`/api/news/${newsId}/supply-chain-impact`, { signal: controller.signal })
+        .then(r => r.json())
+        .then(data => {
+            if (state.controller !== controller) return;
+            state.controller = null;
+            btn.disabled = false;
+            btn.textContent = '🔗 Hide Impact';
+            if (data.error) {
+                panel.innerHTML = `<div style="color:#f85149">${data.error}</div>`;
+                return;
+            }
+
+            const e = data.entities || {};
+            const ct = (e.countries || []).map(x => `<span class="ent-chip ct">${x.label}${x.mentions>1?' ('+x.mentions+')':''}</span>`).join(' ');
+            const co = (e.commodities || []).map(x => `<span class="ent-chip co">${x.label}${x.mentions>1?' ('+x.mentions+')':''}</span>`).join(' ');
+            const tk = (e.tickers || []).map(x => `<span class="ent-chip tk">${x.label}${x.mentions>1?' ('+x.mentions+')':''}</span>`).join(' ');
+            const pc = (e.private_companies || []).map(x => `<span class="ent-chip pc">${x.label}${x.mentions>1?' ('+x.mentions+')':''}</span>`).join(' ');
+            const ev = (e.event_hints || []).map(x => `<span class="ent-chip ev">${x}</span>`).join(' ');
+
+            const entitiesRow =
+                (ct || co || tk || pc || ev) ? `
+                <div style="margin-bottom:8px;line-height:1.8">
+                    ${ct ? `<span style="opacity:0.6">Countries:</span> ${ct}<br>` : ''}
+                    ${co ? `<span style="opacity:0.6">Commodities:</span> ${co}<br>` : ''}
+                    ${tk ? `<span style="opacity:0.6">Tickers:</span> ${tk}<br>` : ''}
+                    ${pc ? `<span style="opacity:0.6">Private companies:</span> ${pc}<br>` : ''}
+                    ${ev ? `<span style="opacity:0.6">Event hints:</span> ${ev}` : ''}
+                </div>` : '<div style="opacity:0.6">No KG-matchable entities found in this headline.</div>';
+
+            const agg = data.aggregate || {};
+            const winners = (agg.winners || []).map(r =>
+                `<tr><td style="color:#7ee787">${r.ticker}</td><td style="color:#7ee787;text-align:right">${r.total_score>=0?'+':''}${r.total_score}</td><td style="opacity:0.7">${(r.contributions||[]).map(c=>c.subject+'/'+c.event+' '+(c.score>=0?'+':'')+c.score).join(', ')}</td></tr>`).join('');
+            const losers = (agg.losers || []).map(r =>
+                `<tr><td style="color:#ffa198">${r.ticker}</td><td style="color:#ffa198;text-align:right">${r.total_score}</td><td style="opacity:0.7">${(r.contributions||[]).map(c=>c.subject+'/'+c.event+' '+(c.score>=0?'+':'')+c.score).join(', ')}</td></tr>`).join('');
+
+            const roll = (agg.total_tickers_affected || 0) > 0 ? `
+                <div style="display:flex;gap:16px;margin-top:10px">
+                    <div style="flex:1">
+                        <div style="color:#7ee787;font-weight:600;margin-bottom:4px">Winners (${(agg.winners||[]).length})</div>
+                        <table class="tbl" style="width:100%;font-size:11px"><thead><tr><th>Ticker</th><th style="text-align:right">Σ Score</th><th>Via</th></tr></thead>
+                        <tbody>${winners || '<tr><td colspan="3" style="opacity:0.5">none</td></tr>'}</tbody></table>
+                    </div>
+                    <div style="flex:1">
+                        <div style="color:#ffa198;font-weight:600;margin-bottom:4px">Losers (${(agg.losers||[]).length})</div>
+                        <table class="tbl" style="width:100%;font-size:11px"><thead><tr><th>Ticker</th><th style="text-align:right">Σ Score</th><th>Via</th></tr></thead>
+                        <tbody>${losers || '<tr><td colspan="3" style="opacity:0.5">none</td></tr>'}</tbody></table>
+                    </div>
+                </div>` : '<div style="opacity:0.5;margin-top:8px">No tickers impacted.</div>';
+
+            const perSubj = (data.per_subject || []).length ? `
+                <details style="margin-top:10px">
+                    <summary style="cursor:pointer;opacity:0.7">Per-subject breakdown (${(data.per_subject||[]).length})</summary>
+                    <div style="margin-top:6px">
+                        ${(data.per_subject || []).map(s =>
+                            `<div style="margin-bottom:4px"><strong>${s.subject}</strong>
+                            <span style="opacity:0.6">[${s.subject_type}]</span>
+                            + <strong>${(s.event||'').replace(/_/g,' ')}</strong>
+                            → ${s.alert_count} alerts</div>`).join('')}
+                    </div>
+                </details>` : '';
+
+            panel.innerHTML = `
+                <div style="font-weight:600;margin-bottom:8px;color:#58a6ff">Supply-Chain Impact Trace</div>
+                ${entitiesRow}
+                ${roll}
+                ${perSubj}
+            `;
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            if (state.controller === controller) state.controller = null;
+            btn.disabled = false;
+            btn.textContent = '🔗 Trace Impact';
+            panel.innerHTML = `<div style="color:#f85149">Error: ${err.message}</div>`;
+        });
+}
+
+// ── Analyze (INTaaS) ───────────────────────────────────────────────────────
+const _analyzeState = {};
+
+function analyzeItem(newsId, btn) {
+    const panel = document.getElementById('intel-' + newsId);
+    const msg = document.getElementById('msg-' + newsId);
+    const state = _analyzeState[newsId] || (_analyzeState[newsId] = {});
+
+    if (state.controller) {
+        try { state.controller.abort(); } catch (_) {}
+        state.controller = null;
+    }
+
+    if (panel.style.display === 'block') {
+        panel.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = 'Analyze';
+        if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Analyzing…';
+    panel.style.display = 'block';
+    panel.innerHTML = '<div style="opacity:0.7">Running INTaaS reasoning on headline + summary… (~15s)</div>';
+    if (msg) { msg.style.display = 'none'; msg.textContent = ''; }
+
+    const controller = new AbortController();
+    state.controller = controller;
+
+    fetch(`/api/news/${newsId}/analyze`, { method: 'POST', signal: controller.signal })
+        .then(r => r.json())
+        .then(data => {
+            if (state.controller !== controller) return;
+            state.controller = null;
+            btn.disabled = false;
+            btn.textContent = 'Hide Analysis';
+            if (data.error) {
+                panel.innerHTML = `<div style="color:#f85149">${data.error}</div>`;
+                return;
+            }
+            const intentColor = {alarming:'#f85149', reassuring:'#3fb950', spinning:'#d29922', promoting:'#d29922', informing:'#8b949e'}[data.author_intent] || '#8b949e';
+            const dirColor = {bullish:'#3fb950', bearish:'#f85149', neutral:'#8b949e'}[data.adjusted_direction] || '#8b949e';
+            let html = `<div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:0.5rem">`;
+            html += `<span>Intent: <strong style="color:${intentColor}">${data.author_intent || '?'}</strong></span>`;
+            html += `<span>Framing: <strong>${data.framing_angle || '?'}</strong></span>`;
+            html += `<span>Direction: <strong style="color:${dirColor}">${data.adjusted_direction || '?'}</strong></span>`;
+            html += `<span>Confidence: <strong>${((data.intelligence_confidence||0)*100)|0}%</strong></span>`;
+            html += `</div>`;
+            if (data.omissions && data.omissions.length) {
+                html += `<div style="color:#d29922;margin-bottom:0.25rem"><strong>Omissions (what's NOT said):</strong></div>`;
+                data.omissions.forEach(o => {
+                    html += `<div style="margin-left:1rem">- ${o.topic}: ${o.expected_because} <span style="color:${o.signal==='bearish'?'#f85149':'#3fb950'}">[${o.signal}]</span></div>`;
+                });
+            }
+            if (data.macro_contradictions && data.macro_contradictions.length) {
+                html += `<div style="color:#f85149;margin-top:0.25rem"><strong>Contradictions vs data:</strong></div>`;
+                data.macro_contradictions.forEach(c => {
+                    html += `<div style="margin-left:1rem">- Claim: "${c.claim}" vs Reality: "${c.reality}" <span style="color:#f85149">[${c.signal}]</span></div>`;
+                });
+            }
+            if (data.divergence_signals && data.divergence_signals.length) {
+                html += `<div style="color:#a371f7;margin-top:0.25rem"><strong>Divergences:</strong></div>`;
+                data.divergence_signals.forEach(d => {
+                    html += `<div style="margin-left:1rem">- ${d}</div>`;
+                });
+            }
+            if (data.reasoning_summary) {
+                html += `<div style="margin-top:0.5rem;opacity:0.8;font-style:italic">${data.reasoning_summary}</div>`;
+            }
+            panel.innerHTML = html;
+        })
+        .catch(err => {
+            if (err.name === 'AbortError') return;
+            if (state.controller === controller) state.controller = null;
+            btn.disabled = false;
+            btn.textContent = 'Analyze';
+            panel.innerHTML = `<div style="color:#f85149">Error: ${err.message}</div>`;
+        });
+}
+
+// ── Initial load + auto-refresh ────────────────────────────────────────────
+loadNews();
+loadClusters();
+loadDivergences();
+setInterval(() => {
+    loadNews();
+    loadClusters();
+}, 60000);
+</script>
+{% endblock %}

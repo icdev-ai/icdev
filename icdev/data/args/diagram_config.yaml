@@ -1,0 +1,223 @@
+# [CUI // SP-CTI]
+# ICDEV Network Canvas — Diagram Profile Configuration
+# Controls canvas appearance, device styles, tooltips, rack infrastructure,
+# naming conventions, site grouping, and enrichment workflow.
+# Edit this file to customize diagram generation for all future topologies.
+
+version: '1.0'
+updated: '2026-04-09T03:33:37.898279+00:00'
+canvas:
+  background: '#ffffff'
+  grid:
+    type: dot
+    color: rgba(0,0,0,0.08)
+    size: 10
+  print_friendly: true
+node_display:
+  label_position: top
+  label_color: '#1a1a2e'
+  label_font: Segoe UI, system-ui, sans-serif
+  label_size: 9
+  label_weight: 700
+  ip_position: bottom
+  ip_color: '#1565c0'
+  ip_font: Cascadia Code, Consolas, monospace
+  ip_size: 8
+  site_label: hidden
+  note: Site label hidden because site grouping boxes already show it
+device_styles:
+  router:
+    fill: '#0f2b3a'
+    stroke: '#3498db'
+    symbol: R
+    stencil: cisco-router
+  switch:
+    fill: '#0f2b0f'
+    stroke: '#27ae60'
+    symbol: SW
+    stencil: cisco-switch-l2
+  firewall:
+    fill: '#2b0f0f'
+    stroke: '#e94560'
+    symbol: FW
+    stencil: cisco-firewall
+  server:
+    fill: '#0f2b2b'
+    stroke: '#1abc9c'
+    symbol: SV
+    stencil: cisco-server
+  load_balancer:
+    fill: '#1a1a0f'
+    stroke: '#f39c12'
+    symbol: LB
+    stencil: cisco-load-balancer
+  vpn_gateway:
+    fill: '#0f2b2b'
+    stroke: '#00bcd4'
+    symbol: VPN
+    stencil: cisco-router
+  wan_link:
+    fill: '#0f0f2b'
+    stroke: '#7f8c8d'
+    symbol: WAN
+    stencil: cisco-cloud
+  access_point:
+    fill: '#1a0f2b'
+    stroke: '#9b59b6'
+    symbol: AP
+    stencil: cisco-wap
+  cloud_service:
+    fill: '#0f0f2b'
+    stroke: '#29b6f6'
+    symbol: CSP
+    stencil: cisco-cloud
+naming_convention_roles:
+  CORE: router
+  RTR: router
+  DIST: switch
+  ACCS: switch
+  SW: switch
+  FWLL: firewall
+  FW: firewall
+  SRVR: server
+  SRV: server
+  VPNG: vpn_gateway
+  VPN: vpn_gateway
+  LB: load_balancer
+  WLAN: access_point
+  AP: access_point
+site_grouping:
+  enabled: true
+  border_style: dashed
+  border_width: 2
+  fill_opacity: '12'
+  label_position: top-left
+  label_font_size: 12
+  label_font_weight: 700
+  padding:
+    x: 50
+    top: 45
+    bottom: 60
+  colors:
+  - '#1565c0'
+  - '#2e7d32'
+  - '#e65100'
+  - '#6a1b9a'
+  - '#00838f'
+  - '#ad1457'
+  - '#4e342e'
+  - '#37474f'
+  - '#1b5e20'
+  - '#b71c1c'
+rack_infrastructure:
+  auto_add: true
+  items_per_rack:
+  - type: PDU-A
+    vendor: APC
+    model: AP8886
+    ru: U41-U42
+    description: "Power Distribution Unit \u2014 Feed A (utility/generator)"
+  - type: PDU-B
+    vendor: APC
+    model: AP8886
+    ru: U39-U40
+    description: "Power Distribution Unit \u2014 Feed B (redundant)"
+  - type: UPS
+    vendor: APC
+    model: SRT3000RMXLI
+    ru: U1-U3
+    description: "Uninterruptible Power Supply \u2014 battery backup"
+  conditional_items:
+  - type: Fiber PP
+    condition: rack_has_fiber
+    vendor: Corning
+    model: CCH-04U
+    ru: U38
+    description: "Fiber patch panel \u2014 LC/SC duplex for SFP+/QSFP28 uplinks"
+  - type: Copper PP
+    condition: rack_has_copper
+    vendor: Panduit
+    model: CP48WSBLY
+    ru: U37
+    description: "Copper patch panel \u2014 Cat6a RJ45 for access ports"
+  fiber_device_types:
+  - router
+  - firewall
+  - load_balancer
+  copper_device_types:
+  - switch
+  - access_point
+  - server
+  storage: nc_racks.notes JSON (NOT on canvas)
+  display: rack elevation panel only
+tooltip:
+  enabled: true
+  show_on: hover
+  fields:
+  - label
+  - role_description
+  - type
+  - ip
+  - site
+  - rack
+  - vendor
+  - model
+  - os
+  - serial
+  - sw_version
+  - eol_date
+  - bandwidth
+  show_connections: true
+  max_connections_shown: 5
+  role_descriptions:
+    router: "Core/edge router \u2014 forwards packets between networks using routing protocols (BGP, OSPF, IS-IS). Performs\
+      \ inter-VLAN routing, policy-based routing, and WAN connectivity."
+    switch: "Network switch \u2014 provides Layer 2/3 switching for LAN segments. Handles VLAN trunking, STP, port security,\
+      \ and access control."
+    firewall: "Security firewall \u2014 inspects and filters traffic between network zones. Enforces security policies, NAT,\
+      \ VPN termination, IPS/IDS."
+    server: "Compute server \u2014 hosts applications, databases, or virtualization workloads. Connected via redundant NICs\
+      \ for high availability."
+    load_balancer: "Application delivery controller \u2014 distributes traffic across server pools using health checks, SSL\
+      \ offload, persistence."
+    vpn_gateway: "VPN concentrator \u2014 terminates encrypted tunnels (IPSec, SSL VPN) from remote sites and users."
+    wan_link: "WAN/MPLS circuit \u2014 provides inter-site connectivity via carrier MPLS, internet, or dedicated leased line."
+    access_point: "Wireless access point or controller \u2014 provides Wi-Fi coverage managed by a wireless LAN controller."
+    pdu: "Power Distribution Unit \u2014 distributes AC power from facility feed to rack equipment via managed outlets."
+    ups: "Uninterruptible Power Supply \u2014 provides battery backup during power outages for graceful shutdown."
+    patch-panel: "Patch panel \u2014 passive termination point for structured cabling (fiber LC/SC or copper Cat6a RJ45)."
+link_labels:
+  show_bandwidth: true
+  show_ports: false
+  port_data_in: edge.config (accessible via tooltip/click)
+  label_color: '#555'
+  label_font: Cascadia Code, Consolas, monospace
+  label_size: 10
+enrichment_workflow:
+  tool: python tools/network/topology_enricher.py --topology-id <ID> --json
+  steps:
+  - 1. Ingest diagram (DrawIO/Visio/PDF/image) via network_ingester.py
+  - 2. Device types auto-classified from naming convention patterns in labels
+  - 3. Assign device metadata (vendor, model, site, rack, IP, cost) in ni_devices
+  - 4. Run topology_enricher.py AFTER metadata (reads site from ni_devices for grouping)
+  - 5. Enricher auto-runs topology_validator.py to fix any remaining unknown types
+  - 6. Assign hardware profiles for EOL/cost/vendor intelligence
+  - 7. Save as template for reuse
+  validator:
+    tool: python tools/network/topology_validator.py --topology-id <ID> --fix --json
+    gate: python tools/network/topology_validator.py --all --gate
+    auto_run_on_enrich: true
+    checks:
+    - unknown_device_types (reclassify from label patterns)
+    - orphan_edges (remove edges referencing deleted nodes)
+    - duplicate_node_ids
+  auto_classify_from_naming: true
+  auto_site_grouping: true
+  auto_rack_infra: true
+  save_template_on_enrich: false
+facilities:
+  auto_create: true
+  default_rack_ru: 42
+  default_power_kw: 10.0
+  default_weight_lbs: 2500
+  link_racks_to_facilities: true

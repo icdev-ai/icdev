@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-006
+-- Title: FedRAMP High — System & Information Integrity (SI) Family Gaps
+-- Framework: FedRAMP High
+-- Category: control-family
+-- Severity: high
+-- Description: SI-family controls at FedRAMP High add continuous malware
+--   scanning (SI-3), integrity verification, and automated alerting not
+--   required at Moderate. Surface unsatisfied SI controls for prioritisation.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.control_id starts_with 'SI' and ctrl.status != 'satisfied'
+select ctrl.control_id, ctrl.implementation_status, ctrl.score, ctrl.project_id

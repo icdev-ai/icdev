@@ -1,0 +1,13 @@
+-- CUI // SP-CTI
+-- IQE Query: FRH-002
+-- Title: FedRAMP High — Controls Without Evidence
+-- Framework: FedRAMP High
+-- Category: evidence-gap
+-- Severity: critical
+-- Description: FedRAMP High authorization requires documented evidence for
+--   every control. Controls with no evidence reference cannot be submitted
+--   in an authorization package and block the entire ATO process.
+
+foreach ctrl in framework('FedRAMP High').controls
+where ctrl.evidence_ref is null
+select ctrl.control_id, ctrl.implementation_status, ctrl.project_id

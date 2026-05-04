@@ -429,6 +429,10 @@ competitive_intel:
     - name: hermes_agent
       repo: nousresearch/hermes-agent
       category: ai_agent_framework
+    - name: nwave
+      repo: nWave-ai/nWave
+      website: https://nwave.ai
+      category: agentic_sdlc
     - name: forward_networks
       website: https://www.forwardnetworks.com
       category: digital_twin_platform
@@ -438,6 +442,46 @@ competitive_intel:
     - name: netbrain
       website: https://www.netbraintech.com
       category: digital_twin_platform
+    - name: tradingagents
+      repo: tauricresearch/tradingagents
+      category: ai_trading_framework
+    # --- Agentic AI Framework competitors (AADC analysis) ---
+    - name: haystack
+      repo: deepset-ai/haystack
+      category: agentic_ai_framework
+    - name: langchain
+      repo: langchain-ai/langchain
+      category: agentic_ai_framework
+    - name: langgraph
+      repo: langchain-ai/langgraph
+      category: agentic_ai_framework
+    - name: crewai
+      repo: crewAIInc/crewAI
+      category: agentic_ai_framework
+    - name: autogen
+      repo: microsoft/autogen
+      category: agentic_ai_framework
+    - name: dspy
+      repo: stanfordnlp/dspy
+      category: agentic_ai_framework
+    - name: llamaindex
+      repo: run-llama/llama_index
+      category: agentic_ai_framework
+    - name: semantic-kernel
+      repo: microsoft/semantic-kernel
+      category: agentic_ai_framework
+    - name: flowise
+      repo: FlowiseAI/Flowise
+      category: agentic_ai_canvas
+    - name: langflow
+      repo: langflow-ai/langflow
+      category: agentic_ai_canvas
+    - name: prefect
+      repo: PrefectHQ/prefect
+      category: workflow_orchestration
+    - name: temporal
+      repo: temporalio/temporal
+      category: workflow_orchestration
 
 # =========================================================================
 # Standards Body Monitoring

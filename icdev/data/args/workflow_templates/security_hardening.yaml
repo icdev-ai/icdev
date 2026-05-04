@@ -27,24 +27,6 @@ steps:
       project-dir: "tools/"
     description: "Scan for hardcoded secrets and credentials"
 
-  - id: owasp
-    name: "OWASP Agentic Assessment"
-    tool: "tools/compliance/owasp_agentic_assessor.py"
-    depends_on: [sast]
-    description: "OWASP Agentic AI threat assessment (T01-T17)"
-
-  - id: owasp_asi
-    name: "OWASP ASI Assessment"
-    tool: "tools/compliance/owasp_asi_assessor.py"
-    depends_on: [sast]
-    description: "OWASP ASI01-ASI10 agentic risk assessment"
-
-  - id: atlas
-    name: "MITRE ATLAS Assessment"
-    tool: "tools/compliance/atlas_assessor.py"
-    depends_on: [owasp]
-    description: "MITRE ATLAS AI threat framework assessment"
-
   - id: patterns
     name: "Dangerous Pattern Scan"
     tool: "tools/security/code_pattern_scanner.py"
@@ -53,3 +35,21 @@ steps:
       project-dir: "tools/"
     required: false
     description: "Scan for dangerous code patterns across 6 languages"
+
+  - id: owasp
+    name: "OWASP Agentic Assessment"
+    tool: "tools/compliance/owasp_agentic_assessor.py"
+    depends_on: [sast, deps, secrets, patterns]
+    description: "OWASP Agentic AI threat assessment (T01-T17)"
+
+  - id: owasp_asi
+    name: "OWASP ASI Assessment"
+    tool: "tools/compliance/owasp_asi_assessor.py"
+    depends_on: [sast, deps, secrets, patterns]
+    description: "OWASP ASI01-ASI10 agentic risk assessment"
+
+  - id: atlas
+    name: "MITRE ATLAS Assessment"
+    tool: "tools/compliance/atlas_assessor.py"
+    depends_on: [owasp, owasp_asi]
+    description: "MITRE ATLAS AI threat framework assessment"

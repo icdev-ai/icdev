@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}PIR/CCIR Management — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+.pir-badge { display:inline-block;padding:.15rem .55rem;border-radius:3px;font-size:.75rem;font-weight:600;letter-spacing:.02em }
+.pir-badge--PIR  { background:rgba(59,130,246,.15);color:#3b82f6 }
+.pir-badge--CCIR { background:rgba(233,69,96,.15);color:#e94560 }
+.pir-badge--EEI  { background:rgba(16,185,129,.15);color:#10b981 }
+.prio-badge { display:inline-flex;align-items:center;justify-content:center;
+              width:24px;height:24px;border-radius:50%;font-size:.75rem;font-weight:700 }
+.prio-1 { background:rgba(233,69,96,.2);color:#e94560 }
+.prio-2 { background:rgba(245,158,11,.2);color:#f59e0b }
+.prio-3 { background:rgba(59,130,246,.2);color:#3b82f6 }
+.prio-4 { background:rgba(107,114,128,.2);color:#9ca3af }
+.prio-5 { background:rgba(107,114,128,.12);color:#6b7280 }
+.status-active    { color:#10b981 }
+.status-satisfied { color:#3b82f6 }
+.status-cancelled { color:#6b7280;text-decoration:line-through }
+.gap-cell { font-size:.78rem;font-family:monospace }
+.gap-unknown { color:var(--text-muted) }
+.gap-stale   { color:#f59e0b }
+.gap-fresh   { color:#10b981 }
+.section-title { font-size:.7rem;font-weight:700;text-transform:uppercase;
+                 letter-spacing:.08em;color:var(--text-muted);margin-bottom:.5rem }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>PIR / CCIR Management
+        <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">
+            Priority Intelligence &amp; Critical Information Requirements
+        </span>
+    </h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<!-- Filter bar -->
+<form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end;flex-wrap:wrap">
+    <div>
+        <label class="section-title" style="display:block;margin-bottom:.25rem">Type</label>
+        <select name="type" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All types</option>
+            {% for t in pir_types %}
+            <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>{{ t }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="section-title" style="display:block;margin-bottom:.25rem">Status</label>
+        <select name="status" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All statuses</option>
+            {% for s in statuses %}
+            <option value="{{ s }}" {% if s == selected_status %}selected{% endif %}>{{ s|title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if selected_type or selected_status %}<a href="/strategos/pir" class="btn">Clear</a>{% endif %}
+    <button type="button" onclick="showAddForm()" class="btn btn-primary" style="margin-left:auto;background:rgba(16,185,129,.15);color:#10b981;border-color:rgba(16,185,129,.3)">
+        + Add Requirement
+    </button>
+</form>
+
+<!-- Add/Edit modal form -->
+<div id="pir-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
+    <div class="card" style="width:min(560px,95vw);max-height:90vh;overflow-y:auto">
+        <h3 id="modal-title" style="margin-top:0">Add Requirement</h3>
+        <input type="hidden" id="edit-id">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+            <div style="grid-column:1/-1">
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Type *</label>
+                <select id="f-pir-type" style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+                    <option value="PIR">PIR — Priority Intelligence Requirement</option>
+                    <option value="CCIR">CCIR — Commander's Critical Information Requirement</option>
+                    <option value="EEI">EEI — Essential Element of Information</option>
+                </select>
+            </div>
+            <div style="grid-column:1/-1">
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Topic *</label>
+                <input id="f-topic" type="text" placeholder="e.g. Enemy armor disposition in AO Delta"
+                       style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;box-sizing:border-box">
+            </div>
+            <div style="grid-column:1/-1">
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Description</label>
+                <textarea id="f-description" rows="3" placeholder="Detailed description of collection need…"
+                          style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;resize:vertical;box-sizing:border-box"></textarea>
+            </div>
+            <div>
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Collection Priority (1=Highest)</label>
+                <select id="f-priority" style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+                    <option value="1">1 — Critical</option>
+                    <option value="2">2 — High</option>
+                    <option value="3" selected>3 — Medium</option>
+                    <option value="4">4 — Low</option>
+                    <option value="5">5 — Routine</option>
+                </select>
+            </div>
+            <div>
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Status</label>
+                <select id="f-status" style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+                    <option value="active">Active</option>
+                    <option value="satisfied">Satisfied</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
+            </div>
+            <div>
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Tasked To</label>
+                <input id="f-tasked-to" type="text" placeholder="Collection asset or unit"
+                       style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;box-sizing:border-box">
+            </div>
+            <div>
+                <label class="section-title" style="display:block;margin-bottom:.35rem">Due By</label>
+                <input id="f-due-by" type="datetime-local"
+                       style="width:100%;padding:.45rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;box-sizing:border-box">
+            </div>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:1.25rem;justify-content:flex-end">
+            <button onclick="closeModal()" class="btn">Cancel</button>
+            <button onclick="savePIR()" class="btn btn-primary">Save</button>
+        </div>
+        <div id="modal-error" style="display:none;margin-top:.75rem;color:#e94560;font-size:.85rem"></div>
+    </div>
+</div>
+
+<!-- =====================================================================
+     Main content: 3 panels
+     ===================================================================== -->
+<div style="display:grid;grid-template-columns:1fr;gap:1.25rem">
+
+    <!-- 1. PIR/CCIR List -->
+    <div>
+        <div class="section-title" style="margin-bottom:.5rem">Requirements ({{ pirs|length }})</div>
+        <div class="card" style="padding:0;overflow:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+                <thead>
+                    <tr style="background:var(--bg-secondary)">
+                        <th style="padding:.6rem 1rem;text-align:center;border-bottom:1px solid var(--border-color);width:32px">#</th>
+                        <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Type</th>
+                        <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Topic</th>
+                        <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Tasked To</th>
+                        <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Due By</th>
+                        <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Status</th>
+                        <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Gap</th>
+                        <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in pirs %}
+                    {% set gap = gaps.get(p.id, -1) %}
+                    <tr style="border-bottom:1px solid var(--border-color)" id="row-{{ p.id }}">
+                        <td style="padding:.55rem 1rem;text-align:center">
+                            <span class="prio-badge prio-{{ p.collection_priority }}">{{ p.collection_priority }}</span>
+                        </td>
+                        <td style="padding:.55rem 1rem">
+                            <span class="pir-badge pir-badge--{{ p.pir_type }}">{{ p.pir_type }}</span>
+                        </td>
+                        <td style="padding:.55rem 1rem">
+                            <div style="font-weight:500">{{ p.topic }}</div>
+                            {% if p.description %}
+                            <div style="font-size:.78rem;color:var(--text-muted);margin-top:.15rem;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                                {{ p.description }}
+                            </div>
+                            {% endif %}
+                        </td>
+                        <td style="padding:.55rem 1rem;color:var(--text-secondary)">{{ p.tasked_to or '—' }}</td>
+                        <td style="padding:.55rem 1rem;font-size:.8rem;color:var(--text-muted)">
+                            {{ (p.due_by or '')[:16] or '—' }}
+                        </td>
+                        <td style="padding:.55rem 1rem">
+                            <span class="status-{{ p.status }}" style="font-size:.82rem;font-weight:500">{{ p.status|title }}</span>
+                        </td>
+                        <td style="padding:.55rem 1rem" class="gap-cell">
+                            {% if gap < 0 %}
+                            <span class="gap-unknown">—</span>
+                            {% elif gap < 6 %}
+                            <span class="gap-fresh">{{ gap|round(1) }}h</span>
+                            {% else %}
+                            <span class="gap-stale">{{ gap|round(0)|int }}h</span>
+                            {% endif %}
+                        </td>
+                        <td style="padding:.55rem 1rem;text-align:right;white-space:nowrap">
+                            <button onclick="editPIR({{ p | tojson | e }})"
+                                    style="padding:.2rem .6rem;border-radius:4px;font-size:.78rem;cursor:pointer;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-secondary)">
+                                Edit
+                            </button>
+                            {% if p.status == 'active' %}
+                            <button onclick="cancelPIR('{{ p.id }}')"
+                                    style="padding:.2rem .6rem;border-radius:4px;font-size:.78rem;cursor:pointer;border:1px solid rgba(233,69,96,.3);background:rgba(233,69,96,.08);color:#e94560">
+                                Cancel
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" style="padding:2.5rem;text-align:center;color:var(--text-muted)">
+                            No PIR/CCIR requirements found.
+                            <a href="#" onclick="showAddForm();return false" style="color:var(--accent-blue)">Add one</a>.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- 2. Gap Heatmap -->
+    {% if pirs %}
+    <div>
+        <div class="section-title" style="margin-bottom:.5rem">Coverage Gap Heatmap</div>
+        <div class="card" style="padding:.75rem 1rem">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:.5rem">
+                {% for p in pirs %}
+                {% set gap = gaps.get(p.id, -1) %}
+                {% if gap < 0 %}
+                  {% set heat_bg = 'rgba(107,114,128,.12)' %}
+                  {% set heat_color = '#6b7280' %}
+                  {% set heat_label = 'No data' %}
+                {% elif gap < 6 %}
+                  {% set heat_bg = 'rgba(16,185,129,.12)' %}
+                  {% set heat_color = '#10b981' %}
+                  {% set heat_label = gap|round(1)|string + 'h ago' %}
+                {% elif gap < 24 %}
+                  {% set heat_bg = 'rgba(245,158,11,.12)' %}
+                  {% set heat_color = '#f59e0b' %}
+                  {% set heat_label = gap|round(0)|int|string + 'h ago' %}
+                {% else %}
+                  {% set heat_bg = 'rgba(233,69,96,.12)' %}
+                  {% set heat_color = '#e94560' %}
+                  {% set heat_label = (gap / 24)|round(1)|string + 'd ago' %}
+                {% endif %}
+                <div style="background:{{ heat_bg }};border:1px solid {{ heat_color }}33;border-radius:6px;padding:.6rem .9rem">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
+                        <span class="pir-badge pir-badge--{{ p.pir_type }}">{{ p.pir_type }}</span>
+                        <span style="font-size:.72rem;font-weight:700;color:{{ heat_color }}">{{ heat_label }}</span>
+                    </div>
+                    <div style="font-size:.82rem;font-weight:500;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                        {{ p.topic }}
+                    </div>
+                    <div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem">
+                        P{{ p.collection_priority }} · {{ p.status|title }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            <div style="display:flex;gap:1.25rem;margin-top:.75rem;font-size:.75rem;color:var(--text-muted)">
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(16,185,129,.3);margin-right:.3rem"></span>Fresh (&lt;6h)</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(245,158,11,.3);margin-right:.3rem"></span>Stale (6–24h)</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(233,69,96,.3);margin-right:.3rem"></span>Overdue (&gt;24h)</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:rgba(107,114,128,.2);margin-right:.3rem"></span>No coverage</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Tasking Queue -->
+    <div>
+        <div class="section-title" style="margin-bottom:.5rem">Tasking Queue — by Collection Asset</div>
+        {% if tasking %}
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.75rem">
+            {% for asset, asset_pirs in tasking.items() %}
+            <div class="card" style="padding:.75rem 1rem">
+                <div style="font-weight:600;font-size:.9rem;margin-bottom:.5rem;color:var(--text-primary)">
+                    {{ asset }}
+                    <span style="font-size:.75rem;font-weight:400;color:var(--text-muted)">
+                        ({{ asset_pirs|length }} req.)
+                    </span>
+                </div>
+                {% for p in asset_pirs %}
+                <div style="display:flex;align-items:center;gap:.4rem;padding:.3rem 0;border-bottom:1px solid var(--border-color)">
+                    <span class="prio-badge prio-{{ p.collection_priority }}" style="flex-shrink:0">{{ p.collection_priority }}</span>
+                    <span class="pir-badge pir-badge--{{ p.pir_type }}" style="flex-shrink:0">{{ p.pir_type }}</span>
+                    <span style="font-size:.8rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                        {{ p.topic }}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="card" style="text-align:center;padding:1.5rem;color:var(--text-muted)">
+            No tasking assignments yet — set "Tasked To" on a requirement to populate this queue.
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const modal    = document.getElementById('pir-modal');
+const modalErr = document.getElementById('modal-error');
+
+function showAddForm() {
+    document.getElementById('modal-title').textContent = 'Add Requirement';
+    document.getElementById('edit-id').value = '';
+    document.getElementById('f-pir-type').value = 'PIR';
+    document.getElementById('f-topic').value = '';
+    document.getElementById('f-description').value = '';
+    document.getElementById('f-priority').value = '3';
+    document.getElementById('f-status').value = 'active';
+    document.getElementById('f-tasked-to').value = '';
+    document.getElementById('f-due-by').value = '';
+    modalErr.style.display = 'none';
+    modal.style.display = 'flex';
+}
+
+function editPIR(p) {
+    document.getElementById('modal-title').textContent = 'Edit Requirement';
+    document.getElementById('edit-id').value = p.id;
+    document.getElementById('f-pir-type').value = p.pir_type || 'PIR';
+    document.getElementById('f-topic').value = p.topic || '';
+    document.getElementById('f-description').value = p.description || '';
+    document.getElementById('f-priority').value = String(p.collection_priority || 3);
+    document.getElementById('f-status').value = p.status || 'active';
+    document.getElementById('f-tasked-to').value = p.tasked_to || '';
+    document.getElementById('f-due-by').value = (p.due_by || '').slice(0,16);
+    modalErr.style.display = 'none';
+    modal.style.display = 'flex';
+}
+
+function closeModal() {
+    modal.style.display = 'none';
+}
+
+modal.addEventListener('click', function(e) {
+    if (e.target === modal) closeModal();
+});
+
+function savePIR() {
+    const id = document.getElementById('edit-id').value;
+    const payload = {
+        pir_type:            document.getElementById('f-pir-type').value,
+        topic:               document.getElementById('f-topic').value.trim(),
+        description:         document.getElementById('f-description').value.trim() || null,
+        collection_priority: parseInt(document.getElementById('f-priority').value),
+        status:              document.getElementById('f-status').value,
+        tasked_to:           document.getElementById('f-tasked-to').value.trim() || null,
+        due_by:              document.getElementById('f-due-by').value || null,
+    };
+    if (!payload.topic) {
+        modalErr.textContent = 'Topic is required.';
+        modalErr.style.display = 'block';
+        return;
+    }
+    const url    = id ? `/api/strategos/pir/${id}` : '/api/strategos/pir';
+    const method = id ? 'PATCH' : 'POST';
+    fetch(url, {
+        method,
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    })
+    .then(r => r.json().then(d => ({ok: r.ok, d})))
+    .then(({ok, d}) => {
+        if (!ok) {
+            modalErr.textContent = d.error || 'Save failed.';
+            modalErr.style.display = 'block';
+            return;
+        }
+        location.reload();
+    })
+    .catch(e => {
+        modalErr.textContent = 'Request failed: ' + e;
+        modalErr.style.display = 'block';
+    });
+}
+
+function cancelPIR(id) {
+    if (!confirm('Cancel this requirement?')) return;
+    fetch(`/api/strategos/pir/${id}`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({status: 'cancelled'}),
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        location.reload();
+    })
+    .catch(e => alert('Request failed: ' + e));
+}
+</script>
+{% endblock %}

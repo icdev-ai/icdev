@@ -122,11 +122,11 @@ class BedrockLLMProvider(LLMProvider):
         if request.stop_sequences:
             body["stop_sequences"] = request.stop_sequences
 
-        # Adaptive thinking (Opus 4.6 / Sonnet 4.5)
+        # Extended thinking (Opus 4.6 / Sonnet 4.5) — "enabled" is the valid type
         if model_config.get("supports_thinking", False):
             effort = request.effort or "medium"
             body["thinking"] = {
-                "type": "adaptive",
+                "type": "enabled",
                 "budget_tokens": self._effort_to_budget(effort, effective_max),
             }
 

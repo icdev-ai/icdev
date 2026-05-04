@@ -1,0 +1,26 @@
+# OPT-71 — Agent adapter configuration.
+# Controls tools/agents/registry.pick_default() behavior.
+default_adapter: auto  # 'auto', 'claude_cli', 'local_llm_router', ...
+
+enabled_adapters:
+  - claude_cli
+  - local_llm_router
+  # - codex_cli     # stub — uncomment when wired
+  # - copilot_cli   # stub — uncomment when wired
+
+# Prefer claude_cli for anything that actually needs to edit files; use
+# local_llm_router for research/plan tasks that only need a written
+# output.
+per_task_type_preference:
+  build: claude_cli
+  fix: claude_cli
+  deploy: claude_cli
+  test: claude_cli
+  research: local_llm_router
+  chore: local_llm_router
+  run: claude_cli
+
+# Fallback walked in order when no task-type match is found.
+fallback_order:
+  - claude_cli
+  - local_llm_router

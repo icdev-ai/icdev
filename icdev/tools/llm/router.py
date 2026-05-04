@@ -1264,6 +1264,9 @@ class LLMRouter:
                 import time as _time
 
                 _start = _time.time()
+                # Stamp route-level config onto request so providers can read flags like disable_thinking
+                route_cfg = self._config.get("routing", {}).get(function, {})
+                request._route_config = route_cfg
                 response = provider.invoke(request, model_id, model_cfg)
                 _latency = int((_time.time() - _start) * 1000)
 

@@ -101,21 +101,25 @@ class AnthropicLLMProvider(LLMProvider):
         if request.tools:
             kwargs["tools"] = tools_to_anthropic(request.tools)
 
-        # Thinking support — try adaptive, fall back to disabled on API error
-        use_thinking = model_config.get("supports_thinking", False)
+        # Thinking support — skip if route config sets disable_thinking: true
+        route_config = getattr(request, "_route_config", {}) or {}
+        use_thinking = (
+            model_config.get("supports_thinking", False)
+            and not route_config.get("disable_thinking", False)
+        )
         if use_thinking:
             effort = request.effort or "medium"
             kwargs["thinking"] = {
-                "type": "adaptive",
+                "type": "enabled",
                 "budget_tokens": self._effort_to_budget(effort, effective_max),
             }
 
         try:
             message = client.messages.create(**kwargs)
         except Exception as exc:
-            if use_thinking and "budget_tokens" in str(exc):
-                # Model doesn't support adaptive thinking — retry without it
-                logger.warning("Adaptive thinking not supported, retrying without: %s", exc)
+            if use_thinking:
+                # Model or endpoint doesn't support extended thinking — retry without it
+                logger.warning("Extended thinking not supported, retrying without: %s", exc)
                 kwargs.pop("thinking", None)
                 try:
                     message = client.messages.create(**kwargs)

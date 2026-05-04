@@ -1,0 +1,54 @@
+# CUI // SP-CTI
+# Boundary Design Canvas — Configuration
+app:
+  name: "Boundary Design Canvas"
+  version: "1.0.0"
+  classification: "CUI // SP-CTI"
+
+database:
+  path: "boundary_canvas.db"
+  wal_mode: true
+  foreign_keys: true
+
+canvas:
+  autosave_delay_ms: 3000
+  grid_size: 10
+  default_width: 110
+  default_height: 60
+  accent_color: "#9c27b0"
+
+assessment:
+  auto_assess_on_save: true
+  default_rules:
+    - BDC-BND-001  # ATO boundary defined
+    - BDC-BND-002  # All systems inside boundary
+    - BDC-ISA-001  # ISA agreements present
+    - BDC-ISA-002  # ISA not expired
+    - BDC-ISA-003  # Cross-domain solution for cross-boundary flows
+    - BDC-CTL-001  # Firewall at boundary
+    - BDC-CTL-002  # IDS/IPS at boundary
+    - BDC-CTL-003  # SIEM at boundary
+    - BDC-DOC-001  # SSP documentation exists
+    - BDC-DOC-002  # ATO documentation complete
+    - BDC-PPS-001  # PPS matrix generated
+  thresholds:
+    min_score: 70
+    cat1_max: 0
+    cat2_max: 5
+
+isa:
+  expiry_warning_days: 60
+  expiry_critical_days: 30
+  auto_pps_generation: true
+
+templates:
+  count: 6
+  auto_seed: true
+
+agent:
+  auto_trigger_sdc_on_save: true
+  auto_trigger_qdc_on_save: true
+
+logging:
+  level: INFO
+  audit_enabled: true

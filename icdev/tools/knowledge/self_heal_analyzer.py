@@ -397,6 +397,16 @@ def analyze_and_heal(failure_data: dict, dry_run: bool = False, db_path: Path = 
             db_path,
         )
         result["healing_event_id"] = event_id
+        if healing_result.get("success"):
+            try:
+                from tools.aisg.roi_tracker import emit_roi_event
+                emit_roi_event(
+                    "self_heal",
+                    f"Auto-remediation: {top_match.get('description', 'unknown')}",
+                    triggered_by="self_heal_analyzer",
+                )
+            except Exception:
+                pass
 
     elif confidence < ESCALATION_THRESHOLD:
         result["decision"] = "escalate"

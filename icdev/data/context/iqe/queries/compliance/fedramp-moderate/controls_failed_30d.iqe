@@ -1,0 +1,9 @@
+# Intent: Identify controls with a "not_implemented" status to surface active
+#         compliance failures requiring immediate corrective action within the
+#         FedRAMP Moderate control baseline.
+# Expected violation shape: rows where implementation_status == "not_implemented";
+#   each row represents a control requiring a corrective action plan entry.
+
+foreach c in compliance.controls
+  where c.implementation_status == "not_implemented"
+  select c.project_id, c.control_id, c.family, c.title, c.responsible_role

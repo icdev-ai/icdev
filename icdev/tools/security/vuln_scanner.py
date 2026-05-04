@@ -264,6 +264,15 @@ def run_all_scans(
           f"ORANGE:{boundary_summary['tier_counts']['ORANGE']} "
           f"YELLOW:{boundary_summary['tier_counts']['YELLOW']} "
           f"GREEN:{boundary_summary['tier_counts']['GREEN']}) ===")
+    try:
+        from tools.aisg.roi_tracker import emit_roi_event
+        emit_roi_event(
+            "security_scan",
+            f"Security scan complete: {aggregated['total_findings']} findings",
+            triggered_by="vuln_scanner",
+        )
+    except Exception:
+        pass
     return aggregated
 
 

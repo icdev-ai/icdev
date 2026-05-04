@@ -1,0 +1,41 @@
+# OPT-64 seed eval — smoke test for the code_generation function.
+# Verifies the primary scanner-tier model and planner-tier model return
+# Python code that looks like a function and doesn't contain TODOs.
+name: code_generation_baseline
+description: >-
+  Side-by-side smoke test: qwen3.5 local vs. claude-sonnet on a trivial
+  Python code-generation prompt. Regression gate for the scanner tier.
+models:
+  - qwen3-local
+  - claude-sonnet
+default_temperature: 0.2
+default_max_tokens: 400
+default_system: |
+  You are a precise Python code assistant. Respond with a single Python
+  function definition and nothing else. No markdown fences, no commentary.
+
+prompts:
+  - id: sum-two-ints
+    messages:
+      - role: user
+        content: |
+          Write a Python function `add(a, b)` that returns the sum of two
+          integers. Include a single-line docstring.
+    assertions:
+      - {type: contains, value: "def add"}
+      - {type: contains, value: "return"}
+      - {type: not_contains, value: "TODO"}
+      - {type: not_contains, value: "```"}
+      - {type: max_length, value: 600}
+      - {type: regex, pattern: "def\\s+add\\s*\\("}
+
+  - id: fibonacci
+    messages:
+      - role: user
+        content: |
+          Write a Python function `fib(n)` that returns the n-th Fibonacci
+          number using an iterative loop (no recursion).
+    assertions:
+      - {type: contains, value: "def fib"}
+      - {type: min_length, value: 40}
+      - {type: regex, pattern: "for\\s+\\w+\\s+in\\s+range"}

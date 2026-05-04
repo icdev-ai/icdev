@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% block title %}Safety Monitor — Circuit Breakers — ICDEV™{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Safety Monitor</h1>
+    <p class="subtitle">Circuit breaker states, failure counts, and system resilience</p>
+</div>
+
+<!-- Summary banner -->
+<div id="cb-banner" class="health-banner healthy" role="alert" style="display:flex;align-items:center;gap:12px;">
+    <span id="cb-dot" class="status-dot green" role="img" aria-label="healthy"></span>
+    <span id="cb-banner-text">Loading circuit breaker status…</span>
+    <span style="margin-left:auto;font-size:0.8rem;color:var(--text-muted);">
+        Auto-refreshes every 5 s &mdash; <span id="cb-last-updated">—</span>
+    </span>
+</div>
+
+<!-- Summary stats -->
+<div class="stat-grid mb-3" id="cb-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total">—</div>
+        <div class="stat-label">Total Breakers</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-red" id="stat-open">—</div>
+        <div class="stat-label">OPEN (tripped)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-yellow" id="stat-half">—</div>
+        <div class="stat-label">HALF-OPEN (testing)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-green" id="stat-closed">—</div>
+        <div class="stat-label">CLOSED (healthy)</div>
+    </div>
+</div>
+
+<!-- Circuit Breaker Cards Grid -->
+<h3 class="section-header" style="margin-bottom:16px;">Circuit Breaker States</h3>
+<div id="cb-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:18px;margin-bottom:32px;">
+    <div class="card" style="padding:32px;text-align:center;color:var(--text-muted);">
+        <div style="font-size:2rem;margin-bottom:8px;">&#x29BF;</div>
+        <div>Loading circuit breakers…</div>
+    </div>
+</div>
+
+<!-- Status Timeline -->
+<h3 class="section-header" style="margin-bottom:12px;">Status Timeline</h3>
+<div class="table-container" id="cb-timeline-wrap">
+    <table id="cb-timeline">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Service</th>
+                <th>State</th>
+                <th>Failures</th>
+                <th>Detail</th>
+            </tr>
+        </thead>
+        <tbody id="cb-timeline-body">
+            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">
+                Waiting for first poll…
+            </td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.cb-card {
+    padding: 20px;
+    border-radius: 10px;
+    border: 2px solid var(--border-color);
+    background: var(--bg-secondary);
+    position: relative;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+.cb-card.state-closed  { border-color: #28a745; }
+.cb-card.state-open    { border-color: #dc3545; box-shadow: 0 0 12px rgba(220,53,69,.25); }
+.cb-card.state-half_open { border-color: #ffc107; box-shadow: 0 0 12px rgba(255,193,7,.2); }
+
+.cb-state-pill {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+}
+.cb-state-pill.closed   { background: rgba(40,167,69,.2); color: #28a745; border: 1px solid #28a745; }
+.cb-state-pill.open     { background: rgba(220,53,69,.2); color: #dc3545; border: 1px solid #dc3545; }
+.cb-state-pill.half_open { background: rgba(255,193,7,.15); color: #ffc107; border: 1px solid #ffc107; }
+
+.cb-service-name {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: var(--text-primary);
+}
+.cb-meta {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+}
+.cb-progress-wrap {
+    background: var(--bg-tertiary, #0f0f1a);
+    border-radius: 6px;
+    height: 8px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.cb-progress-bar {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.5s ease;
+}
+.cb-progress-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+}
+.cb-footer {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+.cb-kv {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.cb-kv-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+}
+.cb-kv-value {
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+/* Timeline state badge */
+.tl-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+.tl-badge.closed   { background: rgba(40,167,69,.15); color: #28a745; }
+.tl-badge.open     { background: rgba(220,53,69,.15); color: #dc3545; }
+.tl-badge.half_open { background: rgba(255,193,7,.12); color: #ffc107; }
+
+.empty-state {
+    text-align: center;
+    padding: 48px 24px;
+    color: var(--text-muted);
+}
+.empty-state .empty-icon { font-size: 3rem; margin-bottom: 12px; }
+.empty-state p { margin: 0; font-size: 0.9rem; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    'use strict';
+
+    const POLL_MS = 5000;
+    // Timeline capped at 50 entries (newest first)
+    const TIMELINE_MAX = 50;
+    const timeline = [];   // {ts, service, state, failures, detail}
+
+    function fmtAgo(secs) {
+        if (secs === null || secs === undefined) return '—';
+        if (secs < 2) return 'just now';
+        if (secs < 60) return Math.round(secs) + 's ago';
+        if (secs < 3600) return Math.round(secs / 60) + 'm ago';
+        return Math.round(secs / 3600) + 'h ago';
+    }
+
+    function fmtTime(ts) {
+        const d = new Date(ts * 1000);
+        return d.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+    }
+
+    function buildCard(b) {
+        const pct = b.failure_threshold > 0
+            ? Math.min(100, Math.round((b.failure_count / b.failure_threshold) * 100))
+            : 0;
+        const barColor = b.state === 'closed' ? '#28a745' : (b.state === 'open' ? '#dc3545' : '#ffc107');
+        const lastFail = b.last_failure_ago_seconds !== null ? fmtAgo(b.last_failure_ago_seconds) : 'None';
+        const lastChange = b.last_state_change_ago_seconds !== null ? fmtAgo(b.last_state_change_ago_seconds) : '—';
+
+        return `
+        <div class="cb-card state-${b.state}" aria-label="${b.service} circuit breaker — ${b.state}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px;">
+                <div class="cb-service-name">${b.service}</div>
+                <span class="cb-state-pill ${b.state}">${b.state.replace('_', '-')}</span>
+            </div>
+            <div class="cb-meta">Threshold: ${b.failure_count}/${b.failure_threshold} failures &bull; Recovery: ${b.recovery_timeout_seconds}s</div>
+            <div class="cb-progress-wrap" title="Failure progress toward trip threshold">
+                <div class="cb-progress-bar" style="width:${pct}%;background:${barColor};"></div>
+            </div>
+            <div class="cb-progress-label">
+                <span>Failures: ${b.failure_count}</span>
+                <span>Threshold: ${b.failure_threshold}</span>
+            </div>
+            <div class="cb-footer">
+                <div class="cb-kv">
+                    <span class="cb-kv-label">Successes</span>
+                    <span class="cb-kv-value text-green">${b.success_count}</span>
+                </div>
+                ${b.state === 'half_open' ? `<div class="cb-kv">
+                    <span class="cb-kv-label">Half-Open Calls</span>
+                    <span class="cb-kv-value text-yellow">${b.half_open_calls}</span>
+                </div>` : ''}
+                <div class="cb-kv">
+                    <span class="cb-kv-label">Last Failure</span>
+                    <span class="cb-kv-value">${lastFail}</span>
+                </div>
+                <div class="cb-kv">
+                    <span class="cb-kv-label">State Changed</span>
+                    <span class="cb-kv-value">${lastChange}</span>
+                </div>
+            </div>
+        </div>`;
+    }
+
+    function renderCards(breakers) {
+        const container = document.getElementById('cb-cards');
+        if (!breakers.length) {
+            container.innerHTML = `<div class="empty-state">
+                <div class="empty-icon">&#x29BF;</div>
+                <p>No circuit breakers registered yet.</p>
+                <p style="margin-top:6px;">They appear once services call <code>get_circuit_breaker(name)</code>.</p>
+            </div>`;
+            return;
+        }
+        container.innerHTML = breakers.map(buildCard).join('');
+    }
+
+    function renderTimeline() {
+        const tbody = document.getElementById('cb-timeline-body');
+        if (!timeline.length) {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:24px;">No events yet.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = timeline.slice(0, TIMELINE_MAX).map(e => `
+            <tr>
+                <td style="white-space:nowrap;color:var(--text-muted);font-size:0.82rem;">${e.time}</td>
+                <td>${e.service}</td>
+                <td><span class="tl-badge ${e.state}">${e.state.replace('_', '-')}</span></td>
+                <td style="text-align:right;">${e.failures}</td>
+                <td style="color:var(--text-muted);font-size:0.82rem;">${e.detail}</td>
+            </tr>`).join('');
+    }
+
+    function updateBanner(summary) {
+        const banner = document.getElementById('cb-banner');
+        const dot = document.getElementById('cb-dot');
+        const text = document.getElementById('cb-banner-text');
+        if (summary.open > 0) {
+            banner.className = 'health-banner critical';
+            dot.className = 'status-dot red';
+            text.textContent = `✗ ${summary.open} circuit breaker(s) OPEN — requests to affected services are being rejected`;
+        } else if (summary.half_open > 0) {
+            banner.className = 'health-banner degraded';
+            dot.className = 'status-dot yellow';
+            text.textContent = `⚠ ${summary.half_open} circuit breaker(s) in HALF-OPEN — recovery in progress`;
+        } else if (summary.total === 0) {
+            banner.className = 'health-banner healthy';
+            dot.className = 'status-dot green';
+            text.textContent = '⦿ No circuit breakers registered yet';
+        } else {
+            banner.className = 'health-banner healthy';
+            dot.className = 'status-dot green';
+            text.textContent = `✓ All ${summary.total} circuit breaker(s) CLOSED — systems operational`;
+        }
+    }
+
+    let prevStates = {};
+
+    function poll() {
+        fetch('/safety/circuit-breaker')
+            .then(r => r.json())
+            .then(data => {
+                const breakers = data.breakers || [];
+                const summary = data.summary || {};
+
+                // Update stats
+                document.getElementById('stat-total').textContent  = summary.total ?? 0;
+                document.getElementById('stat-open').textContent   = summary.open ?? 0;
+                document.getElementById('stat-half').textContent   = summary.half_open ?? 0;
+                document.getElementById('stat-closed').textContent = summary.closed ?? 0;
+
+                // Update banner
+                updateBanner(summary);
+
+                // Update cards
+                renderCards(breakers);
+
+                // Update last updated
+                document.getElementById('cb-last-updated').textContent =
+                    'Updated ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+                // Push state changes to timeline
+                const now = data.timestamp || (Date.now() / 1000);
+                breakers.forEach(b => {
+                    const prev = prevStates[b.service];
+                    if (prev !== b.state) {
+                        const detail = prev
+                            ? `${prev.replace('_','-')} → ${b.state.replace('_','-')}`
+                            : `Initial state: ${b.state.replace('_','-')}`;
+                        timeline.unshift({
+                            time: fmtTime(now),
+                            service: b.service,
+                            state: b.state,
+                            failures: b.failure_count,
+                            detail: detail,
+                        });
+                        if (timeline.length > TIMELINE_MAX) timeline.pop();
+                        prevStates[b.service] = b.state;
+                    }
+                });
+                renderTimeline();
+            })
+            .catch(err => {
+                console.warn('Circuit breaker poll error:', err);
+                const text = document.getElementById('cb-banner-text');
+                text.textContent = '⚠ Could not reach /safety/circuit-breaker — retrying…';
+            });
+    }
+
+    // Initial poll + schedule
+    poll();
+    setInterval(poll, POLL_MS);
+})();
+</script>
+{% endblock %}

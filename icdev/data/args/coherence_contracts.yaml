@@ -1,0 +1,79 @@
+# CUI // SP-CTI
+# Coherence Contracts Configuration (Phase 66, D-WF-8)
+#
+# Declarative rules for verifying internal consistency across ICDEV™.
+# Each contract defines what must stay aligned when changes are made.
+# The coherence checker validates these contracts deterministically.
+
+# Schema-Code Coherence (D-WF-8a)
+# Verify CREATE TABLE columns match INSERT/SELECT in the same tool module
+schema_code:
+  enabled: true
+  # Directories to scan for Python files with SQL
+  scan_dirs:
+    - tools/
+  # Path to init_icdev_db.py for schema extraction
+  schema_file: tools/db/init_icdev_db.py
+  # Severity when columns mismatch
+  mismatch_severity: fail
+
+# Config-Code Coherence (D-WF-8b)
+# Verify YAML config keys match config.get() calls in code
+config_code:
+  enabled: true
+  # Config directories to scan
+  config_dirs:
+    - args/
+  # Code directories that read configs
+  code_dirs:
+    - tools/
+  mismatch_severity: warn
+
+# Signature-Call Coherence (D-WF-8c)
+# Verify function signatures match call sites (especially tests)
+signature_call:
+  enabled: true
+  # Test directories to scan for call sites
+  test_dirs:
+    - tests/
+  # Minimum parameter count to trigger positional-arg warning
+  min_params_for_keyword_warning: 4
+  mismatch_severity: warn
+
+# Test Fixture-Schema Coherence (D-WF-8d)
+# Verify test fixture CREATE TABLE statements match init_icdev_db.py
+fixture_schema:
+  enabled: true
+  test_dirs:
+    - tests/
+  schema_file: tools/db/init_icdev_db.py
+  mismatch_severity: fail
+
+# Manifest Coherence (D-WF-8e)
+# Verify new tool files are documented in tools/manifest.md
+manifest:
+  enabled: true
+  manifest_file: tools/manifest.md
+  scan_dirs:
+    - tools/
+  # Directories to exclude from manifest check
+  exclude_dirs:
+    - tools/db/
+    - tools/dashboard/
+    - tools/saas/
+    - tools/mcp/
+    - tools/extensions/
+    - tools/dx/
+  mismatch_severity: warn
+
+# Integration Impact (D-WF-8f)
+# Cross-subsystem dependency graph — see args/integration_matrix.yaml
+integration:
+  enabled: true
+  matrix_file: args/integration_matrix.yaml
+  mismatch_severity: warn
+
+# Audit settings
+audit:
+  enabled: true
+  actor: "coherence-engine"
