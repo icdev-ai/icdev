@@ -388,6 +388,11 @@ function renderGraph(data) {
     } catch (_) {}
   }
 
+  // Ensure container has explicit height before Sigma measures it
+  const mainEl = document.getElementById('sg-main');
+  const mainH = mainEl ? mainEl.clientHeight : (window.innerHeight - 120);
+  SIGMA_CONTAINER.style.height = Math.max(mainH, 400) + 'px';
+
   // Init Sigma
   _sigma = new Sigma(_graph, SIGMA_CONTAINER, {
     renderEdgeLabels: false,
