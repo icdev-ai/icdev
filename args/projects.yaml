@@ -4,6 +4,41 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: aadc-enh
+  name: AADC Enhancements — Canvas JS, Cost Estimation, IaC, Impact Graph
+  description: 'Four enhancements to the Agentic AI Design Canvas: (1) dedicated
+    agentic-canvas.js with autonomy badges, HITL path highlighting, per-node compliance
+    overlays, threat popovers, and pinned risk sidebar; (2) live cost estimation with
+    model-specific token pricing and optimization hints; (3) IaC generation — one-click
+    Terraform + Helm chart export; (4) cross-design impact graph with blast-radius
+    analysis and supply chain risk roll-up.'
+  task_prefix: aadc-enh-
+  default_open: true
+  briefs:
+  - 'js: agentic-canvas.js — autonomy badges, HITL highlighter, compliance overlays, threat popovers, risk sidebar'
+  - 'cost: cost_estimator.py + blueprint routes + canvas sidebar panel'
+  - 'iac: iac_generator.py + blueprint route + canvas toolbar button'
+  - 'impact: aadc_design_links table + impact-graph page + Sigma.js force graph'
+  epics:
+  - key: js
+    title: Dedicated agentic-canvas.js
+    priority: critical
+  - key: cost
+    title: Live Cost Estimation
+    priority: critical
+  - key: iac
+    title: IaC Generation
+    priority: high
+  - key: impact
+    title: Cross-Design Impact Graph
+    priority: high
+  - key: infra
+    title: Infrastructure (manifest, mirrors, projects.yaml)
+    priority: medium
+  - key: vv
+    title: V&V Gate
+    priority: critical
+
 - key: aadc-sp
   name: AADC Solution Packs — Industry-Ready Agentic AI Templates
   description: '7 pre-wired agentic AI solution packs for the Agentic AI Design Canvas.
