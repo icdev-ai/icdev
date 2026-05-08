@@ -38,6 +38,12 @@ Cross-canvas event bus integration.
 - `publish_design_saved(design_id, name)` — emits `aadc.design_saved`
 - `publish_agent_flagged(design_id, agent_label, level)` — emits `aadc.agent_flagged`
 
+### `tools/agentic_ai_canvas/mcp_sync.py`
+AADC → MCP Tool Registry sync — upserts agent/tool nodes from a design into `mcp_tool_registry` so the MCP gateway is aware of them.
+- `sync_design_to_mcp(design_id)` → `{"synced": N, "nodes": [labels]}` on success; `{"synced": 0, "error": str}` on failure (non-fatal)
+- Syncs node types: `llm`, `llm-local`, `autonomous-agent`, `orchestrator`, `sub-agent`, `researcher-agent`, `writer-agent`, `reviewer-agent`, `mcp-server`, `mcp-gateway`, `tool-chain`, `external-api`
+- Supports both SQLite (`INSERT OR REPLACE`) and PostgreSQL (`ON CONFLICT DO UPDATE`) backends via `get_connection()`
+
 ### `tools/agentic_ai_canvas/events.py`
 AADC Activity Feed Emitter — writes one row to `aadc_design_events` on each significant canvas action.
 - `emit_event(design_id, event_type, actor, metadata)` → bool (True on success, False if table missing or write fails — non-fatal)
