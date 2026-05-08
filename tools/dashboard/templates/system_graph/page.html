@@ -6,9 +6,15 @@
 {% block extra_head %}
 <style>
 /* ---- Layout ------------------------------------------------------------ */
+/* Escape .main-content padding so graph fills viewport */
+.main-content:has(#sg-layout) {
+  padding: 0 !important;
+  max-width: 100% !important;
+}
 #sg-layout {
   display: flex;
-  height: calc(100vh - 56px);
+  height: calc(100vh - 120px);
+  min-height: 500px;
   overflow: hidden;
 }
 #sg-sidebar {
@@ -25,10 +31,13 @@
   flex: 1;
   position: relative;
   background: #0d0d1a;
+  display: flex;
+  flex-direction: column;
 }
 #sigma-container {
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  height: 100%;
 }
 
 /* ---- Toolbar ----------------------------------------------------------- */
@@ -371,7 +380,8 @@ function renderGraph(data) {
     edgeSet.add(key);
     try {
       _graph.addEdge(e.source, e.target, {
-        type: e.type || 'related',
+        relationship: e.type || 'related',
+        type: 'line',
         size: 1,
         color: '#2a2a4e',
       });
@@ -390,6 +400,7 @@ function renderGraph(data) {
     minCameraRatio: 0.05,
     maxCameraRatio: 10,
     zoomToSizeRatioFunction: (x) => x,
+    allowInvalidContainer: true,
   });
 
   // Node click → detail panel

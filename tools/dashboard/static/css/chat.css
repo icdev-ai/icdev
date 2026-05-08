@@ -608,12 +608,14 @@
 
 .chat-input-area__inner {
     display: flex;
+    width: 100%;
     gap: 8px;
     align-items: flex-end;
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 8px 10px;
+    box-sizing: border-box;
     transition: border-color 0.15s;
 }
 
