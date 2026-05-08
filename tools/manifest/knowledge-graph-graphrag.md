@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Graph RAG | tools/knowledge_graph/graph_rag.py | GraphRAG retrieval with scoring profiles (D-KARL-1) | --query, --profile, --json | Retrieval context |
+| Graph-Hop Expander | tools/knowledge_graph/graph_rag.py | Expand top-K BM25 hit node IDs to 1-hop neighbors; results persisted to temp file for restart recovery | --expand-hits ID [ID ...], --project-id, --json | {status, hit_ids, expansions, all_neighbors, cache_file, elapsed_ms} |
 | KG Ingester | tools/knowledge_graph/ingester.py | Knowledge graph document ingestion | --file, --project-id, --json | Ingestion result |
 | Insight Generator | tools/knowledge_graph/insight_generator.py | AI insight generation from graph (scanner-tier) | --graph-id, --questions, --bridge-gaps, --json | Insights |
 | Text Network | tools/knowledge_graph/text_network.py | Text-to-knowledge-graph conversion | --text, --project-id, --json | Graph data |
