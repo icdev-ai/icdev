@@ -624,11 +624,15 @@
 }
 
 .chat-upload-btn {
-    background: transparent;
-    border: none;
-    color: var(--text-muted, #888);
-    padding: 4px 6px;
+    background: rgba(52, 211, 153, 0.12);
+    border: 1px solid rgba(52, 211, 153, 0.45);
+    color: #34d399;
+    padding: 5px 12px;
     cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
     font-size: 1rem;
     display: none;
     transition: color 0.12s;
@@ -638,8 +642,9 @@
 }
 
 .chat-upload-btn:hover {
-    color: var(--text-primary);
-    background: rgba(255,255,255,0.06);
+    background: rgba(52, 211, 153, 0.22);
+    border-color: #34d399;
+    color: #6ee7b7;
 }
 
 /* Drag-and-drop active state */
