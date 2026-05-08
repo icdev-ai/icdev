@@ -1797,6 +1797,17 @@ CREATE TABLE IF NOT EXISTS genesis_reflex_log (
 );
 CREATE INDEX IF NOT EXISTS idx_grl_reflex_name ON genesis_reflex_log (reflex_name);
 CREATE INDEX IF NOT EXISTS idx_grl_ran_at       ON genesis_reflex_log (ran_at);
+
+CREATE TABLE IF NOT EXISTS mcp_tool_registry (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT NOT NULL,
+    source            TEXT NOT NULL,
+    capabilities_json TEXT,
+    updated_at        TEXT NOT NULL,
+    UNIQUE (name, source)
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_tr_name   ON mcp_tool_registry (name);
+CREATE INDEX IF NOT EXISTS idx_mcp_tr_source ON mcp_tool_registry (source);
 """
 
 # ---------------------------------------------------------------------------

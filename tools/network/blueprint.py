@@ -11490,7 +11490,6 @@ Planning rules:
     @bp.route("/subnet-calc")
     @nc_login_required
     def nc_subnet_calc():
-        import ipaddress
         conn = get_connection()
         project_id = request.args.get("project", "")
         projects = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()]
