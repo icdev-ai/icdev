@@ -642,6 +642,14 @@
     background: rgba(255,255,255,0.06);
 }
 
+/* Drag-and-drop active state */
+.chat-drop-active {
+    outline: 2px dashed var(--accent-blue);
+    outline-offset: -4px;
+    background: rgba(52, 152, 219, 0.06) !important;
+    transition: background 0.15s, outline 0.15s;
+}
+
 .chat-message-input {
     flex: 1;
     background: transparent;

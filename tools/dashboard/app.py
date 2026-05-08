@@ -7714,11 +7714,24 @@ def create_app() -> Flask:
         filename = file.filename
 
         # --- Extract text ---
+        _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff"})
         try:
             ext = Path(filename).suffix.lower()
             raw_bytes = file.read()
+            file_size_kb = round(len(raw_bytes) / 1024, 1)
+            is_image = ext in _IMAGE_EXTS
 
-            if ext in (".txt", ".md", ".rst", ".yaml", ".yml", ".json"):
+            if is_image:
+                # Images: synthesise a searchable text stub so they appear in RAG + KG
+                stem = Path(filename).stem.replace("_", " ").replace("-", " ")
+                text = (
+                    f"Image document: {filename}\n"
+                    f"Type: {ext.lstrip('.')} image\n"
+                    f"Size: {file_size_kb} KB\n"
+                    f"Description: {stem}\n"
+                    f"This is a diagram, figure, or image file uploaded to the chat context."
+                )
+            elif ext in (".txt", ".md", ".rst", ".yaml", ".yml", ".json", ".xml", ".csv"):
                 text = raw_bytes.decode("utf-8", errors="replace")
             elif ext == ".pdf":
                 try:
@@ -7730,15 +7743,23 @@ def create_app() -> Flask:
                     Path(tmp_path).unlink(missing_ok=True)
                 except Exception as exc:
                     return jsonify({"error": f"PDF extraction failed: {exc}"}), 422
-            elif ext == ".docx":
+            elif ext in (".docx", ".doc"):
                 try:
                     import io
-                    import docx
-                    doc = docx.Document(io.BytesIO(raw_bytes))
-                    text = "\n".join(p.text for p in doc.paragraphs)
+                    import docx as _docx
+                    doc = _docx.Document(io.BytesIO(raw_bytes))
+                    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                    # Also extract table content
+                    for tbl in doc.tables:
+                        for row in tbl.rows:
+                            row_text = " | ".join(c.text.strip() for c in row.cells if c.text.strip())
+                            if row_text:
+                                paragraphs.append(row_text)
+                    text = "\n".join(paragraphs)
                 except Exception as exc:
                     return jsonify({"error": f"DOCX extraction failed: {exc}"}), 422
             else:
+                # Generic fallback: try UTF-8, mark as unknown type
                 text = raw_bytes.decode("utf-8", errors="replace")
 
             if not text.strip():
@@ -7811,6 +7832,8 @@ def create_app() -> Flask:
             "status": "ok",
             "filename": filename,
             "doc_id": doc_id,
+            "file_type": "image" if is_image else ext.lstrip("."),
+            "file_size_kb": file_size_kb,
             "rag_chunks": rag_chunks_stored,
             "kg": kg_result,
             "text_length": len(text),
