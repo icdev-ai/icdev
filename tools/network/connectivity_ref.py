@@ -8,8 +8,6 @@ for json.dumps() and Jinja2 template rendering.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import sqlite3
 import urllib.parse
 from pathlib import Path
