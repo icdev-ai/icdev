@@ -924,24 +924,41 @@ def _cleanup_worktree(task_id: str):
     except Exception as exc:
         logger.warning("Worktree remove failed for %s: %s", task_id, exc)
 
-    # Capture diff stats before the branch is deleted
+    # Capture diff stats + branch name + commit summary before the branch is deleted
     diff_stats = _capture_diff_stats(task_id)
+
+    # Commit summary (one line per commit on the branch)
+    _commit_summary = ""
+    try:
+        import subprocess as _sp2
+        _log = _sp2.run(
+            ["git", "log", "--oneline", f"{_default_branch()}..kanban/{task_id}"],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+        )
+        _commit_summary = _log.stdout.strip()[:1000] if _log.returncode == 0 else ""
+    except Exception:
+        pass
 
     merged_ok = _merge_worktree_to_main(task_id)
 
-    # Persist change metrics to kanban_tasks (best-effort)
-    if diff_stats.get("files_changed") or diff_stats.get("lines_added") or diff_stats.get("lines_removed"):
-        try:
-            _ds_conn = get_connection()
-            _ds_conn.execute(
-                "UPDATE kanban_tasks SET files_changed = ?, lines_added = ?, lines_removed = ? "
-                "WHERE id = ?",
-                (diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"], task_id),
-            )
-            _ds_conn.commit()
-            _ds_conn.close()
-        except Exception as _ds_exc:
-            logger.warning("diff_stats write failed for %s: %s", task_id, _ds_exc)
+    # Persist change metrics + branch info to kanban_tasks (best-effort)
+    try:
+        _ds_conn = get_connection()
+        _ds_conn.execute(
+            "UPDATE kanban_tasks SET "
+            "files_changed = ?, lines_added = ?, lines_removed = ?, "
+            "branch_name = ?, commit_summary = ? "
+            "WHERE id = ?",
+            (
+                diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
+                f"kanban/{task_id}", _commit_summary or None,
+                task_id,
+            ),
+        )
+        _ds_conn.commit()
+        _ds_conn.close()
+    except Exception as _ds_exc:
+        logger.warning("diff_stats write failed for %s: %s", task_id, _ds_exc)
 
     try:
         # Only delete the branch if merge succeeded; otherwise PRESERVE

@@ -162,6 +162,34 @@ def _annotate_in_progress_tasks(conn, tasks: list) -> None:
         pass
 
 
+def _annotate_task_tags(conn, tasks: list) -> None:
+    """Tier 2: attach tags list to each task. Falls back gracefully if table absent."""
+    for t in tasks:
+        t["tags"] = []
+    if not tasks:
+        return
+    task_ids = [t["id"] for t in tasks]
+    ph = ",".join(["?" for _ in task_ids])
+    try:
+        rows = conn.execute(
+            f"SELECT tt.task_id, tg.id, tg.name, tg.color "  # nosec B608
+            f"FROM kanban_task_tags tt "
+            f"JOIN kanban_tags tg ON tg.id = tt.tag_id "
+            f"WHERE tt.task_id IN ({ph}) "
+            f"ORDER BY tg.name",
+            task_ids,
+        ).fetchall()
+        tag_map: dict = {}
+        for r in rows:
+            d = dict(r)
+            tid = d["task_id"]
+            tag_map.setdefault(tid, []).append({"id": d["id"], "name": d["name"], "color": d["color"]})
+        for t in tasks:
+            t["tags"] = tag_map.get(t["id"], [])
+    except Exception:
+        pass  # table may not exist on older DBs — degrade gracefully
+
+
 @kanban_api.route("/tasks", methods=["GET"])
 def list_tasks():
     """Return all kanban tasks, optionally filtered by status.
@@ -301,6 +329,7 @@ def list_tasks():
         # status filter.
         annotate_tasks_with_value(tasks)
         _annotate_in_progress_tasks(conn, tasks)
+        _annotate_task_tags(conn, tasks)
 
         # Apply sort override if requested. SQL-side ORDER BY can't drive
         # these cleanly because value is computed in Python and
@@ -1101,6 +1130,193 @@ def last_update():
                 "completed_count": count,
             })
         return jsonify({"last_update": None, "task_id": None, "task_title": None, "completed_count": 0})
+    finally:
+        conn.close()
+
+
+# ── Tier 2: Dependency DAG ────────────────────────────────────────────────
+
+@kanban_api.route("/deps-graph", methods=["GET"])
+def deps_graph():
+    """Return the full dependency graph as nodes + edges for Mermaid rendering.
+
+    Nodes: all tasks that appear in at least one edge (or requested via ?all=1).
+    Edges: rows from kanban_task_deps junction table.
+    """
+    include_all = request.args.get("all", "0") == "1"
+    conn = get_connection()
+    try:
+        edges = []
+        node_ids = set()
+        try:
+            rows = conn.execute(
+                "SELECT task_id, depends_on_id FROM kanban_task_deps"
+            ).fetchall()
+            for r in rows:
+                d = dict(r)
+                edges.append({"from": d["task_id"], "to": d["depends_on_id"]})
+                node_ids.add(d["task_id"])
+                node_ids.add(d["depends_on_id"])
+        except Exception:
+            pass
+
+        # Also include scalar depends_on_task_id links not in junction table
+        try:
+            scalar_rows = conn.execute(
+                "SELECT id, depends_on_task_id FROM kanban_tasks "
+                "WHERE depends_on_task_id IS NOT NULL"
+            ).fetchall()
+            for r in scalar_rows:
+                d = dict(r)
+                edge = {"from": d["id"], "to": d["depends_on_task_id"]}
+                if edge not in edges:
+                    edges.append(edge)
+                node_ids.add(d["id"])
+                node_ids.add(d["depends_on_task_id"])
+        except Exception:
+            pass
+
+        if include_all:
+            all_ids = conn.execute("SELECT id FROM kanban_tasks").fetchall()
+            for r in all_ids:
+                node_ids.add(dict(r)["id"] if hasattr(r, "keys") else r[0])
+
+        nodes = []
+        if node_ids:
+            ph = ",".join(["?" for _ in node_ids])
+            task_rows = conn.execute(
+                f"SELECT id, title, status, priority FROM kanban_tasks WHERE id IN ({ph})",  # nosec B608
+                list(node_ids),
+            ).fetchall()
+            nodes = [dict(r) for r in task_rows]
+
+        return jsonify({"nodes": nodes, "edges": edges})
+    finally:
+        conn.close()
+
+
+# ── Tier 2: Tag System ────────────────────────────────────────────────────
+
+@kanban_api.route("/tags", methods=["GET"])
+def list_tags():
+    """Return all available tags."""
+    conn = get_connection()
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT id, name, color, created_at FROM kanban_tags ORDER BY name"
+            ).fetchall()
+            return jsonify({"tags": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"tags": []})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tags", methods=["POST"])
+def create_tag():
+    """Create a new tag. Body: {name, color?}"""
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()[:64]
+    color = (data.get("color") or "#6b7280").strip()[:16]
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    tag_id = f"tag-{uuid.uuid4().hex[:10]}"
+    conn = get_connection()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO kanban_tags (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+                (tag_id, name, color, _utcnow()),
+            )
+            conn.commit()
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                return jsonify({"error": f"Tag '{name}' already exists"}), 409
+            raise
+        try:
+            sse_manager.broadcast({"action": "tag_created", "tag": {"id": tag_id, "name": name, "color": color}}, "kanban")
+        except Exception:
+            pass
+        return jsonify({"status": "created", "id": tag_id}), 201
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tags/<tag_id>", methods=["DELETE"])
+def delete_tag(tag_id):
+    """Delete a tag and its task associations."""
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tags WHERE id = ?", (tag_id,)).fetchone():
+            return jsonify({"error": "Tag not found"}), 404
+        conn.execute("DELETE FROM kanban_task_tags WHERE tag_id = ?", (tag_id,))
+        conn.execute("DELETE FROM kanban_tags WHERE id = ?", (tag_id,))
+        conn.commit()
+        return jsonify({"status": "deleted", "id": tag_id})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/tags", methods=["GET"])
+def list_task_tags(task_id):
+    """Return tags assigned to a task."""
+    conn = get_connection()
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT t.id, t.name, t.color FROM kanban_tags t "
+                "JOIN kanban_task_tags tt ON tt.tag_id = t.id "
+                "WHERE tt.task_id = ? ORDER BY t.name",
+                (task_id,),
+            ).fetchall()
+            return jsonify({"tags": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"tags": []})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/tags", methods=["POST"])
+def add_task_tag(task_id):
+    """Assign a tag to a task. Body: {tag_id}"""
+    data = request.get_json(force=True, silent=True) or {}
+    tag_id = (data.get("tag_id") or "").strip()
+    if not tag_id:
+        return jsonify({"error": "tag_id is required"}), 400
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+            return jsonify({"error": "Task not found"}), 404
+        if not conn.execute("SELECT id FROM kanban_tags WHERE id = ?", (tag_id,)).fetchone():
+            return jsonify({"error": "Tag not found"}), 404
+        try:
+            conn.execute(
+                "INSERT INTO kanban_task_tags (task_id, tag_id, created_at) VALUES (?, ?, ?)",
+                (task_id, tag_id, _utcnow()),
+            )
+            conn.commit()
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                return jsonify({"status": "already_assigned"}), 200
+            raise
+        return jsonify({"status": "assigned"}), 201
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/tags/<tag_id>", methods=["DELETE"])
+def remove_task_tag(task_id, tag_id):
+    """Remove a tag from a task."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM kanban_task_tags WHERE task_id = ? AND tag_id = ?",
+            (task_id, tag_id),
+        )
+        conn.commit()
+        return jsonify({"status": "removed"})
     finally:
         conn.close()
 
