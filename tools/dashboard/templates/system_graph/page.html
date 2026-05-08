@@ -3,17 +3,27 @@
 
 {% block title %}System Graph — ICDEV™{% endblock %}
 
-{% block extra_head %}
+{% block extra_css %}
 <style>
 /* ============================================================
    SYSTEM GRAPH — Full-bleed professional layout
    ============================================================ */
 
-/* Escape base.html padding */
+/* Escape base.html padding — belt-and-suspenders approach */
+.main-content:has(#sg-root),
 .main-content:has(#sg-root) {
   padding: 0 !important;
   max-width: 100% !important;
   width: 100% !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+/* Fallback for browsers without :has() — injected by JS */
+.sg-fullbleed-active {
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
 }
 
 /* Root wrapper */
@@ -160,10 +170,13 @@
 
 /* ── Body (sidebar + canvas + detail) ───────────────────── */
 #sg-body {
-  flex: 1;
-  display: flex;
+  flex: 1 1 0;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
   overflow: hidden;
   min-height: 0;
+  position: relative;
 }
 
 /* ── Left legend panel ───────────────────────────────────── */
@@ -229,7 +242,8 @@
 
 /* ── Canvas area ─────────────────────────────────────────── */
 #sg-canvas-wrap {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 0;
   position: relative;
   background: #080818;
   overflow: hidden;
@@ -643,6 +657,30 @@ let _nodeTypeCounts = {}; // { type: count } — computed after load
 /* ── Boot ─────────────────────────────────────────────────── */
 
 window.addEventListener('DOMContentLoaded', async () => {
+  // Fallback: apply full-bleed class if :has() selector isn't supported
+  const mc = document.querySelector('.main-content');
+  if (mc) {
+    mc.classList.add('sg-fullbleed-active');
+    mc.style.padding = '0';
+    mc.style.maxWidth = '100%';
+    mc.style.margin = '0';
+  }
+  // Force explicit row layout on sg-body via inline styles (belt-and-suspenders)
+  const body = document.getElementById('sg-body');
+  if (body) {
+    body.style.display = 'flex';
+    body.style.flexDirection = 'row';
+    body.style.flexWrap = 'nowrap';
+  }
+  // Size sg-root to fill available height precisely
+  const nav = document.querySelector('.navbar');
+  const navH = nav ? nav.offsetHeight : 46;
+  const root = document.getElementById('sg-root');
+  if (root) root.style.height = (window.innerHeight - navH) + 'px';
+  window.addEventListener('resize', () => {
+    if (root) root.style.height = (window.innerHeight - navH) + 'px';
+  });
+
   await loadNodeTypes();
   sgRefresh();
 });
