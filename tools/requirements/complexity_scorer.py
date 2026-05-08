@@ -45,6 +45,10 @@ def _get_connection(db_path=None):
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")
     conn = get_connection(db_path=str(path))
+    try:
+        conn.rollback()
+    except Exception:
+        pass
     return conn
 
 
