@@ -11600,13 +11600,14 @@ Planning rules:
                 ip_class = "E"
             broadcast = str(net.broadcast_address)
         else:
-            usable = total_hosts
-            subnet_mask = str(net.netmask)
+            usable = None   # too large for SQLite INTEGER; frontend uses prefix_len
+            total_hosts = None
+            subnet_mask = f"/{prefix_len}"
             wildcard = str(net.hostmask)
             first_addr = str(net.network_address + 1)
             last_addr = str(net.broadcast_address - 1)
-            ip_class = "N/A"
-            broadcast = "N/A"
+            ip_class = data.get("ip_class") or "Global Unicast"
+            broadcast = str(net.broadcast_address)
 
         entry_id = str(_uuid.uuid4())
         now = _now()
