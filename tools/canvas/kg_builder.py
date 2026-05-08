@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS canvas_kg_edges (
     source_id    TEXT NOT NULL,
     target_id    TEXT NOT NULL,
     edge_type    TEXT,
+    confidence   REAL DEFAULT 1.0,
     metadata_json TEXT,
     updated_at   TEXT
 )

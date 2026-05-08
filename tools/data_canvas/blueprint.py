@@ -386,6 +386,20 @@ def create_data_canvas_blueprint():
         _audit(design_id, session.get("user_id", "system"), "DELETE", "")
         return jsonify({"deleted": True})
 
+    @bp.route("/api/designs", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_delete_all():
+        """Delete all data designs and cascade child records."""
+        conn = get_connection()
+        ids = [r[0] for r in conn.execute("SELECT id FROM data_designs").fetchall()]
+        for did in ids:
+            conn.execute("DELETE FROM dd_versions WHERE design_id=?", (did,))
+            conn.execute("DELETE FROM dd_assessments WHERE design_id=?", (did,))
+            conn.execute("DELETE FROM data_designs WHERE id=?", (did,))
+        conn.commit()
+        conn.close()
+        return jsonify({"deleted": len(ids)})
+
     # ══════════════════════════════════════════════════════════════════════
     # API — TEMPLATES
     # ══════════════════════════════════════════════════════════════════════

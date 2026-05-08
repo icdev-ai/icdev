@@ -428,6 +428,22 @@ def create_observability_blueprint():
         _audit("DELETE", design_id, "")
         return jsonify({"deleted": True})
 
+    @bp.route("/api/designs", methods=["DELETE"])
+    @oc_login_required
+    def oc_api_delete_all():
+        """Delete all observability designs and cascade child records."""
+        conn = get_connection()
+        try:
+            ids = [r[0] for r in conn.execute("SELECT id FROM observability_designs").fetchall()]
+            for did in ids:
+                conn.execute("DELETE FROM od_assessments WHERE design_id=?", (did,))
+                conn.execute("DELETE FROM od_versions WHERE design_id=?", (did,))
+                conn.execute("DELETE FROM observability_designs WHERE id=?", (did,))
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"deleted": len(ids)})
+
     # ====================================================================
     # API — ASSESSMENT
     # ====================================================================

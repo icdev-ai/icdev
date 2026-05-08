@@ -590,6 +590,39 @@ def save_design(design_id):
     return jsonify({"status": "saved", "id": design_id})
 
 
+_IDC_CHILD_TABLES = ("idc_collab_sessions", "idc_assessments", "idc_versions", "idc_audit")
+
+
+@infra_bp.route("/api/designs/<design_id>", methods=["DELETE"])
+def delete_design(design_id):
+    """Delete an infrastructure design and cascade child records."""
+    conn = _get_conn()
+    try:
+        for tbl in _IDC_CHILD_TABLES:
+            conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (design_id,))  # nosec B608
+        conn.execute("DELETE FROM infra_designs WHERE id=?", (design_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"deleted": design_id})
+
+
+@infra_bp.route("/api/designs", methods=["DELETE"])
+def delete_all_designs():
+    """Delete all infrastructure designs and cascade child records."""
+    conn = _get_conn()
+    try:
+        ids = [r[0] for r in conn.execute("SELECT id FROM infra_designs").fetchall()]
+        for did in ids:
+            for tbl in _IDC_CHILD_TABLES:
+                conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (did,))  # nosec B608
+            conn.execute("DELETE FROM infra_designs WHERE id=?", (did,))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"deleted": len(ids)})
+
+
 @infra_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
 def run_assessment(design_id):
     """Run compliance assessment on a design."""
