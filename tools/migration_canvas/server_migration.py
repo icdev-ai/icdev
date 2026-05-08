@@ -298,6 +298,11 @@ def recommend_target(
         results.append({
             "rank": rank,
             "instance": inst,
+            # Promote common fields to top level for template convenience
+            "instance_type": inst.get("instance_type", ""),
+            "provider": inst.get("provider", ""),
+            "vcpus": inst.get("vcpus", 0),
+            "ram_gb": inst.get("ram_gb", 0),
             "fit_score": round(score, 4),
             "rationale": (
                 f"Requires ~{vcpu_req:.1f} vCPU and ~{ram_req:.1f} GB RAM "

@@ -412,6 +412,7 @@ CREATE TABLE IF NOT EXISTS mc_srv_sessions (
     tgt_instance_id     INTEGER REFERENCES mc_cloud_instances(id),
     readiness_score     REAL DEFAULT 0,
     status              TEXT DEFAULT 'in_progress',
+    notes               TEXT DEFAULT '',
     classification      TEXT DEFAULT 'CUI // SP-CTI',
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
@@ -639,6 +640,20 @@ CREATE INDEX IF NOT EXISTS idx_mc_srv_erb_session ON mc_srv_erb_metadata(session
 def _migrate_server_tables(conn):
     """Idempotently add server migration tables to existing DBs."""
     conn.executescript(SERVER_MIGRATION_SCHEMA)
+    # Column additions for tables that may already exist from a prior init
+    _add_col_if_missing = [
+        ("mc_srv_sessions", "notes",      "TEXT DEFAULT ''"),
+        ("mc_srv_sessions", "src_os_version", "TEXT DEFAULT ''"),
+        ("mc_srv_sessions", "src_datacenter",  "TEXT DEFAULT ''"),
+        ("mc_srv_sessions", "tgt_account_id",  "TEXT DEFAULT ''"),
+    ]
+    for tbl, col, typedef in _add_col_if_missing:
+        existing = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+        if col not in existing:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
+            except Exception:
+                pass  # PG / already-exists race — safe to ignore
 
 
 # ── Cloud Instance Seed Data ─────────────────────────────────────────────────
