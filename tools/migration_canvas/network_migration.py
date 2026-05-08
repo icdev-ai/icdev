@@ -1813,3 +1813,644 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
         rebuild_canvas_kg("mdc", design_id)
     except Exception as exc:
         logger.debug("KG update skipped: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# NMCE Phase 2: Inventory, Config Loading, AI, Protocol Planning, Timeline
+# ---------------------------------------------------------------------------
+
+def get_network_inventory(
+    site: str = "",
+    device_type: str = "",
+    vendor: str = "",
+    eol_within_years: int = 0,
+) -> list[dict]:
+    """Return network device inventory from ni_devices in network_canvas.db.
+
+    Falls back to nc_hardware_profiles rows if ni_devices is empty.
+    Annotates each device with has_config (from ni_device_configs) and
+    active_session_id (from mc_net_sessions in migration_canvas.db).
+    """
+    try:
+        with _nc_conn() as nc:
+            rows = nc.execute(
+                "SELECT id, node_id, label, device_type, vendor, model, "
+                "firmware_version, eol_date, eos_date FROM ni_devices WHERE 1=1"
+            ).fetchall()
+    except Exception:
+        rows = []
+
+    if not rows:
+        try:
+            with _nc_conn() as nc:
+                rows = nc.execute(
+                    "SELECT id, '' AS node_id, (vendor||' '||model) AS label, "
+                    "device_type, vendor, model, '' AS firmware_version, "
+                    "eol_date, '' AS eos_date FROM nc_hardware_profiles ORDER BY vendor, model"
+                ).fetchall()
+        except Exception:
+            return []
+
+    # Build set of device_ids that have configs
+    config_ids: set = set()
+    try:
+        with _nc_conn() as nc:
+            for r in nc.execute("SELECT DISTINCT device_id FROM ni_device_configs").fetchall():
+                config_ids.add(r[0])
+    except Exception:
+        pass
+
+    # Build map of model -> active session_id
+    session_map: dict = {}
+    try:
+        with _mc_conn() as mc:
+            for r in mc.execute(
+                "SELECT id, src_model FROM mc_net_sessions WHERE status NOT IN ('complete','archived')"
+            ).fetchall():
+                session_map[r[1]] = r[0]
+    except Exception:
+        pass
+
+    devices = []
+    from datetime import datetime as _dt, timezone as _tz
+    now = _dt.now(_tz.utc)
+    for r in rows:
+        rd = dict(r)
+        eol = rd.get("eol_date", "") or ""
+        has_config = rd["id"] in config_ids
+        active_sid = session_map.get(rd.get("model", ""))
+
+        # EOL filter
+        if eol_within_years and eol:
+            try:
+                eol_dt = _dt.fromisoformat(eol[:10])
+                if (eol_dt - now.replace(tzinfo=None)).days > eol_within_years * 365:
+                    continue
+            except Exception:
+                pass
+
+        # Device type filter
+        if device_type and rd.get("device_type", "") != device_type:
+            continue
+
+        # Vendor filter (case-insensitive substring)
+        if vendor and vendor.lower() not in (rd.get("vendor", "") or "").lower():
+            continue
+
+        # Site filter — ni_devices may not have site; skip if mismatch
+        # (site info lives in topology/nc_device_geo, skip for now)
+
+        devices.append({
+            "id": rd["id"],
+            "node_id": rd.get("node_id", ""),
+            "label": rd.get("label", rd.get("model", "")),
+            "vendor": rd.get("vendor", ""),
+            "model": rd.get("model", ""),
+            "device_type": rd.get("device_type", ""),
+            "firmware_version": rd.get("firmware_version", ""),
+            "eol_date": eol,
+            "eos_date": rd.get("eos_date", "") or "",
+            "has_config": has_config,
+            "config_source": "db" if has_config else "none",
+            "active_session_id": active_sid,
+        })
+
+    # Apply site filter via a no-op here (site not in ni_devices base schema)
+    return devices
+
+
+def load_device_config_from_db(device_id: str) -> str | None:
+    """Fetch the most-recent running/startup config for a device from ni_device_configs.
+
+    Config type priority: running > startup > show_run > any other.
+    Returns the config_text string or None if not found.
+    """
+    try:
+        with _nc_conn() as nc:
+            row = nc.execute(
+                """SELECT config_text FROM ni_device_configs
+                   WHERE device_id=?
+                   ORDER BY CASE config_type
+                     WHEN 'running' THEN 1
+                     WHEN 'startup' THEN 2
+                     WHEN 'show_run' THEN 3
+                     ELSE 4
+                   END, created_at DESC LIMIT 1""",
+                (device_id,),
+            ).fetchone()
+    except Exception:
+        return None
+    return row[0] if row else None
+
+
+def recommend_hardware(
+    device_info: dict,
+    engineer_notes: str = "",
+    session_id: str = "",
+) -> dict:
+    """AI-powered hardware replacement recommendation.
+
+    Fetches valid replacements from nc_hardware_profiles, calls LLMRouter,
+    and falls back to deterministic scoring when LLM is unavailable.
+    """
+    import uuid
+
+    dtype = device_info.get("device_type", "router")
+    try:
+        with _nc_conn() as nc:
+            profiles = [
+                dict(r) for r in nc.execute(
+                    "SELECT id, vendor, model, device_type, throughput_gbps, rack_units, "
+                    "power_typical_w, ports_json, eol_date, tags FROM nc_hardware_profiles "
+                    "WHERE device_type=? ORDER BY throughput_gbps DESC LIMIT 20",
+                    (dtype,),
+                ).fetchall()
+            ]
+    except Exception:
+        profiles = []
+
+    # ── LLM path ──────────────────────────────────────────────────────────
+    prompt = (
+        f"You are a senior network architect. A network device needs replacement.\n\n"
+        f"Current device:\n{json.dumps(device_info, indent=2)}\n\n"
+        f"Engineer notes / constraints:\n{engineer_notes or 'None provided.'}\n\n"
+        f"Available replacement catalog (from our approved hardware list):\n"
+        f"{json.dumps(profiles, indent=2)}\n\n"
+        "Return a JSON object with key \"recommendations\" containing a list of up to 3 objects. "
+        "Each object must have: profile_id (string), rationale (string), "
+        "migration_considerations (string), risk_level (low|medium|high), score (0-100 integer). "
+        "Only recommend from the catalog above. Respond with JSON only — no markdown, no commentary."
+    )
+
+    resp_text = ""
+    model_used = ""
+    try:
+        from tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest  # type: ignore
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a network architect. Respond with valid JSON only.",
+            effort="high",
+        )
+        resp = router.invoke("recommendation", req)
+        resp_text = resp.content
+        model_used = getattr(resp, "model_id", "") or ""
+        result = json.loads(resp_text)
+    except Exception:
+        # Deterministic fallback: rank by throughput delta + port parity
+        cur_throughput = float(device_info.get("throughput_gbps", 0) or 0)
+        scored = []
+        for p in profiles:
+            pt = float(p.get("throughput_gbps") or 0)
+            delta = abs(pt - cur_throughput)
+            score = max(0, 100 - int(delta / max(cur_throughput, 1) * 50))
+            scored.append({
+                "profile_id": p["id"],
+                "rationale": f"{p['vendor']} {p['model']} — {pt} Gbps throughput, {p.get('rack_units',2)}U",
+                "migration_considerations": "Verify port count and optic compatibility before ordering.",
+                "risk_level": "medium",
+                "score": score,
+            })
+        scored.sort(key=lambda x: -x["score"])
+        result = {"recommendations": scored[:3]}
+
+    # Save to audit trail
+    if session_id:
+        try:
+            with _mc_conn() as mc:
+                mc.execute(
+                    "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), session_id, "assistant",
+                     f"[Hardware recommendation] {resp_text[:1000]}", model_used, _now()),
+                )
+                mc.commit()
+        except Exception:
+            pass
+
+    result.setdefault("recommendations", [])
+    result["model"] = model_used
+    return result
+
+
+def ai_assist(session_id: str, engineer_prompt: str) -> dict:
+    """Contextual AI assistant for network migration.
+
+    Loads conversation history and session context, calls LLMRouter,
+    saves both turns to mc_net_ai_sessions.
+    """
+    import uuid
+
+    # Load session context
+    sess: dict = {}
+    history: list[dict] = []
+    try:
+        with _mc_conn() as mc:
+            row = mc.execute(
+                "SELECT src_model, tgt_model, src_device_name, tgt_device_name, "
+                "src_config_raw, status FROM mc_net_sessions WHERE id=?", (session_id,)
+            ).fetchone()
+            if row:
+                sess = dict(row)
+            history = [
+                dict(r) for r in mc.execute(
+                    "SELECT role, message FROM mc_net_ai_sessions WHERE session_id=? "
+                    "ORDER BY created_at DESC LIMIT 10",
+                    (session_id,),
+                ).fetchall()
+            ]
+    except Exception:
+        pass
+
+    # Build protocol context from parsed config
+    proto_ctx = ""
+    if sess.get("src_config_raw"):
+        try:
+            parsed = parse_source_config(sess["src_config_raw"])
+            parts = []
+            if parsed.get("bgp_neighbors"):
+                parts.append(f"{len(parsed['bgp_neighbors'])} BGP peers")
+            if parsed.get("ospf_areas"):
+                parts.append(f"OSPF areas: {', '.join(parsed['ospf_areas'])}")
+            if parsed.get("l3vpn_vrfs"):
+                parts.append(f"{len(parsed['l3vpn_vrfs'])} L3VPN VRFs")
+            if parsed.get("mpls_interfaces"):
+                parts.append("MPLS enabled")
+            proto_ctx = "; ".join(parts)
+        except Exception:
+            pass
+
+    system_prompt = (
+        "You are ICDEV's network migration AI assistant. "
+        "You help network engineers plan and execute network device hardware migrations.\n\n"
+        f"Current migration session:\n"
+        f"  Source: {sess.get('src_model','unknown')} ({sess.get('src_device_name','')})\n"
+        f"  Target: {sess.get('tgt_model','unknown')} ({sess.get('tgt_device_name','')})\n"
+        f"  Status: {sess.get('status','planning')}\n"
+        + (f"  Protocols: {proto_ctx}\n" if proto_ctx else "")
+        + "\nYou have expertise in Cisco IOS/IOS-XR/NX-OS, Juniper JunOS, Arista EOS migration, "
+        "BGP/OSPF/IS-IS/EIGRP protocol migration, VLAN/STP migration, PortChannel/LAG, "
+        "QoS policy translation, ACL migration, HSRP/VRRP migration, "
+        "cutover planning, and rollback procedures."
+    )
+
+    # Build message list from history (reversed to chronological) + new prompt
+    messages = []
+    for h in reversed(history[:6]):
+        role = h.get("role", "engineer")
+        messages.append({"role": "user" if role == "engineer" else "assistant",
+                         "content": h.get("message", "")})
+    messages.append({"role": "user", "content": engineer_prompt})
+
+    response_text = ""
+    model_used = ""
+    try:
+        from tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest  # type: ignore
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=messages,
+            system_prompt=system_prompt,
+            effort="high",
+        )
+        resp = router.invoke("recommendation", req)
+        response_text = resp.content
+        model_used = getattr(resp, "model_id", "") or ""
+    except Exception as exc:
+        response_text = (
+            f"AI assistance is currently unavailable ({type(exc).__name__}). "
+            "Check your LLM configuration in args/llm_config.yaml."
+        )
+
+    # Save both turns
+    try:
+        with _mc_conn() as mc:
+            mc.execute(
+                "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id, "engineer", engineer_prompt, "", _now()),
+            )
+            mc.execute(
+                "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id, "assistant", response_text, model_used, _now()),
+            )
+            mc.commit()
+    except Exception:
+        pass
+
+    return {"response": response_text, "model": model_used}
+
+
+# ── Protocol-specific step generators ───────────────────────────────────────
+
+def _bgp_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    peers = parsed.get("bgp_neighbors", [])
+    steps = [
+        "Verify BGP ASN is preserved on target device.",
+        "Configure BGP process on target with identical AS and router-ID.",
+        f"Establish {len(peers)} BGP neighbor session(s) in passive/no-export mode on new device.",
+        "Validate prefix counts match source device before cutover.",
+        "Migrate inbound/outbound route-policies — translate syntax if vendor changed.",
+        "Update community/large-community mappings for new platform syntax.",
+        "Drain traffic by raising local-pref or MED on source before cutover.",
+        "After cutover: remove passive mode; monitor prefix table for 15 minutes.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps.insert(4, f"Translate route-policy syntax from {src_vendor} to {tgt_vendor} CLI.")
+    return {"steps": steps, "risk_level": "high", "peer_count": len(peers)}
+
+
+def _ospf_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    areas = parsed.get("ospf_areas", [])
+    steps = [
+        f"Configure OSPF process on target in area(s): {', '.join(areas) or 'backbone'}.",
+        "Enable OSPF interfaces in passive mode on new device (do not advertise yet).",
+        "Verify adjacency forms — check neighbor state reaches FULL.",
+        "Confirm routing table matches source before cutover.",
+        "Raise OSPF cost on source interfaces to drain traffic prior to cutover.",
+        "After cutover: remove passive mode; restore default costs.",
+        "Verify all OSPF neighbors re-form on new device.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps.insert(1, f"Translate OSPF config from {src_vendor} to {tgt_vendor} syntax.")
+    return {"steps": steps, "risk_level": "medium", "area_count": len(areas)}
+
+
+def _vlan_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    steps = [
+        "Pre-configure identical VLAN IDs on target device.",
+        "Set all access/trunk port modes before physical cabling.",
+        "Disable DTP (auto-negotiation) on all trunk links for explicit mode.",
+        "Verify VLAN database consistency across upstream switches.",
+        "Migrate STP root bridge priority if device is root — lower priority on new device first.",
+        "Confirm spanning-tree topology is stable before cutover.",
+    ]
+    return {"steps": steps, "risk_level": "low"}
+
+
+def _lag_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    lag_count = parsed.get("lag_count", 0)
+    steps = [
+        f"Map {lag_count} LAG group(s) — verify LACP mode (active/passive) is consistent.",
+        "Pre-configure port-channel/ae interfaces on target before physical cabling.",
+        "Check LACP system-priority and port-priority alignment with peers.",
+        "Migrate LACP min-links and max-links settings.",
+        "After cabling: verify LAG bundle forms and all member links are up.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps.insert(1, f"Translate port-channel config (ae on Juniper, Po on Cisco) for {tgt_vendor}.")
+    return {"steps": steps, "risk_level": "medium", "lag_count": lag_count}
+
+
+def _mpls_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    ldp = parsed.get("ldp_interfaces", [])
+    rsvp = parsed.get("rsvp_interfaces", [])
+    vrfs = parsed.get("l3vpn_vrfs", [])
+    steps = [
+        "Enable MPLS on all uplink interfaces before cutover.",
+        f"Configure LDP on {len(ldp)} interface(s) — verify label space and hello timers.",
+        "Establish LDP adjacency with all upstream/downstream neighbors.",
+        "Verify label database convergence before traffic shift.",
+        f"Migrate {len(vrfs)} L3VPN VRF(s) — RD, RT, and BGP VPNv4 neighbor config.",
+        "Confirm VRF routing table is complete after cutover.",
+    ]
+    if rsvp:
+        steps.insert(4, f"Re-establish {len(rsvp)} RSVP-TE tunnel(s) on new device.")
+    return {"steps": steps, "risk_level": "high", "ldp_count": len(ldp), "vrf_count": len(vrfs)}
+
+
+def _acl_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    filters = parsed.get("firewall_filters", [])
+    steps = [
+        f"Export {len(filters)} ACL/firewall-filter definition(s) from source config.",
+        "Translate ACL syntax to target platform CLI.",
+        "Apply ACLs/filters to target interfaces before cutover.",
+        "Validate ACL hit counters are incrementing correctly after cutover.",
+        "Remove ACLs from source device after decommission.",
+    ]
+    if src_vendor != tgt_vendor:
+        steps[1] = (
+            f"Translate {src_vendor} firewall-filter/ACL syntax to {tgt_vendor} equivalent "
+            "(e.g., Juniper 'firewall filter' → Cisco 'ip access-list extended')."
+        )
+    return {"steps": steps, "risk_level": "medium", "filter_count": len(filters)}
+
+
+def plan_protocol_migration(session_id: str) -> dict:
+    """Generate per-protocol migration steps from parsed source config.
+
+    Detects protocols present in the config and generates ordered steps
+    for each. Upserts rows into mc_net_protocol_plans.
+    """
+    import uuid
+
+    with _mc_conn() as mc:
+        sess = dict(mc.execute(
+            "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+            (session_id,),
+        ).fetchone() or {})
+
+    if not sess.get("src_config_raw"):
+        return {"error": "No config imported yet — complete Step 2 first."}
+
+    parsed = parse_source_config(sess["src_config_raw"])
+    src_vendor = parsed.get("vendor", "")
+
+    # Detect target vendor
+    tgt_vendor = ""
+    try:
+        with _nc_conn() as nc:
+            hw = nc.execute(
+                "SELECT vendor FROM nc_hardware_profiles WHERE model=? LIMIT 1",
+                (sess.get("tgt_model", ""),),
+            ).fetchone()
+            if hw:
+                tgt_vendor = hw[0].lower()
+    except Exception:
+        pass
+
+    plans: dict[str, dict] = {}
+    now = _now()
+
+    protocol_handlers = []
+    if parsed.get("bgp_neighbors"):
+        protocol_handlers.append(("bgp", _bgp_plan))
+    if parsed.get("ospf_areas"):
+        protocol_handlers.append(("ospf", _ospf_plan))
+    if parsed.get("lag_count", 0):
+        protocol_handlers.append(("lag", _lag_plan))
+    if parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces") or parsed.get("l3vpn_vrfs"):
+        protocol_handlers.append(("mpls", _mpls_plan))
+    if parsed.get("firewall_filters"):
+        protocol_handlers.append(("acl", _acl_plan))
+    # Always include VLAN
+    protocol_handlers.append(("vlan", _vlan_plan))
+
+    with _mc_conn() as mc:
+        for protocol, handler in protocol_handlers:
+            plan = handler(parsed, src_vendor, tgt_vendor)
+            steps = plan.pop("steps", [])
+            risk = plan.pop("risk_level", "medium")
+            plans[protocol] = {**plan, "steps": steps, "risk_level": risk}
+
+            mc.execute(
+                "INSERT OR REPLACE INTO mc_net_protocol_plans "
+                "(id, session_id, protocol, migration_steps_json, risk_level, status, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id, protocol,
+                 json.dumps(steps), risk, "draft", now, now),
+            )
+        mc.commit()
+
+    return {"session_id": session_id, "protocols": plans}
+
+
+def build_parallel_timeline(session_id: str) -> list[dict]:
+    """Generate parallel operation milestone timeline for a migration session.
+
+    Returns milestones sorted by days_before_cutover (negative=before cutover).
+    """
+    import uuid
+
+    # Load session data
+    sess: dict = {}
+    port_map: list[dict] = []
+    compat_checks: list[dict] = []
+    has_bgp = has_ospf = has_mpls = False
+
+    try:
+        with _mc_conn() as mc:
+            row = mc.execute(
+                "SELECT src_config_raw, src_model, tgt_model FROM mc_net_sessions WHERE id=?",
+                (session_id,),
+            ).fetchone()
+            if row:
+                sess = dict(row)
+            port_map = [
+                dict(r) for r in mc.execute(
+                    "SELECT optic_change FROM mc_net_port_map WHERE session_id=?", (session_id,)
+                ).fetchall()
+            ]
+            compat_checks = [
+                dict(r) for r in mc.execute(
+                    "SELECT severity, status FROM mc_net_compat_checks WHERE session_id=?", (session_id,)
+                ).fetchall()
+            ]
+    except Exception:
+        pass
+
+    if sess.get("src_config_raw"):
+        try:
+            parsed = parse_source_config(sess["src_config_raw"])
+            has_bgp = bool(parsed.get("bgp_neighbors"))
+            has_ospf = bool(parsed.get("ospf_areas"))
+            has_mpls = bool(parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces"))
+        except Exception:
+            pass
+
+    optic_changes = sum(1 for r in port_map if r.get("optic_change"))
+    blocker_count = sum(1 for r in compat_checks if r.get("severity") == "blocker" and r.get("status") == "fail")
+
+    base_milestones = [
+        {"milestone_name": "Order and receive target hardware",
+         "days_before_cutover": -30, "phase": "pre_migration", "duration_hours": 1,
+         "description": "Issue PO for replacement hardware. Confirm lead time with vendor."},
+        {"milestone_name": "Rack, stack, and cable new device",
+         "days_before_cutover": -14, "phase": "pre_migration", "duration_hours": 4,
+         "description": "Physical installation, power, out-of-band management cable."},
+        {"milestone_name": "Initial device configuration (hostname, NTP, AAA, SNMP, syslog)",
+         "days_before_cutover": -7, "phase": "pre_migration", "duration_hours": 2,
+         "description": "Base config only — no production routing or interfaces yet."},
+        {"milestone_name": "Load production configuration — interfaces and VLANs",
+         "days_before_cutover": -5, "phase": "parallel_run", "duration_hours": 4,
+         "description": "Apply converted config. Interfaces in shutdown state initially."},
+        {"milestone_name": "Verify routing table convergence on new device",
+         "days_before_cutover": -3, "phase": "parallel_run", "duration_hours": 1,
+         "description": "Confirm route count and next-hops match source before any traffic shift."},
+        {"milestone_name": "Dual-home test traffic — non-production flows only",
+         "days_before_cutover": -2, "phase": "parallel_run", "duration_hours": 4,
+         "description": "Shift low-risk/non-critical traffic to validate path. Monitor for drops."},
+        {"milestone_name": "Final stakeholder notification and change window scheduling",
+         "days_before_cutover": -1, "phase": "pre_migration", "duration_hours": 1,
+         "description": "Notify NOC, network owners, and downstream teams of maintenance window."},
+        {"milestone_name": "Drain traffic from source device",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 1,
+         "description": "Raise OSPF cost or BGP MED on source to redirect traffic to alternate paths."},
+        {"milestone_name": "Cut over production interfaces to new device",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 2,
+         "description": "Execute cutover sequence per plan. Follow runbook step-by-step."},
+        {"milestone_name": "Verify routing, reachability, and critical applications",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 1,
+         "description": "Ping tests, route-table comparison, app team confirmation."},
+        {"milestone_name": "Go/No-go decision — rollback window 2 hours",
+         "days_before_cutover": 0, "phase": "cutover", "duration_hours": 0,
+         "description": "Decision point: if issues, execute rollback within 2h window."},
+        {"milestone_name": "Monitor new device — 24-hour watch period",
+         "days_before_cutover": 1, "phase": "post_migration", "duration_hours": 24,
+         "description": "Continuous monitoring: interface errors, BGP/OSPF flaps, CPU/memory."},
+        {"milestone_name": "Update monitoring systems (SNMP, NetFlow, NMS, syslog)",
+         "days_before_cutover": 1, "phase": "post_migration", "duration_hours": 2,
+         "description": "Update LibreNMS/SolarWinds, NetFlow collector, SIEM syslog source."},
+        {"milestone_name": "Close change request and document lessons learned",
+         "days_before_cutover": 7, "phase": "post_migration", "duration_hours": 2,
+         "description": "Update CMDB, close ServiceNow/JIRA ticket, capture lessons learned."},
+        {"milestone_name": "Decommission source device",
+         "days_before_cutover": 30, "phase": "decommission", "duration_hours": 4,
+         "description": "Remove cables, erase config, update asset inventory and NMS."},
+    ]
+
+    conditional: list[dict] = []
+    if optic_changes:
+        conditional.append({
+            "milestone_name": f"Order replacement optics ({optic_changes} port(s) need new optics)",
+            "days_before_cutover": -21, "phase": "pre_migration", "duration_hours": 1,
+            "description": "Some ports require different SFP/QSFP optics on target hardware.",
+        })
+    if blocker_count:
+        conditional.append({
+            "milestone_name": f"Resolve {blocker_count} compatibility blocker(s) before parallel run",
+            "days_before_cutover": -10, "phase": "pre_migration", "duration_hours": 4,
+            "description": "Compatibility check found blocking issues. Must resolve before continuing.",
+        })
+    if has_ospf:
+        conditional.append({
+            "milestone_name": "Establish OSPF adjacency on new device (passive mode)",
+            "days_before_cutover": -4, "phase": "parallel_run", "duration_hours": 1,
+            "description": "Bring up OSPF in passive mode — neighbor should reach FULL state but not carry traffic.",
+        })
+    if has_bgp:
+        conditional.append({
+            "milestone_name": "Establish BGP sessions on new device (passive/no-export)",
+            "days_before_cutover": -3, "phase": "parallel_run", "duration_hours": 2,
+            "description": "BGP sessions in passive mode. Verify prefix counts match source.",
+        })
+    if has_mpls:
+        conditional.append({
+            "milestone_name": "Verify LDP adjacency and label exchange on new device",
+            "days_before_cutover": -2, "phase": "parallel_run", "duration_hours": 1,
+            "description": "LDP/MPLS must be fully converged before any L3VPN traffic is shifted.",
+        })
+
+    all_milestones = sorted(base_milestones + conditional, key=lambda m: m["days_before_cutover"])
+
+    now = _now()
+    with _mc_conn() as mc:
+        mc.execute("DELETE FROM mc_net_parallel_timelines WHERE session_id=?", (session_id,))
+        for m in all_milestones:
+            mc.execute(
+                "INSERT INTO mc_net_parallel_timelines "
+                "(id, session_id, milestone_name, description, days_before_cutover, "
+                "phase, duration_hours, status, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), session_id,
+                 m["milestone_name"], m.get("description", ""),
+                 m["days_before_cutover"], m["phase"],
+                 m.get("duration_hours", 1), "planned", now),
+            )
+        mc.commit()
+
+    return all_milestones

@@ -1,0 +1,240 @@
+{# CUI // SP-CTI #}
+{% extends "base.html" %}
+{% block title %}Network Infrastructure Migration — ICDEV{% endblock %}
+
+{% block extra_css %}
+<style>
+.ni-root { padding: 24px 28px; max-width: 1400px; }
+.ni-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.ni-header h1 { font-size: 22px; margin: 0; }
+.ni-header .cui { font-size: 11px; color: #e74c3c; font-weight: 700; letter-spacing: 1px; }
+.stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; margin-bottom: 20px; }
+.stat-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px 20px; }
+.stat-num { font-size: 28px; font-weight: 700; color: #27ae60; }
+.stat-num.urgent { color: #e74c3c; }
+.stat-num.warn { color: #f39c12; }
+.stat-label { font-size: 12px; color: #7a8cb0; margin-top: 2px; }
+.filter-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+.filter-row select, .filter-row input { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 5px;
+  color: #eaeaea; padding: 6px 10px; font-size: 12px; }
+.filter-row input[type=text] { flex: 1; min-width: 180px; }
+.inv-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.inv-table th { background: #0d1b2e; color: #7a8cb0; text-align: left; padding: 8px 10px;
+  border-bottom: 1px solid #1e3a6e; font-size: 11px; text-transform: uppercase; }
+.inv-table td { padding: 9px 10px; border-bottom: 1px solid #141f33; vertical-align: middle; }
+.inv-table tr:hover td { background: #111f35; }
+.chip { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: 700; }
+.chip-ok { background: #1a5e2d; color: #27ae60; }
+.chip-warn { background: #3d2e0d; color: #f39c12; }
+.chip-urgent { background: #3d1515; color: #e74c3c; }
+.chip-db { background: #1a3a6e; color: #5899e2; }
+.chip-upload { background: #2d2d2d; color: #888; }
+.chip-active { background: #1a4e3e; color: #27ae60; }
+.btn { padding: 6px 14px; border-radius: 5px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
+.btn-primary { background: #27ae60; color: #fff; }
+.btn-primary:hover { background: #219a52; }
+.btn-link { background: none; border: none; color: #5899e2; cursor: pointer; font-size: 12px;
+  text-decoration: underline; padding: 0; }
+.empty-state { text-align: center; color: #4a6080; padding: 40px; font-size: 13px; }
+.loading { color: #7a8cb0; font-size: 12px; padding: 20px; text-align: center; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ni-root">
+  <div class="ni-header">
+    <div>
+      <h1>Network Infrastructure Migration</h1>
+      <div class="cui">CUI // SP-CTI</div>
+    </div>
+    <button class="btn btn-primary" onclick="window.location='/migration-canvas/network-migration/new'">+ New Migration (manual)</button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-num" id="stat-total">{{ total }}</div>
+      <div class="stat-label">Total Devices</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num urgent" id="stat-eol1">{{ eol_1yr }}</div>
+      <div class="stat-label">EOL within 12 months</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num warn" id="stat-eol2">{{ eol_2yr }}</div>
+      <div class="stat-label">EOL within 24 months</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-num" id="stat-active">{{ active_count }}</div>
+      <div class="stat-label">Active Migrations</div>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <select id="f-type" onchange="applyFilters()">
+      <option value="">All Device Types</option>
+      <option value="router">Router</option>
+      <option value="switch">Switch</option>
+      <option value="firewall">Firewall</option>
+      <option value="load_balancer">Load Balancer</option>
+      <option value="access_point">Access Point</option>
+    </select>
+    <select id="f-vendor" onchange="applyFilters()">
+      <option value="">All Vendors</option>
+      <option value="Cisco">Cisco</option>
+      <option value="Juniper">Juniper</option>
+      <option value="Arista">Arista</option>
+      <option value="Palo Alto">Palo Alto</option>
+      <option value="F5">F5</option>
+    </select>
+    <select id="f-eol" onchange="applyFilters()">
+      <option value="">All EOL Status</option>
+      <option value="urgent">Urgent (&le;12 mo)</option>
+      <option value="soon">Soon (&le;24 mo)</option>
+      <option value="ok">OK (&gt;24 mo)</option>
+      <option value="unknown">Unknown</option>
+    </select>
+    <select id="f-config" onchange="applyFilters()">
+      <option value="">All Config Status</option>
+      <option value="db">Config in DB</option>
+      <option value="none">No Config</option>
+    </select>
+    <input type="text" id="f-search" placeholder="Search hostname or model…" oninput="applyFilters()">
+  </div>
+
+  <div id="inv-loading" class="loading">Loading device inventory…</div>
+  <table class="inv-table" id="inv-table" style="display:none">
+    <thead>
+      <tr>
+        <th>Hostname / Label</th>
+        <th>Vendor / Model</th>
+        <th>Type</th>
+        <th>Firmware</th>
+        <th>EOL Date</th>
+        <th>Config</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="inv-tbody"></tbody>
+  </table>
+  <div id="inv-empty" class="empty-state" style="display:none">No devices found matching filters.</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _allDevices = [];
+
+async function loadInventory() {
+  try {
+    const r = await fetch('/migration-canvas/api/network-migration/inventory');
+    const d = await r.json();
+    _allDevices = d.devices || [];
+    document.getElementById('stat-total').textContent = d.total || 0;
+    document.getElementById('inv-loading').style.display = 'none';
+    applyFilters();
+  } catch(e) {
+    document.getElementById('inv-loading').textContent = 'Failed to load inventory — ' + e.message;
+  }
+}
+
+function eolStatus(eolDate) {
+  if (!eolDate) return 'unknown';
+  const d = new Date(eolDate), now = new Date();
+  const days = (d - now) / 86400000;
+  if (days < 0) return 'urgent';
+  if (days <= 365) return 'urgent';
+  if (days <= 730) return 'soon';
+  return 'ok';
+}
+
+function eolChip(eolDate) {
+  const s = eolStatus(eolDate);
+  const map = {
+    urgent: '<span class="chip chip-urgent">EOL URGENT</span>',
+    soon:   '<span class="chip chip-warn">EOL SOON</span>',
+    ok:     '<span class="chip chip-ok">OK</span>',
+    unknown:'<span class="chip chip-upload">UNKNOWN</span>',
+  };
+  return (map[s] || '') + (eolDate ? ` <span style="color:#7a8cb0;font-size:10px">${eolDate}</span>` : '');
+}
+
+function configChip(dev) {
+  if (dev.config_source === 'db') return '<span class="chip chip-db">DB ✓</span>';
+  return '<span class="chip chip-upload">Upload Reqd</span>';
+}
+
+function applyFilters() {
+  const fType = document.getElementById('f-type').value;
+  const fVendor = document.getElementById('f-vendor').value;
+  const fEol = document.getElementById('f-eol').value;
+  const fConfig = document.getElementById('f-config').value;
+  const fSearch = document.getElementById('f-search').value.toLowerCase();
+
+  let filtered = _allDevices.filter(d => {
+    if (fType && d.device_type !== fType) return false;
+    if (fVendor && !(d.vendor||'').toLowerCase().includes(fVendor.toLowerCase())) return false;
+    if (fEol && eolStatus(d.eol_date) !== fEol) return false;
+    if (fConfig && d.config_source !== fConfig) return false;
+    if (fSearch && !(d.label||'').toLowerCase().includes(fSearch) && !(d.model||'').toLowerCase().includes(fSearch)) return false;
+    return true;
+  });
+
+  const tbody = document.getElementById('inv-tbody');
+  const tbl = document.getElementById('inv-table');
+  const empty = document.getElementById('inv-empty');
+
+  if (!filtered.length) {
+    tbl.style.display = 'none';
+    empty.style.display = 'block';
+    return;
+  }
+  tbl.style.display = 'table';
+  empty.style.display = 'none';
+
+  tbody.innerHTML = filtered.map(d => {
+    const activeLink = d.active_session_id
+      ? `<a class="btn-link" href="/migration-canvas/network-migration/${d.active_session_id}" target="_blank">Active ↗</a>`
+      : '';
+    return `<tr>
+      <td style="font-weight:600;color:#eaeaea">${d.label||d.model||d.id}</td>
+      <td>${d.vendor||''} ${d.model||''}</td>
+      <td><span style="color:#7a8cb0">${d.device_type||''}</span></td>
+      <td style="color:#7a8cb0">${d.firmware_version||'—'}</td>
+      <td>${eolChip(d.eol_date)}</td>
+      <td>${configChip(d)}</td>
+      <td style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" onclick="startMigration('${d.id}','${d.model||''}','${(d.label||d.model||'').replace(/'/g,'')}')">&rarr; Migrate</button>
+        ${activeLink}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function startMigration(deviceId, model, label) {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  try {
+    const r = await fetch('/migration-canvas/api/network-migration/create-from-inventory', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({device_id: deviceId, src_model: model, src_device_name: label}),
+    });
+    const d = await r.json();
+    if (d.id) {
+      window.location = `/migration-canvas/network-migration/${d.id}`;
+    } else {
+      alert('Failed to create session: ' + (d.error || JSON.stringify(d)));
+      btn.disabled = false;
+      btn.textContent = '→ Migrate';
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = '→ Migrate';
+  }
+}
+
+window.addEventListener('DOMContentLoaded', loadInventory);
+</script>
+{% endblock %}

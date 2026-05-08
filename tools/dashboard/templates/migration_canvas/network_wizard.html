@@ -231,6 +231,47 @@
 .cc-group-hdr.cc-warnings { color: #f39c12; }
 .cc-group-hdr.cc-info { color: #27ae60; }
 .cc-group-badge { background: rgba(255,255,255,0.1); border-radius: 8px; padding: 1px 7px; font-size: 10px; }
+
+/* ── Protocol Plan ─────────────────────────────────────────────── */
+.proto-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; margin-bottom: 10px; }
+.proto-card-hdr { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; }
+.proto-card-hdr:hover { background: #1a2d4a; }
+.proto-name { font-size: 13px; font-weight: 600; flex: 1; }
+.proto-body { padding: 4px 14px 14px; display: none; }
+.proto-body.open { display: block; }
+.proto-step { display: flex; gap: 8px; padding: 5px 0; font-size: 12px; border-bottom: 1px solid #1a2e45; }
+.proto-step:last-child { border-bottom: none; }
+.proto-step-num { color: #27ae60; font-weight: 700; min-width: 20px; }
+.risk-low { background: #1a5e2d; color: #27ae60; }
+.risk-medium { background: #3d2e0d; color: #f39c12; }
+.risk-high { background: #3d1515; color: #e74c3c; }
+.risk-critical { background: #5e0d0d; color: #ff4444; }
+
+/* ── Parallel Timeline Gantt ───────────────────────────────────── */
+.gantt-wrap { overflow-x: auto; }
+.gantt-row { display: flex; align-items: center; gap: 0; min-height: 30px; border-bottom: 1px solid #141f33; }
+.gantt-row:hover { background: #0e1c2f; }
+.gantt-label { width: 260px; min-width: 260px; font-size: 11px; color: #eaeaea; padding: 4px 8px; border-right: 1px solid #1e3a6e; }
+.gantt-bar-area { flex: 1; position: relative; height: 24px; }
+.gantt-bar { position: absolute; height: 16px; top: 4px; border-radius: 3px; min-width: 8px; }
+.phase-pre_migration { background: #1e3a8e; }
+.phase-parallel_run { background: #0e5a5a; }
+.phase-cutover { background: #7a3200; }
+.phase-post_migration { background: #1a5e2d; }
+.phase-decommission { background: #3a3a3a; }
+.gantt-header { display: flex; align-items: center; border-bottom: 2px solid #1e3a6e; margin-bottom: 4px; }
+.gantt-header-label { width: 260px; min-width: 260px; font-size: 10px; color: #4a6080; padding: 4px 8px; }
+.gantt-header-ticks { flex: 1; display: flex; }
+.gantt-tick { flex: 1; font-size: 9px; color: #3a5070; text-align: center; border-right: 1px solid #1a2a3a; }
+.timeline-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; font-size: 11px; }
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 2px; }
+
+/* ── AI panel ──────────────────────────────────────────────────── */
+.ai-msg { padding: 8px 10px; border-radius: 6px; font-size: 12px; line-height: 1.5; max-width: 90%; }
+.ai-msg.engineer { background: #1a3a6e; color: #eaeaea; align-self: flex-end; }
+.ai-msg.assistant { background: #162820; color: #eaeaea; align-self: flex-start; }
+.ai-thinking { color: #4a6080; font-size: 11px; font-style: italic; }
 </style>
 {% endblock %}
 
@@ -248,7 +289,9 @@
       (5,'Config Preview'),
       (6,'Test Plan'),
       (7,'Cutover Planner'),
-      (8,'ERB / CCB Package')
+      (8,'ERB / CCB Package'),
+      (9,'Protocol Plan'),
+      (10,'Parallel Timeline')
     ] %}
     {% for num, label in steps %}
     <div class="nw-step-link" id="step-link-{{ num }}" onclick="goStep({{ num }})">
@@ -802,7 +845,61 @@
       </div>
     </div>
 
+    <!-- ════════════════ STEP 9 — Protocol Migration Plan ════════════════ -->
+    <div class="nw-page" id="page-9">
+      <div class="nw-header">
+        <h2>Step 9 — Protocol Migration Plan</h2>
+        <p>Per-protocol migration steps auto-generated from your imported config. Requires Step 2 config import.</p>
+      </div>
+      <div id="proto-empty-state" style="color:#7a8cb0;font-size:13px;margin-bottom:16px">
+        No protocol plan yet. Import a device config (Step 2) then click Generate.
+      </div>
+      <div class="nw-actions" style="margin-bottom:16px;margin-top:0">
+        <button class="btn btn-primary" onclick="generateProtocolPlan()">Generate Protocol Plan</button>
+        <button class="btn btn-secondary" onclick="goStep(8)">← Back</button>
+      </div>
+      <div id="proto-accordion"></div>
+      <div class="nw-actions" style="margin-top:16px">
+        <button class="btn btn-primary" onclick="goStep(10)">Continue → Parallel Timeline</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 10 — Parallel Operation Timeline ════════════════ -->
+    <div class="nw-page" id="page-10">
+      <div class="nw-header">
+        <h2>Step 10 — Parallel Operation Timeline</h2>
+        <p>Structured milestone plan for running old and new devices side-by-side to minimize outages.</p>
+      </div>
+      <div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:16px">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:12px;color:#7a8cb0">Planned Cutover Date (Day 0)</label>
+          <input type="date" id="cutover-date" style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:5px;color:#eaeaea;padding:6px 10px;font-size:12px">
+        </div>
+        <button class="btn btn-primary" onclick="generateTimeline()">Generate Timeline</button>
+        <button class="btn btn-secondary" onclick="goStep(9)">← Back</button>
+      </div>
+      <div id="timeline-empty" style="color:#7a8cb0;font-size:13px">No timeline yet — click Generate Timeline.</div>
+      <div id="timeline-gantt" style="display:none"></div>
+    </div>
+
   </div><!-- /.nw-main -->
+
+  <!-- ════════════════ AI Migration Assistant Panel ════════════════ -->
+  <div id="ai-panel" style="position:fixed;right:0;top:56px;width:320px;height:calc(100vh - 56px);background:#0a1624;border-left:1px solid #1e3a6e;display:flex;flex-direction:column;z-index:100;transition:transform 0.2s;transform:translateX(296px)">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #1e3a6e;background:#0d1b2e">
+      <span style="font-size:13px;font-weight:600;color:#eaeaea">AI Migration Assistant</span>
+      <button onclick="toggleAI()" style="background:none;border:1px solid #1e3a6e;color:#7a8cb0;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px" id="ai-toggle-btn">⇄ Open</button>
+    </div>
+    <div id="ai-history" style="flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:8px"></div>
+    <div style="padding:10px;border-top:1px solid #1e3a6e">
+      <textarea id="ai-input" rows="3" placeholder="Ask anything: BGP migration, optic compatibility, rollback plan…" style="width:100%;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:5px;color:#eaeaea;padding:7px;font-size:12px;box-sizing:border-box;resize:none"></textarea>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button class="btn btn-primary" onclick="sendAI()" style="flex:1">Send</button>
+        <button onclick="clearAI()" class="btn btn-secondary" style="font-size:11px">Clear</button>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /.nw-shell -->
 
 <div class="toast" id="toast"></div>
@@ -810,6 +907,198 @@
 <script>
 const SESSION_ID = {{ session_id | tojson }};
 let _sid = SESSION_ID;
+
+// ── NMCE: Protocol Plan ───────────────────────────────────────────
+async function generateProtocolPlan() {
+  if (!_sid) { showToast('Create a session first (Step 1).', 'warn'); return; }
+  showToast('Generating protocol plan…', 'info');
+  try {
+    const r = await fetch(`/migration-canvas/api/network-migration/${_sid}/protocol-plan`, {method:'POST'});
+    const d = await r.json();
+    if (d.error) { showToast(d.error, 'warn'); return; }
+    renderProtocolPlan(d.protocols || {});
+    document.getElementById('proto-empty-state').style.display = 'none';
+    showToast('Protocol plan generated.', 'ok');
+  } catch(e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+async function loadProtocolPlan() {
+  if (!_sid) return;
+  try {
+    const r = await fetch(`/migration-canvas/api/network-migration/${_sid}/protocol-plan`);
+    const d = await r.json();
+    const protos = d.protocols || {};
+    if (Object.keys(protos).length) {
+      renderProtocolPlan(protos);
+      document.getElementById('proto-empty-state').style.display = 'none';
+    }
+  } catch(e) {}
+}
+
+function renderProtocolPlan(protocols) {
+  const riskColors = {low:'risk-low',medium:'risk-medium',high:'risk-high',critical:'risk-critical'};
+  const protoLabels = {bgp:'BGP',ospf:'OSPF',isis:'IS-IS',vlan:'VLAN / STP',lag:'LAG / PortChannel',mpls:'MPLS / LDP',acl:'ACL / Firewall Filters'};
+  const container = document.getElementById('proto-accordion');
+  container.innerHTML = Object.entries(protocols).map(([proto, data]) => {
+    const steps = data.steps || [];
+    const risk = data.risk_level || 'medium';
+    const label = protoLabels[proto] || proto.toUpperCase();
+    const extras = Object.entries(data).filter(([k]) => !['steps','risk_level','ai_notes','status'].includes(k))
+      .map(([k,v]) => `<span style="color:#7a8cb0">${k.replace(/_/g,' ')}: <b style="color:#eaeaea">${v}</b></span>`).join(' · ');
+    return `<div class="proto-card">
+      <div class="proto-card-hdr" onclick="toggleProto(this)">
+        <span class="proto-name">${label}</span>
+        ${extras ? `<span style="font-size:11px">${extras}</span>` : ''}
+        <span class="chip ${riskColors[risk] || 'risk-medium'}">${risk.toUpperCase()} RISK</span>
+        <span style="color:#7a8cb0;font-size:11px">${steps.length} steps ▾</span>
+      </div>
+      <div class="proto-body">
+        ${steps.map((s,i) => `<div class="proto-step"><span class="proto-step-num">${i+1}.</span><span>${s}</span></div>`).join('')}
+        ${data.ai_notes ? `<div style="font-size:11px;color:#7a8cb0;font-style:italic;margin-top:8px">${data.ai_notes}</div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleProto(hdr) {
+  const body = hdr.nextElementSibling;
+  body.classList.toggle('open');
+}
+
+// ── NMCE: Parallel Timeline ───────────────────────────────────────
+async function generateTimeline() {
+  if (!_sid) { showToast('Create a session first (Step 1).', 'warn'); return; }
+  showToast('Generating parallel timeline…', 'info');
+  try {
+    const r = await fetch(`/migration-canvas/api/network-migration/${_sid}/parallel-timeline`, {method:'POST'});
+    const d = await r.json();
+    renderTimeline(d.milestones || []);
+    showToast(`Timeline generated — ${d.count} milestones.`, 'ok');
+  } catch(e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+async function loadTimeline() {
+  if (!_sid) return;
+  try {
+    const r = await fetch(`/migration-canvas/api/network-migration/${_sid}/parallel-timeline`);
+    const d = await r.json();
+    if ((d.milestones||[]).length) renderTimeline(d.milestones);
+  } catch(e) {}
+}
+
+function renderTimeline(milestones) {
+  const el = document.getElementById('timeline-gantt');
+  const empty = document.getElementById('timeline-empty');
+  if (!milestones.length) { empty.style.display = 'block'; el.style.display = 'none'; return; }
+  empty.style.display = 'none'; el.style.display = 'block';
+
+  const MIN_DAY = -30, MAX_DAY = 30, RANGE = MAX_DAY - MIN_DAY;
+  const phaseColors = {pre_migration:'pre_migration',parallel_run:'parallel_run',cutover:'cutover',post_migration:'post_migration',decommission:'decommission'};
+  const cutoverDate = document.getElementById('cutover-date').value;
+
+  // Legend
+  const legendItems = [
+    {phase:'pre_migration',label:'Pre-Migration'},
+    {phase:'parallel_run',label:'Parallel Run'},
+    {phase:'cutover',label:'Cutover'},
+    {phase:'post_migration',label:'Post-Migration'},
+    {phase:'decommission',label:'Decommission'},
+  ];
+
+  let html = `<div class="timeline-legend">${legendItems.map(l =>
+    `<div class="legend-item"><div class="legend-dot phase-${l.phase}"></div><span style="color:#7a8cb0">${l.label}</span></div>`
+  ).join('')}</div>`;
+
+  // Tick marks
+  const ticks = [-30,-21,-14,-7,0,7,14,21,30];
+  html += `<div class="gantt-header">
+    <div class="gantt-header-label">Milestone</div>
+    <div class="gantt-header-ticks">${ticks.map(t =>
+      `<div class="gantt-tick" style="position:absolute;left:${((t-MIN_DAY)/RANGE*100).toFixed(1)}%;transform:translateX(-50%);">${t>=0?'+':''}${t}d</div>`
+    ).join('')}<div style="position:relative;height:16px;flex:1"></div></div>
+  </div>`;
+
+  html += '<div class="gantt-wrap">';
+  milestones.forEach(m => {
+    const day = m.days_before_cutover || 0;
+    const dur = Math.max(m.duration_hours || 1, 1);
+    const pct = ((day - MIN_DAY) / RANGE * 100).toFixed(1);
+    const widthPct = Math.max((dur / 24) / RANGE * 100, 0.8).toFixed(1);
+    const phase = m.phase || 'pre_migration';
+    const dateStr = cutoverDate ? (() => {
+      try {
+        const co = new Date(cutoverDate);
+        co.setDate(co.getDate() + day);
+        return co.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+      } catch(e) { return ''; }
+    })() : '';
+    html += `<div class="gantt-row" title="${m.description||''}">
+      <div class="gantt-label">${m.milestone_name}${dateStr ? ` <span style="color:#4a6080">(${dateStr})</span>` : ''}</div>
+      <div class="gantt-bar-area" style="position:relative">
+        <div class="gantt-bar phase-${phaseColors[phase]}" style="left:${pct}%;width:${widthPct}%"></div>
+        ${day===0 ? '<div style="position:absolute;left:' + ((0-MIN_DAY)/RANGE*100).toFixed(1) + '%;top:0;bottom:0;width:2px;background:#e74c3c;z-index:2"></div>' : ''}
+      </div>
+    </div>`;
+  });
+  html += '</div>';
+
+  el.innerHTML = html;
+}
+
+// ── NMCE: AI Assistant Panel ─────────────────────────────────────
+let _aiOpen = false;
+function toggleAI() {
+  _aiOpen = !_aiOpen;
+  const panel = document.getElementById('ai-panel');
+  panel.style.transform = _aiOpen ? 'translateX(0)' : 'translateX(296px)';
+  document.getElementById('ai-toggle-btn').textContent = _aiOpen ? '⇄ Close' : '⇄ Open';
+}
+
+function appendAIMsg(role, text) {
+  const hist = document.getElementById('ai-history');
+  const div = document.createElement('div');
+  div.className = `ai-msg ${role}`;
+  div.textContent = text;
+  hist.appendChild(div);
+  hist.scrollTop = hist.scrollHeight;
+}
+
+async function sendAI() {
+  const input = document.getElementById('ai-input');
+  const prompt = input.value.trim();
+  if (!prompt) return;
+  if (!_sid) { showToast('Start a migration session first.', 'warn'); return; }
+  appendAIMsg('engineer', prompt);
+  input.value = '';
+  const thinking = document.createElement('div');
+  thinking.className = 'ai-thinking';
+  thinking.textContent = 'Thinking…';
+  document.getElementById('ai-history').appendChild(thinking);
+  try {
+    const r = await fetch(`/migration-canvas/api/network-migration/${_sid}/ai-assist`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({prompt}),
+    });
+    const d = await r.json();
+    thinking.remove();
+    appendAIMsg('assistant', d.response || '(no response)');
+  } catch(e) {
+    thinking.remove();
+    appendAIMsg('assistant', 'Error: ' + e.message);
+  }
+}
+
+function clearAI() {
+  document.getElementById('ai-history').innerHTML = '';
+}
+
+document.getElementById('ai-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendAI();
+});
+
+// ── NMCE: Load data for steps 9+10 when navigated to ─────────────
+const _origGoStep = typeof goStep === 'function' ? goStep : null;
 
 // ── State ─────────────────────────────────────────────────────────
 let hwCatalog = [];
@@ -837,6 +1126,8 @@ function goStep(n) {
   document.querySelectorAll('.nw-page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nw-step-link').forEach(l => l.classList.remove('active'));
   document.getElementById('page-' + n).classList.add('active');
+  if (n === 9) loadProtocolPlan();
+  if (n === 10) loadTimeline();
   document.getElementById('step-link-' + n).classList.add('active');
   currentStep = n;
   if (n === 4 && _sid && !_compatChecked) runCompatCheck(true);

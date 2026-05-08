@@ -1363,6 +1363,247 @@ def create_migration_blueprint():
         """Get readiness score and blockers list."""
         return jsonify(_nm.compute_readiness(sid))
 
+    # ── NMCE: Inventory page + API ────────────────────────────────────────
+
+    @bp.route("/network-migration/")
+    @mdc_login_required
+    def mc_net_inventory_page():
+        """Network inventory dashboard — list all devices, start migrations."""
+        devices = []
+        try:
+            devices = _nm.get_network_inventory()
+        except Exception as exc:
+            logger.warning("Inventory fetch failed: %s", exc)
+        eol_1yr = sum(1 for d in devices if _is_eol_within(d.get("eol_date", ""), 1))
+        eol_2yr = sum(1 for d in devices if _is_eol_within(d.get("eol_date", ""), 2))
+        with get_connection() as conn:
+            active_count = conn.execute(
+                "SELECT COUNT(*) FROM mc_net_sessions WHERE status NOT IN ('complete','archived')"
+            ).fetchone()[0]
+        return render_template(
+            "migration_canvas/network_inventory.html",
+            devices=devices,
+            total=len(devices),
+            eol_1yr=eol_1yr,
+            eol_2yr=eol_2yr,
+            active_count=active_count,
+        )
+
+    def _is_eol_within(eol_date: str, years: int) -> bool:
+        if not eol_date:
+            return False
+        try:
+            from datetime import date
+            eol = date.fromisoformat(eol_date[:10])
+            delta = (eol - date.today()).days
+            return 0 <= delta <= years * 365
+        except Exception:
+            return False
+
+    @bp.route("/api/network-migration/inventory", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_inventory():
+        """Return network device inventory with EOL and config status."""
+        site = request.args.get("site", "")
+        device_type = request.args.get("device_type", "")
+        vendor = request.args.get("vendor", "")
+        try:
+            eol_years = int(request.args.get("eol_within_years", 0))
+        except (ValueError, TypeError):
+            eol_years = 0
+        devices = _nm.get_network_inventory(site=site, device_type=device_type,
+                                             vendor=vendor, eol_within_years=eol_years)
+        eol_soon = sum(1 for d in devices if _is_eol_within(d.get("eol_date", ""), 2))
+        return jsonify({"devices": devices, "total": len(devices), "eol_soon_count": eol_soon})
+
+    # ── NMCE: Session creation enhancement (auto-load DB config) ─────────
+
+    @bp.route("/api/network-migration/create-from-inventory", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_create_from_inventory():
+        """Create a network migration session from an inventory device_id.
+
+        Auto-loads config from ni_device_configs if available, parses it,
+        and returns config_auto_loaded flag + parsed_summary.
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        device_id = data.get("device_id", "")
+        src_model = data.get("src_model", "")
+        sid = "nmig-" + _uuid.uuid4().hex[:12]
+        now = now_isoformat()
+
+        # Auto-load config from DB
+        config_raw = ""
+        config_auto_loaded = False
+        parsed_summary: dict = {}
+        if device_id:
+            config_raw = _nm.load_device_config_from_db(device_id) or ""
+            if config_raw:
+                config_auto_loaded = True
+                try:
+                    parsed = _nm.parse_source_config(config_raw)
+                    parsed_summary = {
+                        "vendor": parsed.get("vendor", ""),
+                        "hostname": parsed.get("hostname", ""),
+                        "interface_count": parsed.get("raw_interface_count", 0),
+                        "bgp_peer_count": len(parsed.get("bgp_neighbors", [])),
+                        "ospf_area_count": len(parsed.get("ospf_areas", [])),
+                        "lag_count": parsed.get("lag_count", 0),
+                    }
+                except Exception:
+                    pass
+
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT INTO mc_net_sessions "
+                "(id, design_id, src_model, tgt_model, src_device_name, tgt_device_name, "
+                "src_site, src_config_raw, config_parsed, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (sid, data.get("design_id"), src_model, data.get("tgt_model", ""),
+                 data.get("src_device_name", ""), data.get("tgt_device_name", ""),
+                 data.get("src_site", ""),
+                 config_raw, 1 if config_auto_loaded else 0, now, now),
+            )
+            conn.commit()
+
+        _audit(sid, "net_session_created_from_inventory",
+               f"device_id={device_id} config_auto_loaded={config_auto_loaded}")
+        return jsonify({
+            "id": sid,
+            "src_model": src_model,
+            "config_auto_loaded": config_auto_loaded,
+            "parsed_summary": parsed_summary,
+        }), 201
+
+    @bp.route("/api/network-migration/<sid>/upload-config", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_upload_config(sid):
+        """Unified config ingestion: file upload, paste, or reload from DB.
+
+        Accepts multipart/form-data (file field) or JSON body:
+          {config_text: str, source: 'paste'|'upload'|'db', device_id: str}
+        """
+
+        config_text = ""
+        source = "upload"
+
+        if request.files.get("file"):
+            f = request.files["file"]
+            config_text = f.read().decode("utf-8", errors="replace")
+            source = "upload"
+        else:
+            body = request.get_json(force=True, silent=True) or {}
+            source = body.get("source", "paste")
+            if source == "db":
+                device_id = body.get("device_id", "")
+                config_text = _nm.load_device_config_from_db(device_id) or ""
+                if not config_text:
+                    return jsonify({"error": "No config found in database for this device"}), 404
+            else:
+                config_text = body.get("config_text", "")
+
+        if not config_text.strip():
+            return jsonify({"error": "config_text is empty"}), 400
+
+        parsed = _nm.parse_source_config(config_text)
+
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE mc_net_sessions SET src_config_raw=?, config_parsed=1, updated_at=? WHERE id=?",
+                (config_text, now_isoformat(), sid),
+            )
+            conn.commit()
+
+        _audit(sid, "config_uploaded", f"source={source} vendor={parsed.get('vendor','?')} "
+               f"ifaces={len(parsed.get('interfaces',[]))}")
+        return jsonify({**parsed, "config_source": source, "ok": True})
+
+    # ── NMCE: AI routes ───────────────────────────────────────────────────
+
+    @bp.route("/api/network-migration/<sid>/ai-recommend", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_ai_recommend(sid):
+        """AI hardware recommendation for target device selection."""
+        data = request.get_json(force=True, silent=True) or {}
+        device_info = data.get("device_info", {})
+        engineer_notes = data.get("engineer_notes", "")
+        if not device_info:
+            with get_connection() as conn:
+                sess = conn.execute(
+                    "SELECT src_model FROM mc_net_sessions WHERE id=?", (sid,)
+                ).fetchone()
+            if sess:
+                device_info = {"model": sess[0], "device_type": "router"}
+        result = _nm.recommend_hardware(device_info, engineer_notes, sid)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/ai-assist", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_ai_assist(sid):
+        """Contextual AI assistant for migration questions."""
+        data = request.get_json(force=True, silent=True) or {}
+        prompt = data.get("prompt", "").strip()
+        if not prompt:
+            return jsonify({"error": "prompt is required"}), 400
+        result = _nm.ai_assist(sid, prompt)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/protocol-plan", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_protocol_plan(sid):
+        """Get stored per-protocol migration plans."""
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT protocol, migration_steps_json, risk_level, ai_notes, status "
+                "FROM mc_net_protocol_plans WHERE session_id=?", (sid,)
+            ).fetchall()
+        protocols = {}
+        for r in rows:
+            steps = []
+            try:
+                steps = json.loads(r[1] or "[]")
+            except Exception:
+                pass
+            protocols[r[0]] = {
+                "steps": steps,
+                "risk_level": r[2],
+                "ai_notes": r[3] or "",
+                "status": r[4],
+            }
+        return jsonify({"protocols": protocols})
+
+    @bp.route("/api/network-migration/<sid>/protocol-plan", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_gen_protocol_plan(sid):
+        """Generate per-protocol migration plans from parsed source config."""
+        result = _nm.plan_protocol_migration(sid)
+        if "error" in result:
+            return jsonify(result), 400
+        _audit(sid, "protocol_plan_generated",
+               f"protocols={list(result.get('protocols', {}).keys())}")
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/parallel-timeline", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_timeline(sid):
+        """Get stored parallel operation timeline milestones."""
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, milestone_name, description, days_before_cutover, phase, "
+                "owner, duration_hours, status, notes "
+                "FROM mc_net_parallel_timelines WHERE session_id=? "
+                "ORDER BY days_before_cutover", (sid,)
+            ).fetchall()
+        return jsonify({"milestones": [dict(r) for r in rows]})
+
+    @bp.route("/api/network-migration/<sid>/parallel-timeline", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_gen_timeline(sid):
+        """Generate parallel operation milestone timeline."""
+        milestones = _nm.build_parallel_timeline(sid)
+        _audit(sid, "parallel_timeline_generated", f"milestones={len(milestones)}")
+        return jsonify({"milestones": milestones, "count": len(milestones)})
+
     @bp.route("/api/network-migration/<sid>/export-diagram", methods=["GET"])
     @mdc_login_required
     def mc_net_api_export_diagram(sid):
