@@ -1,13 +1,16 @@
 # CUI // SP-CTI
 """System Graph blueprint — routes for the unified Sigma.js graph dashboard page."""
 
+import logging
 import threading
 import time
 
 from flask import Blueprint, jsonify, render_template, request
 
 from .constants import NODE_TYPES, EDGE_TYPES
-from .graph_builder import build_graph, get_node_detail
+from .graph_builder import build_graph, build_search_fallback, get_node_detail
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("system_graph", __name__)
 
@@ -62,13 +65,38 @@ def api_graph():
     if not any([filter_type, filter_health, filter_cluster, search, sources]):
         data = _get_cached_graph()
     else:
-        data = build_graph(
-            sources=sources,
-            filter_type=filter_type,
-            filter_cluster=filter_cluster,
-            filter_health=filter_health,
-            search=search,
-        )
+        try:
+            data = build_graph(
+                sources=sources,
+                filter_type=filter_type,
+                filter_cluster=filter_cluster,
+                filter_health=filter_health,
+                search=search,
+            )
+        except Exception as exc:
+            logger.error(
+                "system-graph build_graph failed (search=%r filter_type=%r): %s",
+                search, filter_type, exc, exc_info=True,
+            )
+            if search:
+                # Return degraded response: BM25/substring hits only, no layout/clusters
+                data = build_search_fallback(
+                    search=search, sources=sources, error=str(exc)
+                )
+            else:
+                data = {
+                    "nodes": [], "edges": [],
+                    "stats": {
+                        "source_counts": {},
+                        "total_nodes": 0,
+                        "total_edges": 0,
+                        "cluster_count": 0,
+                        "build_ms": 0,
+                        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "partial": True,
+                        "error": str(exc),
+                    },
+                }
     return jsonify(data)
 
 
