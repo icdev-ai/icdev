@@ -1788,6 +1788,15 @@ CREATE TABLE IF NOT EXISTS aisg_wizard_sessions (
     generated_args_json TEXT,
     created_at          TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS genesis_reflex_log (
+    id           TEXT PRIMARY KEY,
+    reflex_name  TEXT NOT NULL,
+    ran_at       TEXT NOT NULL,
+    result_json  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_grl_reflex_name ON genesis_reflex_log (reflex_name);
+CREATE INDEX IF NOT EXISTS idx_grl_ran_at       ON genesis_reflex_log (ran_at);
 """
 
 # ---------------------------------------------------------------------------

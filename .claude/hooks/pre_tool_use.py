@@ -413,6 +413,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_citations",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
+        # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
+        "genesis_reflex_log",
     ]
 
     if tool_name == "Bash":
