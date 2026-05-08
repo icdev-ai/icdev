@@ -4631,6 +4631,8 @@ def create_app() -> Flask:
                 "nodes": kg_result.get("nodes", []) if isinstance(kg_result, dict) else [],
                 "edges": kg_result.get("edges", []) if isinstance(kg_result, dict) else [],
                 "profile": kg_result.get("profile", "internal_awareness") if isinstance(kg_result, dict) else "internal_awareness",
+                "rrf_fusion": kg_result.get("rrf_fusion", False) if isinstance(kg_result, dict) else False,
+                "neighbor_count": kg_result.get("neighbor_count", 0) if isinstance(kg_result, dict) else 0,
             },
             "health_hits": health_hits,
             "suggested_next_actions": suggested,

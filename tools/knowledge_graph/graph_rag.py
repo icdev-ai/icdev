@@ -455,20 +455,28 @@ def _compute_recency_score(created_at: str) -> float:
         return 0.5  # safe default for unparseable timestamps
 
 
+_RRF_K = 60  # RRF constant — larger values reduce the impact of top-rank gaps
+
+
 def _score_nodes(
     nodes: List[Dict[str, Any]],
     edges: List[Dict[str, Any]],
     profile: str,
     query_terms: List[str],
+    neighbor_ids: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
-    """Score and rank nodes using profile weights.
+    """Score and rank nodes using profile weights, neighbor boosting, and RRF fusion.
 
     Score formula:
         score = w_edge * avg_edge_weight
               + w_centrality * centrality
               + w_recency * recency_score
+              + relevance_bonus   (keyword hit, up to +0.3)
+              + embedding_bonus   (semantic similarity, up to +0.2)
+              + neighbor_boost    (+0.3 if node is a 1-hop neighbor of a matched node)
 
-    A text-match relevance bonus is added for direct keyword hits.
+    hybrid_rank is a Reciprocal Rank Fusion (RRF) of BM25 and semantic rankings,
+    with the BM25 score pre-boosted by +0.3 for neighbor nodes.
 
     Args:
         nodes: List of node dicts with id, label, entity_type,
@@ -476,14 +484,20 @@ def _score_nodes(
         edges: List of edge dicts with source_id, target_id, weight.
         profile: Scoring profile name.
         query_terms: Lowercased query tokens.
+        neighbor_ids: Set of node IDs that are 1-hop neighbors of matched nodes
+                      (not directly keyword/semantic matched). These receive a
+                      +0.3 score boost and a pre-boosted BM25 rank for RRF.
 
     Returns:
-        Nodes sorted by score descending, each augmented with 'score'.
+        Nodes sorted by score descending, each augmented with 'score',
+        'hybrid_rank', and 'is_neighbor'.
     """
     weights = SCORING_PROFILES.get(profile, SCORING_PROFILES["exploratory"])
     w_edge = weights["edge_weight"]
     w_centrality = weights["centrality"]
     w_recency = weights["recency"]
+
+    _neighbor_ids = neighbor_ids or set()
 
     # Build per-node average edge weight
     node_edge_weights: Dict[str, List[float]] = {}
@@ -493,6 +507,42 @@ def _score_nodes(
         w = float(edge.get("weight", 1.0))
         node_edge_weights.setdefault(src, []).append(w)
         node_edge_weights.setdefault(tgt, []).append(w)
+
+    # Compute per-node BM25-like and semantic scores for RRF
+    bm25_scores: Dict[str, float] = {}
+    semantic_scores_map: Dict[str, float] = {}
+    for node in nodes:
+        nid = node.get("id", "")
+        label = (node.get("label", "") or "").lower()
+        entity_type = (node.get("entity_type", "") or "").lower()
+        props_str = node.get("properties", "{}")
+        searchable = f"{label} {entity_type} {props_str}".lower()
+
+        # BM25-like term-frequency score; neighbor nodes get +0.3 pre-boost
+        tf_score = float(sum(searchable.count(t) for t in query_terms)) if query_terms else 0.0
+        if nid in _neighbor_ids:
+            tf_score += 0.3
+        bm25_scores[nid] = tf_score
+
+        sem = node.get("_embedding_sim")
+        semantic_scores_map[nid] = float(sem) if sem is not None else 0.0
+
+    # Build RRF scores: 1/(k + bm25_rank) + 1/(k + semantic_rank)
+    bm25_ranked = sorted(nodes, key=lambda n: bm25_scores.get(n.get("id", ""), 0.0), reverse=True)
+    sem_ranked = sorted(nodes, key=lambda n: semantic_scores_map.get(n.get("id", ""), 0.0), reverse=True)
+
+    rrf_scores: Dict[str, float] = {n.get("id", ""): 0.0 for n in nodes}
+    for rank, node in enumerate(bm25_ranked, 1):
+        nid = node.get("id", "")
+        rrf_scores[nid] = rrf_scores.get(nid, 0.0) + 1.0 / (_RRF_K + rank)
+    for rank, node in enumerate(sem_ranked, 1):
+        nid = node.get("id", "")
+        rrf_scores[nid] = rrf_scores.get(nid, 0.0) + 1.0 / (_RRF_K + rank)
+
+    # Normalize RRF scores to [0, 1]
+    max_rrf = max(rrf_scores.values()) if rrf_scores else 1.0
+    if max_rrf > 0:
+        rrf_scores = {k: v / max_rrf for k, v in rrf_scores.items()}
 
     scored = []
     for node in nodes:
@@ -527,8 +577,13 @@ def _score_nodes(
         if embedding_sim is not None:
             embedding_bonus = 0.2 * float(embedding_sim)
 
+        # Neighbor boost: +0.3 for nodes reachable via 1-hop from matched nodes
+        neighbor_boost = 0.3 if nid in _neighbor_ids else 0.0
+
         node_copy = dict(node)
-        node_copy["score"] = round(base_score + relevance_bonus + embedding_bonus, 6)
+        node_copy["score"] = round(base_score + relevance_bonus + embedding_bonus + neighbor_boost, 6)
+        node_copy["hybrid_rank"] = round(rrf_scores.get(nid, 0.0), 6)
+        node_copy["is_neighbor"] = nid in _neighbor_ids
         scored.append(node_copy)
 
     scored.sort(key=lambda n: n["score"], reverse=True)
@@ -974,12 +1029,13 @@ def retrieve(
             for r in nbr_rows:
                 matched_nodes.append(dict(r))
 
-        # Step 4: Score nodes
+        # Step 4: Score nodes (pass neighbor_ids for +0.3 boost and RRF hybrid_rank)
         scored_nodes = _score_nodes(
             matched_nodes,
             all_edges,
             selected_profile,
             query_terms,
+            neighbor_ids=neighbor_ids,
         )
 
         # Step 5: Take top_k
@@ -1016,7 +1072,8 @@ def retrieve(
         )
 
         # Step 9: Return result
-        # Sanitize nodes for JSON serialization (drop internal keys, bytea)
+        # Sanitize nodes for JSON serialization (drop raw binary / internal keys).
+        # hybrid_rank and is_neighbor are computed fields — keep them.
         serializable_nodes = []
         for n in top_nodes:
             sn = {k: v for k, v in n.items()
@@ -1038,6 +1095,8 @@ def retrieve(
             "nodes_matched": total_matched,
             "nodes_returned": len(top_nodes),
             "edges_returned": len(top_edges),
+            "neighbor_count": len(neighbor_ids),
+            "rrf_fusion": True,
             "nodes": serializable_nodes,
             "edges": serializable_edges,
             "compressed": compressed,
