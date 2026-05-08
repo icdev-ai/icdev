@@ -2749,3 +2749,39 @@ projects:
   - key: viz
     title: VIZ
     priority: medium
+- key: smig
+  name: Server Migration Canvas
+  description: >
+    8-step server wizard at /migration-canvas/server-migration/ supporting P2P,
+    P2V, and V2V migrations. Pre-seeded cloud instance catalog (~150 rows) with
+    live API sync when online and air-gap fallback when offline. 13 DB tables,
+    rightsizing engine, CAT1/CAT2 compat checks, drag-reorderable cutover
+    planner, and ERB package export.
+  task_prefix: smig-
+  default_open: true
+  briefs:
+    - "db: mc_cloud_instances + 12 session tables + seed data in init_db.py"
+    - "eng: server_migration.py engine (parse, recommend, compat, rightsizing, sync)"
+    - "bp: 26 blueprint routes in blueprint.py"
+    - "ui: server_wizard.html 8-step wizard"
+    - "infra: constants + nav link + icdev mirror + manifest"
+    - "vv: V&V gate"
+  epics:
+    - key: db
+      title: DB Schema + Seed Data
+      priority: critical
+    - key: eng
+      title: Engine Module (server_migration.py)
+      priority: critical
+    - key: bp
+      title: Blueprint Routes (blueprint.py)
+      priority: critical
+    - key: ui
+      title: Wizard Template (server_wizard.html)
+      priority: high
+    - key: infra
+      title: Infrastructure (constants, mirror, nav, manifest)
+      priority: high
+    - key: vv
+      title: V&V Gate
+      priority: high

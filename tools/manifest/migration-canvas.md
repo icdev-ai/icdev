@@ -22,6 +22,23 @@
 | `build_parallel_timeline` | tools/migration_canvas/network_migration.py | 15–20 conditional milestones from D-30 to D+30 relative to cutover; writes mc_net_parallel_timelines; conditional on BGP/OSPF/MPLS/optic_change flags | session_id | list[dict] |
 | Network Inventory Page | tools/dashboard/templates/migration_canvas/network_inventory.html | Inventory dashboard at /migration-canvas/network-migration/ — 27 devices, EOL chips, config-source chips, active migration links, 5-filter toolbar | (template) | HTML page |
 
+## Server Migration Canvas (SMC)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Server Migration Engine | tools/migration_canvas/server_migration.py | Core engine — inventory parsing, cloud catalog, rightsizing, compat checks, cutover templates, test cases, ERB export, readiness score, live API sync with air-gap fallback | (library) | parse_server_inventory, get_cloud_instances, recommend_target, run_compatibility_checks, compute_rightsizing, generate_default_cutover_steps, build_erb_package, compute_readiness_score, sync_cloud_catalog |
+| `parse_server_inventory` | tools/migration_canvas/server_migration.py | Parse server inventory from CSV, JSON, VMware OVF/XML, or manual form dict; returns canonical inventory + nics + disks + services lists | raw_input (str), fmt (csv/json/vmware_export/manual) | {ok, inventory, nics, disks, services, errors} |
+| `get_cloud_instances` | tools/migration_canvas/server_migration.py | Query mc_cloud_instances catalog with optional filters (min/max_vcpus, ram, govcloud_only, il_required, family, cost_tier, eol_status) | provider (str\|None), filters (dict) | list[dict] — rows from catalog |
+| `recommend_target` | tools/migration_canvas/server_migration.py | Rightsizing engine: effective_vcpu = src × (cpu_util/100) × headroom; scores and ranks top-3 fitting instances | src_specs, migration_type, tgt_platform, perf_data, headroom=1.2 | list[dict] — ranked recommendations |
+| `run_compatibility_checks` | tools/migration_canvas/server_migration.py | Auto-generate CAT1/CAT2/CAT3 checks across 6 categories (compute, os, security, storage, network, licensing); refreshes auto_detected rows | session_id | list[dict] |
+| `compute_rightsizing` | tools/migration_canvas/server_migration.py | Call recommend_target() and write top-3 to mc_srv_rightsizing; return ranked recommendations | session_id | {recommendations, session_id} |
+| `generate_default_cutover_steps` | tools/migration_canvas/server_migration.py | Seed mc_srv_cutover_steps with phase-templated steps for p2p (16), p2v_onprem (13), p2v_cloud (17), v2v_cloud (13), v2v_hypervisor (14) | session_id, migration_type | list[dict] — seeded steps |
+| `generate_default_test_cases` | tools/migration_canvas/server_migration.py | Seed mc_srv_test_cases with 10 default tests: 4 pre-migration, 6 post-migration | session_id | list[dict] |
+| `build_erb_package` | tools/migration_canvas/server_migration.py | Assemble full ERB JSON from all sub-tables; includes classification: "CUI // SP-CTI" | session_id | dict — ERB package |
+| `compute_readiness_score` | tools/migration_canvas/server_migration.py | Weighted 100-pt score (9 components); −20pt per unresolved CAT1; updates mc_srv_sessions.readiness_score | session_id | {score, cat1_blockers, breakdown} |
+| `sync_cloud_catalog` | tools/migration_canvas/server_migration.py | Check connectivity (tools.airgap + socket); if online fetch public AWS/Azure/GCP/OCI pricing APIs and upsert with source='api'; returns airgap status if offline | providers (list\|None), force (bool) | {status, providers_synced, rows_upserted, skipped_reason} |
+| Server Wizard Template | tools/dashboard/templates/migration_canvas/server_wizard.html | 8-step wizard at /migration-canvas/server-migration/ — migration type, inventory, performance, target selection, compat checks, NIC+storage map, cutover planner, ERB & test plan | (template) | HTML 8-step wizard |
+
 ## Migration Intelligence Engine (MI)
 
 | Tool | File | Description | Input | Output |

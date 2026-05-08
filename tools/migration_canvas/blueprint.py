@@ -1788,4 +1788,787 @@ def create_migration_blueprint():
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ══════════════════════════════════════════════════════════════════════
+    # SERVER MIGRATION CANVAS
+    # ══════════════════════════════════════════════════════════════════════
+
+    try:
+        from tools.migration_canvas import server_migration as _sm
+    except Exception as _sm_exc:
+        logger.warning("server_migration import failed: %s", _sm_exc)
+        _sm = None  # type: ignore
+
+    # ── Page Routes ───────────────────────────────────────────────────────
+
+    @bp.route("/server-migration/")
+    @mdc_login_required
+    def mc_srv_index():
+        try:
+            conn = get_connection()
+            rows = list(conn.execute(
+                "SELECT id, src_hostname, src_ip, migration_type, tgt_platform, "
+                "status, readiness_score, created_at FROM mc_srv_sessions ORDER BY created_at DESC LIMIT 100"
+            ))
+            conn.close()
+            sessions = [dict(zip(
+                ["id", "src_hostname", "src_ip", "migration_type", "tgt_platform",
+                 "status", "readiness_score", "created_at"], r
+            )) for r in rows]
+        except Exception:
+            sessions = []
+        return render_template(
+            "migration_canvas/server_wizard.html",
+            page="index",
+            sessions=sessions,
+        )
+
+    @bp.route("/server-migration/new")
+    @mdc_login_required
+    def mc_srv_wizard_new():
+        from tools.migration_canvas.constants import (
+            SERVER_MIGRATION_TYPES, SERVER_PLATFORMS,
+            SERVER_COMPAT_CATEGORIES, CUTOVER_PHASES, MIGRATION_TOOLS,
+        )
+        return render_template(
+            "migration_canvas/server_wizard.html",
+            page="new",
+            sid=None,
+            srv_session=None,
+            SERVER_MIGRATION_TYPES=SERVER_MIGRATION_TYPES,
+            SERVER_PLATFORMS=SERVER_PLATFORMS,
+            SERVER_COMPAT_CATEGORIES=SERVER_COMPAT_CATEGORIES,
+            CUTOVER_PHASES=CUTOVER_PHASES,
+            MIGRATION_TOOLS=MIGRATION_TOOLS,
+        )
+
+    @bp.route("/server-migration/<sid>")
+    @mdc_login_required
+    def mc_srv_wizard(sid):
+        from tools.migration_canvas.constants import (
+            SERVER_MIGRATION_TYPES, SERVER_PLATFORMS,
+            SERVER_COMPAT_CATEGORIES, CUTOVER_PHASES, MIGRATION_TOOLS,
+        )
+        try:
+            conn = get_connection()
+            row = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (sid,)).fetchone()
+            conn.close()
+            if not row:
+                abort(404)
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_sessions WHERE 1=0").description] if False else [
+                "id", "migration_type", "src_hostname", "src_ip", "src_os", "src_hypervisor",
+                "tgt_platform", "tgt_region", "tgt_instance_id", "readiness_score",
+                "status", "classification", "notes", "created_at", "updated_at",
+            ]
+            srv_session = dict(zip(cols, row))
+        except Exception:
+            abort(404)
+        return render_template(
+            "migration_canvas/server_wizard.html",
+            page="wizard",
+            sid=sid,
+            srv_session=srv_session,
+            SERVER_MIGRATION_TYPES=SERVER_MIGRATION_TYPES,
+            SERVER_PLATFORMS=SERVER_PLATFORMS,
+            SERVER_COMPAT_CATEGORIES=SERVER_COMPAT_CATEGORIES,
+            CUTOVER_PHASES=CUTOVER_PHASES,
+            MIGRATION_TOOLS=MIGRATION_TOOLS,
+        )
+
+    # ── Session CRUD ──────────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_create():
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            sid = _sm._session_id()
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute(
+                """INSERT INTO mc_srv_sessions
+                   (id, migration_type, src_hostname, src_ip, src_os, src_hypervisor,
+                    tgt_platform, tgt_region, status, classification, notes, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    sid,
+                    body.get("migration_type", ""),
+                    body.get("src_hostname", ""),
+                    body.get("src_ip", ""),
+                    body.get("src_os", ""),
+                    body.get("src_hypervisor", ""),
+                    body.get("tgt_platform", ""),
+                    body.get("tgt_region", ""),
+                    "discovery",
+                    body.get("classification", "CUI // SP-CTI"),
+                    body.get("notes", ""),
+                    now, now,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            _audit(None, "srv_create_session", sid)
+            return jsonify({"id": sid, "status": "discovery", "created_at": now}), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_get(sid):
+        try:
+            conn = get_connection()
+            row = conn.execute("SELECT * FROM mc_srv_sessions WHERE id=?", (sid,)).fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "not found"}), 404
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_sessions LIMIT 0").description]
+            result = dict(zip(cols, row))
+            conn.close()
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>", methods=["PATCH"])
+    @mdc_login_required
+    def mc_srv_api_update(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            allowed = {
+                "migration_type", "src_hostname", "src_ip", "src_os", "src_hypervisor",
+                "tgt_platform", "tgt_region", "tgt_instance_id", "status",
+                "classification", "notes",
+            }
+            updates = {k: v for k, v in body.items() if k in allowed}
+            if not updates:
+                return jsonify({"error": "no valid fields"}), 400
+            updates["updated_at"] = _sm._now()
+            set_clause = ", ".join(f"{k}=?" for k in updates)
+            vals = list(updates.values()) + [sid]
+            conn = get_connection()
+            conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=?", vals)
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>", methods=["DELETE"])
+    @mdc_login_required
+    def mc_srv_api_delete(sid):
+        try:
+            conn = get_connection()
+            tables = [
+                "mc_srv_erb_metadata", "mc_srv_test_cases", "mc_srv_cutover_steps",
+                "mc_srv_storage_map", "mc_srv_nic_map", "mc_srv_dependencies",
+                "mc_srv_rightsizing", "mc_srv_compat_checks", "mc_srv_performance",
+                "mc_srv_services", "mc_srv_inventory", "mc_srv_sessions",
+            ]
+            for tbl in tables:
+                if tbl == "mc_srv_sessions":
+                    conn.execute(f"DELETE FROM {tbl} WHERE id=?", (sid,))
+                else:
+                    conn.execute(f"DELETE FROM {tbl} WHERE session_id=?", (sid,))
+            conn.commit()
+            conn.close()
+            _audit(None, "srv_delete_session", sid)
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Inventory ─────────────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/inventory", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_inventory_get(sid):
+        try:
+            conn = get_connection()
+            inv_row = conn.execute("SELECT * FROM mc_srv_inventory WHERE session_id=?", (sid,)).fetchone()
+            inv_cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_inventory LIMIT 0").description]
+            inventory = dict(zip(inv_cols, inv_row)) if inv_row else {}
+            nics = [
+                dict(zip([d[0] for d in conn.execute("SELECT * FROM mc_srv_nic_map LIMIT 0").description], r))
+                for r in conn.execute("SELECT * FROM mc_srv_nic_map WHERE session_id=?", (sid,))
+            ]
+            storage = [
+                dict(zip([d[0] for d in conn.execute("SELECT * FROM mc_srv_storage_map LIMIT 0").description], r))
+                for r in conn.execute("SELECT * FROM mc_srv_storage_map WHERE session_id=?", (sid,))
+            ]
+            services = [
+                dict(zip([d[0] for d in conn.execute("SELECT * FROM mc_srv_services LIMIT 0").description], r))
+                for r in conn.execute("SELECT * FROM mc_srv_services WHERE session_id=?", (sid,))
+            ]
+            conn.close()
+            return jsonify({"inventory": inventory, "nics": nics, "storage": storage, "services": services})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/inventory", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_inventory_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            raw = body.get("raw", "")
+            fmt = body.get("fmt", "manual")
+            if raw:
+                parsed = _sm.parse_server_inventory(raw, fmt)
+                if not parsed.get("ok"):
+                    return jsonify(parsed), 400
+                inv = parsed["inventory"]
+                nics = parsed.get("nics", [])
+                disks = parsed.get("disks", [])
+                services = parsed.get("services", [])
+            else:
+                inv = body.get("inventory", {})
+                nics = body.get("nics", [])
+                disks = body.get("disks", [])
+                services = body.get("services", [])
+
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_inventory WHERE session_id=?", (sid,))
+            conn.execute(
+                """INSERT INTO mc_srv_inventory
+                   (session_id, vcpus, ram_gb, disk_count, total_disk_gb, disk_type,
+                    nic_count, primary_nic_gbps, os_family, os_name, os_arch,
+                    bios_type, virtualization_ext, raw_export_json, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    sid,
+                    inv.get("vcpus", 0),
+                    inv.get("ram_gb", 0),
+                    inv.get("disk_count", len(disks)),
+                    inv.get("total_disk_gb", sum(d.get("size_gb", 0) for d in disks)),
+                    inv.get("disk_type", ""),
+                    inv.get("nic_count", len(nics)),
+                    inv.get("primary_nic_gbps", 1.0),
+                    inv.get("os_family", ""),
+                    inv.get("os_name", ""),
+                    inv.get("os_arch", "x86_64"),
+                    inv.get("bios_type", "UEFI"),
+                    inv.get("virtualization_ext", ""),
+                    json.dumps(inv),
+                    now,
+                ),
+            )
+            # Replace NIC map
+            conn.execute("DELETE FROM mc_srv_nic_map WHERE session_id=?", (sid,))
+            for i, nic in enumerate(nics):
+                conn.execute(
+                    "INSERT INTO mc_srv_nic_map (session_id,src_nic,src_speed_gbps,src_mac,src_vlan,src_ip,created_at) VALUES (?,?,?,?,?,?,?)",
+                    (sid, nic.get("name", f"eth{i}"), nic.get("speed_gbps", 1.0),
+                     nic.get("mac", ""), nic.get("vlan", ""), nic.get("ip", ""), now),
+                )
+            # Replace storage map
+            conn.execute("DELETE FROM mc_srv_storage_map WHERE session_id=?", (sid,))
+            for i, disk in enumerate(disks):
+                conn.execute(
+                    "INSERT INTO mc_srv_storage_map (session_id,src_disk,src_size_gb,src_type,src_mount,src_filesystem,src_used_gb,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (sid, disk.get("name", f"disk{i}"), disk.get("size_gb", 0),
+                     disk.get("type", "SSD"), disk.get("mount", ""), disk.get("filesystem", ""),
+                     disk.get("used_gb", 0), now),
+                )
+            # Save services from parsed input
+            if services:
+                conn.execute("DELETE FROM mc_srv_services WHERE session_id=?", (sid,))
+                for svc in services:
+                    conn.execute(
+                        "INSERT INTO mc_srv_services (session_id,service_name,service_role,port,protocol,status,auto_detected,created_at) VALUES (?,?,?,?,?,?,?,?)",
+                        (sid, svc.get("service_name", ""), svc.get("service_role", ""),
+                         svc.get("port", 0), svc.get("protocol", "tcp"),
+                         svc.get("status", "running"), int(svc.get("auto_detected", 0)), now),
+                    )
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "nics": len(nics), "disks": len(disks), "services": len(services)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/services", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_services_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            services = body.get("services", [])
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_services WHERE session_id=?", (sid,))
+            for svc in services:
+                conn.execute(
+                    """INSERT INTO mc_srv_services
+                       (session_id, service_name, service_role, port, protocol, status, auto_detected, created_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (
+                        sid, svc.get("service_name", ""), svc.get("service_role", ""),
+                        svc.get("port", 0), svc.get("protocol", "tcp"),
+                        svc.get("status", "running"), int(svc.get("auto_detected", 0)), now,
+                    ),
+                )
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "services": len(services)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Performance ───────────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/performance", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_perf_get(sid):
+        try:
+            conn = get_connection()
+            row = conn.execute("SELECT * FROM mc_srv_performance WHERE session_id=?", (sid,)).fetchone()
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_performance LIMIT 0").description]
+            result = dict(zip(cols, row)) if row else {}
+            conn.close()
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/performance", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_perf_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_performance WHERE session_id=?", (sid,))
+            conn.execute(
+                """INSERT INTO mc_srv_performance
+                   (session_id, cpu_avg_pct, cpu_peak_pct, ram_avg_pct, ram_peak_pct,
+                    disk_iops_avg, disk_iops_peak, net_mbps_avg, net_mbps_peak,
+                    sample_period_days, source, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    sid,
+                    body.get("cpu_avg_pct", 0), body.get("cpu_peak_pct", 0),
+                    body.get("ram_avg_pct", 0), body.get("ram_peak_pct", 0),
+                    body.get("disk_iops_avg", 0), body.get("disk_iops_peak", 0),
+                    body.get("net_mbps_avg", 0), body.get("net_mbps_peak", 0),
+                    body.get("sample_period_days", 30), body.get("source", "manual"), now,
+                ),
+            )
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Instance Catalog + Recommendations ───────────────────────────────
+
+    @bp.route("/api/server-migration/instance-catalog", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_catalog():
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            filters = {
+                "min_vcpus": request.args.get("min_vcpus", type=int),
+                "max_vcpus": request.args.get("max_vcpus", type=int),
+                "min_ram_gb": request.args.get("min_ram_gb", type=float),
+                "max_ram_gb": request.args.get("max_ram_gb", type=float),
+                "govcloud_only": request.args.get("govcloud_only", "").lower() in ("1", "true"),
+                "family": request.args.get("family"),
+                "cost_tier": request.args.get("cost_tier"),
+                "use_case": request.args.get("use_case"),
+                "eol_status": request.args.get("eol_status"),
+            }
+            provider = request.args.get("provider")
+            instances = _sm.get_cloud_instances(provider, {k: v for k, v in filters.items() if v is not None})
+            return jsonify({"instances": instances, "count": len(instances)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/catalog-sync", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_catalog_sync():
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            providers = body.get("providers")
+            force = bool(body.get("force", False))
+            result = _sm.sync_cloud_catalog(providers=providers, force=force)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/recommend", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_recommend(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            result = _sm.compute_rightsizing(sid)
+            if "error" in result:
+                return jsonify(result), 400
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Compatibility Checks ──────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/compat-check", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_compat_run(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            checks = _sm.run_compatibility_checks(sid)
+            cat1 = [c for c in checks if c.get("severity") == "cat1" and c.get("status") == "fail"]
+            return jsonify({"checks": checks, "cat1_count": len(cat1)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/compat-check", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_compat_list(sid):
+        try:
+            conn = get_connection()
+            rows = list(conn.execute(
+                "SELECT * FROM mc_srv_compat_checks WHERE session_id=? ORDER BY severity, category",
+                (sid,),
+            ))
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_compat_checks LIMIT 0").description]
+            conn.close()
+            checks = [dict(zip(cols, r)) for r in rows]
+            return jsonify({"checks": checks})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/compat-check/<int:cid>/override", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_compat_override(sid, cid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            reason = body.get("reason", "").strip()
+            if not reason:
+                return jsonify({"error": "override reason required"}), 400
+            conn = get_connection()
+            conn.execute(
+                "UPDATE mc_srv_compat_checks SET status='override', override_reason=? WHERE id=? AND session_id=?",
+                (reason, cid, sid),
+            )
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── NIC & Storage Maps ────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/nic-map", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_nic_map(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            nics = body.get("nics", [])
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_nic_map WHERE session_id=?", (sid,))
+            for nic in nics:
+                conn.execute(
+                    """INSERT INTO mc_srv_nic_map
+                       (session_id, src_nic, src_speed_gbps, src_mac, src_vlan, src_ip,
+                        tgt_nic, tgt_vlan, tgt_ip, ip_change, requires_dhcp, created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        sid, nic.get("src_nic", ""), nic.get("src_speed_gbps", 1.0),
+                        nic.get("src_mac", ""), nic.get("src_vlan", ""), nic.get("src_ip", ""),
+                        nic.get("tgt_nic", ""), nic.get("tgt_vlan", ""), nic.get("tgt_ip", ""),
+                        int(nic.get("ip_change", 0)), int(nic.get("requires_dhcp", 0)), now,
+                    ),
+                )
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "nics": len(nics)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/storage-map", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_storage_map(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            disks = body.get("disks", [])
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_storage_map WHERE session_id=?", (sid,))
+            for disk in disks:
+                src_gb = disk.get("src_size_gb", 0) or 0
+                tgt_gb = disk.get("tgt_size_gb", 0) or src_gb
+                pct = round((tgt_gb - src_gb) / src_gb * 100, 1) if src_gb else 0
+                conn.execute(
+                    """INSERT INTO mc_srv_storage_map
+                       (session_id, src_disk, src_size_gb, src_type, src_mount, src_filesystem,
+                        src_used_gb, tgt_volume, tgt_size_gb, tgt_type, tgt_iops_provisioned,
+                        size_increase_pct, created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        sid, disk.get("src_disk", ""), src_gb, disk.get("src_type", "SSD"),
+                        disk.get("src_mount", ""), disk.get("src_filesystem", ""),
+                        disk.get("src_used_gb", 0), disk.get("tgt_volume", ""),
+                        tgt_gb, disk.get("tgt_type", ""), disk.get("tgt_iops_provisioned", 0),
+                        pct, now,
+                    ),
+                )
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "disks": len(disks)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Dependencies ──────────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/dependencies", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_deps_get(sid):
+        try:
+            conn = get_connection()
+            rows = list(conn.execute(
+                "SELECT * FROM mc_srv_dependencies WHERE session_id=? ORDER BY criticality DESC",
+                (sid,),
+            ))
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_dependencies LIMIT 0").description]
+            conn.close()
+            return jsonify({"dependencies": [dict(zip(cols, r)) for r in rows]})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/dependencies", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_deps_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            deps = body.get("dependencies", [])
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_dependencies WHERE session_id=?", (sid,))
+            for dep in deps:
+                conn.execute(
+                    """INSERT INTO mc_srv_dependencies
+                       (session_id, dep_hostname, dep_ip, dep_role, dep_type,
+                        dep_port, criticality, migration_order, created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (
+                        sid, dep.get("dep_hostname", ""), dep.get("dep_ip", ""),
+                        dep.get("dep_role", ""), dep.get("dep_type", "outbound"),
+                        dep.get("dep_port", 0), dep.get("criticality", "medium"),
+                        dep.get("migration_order", 0), now,
+                    ),
+                )
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "dependencies": len(deps)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Cutover Steps ─────────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/cutover-steps", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_cutover_get(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            seed = request.args.get("seed", "").lower() in ("1", "true")
+            if seed:
+                conn = get_connection()
+                existing = conn.execute(
+                    "SELECT COUNT(*) FROM mc_srv_cutover_steps WHERE session_id=?", (sid,)
+                ).fetchone()[0]
+                conn.close()
+                if not existing:
+                    conn2 = get_connection()
+                    row = conn2.execute(
+                        "SELECT migration_type FROM mc_srv_sessions WHERE id=?", (sid,)
+                    ).fetchone()
+                    conn2.close()
+                    mtype = row[0] if row else "p2v_cloud"
+                    _sm.generate_default_cutover_steps(sid, mtype)
+            conn = get_connection()
+            rows = list(conn.execute(
+                "SELECT * FROM mc_srv_cutover_steps WHERE session_id=? ORDER BY phase, seq_no",
+                (sid,),
+            ))
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_cutover_steps LIMIT 0").description]
+            conn.close()
+            return jsonify({"steps": [dict(zip(cols, r)) for r in rows]})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/cutover-steps", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_cutover_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            action = body.get("action", "replace")
+            if action == "seed":
+                mtype = body.get("migration_type", "p2v_cloud")
+                steps = _sm.generate_default_cutover_steps(sid, mtype)
+                return jsonify({"ok": True, "steps": len(steps)})
+            steps = body.get("steps", [])
+            now = _sm._now()
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_cutover_steps WHERE session_id=?", (sid,))
+            for step in steps:
+                conn.execute(
+                    """INSERT INTO mc_srv_cutover_steps
+                       (session_id, phase, seq_no, description, action, verify_action,
+                        rollback_action, owner, duration_min, status, created_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        sid, step.get("phase", "cutover"), step.get("seq_no", 0),
+                        step.get("description", ""), step.get("action", ""),
+                        step.get("verify_action", ""), step.get("rollback_action", ""),
+                        step.get("owner", ""), step.get("duration_min", 15),
+                        step.get("status", "pending"), now,
+                    ),
+                )
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "steps": len(steps)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Test Cases ────────────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/test-cases", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_tests_get(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            seed = request.args.get("seed", "").lower() in ("1", "true")
+            if seed:
+                conn = get_connection()
+                existing = conn.execute(
+                    "SELECT COUNT(*) FROM mc_srv_test_cases WHERE session_id=?", (sid,)
+                ).fetchone()[0]
+                conn.close()
+                if not existing:
+                    _sm.generate_default_test_cases(sid)
+            conn = get_connection()
+            rows = list(conn.execute(
+                "SELECT * FROM mc_srv_test_cases WHERE session_id=? ORDER BY phase, seq_no",
+                (sid,),
+            ))
+            cols = [d[0] for d in conn.execute("SELECT * FROM mc_srv_test_cases LIMIT 0").description]
+            conn.close()
+            return jsonify({"test_cases": [dict(zip(cols, r)) for r in rows]})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/test-cases", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_tests_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            action = body.get("action", "update")
+            if action == "seed":
+                cases = _sm.generate_default_test_cases(sid)
+                return jsonify({"ok": True, "test_cases": len(cases)})
+            # Update a single test result
+            tc_id = body.get("id")
+            if not tc_id:
+                return jsonify({"error": "id required for update"}), 400
+            passed = body.get("passed")
+            actual = body.get("actual_result", "")
+            conn = get_connection()
+            conn.execute(
+                "UPDATE mc_srv_test_cases SET passed=?, actual_result=?, executed_at=? WHERE id=? AND session_id=?",
+                (passed, actual, _sm._now(), tc_id, sid),
+            )
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── ERB & Readiness ───────────────────────────────────────────────────
+
+    @bp.route("/api/server-migration/<sid>/erb", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_erb_get(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            package = _sm.build_erb_package(sid)
+            return jsonify(package)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/erb", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_api_erb_post(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            now = _sm._now()
+            erb_id = body.get("id") or f"erb-{_uuid.uuid4().hex[:10]}"
+            conn = get_connection()
+            conn.execute("DELETE FROM mc_srv_erb_metadata WHERE session_id=?", (sid,))
+            conn.execute(
+                """INSERT INTO mc_srv_erb_metadata
+                   (id, session_id, change_type, risk_tier, business_justification,
+                    technical_summary, impact_summary, rollback_plan, mw_start, mw_end,
+                    go_nogo_criteria, requestor, approver, approval_status, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    erb_id, sid,
+                    body.get("change_type", ""), body.get("risk_tier", "medium"),
+                    body.get("business_justification", ""), body.get("technical_summary", ""),
+                    body.get("impact_summary", ""), body.get("rollback_plan", ""),
+                    body.get("mw_start", ""), body.get("mw_end", ""),
+                    json.dumps(body.get("go_nogo_criteria", [])),
+                    body.get("requestor", ""), body.get("approver", ""),
+                    body.get("approval_status", "pending"), now,
+                ),
+            )
+            conn.execute("UPDATE mc_srv_sessions SET updated_at=? WHERE id=?", (now, sid))
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "id": erb_id})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/readiness", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_api_readiness(sid):
+        if _sm is None:
+            return jsonify({"error": "server_migration module unavailable"}), 503
+        try:
+            result = _sm.compute_readiness_score(sid)
+            result["score"] = result.get("overall", 0)
+            result["cat1_blockers"] = result.get("blockers", [])
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     return bp

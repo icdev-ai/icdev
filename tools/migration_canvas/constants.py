@@ -360,3 +360,58 @@ SOP_TYPES = [
 ]
 
 CLASSIFICATION_LEVELS = ["PUBLIC", "CUI", "SECRET", "TOP SECRET"]
+
+
+# ── Server Migration Constants ──────────────────────────────────────────────
+
+SERVER_MIGRATION_TYPES = [
+    {"value": "p2p",              "label": "P2P — Physical to Physical",       "desc": "Bare-metal server refresh or datacenter consolidation"},
+    {"value": "p2v_onprem",       "label": "P2V — Physical to On-Prem VM",     "desc": "Physical server to VMware, Hyper-V, KVM, Nutanix, or Proxmox"},
+    {"value": "p2v_cloud",        "label": "P2V — Physical to Cloud",          "desc": "Physical server to cloud VM (AWS, Azure, GCP, OCI, IBM)"},
+    {"value": "v2v_cloud",        "label": "V2V — VM to Cloud",                "desc": "On-prem VM to cloud (lift-and-shift via OVA/replication)"},
+    {"value": "v2v_hypervisor",   "label": "V2V — Hypervisor to Hypervisor",   "desc": "Cross-hypervisor migration (e.g. VMware → KVM, Hyper-V → vSphere)"},
+    {"value": "v2v_cloud2cloud",  "label": "V2V — Cloud to Cloud",             "desc": "Cross-cloud migration (e.g. AWS → Azure, GCP → OCI)"},
+]
+
+SERVER_PLATFORMS = [
+    # Cloud
+    {"value": "aws",      "label": "AWS EC2",            "category": "cloud",   "govcloud": True},
+    {"value": "azure",    "label": "Azure VM",           "category": "cloud",   "govcloud": True},
+    {"value": "gcp",      "label": "GCP Compute Engine", "category": "cloud",   "govcloud": False},
+    {"value": "oci",      "label": "OCI Compute",        "category": "cloud",   "govcloud": True},
+    {"value": "ibm",      "label": "IBM Cloud VSI",      "category": "cloud",   "govcloud": True},
+    # On-prem hypervisors
+    {"value": "vmware",   "label": "VMware vSphere",     "category": "onprem",  "govcloud": False},
+    {"value": "hyperv",   "label": "Microsoft Hyper-V",  "category": "onprem",  "govcloud": False},
+    {"value": "kvm",      "label": "KVM / QEMU",         "category": "onprem",  "govcloud": False},
+    {"value": "nutanix",  "label": "Nutanix AHV",        "category": "onprem",  "govcloud": False},
+    {"value": "proxmox",  "label": "Proxmox VE",         "category": "onprem",  "govcloud": False},
+    # Physical
+    {"value": "physical", "label": "Physical Server",    "category": "physical","govcloud": False},
+]
+
+SERVER_COMPAT_CATEGORIES = [
+    {"value": "compute",   "label": "Compute",    "icon": "⚙"},
+    {"value": "storage",   "label": "Storage",    "icon": "💾"},
+    {"value": "network",   "label": "Network",    "icon": "🔌"},
+    {"value": "os",        "label": "OS / Kernel","icon": "🖥"},
+    {"value": "licensing", "label": "Licensing",  "icon": "📋"},
+    {"value": "security",  "label": "Security",   "icon": "🛡"},
+]
+
+CUTOVER_PHASES = [
+    {"value": "pre_migration",  "label": "Pre-Migration",  "badge_class": "badge-info"},
+    {"value": "parallel_run",   "label": "Parallel Run",   "badge_class": "badge-primary"},
+    {"value": "cutover",        "label": "Cutover",        "badge_class": "badge-warning"},
+    {"value": "post_migration", "label": "Post-Migration", "badge_class": "badge-success"},
+    {"value": "rollback",       "label": "Rollback",       "badge_class": "badge-danger"},
+]
+
+MIGRATION_TOOLS = {
+    "p2p":             ["Manual / Clonezilla", "Custom Script", "Acronis Migrate"],
+    "p2v_onprem":      ["VMware vCenter Converter", "StarWind V2V", "Virt-P2V / virt-v2v", "Disk2VHD (Hyper-V)"],
+    "p2v_cloud":       ["AWS Application Migration Service (MGN)", "Azure Migrate", "GCP Migrate for Compute", "OCI Cloud Migrations", "IBM Cloud Migration"],
+    "v2v_cloud":       ["AWS MGN", "Azure Site Recovery", "GCP Migrate", "CloudEndure", "OVA Export + Import"],
+    "v2v_hypervisor":  ["VMware vMotion", "StarWind V2V", "qemu-img convert", "Microsoft SCVMM"],
+    "v2v_cloud2cloud": ["AWS MGN", "Azure Site Recovery", "Zerto", "Velero (K8s)"],
+}

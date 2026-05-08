@@ -364,6 +364,448 @@ def _migrate_network_tables(conn):
         pass  # column already exists
 
 
+# ── Server Migration Schema ──────────────────────────────────────────────────
+
+SERVER_MIGRATION_SCHEMA = """
+-- Cloud / on-prem instance catalog (seeded at init; refreshed from APIs when online)
+CREATE TABLE IF NOT EXISTS mc_cloud_instances (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    provider             TEXT NOT NULL,
+    instance_type        TEXT NOT NULL,
+    family               TEXT NOT NULL DEFAULT '',
+    vcpus                INTEGER NOT NULL DEFAULT 0,
+    ram_gb               REAL NOT NULL DEFAULT 0,
+    local_storage_gb     REAL DEFAULT 0,
+    storage_type         TEXT DEFAULT '',
+    network_gbps         REAL DEFAULT 0,
+    premium_disk_opt     INTEGER DEFAULT 0,
+    cost_tier            TEXT DEFAULT 'medium',
+    govcloud             INTEGER DEFAULT 0,
+    il_support           TEXT DEFAULT '[]',
+    use_case_tags        TEXT DEFAULT '[]',
+    eol_status           TEXT DEFAULT 'active',
+    compliance_certs     TEXT DEFAULT '{}',
+    source               TEXT DEFAULT 'seed',
+    last_refreshed_at    TEXT DEFAULT NULL,
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mc_cloud_instances ON mc_cloud_instances(provider, instance_type);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_provider ON mc_cloud_instances(provider);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_family ON mc_cloud_instances(family);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_vcpus ON mc_cloud_instances(vcpus);
+CREATE INDEX IF NOT EXISTS idx_mc_cloud_instances_ram ON mc_cloud_instances(ram_gb);
+
+-- Server migration session header
+CREATE TABLE IF NOT EXISTS mc_srv_sessions (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES migration_designs(id),
+    migration_type      TEXT NOT NULL DEFAULT 'p2v_cloud',
+    src_hostname        TEXT DEFAULT '',
+    src_ip              TEXT DEFAULT '',
+    src_os              TEXT DEFAULT '',
+    src_os_version      TEXT DEFAULT '',
+    src_hypervisor      TEXT DEFAULT '',
+    src_datacenter      TEXT DEFAULT '',
+    tgt_platform        TEXT NOT NULL DEFAULT '',
+    tgt_region          TEXT DEFAULT '',
+    tgt_account_id      TEXT DEFAULT '',
+    tgt_instance_id     INTEGER REFERENCES mc_cloud_instances(id),
+    readiness_score     REAL DEFAULT 0,
+    status              TEXT DEFAULT 'in_progress',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_sessions_status ON mc_srv_sessions(status);
+
+-- Source server hardware inventory
+CREATE TABLE IF NOT EXISTS mc_srv_inventory (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    vcpus               INTEGER DEFAULT 0,
+    ram_gb              REAL DEFAULT 0,
+    disk_count          INTEGER DEFAULT 0,
+    total_disk_gb       REAL DEFAULT 0,
+    disk_type           TEXT DEFAULT '',
+    nic_count           INTEGER DEFAULT 0,
+    primary_nic_gbps    REAL DEFAULT 0,
+    os_family           TEXT DEFAULT '',
+    os_name             TEXT DEFAULT '',
+    os_arch             TEXT DEFAULT '',
+    bios_type           TEXT DEFAULT '',
+    virtualization_ext  INTEGER DEFAULT 0,
+    raw_export_json     TEXT DEFAULT '{}',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_inventory_session ON mc_srv_inventory(session_id);
+
+-- Installed services / roles on source server
+CREATE TABLE IF NOT EXISTS mc_srv_services (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    service_name        TEXT NOT NULL,
+    service_role        TEXT DEFAULT '',
+    port                INTEGER DEFAULT 0,
+    protocol            TEXT DEFAULT 'tcp',
+    status              TEXT DEFAULT 'running',
+    auto_detected       INTEGER DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_services_session ON mc_srv_services(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_services_role ON mc_srv_services(service_role);
+
+-- Historical performance metrics (manual or imported)
+CREATE TABLE IF NOT EXISTS mc_srv_performance (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    cpu_avg_pct         REAL DEFAULT 0,
+    cpu_peak_pct        REAL DEFAULT 0,
+    ram_avg_pct         REAL DEFAULT 0,
+    ram_peak_pct        REAL DEFAULT 0,
+    disk_iops_avg       REAL DEFAULT 0,
+    disk_iops_peak      REAL DEFAULT 0,
+    net_mbps_avg        REAL DEFAULT 0,
+    net_mbps_peak       REAL DEFAULT 0,
+    sample_period_days  INTEGER DEFAULT 30,
+    source              TEXT DEFAULT 'manual',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_perf_session ON mc_srv_performance(session_id);
+
+-- CAT1/CAT2/CAT3 compatibility check results
+CREATE TABLE IF NOT EXISTS mc_srv_compat_checks (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    category            TEXT NOT NULL DEFAULT 'compute',
+    check_name          TEXT NOT NULL,
+    expected            TEXT DEFAULT '',
+    actual              TEXT DEFAULT '',
+    severity            TEXT DEFAULT 'cat2',
+    status              TEXT DEFAULT 'pending',
+    override_reason     TEXT DEFAULT '',
+    auto_detected       INTEGER DEFAULT 1,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_compat_session ON mc_srv_compat_checks(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_compat_sev ON mc_srv_compat_checks(severity);
+
+-- Rightsizing recommendations (top-3, rank 1 = best fit)
+CREATE TABLE IF NOT EXISTS mc_srv_rightsizing (
+    id                         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id                 TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    recommended_instance_id    INTEGER REFERENCES mc_cloud_instances(id),
+    rank                       INTEGER DEFAULT 1,
+    cost_tier                  TEXT DEFAULT 'medium',
+    rationale                  TEXT DEFAULT '',
+    vcpu_req                   REAL DEFAULT 0,
+    ram_req_gb                 REAL DEFAULT 0,
+    disk_req_gb                REAL DEFAULT 0,
+    iops_req                   REAL DEFAULT 0,
+    net_req_mbps               REAL DEFAULT 0,
+    headroom_factor            REAL DEFAULT 1.2,
+    created_at                 TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_rightsizing_session ON mc_srv_rightsizing(session_id);
+
+-- Inter-server dependencies
+CREATE TABLE IF NOT EXISTS mc_srv_dependencies (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    dep_hostname        TEXT NOT NULL,
+    dep_ip              TEXT DEFAULT '',
+    dep_role            TEXT DEFAULT '',
+    dep_type            TEXT DEFAULT 'inbound',
+    dep_port            INTEGER DEFAULT 0,
+    dep_protocol        TEXT DEFAULT 'tcp',
+    criticality         TEXT DEFAULT 'medium',
+    migration_order     INTEGER DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_deps_session ON mc_srv_dependencies(session_id);
+
+-- NIC-to-NIC mapping
+CREATE TABLE IF NOT EXISTS mc_srv_nic_map (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    src_nic             TEXT NOT NULL,
+    src_speed_gbps      REAL DEFAULT 0,
+    src_mac             TEXT DEFAULT '',
+    src_vlan            TEXT DEFAULT '',
+    src_ip              TEXT DEFAULT '',
+    src_subnet          TEXT DEFAULT '',
+    src_description     TEXT DEFAULT '',
+    tgt_nic             TEXT DEFAULT '',
+    tgt_speed_gbps      REAL DEFAULT 0,
+    tgt_vlan            TEXT DEFAULT '',
+    tgt_ip              TEXT DEFAULT '',
+    ip_change           INTEGER DEFAULT 0,
+    requires_dhcp       INTEGER DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    status              TEXT DEFAULT 'pending',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_nic_session ON mc_srv_nic_map(session_id);
+
+-- Disk/volume mapping
+CREATE TABLE IF NOT EXISTS mc_srv_storage_map (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    src_disk            TEXT NOT NULL,
+    src_size_gb         REAL DEFAULT 0,
+    src_type            TEXT DEFAULT '',
+    src_mount           TEXT DEFAULT '',
+    src_filesystem      TEXT DEFAULT '',
+    src_used_gb         REAL DEFAULT 0,
+    tgt_volume          TEXT DEFAULT '',
+    tgt_size_gb         REAL DEFAULT 0,
+    tgt_type            TEXT DEFAULT '',
+    tgt_iops_provisioned INTEGER DEFAULT 0,
+    size_increase_pct   REAL DEFAULT 0,
+    notes               TEXT DEFAULT '',
+    status              TEXT DEFAULT 'pending',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_storage_session ON mc_srv_storage_map(session_id);
+
+-- Ordered cutover steps (drag-reorderable)
+CREATE TABLE IF NOT EXISTS mc_srv_cutover_steps (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    phase               TEXT NOT NULL DEFAULT 'cutover',
+    seq_no              INTEGER DEFAULT 0,
+    description         TEXT DEFAULT '',
+    action              TEXT DEFAULT '',
+    verify_action       TEXT DEFAULT '',
+    rollback_action     TEXT DEFAULT '',
+    owner               TEXT DEFAULT '',
+    duration_min        INTEGER DEFAULT 5,
+    executed_at         TEXT DEFAULT '',
+    status              TEXT DEFAULT 'pending',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_cutover_session ON mc_srv_cutover_steps(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_cutover_phase ON mc_srv_cutover_steps(phase);
+
+-- Pre/mid/post migration test cases
+CREATE TABLE IF NOT EXISTS mc_srv_test_cases (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id          TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    phase               TEXT NOT NULL DEFAULT 'post',
+    seq_no              INTEGER DEFAULT 0,
+    test_name           TEXT NOT NULL,
+    procedure           TEXT DEFAULT '',
+    expected_result     TEXT DEFAULT '',
+    actual_result       TEXT DEFAULT '',
+    passed              INTEGER DEFAULT NULL,
+    notes               TEXT DEFAULT '',
+    executed_at         TEXT DEFAULT '',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_tests_session ON mc_srv_test_cases(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_tests_phase ON mc_srv_test_cases(phase);
+
+-- ERB/CCB change request metadata
+CREATE TABLE IF NOT EXISTS mc_srv_erb_metadata (
+    id                      TEXT PRIMARY KEY,
+    session_id              TEXT NOT NULL REFERENCES mc_srv_sessions(id),
+    change_type             TEXT DEFAULT 'server_migration',
+    risk_tier               TEXT DEFAULT 'medium',
+    business_justification  TEXT DEFAULT '',
+    technical_summary       TEXT DEFAULT '',
+    impact_summary          TEXT DEFAULT '',
+    rollback_plan           TEXT DEFAULT '',
+    mw_start                TEXT DEFAULT '',
+    mw_end                  TEXT DEFAULT '',
+    go_nogo_criteria        TEXT DEFAULT '{}',
+    requestor               TEXT DEFAULT '',
+    approver                TEXT DEFAULT '',
+    approval_status         TEXT DEFAULT 'draft',
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_erb_session ON mc_srv_erb_metadata(session_id);
+"""
+
+
+def _migrate_server_tables(conn):
+    """Idempotently add server migration tables to existing DBs."""
+    conn.executescript(SERVER_MIGRATION_SCHEMA)
+
+
+# ── Cloud Instance Seed Data ─────────────────────────────────────────────────
+
+_CLOUD_INSTANCE_SEED = [
+    # ── AWS EC2 ──────────────────────────────────────────────────────────────
+    # t3 — burstable general purpose
+    ("aws","t3.nano","t3",2,0.5,0,"EBS-only",5,0,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.micro","t3",2,1,0,"EBS-only",5,0,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.small","t3",2,2,0,"EBS-only",5,0,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.medium","t3",2,4,0,"EBS-only",5,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.large","t3",2,8,0,"EBS-only",5,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.xlarge","t3",4,16,0,"EBS-only",5,1,"medium",1,'["2","4","5"]','["burstable","general"]'),
+    ("aws","t3.2xlarge","t3",8,32,0,"EBS-only",5,1,"medium",1,'["2","4","5"]','["burstable","general"]'),
+    # m6i — general purpose
+    ("aws","m6i.large","m6i",2,8,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.xlarge","m6i",4,16,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.2xlarge","m6i",8,32,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.4xlarge","m6i",16,64,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.8xlarge","m6i",32,128,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["general"]'),
+    ("aws","m6i.16xlarge","m6i",64,256,0,"EBS-only",25,1,"high",1,'["2","4","5"]','["general"]'),
+    # c6i — compute optimized
+    ("aws","c6i.large","c6i",2,4,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.xlarge","c6i",4,8,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.2xlarge","c6i",8,16,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.4xlarge","c6i",16,32,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.8xlarge","c6i",32,64,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["compute"]'),
+    ("aws","c6i.16xlarge","c6i",64,128,0,"EBS-only",25,1,"high",1,'["2","4","5"]','["compute"]'),
+    # r6i — memory optimized
+    ("aws","r6i.large","r6i",2,16,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.xlarge","r6i",4,32,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.2xlarge","r6i",8,64,0,"EBS-only",12.5,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.4xlarge","r6i",16,128,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.8xlarge","r6i",32,256,0,"EBS-only",12.5,1,"high",1,'["2","4","5"]','["memory"]'),
+    ("aws","r6i.16xlarge","r6i",64,512,0,"EBS-only",25,1,"very_high",1,'["2","4","5"]','["memory"]'),
+    # i3 — storage optimized NVMe
+    ("aws","i3.large","i3",2,15.25,475,"NVMe",10,1,"medium",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.xlarge","i3",4,30.5,950,"NVMe",10,1,"medium",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.2xlarge","i3",8,61,1900,"NVMe",10,1,"medium",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.4xlarge","i3",16,122,3800,"NVMe",10,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.8xlarge","i3",32,244,6400,"NVMe",10,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("aws","i3.16xlarge","i3",64,488,12800,"NVMe",25,1,"very_high",1,'["2","4","5"]','["storage"]'),
+    # p3 — GPU
+    ("aws","p3.2xlarge","p3",8,61,0,"EBS-only",10,1,"very_high",0,'["2"]','["gpu"]'),
+    ("aws","p3.8xlarge","p3",32,244,0,"EBS-only",10,1,"very_high",0,'["2"]','["gpu"]'),
+    # ── Azure VMs ─────────────────────────────────────────────────────────────
+    # B — burstable
+    ("azure","Standard_B2s","B",2,4,0,"SSD",0.8,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("azure","Standard_B2ms","B",2,8,0,"SSD",0.8,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("azure","Standard_B4ms","B",4,16,0,"SSD",0.8,1,"low",1,'["2","4","5"]','["burstable","general"]'),
+    ("azure","Standard_B8ms","B",8,32,0,"SSD",0.8,1,"medium",1,'["2","4","5"]','["burstable","general"]'),
+    # D_v5 — general purpose
+    ("azure","Standard_D2s_v5","D_v5",2,8,0,"SSD",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D4s_v5","D_v5",4,16,0,"SSD",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D8s_v5","D_v5",8,32,0,"SSD",12.5,1,"medium",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D16s_v5","D_v5",16,64,0,"SSD",12.5,1,"high",1,'["2","4","5"]','["general"]'),
+    ("azure","Standard_D32s_v5","D_v5",32,128,0,"SSD",16,1,"high",1,'["2","4","5"]','["general"]'),
+    # F_v2 — compute optimized
+    ("azure","Standard_F2s_v2","F_v2",2,4,0,"SSD",5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F4s_v2","F_v2",4,8,0,"SSD",5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F8s_v2","F_v2",8,16,0,"SSD",5,1,"medium",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F16s_v2","F_v2",16,32,0,"SSD",5,1,"high",1,'["2","4","5"]','["compute"]'),
+    ("azure","Standard_F32s_v2","F_v2",32,64,0,"SSD",16,1,"high",1,'["2","4","5"]','["compute"]'),
+    # E_v5 — memory optimized
+    ("azure","Standard_E2s_v5","E_v5",2,16,0,"SSD",3,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E4s_v5","E_v5",4,32,0,"SSD",6.25,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E8s_v5","E_v5",8,64,0,"SSD",6.25,1,"medium",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E16s_v5","E_v5",16,128,0,"SSD",6.25,1,"high",1,'["2","4","5"]','["memory"]'),
+    ("azure","Standard_E32s_v5","E_v5",32,256,0,"SSD",16,1,"high",1,'["2","4","5"]','["memory"]'),
+    # L_v3 — storage optimized NVMe
+    ("azure","Standard_L8s_v3","L_v3",8,64,1920,"NVMe",12.5,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("azure","Standard_L16s_v3","L_v3",16,128,3840,"NVMe",12.5,1,"high",1,'["2","4","5"]','["storage"]'),
+    ("azure","Standard_L32s_v3","L_v3",32,256,7680,"NVMe",16,1,"very_high",1,'["2","4","5"]','["storage"]'),
+    ("azure","Standard_L64s_v3","L_v3",64,512,15360,"NVMe",16,1,"very_high",1,'["2","4","5"]','["storage"]'),
+    # NC_v3 — GPU
+    ("azure","Standard_NC6s_v3","NC_v3",6,112,736,"SSD",24,1,"very_high",0,'["2"]','["gpu"]'),
+    ("azure","Standard_NC12s_v3","NC_v3",12,224,1474,"SSD",24,1,"very_high",0,'["2"]','["gpu"]'),
+    # ── GCP Compute ───────────────────────────────────────────────────────────
+    # e2 — general purpose
+    ("gcp","e2-micro","e2",2,1,0,"SSD",1,0,"low",0,'["2"]','["burstable","general"]'),
+    ("gcp","e2-small","e2",2,2,0,"SSD",1,0,"low",0,'["2"]','["burstable","general"]'),
+    ("gcp","e2-medium","e2",2,4,0,"SSD",2,0,"low",0,'["2"]','["burstable","general"]'),
+    ("gcp","e2-standard-4","e2",4,16,0,"SSD",10,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","e2-standard-8","e2",8,32,0,"SSD",16,0,"medium",0,'["2"]','["general"]'),
+    # n2 — general purpose (newer)
+    ("gcp","n2-standard-2","n2",2,8,0,"SSD",10,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-4","n2",4,16,0,"SSD",10,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-8","n2",8,32,0,"SSD",16,0,"medium",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-16","n2",16,64,0,"SSD",32,0,"high",0,'["2"]','["general"]'),
+    ("gcp","n2-standard-32","n2",32,128,0,"SSD",32,0,"high",0,'["2"]','["general"]'),
+    # c2 — compute optimized
+    ("gcp","c2-standard-4","c2",4,16,0,"SSD",10,0,"medium",0,'["2"]','["compute"]'),
+    ("gcp","c2-standard-8","c2",8,32,0,"SSD",16,0,"medium",0,'["2"]','["compute"]'),
+    ("gcp","c2-standard-16","c2",16,64,0,"SSD",32,0,"high",0,'["2"]','["compute"]'),
+    ("gcp","c2-standard-30","c2",30,120,0,"SSD",32,0,"high",0,'["2"]','["compute"]'),
+    # m1 — memory optimized
+    ("gcp","m1-megamem-96","m1",96,1433.6,0,"SSD",32,0,"very_high",0,'["2"]','["memory"]'),
+    ("gcp","m1-ultramem-40","m1",40,961,0,"SSD",32,0,"very_high",0,'["2"]','["memory"]'),
+    # a2 — GPU
+    ("gcp","a2-highgpu-1g","a2",12,85,0,"SSD",24,0,"very_high",0,'["2"]','["gpu"]'),
+    ("gcp","a2-highgpu-2g","a2",24,170,0,"SSD",24,0,"very_high",0,'["2"]','["gpu"]'),
+    # ── OCI Compute ───────────────────────────────────────────────────────────
+    ("oci","VM.Standard.E4.Flex.1","VM.Standard.E4.Flex",1,8,0,"Block",1,0,"low",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.2","VM.Standard.E4.Flex",2,16,0,"Block",2,0,"low",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.4","VM.Standard.E4.Flex",4,32,0,"Block",4,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.8","VM.Standard.E4.Flex",8,64,0,"Block",8,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard.E4.Flex.16","VM.Standard.E4.Flex",16,128,0,"Block",16,0,"high",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard3.Flex.2","VM.Standard3.Flex",2,16,0,"Block",2,0,"low",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard3.Flex.4","VM.Standard3.Flex",4,32,0,"Block",4,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","VM.Standard3.Flex.8","VM.Standard3.Flex",8,64,0,"Block",8,0,"medium",1,'["2","4","5"]','["general"]'),
+    ("oci","BM.Standard.E4.128","BM.Standard.E4",128,2048,0,"NVMe",64,0,"very_high",1,'["2","4","5"]','["memory","compute"]'),
+    ("oci","VM.GPU3.1","VM.GPU3",6,90,0,"Block",16,0,"very_high",0,'["2"]','["gpu"]'),
+    # ── IBM Cloud ─────────────────────────────────────────────────────────────
+    ("ibm","bx2-2x8","bx2",2,8,0,"Block",4,0,"low",1,'["2","4"]','["general"]'),
+    ("ibm","bx2-4x16","bx2",4,16,0,"Block",8,0,"low",1,'["2","4"]','["general"]'),
+    ("ibm","bx2-8x32","bx2",8,32,0,"Block",16,0,"medium",1,'["2","4"]','["general"]'),
+    ("ibm","mx2-8x64","mx2",8,64,0,"Block",16,0,"medium",1,'["2","4"]','["memory"]'),
+    ("ibm","mx2-16x128","mx2",16,128,0,"Block",16,0,"high",1,'["2","4"]','["memory"]'),
+    ("ibm","cx2-4x8","cx2",4,8,0,"Block",8,0,"medium",1,'["2","4"]','["compute"]'),
+    ("ibm","cx2-8x16","cx2",8,16,0,"Block",16,0,"medium",1,'["2","4"]','["compute"]'),
+    ("ibm","cx2-16x32","cx2",16,32,0,"Block",16,0,"high",1,'["2","4"]','["compute"]'),
+    ("ibm","ox2-16x128","ox2",16,128,0,"Block",16,0,"high",1,'["2","4"]','["memory","compute"]'),
+    ("ibm","gx2-8x64x1v100","gx2",8,64,0,"Block",16,0,"very_high",0,'["2"]','["gpu"]'),
+    # ── On-prem hypervisor templates ──────────────────────────────────────────
+]
+
+# On-prem hypervisor standard templates (7 sizes × 5 providers)
+_ONPREM_PROVIDERS = ["vmware", "hyperv", "kvm", "nutanix", "proxmox"]
+_ONPREM_SIZES = [
+    ("xs",  1,  1,  0, "SSD", 1),
+    ("sm",  2,  4,  0, "SSD", 1),
+    ("md",  4,  8,  0, "SSD", 2),
+    ("lg",  8,  16, 0, "SSD", 4),
+    ("xl",  16, 32, 0, "SSD", 10),
+    ("2xl", 32, 64, 0, "SSD", 10),
+    ("4xl", 64, 128,0, "SSD", 25),
+]
+_ONPREM_LABELS = {"vmware": "VMware vSphere", "hyperv": "Hyper-V", "kvm": "KVM", "nutanix": "Nutanix AHV", "proxmox": "Proxmox VE"}
+
+for _prov in _ONPREM_PROVIDERS:
+    for _sz, _vcpu, _ram, _disk, _st, _net in _ONPREM_SIZES:
+        _CLOUD_INSTANCE_SEED.append((
+            _prov, f"{_prov}_{_sz}", _prov, _vcpu, _ram, _disk, _st, _net, 0,
+            "low", 0, '[]', '["general"]',
+        ))
+
+
+def _seed_cloud_instances(conn):
+    """Seed mc_cloud_instances with ~150 pre-built rows (air-gap baseline).
+
+    Uses INSERT OR IGNORE so existing rows (source='api') are never overwritten.
+    """
+    sql = (
+        "INSERT OR IGNORE INTO mc_cloud_instances "
+        "(provider, instance_type, family, vcpus, ram_gb, local_storage_gb, "
+        "storage_type, network_gbps, premium_disk_opt, cost_tier, govcloud, "
+        "il_support, use_case_tags, source) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'seed')"
+    )
+    for row in _CLOUD_INSTANCE_SEED:
+        try:
+            conn.execute(sql, row)
+        except Exception:
+            pass
+    conn.commit()
+
+
 # ── Seed Templates ──────────────────────────────────────────────────────────
 
 
@@ -892,10 +1334,12 @@ SEED_SOPS = [
 
 
 def init_db():
-    """Create tables and seed templates, snippets, runbooks, and SOPs."""
+    """Create tables and seed templates, snippets, runbooks, SOPs, and cloud instances."""
     with get_connection() as conn:
         conn.executescript(SCHEMA)
         _migrate_network_tables(conn)
+        _migrate_server_tables(conn)
+        _seed_cloud_instances(conn)
 
         # Seed templates
         for tpl in SEED_TEMPLATES:
