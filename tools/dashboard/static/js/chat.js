@@ -1533,7 +1533,7 @@
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
             document.getElementById('new-ctx-title').value = '';
             document.getElementById('new-ctx-prompt').value = '';
-            document.getElementById('new-ctx-intake').checked = false;
+            document.getElementById('new-ctx-intake').checked = true;
         });
 
         // Send message
@@ -1603,10 +1603,26 @@
             refreshContextList();
             createIntakeContext({});
         } else {
-            // Auto-select the first active context so the input is ready immediately
+            // Auto-select: prefer an existing intake (RICOAS) context; if none, create one
             refreshContextList().then(function (contexts) {
                 if (contexts && contexts.length > 0) {
-                    switchContext(contexts[0].context_id);
+                    // Find the first intake context in the list
+                    var intakeCtx = null;
+                    for (var i = 0; i < contexts.length; i++) {
+                        if (isIntakeContext(contexts[i].context_id)) {
+                            intakeCtx = contexts[i];
+                            break;
+                        }
+                    }
+                    if (intakeCtx) {
+                        switchContext(intakeCtx.context_id);
+                    } else {
+                        // Existing contexts are all regular — auto-create intake so RICOAS is available
+                        createIntakeContext({});
+                    }
+                } else {
+                    // No contexts at all — create a fresh intake context
+                    createIntakeContext({});
                 }
             });
         }

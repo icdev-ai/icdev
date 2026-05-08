@@ -1,12 +1,32 @@
 # CUI // SP-CTI
 """System Graph blueprint — routes for the unified Sigma.js graph dashboard page."""
 
+import threading
+import time
+
 from flask import Blueprint, jsonify, render_template, request
 
 from .constants import NODE_TYPES, EDGE_TYPES
 from .graph_builder import build_graph, get_node_detail
 
 bp = Blueprint("system_graph", __name__)
+
+# Simple in-process cache for the full (unfiltered) graph payload — 5 min TTL
+_cache_lock = threading.Lock()
+_cache: dict = {}
+_CACHE_TTL = 300  # seconds
+
+
+def _get_cached_graph(**kwargs) -> dict:
+    cache_key = str(sorted(kwargs.items()))
+    with _cache_lock:
+        entry = _cache.get(cache_key)
+        if entry and (time.time() - entry["ts"]) < _CACHE_TTL:
+            return entry["data"]
+    data = build_graph(**kwargs)
+    with _cache_lock:
+        _cache[cache_key] = {"data": data, "ts": time.time()}
+    return data
 
 
 @bp.route("/system-graph")
@@ -38,13 +58,17 @@ def api_graph():
     sources_param = request.args.get("sources") or None
     sources = sources_param.split(",") if sources_param else None
 
-    data = build_graph(
-        sources=sources,
-        filter_type=filter_type,
-        filter_cluster=filter_cluster,
-        filter_health=filter_health,
-        search=search,
-    )
+    # Only cache the unfiltered full graph; filtered/searched requests bypass cache
+    if not any([filter_type, filter_health, filter_cluster, search, sources]):
+        data = _get_cached_graph()
+    else:
+        data = build_graph(
+            sources=sources,
+            filter_type=filter_type,
+            filter_cluster=filter_cluster,
+            filter_health=filter_health,
+            search=search,
+        )
     return jsonify(data)
 
 
