@@ -111,8 +111,22 @@ Browser → GET /system-graph
 
 ---
 
-## Deferred (Tier 2)
+## MCP Integration
 
-- Evidence/confidence fields on edges (`canvas_kg_edges.confidence`)
-- Blast-radius traversal API (`/api/system-graph/impact/<node_id>`)  
-- Graph-augmented hybrid search (RRF fusion of BM25 + semantic + graph hop distance)
+Three MCP tools registered in `tool_registry.py` and `gap_handlers.py`:
+
+| Tool | Description |
+|------|-------------|
+| `system_graph_get` | Full graph with optional `filter_type`, `filter_health`, `filter_cluster`, `search` params. Caps at 500 nodes for MCP transport. |
+| `system_graph_node_detail` | Per-node detail by `node_id` — label, type, source, health, neighbors. |
+| `system_graph_stats` | High-level stats only: node count, edge count, by-type breakdown. |
+
+---
+
+## Deferred (Tier 2 — Kanban backlog)
+
+| Task ID | Item |
+|---------|------|
+| `sg-t2-01` | Blast-radius traversal API (`/api/system-graph/impact/<node_id>`) — BFS up to 3 hops |
+| `sg-t2-02` | Graph-augmented hybrid search — BM25 + semantic + graph-hop RRF fusion |
+| `sg-t2-03` | Edge confidence from `canvas_kg_edges.confidence` → Sigma edge opacity |
