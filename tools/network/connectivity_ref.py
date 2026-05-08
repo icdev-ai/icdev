@@ -840,3 +840,98 @@ def list_sops_by_category(category: str) -> list[dict[str, Any]]:
         ]
     except Exception:
         return []
+
+
+# ── Pattern Seeder ────────────────────────────────────────────────────────────
+
+def seed_patterns(dry_run: bool = False) -> int:
+    """Seed nc_connectivity_patterns from HYBRID_CONNECTIVITY_PATTERNS. Idempotent (INSERT OR IGNORE)."""
+    import itertools
+    import json as _json
+
+    try:
+        from tools.network.constants import HYBRID_CONNECTIVITY_PATTERNS
+    except ImportError:
+        return 0
+
+    all_csps = ["aws", "azure", "gcp", "oci", "ibm"]
+    rows: list[tuple] = []
+
+    for pattern_key, pdata in HYBRID_CONNECTIVITY_PATTERNS.items():
+        label = pdata.get("label", pattern_key)
+        description = pdata.get("description", "")
+        resiliency = pdata.get("resiliency", "high")
+        cost_tier = pdata.get("cost", "medium")
+        applicable: list[str] = pdata.get("applicable_csps", [])
+
+        # Collect node type hints from any CSP sub-dicts in the pattern
+        node_types: list[str] = []
+        for csp in (applicable or all_csps):
+            csp_data = pdata.get(csp, {})
+            if isinstance(csp_data, dict):
+                for v in csp_data.values():
+                    if isinstance(v, str):
+                        node_types.append(v)
+        # Deduplicate preserving order
+        seen: set[str] = set()
+        node_types = [x for x in node_types if not (x in seen or seen.add(x))]  # type: ignore[func-returns-value]
+
+        is_c2c = "multi_cloud" in pattern_key
+        if is_c2c:
+            # One row per ordered CSP pair
+            for src, dst in itertools.combinations(applicable or all_csps, 2):
+                csp_pair = f"{src}:{dst}"
+                row_id = f"{pattern_key}:{csp_pair}"
+                rows.append((row_id, csp_pair, pattern_key, label, description,
+                              resiliency, cost_tier, "[]", _json.dumps(node_types), "[]"))
+        elif applicable:
+            # One row per on-prem → CSP direction
+            for csp in applicable:
+                csp_pair = f"onprem:{csp}"
+                row_id = f"{pattern_key}:{csp}"
+                rows.append((row_id, csp_pair, pattern_key, label, description,
+                              resiliency, cost_tier, "[]", _json.dumps(node_types), "[]"))
+        else:
+            # Universal / technology pattern — single "multi" row
+            row_id = f"{pattern_key}:multi"
+            rows.append((row_id, "multi", pattern_key, label, description,
+                         resiliency, cost_tier, "[]", _json.dumps(node_types), "[]"))
+
+    if dry_run:
+        return len(rows)
+
+    conn = _get_conn()
+    inserted = 0
+    try:
+        for row in rows:
+            cur = conn.execute(
+                """INSERT OR IGNORE INTO nc_connectivity_patterns
+                   (id, csp_pair, pattern_key, label, description, resiliency, cost_tier,
+                    use_cases, node_types, sop_refs)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                row,
+            )
+            inserted += cur.rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    return inserted
+
+
+if __name__ == "__main__":
+    import argparse, json as _json2, sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+    ap = argparse.ArgumentParser(description="Seed nc_connectivity_patterns table")
+    ap.add_argument("--dry-run", action="store_true", help="Count rows without writing")
+    ap.add_argument("--json", dest="as_json", action="store_true")
+    args = ap.parse_args()
+
+    count = seed_patterns(dry_run=args.dry_run)
+    result = {"rows": count, "dry_run": args.dry_run, "status": "ok"}
+    if args.as_json:
+        print(_json2.dumps(result))
+    else:
+        action = "Would insert" if args.dry_run else "Inserted"
+        print(f"{action} {count} pattern rows into nc_connectivity_patterns")
+        sys.exit(0)

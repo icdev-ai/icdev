@@ -265,3 +265,58 @@ result = import_from_url(
 print(result)
 "
 ```
+
+---
+
+## NDC — SOP Library
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| `seed()` | `tools/network/seed_sops.py` | Seeds 49 approved SOPs into `ndc_sops` (8 categories: physical_connectivity, vpn_configuration, hub_transit, cross_cloud, dod_scca, ipsec_reference, routing_protocols, troubleshooting). Idempotent — deduplicates by title. Calls `init_db()` before seeding. |
+| `get_connectivity_matrix()` | `tools/network/connectivity_ref.py` | Returns full CSP×connection-type reference matrix (AWS/Azure/GCP/OCI/IBM). Each entry includes service name, abbrev, bandwidth, compliance levels (IL4/IL5/FedRAMP), BCAP-compatible flag, MACsec flag, and SOP title list. |
+| `get_onprem_to_csp_patterns()` | `tools/network/connectivity_ref.py` | Returns on-prem→CSP pattern detail (description, pros/cons, diagram, SOP titles, DoD notes) for a given CSP and pattern type (ipsec_vpn, dedicated_private, partner_managed, sdwan_overlay). |
+| `get_csp_to_csp_patterns()` | `tools/network/connectivity_ref.py` | Returns available cloud-to-cloud patterns for a given src/dst CSP pair. Supports IPSec-overlay, SD-WAN, cloud-exchange, and native interconnect. |
+| `get_scca_flow()` | `tools/network/connectivity_ref.py` | Returns ordered SCCA component flow (BCAP→VDSS→VDMS→TCCM) with CSP-specific service mappings and SOP title list. |
+| `seed_patterns()` | `tools/network/connectivity_ref.py` | Seeds `nc_connectivity_patterns` table from `HYBRID_CONNECTIVITY_PATTERNS` constants. Idempotent (INSERT OR IGNORE). 19 rows across 7 pattern types. |
+| `list_sops_by_category()` | `tools/network/connectivity_ref.py` | Proxy for `sops.list_sops()` — returns approved SOPs for a given category with minimal fields (sop_id, title, category, status, version). |
+
+```bash
+# Seed 49 SOPs (idempotent)
+python tools/network/seed_sops.py --json
+python tools/network/seed_sops.py --status approved --json
+
+# Dry-run preview
+python tools/network/seed_sops.py --dry-run --json
+python tools/network/seed_sops.py --dry-run --category dod_scca --json
+
+# Seed connectivity patterns (idempotent, 19 rows)
+python tools/network/connectivity_ref.py --json
+
+# Query matrix
+python -c "
+from tools.network.connectivity_ref import get_connectivity_matrix
+m = get_connectivity_matrix()
+print('CSPs:', list(m.keys()))
+print('AWS DX compliance:', m['aws']['dedicated_private']['compliance_levels'])
+"
+
+# SCCA flow
+python -c "
+from tools.network.connectivity_ref import get_scca_flow
+f = get_scca_flow()
+print('Flow:', f['flow_ascii'])
+print('Components:', [c['key'] for c in f['components']])
+"
+```
+
+### SOP Endpoints (Flask)
+- `GET /network/sops` — SOP Library UI (category/CSP/status filters, expandable step viewer, copy-to-clipboard CLI blocks)
+- `GET /network/api/sops` — JSON list (params: `category`, `status`, `limit`)
+- `GET /network/api/sops/<sop_id>` — Single SOP JSON
+- `GET /network/api/sops/<sop_id>/history` — Approval history JSON
+
+### Connectivity Reference Endpoints (Flask)
+- `GET /network/connectivity` — 4-tab Connectivity Reference UI (Matrix, On-Prem→Cloud, Cloud→Cloud, DoD/SCCA)
+- `GET /network/api/connectivity/matrix` — Full CSP×type matrix JSON
+- `GET /network/api/connectivity/onprem-pattern?csp=<csp>&type=<type>` — Single on-prem→CSP pattern JSON
+- `GET /network/api/connectivity/c2c-patterns?src=<csp>&dst=<csp>` — C2C pattern list JSON
