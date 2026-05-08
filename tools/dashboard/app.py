@@ -104,6 +104,13 @@ if _CANVAS_KG_ENABLED:
         _HAS_CANVAS_KG = True
     except ImportError:
         _HAS_CANVAS_KG = False
+
+# RAG-KG hybrid search blueprint (always enabled)
+try:
+    from tools.knowledge_graph.blueprint import rag_kg_api as _rag_kg_api  # noqa: E402
+    _HAS_RAG_KG_API = True
+except ImportError:
+    _HAS_RAG_KG_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded.
 # Opt-in: default is OFF. Operators set ICDEV_GOVCON_ENABLED=true to enable.
 # Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
@@ -1354,6 +1361,14 @@ def create_app() -> Flask:
     @app.route("/ndc/sops")
     def ndc_sops_page():
         return render_template("ndc_sops.html")
+
+    # ---- RAG-KG Hybrid Search Blueprint ----
+    if _HAS_RAG_KG_API:
+        try:
+            app.register_blueprint(_rag_kg_api, url_prefix="/api/rag-kg")
+            app.logger.info("RAG-KG hybrid search registered at /api/rag-kg")
+        except Exception as exc:
+            app.logger.warning("RAG-KG blueprint failed to register: %s", exc)
 
     # ---- Canvas Knowledge Graph Blueprint ----
     if _HAS_CANVAS_KG:
@@ -7674,6 +7689,164 @@ def create_app() -> Flask:
             return jsonify({"personas": {}})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/chat/upload", methods=["POST"])
+    def api_chat_upload():
+        """Ingest an uploaded document into RAG vector store and Knowledge Graph.
+
+        Multipart form fields:
+            file        — the document (txt, md, pdf, docx)
+            context_id  — chat context (used to tag chunks with project_id)
+            project_id  — optional project scope
+            tenant_id   — optional tenant scope
+        """
+        import hashlib
+        import tempfile
+        import uuid as _uuid
+
+        file = flask_request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"error": "No file provided"}), 400
+
+        context_id = flask_request.form.get("context_id", "")
+        project_id = flask_request.form.get("project_id", "")
+        tenant_id = flask_request.form.get("tenant_id", "")
+        filename = file.filename
+
+        # --- Extract text ---
+        try:
+            ext = Path(filename).suffix.lower()
+            raw_bytes = file.read()
+
+            if ext in (".txt", ".md", ".rst", ".yaml", ".yml", ".json"):
+                text = raw_bytes.decode("utf-8", errors="replace")
+            elif ext == ".pdf":
+                try:
+                    from tools.rag.pdf_provider import extract_text
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                        tmp.write(raw_bytes)
+                        tmp_path = tmp.name
+                    text = extract_text(tmp_path)
+                    Path(tmp_path).unlink(missing_ok=True)
+                except Exception as exc:
+                    return jsonify({"error": f"PDF extraction failed: {exc}"}), 422
+            elif ext == ".docx":
+                try:
+                    import io
+                    import docx
+                    doc = docx.Document(io.BytesIO(raw_bytes))
+                    text = "\n".join(p.text for p in doc.paragraphs)
+                except Exception as exc:
+                    return jsonify({"error": f"DOCX extraction failed: {exc}"}), 422
+            else:
+                text = raw_bytes.decode("utf-8", errors="replace")
+
+            if not text.strip():
+                return jsonify({"error": "Document contains no extractable text"}), 422
+        except Exception as exc:
+            return jsonify({"error": f"Text extraction error: {exc}"}), 500
+
+        doc_id = hashlib.sha256(text[:512].encode()).hexdigest()[:16]
+        rag_chunks_stored = 0
+        kg_result = {}
+
+        # --- RAG ingestion: chunk + embed + upsert ---
+        try:
+            from tools.rag.chunker import chunk_content
+            from tools.rag.vector_store_factory import VectorStoreFactory
+
+            chunks = chunk_content(
+                content=text,
+                source_type="chat_upload",
+                source_id=doc_id,
+                source_table="chat_uploads",
+                metadata={"filename": filename, "context_id": context_id},
+                tenant_id=tenant_id,
+                project_id=project_id,
+                classification="CUI",
+            )
+
+            try:
+                from tools.llm import get_embedding_provider
+                emb_provider = get_embedding_provider()
+            except Exception:
+                emb_provider = None
+
+            store = VectorStoreFactory.create(tenant_id=tenant_id)
+            for chunk in chunks:
+                if not chunk.chunk_id:
+                    chunk.chunk_id = str(_uuid.uuid4())
+                chunk.compute_content_hash()
+                if emb_provider:
+                    try:
+                        chunk.embedding = emb_provider.embed(chunk.content)
+                    except Exception:
+                        pass
+            rag_chunks_stored = store.upsert(chunks)
+        except Exception as exc:
+            app.logger.warning("RAG ingestion failed for upload %s: %s", filename, exc)
+
+        # --- KG ingestion: entity + relationship extraction ---
+        try:
+            from tools.knowledge_graph.ingester import ingest_file as kg_ingest_file
+            with tempfile.NamedTemporaryFile(
+                suffix=Path(filename).suffix or ".txt",
+                mode="w",
+                encoding="utf-8",
+                delete=False,
+            ) as tmp:
+                tmp.write(text)
+                tmp_path = tmp.name
+            kg_result = kg_ingest_file(
+                file_path=tmp_path,
+                project_id=project_id or context_id or "chat",
+                graph_name=Path(filename).stem,
+            )
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception as exc:
+            app.logger.warning("KG ingestion failed for upload %s: %s", filename, exc)
+            kg_result = {"status": "unavailable", "error": str(exc)}
+
+        return jsonify({
+            "status": "ok",
+            "filename": filename,
+            "doc_id": doc_id,
+            "rag_chunks": rag_chunks_stored,
+            "kg": kg_result,
+            "text_length": len(text),
+        })
+
+    @app.route("/api/chat/sources")
+    def api_chat_sources():
+        """List documents indexed into RAG from chat uploads."""
+        tenant_id = flask_request.args.get("tenant_id", "")
+        context_id = flask_request.args.get("context_id", "")
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT source_id,
+                           MAX(json_extract(metadata, '$.filename')) AS filename,
+                           MAX(json_extract(metadata, '$.context_id')) AS context_id,
+                           COUNT(*) AS chunk_count,
+                           MAX(created_at) AS indexed_at
+                    FROM rag_chunks
+                    WHERE source_type = 'chat_upload'
+                      AND (? = '' OR tenant_id = ?)
+                      AND (? = '' OR json_extract(metadata, '$.context_id') = ?)
+                    GROUP BY source_id
+                    ORDER BY indexed_at DESC
+                    LIMIT 50
+                    """,
+                    (tenant_id, tenant_id, context_id, context_id),
+                ).fetchall()
+                return jsonify({
+                    "sources": [dict(r) for r in rows],
+                    "total": len(rows),
+                })
+        except Exception as exc:
+            app.logger.warning("api_chat_sources error: %s", exc)
+            return jsonify({"sources": [], "total": 0})
 
     # ================================================================
     # Phase 69: Codebase Assistant API (D-CA-5 to D-CA-8)

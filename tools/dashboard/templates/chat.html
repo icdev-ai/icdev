@@ -226,11 +226,31 @@
                 <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>
             </div>
 
+            <!-- Document Upload & Index -->
+            <div class="intel-section" id="intel-docs">
+                <h4 class="intel-section-heading intel-section-heading--docs">
+                    Documents
+                    <button id="intel-upload-btn" class="intel-upload-btn" title="Upload document to index into RAG + KG">+ Upload</button>
+                    <input type="file" id="intel-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.yaml,.json,.rst">
+                </h4>
+                <div id="intel-docs-content" class="intel-section-content">
+                    No documents indexed. Upload a file to chat with your documents.
+                </div>
+            </div>
+
             <!-- RAG Knowledge Sources -->
             <div class="intel-section" id="intel-rag">
                 <h4 class="intel-section-heading intel-section-heading--rag">Knowledge Sources (RAG)</h4>
                 <div id="intel-rag-content" class="intel-section-content">
                     No sources retrieved yet. RAG context is automatically injected when you ask questions.
+                </div>
+            </div>
+
+            <!-- Knowledge Graph -->
+            <div class="intel-section" id="intel-kg">
+                <h4 class="intel-section-heading intel-section-heading--kg">Knowledge Graph</h4>
+                <div id="intel-kg-content" class="intel-section-content">
+                    No KG nodes retrieved yet. KG context is injected automatically when relevant nodes are found.
                 </div>
             </div>
 
@@ -376,8 +396,26 @@
     var btnRicoas = document.getElementById('btn-ricoas-toggle');
 
     if (btnGov) btnGov.addEventListener('click', function() { toggleTab('gov'); });
-    if (btnIntel) btnIntel.addEventListener('click', function() { toggleTab('intel'); });
+    if (btnIntel) btnIntel.addEventListener('click', function() {
+        toggleTab('intel');
+        if (window.ICDEV_Chat && window.ICDEV_Chat.refreshDocumentList) {
+            window.ICDEV_Chat.refreshDocumentList();
+        }
+    });
     if (btnRicoas) btnRicoas.addEventListener('click', function() { toggleTab('ricoas'); });
+
+    // Intel tab upload button
+    var intelUploadBtn = document.getElementById('intel-upload-btn');
+    var intelFileInput = document.getElementById('intel-file-input');
+    if (intelUploadBtn && intelFileInput) {
+        intelUploadBtn.addEventListener('click', function() { intelFileInput.click(); });
+        intelFileInput.addEventListener('change', function() {
+            if (intelFileInput.files.length && window.ICDEV_Chat && window.ICDEV_Chat.uploadFiles) {
+                window.ICDEV_Chat.uploadFiles(intelFileInput.files);
+                intelFileInput.value = '';
+            }
+        });
+    }
 
     // Focus mode
     var btnFocus = document.getElementById('btn-focus-mode');

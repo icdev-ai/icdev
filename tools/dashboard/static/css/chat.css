@@ -948,11 +948,29 @@
 .intel-section:last-child { border-bottom: none; margin-bottom: 0; }
 .intel-section-heading { margin: 0 0 5px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .intel-section-heading--rag       { color: #2196f3; }
+.intel-section-heading--kg        { color: #a78bfa; }
+.intel-section-heading--docs      { color: #34d399; display: flex; align-items: center; gap: 6px; }
 .intel-section-heading--bayesian  { color: #00bfa5; }
 .intel-section-heading--quality   { color: #ff9800; }
 .intel-section-heading--genesis   { color: #e040fb; }
 .intel-section-heading--health    { color: #ff5252; }
 .intel-section-content { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; }
+
+.intel-upload-btn {
+    margin-left: auto;
+    background: rgba(52, 211, 153, 0.15);
+    color: #34d399;
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    border-radius: 5px;
+    padding: 2px 8px;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-transform: none;
+    letter-spacing: 0;
+    transition: background 0.15s;
+}
+.intel-upload-btn:hover { background: rgba(52, 211, 153, 0.28); }
 
 /* ===================================================================
    Rich Content
