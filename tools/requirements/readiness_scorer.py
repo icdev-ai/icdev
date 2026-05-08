@@ -166,7 +166,10 @@ def score_readiness(session_id: str, db_path=None) -> dict:
             }
             devsecops_readiness = level_map.get(devsecops_profile["maturity_level"], 0.0)
     except Exception:
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     # --- AI Governance Readiness (D323) ---
     ai_governance_readiness = 0.0
@@ -176,7 +179,10 @@ def score_readiness(session_id: str, db_path=None) -> dict:
         gov_result = score_ai_governance_readiness(session_data.get("project_id", ""), conn=conn)
         ai_governance_readiness = gov_result.get("score", 0.0)
     except (ImportError, Exception):
-        pass
+        try:
+            conn.rollback()
+        except Exception:
+            pass
 
     weights = _load_weights()
     overall = (
