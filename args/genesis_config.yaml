@@ -630,6 +630,21 @@ reflexes:
       - risk
       - execution
 
+  # ── Network Migration Canvas Health Monitor (NMCE — 2026-05-08) ──────────
+
+  migration_canvas:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400   # Daily — sessions and EOL dates change slowly
+    cooldown_minutes: 360     # 6h minimum gap — no rapid re-fire
+    description: "Detect stale migration sessions (>7d no progress), EOL devices with no active migration (<90d to EOL), and protocol plans stuck in draft (>14d). Promotes findings to kanban at >= 0.70 confidence."
+    promotion_threshold: 0.70
+    success_metric:
+      name: findings
+      threshold: 0
+      operator: gte  # 0 = all migrations healthy, >0 = issues surfaced
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

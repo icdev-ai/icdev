@@ -457,3 +457,64 @@ NODE_DESCRIPTIONS: dict[str, str] = {
     "a2a-bridge":           "Agent-to-Agent communication bridge — zero-trust inter-agent messaging",
     "sandbox-exec":         "Isolated sandboxed execution environment for untrusted code or tools",
 }
+
+# ---------------------------------------------------------------------------
+# Enhancement constants — cost estimation, autonomy colors, IaC mapping
+# ---------------------------------------------------------------------------
+
+AUTONOMY_COLORS: dict[int, str] = {
+    0: "#27ae60",   # L0 Human-Operated — green
+    1: "#2ecc71",   # L1 Human-Delegated — light green
+    2: "#f39c12",   # L2 Human-Supervised — amber
+    3: "#e67e22",   # L3 Human-Initiated — orange
+    4: "#e74c3c",   # L4 Fully Autonomous — red
+    5: "#8e44ad",   # L5 Unconstrained — purple (CRITICAL)
+}
+
+AADC_MODEL_COSTS: dict[str, dict] = {
+    # model_id: {input: $/1k-tokens, output: $/1k-tokens, avg_in: tokens, avg_out: tokens}
+    "claude-opus-4":      {"input": 0.015,    "output": 0.075,   "avg_in": 800, "avg_out": 400},
+    "claude-sonnet-4":    {"input": 0.003,    "output": 0.015,   "avg_in": 600, "avg_out": 300},
+    "claude-haiku-4":     {"input": 0.00025,  "output": 0.00125, "avg_in": 500, "avg_out": 250},
+    "gpt-4o":             {"input": 0.005,    "output": 0.015,   "avg_in": 700, "avg_out": 350},
+    "gpt-4o-mini":        {"input": 0.00015,  "output": 0.0006,  "avg_in": 500, "avg_out": 250},
+    "llama-3.3-70b":      {"input": 0.00059,  "output": 0.00079, "avg_in": 600, "avg_out": 300},
+    "llama-3.1-8b":       {"input": 0.00018,  "output": 0.00018, "avg_in": 500, "avg_out": 250},
+    "mistral-large":      {"input": 0.002,    "output": 0.006,   "avg_in": 600, "avg_out": 300},
+    "gemini-1.5-pro":     {"input": 0.00125,  "output": 0.005,   "avg_in": 700, "avg_out": 350},
+    "gemini-1.5-flash":   {"input": 0.000075, "output": 0.0003,  "avg_in": 500, "avg_out": 250},
+    "qwen3-local":        {"input": 0.0,      "output": 0.0,     "avg_in": 600, "avg_out": 300},
+    "ollama-local":       {"input": 0.0,      "output": 0.0,     "avg_in": 600, "avg_out": 300},
+}
+
+# node-type prefix → (terraform_resource, helm_template_type)
+AADC_IAC_NODE_MAP: dict[str, tuple[str, str]] = {
+    "autonomous-agent":  ("kubernetes_deployment", "deployment"),
+    "semi-auto-agent":   ("kubernetes_deployment", "deployment"),
+    "orchestrator":      ("kubernetes_deployment", "deployment"),
+    "sub-agent":         ("kubernetes_deployment", "deployment"),
+    "researcher-agent":  ("kubernetes_deployment", "deployment"),
+    "writer-agent":      ("kubernetes_deployment", "deployment"),
+    "analyst-agent":     ("kubernetes_deployment", "deployment"),
+    "reviewer-agent":    ("kubernetes_deployment", "deployment"),
+    "llm":               ("null_resource",         "configmap"),      # managed model — no deploy
+    "llm-local":         ("helm_release",          "ollama-values"),  # Ollama
+    "embedding-model":   ("kubernetes_deployment", "deployment"),
+    "mcp-server":        ("kubernetes_service",    "service"),
+    "mcp-gateway":       ("kubernetes_service",    "service"),
+    "tool-chain":        ("kubernetes_deployment", "deployment"),
+    "function-caller":   ("kubernetes_deployment", "deployment"),
+    "code-executor":     ("kubernetes_deployment", "deployment"),
+    "vector-db":         ("helm_release",          "vector-db-values"),
+    "doc-store":         ("kubernetes_deployment", "deployment"),
+    "knowledge-graph":   ("kubernetes_deployment", "deployment"),
+    "guardrail":         ("kubernetes_deployment", "deployment"),
+    "pii-detector":      ("kubernetes_deployment", "deployment"),
+    "trusted-monitor":   ("kubernetes_deployment", "deployment"),
+    "hitl-gate":         ("kubernetes_deployment", "deployment"),
+    "audit-logger":      ("kubernetes_deployment", "deployment"),
+    "gpu-cluster":       ("null_resource",         "configmap"),      # infra-provisioned
+    "model-registry":    ("kubernetes_deployment", "deployment"),
+    "trace-collector":   ("helm_release",          "otel-values"),
+    "metrics-emitter":   ("kubernetes_deployment", "deployment"),
+}

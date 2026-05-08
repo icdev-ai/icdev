@@ -911,6 +911,44 @@ def _seed_solution_packs(conn) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Enhancement schema — design links + cost estimates (added post-Phase 10)
+# ---------------------------------------------------------------------------
+
+ENHANCEMENT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS aadc_design_links (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    src_design_id   TEXT NOT NULL REFERENCES aadc_designs(id),
+    tgt_design_id   TEXT NOT NULL REFERENCES aadc_designs(id),
+    link_type       TEXT DEFAULT 'calls',
+    link_label      TEXT DEFAULT '',
+    auto_detected   INTEGER DEFAULT 0,
+    metadata_json   TEXT DEFAULT '{}',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(src_design_id, tgt_design_id, link_type)
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_links_src ON aadc_design_links(src_design_id);
+CREATE INDEX IF NOT EXISTS idx_aadc_links_tgt ON aadc_design_links(tgt_design_id);
+
+CREATE TABLE IF NOT EXISTS aadc_cost_estimates (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id       TEXT NOT NULL REFERENCES aadc_designs(id),
+    model_breakdown TEXT DEFAULT '{}',
+    total_per_run   REAL DEFAULT 0,
+    total_monthly   REAL DEFAULT 0,
+    runs_per_month  INTEGER DEFAULT 1000,
+    optimization_hints TEXT DEFAULT '[]',
+    generated_at    TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_cost_design ON aadc_cost_estimates(design_id);
+"""
+
+
+def _migrate_aadc_enhancement_tables(conn) -> None:
+    conn.executescript(ENHANCEMENT_SCHEMA)
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
 
@@ -919,6 +957,7 @@ def init_db() -> None:
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
+        _migrate_aadc_enhancement_tables(conn)
         _seed_templates(conn)
         _seed_snippets(conn)
         _seed_solution_packs(conn)

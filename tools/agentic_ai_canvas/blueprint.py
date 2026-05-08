@@ -56,6 +56,12 @@ from tools.agentic_ai_canvas.solution_packs import (
     SOLUTION_PACK_RISKS, SOLUTION_PACK_ATLAS,
     recommend_pack,
 )
+try:
+    from tools.agentic_ai_canvas.cost_estimator import estimate_design_cost as _estimate_cost
+    from tools.agentic_ai_canvas.iac_generator import generate_deploy_bundle as _gen_iac
+except ImportError:
+    _estimate_cost = None
+    _gen_iac = None
 
 logger = logging.getLogger(__name__)
 
@@ -2496,6 +2502,187 @@ def quickstart_recommend():
             "description": p["description"],
             "autonomy_max": p["autonomy_max"],
             "badges": p["badges"],
+        })
+    finally:
+        conn.close()
+
+
+# ── Enhancement routes ── cost estimation, IaC, design links, impact graph ──
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/cost-estimate", methods=["POST"])
+def aadc_api_cost_estimate(did):
+    if not _estimate_cost:
+        return jsonify({"error": "cost estimator not available"}), 503
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (did,)).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+        graph = json.loads(row["graph_json"] or '{"nodes":[],"edges":[]}')
+        runs = request.json.get("runs_per_month", 1000) if request.is_json else 1000
+        result = _estimate_cost(graph, runs_per_month=int(runs))
+        conn.execute(
+            "DELETE FROM aadc_cost_estimates WHERE design_id=?", (did,)
+        )
+        conn.execute(
+            "INSERT INTO aadc_cost_estimates "
+            "(design_id, model_breakdown, total_per_run, total_monthly, runs_per_month, optimization_hints) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                did,
+                json.dumps(result["model_breakdown"]),
+                result["total_per_run"],
+                result["total_monthly"],
+                result["runs_per_month"],
+                json.dumps(result["optimization_hints"]),
+            ),
+        )
+        conn.commit()
+        return jsonify(result)
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/iac", methods=["GET"])
+def aadc_api_iac(did):
+    if not _gen_iac:
+        return jsonify({"error": "IaC generator not available"}), 503
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT name, graph_json FROM aadc_designs WHERE id=?", (did,)).fetchone()
+        if not row:
+            return jsonify({"error": "design not found"}), 404
+        name = row["name"] or did
+        graph = json.loads(row["graph_json"] or '{"nodes":[],"edges":[]}')
+        csp = request.args.get("csp", "auto")
+        bundle = _gen_iac(graph, name, target_csp=csp)
+        import re as _re
+        safe = _re.sub(r"[^a-z0-9\-]", "-", name.lower())[:40]
+        return Response(
+            bundle["zip_bytes"],
+            mimetype="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{safe}-iac.zip"'},
+        )
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/links", methods=["GET", "POST"])
+def aadc_api_design_links(did):
+    conn = _conn()
+    try:
+        if request.method == "GET":
+            rows = conn.execute(
+                "SELECT * FROM aadc_design_links WHERE src_design_id=? OR tgt_design_id=?",
+                (did, did),
+            ).fetchall()
+            return jsonify([dict(r) for r in rows])
+        data = request.get_json(force=True) or {}
+        tgt = data.get("tgt_design_id", "")
+        if not tgt:
+            return jsonify({"error": "tgt_design_id required"}), 400
+        link_type = data.get("link_type", "calls")
+        label = data.get("link_label", "")
+        conn.execute(
+            "INSERT OR REPLACE INTO aadc_design_links "
+            "(src_design_id, tgt_design_id, link_type, link_label, auto_detected) "
+            "VALUES (?,?,?,?,0)",
+            (did, tgt, link_type, label),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM aadc_design_links WHERE src_design_id=? AND tgt_design_id=? AND link_type=?",
+            (did, tgt, link_type),
+        ).fetchone()
+        return jsonify(dict(row)), 201
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/api/agentic-ai/designs/<did>/links/<int:lid>", methods=["DELETE"])
+def aadc_api_design_link_delete(did, lid):
+    conn = _conn()
+    try:
+        conn.execute(
+            "DELETE FROM aadc_design_links WHERE id=? AND src_design_id=?", (lid, did)
+        )
+        conn.commit()
+        return jsonify({"ok": True})
+    finally:
+        conn.close()
+
+
+@aadc_bp.route("/impact-graph")
+def aadc_impact_graph_page():
+    return render_template("agentic_ai_canvas/impact_graph.html")
+
+
+@aadc_bp.route("/api/agentic-ai/impact-graph", methods=["GET"])
+def aadc_api_impact_graph():
+    conn = _conn()
+    try:
+        designs = conn.execute(
+            "SELECT id, name, autonomy_max FROM aadc_designs ORDER BY updated_at DESC"
+        ).fetchall()
+        links = conn.execute("SELECT * FROM aadc_design_links").fetchall()
+
+        # Build adjacency for blast-radius DFS
+        children: dict[str, list[str]] = {}
+        for lnk in links:
+            src = lnk["src_design_id"]
+            tgt = lnk["tgt_design_id"]
+            children.setdefault(src, []).append(tgt)
+
+        def _blast_radius(did: str) -> int:
+            visited: set[str] = set()
+            stack = list(children.get(did, []))
+            while stack:
+                cur = stack.pop()
+                if cur in visited:
+                    continue
+                visited.add(cur)
+                stack.extend(children.get(cur, []))
+            return len(visited)
+
+        # Latest assessment score per design
+        scores: dict[str, float] = {}
+        for row in conn.execute(
+            "SELECT design_id, MAX(score) as score FROM aadc_assessments GROUP BY design_id"
+        ).fetchall():
+            scores[row["design_id"]] = row["score"]
+
+        nodes = []
+        for d in designs:
+            did = d["id"]
+            nodes.append({
+                "id": did,
+                "label": d["name"],
+                "score": scores.get(did, 0),
+                "autonomy_level": f"L{d['autonomy_max']}",
+                "blast_radius": _blast_radius(did),
+            })
+
+        edges = [
+            {
+                "source": lnk["src_design_id"],
+                "target": lnk["tgt_design_id"],
+                "link_type": lnk["link_type"],
+                "label": lnk["link_label"] or lnk["link_type"],
+            }
+            for lnk in links
+        ]
+
+        high_risk = sum(1 for n in nodes if n["blast_radius"] > 2 or n["score"] < 50)
+        max_br = max((n["blast_radius"] for n in nodes), default=0)
+
+        return jsonify({
+            "nodes": nodes,
+            "edges": edges,
+            "risk_summary": {
+                "total_designs": len(nodes),
+                "high_risk_count": high_risk,
+                "max_blast_radius": max_br,
+            },
         })
     finally:
         conn.close()
