@@ -309,6 +309,47 @@ CREATE INDEX IF NOT EXISTS idx_mc_net_tests_session ON mc_net_test_cases(session
 CREATE INDEX IF NOT EXISTS idx_mc_net_tests_phase ON mc_net_test_cases(phase);
 CREATE INDEX IF NOT EXISTS idx_mc_net_cutover_session ON mc_net_cutover_steps(session_id);
 CREATE INDEX IF NOT EXISTS idx_mc_net_erb_session ON mc_net_erb_metadata(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_ai_sessions (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT 'engineer',
+    message     TEXT NOT NULL,
+    model_used  TEXT DEFAULT '',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_ai_session ON mc_net_ai_sessions(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_protocol_plans (
+    id                    TEXT PRIMARY KEY,
+    session_id            TEXT NOT NULL,
+    protocol              TEXT NOT NULL,
+    src_config_json       TEXT DEFAULT '{}',
+    tgt_config_json       TEXT DEFAULT '{}',
+    migration_steps_json  TEXT DEFAULT '[]',
+    risk_level            TEXT DEFAULT 'medium',
+    ai_notes              TEXT DEFAULT '',
+    status                TEXT DEFAULT 'draft',
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(session_id, protocol)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_proto_session ON mc_net_protocol_plans(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
+    id                   TEXT PRIMARY KEY,
+    session_id           TEXT NOT NULL,
+    milestone_name       TEXT NOT NULL,
+    description          TEXT DEFAULT '',
+    days_before_cutover  INTEGER DEFAULT 0,
+    phase                TEXT NOT NULL DEFAULT 'pre_migration',
+    owner                TEXT DEFAULT '',
+    duration_hours       INTEGER DEFAULT 1,
+    status               TEXT DEFAULT 'planned',
+    notes                TEXT DEFAULT '',
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_timeline_session ON mc_net_parallel_timelines(session_id);
 """
 
 
