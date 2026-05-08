@@ -60,6 +60,7 @@ VALID_EVENT_TYPES = (
     "gap_detected",
     "ambiguity_detected",
     "readiness_scored",
+    "complexity_scored",
     "decomposition_generated",
     "document_uploaded",
     "document_extracted",
