@@ -41,7 +41,7 @@ LAYOUT_K = 2.0
 LAYOUT_ITERATIONS = 50
 
 # Maximum nodes to return without filtering (above this, cluster summary mode)
-MAX_FULL_NODES = 2000
+MAX_FULL_NODES = 5000
 
 # Graph sources federated
 GRAPH_SOURCES = [

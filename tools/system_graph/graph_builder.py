@@ -127,12 +127,10 @@ def _load_awareness_kg() -> tuple[list[dict], list[dict]]:
                 r["id"], r.get("label") or r["id"], ntype,
                 source="awareness_kg", props=props, health=health,
             ))
-        # edges for this graph (column is 'relationship', not 'edge_type')
+        # Load all kg_edges — filter by node membership after (awareness nodes may link via any graph)
         try:
             erows = conn.execute(
-                "SELECT source_id, target_id, relationship FROM kg_edges "
-                "WHERE graph_id = %s LIMIT 15000",
-                (_AWARENESS_GRAPH_ID,)
+                "SELECT source_id, target_id, relationship FROM kg_edges LIMIT 20000"
             ).fetchall()
             for er in erows:
                 er = dict(er) if hasattr(er, "keys") else {
@@ -156,12 +154,13 @@ def _load_canvas_kg() -> tuple[list[dict], list[dict]]:
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
+        # Use node_id as the graph node ID (canvas_kg_edges references node_id, not id)
         rows = conn.execute(
-            "SELECT id, canvas, node_type, label, metadata_json FROM canvas_kg_nodes LIMIT 3000"
+            "SELECT node_id, canvas, node_type, label, metadata_json FROM canvas_kg_nodes LIMIT 3000"
         ).fetchall()
         for r in rows:
             r = dict(r) if hasattr(r, "keys") else {
-                "id": r[0], "canvas": r[1], "node_type": r[2], "label": r[3], "metadata_json": r[4]
+                "node_id": r[0], "canvas": r[1], "node_type": r[2], "label": r[3], "metadata_json": r[4]
             }
             props = {"canvas": r.get("canvas")}
             if r.get("metadata_json"):
@@ -170,14 +169,15 @@ def _load_canvas_kg() -> tuple[list[dict], list[dict]]:
                 except Exception:
                     pass
             ntype = r.get("node_type") or "canvas_module"
-            nodes.append(_node(r["id"], r.get("label") or r["id"], ntype,
+            nid = r["node_id"] or r.get("id") or "?"
+            nodes.append(_node(nid, r.get("label") or nid, ntype,
                                source="canvas_kg", props=props))
         erows = conn.execute(
-            "SELECT id, source_id, target_id, edge_type FROM canvas_kg_edges LIMIT 5000"
+            "SELECT source_id, target_id, edge_type FROM canvas_kg_edges LIMIT 5000"
         ).fetchall()
         for er in erows:
             er = dict(er) if hasattr(er, "keys") else {
-                "id": er[0], "source_id": er[1], "target_id": er[2], "edge_type": er[3]
+                "source_id": er[0], "target_id": er[1], "edge_type": er[2]
             }
             edges.append(_edge(er["source_id"], er["target_id"], er.get("edge_type") or "related"))
     except Exception:
@@ -211,15 +211,17 @@ def _load_kanban_deps() -> tuple[list[dict], list[dict]]:
                                "task_type": r.get("task_type"), "task_id": r["id"]},
                                health=health))
             task_ids.add(r["id"])
-        # dependency edges
+        # dependency edges (column is depends_on_id, not depends_on_task_id)
         dep_rows = conn.execute(
-            "SELECT task_id, depends_on_task_id FROM kanban_task_deps"
+            "SELECT task_id, depends_on_id FROM kanban_task_deps"
         ).fetchall()
         for dr in dep_rows:
-            dr = dict(dr) if hasattr(dr, "keys") else {"task_id": dr[0], "depends_on_task_id": dr[1]}
-            if dr["task_id"] in task_ids and dr["depends_on_task_id"] in task_ids:
-                src = _nid("kanban", dr["depends_on_task_id"])
-                dst = _nid("kanban", dr["task_id"])
+            dr = dict(dr) if hasattr(dr, "keys") else {"task_id": dr[0], "depends_on_id": dr[1]}
+            tid = dr.get("task_id") or dr.get("task_id")
+            did = dr.get("depends_on_id")
+            if tid in task_ids and did in task_ids:
+                src = _nid("kanban", did)
+                dst = _nid("kanban", tid)
                 edges.append(_edge(src, dst, "depends_on"))
     except Exception:
         pass
@@ -449,9 +451,28 @@ def build_graph(
     }
 
 
+_detail_cache: dict = {}
+_detail_cache_lock = __import__("threading").Lock()
+_DETAIL_CACHE_TTL = 300
+
+
+def _get_or_build_graph() -> dict:
+    """Return cached full graph, building it if needed. Shares cache with blueprint layer."""
+    import time
+    key = "[]"
+    with _detail_cache_lock:
+        entry = _detail_cache.get(key)
+        if entry and (time.time() - entry["ts"]) < _DETAIL_CACHE_TTL:
+            return entry["data"]
+    data = build_graph()
+    with _detail_cache_lock:
+        _detail_cache[key] = {"data": data, "ts": __import__("time").time()}
+    return data
+
+
 def get_node_detail(node_id: str) -> dict | None:
     """Return full node info + 1-hop neighbors for sidebar detail panel."""
-    graph = build_graph()
+    graph = _get_or_build_graph()
     node_map = {n["id"]: n for n in graph["nodes"]}
     node = node_map.get(node_id)
     if not node:
