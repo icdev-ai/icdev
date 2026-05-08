@@ -10567,6 +10567,11 @@ Respond with ONLY this JSON (no other text):
         s = _gs(sop_id)
         return (jsonify(s), 200) if s else (jsonify({"error": "not found"}), 404)
 
+    @bp.route("/api/sops/<sop_id>/history")
+    def nc_api_sop_history(sop_id):
+        from tools.network.sops import get_approval_history as _gah
+        return jsonify(_gah(sop_id))
+
     # ── Connectivity Reference ────────────────────────────────────────────
 
     @bp.route("/connectivity")

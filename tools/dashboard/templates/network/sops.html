@@ -309,12 +309,12 @@ function loadHistory(sopId) {
   const el = document.getElementById('history-content-' + sopId);
   if (!el || el.dataset.loaded) return;
   el.dataset.loaded = '1';
-  fetch('/network/api/sops/' + sopId)
+  fetch('/network/api/sops/' + sopId + '/history')
     .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (!data.sop_id) { el.textContent = 'Not found.'; return; }
+    .then(function(rows) {
+      if (!rows || !rows.length) { el.textContent = 'No history entries.'; return; }
       el.innerHTML = '<table class="history-table" style="margin-top:8px;"><tr><th style="color:#78909c;">Actor</th><th style="color:#78909c;">Action</th><th style="color:#78909c;">Comment</th><th style="color:#78909c;">Time</th></tr>' +
-        (data._history || []).map(function(h) {
+        rows.map(function(h) {
           return '<tr><td style="color:#eceff1;">' + h.actor + '</td><td style="color:#4fc3f7;">' + h.action + '</td><td style="color:#90a4ae;">' + (h.comment||'') + '</td><td style="color:#546e7a;">' + (h.timestamp||'').substring(0,19) + '</td></tr>';
         }).join('') + '</table>';
     });
