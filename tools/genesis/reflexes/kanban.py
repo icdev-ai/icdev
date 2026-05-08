@@ -866,6 +866,37 @@ def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[s
     return removed
 
 
+def _capture_diff_stats(task_id: str) -> dict:
+    """Return files_changed/lines_added/lines_removed for kanban/{task_id} vs main.
+
+    Parses the last line of `git diff --stat main..kanban/{task_id}` which is:
+      "N files changed, M insertions(+), L deletions(-)"
+    Returns zeros on any error (non-blocking, best-effort).
+    """
+    import subprocess as _sp
+    import re as _re
+
+    branch = f"kanban/{task_id}"
+    default = {"files_changed": 0, "lines_added": 0, "lines_removed": 0}
+    try:
+        result = _sp.run(
+            ["git", "diff", "--stat", f"{_default_branch()}..{branch}"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return default
+        summary = result.stdout.strip().splitlines()[-1]
+        fc = int((_re.search(r"(\d+) file", summary) or type("", (), {"group": lambda *_: "0"})()).group(1))
+        la = int((_re.search(r"(\d+) insertion", summary) or type("", (), {"group": lambda *_: "0"})()).group(1))
+        lr = int((_re.search(r"(\d+) deletion", summary) or type("", (), {"group": lambda *_: "0"})()).group(1))
+        return {"files_changed": fc, "lines_added": la, "lines_removed": lr}
+    except Exception:
+        return default
+
+
 def _cleanup_worktree(task_id: str):
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
@@ -893,7 +924,24 @@ def _cleanup_worktree(task_id: str):
     except Exception as exc:
         logger.warning("Worktree remove failed for %s: %s", task_id, exc)
 
+    # Capture diff stats before the branch is deleted
+    diff_stats = _capture_diff_stats(task_id)
+
     merged_ok = _merge_worktree_to_main(task_id)
+
+    # Persist change metrics to kanban_tasks (best-effort)
+    if diff_stats.get("files_changed") or diff_stats.get("lines_added") or diff_stats.get("lines_removed"):
+        try:
+            _ds_conn = get_connection()
+            _ds_conn.execute(
+                "UPDATE kanban_tasks SET files_changed = ?, lines_added = ?, lines_removed = ? "
+                "WHERE id = ?",
+                (diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"], task_id),
+            )
+            _ds_conn.commit()
+            _ds_conn.close()
+        except Exception as _ds_exc:
+            logger.warning("diff_stats write failed for %s: %s", task_id, _ds_exc)
 
     try:
         # Only delete the branch if merge succeeded; otherwise PRESERVE

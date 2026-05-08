@@ -207,12 +207,19 @@ def list_tasks():
             "op.lens_name AS oracle_lens, "
             "op.prediction_type AS oracle_prediction_type, "
             "dep.title  AS depends_on_title, "
-            "dep.status AS depends_on_status "
+            "dep.status AS depends_on_status, "
+            "kv.phantom_ratio AS phantom_ratio "
             "FROM kanban_tasks kt "
             "LEFT JOIN oracle_predictions op "
             "ON kt.source_prediction_id = op.id "
             "LEFT JOIN kanban_tasks dep "
             "ON kt.depends_on_task_id = dep.id "
+            "LEFT JOIN kanban_verifications kv "
+            "ON kv.id = ("
+            "  SELECT id FROM kanban_verifications "
+            "  WHERE task_id = kt.id "
+            "  ORDER BY verified_at DESC LIMIT 1"
+            ") "
         )
         if status_filter:
             rows = conn.execute(
@@ -467,8 +474,9 @@ def create_task():
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, "
             "status, scheduled_at, executor_type, depends_on_task_id, "
+            "start_date, target_date, "
             "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 task_id,
                 data["title"],
@@ -479,6 +487,8 @@ def create_task():
                 data.get("scheduled_at"),
                 data.get("executor_type", "claude_cli"),
                 depends_on or (dep_ids[0] if dep_ids else None),
+                data.get("start_date"),
+                data.get("target_date"),
                 now,
                 now,
             ),
@@ -536,6 +546,8 @@ def update_task(task_id):
             "scheduled_at",
             "executor_type",
             "depends_on_task_id",
+            "start_date",
+            "target_date",
         )
         # Multi-parent deps: validate via DFS before any DB writes
         new_dep_ids: list = data.get("depends_on_task_ids") or []
@@ -1009,6 +1021,52 @@ def move_task(task_id):
         except Exception:
             pass  # SSE is best-effort
         return jsonify({"status": "moved", "id": task_id, "new_status": new_status})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/comments", methods=["GET"])
+def list_comments(task_id):
+    """Return comments for a task, oldest first."""
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+            return jsonify({"error": "Task not found"}), 404
+        try:
+            rows = conn.execute(
+                "SELECT id, author, body, created_at FROM kanban_task_comments "
+                "WHERE task_id = ? ORDER BY created_at ASC",
+                (task_id,),
+            ).fetchall()
+            return jsonify({"comments": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"comments": []})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/comments", methods=["POST"])
+def add_comment(task_id):
+    """Add a comment to a task."""
+    data = request.get_json(force=True, silent=True) or {}
+    body = (data.get("body") or "").strip()
+    author = (data.get("author") or "user").strip() or "user"
+    if not body:
+        return jsonify({"error": "body is required"}), 400
+
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+            return jsonify({"error": "Task not found"}), 404
+        comment_id = f"kc-{uuid.uuid4().hex[:12]}"
+        now = _utcnow()
+        conn.execute(
+            "INSERT INTO kanban_task_comments (id, task_id, author, body, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (comment_id, task_id, author[:64], body[:2000], now),
+        )
+        conn.commit()
+        return jsonify({"status": "created", "id": comment_id, "created_at": now}), 201
     finally:
         conn.close()
 
