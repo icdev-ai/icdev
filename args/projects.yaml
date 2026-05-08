@@ -2616,3 +2616,40 @@ projects:
     title: Phase 10 — Design Review, Lifecycle & Monitoring (lifecycle state machine,
       multi-reviewer workflow, portfolio score drift dashboard)
     priority: high
+- key: sysgraph
+  name: Unified System Graph — Sigma.js Federated Graph Platform
+  description: >
+    Replace fragmented graph systems (JointJS /components-map, /knowledge-graph,
+    canvas KGs, kanban DAG) with a single /system-graph page powered by Sigma.js 3.0.2
+    WebGL rendering + Graphology. Federates kg_nodes, canvas_kg_nodes, kanban_task_deps,
+    goal→tool edges, and migration dependency chains into one interactive graph with
+    community detection clusters, filter chips, and sidebar detail panels.
+    Inspired by GitNexus's unified AST graph architecture.
+  task_prefix: sg-
+  default_open: true
+  briefs:
+    - 'sg-v: Vendor Sigma.js 3.0.2 + Graphology 0.26.0 + ForceAtlas2 as static files (air-gap safe)'
+    - 'sg-m: tools/system_graph/ module — graph_builder.py federates 5 graph sources + constants.py'
+    - 'sg-r: blueprint.py routes + /api/system-graph/graph + /api/system-graph/node/<id> endpoints'
+    - 'sg-t: system_graph/page.html Sigma.js 3-pane template + icdev/ mirror + nav link'
+    - 'sg-c: Community detection via NetworkX — cluster_id + cluster_color on nodes'
+    - 'sg-vv: V&V gate — Playwright E2E + companion sync + coherence gate'
+  epics:
+    - key: v
+      title: Vendor Sigma.js + Graphology Static Files
+      priority: critical
+    - key: m
+      title: system_graph Module — Federation + Constants
+      priority: critical
+    - key: r
+      title: Blueprint Routes + API Endpoints
+      priority: critical
+    - key: t
+      title: Sigma.js Template + Nav Link + icdev Mirror
+      priority: critical
+    - key: c
+      title: Community Detection (NetworkX clusters)
+      priority: high
+    - key: vv
+      title: V&V Gate — E2E + Companion + Coherence
+      priority: high

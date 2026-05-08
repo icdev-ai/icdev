@@ -1,0 +1,555 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+
+{% block title %}System Graph — ICDEV™{% endblock %}
+
+{% block extra_head %}
+<style>
+/* ---- Layout ------------------------------------------------------------ */
+#sg-layout {
+  display: flex;
+  height: calc(100vh - 56px);
+  overflow: hidden;
+}
+#sg-sidebar {
+  width: 300px;
+  min-width: 240px;
+  max-width: 380px;
+  background: var(--surface, #1e1e2e);
+  border-right: 1px solid var(--border, #2a2a3e);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+#sg-main {
+  flex: 1;
+  position: relative;
+  background: #0d0d1a;
+}
+#sigma-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- Toolbar ----------------------------------------------------------- */
+#sg-toolbar {
+  padding: 8px 10px;
+  background: var(--surface, #1e1e2e);
+  border-bottom: 1px solid var(--border, #2a2a3e);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+#sg-toolbar input[type=text] {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 8px;
+  background: #11112a;
+  border: 1px solid var(--border, #2a2a3e);
+  border-radius: 4px;
+  color: var(--text, #e0e0e0);
+  font-size: 0.8rem;
+}
+#sg-toolbar select {
+  padding: 4px 6px;
+  background: #11112a;
+  border: 1px solid var(--border, #2a2a3e);
+  border-radius: 4px;
+  color: var(--text, #e0e0e0);
+  font-size: 0.8rem;
+}
+.sg-btn {
+  padding: 4px 10px;
+  border: 1px solid var(--border, #2a2a3e);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  background: #11112a;
+  color: var(--text, #e0e0e0);
+}
+.sg-btn:hover { background: #1976d2; border-color: #1976d2; }
+.sg-btn.active { background: #1976d2; border-color: #1976d2; }
+
+/* ---- Sidebar content --------------------------------------------------- */
+#sg-stats {
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  color: #9e9e9e;
+  border-bottom: 1px solid var(--border, #2a2a3e);
+}
+#sg-stats span { color: #42a5f5; font-weight: 600; }
+
+#sg-legend {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #2a2a3e);
+  overflow-y: auto;
+  max-height: 200px;
+}
+#sg-legend h4 { font-size: 0.72rem; color: #9e9e9e; margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+.sg-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.sg-legend-item:hover { background: rgba(255,255,255,0.05); }
+.sg-legend-item.dimmed { opacity: 0.35; }
+.sg-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+#sg-detail {
+  flex: 1;
+  padding: 12px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+}
+#sg-detail h3 { margin: 0 0 8px; font-size: 0.95rem; color: var(--text, #e0e0e0); word-break: break-all; }
+#sg-detail .sg-prop { margin-bottom: 4px; }
+#sg-detail .sg-prop-key { color: #9e9e9e; }
+#sg-detail .sg-prop-val { color: #e0e0e0; }
+#sg-detail .sg-neighbor-list { margin-top: 10px; }
+#sg-detail .sg-neighbor-item {
+  padding: 4px 6px;
+  margin-bottom: 3px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid var(--border, #2a2a3e);
+}
+#sg-detail .sg-neighbor-item:hover { background: rgba(255,255,255,0.05); }
+.sg-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  background: rgba(255,255,255,0.1);
+  margin-left: 4px;
+}
+.sg-health-ok { color: #66bb6a; }
+.sg-health-warn { color: #ffa726; }
+.sg-health-error { color: #ef5350; }
+
+/* ---- Loading overlay --------------------------------------------------- */
+#sg-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13,13,26,0.85);
+  z-index: 20;
+  flex-direction: column;
+  gap: 12px;
+  font-size: 0.9rem;
+  color: #9e9e9e;
+}
+.sg-spinner {
+  width: 36px; height: 36px;
+  border: 3px solid #2a2a3e;
+  border-top-color: #42a5f5;
+  border-radius: 50%;
+  animation: sg-spin 0.8s linear infinite;
+}
+@keyframes sg-spin { to { transform: rotate(360deg); } }
+
+/* ---- Tooltip ----------------------------------------------------------- */
+#sg-tooltip {
+  position: absolute;
+  background: #1e1e2e;
+  border: 1px solid #2a2a3e;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  color: #e0e0e0;
+  pointer-events: none;
+  z-index: 30;
+  max-width: 220px;
+  display: none;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="sg-layout">
+
+  <!-- Sidebar -->
+  <div id="sg-sidebar">
+    <div id="sg-toolbar">
+      <input type="text" id="sg-search" placeholder="Search nodes…" oninput="sgSearch()" />
+      <select id="sg-type-filter" onchange="sgRefresh()">
+        <option value="">All types</option>
+        {% for t in node_types %}
+        <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+      <select id="sg-health-filter" onchange="sgRefresh()">
+        <option value="">All health</option>
+        <option value="ok">OK</option>
+        <option value="warn">Warn</option>
+        <option value="error">Error</option>
+        <option value="unknown">Unknown</option>
+      </select>
+      <button class="sg-btn" onclick="sgRefresh()">⟳ Refresh</button>
+      <button class="sg-btn" id="sg-cluster-btn" onclick="sgToggleClusters()">⬡ Clusters</button>
+      <button class="sg-btn" onclick="sgResetCamera()">⊞ Fit</button>
+    </div>
+
+    <div id="sg-stats">
+      <span id="sg-stat-nodes">—</span> nodes &nbsp;|&nbsp;
+      <span id="sg-stat-edges">—</span> edges &nbsp;|&nbsp;
+      <span id="sg-stat-clusters">—</span> clusters &nbsp;|&nbsp;
+      <span id="sg-stat-ms">—</span> ms
+    </div>
+
+    <div id="sg-legend">
+      <h4>Node Types</h4>
+      <div id="sg-legend-items"></div>
+    </div>
+
+    <div id="sg-detail">
+      <p style="color:#9e9e9e;font-size:0.78rem;">Click a node to see details.</p>
+    </div>
+  </div>
+
+  <!-- Graph canvas -->
+  <div id="sg-main">
+    <div id="sg-loading">
+      <div class="sg-spinner"></div>
+      <div id="sg-loading-msg">Building federated graph…</div>
+    </div>
+    <div id="sigma-container"></div>
+    <div id="sg-tooltip"></div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<!-- Sigma.js + Graphology vendor -->
+<script src="{{ url_for('static', filename='vendor/sigma/graphology.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/sigma/sigma.min.js') }}"></script>
+
+<script>
+/* =========================================================================
+   System Graph — Sigma.js 3.x controller
+   ========================================================================= */
+
+const NODE_TYPE_COLORS = {};
+const SIGMA_CONTAINER = document.getElementById('sigma-container');
+let _sigma = null;
+let _graph = null;
+let _graphData = null;
+let _clustersVisible = true;
+let _activeTypeFilter = null;
+let _hoveredNode = null;
+
+// ---------------------------------------------------------------------------
+// Boot
+// ---------------------------------------------------------------------------
+
+window.addEventListener('DOMContentLoaded', async () => {
+  await loadNodeTypes();
+  sgRefresh();
+});
+
+async function loadNodeTypes() {
+  try {
+    const r = await fetch('/api/system-graph/node-types');
+    const d = await r.json();
+    for (const [k, v] of Object.entries(d.node_types || {})) {
+      NODE_TYPE_COLORS[k] = v.color;
+    }
+    renderLegend(d.node_types || {});
+  } catch (_) {}
+}
+
+// ---------------------------------------------------------------------------
+// Legend
+// ---------------------------------------------------------------------------
+
+function renderLegend(types) {
+  const container = document.getElementById('sg-legend-items');
+  container.innerHTML = '';
+  for (const [k, v] of Object.entries(types)) {
+    const el = document.createElement('div');
+    el.className = 'sg-legend-item';
+    el.dataset.type = k;
+    el.innerHTML = `<div class="sg-dot" style="background:${v.color}"></div><span>${v.label || k}</span>`;
+    el.onclick = () => sgFilterByType(k);
+    container.appendChild(el);
+  }
+}
+
+function sgFilterByType(t) {
+  const items = document.querySelectorAll('.sg-legend-item');
+  if (_activeTypeFilter === t) {
+    _activeTypeFilter = null;
+    items.forEach(i => i.classList.remove('dimmed'));
+    document.getElementById('sg-type-filter').value = '';
+  } else {
+    _activeTypeFilter = t;
+    items.forEach(i => i.classList.toggle('dimmed', i.dataset.type !== t));
+    document.getElementById('sg-type-filter').value = t;
+  }
+  sgRefresh();
+}
+
+// ---------------------------------------------------------------------------
+// Data loading
+// ---------------------------------------------------------------------------
+
+async function sgRefresh() {
+  showLoading('Building federated graph…');
+  const type = document.getElementById('sg-type-filter').value;
+  const health = document.getElementById('sg-health-filter').value;
+  const q = document.getElementById('sg-search').value.trim();
+  const params = new URLSearchParams();
+  if (type)   params.set('type', type);
+  if (health) params.set('health', health);
+  if (q)      params.set('q', q);
+
+  try {
+    const r = await fetch('/api/system-graph/graph?' + params.toString());
+    _graphData = await r.json();
+    renderGraph(_graphData);
+    updateStats(_graphData.stats || {});
+  } catch (err) {
+    hideLoading();
+    document.getElementById('sg-loading-msg').textContent = 'Error loading graph: ' + err.message;
+  }
+}
+
+function sgSearch() {
+  clearTimeout(window._sgSearchTimer);
+  window._sgSearchTimer = setTimeout(sgRefresh, 350);
+}
+
+// ---------------------------------------------------------------------------
+// Sigma rendering
+// ---------------------------------------------------------------------------
+
+function renderGraph(data) {
+  if (_sigma) {
+    _sigma.kill();
+    _sigma = null;
+    _graph = null;
+  }
+
+  // Build Graphology graph
+  _graph = new graphology.Graph({ type: 'directed', multi: false });
+
+  const nodeSet = new Set();
+  for (const n of data.nodes || []) {
+    if (nodeSet.has(n.id)) continue;
+    nodeSet.add(n.id);
+    const color = _clustersVisible && n.cluster_id >= 0
+      ? n.cluster_color
+      : (NODE_TYPE_COLORS[n.type] || '#78909c');
+    _graph.addNode(n.id, {
+      label: n.label,
+      x: n.x || 0,
+      y: n.y || 0,
+      size: n.size || 6,
+      color: color,
+      ntype: n.type,
+      health: n.health,
+      source: n.source,
+      cluster_id: n.cluster_id,
+      cluster_color: n.cluster_color,
+      type_color: NODE_TYPE_COLORS[n.type] || '#78909c',
+      properties: n.properties || {},
+    });
+  }
+
+  const edgeSet = new Set();
+  for (const e of data.edges || []) {
+    const key = `${e.source}__${e.target}`;
+    if (edgeSet.has(key) || !_graph.hasNode(e.source) || !_graph.hasNode(e.target)) continue;
+    edgeSet.add(key);
+    try {
+      _graph.addEdge(e.source, e.target, {
+        type: e.type || 'related',
+        size: 1,
+        color: '#2a2a4e',
+      });
+    } catch (_) {}
+  }
+
+  // Init Sigma
+  _sigma = new Sigma(_graph, SIGMA_CONTAINER, {
+    renderEdgeLabels: false,
+    defaultEdgeColor: '#2a2a4e',
+    defaultNodeColor: '#42a5f5',
+    labelFont: 'Inter, system-ui, sans-serif',
+    labelSize: 11,
+    labelWeight: '400',
+    labelColor: { color: '#c0c0d0' },
+    minCameraRatio: 0.05,
+    maxCameraRatio: 10,
+    zoomToSizeRatioFunction: (x) => x,
+  });
+
+  // Node click → detail panel
+  _sigma.on('clickNode', ({ node }) => {
+    loadNodeDetail(node);
+  });
+
+  // Hover tooltip
+  _sigma.on('enterNode', ({ node, event }) => {
+    const attrs = _graph.getNodeAttributes(node);
+    const tt = document.getElementById('sg-tooltip');
+    tt.innerHTML = `<strong>${attrs.label}</strong><br>
+      <span style="color:#9e9e9e">${attrs.ntype}</span>
+      <span class="sg-health-${attrs.health}" style="margin-left:6px">● ${attrs.health}</span>`;
+    tt.style.display = 'block';
+    positionTooltip(event);
+    _hoveredNode = node;
+  });
+  _sigma.on('leaveNode', () => {
+    document.getElementById('sg-tooltip').style.display = 'none';
+    _hoveredNode = null;
+  });
+  _sigma.on('moveBody', (event) => {
+    if (_hoveredNode) positionTooltip(event);
+  });
+
+  hideLoading();
+}
+
+function positionTooltip(event) {
+  const tt = document.getElementById('sg-tooltip');
+  const rect = SIGMA_CONTAINER.getBoundingClientRect();
+  const ex = (event.x || event.clientX || 0) - rect.left;
+  const ey = (event.y || event.clientY || 0) - rect.top;
+  tt.style.left = (ex + 12) + 'px';
+  tt.style.top  = (ey + 12) + 'px';
+}
+
+// ---------------------------------------------------------------------------
+// Cluster toggle
+// ---------------------------------------------------------------------------
+
+function sgToggleClusters() {
+  _clustersVisible = !_clustersVisible;
+  document.getElementById('sg-cluster-btn').classList.toggle('active', _clustersVisible);
+  if (!_graph) return;
+  _graph.updateEachNodeAttributes((node, attrs) => {
+    attrs.color = _clustersVisible && attrs.cluster_id >= 0
+      ? attrs.cluster_color
+      : attrs.type_color;
+    return attrs;
+  });
+  if (_sigma) _sigma.refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Camera controls
+// ---------------------------------------------------------------------------
+
+function sgResetCamera() {
+  if (_sigma) _sigma.getCamera().animatedReset();
+}
+
+// ---------------------------------------------------------------------------
+// Stats bar
+// ---------------------------------------------------------------------------
+
+function updateStats(stats) {
+  document.getElementById('sg-stat-nodes').textContent    = stats.total_nodes ?? '—';
+  document.getElementById('sg-stat-edges').textContent    = stats.total_edges ?? '—';
+  document.getElementById('sg-stat-clusters').textContent = stats.cluster_count ?? '—';
+  document.getElementById('sg-stat-ms').textContent       = stats.build_ms ?? '—';
+}
+
+// ---------------------------------------------------------------------------
+// Node detail panel
+// ---------------------------------------------------------------------------
+
+async function loadNodeDetail(nodeId) {
+  const detail = document.getElementById('sg-detail');
+  detail.innerHTML = '<p style="color:#9e9e9e">Loading…</p>';
+  try {
+    const r = await fetch('/api/system-graph/node/' + encodeURIComponent(nodeId));
+    if (!r.ok) { detail.innerHTML = '<p style="color:#ef5350">Node not found.</p>'; return; }
+    const n = await r.json();
+    renderNodeDetail(n);
+  } catch (err) {
+    detail.innerHTML = '<p style="color:#ef5350">Error: ' + err.message + '</p>';
+  }
+}
+
+function renderNodeDetail(n) {
+  const hClass = `sg-health-${n.health || 'unknown'}`;
+  const props = n.properties || {};
+
+  let html = `
+    <h3>${escHtml(n.label)}</h3>
+    <div class="sg-prop"><span class="sg-prop-key">Type:</span> <span class="sg-badge">${escHtml(n.type)}</span></div>
+    <div class="sg-prop"><span class="sg-prop-key">Source:</span> <span class="sg-prop-val">${escHtml(n.source || '')}</span></div>
+    <div class="sg-prop"><span class="sg-prop-key">Health:</span> <span class="${hClass}">● ${escHtml(n.health || 'unknown')}</span></div>
+  `;
+
+  if (props.path) {
+    html += `<div class="sg-prop"><span class="sg-prop-key">Path:</span> <span class="sg-prop-val" style="word-break:break-all;font-size:0.72rem">${escHtml(props.path)}</span></div>`;
+  }
+  if (props.status) {
+    html += `<div class="sg-prop"><span class="sg-prop-key">Status:</span> <span class="sg-prop-val">${escHtml(props.status)}</span></div>`;
+  }
+
+  const neighbors = n.neighbors || [];
+  if (neighbors.length) {
+    const inbound  = neighbors.filter(nb => nb.direction === 'inbound');
+    const outbound = neighbors.filter(nb => nb.direction === 'outbound');
+
+    html += `<div class="sg-neighbor-list">`;
+    if (inbound.length) {
+      html += `<div style="color:#9e9e9e;font-size:0.72rem;margin:8px 0 4px">▼ Inbound (${inbound.length})</div>`;
+      for (const nb of inbound.slice(0, 20)) {
+        html += `<div class="sg-neighbor-item" onclick="loadNodeDetail('${escAttr(nb.id)}')">
+          <span style="color:${NODE_TYPE_COLORS[nb.type]||'#78909c'};margin-right:4px">●</span>
+          ${escHtml(nb.label)}
+          <span class="sg-badge">${escHtml(nb.edge_type||'')}</span>
+        </div>`;
+      }
+    }
+    if (outbound.length) {
+      html += `<div style="color:#9e9e9e;font-size:0.72rem;margin:8px 0 4px">▲ Outbound (${outbound.length})</div>`;
+      for (const nb of outbound.slice(0, 20)) {
+        html += `<div class="sg-neighbor-item" onclick="loadNodeDetail('${escAttr(nb.id)}')">
+          <span style="color:${NODE_TYPE_COLORS[nb.type]||'#78909c'};margin-right:4px">●</span>
+          ${escHtml(nb.label)}
+          <span class="sg-badge">${escHtml(nb.edge_type||'')}</span>
+        </div>`;
+      }
+    }
+    html += `</div>`;
+  } else {
+    html += `<p style="color:#9e9e9e;margin-top:10px">No edges.</p>`;
+  }
+
+  document.getElementById('sg-detail').innerHTML = html;
+}
+
+// ---------------------------------------------------------------------------
+// Utils
+// ---------------------------------------------------------------------------
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/'/g,"\\'");
+}
+function showLoading(msg) {
+  const el = document.getElementById('sg-loading');
+  document.getElementById('sg-loading-msg').textContent = msg || 'Loading…';
+  el.style.display = 'flex';
+}
+function hideLoading() {
+  document.getElementById('sg-loading').style.display = 'none';
+}
+</script>
+{% endblock %}
