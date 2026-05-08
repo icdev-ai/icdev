@@ -897,18 +897,6 @@ class ChatManager:
             ctx.status = row.get("status", "active")
             ctx.message_count = row.get("message_count", 0)
             ctx.turn_number = row.get("message_count", 0)
-            # Load message history from DB
-            try:
-                conn2 = self._get_db()
-                conn2.rollback()
-                msgs = conn2.execute(
-                    "SELECT role, content, turn_number FROM chat_messages WHERE context_id = ? ORDER BY turn_number",
-                    (context_id,),
-                ).fetchall()
-                conn2.close()
-                ctx.messages = [{"role": m["role"], "content": m["content"]} for m in msgs]
-            except Exception:
-                ctx.messages = []
             with self._lock:
                 self._contexts[context_id] = ctx
             # Restart agent loop if still active

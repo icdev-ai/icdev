@@ -40,8 +40,9 @@ Categories:
     agent_topology (3)
     sre (8)
     canvas (8)
+    system_graph (3)
 
-Total: 259 tools, 6 resources
+Total: 262 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6195,6 +6196,44 @@ RESOURCE_REGISTRY = {
         "module": "tools.mcp.core_server",
         "handler": "handle_resource_project_status",
         "mime_type": "application/json",
+    },
+    # ============================================================
+    # SYSTEM GRAPH (3 tools)
+    # ============================================================
+    "system_graph_get": {
+        "category": "system_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_system_graph_get",
+        "description": "Return the full federated ICDEV system graph (3 500+ nodes, 5 sources). Supports optional filters: type, health, sources.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "filter_type":   {"type": "string", "description": "Filter nodes by entity type (tool, route, blueprint, db_table, agent, kanban_task, …)"},
+                "filter_health": {"type": "string", "enum": ["ok", "warn", "error", "unknown"], "description": "Filter by health status"},
+                "sources":       {"type": "array", "items": {"type": "string"}, "description": "Subset of sources to include (awareness_kg, canvas_kg, kanban_deps, goals, migrations, codebase)"},
+                "search":        {"type": "string", "description": "Free-text substring search across node labels"},
+            },
+        },
+    },
+    "system_graph_node_detail": {
+        "category": "system_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_system_graph_node_detail",
+        "description": "Return full detail for a single graph node including inbound/outbound neighbours.",
+        "input_schema": {
+            "type": "object",
+            "required": ["node_id"],
+            "properties": {
+                "node_id": {"type": "string", "description": "Unique node ID (SHA256 prefix used by the graph builder)"},
+            },
+        },
+    },
+    "system_graph_stats": {
+        "category": "system_graph",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_system_graph_stats",
+        "description": "Return high-level stats for the federated system graph: total nodes, edges, clusters, source counts, and build time.",
+        "input_schema": {"type": "object", "properties": {}},
     },
     "marketplace://catalog": {
         "name": "Marketplace Catalog",
