@@ -38,6 +38,11 @@ Cross-canvas event bus integration.
 - `publish_design_saved(design_id, name)` — emits `aadc.design_saved`
 - `publish_agent_flagged(design_id, agent_label, level)` — emits `aadc.agent_flagged`
 
+### `tools/agentic_ai_canvas/events.py`
+AADC Activity Feed Emitter — writes one row to `aadc_design_events` on each significant canvas action.
+- `emit_event(design_id, event_type, actor, metadata)` → bool (True on success, False if table missing or write fails — non-fatal)
+- Uses `get_connection()` for SQLite/PostgreSQL compatibility; silently skips if migration hasn't run yet
+
 ### `tools/agentic_ai_canvas/checkpoint_manager.py`
 Phase 4 — Checkpoint/fork service (LangGraph pattern).
 - `save_checkpoint(design_id, graph_json, label, node_id)` → checkpoint dict
@@ -344,6 +349,7 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_deploy_gates` | Phase 9 — Deployment gate verdict snapshots per design (migration 111) |
 | `aadc_lifecycle_states` | Phase 10 — Design lifecycle state transition log per design (migration 112) |
 | `aadc_review_comments` | Phase 10 — Design review comments and decisions per design (migration 112) |
+| `aadc_design_events` | Activity feed — one row per significant canvas action emitted by `events.py` |
 
 ---
 
