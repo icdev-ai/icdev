@@ -576,6 +576,7 @@
         <span class="sg-chip on" data-src="kanban_deps" onclick="sgToggleSource(this)">Kanban</span>
         <span class="sg-chip on" data-src="goals"       onclick="sgToggleSource(this)">Goals</span>
         <span class="sg-chip on" data-src="migrations"  onclick="sgToggleSource(this)">Migrations</span>
+        <span class="sg-chip on" data-src="codebase"    onclick="sgToggleSource(this)">Codebase</span>
       </div>
     </div>
   </div>
@@ -794,7 +795,7 @@ async function sgRefresh() {
   const params = new URLSearchParams();
   if (health)         params.set('health', health);
   if (q)              params.set('q', q);
-  if (sources.length < 5) params.set('sources', sources.join(','));
+  if (sources.length < 6) params.set('sources', sources.join(','));
 
   try {
     const r = await fetch('/api/system-graph/graph?' + params.toString());
