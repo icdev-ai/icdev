@@ -50,4 +50,5 @@ GRAPH_SOURCES = [
     "kanban_deps",     # kanban_tasks + kanban_task_deps
     "goals",           # goals/ directory scan
     "migrations",      # tools/db/migrations/ dependency chain
+    "codebase",        # routes, blueprints, db_tables, agents from tools/
 ]

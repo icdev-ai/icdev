@@ -45,6 +45,9 @@ def _nid(prefix: str, name: str) -> str:
 
 def _node(nid: str, label: str, ntype: str, *, source: str,
           props: dict | None = None, health: str = "unknown") -> dict:
+    # Normalize any unrecognised entity type to "other"
+    if ntype not in NODE_TYPES:
+        ntype = "other"
     color = NODE_TYPES.get(ntype, NODE_TYPES["other"])["color"]
     return {
         "id": nid,
@@ -285,6 +288,82 @@ def _load_migrations() -> tuple[list[dict], list[dict]]:
 
 
 # ---------------------------------------------------------------------------
+# Source 6: Codebase structure (routes, blueprints, db_tables, agents)
+# ---------------------------------------------------------------------------
+
+def _load_codebase_structure() -> tuple[list[dict], list[dict]]:
+    """Scan tools/ for Flask routes, blueprints, DB tables, and agent configs."""
+    nodes: list[dict] = []
+    edges: list[dict] = []
+
+    route_re   = re.compile(r'@\w*bp\w*\.route\(["\']([^"\']+)["\']')
+    bp_re      = re.compile(r'Blueprint\(\s*["\'](\w+)["\']')
+    table_re   = re.compile(r'CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["\`]?(\w+)["\`]?', re.IGNORECASE)
+    agent_re   = re.compile(r'["\'](?:name|agent_name|agent_id)["\']:\s*["\']([^"\']{3,60})["\']')
+
+    # ── Routes and blueprints from blueprint.py files ──────────────────────
+    for bp_file in list((_ROOT / "tools").rglob("blueprint.py"))[:60]:
+        try:
+            src = bp_file.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        rel = str(bp_file.relative_to(_ROOT)).replace("\\", "/")
+        # Blueprint node
+        for bpname in bp_re.findall(src)[:1]:
+            bid = _nid("blueprint", bpname)
+            nodes.append(_node(bid, bpname, "blueprint", source="codebase",
+                               props={"file": rel}))
+        # Route nodes linked to the blueprint
+        bm = bp_re.search(src)
+        bp_nid = _nid("blueprint", bm.group(1)) if bm else None
+        for route_path in route_re.findall(src)[:30]:
+            rid = _nid("route", route_path)
+            label = route_path if len(route_path) < 50 else route_path[:47] + "…"
+            nodes.append(_node(rid, label, "route", source="codebase",
+                               props={"path": route_path, "file": rel}))
+            if bp_nid:
+                edges.append(_edge(bp_nid, rid, "registers"))
+
+    # ── DB tables from migration SQL files ─────────────────────────────────
+    migs_dir = _ROOT / "tools" / "db" / "migrations"
+    seen_tables: set[str] = set()
+    if migs_dir.exists():
+        for sql_file in sorted(migs_dir.rglob("*.sql"))[:300]:
+            try:
+                src = sql_file.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            for tname in table_re.findall(src):
+                if tname.lower() in ("table", "exists", "temp") or tname in seen_tables:
+                    continue
+                seen_tables.add(tname)
+                tid = _nid("db_table", tname)
+                nodes.append(_node(tid, tname, "db_table", source="codebase",
+                                   props={"table": tname,
+                                          "migration": sql_file.parent.name}))
+
+    # ── Agents from architecture / agent config files ──────────────────────
+    agent_files = list((_ROOT / "tools").rglob("*agent*.py"))[:40]
+    agent_files += list((_ROOT / "args").glob("*agent*"))
+    agent_files += list((_ROOT / "args").glob("*agents*"))
+    seen_agents: set[str] = set()
+    for af in agent_files:
+        try:
+            src = af.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        for aname in agent_re.findall(src)[:10]:
+            if aname in seen_agents or len(aname) < 4:
+                continue
+            seen_agents.add(aname)
+            aid = _nid("agent", aname)
+            nodes.append(_node(aid, aname, "agent", source="codebase",
+                               props={"file": str(af.relative_to(_ROOT)).replace("\\", "/")}))
+
+    return nodes, edges
+
+
+# ---------------------------------------------------------------------------
 # Federation + layout
 # ---------------------------------------------------------------------------
 
@@ -396,6 +475,7 @@ def build_graph(
         "kanban_deps":   _load_kanban_deps,
         "goals":         _load_goals,
         "migrations":    _load_migrations,
+        "codebase":      _load_codebase_structure,
     }
     active = sources or list(loaders.keys())
     for src in active:

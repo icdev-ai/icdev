@@ -89,8 +89,8 @@
     <!-- Input area spans main pane + right sidebar all the way to the right edge -->
     <div id="input-area" class="chat-input-area">
         <div class="chat-input-area__inner">
-            <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.rst,.pdf,.docx,.doc,.yaml,.yml,.json,.png,.jpg,.jpeg,.gif,.webp,.svg,.csv,.xml" multiple>
-            <label for="chat-file-input" id="chat-upload-btn" class="chat-upload-btn" title="Upload document, spec, or diagram (PDF, DOCX, TXT, MD, PNG, JPG)" aria-label="Upload file">&#x1F4CE; Upload</label>
+            <input type="file" id="chat-file-input" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" accept=".txt,.md,.rst,.pdf,.docx,.doc,.yaml,.yml,.json,.png,.jpg,.jpeg,.gif,.webp,.svg,.csv,.xml" multiple>
+            <button id="chat-upload-btn" class="chat-upload-btn" type="button" onclick="document.getElementById('chat-file-input').click()" title="Upload document, spec, or diagram (PDF, DOCX, TXT, MD, PNG, JPG)" aria-label="Upload file">&#x1F4CE; Upload</button>
             <textarea id="message-input" class="chat-message-input" placeholder="Type a message… or drag &amp; drop a file" rows="1" disabled></textarea>
             <button id="btn-send" class="chat-send-btn" type="button" disabled title="Send message" aria-label="Send">&#x2191;</button>
         </div>
