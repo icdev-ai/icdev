@@ -96,6 +96,16 @@
                     <input type="datetime-local" id="task-scheduled-at" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
                 </div>
             </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Start Date</label>
+                    <input type="date" id="task-start-date" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Target Date</label>
+                    <input type="date" id="task-target-date" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+            </div>
             <div style="margin-bottom:12px;">
                 <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Executor</label>
                 <select id="task-executor-type" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
@@ -103,6 +113,15 @@
                     <option value="gitlab">&#129418; GitLab CI</option>
                     <option value="github_actions">&#9881;&#65039; GitHub Actions</option>
                 </select>
+            </div>
+        </div>
+        <!-- Comments section (only shown when editing an existing task) -->
+        <div id="task-comments-section" style="display:none; margin-top:4px; border-top:1px solid var(--border); padding-top:12px;">
+            <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px;">Comments</label>
+            <div id="task-comments-list" style="max-height:140px; overflow-y:auto; margin-bottom:8px; display:flex; flex-direction:column; gap:6px;"></div>
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="task-comment-input" placeholder="Add a comment..." style="flex:1; padding:6px 10px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px;">
+                <button class="btn btn-sm btn-primary" onclick="postComment()" style="white-space:nowrap;">Post</button>
             </div>
         </div>
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
@@ -167,7 +186,10 @@ function openAddTaskModal() {
     document.getElementById('task-priority').value = 'medium';
     document.getElementById('task-status').value = 'backlog';
     document.getElementById('task-scheduled-at').value = '';
+    document.getElementById('task-start-date').value = '';
+    document.getElementById('task-target-date').value = '';
     document.getElementById('task-executor-type').value = 'claude_cli';
+    document.getElementById('task-comments-section').style.display = 'none';
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -180,7 +202,11 @@ function openEditTaskModal(task) {
     document.getElementById('task-priority').value = task.priority;
     document.getElementById('task-status').value = task.status;
     document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
+    document.getElementById('task-start-date').value = task.start_date || '';
+    document.getElementById('task-target-date').value = task.target_date || '';
     document.getElementById('task-executor-type').value = task.executor_type || 'claude_cli';
+    document.getElementById('task-comments-section').style.display = 'block';
+    _loadComments(task.id);
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -197,7 +223,9 @@ function saveTask() {
         priority: document.getElementById('task-priority').value,
         status: document.getElementById('task-status').value,
         scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value),
-        executor_type: document.getElementById('task-executor-type').value
+        executor_type: document.getElementById('task-executor-type').value,
+        start_date: document.getElementById('task-start-date').value || null,
+        target_date: document.getElementById('task-target-date').value || null
     };
     if (!payload.title.trim()) { alert('Title is required'); return; }
 
@@ -401,6 +429,36 @@ function renderTaskKanban(tasks) {
 
             var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">\u{1F4C5} ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
+            // Target date line with overdue warning
+            var targetLine = '';
+            if (t.target_date) {
+                var today = new Date(); today.setHours(0,0,0,0);
+                var td = new Date(t.target_date + 'T00:00:00');
+                var overdue = td < today && t.status !== 'done';
+                targetLine = '<div style="font-size:11px; color:' + (overdue ? '#ef4444' : 'var(--text-dim)') + '; margin-top:3px;" title="Target: ' + esc(t.target_date) + '">'
+                    + (overdue ? '🔴' : '🎯') + ' ' + esc(t.target_date) + (overdue ? ' <strong>OVERDUE</strong>' : '') + '</div>';
+            }
+
+            // Phantom completion risk badge
+            var phantomBadge = '';
+            if (t.phantom_ratio && t.phantom_ratio > 0.5) {
+                var pr = Math.round(t.phantom_ratio * 100);
+                phantomBadge = '<span class="badge" style="background:#f97316; color:#fff; font-size:10px;" title="Phantom completion risk: output/claim ratio ' + pr + '%">⚠️ ' + pr + '% phantom</span>';
+            }
+
+            // Change metrics badge (done cards only)
+            var changeMetrics = '';
+            if (t.status === 'done' && (t.files_changed || t.lines_added || t.lines_removed)) {
+                var fc = t.files_changed || 0;
+                var la = t.lines_added || 0;
+                var lr = t.lines_removed || 0;
+                changeMetrics = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;" title="' + fc + ' files changed">'
+                    + fc + ' file' + (fc !== 1 ? 's' : '')
+                    + ' <span style="color:#22c55e;">+' + la + '</span>'
+                    + ' <span style="color:#ef4444;">-' + lr + '</span>'
+                    + '</div>';
+            }
+
             // Executor badge
             var execInfo = executorLabels[t.executor_type] || executorLabels['claude_cli'];
             var execBadge = '<span class="badge" style="background:' + execInfo.color + '20;color:' + execInfo.color + ';font-size:10px;" title="Executor: ' + execInfo.label + '">'
@@ -480,11 +538,14 @@ function renderTaskKanban(tasks) {
                 + execBadge
                 + llmBadge
                 + attemptBadge
+                + phantomBadge
                 + '</div>'
                 + depLine
                 + tifLine
                 + lastKilledLine
                 + schedLine
+                + targetLine
+                + changeMetrics
                 + execIdLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                 + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
@@ -544,6 +605,54 @@ function submitMessage() {
         btn.disabled = false;
         document.getElementById('kanban-msg-status').textContent = 'Error: ' + e;
         document.getElementById('kanban-msg-status').style.color = '#ef4444';
+    });
+}
+
+// Comments
+var _commentsTaskId = null;
+function _loadComments(taskId) {
+    _commentsTaskId = taskId;
+    var listEl = document.getElementById('task-comments-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="font-size:11px; color:var(--text-dim);">Loading…</div>';
+    fetch('/api/kanban/tasks/' + taskId + '/comments')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var comments = data.comments || [];
+            if (comments.length === 0) {
+                listEl.innerHTML = '<div style="font-size:11px; color:var(--text-dim); font-style:italic;">No comments yet.</div>';
+                return;
+            }
+            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+            listEl.innerHTML = comments.map(function(c) {
+                var ts = c.created_at ? new Date(c.created_at).toLocaleString() : '';
+                return '<div style="background:var(--bg-code); border-radius:4px; padding:6px 8px; font-size:12px;">'
+                    + '<span style="font-weight:600; color:var(--text-primary);">' + esc(c.author) + '</span>'
+                    + '<span style="color:var(--text-dim); margin-left:6px; font-size:10px;">' + ts + '</span>'
+                    + '<div style="margin-top:3px; white-space:pre-wrap; word-break:break-word;">' + esc(c.body) + '</div>'
+                    + '</div>';
+            }).join('');
+            listEl.scrollTop = listEl.scrollHeight;
+        })
+        .catch(function() {
+            listEl.innerHTML = '<div style="font-size:11px; color:#ef4444;">Failed to load comments.</div>';
+        });
+}
+
+function postComment() {
+    if (!_commentsTaskId) return;
+    var input = document.getElementById('task-comment-input');
+    var body = (input.value || '').trim();
+    if (!body) return;
+    fetch('/api/kanban/tasks/' + _commentsTaskId + '/comments', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ body: body, author: 'dashboard' })
+    }).then(function(r) {
+        if (r.ok) {
+            input.value = '';
+            _loadComments(_commentsTaskId);
+        }
     });
 }
 
