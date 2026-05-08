@@ -27,6 +27,7 @@ import logging
 import math
 import sqlite3
 import struct
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -1068,6 +1069,148 @@ def retrieve(
 
 
 # ---------------------------------------------------------------------------
+# Graph-Hop Expansion for Top-K BM25 Hits
+# ---------------------------------------------------------------------------
+
+
+def expand_bm25_top_k(
+    hit_ids: List[str],
+    graph_id: Optional[str] = None,
+    project_id: Optional[str] = None,
+    cache_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Expand top-K BM25 hits to their direct (1-hop) neighbors.
+
+    For each node ID in *hit_ids*, queries kg_edges for all directly connected
+    edges and collects the IDs of nodes on the other end.  Results are written
+    to a temp file so that a process restart or timeout does not lose the
+    expansion output.
+
+    Args:
+        hit_ids:    Node IDs representing the top-K BM25 hits.
+        graph_id:   Restrict edge traversal to a single graph.
+        project_id: Restrict edge traversal to all graphs under a project.
+        cache_key:  Stable identifier for the temp-file name
+                    (default: first-16 hex chars of SHA-256 of sorted hit_ids).
+
+    Returns:
+        Dict with keys:
+            status        — "ok" or "error"
+            hit_ids       — echo of input
+            expansions    — {hit_id: [neighbor_id, ...], ...}
+            all_neighbors — deduplicated flat list of every neighbor ID
+            cache_file    — absolute path where results were persisted
+            elapsed_ms    — wall-clock duration
+    """
+    start_ms = int(time.time() * 1000)
+
+    if not hit_ids:
+        return {
+            "status": "ok",
+            "hit_ids": [],
+            "expansions": {},
+            "all_neighbors": [],
+            "cache_file": None,
+            "elapsed_ms": 0,
+        }
+
+    if cache_key is None:
+        cache_key = hashlib.sha256(
+            "|".join(sorted(hit_ids)).encode()
+        ).hexdigest()[:16]
+
+    cache_path = Path(tempfile.gettempdir()) / f"icdev_graph_hop_{cache_key}.json"
+
+    conn = _get_db()
+    try:
+        _ensure_tables(conn)
+
+        # Determine graph scope
+        if graph_id:
+            scope_rows = conn.execute(
+                "SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)
+            ).fetchall()
+        elif project_id:
+            scope_rows = conn.execute(
+                "SELECT id FROM kg_graphs WHERE project_id = ?", (project_id,)
+            ).fetchall()
+        else:
+            scope_rows = conn.execute("SELECT id FROM kg_graphs").fetchall()
+
+        scope_ids = [dict(r)["id"] for r in scope_rows]
+
+        expansions: Dict[str, List[str]] = {hid: [] for hid in hit_ids}
+        hit_set = set(hit_ids)
+
+        if scope_ids:
+            scope_ph = ",".join("?" for _ in scope_ids)
+            id_ph = ",".join("?" for _ in hit_ids)
+            edge_rows = conn.execute(
+                f"""
+                SELECT source_id, target_id
+                FROM kg_edges
+                WHERE graph_id IN ({scope_ph})
+                  AND (source_id IN ({id_ph}) OR target_id IN ({id_ph}))
+                """,  # nosec B608 — column/table names are internal constants
+                list(scope_ids) + list(hit_ids) + list(hit_ids),
+            ).fetchall()
+
+            for row in edge_rows:
+                r = dict(row)
+                src = r.get("source_id", "")
+                tgt = r.get("target_id", "")
+                if src in hit_set and tgt not in hit_set:
+                    expansions[src].append(tgt)
+                if tgt in hit_set and src not in hit_set:
+                    expansions[tgt].append(src)
+
+        # Deduplicate neighbor lists while preserving insertion order
+        for hid in expansions:
+            expansions[hid] = list(dict.fromkeys(expansions[hid]))
+
+        all_neighbors = list(
+            dict.fromkeys(nbr for nbrs in expansions.values() for nbr in nbrs)
+        )
+
+        elapsed_ms = int(time.time() * 1000) - start_ms
+        result: Dict[str, Any] = {
+            "status": "ok",
+            "hit_ids": hit_ids,
+            "expansions": expansions,
+            "all_neighbors": all_neighbors,
+            "cache_file": str(cache_path),
+            "elapsed_ms": elapsed_ms,
+        }
+
+        # Persist for restart/timeout recovery
+        cache_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
+
+        return result
+
+    except Exception as exc:
+        logger.error("expand_bm25_top_k failed: %s", exc)
+        elapsed_ms = int(time.time() * 1000) - start_ms
+        error_result: Dict[str, Any] = {
+            "status": "error",
+            "hit_ids": hit_ids,
+            "expansions": {},
+            "all_neighbors": [],
+            "cache_file": str(cache_path),
+            "elapsed_ms": elapsed_ms,
+            "error": str(exc),
+        }
+        try:
+            cache_path.write_text(
+                json.dumps(error_result, indent=2, default=str), encoding="utf-8"
+            )
+        except Exception:
+            pass
+        return error_result
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1079,8 +1222,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--query",
-        required=True,
-        help="Search query text",
+        default=None,
+        help="Search query text (required unless --expand-hits is used)",
     )
     parser.add_argument(
         "--project-id",
@@ -1105,12 +1248,38 @@ def main() -> None:
         help="Skip scanner-tier LLM context compression",
     )
     parser.add_argument(
+        "--expand-hits",
+        nargs="+",
+        metavar="NODE_ID",
+        help="Expand top-K BM25 hit node IDs to 1-hop neighbors (space-separated IDs)",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Output as JSON",
     )
 
     args = parser.parse_args()
+
+    if not args.expand_hits and not args.query:
+        parser.error("--query is required unless --expand-hits is used")
+
+    if args.expand_hits:
+        result = expand_bm25_top_k(
+            hit_ids=args.expand_hits,
+            project_id=args.project_id,
+        )
+        if args.json:
+            print(json.dumps(result, indent=2, default=str))
+        else:
+            print(f"Status:        {result.get('status')}")
+            print(f"Hit IDs:       {result.get('hit_ids')}")
+            print(f"All neighbors: {result.get('all_neighbors')}")
+            print(f"Cache file:    {result.get('cache_file')}")
+            print(f"Time:          {result.get('elapsed_ms')} ms")
+            for hid, nbrs in result.get("expansions", {}).items():
+                print(f"  {hid} → {nbrs}")
+        return
 
     result = retrieve(
         query=args.query,
