@@ -1805,7 +1805,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 return
 
         # HITL gate: block in_progress→done when a HITL approval is pending
-        if new_status == "done" and os.getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
+        if new_status == "done" and __import__("os").getenv("ICDEV_HITL_KANBAN_GATE", "").lower() in ("true", "1"):
             try:
                 from tools.workflow_hitl.gate import HITLGate
                 pending = HITLGate().get_pending(task_id)

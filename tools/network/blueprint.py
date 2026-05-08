@@ -11515,6 +11515,36 @@ Planning rules:
             active_project=active_project,
         )
 
+    @bp.route("/api/nc-projects", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_project_quick():
+        """Lightweight project creation — name + optional description/owner only."""
+        data = request.get_json(force=True, silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        pid = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_projects (id, name, description, status, owner, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (pid, name, data.get("description", ""), data.get("status", "draft"), data.get("owner", ""), now, now),
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "project", pid, name)
+        return jsonify({"id": pid, "name": name}), 201
+
+    @bp.route("/api/nc-projects", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_projects_quick():
+        """Return all nc_projects as id/name pairs for dropdowns."""
+        conn = get_connection()
+        rows = conn.execute("SELECT id, name, status FROM nc_projects ORDER BY name").fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
     @bp.route("/api/subnet-calc", methods=["GET"])
     @nc_login_required
     def nc_api_list_subnet_calc():
