@@ -11483,6 +11483,146 @@ Planning rules:
         finally:
             conn.close()
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Subnet Calculator — page + API
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/subnet-calc")
+    @nc_login_required
+    def nc_subnet_calc():
+        import ipaddress
+        conn = get_connection()
+        project_id = request.args.get("project", "")
+        projects = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()]
+        if project_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_subnet_calc_history WHERE project_id=? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT h.*, p.name AS project_name FROM nc_subnet_calc_history h "
+                "LEFT JOIN nc_projects p ON p.id=h.project_id ORDER BY h.created_at DESC LIMIT 200"
+            ).fetchall()
+        history = [_row_to_dict(r) for r in rows]
+        conn.close()
+        active_project = next((p for p in projects if p["id"] == project_id), None)
+        return render_template(
+            "network/subnet_calc.html",
+            projects=projects,
+            history=history,
+            filter_project=project_id,
+            active_project=active_project,
+        )
+
+    @bp.route("/api/subnet-calc", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_subnet_calc():
+        conn = get_connection()
+        project_id = request.args.get("project", "")
+        if project_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_subnet_calc_history WHERE project_id=? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM nc_subnet_calc_history ORDER BY created_at DESC LIMIT 200"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/subnet-calc", methods=["POST"])
+    @nc_login_required
+    def nc_api_save_subnet_calc():
+        import ipaddress
+        data = request.get_json(force=True, silent=True) or {}
+        cidr = (data.get("cidr") or "").strip()
+        project_id = (data.get("project_id") or "").strip()
+        if not cidr or not project_id:
+            return jsonify({"error": "cidr and project_id required"}), 400
+
+        # Validate and compute server-side
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except ValueError as exc:
+            return jsonify({"error": f"Invalid CIDR: {exc}"}), 422
+
+        prefix_len = net.prefixlen
+        af = "ipv6" if net.version == 6 else "ipv4"
+        total_hosts = net.num_addresses
+        if net.version == 4:
+            usable = max(0, total_hosts - 2) if prefix_len < 31 else total_hosts
+            subnet_mask = str(net.netmask)
+            wildcard = str(net.hostmask)
+            first_addr = str(net.network_address + 1) if prefix_len < 31 else str(net.network_address)
+            last_addr = str(net.broadcast_address - 1) if prefix_len < 31 else str(net.broadcast_address)
+            first_octet = int(str(net.network_address).split(".")[0])
+            if first_octet < 128:
+                ip_class = "A"
+            elif first_octet < 192:
+                ip_class = "B"
+            elif first_octet < 224:
+                ip_class = "C"
+            elif first_octet < 240:
+                ip_class = "D"
+            else:
+                ip_class = "E"
+            broadcast = str(net.broadcast_address)
+        else:
+            usable = total_hosts
+            subnet_mask = str(net.netmask)
+            wildcard = str(net.hostmask)
+            first_addr = str(net.network_address + 1)
+            last_addr = str(net.broadcast_address - 1)
+            ip_class = "N/A"
+            broadcast = "N/A"
+
+        entry_id = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        # Dedup: INSERT OR REPLACE (UNIQUE on cidr+project_id)
+        existing = conn.execute(
+            "SELECT id FROM nc_subnet_calc_history WHERE cidr=? AND project_id=?",
+            (str(net.with_prefixlen), project_id),
+        ).fetchone()
+        if existing:
+            entry_id = existing[0]
+            conn.execute(
+                "UPDATE nc_subnet_calc_history SET network_addr=?,broadcast=?,first_host=?,last_host=?,"
+                "total_hosts=?,usable_hosts=?,prefix_len=?,subnet_mask=?,wildcard_mask=?,address_family=?,"
+                "ip_class=?,notes=?,created_at=? WHERE id=?",
+                (str(net.network_address), broadcast, first_addr, last_addr,
+                 total_hosts, usable, prefix_len, subnet_mask, wildcard,
+                 af, ip_class, data.get("notes", ""), now, entry_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO nc_subnet_calc_history "
+                "(id,project_id,cidr,network_addr,broadcast,first_host,last_host,"
+                "total_hosts,usable_hosts,prefix_len,subnet_mask,wildcard_mask,"
+                "address_family,ip_class,notes,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (entry_id, project_id, str(net.with_prefixlen),
+                 str(net.network_address), broadcast, first_addr, last_addr,
+                 total_hosts, usable, prefix_len, subnet_mask, wildcard,
+                 af, ip_class, data.get("notes", ""), now),
+            )
+        conn.commit()
+        conn.close()
+        _audit("SAVE", "subnet_calc", entry_id, cidr)
+        return jsonify({"id": entry_id, "cidr": str(net.with_prefixlen), "updated": bool(existing)}), 201
+
+    @bp.route("/api/subnet-calc/<entry_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_subnet_calc(entry_id):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_subnet_calc_history WHERE id=?", (entry_id,))
+        conn.commit()
+        conn.close()
+        _audit("DELETE", "subnet_calc", entry_id)
+        return jsonify({"deleted": entry_id})
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
