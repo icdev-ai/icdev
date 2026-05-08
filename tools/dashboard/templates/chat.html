@@ -88,8 +88,8 @@
         <div id="input-area" class="chat-input-area">
             <div class="chat-input-area__inner">
                 <button id="chat-upload-btn" class="chat-upload-btn" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
-                <input type="text" id="message-input" class="chat-message-input" placeholder="Type a message..." disabled>
-                <button id="btn-send" class="chat-send-btn" disabled>Send</button>
+                <textarea id="message-input" class="chat-message-input" placeholder="Type a message… (Shift+Enter for newline)" rows="1" disabled></textarea>
+                <button id="btn-send" class="chat-send-btn" disabled title="Send message" aria-label="Send">&#x2191;</button>
                 <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
             </div>
         </div>
@@ -514,6 +514,19 @@
                 healthEl.innerHTML = '<span style="color:' + hColor + ';font-weight:600;">' + hText + '</span>';
             }
         }
+    });
+})();
+
+// Textarea auto-resize
+(function() {
+    document.addEventListener('DOMContentLoaded', function() {
+        var ta = document.getElementById('message-input');
+        if (!ta) return;
+        function resize() {
+            ta.style.height = 'auto';
+            ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
+        }
+        ta.addEventListener('input', resize);
     });
 })();
 

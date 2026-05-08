@@ -132,11 +132,35 @@
     }
 
     function refreshContextList() {
-        chatApi('GET', '/contexts?user_id=' + encodeURIComponent(_userId) + '&include_closed=true')
+        return chatApi('GET', '/contexts?user_id=' + encodeURIComponent(_userId) + '&include_closed=false')
             .then(function (data) {
-                renderContextList(data.contexts || []);
-                updateTopStats(data.contexts || []);
+                var contexts = data.contexts || [];
+                renderContextList(contexts);
+                updateTopStats(contexts);
+                return contexts;
             });
+    }
+
+    function deleteContext(ctxId) {
+        chatApi('POST', '/' + ctxId + '/close').then(function () {
+            if (_activeContextId === ctxId) {
+                _activeContextId = null;
+                _activeIntakeSessionId = null;
+                stopPolling();
+                stopRicoasTimers();
+                hideRicoasSidebar();
+                setText('chat-title', 'Select or create a context');
+                var inp = document.getElementById('message-input');
+                var btn = document.getElementById('btn-send');
+                var closeBtn = document.getElementById('btn-close-context');
+                if (inp) inp.disabled = true;
+                if (btn) btn.disabled = true;
+                if (closeBtn) closeBtn.style.display = 'none';
+                var stream = document.getElementById('message-stream');
+                if (stream) stream.innerHTML = '';
+            }
+            refreshContextList();
+        });
     }
 
     function switchContext(ctxId) {
@@ -164,7 +188,7 @@
         hideRicoasSidebar();
         stopRicoasTimers();
 
-        chatApi('GET', '/' + ctxId).then(function (ctx) {
+        chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
             if (ctx.error) return;
             setText('chat-title', ctx.title || ctxId);
             var statusEl = document.getElementById('chat-status');
@@ -197,7 +221,7 @@
         showRicoasSidebar();
 
         // Load context header from chat API
-        chatApi('GET', '/' + ctxId).then(function (ctx) {
+        chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
             if (ctx.error) return;
             setText('chat-title', ctx.title || 'Requirements Intake');
             var statusEl = document.getElementById('chat-status');
@@ -1201,37 +1225,42 @@
         var container = document.getElementById('context-list');
         if (!container) return;
         if (!contexts.length) {
-            container.innerHTML = '<div style="padding: 16px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">No chat contexts yet. Click + New to start.</div>';
+            container.innerHTML = '<div class="ctx-empty">No active chats.<br>Click <strong>+ New</strong> to start.</div>';
             return;
         }
         var html = '';
         for (var i = 0; i < contexts.length; i++) {
             var c = contexts[i];
             var isActive = c.context_id === _activeContextId;
-            var statusColor = c.status === 'active' ? 'var(--accent-green, #0a0)' : 'var(--text-muted)';
+            var dotClass = c.status === 'active' ? 'ctx-dot--active' : 'ctx-dot--closed';
             var isIntake = isIntakeContext(c.context_id);
-            var titleSuffix = isIntake ? ' [RICOAS]' : '';
-            html += '<div class="ctx-item' + (isActive ? ' active' : '') + '" data-ctx-id="' + c.context_id + '" '
-                + 'style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); cursor: pointer;'
-                + (isActive ? ' background: var(--bg-tertiary, #223);' : '') + '">'
-                + '<div style="display: flex; justify-content: space-between; align-items: center;">'
-                + '<span style="font-size: 0.85rem; font-weight: 500;">' + escHtml(c.title || c.context_id) + titleSuffix + '</span>'
-                + '<span style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>'
-                + '</div>'
-                + '<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">'
-                + c.message_count + ' msgs'
+            var titleText = escHtml(c.title || c.context_id) + (isIntake ? ' <span style="font-size:0.68rem;opacity:0.7;">[RICOAS]</span>' : '');
+            var meta = c.message_count + ' msg' + (c.message_count !== 1 ? 's' : '')
                 + (c.is_processing ? ' · processing' : '')
-                + (c.queue_depth > 0 ? ' · ' + c.queue_depth + ' queued' : '')
-                + '</div></div>';
+                + (c.queue_depth > 0 ? ' · ' + c.queue_depth + ' queued' : '');
+            html += '<div class="ctx-item' + (isActive ? ' active' : '') + '" data-ctx-id="' + escAttr(c.context_id) + '">'
+                + '<span class="ctx-dot ' + dotClass + '"></span>'
+                + '<div class="ctx-body">'
+                + '<div class="ctx-title">' + titleText + '</div>'
+                + '<div class="ctx-meta">' + meta + '</div>'
+                + '</div>'
+                + '<button class="ctx-delete-btn" data-del-id="' + escAttr(c.context_id) + '" title="Close context" aria-label="Close">×</button>'
+                + '</div>';
         }
         container.innerHTML = html;
 
-        var items = container.querySelectorAll('.ctx-item');
-        for (var j = 0; j < items.length; j++) {
-            items[j].addEventListener('click', (function (id) {
-                return function () { switchContext(id); };
-            })(items[j].dataset.ctxId));
-        }
+        container.querySelectorAll('.ctx-item').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+                if (e.target.closest('.ctx-delete-btn')) return;
+                switchContext(el.dataset.ctxId);
+            });
+        });
+        container.querySelectorAll('.ctx-delete-btn').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                deleteContext(btn.dataset.delId);
+            });
+        });
     }
 
     // Advisory content_type → display metadata mapping (D-CU-2)
@@ -1562,17 +1591,24 @@
             });
         }
 
-        // Initial load
-        refreshContextList();
-
-        // Check for wizard params (auto-create intake context)
+        // Initial load — only treat wizardGoal as a wizard flow when URL query params
+        // are present (e.g. /chat?goal=build). Without params, the server renders a
+        // default goal; in that case fall through to auto-select existing contexts.
         var cfg = window._CHAT_CONFIG || {};
+        var hasUrlParams = window.location.search && window.location.search.length > 1;
         if (cfg.sessionId) {
-            // Resume existing intake session
+            refreshContextList();
             loadIntakeSession(cfg.sessionId);
-        } else if (cfg.wizardGoal) {
-            // Create new intake context from wizard
+        } else if (cfg.wizardGoal && hasUrlParams) {
+            refreshContextList();
             createIntakeContext({});
+        } else {
+            // Auto-select the first active context so the input is ready immediately
+            refreshContextList().then(function (contexts) {
+                if (contexts && contexts.length > 0) {
+                    switchContext(contexts[0].context_id);
+                }
+            });
         }
     }
 

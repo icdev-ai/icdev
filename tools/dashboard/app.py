@@ -2290,9 +2290,9 @@ def create_app() -> Flask:
     @app.route("/chat")
     def chat_new():
         """Start a new requirements chat — wizard params set context."""
-        goal = flask_request.args.get("goal", "build")
-        role = flask_request.args.get("role", "developer")
-        classification = flask_request.args.get("classification", "il4")
+        goal = flask_request.args.get("goal", "")
+        role = flask_request.args.get("role", "")
+        classification = flask_request.args.get("classification", "")
         frameworks = flask_request.args.get("frameworks", "")
         custom_role_name = flask_request.args.get("custom_role_name", "")
         custom_role_desc = flask_request.args.get("custom_role_desc", "")
