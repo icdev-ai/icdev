@@ -305,87 +305,87 @@ models:
 # First available model in the chain is used.
 routing:
   agent_architect:
-    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o, llama-local]
     effort: max
 
   agent_orchestrator:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
     effort: high
 
   agent_builder:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: max
 
   agent_compliance:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   agent_security:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   agent_infra:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
   agent_knowledge:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
   agent_monitor:
-    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
   agent_mbse:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
     effort: max
 
   agent_modernization:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
     effort: high
 
   agent_requirements_analyst:
-    chain: [claude-opus, gemini-2.5-pro, gpt-4o, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
     effort: high
 
   agent_supply_chain:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
   agent_simulation:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   agent_gateway:
-    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
   agent_devsecops:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   task_decomposition:
-    chain: [claude-opus, o3, gemini-2.5-pro, gpt-4o, qwen3-local]
+    chain: [qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
   collaboration:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
   nlq_sql:
-    chain: [gpt-4o-mini, gemini-2.0-flash, claude-haiku, qwen3-local, llama-local]
+    chain: [qwen3-local, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
     effort: low
 
   code_generation:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   saas_proxy:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash]
     effort: medium
 
   child_app:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local]
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o]
     effort: medium
 
   screenshot_validation:
@@ -413,40 +413,40 @@ routing:
     effort: low
 
   intake_persona_response:
-    chain: [claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
   bdd_preview:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, codestral-local]
     effort: low
 
   narrative_generation:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: high
 
   compliance_export:
-    chain: [claude-sonnet, gpt-4o-mini, gemini-2.0-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: medium
 
   # Cross-Language Translation (Phase 43)
   code_translation:
-    chain: [claude-opus, claude-sonnet, o3, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-opus, claude-sonnet, o3, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: max
 
   code_translation_repair:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   code_translation_review:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   test_translation:
-    chain: [claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   dependency_suggestion:
-    chain: [claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen3-local, codestral-local]
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, codestral-local]
     effort: low
 
   # RAG Re-ranking (Phase 64, D-RAG-3 — scanner_function, qwen3 only)
@@ -463,18 +463,18 @@ routing:
   # LeanStral excels at code verification and repair — use when available,
   # fall back to general-purpose models. Air-gapped: leanstral-local via vLLM.
   verify_loop_repair:
-    chain: [leanstral, leanstral-local, claude-sonnet, gemini-2.5-pro, gpt-4o, qwen3-local, codestral-local]
+    chain: [qwen3-local, leanstral, leanstral-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   # Formal Verification / Property-Based Testing (D-VL-6)
   # For generating invariant specifications and property tests.
   formal_verification:
-    chain: [leanstral, leanstral-local, claude-opus, o3, gemini-2.5-pro, qwen3-local]
+    chain: [qwen3-local, leanstral, leanstral-local, claude-opus, o3, gemini-2.5-pro]
     effort: max
 
   # GovEval Benchmark Evaluation (D-VL-9)
   goveval_judge:
-    chain: [claude-sonnet, leanstral, gpt-4o, gemini-2.5-pro, qwen3-local]
+    chain: [qwen3-local, claude-sonnet, leanstral, gpt-4o, gemini-2.5-pro]
     effort: high
 
   # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
@@ -501,7 +501,7 @@ routing:
   # Ollama for patch (building/code-gen). Explicit two-tier split per
   # the "Claude thinks, Ollama builds" convention.
   failure_triage_diagnose:
-    chain: [claude-sonnet, claude-opus, gpt-4o, gemini-2.5-pro, qwen3-local]
+    chain: [qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-pro]
     effort: high
 
   failure_triage_patch:
@@ -509,12 +509,12 @@ routing:
     effort: medium
 
   chat_response:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: low
     disable_thinking: true
 
   default:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, qwen3-local, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
 # -----------------------------------------------------------------------
