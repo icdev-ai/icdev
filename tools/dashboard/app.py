@@ -1493,6 +1493,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Autonomous Coder blueprint failed to register: %s", _exc)
 
+    # ---- System Graph (Unified Sigma.js graph) ----
+    try:
+        from tools.system_graph.blueprint import bp as _sysgraph_bp
+        app.register_blueprint(_sysgraph_bp)
+        app.logger.info("System Graph blueprint registered at /system-graph")
+    except Exception as _exc:
+        app.logger.warning("System Graph blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -8913,7 +8921,8 @@ if __name__ == "__main__":
             socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
+        _extra_files = [str(BASE_DIR / "args" / "llm_config.yaml")]
         if _ssl_context is not None:
-            app.run(host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+            app.run(host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context, extra_files=_extra_files)  # nosec B104
         else:
-            app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            app.run(host="0.0.0.0", port=args.port, debug=args.debug, extra_files=_extra_files)  # nosec B104 -- intentional bind-all for containerized/dev deployment
