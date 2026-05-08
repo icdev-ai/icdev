@@ -725,10 +725,46 @@ function sgFilterByType(t) {
     _activeType = t;
     document.getElementById('sg-type-filter').value = t;
   }
+  // Update legend dimming
   document.querySelectorAll('.sg-litem').forEach(el => {
     el.classList.toggle('dimmed', !!_activeType && el.dataset.type !== _activeType);
   });
-  sgRefresh();
+  // Apply client-side filter using Sigma reducers (no server round-trip)
+  _applyTypeFilter();
+}
+
+function _applyTypeFilter() {
+  if (!_sigma) return;
+  if (!_activeType) {
+    // Clear reducers — show everything
+    _sigma.setSetting('nodeReducer', null);
+    _sigma.setSetting('edgeReducer', null);
+    _sigma.refresh();
+    // Update empty hint
+    document.getElementById('sg-empty-hint').style.display = 'none';
+    return;
+  }
+  // Build set of visible node IDs for this type
+  const visibleIds = new Set();
+  _graph.forEachNode((node, attrs) => {
+    if (attrs.ntype === _activeType) visibleIds.add(node);
+  });
+  // Show/hide nodes via Sigma nodeReducer
+  _sigma.setSetting('nodeReducer', (node, data) => {
+    if (!visibleIds.has(node)) return { ...data, hidden: true, size: 0 };
+    return data;
+  });
+  // Hide edges where either endpoint is hidden
+  _sigma.setSetting('edgeReducer', (edge, data) => {
+    const src = _graph.source(edge);
+    const tgt = _graph.target(edge);
+    if (!visibleIds.has(src) || !visibleIds.has(tgt)) return { ...data, hidden: true };
+    return data;
+  });
+  _sigma.refresh();
+  // Show empty hint if no matching nodes
+  document.getElementById('sg-empty-hint').style.display =
+    visibleIds.size === 0 ? 'flex' : 'none';
 }
 
 /* ── Source chips ────────────────────────────────────────── */
@@ -750,13 +786,12 @@ async function sgRefresh() {
   clearTimeout(_refreshTimer);
   showLoading('Federating graph sources…');
 
-  const type   = document.getElementById('sg-type-filter').value;
+  // Legend type filter is applied client-side — don't send it to server on full refresh
   const health = document.getElementById('sg-health-filter').value;
   const q      = document.getElementById('sg-search').value.trim();
   const sources = getActiveSources();
 
   const params = new URLSearchParams();
-  if (type)           params.set('type', type);
   if (health)         params.set('health', health);
   if (q)              params.set('q', q);
   if (sources.length < 5) params.set('sources', sources.join(','));
@@ -764,6 +799,10 @@ async function sgRefresh() {
   try {
     const r = await fetch('/api/system-graph/graph?' + params.toString());
     _graphData = await r.json();
+    // Reset active type when doing a full server refresh
+    _activeType = null;
+    document.getElementById('sg-type-filter').value = '';
+    document.querySelectorAll('.sg-litem').forEach(el => el.classList.remove('dimmed'));
     renderGraph(_graphData);
     updateStats(_graphData.stats || {});
   } catch (err) {
@@ -880,6 +919,9 @@ function renderGraph(data) {
   });
 
   hideLoading();
+
+  // Re-apply any active legend type filter after graph rebuild
+  if (_activeType) _applyTypeFilter();
 }
 
 function positionTooltip(ev) {

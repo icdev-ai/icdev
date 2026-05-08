@@ -241,7 +241,7 @@
         });
 
         // Load messages from intake API
-        fetch(INTAKE_API + '/conversation/' + intakeSessionId)
+        fetch(INTAKE_API + '/session/' + intakeSessionId)
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.error) {
@@ -1677,11 +1677,9 @@
             }
         });
 
-        // File upload
-        var uploadBtn = document.getElementById('chat-upload-btn');
+        // File upload — label[for=chat-file-input] opens dialog natively; only wire change event
         var fileInput = document.getElementById('chat-file-input');
-        if (uploadBtn && fileInput) {
-            uploadBtn.addEventListener('click', function () { fileInput.click(); });
+        if (fileInput) {
             fileInput.addEventListener('change', function () {
                 if (fileInput.files.length > 0) uploadFiles(fileInput.files);
                 fileInput.value = '';
