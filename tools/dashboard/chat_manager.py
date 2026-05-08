@@ -106,6 +106,44 @@ def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list
 
 
 # ---------------------------------------------------------------------------
+# KG context retrieval
+# ---------------------------------------------------------------------------
+
+
+def _kg_retrieve(query: str, project_id: str = "") -> list:
+    """Retrieve relevant Knowledge Graph nodes for a chat message.
+
+    Returns list of dicts with 'label', 'entity_type', 'summary', 'score' keys.
+    Gracefully returns empty list if KG is unavailable or has no indexed data.
+    """
+    try:
+        from tools.knowledge_graph.graph_rag import retrieve as kg_retrieve
+
+        result = kg_retrieve(
+            query=query,
+            project_id=project_id or None,
+            top_k=5,
+            compress=False,
+        )
+        if result.get("status") != "ok":
+            return []
+        nodes = result.get("nodes", [])
+        return [
+            {
+                "label": n.get("label", ""),
+                "entity_type": n.get("entity_type", "unknown"),
+                "summary": (n.get("summary") or n.get("properties", {}).get("summary", ""))[:300],
+                "score": round(float(n.get("score", 0.0)), 3),
+            }
+            for n in nodes[:5]
+            if n.get("label") and float(n.get("score", 0.0)) >= 0.1
+        ]
+    except (ImportError, Exception) as exc:
+        logger.debug("KG retrieval unavailable: %s", exc)
+        return []
+
+
+# ---------------------------------------------------------------------------
 # History compression (D271-D274)
 # ---------------------------------------------------------------------------
 
@@ -253,6 +291,7 @@ class ChatManager:
         self._contexts: Dict[str, ChatContext] = {}
         self._lock = threading.Lock()
         self._last_rag_sources: Dict[str, list] = {}  # context_id -> last RAG results
+        self._last_kg_sources: Dict[str, list] = {}   # context_id -> last KG nodes
 
     # ------------------------------------------------------------------
     # Context CRUD
@@ -646,9 +685,10 @@ class ChatManager:
             conversation = []
             system_content = ctx.system_prompt or ""
 
-            # --- RAG context injection (D-RAG-2) ---
+            # --- RAG + KG context injection (D-RAG-2) ---
             user_content = msg.get("content", "")
             rag_results = []
+            kg_results = []
             if user_content and msg.get("role") == "user":
                 rag_results = _rag_retrieve(
                     query=user_content,
@@ -660,6 +700,16 @@ class ChatManager:
                     for i, r in enumerate(rag_results, 1):
                         rag_context += f"  [{i}] ({r['source_type']}, score={r['score']}): {r['content'][:400]}\n"
                     system_content += rag_context
+
+                kg_results = _kg_retrieve(
+                    query=user_content,
+                    project_id=ctx.project_id,
+                )
+                if kg_results:
+                    kg_context = "\n\n[Knowledge Graph Context]\n"
+                    for i, n in enumerate(kg_results, 1):
+                        kg_context += f"  [{i}] {n['label']} ({n['entity_type']}, score={n['score']}): {n['summary']}\n"
+                    system_content += kg_context
 
             if system_content:
                 conversation.append({"role": "system", "content": system_content})
@@ -690,9 +740,16 @@ class ChatManager:
             response = router.invoke("chat_response", request)
             result = response.content if response.content else str(response)
 
-            # Store RAG sources in metadata for attribution display
+            # Store RAG + KG sources for attribution display
             if rag_results:
                 self._last_rag_sources[ctx.context_id] = rag_results
+            if kg_results:
+                self._last_kg_sources[ctx.context_id] = kg_results
+                _mark_dirty(
+                    ctx.context_id,
+                    "kg_attribution",
+                    {"node_count": len(kg_results), "nodes": kg_results},
+                )
 
             return result
 

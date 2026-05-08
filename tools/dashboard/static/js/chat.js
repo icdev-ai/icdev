@@ -394,21 +394,28 @@
     }
 
     // ===================================================================
-    // SECTION 3: File Upload (RICOAS contexts only)
+    // SECTION 3: File Upload (RICOAS + RAG/KG for all contexts)
     // ===================================================================
 
     function uploadFiles(files) {
-        if (!_activeIntakeSessionId) {
-            appendMessage({ role: 'system', content: 'File upload requires a RICOAS intake context.' });
-            return;
-        }
         for (var i = 0; i < files.length; i++) {
-            uploadSingleFile(files[i]);
+            if (_activeIntakeSessionId) {
+                uploadSingleFileIntake(files[i]);
+            }
+            // Always also index into RAG+KG for the active context
+            uploadSingleFileRagKg(files[i]);
         }
     }
 
     function uploadSingleFile(file) {
-        appendMessage({ role: 'system', content: 'Uploading ' + file.name + '...' });
+        // Legacy alias — route to intake upload (backward compat)
+        if (_activeIntakeSessionId) {
+            uploadSingleFileIntake(file);
+        }
+        uploadSingleFileRagKg(file);
+    }
+
+    function uploadSingleFileIntake(file) {
         var formData = new FormData();
         formData.append('session_id', _activeIntakeSessionId);
         formData.append('file', file);
@@ -416,21 +423,91 @@
         fetch(INTAKE_API + '/upload', { method: 'POST', body: formData })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (data.error) {
-                appendMessage({ role: 'system', content: 'Upload failed: ' + data.error });
-                return;
-            }
-            var msg = 'Uploaded ' + file.name;
-            if (data.requirements_extracted > 0) msg += ' — extracted ' + data.requirements_extracted + ' requirement(s)';
-            appendMessage({ role: 'system', content: msg });
-
+            if (data.error) return;
             var docEl = document.getElementById('stat-documents');
             if (docEl) docEl.textContent = (parseInt(docEl.textContent, 10) || 0) + 1;
             refreshReadiness();
         })
+        .catch(function () {});
+    }
+
+    function uploadSingleFileRagKg(file) {
+        appendMessage({ role: 'system', content: 'Indexing ' + file.name + ' into RAG + Knowledge Graph…' });
+        var formData = new FormData();
+        formData.append('file', file);
+        formData.append('context_id', _activeContextId || '');
+
+        fetch('/api/chat/upload', { method: 'POST', body: formData })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) {
+                appendMessage({ role: 'system', content: 'Index failed: ' + data.error });
+                return;
+            }
+            var msg = 'Indexed ' + file.name + ': ' + data.rag_chunks + ' RAG chunk(s)';
+            if (data.kg && data.kg.total_entities) msg += ', ' + data.kg.total_entities + ' KG entity/entities';
+            appendMessage({ role: 'system', content: msg });
+            refreshDocumentList();
+        })
         .catch(function (err) {
-            appendMessage({ role: 'system', content: 'Upload error: ' + err.message });
+            appendMessage({ role: 'system', content: 'Index error: ' + err.message });
         });
+    }
+
+    // ===================================================================
+    // SECTION 3b: Intel Tab — Document List + KG Attribution
+    // ===================================================================
+
+    function refreshDocumentList() {
+        var params = 'context_id=' + encodeURIComponent(_activeContextId || '');
+        fetch('/api/chat/sources?' + params)
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var el = document.getElementById('intel-docs-content');
+            if (!el) return;
+            var sources = data.sources || [];
+            if (!sources.length) {
+                el.innerHTML = 'No documents indexed. Upload a file to chat with your documents.';
+                return;
+            }
+            var html = '<ul style="margin:0;padding:0 0 0 14px;">';
+            for (var i = 0; i < sources.length; i++) {
+                var s = sources[i];
+                var name = escHtml(s.filename || s.source_id);
+                var chunks = s.chunk_count || 0;
+                var ts = s.indexed_at ? s.indexed_at.slice(0, 16).replace('T', ' ') : '';
+                html += '<li style="margin-bottom:4px;"><span style="color:var(--accent-blue);">' + name + '</span>'
+                      + ' <span style="color:var(--text-muted);font-size:0.75rem;">' + chunks + ' chunk' + (chunks !== 1 ? 's' : '') + (ts ? ' · ' + ts : '') + '</span></li>';
+            }
+            html += '</ul>';
+            el.innerHTML = html;
+        })
+        .catch(function () {});
+    }
+
+    function updateKgAttribution(nodes) {
+        var el = document.getElementById('intel-kg-content');
+        if (!el) return;
+        if (!nodes || !nodes.length) {
+            el.innerHTML = 'No KG nodes retrieved yet.';
+            return;
+        }
+        var html = '<ul style="margin:0;padding:0 0 0 14px;">';
+        for (var i = 0; i < nodes.length; i++) {
+            var n = nodes[i];
+            var label = escHtml(n.label || '');
+            var etype = escHtml(n.entity_type || '');
+            var score = n.score !== undefined ? n.score.toFixed(2) : '';
+            var summary = escHtml((n.summary || '').slice(0, 120));
+            html += '<li style="margin-bottom:6px;">'
+                  + '<span style="color:#a78bfa;font-weight:600;">' + label + '</span>'
+                  + (etype ? ' <span style="color:var(--text-muted);font-size:0.7rem;">[' + etype + ']</span>' : '')
+                  + (score ? ' <span style="color:var(--text-muted);font-size:0.7rem;">(' + score + ')</span>' : '')
+                  + (summary ? '<br><span style="color:var(--text-muted);font-size:0.75rem;">' + summary + '</span>' : '')
+                  + '</li>';
+        }
+        html += '</ul>';
+        el.innerHTML = html;
     }
 
     // ===================================================================
@@ -461,6 +538,16 @@
                         var change = updates.changes[i];
                         if (change.type === 'new_message' && change.data && change.data.role === 'assistant') {
                             if (!isIntakeContext(ctxId)) refreshChatMessages(ctxId);
+                        }
+                        if (change.type === 'rag_attribution' && change.data) {
+                            var ragEl = document.getElementById('intel-rag-content');
+                            if (ragEl && change.data.source_count) {
+                                ragEl.innerHTML = '<span style="color:#2196f3;font-weight:600;">' + change.data.source_count +
+                                    ' source(s)</span> used in last response.';
+                            }
+                        }
+                        if (change.type === 'kg_attribution' && change.data && change.data.nodes) {
+                            updateKgAttribution(change.data.nodes);
                         }
                     }
                 }
@@ -1268,6 +1355,7 @@
         'governance_advisory': { label: 'Governance', advisory: 'governance', icon: '\u26A0' },
         'bayesian_advisory':   { label: 'Bayesian Learning', advisory: 'bayesian', icon: '\uD83E\uDDE0' },
         'rag_attribution':     { label: 'Knowledge Sources', advisory: 'rag', icon: '\uD83D\uDCDA' },
+        'kg_attribution':      { label: 'Knowledge Graph', advisory: 'kg',  icon: '\uD83D\uDD78' },
         'code_quality_advisory': { label: 'Code Quality', advisory: 'code_quality', icon: '\uD83D\uDD27' },
         'genesis_advisory':    { label: 'Genesis Insight', advisory: 'genesis', icon: '\uD83D\uDD2C' },
         'intake_advisory':     { label: 'Requirements', advisory: 'intake', icon: '\uD83D\uDCCB' },
@@ -1646,6 +1734,11 @@
     ns.chatRunTests = chatRunTests;
     ns.chatActivateTechnique = activateTechnique;
     ns.chatDeactivateTechnique = deactivateTechnique;
+
+    // RAG + KG document management
+    ns.uploadFiles = uploadFiles;
+    ns.refreshDocumentList = refreshDocumentList;
+    ns.updateKgAttribution = updateKgAttribution;
 
     // Multi-stream API
     ns.chatStreams = {

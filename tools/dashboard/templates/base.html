@@ -137,7 +137,6 @@
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/kanban">Task Board</a></li>
-                    <li><a href="/system-graph">System Graph</a></li>
                     <li><a href="/batch">Batch</a></li>
                     <li><a href="/simulation">Simulation</a></li>
                     <li><a href="/simulate/chat">Simulate Chat</a></li>
@@ -181,13 +180,17 @@
 
             <!-- Intelligence -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/knowledge-search', '/code-quality', '/writeguard'] or (not airgap_mode and request.path in ['/research', '/autoresearch', '/pulse', '/clawhub']) %}active{% endif %}">Intelligence</a>
+                <a href="#" class="{% if request.path in ['/knowledge-search', '/code-quality', '/writeguard', '/system-graph', '/components-map', '/ask-icdev'] or (not airgap_mode and request.path in ['/research', '/autoresearch', '/pulse', '/clawhub']) %}active{% endif %}">Intelligence</a>
                 <ul class="nav-dropdown-menu">
+                    <li><a href="/system-graph" style="font-weight:600;color:#42a5f5;">System Graph</a></li>
+                    <li><a href="/components-map">Component Map</a></li>
+                    <li><a href="/ask-icdev">Ask ICDEV</a></li>
+                    <li style="border-top:1px solid rgba(255,255,255,0.08);margin:4px 0;padding:0;"></li>
                     {% if not airgap_mode %}
                     <li><a href="/research">Research</a></li>
                     <li><a href="/autoresearch">Autoresearch</a></li>
                     {% endif %}
-                    <li><a href="/knowledge-search">Knowledge</a></li>
+                    <li><a href="/knowledge-search">Knowledge Search</a></li>
                     <li><a href="/code-quality">Code Quality</a></li>
                     <li><a href="/writeguard">WriteGuard</a></li>
                     {% if not airgap_mode %}
