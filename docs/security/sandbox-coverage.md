@@ -222,6 +222,22 @@ When a new `tools/` module ingests user-provided content:
   - Guardrails: Credentials from env vars or instance profile only — never hardcoded. `ICDEV_STRICT_SANDBOX=1` routes through `SandboxExecutor` in IL5. Endpoint override (`AWS_SECRETS_ENDPOINT_URL`) is for testing only and must not be user-supplied.
 - **Revisit if:** resolver accepts a caller-supplied endpoint URL from a user-facing HTTP API, or if secret content is ever executed rather than passed as a credential string.
 
+### Gap 14 — NMCE Config Upload (`tools/migration_canvas/blueprint.py` — `/upload-config`)
+
+**Module:** `tools/migration_canvas/blueprint.py` route `POST /api/network-migration/<sid>/upload-config`
+
+**Ingress path:** Engineer uploads a device config file (`.txt`, `.conf`, `.cfg`, `.log`) via multipart HTTP, pastes raw text as JSON `config_text`, or requests a DB reload from `ni_device_configs`. Content is stored verbatim in `mc_net_sessions.src_config_raw` (TEXT column, SQLite). No file system write; content is parsed by `parse_source_config()` (regex-only, no `eval()`/`exec()`).
+
+- **Decision:** **trusted-first-party** (operator-controlled data path)
+- **Rationale:** The config is a structured network device text file (IOS-XR, JunOS, etc.). The parser (`tools/network/config_parser.py`) uses only `re.search`/`re.findall` pattern matching — no dynamic code execution, no shell calls, no file writes outside the DB column. The result is structured Python dicts. File extension is validated to an allowlist (`.txt .conf .cfg .log`). Config content is never rendered unescaped in HTML (Jinja2 auto-escaping). Users uploading device configs are authenticated operators (`mdc_login_required`).
+- **Guardrails:**
+  - Extension allowlist enforced: reject anything not in `{'.txt', '.conf', '.cfg', '.log'}`.
+  - Flask `MAX_CONTENT_LENGTH` (16 MB default) caps file size.
+  - No `exec()`/`eval()` anywhere in `parse_source_config()` or the route handler.
+  - Config stored only in `mc_net_sessions.src_config_raw` (TEXT); never written to the file system.
+  - DB reload path (`source='db'`) reads from first-party `ni_device_configs` only — no new user content enters.
+- **Revisit if:** config content is ever passed to a shell command, rendered outside Jinja2 auto-escape, or accepted from an unauthenticated endpoint.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)

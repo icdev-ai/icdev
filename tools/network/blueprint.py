@@ -10549,7 +10549,7 @@ Respond with ONLY this JSON (no other text):
             "network/sops.html",
             sops=sops, categories=categories, csps=csps,
             filter_category=category, filter_status=status_f, search_q=q,
-            is_admin=(getattr(current_user, "role", "") == "admin"),
+            is_admin=(getattr(g.get("current_user"), "role", "") == "admin"),
         )
 
     @bp.route("/api/sops")
