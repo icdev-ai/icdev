@@ -1462,6 +1462,39 @@ def create_app() -> Flask:
     else:
         app.logger.info("Strategos disabled (ICDEV_STRATEGOS_ENABLED=false)")
 
+    # ---- GeoSIGINT Blueprint ----
+    try:
+        import importlib.util as _ilu, sys as _sys
+        _geo_bp_path = BASE_DIR / "apps" / "geosigint" / "blueprint.py"
+        if not _geo_bp_path.exists():
+            raise FileNotFoundError(f"GeoSIGINT blueprint not found at {_geo_bp_path}")
+        # Ensure apps and apps.geosigint are in sys.modules for intra-package imports.
+        # __path__ must be set so that sub-module imports (e.g. from apps.geosigint.a2ad_mapper)
+        # resolve correctly at request time.
+        for _pkg, _pkg_path, _pkg_dir in [
+            ("apps", BASE_DIR / "apps" / "__init__.py", BASE_DIR / "apps"),
+            ("apps.geosigint", BASE_DIR / "apps" / "geosigint" / "__init__.py", BASE_DIR / "apps" / "geosigint"),
+        ]:
+            if _pkg not in _sys.modules:
+                _spec = _ilu.spec_from_file_location(_pkg, str(_pkg_path))
+                _mod = _ilu.module_from_spec(_spec)
+                _mod.__path__ = [str(_pkg_dir)]
+                _mod.__package__ = _pkg
+                _sys.modules[_pkg] = _mod
+                _spec.loader.exec_module(_mod)
+        _spec = _ilu.spec_from_file_location("apps.geosigint.blueprint", str(_geo_bp_path))
+        _geo_mod = _ilu.module_from_spec(_spec)
+        _sys.modules["apps.geosigint.blueprint"] = _geo_mod
+        _spec.loader.exec_module(_geo_mod)
+        _geo_bp = _geo_mod.create_geosigint_blueprint()
+        _geo_api_bp = _geo_mod.create_geosigint_api_blueprint()
+        app.register_blueprint(_geo_bp)
+        app.register_blueprint(_geo_api_bp)
+        app.logger.info("GeoSIGINT blueprints registered at /geosigint and /api/geosigint")
+    except Exception as _exc:
+        import traceback as _tb
+        app.logger.warning("GeoSIGINT blueprint failed to register: %s\n%s", _exc, _tb.format_exc())
+
     # ---- TA Patterns Blueprint ----
     try:
         from tools.trading.ta.blueprint import create_ta_blueprint
