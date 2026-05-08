@@ -1504,3 +1504,59 @@ def handle_news_reason(args: dict) -> dict:
 def handle_news_db_migrate(args: dict) -> dict:
     """Run ADN database migrations (ad_news_* tables)."""
     return _run_cli("tools/trading/news/db.py", ["--migrate"])
+
+
+# ---------------------------------------------------------------------------
+# System Graph (federated Sigma.js graph — 3 500+ nodes, 6 sources)
+# ---------------------------------------------------------------------------
+
+
+def handle_system_graph_get(args: dict) -> dict:
+    """Return the full federated ICDEV system graph payload."""
+    try:
+        from tools.system_graph.graph_builder import build_graph
+        sources = args.get("sources") or None
+        if isinstance(sources, list) and len(sources) == 0:
+            sources = None
+        data = build_graph(
+            sources=sources,
+            filter_type=args.get("filter_type") or None,
+            filter_health=args.get("filter_health") or None,
+            search=args.get("search") or None,
+        )
+        return {
+            "node_count": len(data.get("nodes", [])),
+            "edge_count": len(data.get("edges", [])),
+            "stats": data.get("stats", {}),
+            "nodes": data.get("nodes", [])[:500],   # cap for MCP transport
+            "edges": data.get("edges", [])[:500],
+            "truncated": len(data.get("nodes", [])) > 500,
+        }
+    except Exception as exc:
+        logger.warning("handle_system_graph_get: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_system_graph_node_detail(args: dict) -> dict:
+    """Return full detail for a single graph node."""
+    try:
+        from tools.system_graph.graph_builder import get_node_detail
+        node_id = args.get("node_id", "")
+        detail = get_node_detail(node_id)
+        if detail is None:
+            return {"error": f"node '{node_id}' not found"}
+        return detail
+    except Exception as exc:
+        logger.warning("handle_system_graph_node_detail: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_system_graph_stats(args: dict) -> dict:
+    """Return high-level stats for the federated system graph."""
+    try:
+        from tools.system_graph.graph_builder import build_graph
+        data = build_graph()
+        return data.get("stats", {})
+    except Exception as exc:
+        logger.warning("handle_system_graph_stats: %s", exc)
+        return {"error": str(exc)}

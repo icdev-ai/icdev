@@ -2247,3 +2247,30 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 # POST /data/api/sync/openmetadata   {"design_id": "<id>", "dry_run": false}    # Trigger OpenMetadata sync
 # Omit design_id to sync all designs. dry_run=true for validation without writes.
 ```
+
+
+## System Graph Commands
+```bash
+# Federated graph API (6 sources — 3500+ nodes, 1600+ edges)
+# Dashboard page
+open http://localhost:5050/system-graph
+
+# REST API
+GET /api/system-graph/graph                          # Full graph (5-min cache)
+GET /api/system-graph/graph?type=tool                # Filter by node type
+GET /api/system-graph/graph?health=error             # Filter by health
+GET /api/system-graph/graph?q=kanban                 # Full-text search
+GET /api/system-graph/graph?sources=awareness_kg,goals  # Subset of sources
+GET /api/system-graph/node/<node_id>                 # Per-node detail + neighbours
+GET /api/system-graph/node-types                     # Node type + edge type metadata
+
+# Python direct import
+python -c "from tools.system_graph.graph_builder import build_graph; d = build_graph(); print(d['stats'])"
+python -c "from tools.system_graph.graph_builder import get_node_detail; print(get_node_detail('<node_id>'))"
+
+# MCP tools (via unified gateway)
+#   system_graph_get        — full graph with optional filters
+#   system_graph_node_detail — per-node detail
+#   system_graph_stats       — source counts + timing
+```
+
