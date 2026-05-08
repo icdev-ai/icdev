@@ -443,3 +443,148 @@ class TestInsightQuestions:
                 assert result["status"] == "ok"
                 assert "questions" in result
                 assert isinstance(result["questions"], list)
+
+
+# ===========================================================================
+# graph-hop re-ranking: simulated DB move (sg-t2-02-d4)
+# ===========================================================================
+
+
+class TestGraphHopReRankSimulatedDBMove:
+    """Graph-hop re-ranking unit tests with simulated DB move.
+
+    Scenario: neighbor retrieval first succeeds (valid RRF scores computed),
+    then the DB 'moves' mid-expansion (OperationalError on the edge query),
+    triggering the fallback error handler in expand_bm25_top_k.
+
+    Verifies:
+    - Neighbor boost (+0.3) applied exactly to the score field.
+    - hybrid_rank (RRF) is present and non-negative for all scored nodes.
+    - DB-move error → expand_bm25_top_k returns structured error dict and
+      logs the failure to the module logger (the backlog signal).
+    - Partial graph expansion (only some neighbors retrieved) still yields
+      a valid scored result with positive scores and RRF values.
+    """
+
+    def test_neighbor_boost_increases_score_by_0_3(self):
+        """Nodes in neighbor_ids receive exactly +0.3 added to their score."""
+        from tools.knowledge_graph.graph_rag import _score_nodes
+
+        node_a = {
+            "id": "na", "label": "AC-2", "entity_type": "control",
+            "centrality": 0.5, "created_at": "2024-01-01 00:00:00", "properties": "{}",
+        }
+        node_b = {
+            "id": "nb", "label": "FedRAMP", "entity_type": "standard",
+            "centrality": 0.5, "created_at": "2024-01-01 00:00:00", "properties": "{}",
+        }
+        edges = [{"source_id": "na", "target_id": "nb", "weight": 1.0}]
+
+        # Score with nb as a 1-hop neighbor vs. without
+        scored_with = _score_nodes([node_a, node_b], edges, "compliance", [], neighbor_ids={"nb"})
+        scored_without = _score_nodes([node_a, node_b], edges, "compliance", [], neighbor_ids=set())
+
+        nb_with = next(n for n in scored_with if n["id"] == "nb")
+        nb_without = next(n for n in scored_without if n["id"] == "nb")
+
+        assert nb_with["is_neighbor"] is True
+        assert nb_without["is_neighbor"] is False
+        # Only neighbor_boost differs; base_score / relevance / embedding are identical
+        assert abs((nb_with["score"] - nb_without["score"]) - 0.3) < 1e-5
+
+    def test_rrf_hybrid_rank_present_and_nonnegative(self):
+        """All scored nodes carry a non-negative hybrid_rank (RRF) when neighbors are present."""
+        from tools.knowledge_graph.graph_rag import _score_nodes
+
+        nodes = [
+            {"id": "n1", "label": "NIST 800-53", "entity_type": "standard",
+             "centrality": 0.8, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+            {"id": "n2", "label": "AC-2 access control", "entity_type": "control",
+             "centrality": 0.6, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+            {"id": "n3", "label": "IAM System", "entity_type": "system",
+             "centrality": 0.4, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+        ]
+        edges = [
+            {"source_id": "n2", "target_id": "n1", "weight": 1.0},
+            {"source_id": "n3", "target_id": "n2", "weight": 0.8},
+        ]
+
+        scored = _score_nodes(
+            nodes, edges, "compliance", ["access", "control"], neighbor_ids={"n3"}
+        )
+
+        assert len(scored) == 3
+        for node in scored:
+            assert "hybrid_rank" in node, f"Missing hybrid_rank on node {node['id']}"
+            assert node["hybrid_rank"] >= 0.0, f"Negative hybrid_rank on {node['id']}"
+        n3 = next(n for n in scored if n["id"] == "n3")
+        assert n3["is_neighbor"] is True
+
+    def test_db_move_expansion_fallback_returns_error_and_logs(self, caplog):
+        """DB move (OperationalError on edge query) → error dict returned, failure logged."""
+        import logging
+
+        from tools.knowledge_graph.graph_rag import expand_bm25_top_k
+
+        # Real in-memory DB so the graph-scope query succeeds
+        real_conn = sqlite3.connect(":memory:")
+        real_conn.row_factory = sqlite3.Row
+        real_conn.executescript(KG_SCHEMA)
+        real_conn.execute(
+            "INSERT INTO kg_graphs (id, project_id, name) VALUES ('g1', 'p1', 'Test')"
+        )
+        real_conn.commit()
+
+        class _DBMovedWrapper:
+            """Passes all queries through except kg_edges (simulates DB move)."""
+
+            def execute(self, sql, params=None):
+                if "kg_edges" in sql:
+                    raise sqlite3.OperationalError("database has moved")
+                return (
+                    real_conn.execute(sql, params)
+                    if params is not None
+                    else real_conn.execute(sql)
+                )
+
+            def close(self):
+                real_conn.close()
+
+        with patch("tools.knowledge_graph.graph_rag._get_db", return_value=_DBMovedWrapper()):
+            with patch("tools.knowledge_graph.graph_rag._ensure_tables"):
+                with caplog.at_level(logging.ERROR, logger="icdev.knowledge_graph.graph_rag"):
+                    result = expand_bm25_top_k(["n1", "n2"], graph_id="g1")
+
+        # Fallback: structured error dict returned instead of raising to caller
+        assert result["status"] == "error"
+        assert result["all_neighbors"] == []
+        assert "database has moved" in result.get("error", "")
+        # Error logged to the module logger (backlog signal)
+        assert any(
+            "expand_bm25_top_k failed" in r.message
+            and r.name == "icdev.knowledge_graph.graph_rag"
+            for r in caplog.records
+        )
+
+    def test_partial_expansion_yields_valid_rrf_scores(self):
+        """Partial graph expansion (1 matched + 1 neighbor only) → valid scored nodes."""
+        from tools.knowledge_graph.graph_rag import _score_nodes
+
+        partial_nodes = [
+            {"id": "n1", "label": "AC-2", "entity_type": "control",
+             "centrality": 0.7, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+            {"id": "n4", "label": "FedRAMP Boundary", "entity_type": "boundary",
+             "centrality": 0.3, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+        ]
+        edges = [{"source_id": "n1", "target_id": "n4", "weight": 0.85}]
+
+        scored = _score_nodes(
+            partial_nodes, edges, "compliance", ["ac"], neighbor_ids={"n4"}
+        )
+
+        assert len(scored) == 2
+        assert all(n["score"] >= 0.0 for n in scored)
+        assert all(n["hybrid_rank"] >= 0.0 for n in scored)
+        n4 = next(n for n in scored if n["id"] == "n4")
+        assert n4["score"] > 0.0
+        assert n4["is_neighbor"] is True
