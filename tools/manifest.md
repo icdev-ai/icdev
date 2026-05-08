@@ -674,3 +674,11 @@
 | Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |
 
 | [system-graph](manifest/system-graph.md) | Unified federated graph (Sigma.js 3.0.2) — 6 sources, 3 500+ nodes |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cmmi L3 Assessor | tools\compliance\cmmi_l3_assessor.py | Auto-registered: compliance/cmmi_l3_assessor.py | --json | JSON |
+| Connectivity Ref | tools\network\connectivity_ref.py | Auto-registered: network/connectivity_ref.py | --json | JSON |
+| Forge Academy Oracle | tools\genesis\reflexes\forge_academy_oracle.py | Auto-registered: reflexes/forge_academy_oracle.py | --json | JSON |

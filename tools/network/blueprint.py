@@ -10532,6 +10532,78 @@ Respond with ONLY this JSON (no other text):
         conn.close()
         return jsonify({"status": "deleted"})
 
+    # ── SOP Library ───────────────────────────────────────────────────────
+
+    @bp.route("/sops")
+    @nc_login_required
+    def nc_sops_page():
+        from tools.network.sops import list_sops as _ls
+        category = request.args.get("category", "")
+        status_f = request.args.get("status", "approved")
+        q = request.args.get("q", "")
+        sops = _ls(category=category or None, status=status_f or None, limit=200)
+        all_sops = _ls(limit=1000)
+        categories = sorted({s["category"] for s in all_sops})
+        csps = sorted({s.get("csp", "multi") for s in all_sops})
+        return render_template(
+            "network/sops.html",
+            sops=sops, categories=categories, csps=csps,
+            filter_category=category, filter_status=status_f, search_q=q,
+            is_admin=(getattr(current_user, "role", "") == "admin"),
+        )
+
+    @bp.route("/api/sops")
+    def nc_api_sops_list():
+        from tools.network.sops import list_sops as _ls
+        return jsonify(_ls(
+            category=request.args.get("category") or None,
+            status=request.args.get("status") or None,
+            limit=200,
+        ))
+
+    @bp.route("/api/sops/<sop_id>")
+    def nc_api_sop_get(sop_id):
+        from tools.network.sops import get_sop as _gs
+        s = _gs(sop_id)
+        return (jsonify(s), 200) if s else (jsonify({"error": "not found"}), 404)
+
+    # ── Connectivity Reference ────────────────────────────────────────────
+
+    @bp.route("/connectivity")
+    @nc_login_required
+    def nc_connectivity_page():
+        from tools.network.connectivity_ref import (
+            get_connectivity_matrix, get_scca_flow, get_resiliency_tiers,
+        )
+        return render_template(
+            "network/connectivity.html",
+            matrix=get_connectivity_matrix(),
+            csps=["aws", "azure", "gcp", "oci", "ibm"],
+            scca_flow=get_scca_flow(),
+            resiliency_tiers=get_resiliency_tiers(),
+        )
+
+    @bp.route("/api/connectivity/matrix")
+    def nc_api_connectivity_matrix():
+        from tools.network.connectivity_ref import get_connectivity_matrix
+        return jsonify(get_connectivity_matrix())
+
+    @bp.route("/api/connectivity/onprem-pattern")
+    def nc_api_onprem_pattern():
+        from tools.network.connectivity_ref import get_onprem_to_csp_patterns
+        return jsonify(get_onprem_to_csp_patterns(
+            csp=request.args.get("csp", "aws"),
+            pattern_type=request.args.get("type", "ipsec_vpn"),
+        ))
+
+    @bp.route("/api/connectivity/c2c-patterns")
+    def nc_api_c2c_patterns():
+        from tools.network.connectivity_ref import get_csp_to_csp_patterns
+        return jsonify(get_csp_to_csp_patterns(
+            src_csp=request.args.get("src", "aws"),
+            dst_csp=request.args.get("dst", "azure"),
+        ))
+
     # ── Packet Capture (GNS3 / lab link capture) ─────────────────────────
 
     import hashlib
