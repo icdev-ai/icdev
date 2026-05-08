@@ -84,14 +84,15 @@
             </div>
         </div>
 
-        <!-- Input area with file upload -->
-        <div id="input-area" class="chat-input-area">
-            <div class="chat-input-area__inner">
-                <button id="chat-upload-btn" class="chat-upload-btn" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
-                <textarea id="message-input" class="chat-message-input" placeholder="Type a message… (Shift+Enter for newline)" rows="1" disabled></textarea>
-                <button id="btn-send" class="chat-send-btn" disabled title="Send message" aria-label="Send">&#x2191;</button>
-                <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
-            </div>
+    </div>
+
+    <!-- Input area spans main pane + right sidebar all the way to the right edge -->
+    <div id="input-area" class="chat-input-area">
+        <div class="chat-input-area__inner">
+            <button id="chat-upload-btn" class="chat-upload-btn" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
+            <textarea id="message-input" class="chat-message-input" placeholder="Type a message… (Shift+Enter for newline)" rows="1" disabled></textarea>
+            <button id="btn-send" class="chat-send-btn" disabled title="Send message" aria-label="Send">&#x2191;</button>
+            <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
         </div>
     </div>
 
