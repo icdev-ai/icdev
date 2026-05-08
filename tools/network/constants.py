@@ -1310,6 +1310,13 @@ CSP_GROUP_DEFAULTS = {
         {"type": "ibm-dl", "label": "Direct Link", "dx": 360, "dy": 60},
         {"type": "ibm-satellite", "label": "Satellite", "dx": 360, "dy": 150},
     ],
+    "dod": [
+        {"type": "dod-niprnet-onramp", "label": "NIPRNet On-ramp", "dx": 40,  "dy": 60},
+        {"type": "dod-bcap",           "label": "BCAP",             "dx": 200, "dy": 60},
+        {"type": "dod-vdss",           "label": "VDSS Stack",       "dx": 360, "dy": 60},
+        {"type": "dod-vdms",           "label": "VDMS Stack",       "dx": 200, "dy": 150},
+        {"type": "dod-tccm",           "label": "TCCM",             "dx": 360, "dy": 150},
+    ],
 }
 
 # ── Compliance Regimes & Rule Definitions ─────────────────────────────────────

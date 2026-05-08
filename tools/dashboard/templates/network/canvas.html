@@ -3096,8 +3096,8 @@ async function cfgDownloadAll() {
 
 // ── Load Cloud Networking palette from API ──────────────────────────────────
 (function(){
-  const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon'};
-  const CSP_LABELS = {aws:'AWS',azure:'Azure',gcp:'GCP',oci:'OCI',ibm:'IBM Cloud',multi_cloud:'Multi-Cloud'};
+  const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon',dod:'dod-icon'};
+  const CSP_LABELS = {aws:'AWS',azure:'Azure',gcp:'GCP',oci:'OCI',ibm:'IBM Cloud',multi_cloud:'Multi-Cloud',dod:'DoD/SCCA'};
   fetch(NC_BASE + '/api/cloud-objects').then(r=>r.json()).then(data=>{
     const container = document.getElementById('cloud-palette-container');
     if(!container) return;

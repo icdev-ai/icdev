@@ -1120,6 +1120,7 @@ function toast(msg, isErr=false) {
   el.className = 'toast show' + (isErr ? ' error' : '');
   setTimeout(() => el.className = 'toast', 3000);
 }
+function showToast(msg, type) { toast(msg, type === 'warn' || type === 'error'); }
 
 // ── Step navigation ───────────────────────────────────────────────
 function goStep(n) {
