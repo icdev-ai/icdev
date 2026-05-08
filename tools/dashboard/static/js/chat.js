@@ -208,7 +208,7 @@
                 btn.disabled = true;
                 closeBtn.style.display = 'none';
             }
-            if (uploadBtn) uploadBtn.style.display = 'none';
+            if (uploadBtn) uploadBtn.style.display = ctx.status === 'active' ? 'inline-block' : 'none';
 
             renderMessages(ctx.messages || []);
             updateInterventionBar(ctx.is_processing);
@@ -432,7 +432,10 @@
     }
 
     function uploadSingleFileRagKg(file) {
-        appendMessage({ role: 'system', content: 'Indexing ' + file.name + ' into RAG + Knowledge Graph…' });
+        // Show uploading indicator card
+        var uploadingContent = '📎 Indexing **' + file.name + '** into RAG + Knowledge Graph…';
+        appendMessage({ role: 'system', content: uploadingContent });
+
         var formData = new FormData();
         formData.append('file', file);
         formData.append('context_id', _activeContextId || '');
@@ -441,16 +444,32 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data.error) {
-                appendMessage({ role: 'system', content: 'Index failed: ' + data.error });
+                appendMessage({ role: 'system', content: '❌ Upload failed for **' + file.name + '**: ' + data.error });
                 return;
             }
-            var msg = 'Indexed ' + file.name + ': ' + data.rag_chunks + ' RAG chunk(s)';
-            if (data.kg && data.kg.total_entities) msg += ', ' + data.kg.total_entities + ' KG entity/entities';
+            // Build rich confirmation message
+            var chunks = data.rag_chunks || 0;
+            var kgEntities = (data.kg && data.kg.total_entities) ? data.kg.total_entities : 0;
+            var kgEdges = (data.kg && data.kg.total_edges) ? data.kg.total_edges : 0;
+            var sizeKb = data.file_size_kb ? ' (' + data.file_size_kb + ' KB)' : '';
+            var ftype = data.file_type ? data.file_type.toUpperCase() : '';
+
+            var msg = '✅ **' + file.name + '** indexed' + sizeKb + '\n'
+                    + '• RAG: ' + chunks + ' searchable chunk' + (chunks !== 1 ? 's' : '') + '\n';
+            if (kgEntities > 0) {
+                msg += '• KG: ' + kgEntities + ' entit' + (kgEntities !== 1 ? 'ies' : 'y')
+                     + (kgEdges > 0 ? ', ' + kgEdges + ' relationship' + (kgEdges !== 1 ? 's' : '') : '') + '\n';
+            }
+            if (ftype === 'IMAGE' || ftype === 'PNG' || ftype === 'JPG' || ftype === 'JPEG' || ftype === 'GIF' || ftype === 'WEBP' || ftype === 'SVG') {
+                msg += '• 📌 Image stored as reference — describe its contents in your next message to add semantic context';
+            } else {
+                msg += '• Now ask questions about this document and I\'ll retrieve the relevant sections automatically';
+            }
             appendMessage({ role: 'system', content: msg });
             refreshDocumentList();
         })
         .catch(function (err) {
-            appendMessage({ role: 'system', content: 'Index error: ' + err.message });
+            appendMessage({ role: 'system', content: '❌ Upload error: ' + err.message });
         });
     }
 
@@ -1669,15 +1688,30 @@
             });
         }
 
-        // Drag-and-drop on message stream
-        var streamEl = document.getElementById('message-stream');
-        if (streamEl) {
-            streamEl.addEventListener('dragover', function (e) { e.preventDefault(); });
-            streamEl.addEventListener('drop', function (e) {
+        // Drag-and-drop on message stream + input area
+        var dropZones = [
+            document.getElementById('message-stream'),
+            document.getElementById('input-area')
+        ];
+        dropZones.forEach(function (zone) {
+            if (!zone) return;
+            zone.addEventListener('dragenter', function (e) {
                 e.preventDefault();
+                zone.classList.add('chat-drop-active');
+            });
+            zone.addEventListener('dragover', function (e) {
+                e.preventDefault();
+                zone.classList.add('chat-drop-active');
+            });
+            zone.addEventListener('dragleave', function (e) {
+                if (!zone.contains(e.relatedTarget)) zone.classList.remove('chat-drop-active');
+            });
+            zone.addEventListener('drop', function (e) {
+                e.preventDefault();
+                zone.classList.remove('chat-drop-active');
                 if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
             });
-        }
+        });
 
         // Initial load — only treat wizardGoal as a wizard flow when URL query params
         // are present (e.g. /chat?goal=build). Without params, the server renders a
