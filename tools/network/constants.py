@@ -21,7 +21,11 @@ CLOUD_OBJECTS = {
         {"type": "aws-r53", "label": "Route 53", "icon": "R53", "desc": "AWS Route 53 DNS"},
         {"type": "aws-nfw", "label": "Network FW", "icon": "NFW", "desc": "AWS Network Firewall"},
         {"type": "aws-waf", "label": "WAF", "icon": "WAF", "desc": "AWS WAF — Web Application Firewall"},
-        {"type": "aws-gw-ep", "label": "GW Endpoint", "icon": "GEP", "desc": "AWS Gateway/Interface VPC Endpoint"},
+        {"type": "aws-gw-ep",   "label": "GW Endpoint",      "icon": "GEP", "desc": "AWS Gateway/Interface VPC Endpoint"},
+        {"type": "aws-vgw",     "label": "Virtual Priv GW",  "icon": "VGW", "desc": "AWS Virtual Private Gateway — customer-side attachment for S2S VPN and DX private VIFs"},
+        {"type": "aws-cgw",     "label": "Customer GW",      "icon": "CGW", "desc": "AWS Customer Gateway — represents the on-prem endpoint for Site-to-Site VPN"},
+        {"type": "aws-vpn-ha",  "label": "VPN HA (A/A)",     "icon": "VHA", "desc": "AWS Site-to-Site VPN HA — active/active dual-tunnel for redundant IPSec connectivity"},
+        {"type": "aws-tgw-rt",  "label": "TGW Route Table",  "icon": "TRT", "desc": "AWS Transit Gateway Route Table — explicit route table segment for traffic segmentation"},
     ],
     "azure": [
         {"type": "az-vnet", "label": "VNet", "icon": "VNT", "desc": "Azure Virtual Network"},
@@ -34,7 +38,11 @@ CLOUD_OBJECTS = {
         {"type": "az-front", "label": "Front Door", "icon": "FD", "desc": "Azure Front Door — global CDN + WAF"},
         {"type": "az-dns", "label": "Azure DNS", "icon": "DNS", "desc": "Azure DNS zones"},
         {"type": "az-bastion", "label": "Bastion", "icon": "BST", "desc": "Azure Bastion — secure RDP/SSH"},
-        {"type": "az-nsg", "label": "NSG", "icon": "NSG", "desc": "Azure Network Security Group"},
+        {"type": "az-nsg",          "label": "NSG",              "icon": "NSG", "desc": "Azure Network Security Group"},
+        {"type": "az-lng",          "label": "Local Net GW",     "icon": "LNG", "desc": "Azure Local Network Gateway — represents on-prem endpoint for S2S VPN connections"},
+        {"type": "az-ergw",         "label": "ER Gateway",       "icon": "ERG", "desc": "Azure ExpressRoute Gateway — VNet attachment point for ExpressRoute circuits"},
+        {"type": "az-route-server", "label": "Route Server",     "icon": "ARS", "desc": "Azure Route Server — BGP route injection into VNet, enables NVA dynamic routing"},
+        {"type": "az-vnet-peer",    "label": "VNet Peering",     "icon": "PER", "desc": "Azure VNet Peering — direct intra or cross-region VNet connectivity (low latency, no GW)"},
     ],
     "gcp": [
         {"type": "gcp-vpc", "label": "VPC", "icon": "VPC", "desc": "GCP Virtual Private Cloud (global)"},
@@ -46,7 +54,11 @@ CLOUD_OBJECTS = {
         {"type": "gcp-armor", "label": "Cloud Armor", "icon": "ARM", "desc": "GCP Cloud Armor — DDoS + WAF"},
         {"type": "gcp-cdn", "label": "Cloud CDN", "icon": "CDN", "desc": "GCP Cloud CDN"},
         {"type": "gcp-dns", "label": "Cloud DNS", "icon": "DNS", "desc": "GCP Cloud DNS"},
-        {"type": "gcp-router", "label": "Cloud Router", "icon": "CR", "desc": "GCP Cloud Router — BGP peering"},
+        {"type": "gcp-router",      "label": "Cloud Router",     "icon": "CR",  "desc": "GCP Cloud Router — BGP peering"},
+        {"type": "gcp-classic-vpn", "label": "Classic VPN",      "icon": "CVP", "desc": "GCP Cloud VPN Classic — single-tunnel, static routing, no BGP"},
+        {"type": "gcp-ha-vpn",      "label": "HA VPN GW",        "icon": "HVP", "desc": "GCP HA VPN Gateway — dual-interface, BGP, 99.99% SLA for cloud-to-on-prem"},
+        {"type": "gcp-ic-partner",  "label": "Partner IC",       "icon": "PIC", "desc": "GCP Partner Interconnect — L2/L3 connectivity via NSP (100 Mbps–50 Gbps)"},
+        {"type": "gcp-ncc-spoke",   "label": "NCC Spoke",        "icon": "NSP", "desc": "GCP Network Connectivity Center Spoke — site attachment to NCC hub (VPN/IC/Router)"},
     ],
     "oci": [
         {"type": "oci-vcn", "label": "VCN", "icon": "VCN", "desc": "OCI Virtual Cloud Network"},
@@ -55,7 +67,10 @@ CLOUD_OBJECTS = {
         {"type": "oci-fc", "label": "FastConnect", "icon": "FC", "desc": "OCI FastConnect — dedicated circuit"},
         {"type": "oci-lb", "label": "Load Balancer", "icon": "OLB", "desc": "OCI Load Balancer"},
         {"type": "oci-waf", "label": "WAF", "icon": "WAF", "desc": "OCI Web Application Firewall"},
-        {"type": "oci-nsg", "label": "NSG", "icon": "NSG", "desc": "OCI Network Security Group"},
+        {"type": "oci-nsg",   "label": "NSG",             "icon": "NSG", "desc": "OCI Network Security Group"},
+        {"type": "oci-cpe",   "label": "CPE",             "icon": "CPE", "desc": "OCI Customer Premises Equipment — on-prem device representation for IPSec tunnels"},
+        {"type": "oci-ipsec", "label": "IPSec Conn",      "icon": "IPS", "desc": "OCI IPSec Connection — tunnel object between CPE and DRG (static or BGP)"},
+        {"type": "oci-fc-vc", "label": "FastConnect VC",  "icon": "FVC", "desc": "OCI FastConnect Virtual Circuit — logical VC over FastConnect (private or public peering)"},
     ],
     "ibm": [
         {"type": "ibm-vpc", "label": "VPC", "icon": "VPC", "desc": "IBM Cloud VPC"},
@@ -63,7 +78,9 @@ CLOUD_OBJECTS = {
         {"type": "ibm-dl", "label": "Direct Link", "icon": "DL", "desc": "IBM Cloud Direct Link — dedicated circuit"},
         {"type": "ibm-vpn", "label": "VPN Gateway", "icon": "VPN", "desc": "IBM Cloud VPN Gateway"},
         {"type": "ibm-lb", "label": "Load Balancer", "icon": "ILB", "desc": "IBM Cloud Load Balancer"},
-        {"type": "ibm-tg", "label": "Transit GW", "icon": "TG", "desc": "IBM Cloud Transit Gateway"},
+        {"type": "ibm-tg",     "label": "Transit GW",    "icon": "TG",  "desc": "IBM Cloud Transit Gateway"},
+        {"type": "ibm-dl-ded", "label": "Direct Link Ded","icon": "DLD", "desc": "IBM Direct Link 2.0 Dedicated — physical 1G/10G fiber to IBM PoP"},
+        {"type": "ibm-dl-con", "label": "Direct Link Con", "icon": "DLC", "desc": "IBM Direct Link 2.0 Connect — via network service provider (50 Mbps–5 Gbps)"},
     ],
     "multi_cloud": [
         {
@@ -85,7 +102,16 @@ CLOUD_OBJECTS = {
             "desc": "SASE/SSE point of presence (Zscaler, Prisma, etc.)",
         },
         {"type": "internet-exchange", "label": "IXP", "icon": "IXP", "desc": "Internet Exchange Point"},
-        {"type": "cloud-region", "label": "Region", "icon": "REG", "desc": "Cloud region/availability zone boundary"},
+        {"type": "cloud-region",    "label": "Region",         "icon": "REG", "desc": "Cloud region/availability zone boundary"},
+        {"type": "megaport-mcr",    "label": "Megaport MCR",   "icon": "MCR", "desc": "Megaport Cloud Router — cloud-neutral L2/L3 interconnect between CSPs and on-prem"},
+        {"type": "equinix-fabric",  "label": "Equinix Fabric", "icon": "EQX", "desc": "Equinix Fabric — colocation-based cloud interconnect for CSP-to-CSP and on-prem"},
+    ],
+    "dod": [
+        {"type": "dod-bcap",          "label": "BCAP",           "icon": "BCP", "desc": "Boundary Cloud Access Point — DISA-managed DISN boundary protection (SCCA FRD §2.1.1)"},
+        {"type": "dod-vdss",          "label": "VDSS Stack",     "icon": "VDS", "desc": "Virtual DC Security Stack — WAF/IDS-IPS/TLS inspection/PPSM (SCCA FRD §2.1.2)"},
+        {"type": "dod-vdms",          "label": "VDMS Stack",     "icon": "VDM", "desc": "Virtual DC Managed Services — ACAS/HBSS/patch/logging/directory (SCCA FRD §2.1.3)"},
+        {"type": "dod-tccm",          "label": "TCCM",           "icon": "TCM", "desc": "Trusted Cloud Credential Manager — IAM/RBAC/CAC-PIV/CCMP (SCCA FRD §2.1.4)"},
+        {"type": "dod-niprnet-onramp","label": "NIPRNet On-ramp","icon": "NPR", "desc": "DISA NIPRNet Cloud On-ramp — DISN-managed cloud entry point for DoD organizations"},
     ],
     "colocation": [
         {
@@ -659,6 +685,10 @@ CLOUD_OBJECTS_EXTENDED = {
         },
     ],
 }
+
+# Merge extended objects into primary palette (3-line loop; keeps separation for audits)
+for _csp_ext, _nodes_ext in CLOUD_OBJECTS_EXTENDED.items():
+    CLOUD_OBJECTS.setdefault(_csp_ext, []).extend(_nodes_ext)
 
 # ── CSP Service Equivalence Map ──────────────────────────────────────────────
 # Cross-cloud mapping from AWS Well-Architected Hybrid Networking Lens.

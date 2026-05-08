@@ -45,6 +45,25 @@
 .sc-project-row label { font-size:.8rem; color:var(--text-muted,#718096); white-space:nowrap; }
 .sc-project-row select { flex:1; background:var(--input-bg,#141820); border:1px solid var(--border,#2d3748); color:var(--text-primary,#e2e8f0); border-radius:6px; padding:.45rem .6rem; font-size:.85rem; }
 .sc-project-row select:focus { outline:none; border-color:#4299e1; }
+.btn-new-proj     { background:transparent; border:1px solid #4299e1; color:#63b3ed; border-radius:6px; padding:.4rem .65rem; cursor:pointer; font-size:.8rem; font-weight:600; white-space:nowrap; transition:all .15s; }
+.btn-new-proj:hover { background:#3182ce; color:#fff; border-color:#3182ce; }
+
+/* ── New-project modal ───────────────────────────────────────────────── */
+.np-overlay       { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:1000; display:none; align-items:center; justify-content:center; }
+.np-overlay.open  { display:flex; }
+.np-modal         { background:var(--panel-bg,#1e2430); border:1px solid var(--border,#2d3748); border-radius:10px; padding:1.5rem; width:420px; max-width:92vw; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.np-modal h3      { margin:0 0 1rem; font-size:1rem; color:var(--text-primary,#e2e8f0); }
+.np-field         { margin-bottom:.75rem; }
+.np-field label   { display:block; font-size:.75rem; color:var(--text-muted,#718096); margin-bottom:.3rem; text-transform:uppercase; letter-spacing:.04em; }
+.np-field input, .np-field select, .np-field textarea {
+  width:100%; box-sizing:border-box;
+  background:var(--input-bg,#141820); border:1px solid var(--border,#2d3748);
+  color:var(--text-primary,#e2e8f0); border-radius:6px; padding:.5rem .75rem; font-size:.88rem;
+}
+.np-field input:focus, .np-field select:focus, .np-field textarea:focus { outline:none; border-color:#4299e1; }
+.np-field textarea { resize:vertical; min-height:60px; }
+.np-actions       { display:flex; gap:.5rem; justify-content:flex-end; margin-top:1rem; }
+.np-err           { font-size:.8rem; color:#fc8181; margin-top:.4rem; display:none; }
 .sc-notes-row     { margin-bottom:.75rem; }
 .sc-notes-row input { width:100%; box-sizing:border-box; background:var(--input-bg,#141820); border:1px solid var(--border,#2d3748); color:var(--text-primary,#e2e8f0); border-radius:6px; padding:.45rem .75rem; font-size:.85rem; }
 .sc-notes-row input:focus { outline:none; border-color:#4299e1; }
@@ -175,6 +194,7 @@
               <option value="{{ p.id }}" {% if filter_project == p.id %}selected{% endif %}>{{ p.name }}</option>
               {% endfor %}
             </select>
+            <button class="btn-new-proj" type="button" onclick="openNewProject()" title="Create a new project">+ New</button>
           </div>
           <div class="sc-notes-row">
             <input id="sc-notes" type="text" placeholder="Notes (optional)">
@@ -265,6 +285,39 @@
 </div>
 
 <div id="sc-toast" class="sc-toast"></div>
+
+<!-- ── New Project Modal ─────────────────────────────────────────────── -->
+<div id="np-overlay" class="np-overlay" onclick="if(event.target===this)closeNewProject()">
+  <div class="np-modal">
+    <h3>&#x1F4C1; New Project</h3>
+    <div class="np-field">
+      <label>Project Name *</label>
+      <input id="np-name" type="text" placeholder="e.g. Core Network Refresh Q3" maxlength="120"
+             onkeydown="if(event.key==='Enter')submitNewProject()">
+      <div class="np-err" id="np-err"></div>
+    </div>
+    <div class="np-field">
+      <label>Description</label>
+      <textarea id="np-desc" placeholder="What is this project about?" rows="2"></textarea>
+    </div>
+    <div class="np-field">
+      <label>Owner</label>
+      <input id="np-owner" type="text" placeholder="e.g. jane.doe@example.com">
+    </div>
+    <div class="np-field">
+      <label>Status</label>
+      <select id="np-status">
+        <option value="draft">Draft</option>
+        <option value="in_review">In Review</option>
+        <option value="approved">Approved</option>
+      </select>
+    </div>
+    <div class="np-actions">
+      <button class="sc-btn sc-btn-clear" type="button" onclick="closeNewProject()">Cancel</button>
+      <button class="sc-btn sc-btn-save" type="button" onclick="submitNewProject()">&#x2713; Create Project</button>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -562,5 +615,69 @@ function toast(msg, type) {
   const cidr = params.get('cidr');
   if (cidr) { document.getElementById('sc-cidr').value = cidr; calcSubnet(); }
 })();
+
+// ── New Project modal ─────────────────────────────────────────────────────────
+
+function openNewProject() {
+  document.getElementById('np-overlay').classList.add('open');
+  document.getElementById('np-name').focus();
+  document.getElementById('np-err').style.display = 'none';
+}
+
+function closeNewProject() {
+  document.getElementById('np-overlay').classList.remove('open');
+  document.getElementById('np-name').value = '';
+  document.getElementById('np-desc').value = '';
+  document.getElementById('np-owner').value = '';
+  document.getElementById('np-status').value = 'draft';
+}
+
+function submitNewProject() {
+  const name = document.getElementById('np-name').value.trim();
+  const errEl = document.getElementById('np-err');
+  if (!name) {
+    errEl.textContent = 'Project name is required.';
+    errEl.style.display = 'block';
+    document.getElementById('np-name').focus();
+    return;
+  }
+  errEl.style.display = 'none';
+
+  fetch(NC_BASE + '/api/nc-projects', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      name,
+      description: document.getElementById('np-desc').value.trim(),
+      owner:       document.getElementById('np-owner').value.trim(),
+      status:      document.getElementById('np-status').value,
+    })
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { errEl.textContent = d.error; errEl.style.display = 'block'; return; }
+
+    // Inject into both dropdowns (calc pane + history filter)
+    const opt = new Option(d.name, d.id);
+    const calcSel = document.getElementById('sc-project');
+    calcSel.appendChild(opt.cloneNode(true));
+    calcSel.value = d.id;           // auto-select the new project
+
+    const histSel = document.getElementById('sc-hist-filter') || document.querySelector('.sc-filter-bar select');
+    if (histSel) {
+      const opt2 = new Option(d.name, d.id);
+      histSel.appendChild(opt2);
+    }
+
+    closeNewProject();
+    toast(`Project "${d.name}" created`, 'ok');
+  })
+  .catch(() => { errEl.textContent = 'Server error — try again.'; errEl.style.display = 'block'; });
+}
+
+// Close modal on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeNewProject();
+});
 </script>
 {% endblock %}

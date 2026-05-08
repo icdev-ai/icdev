@@ -1624,6 +1624,22 @@ CREATE TABLE IF NOT EXISTS ndc_sop_approval_log (
 );
 CREATE INDEX IF NOT EXISTS idx_ndc_sop_log_sop ON ndc_sop_approval_log(sop_id);
 
+-- ── Cloud Connectivity Patterns Reference ─────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_connectivity_patterns (
+    id          TEXT PRIMARY KEY,
+    csp_pair    TEXT NOT NULL,
+    pattern_key TEXT NOT NULL,
+    label       TEXT NOT NULL,
+    description TEXT,
+    resiliency  TEXT DEFAULT 'high',
+    cost_tier   TEXT DEFAULT 'medium',
+    use_cases   TEXT DEFAULT '[]',
+    node_types  TEXT DEFAULT '[]',
+    sop_refs    TEXT DEFAULT '[]',
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_cp_csp ON nc_connectivity_patterns(csp_pair);
+
 -- ── Traffic Flow Walkthroughs (DoD BCAP path analysis) ───────────────────────
 CREATE TABLE IF NOT EXISTS nc_traffic_flows (
     id                  TEXT PRIMARY KEY,
@@ -13223,6 +13239,8 @@ def init_db():
             ("nc_security_domain_policies", "routing_policy", "TEXT DEFAULT '{}'"),
             ("nc_security_domain_policies", "vpn_policy", "TEXT DEFAULT '{}'"),
             ("nc_security_domain_policies", "updated_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
+            # Connectivity: csp column on ndc_sops for SOP library CSP filter
+            ("ndc_sops", "csp", "TEXT DEFAULT 'multi'"),
         ]
         for table, col, coltype in _migrations:
             try:

@@ -1,32 +1,38 @@
+# CUI // SP-CTI
+#
+# Auto-managed by tools/project/kanban_project_sync.py
+# Human edits to name/description/briefs are preserved.
+
 projects:
 - key: aadc-sp
   name: AADC Solution Packs — Industry-Ready Agentic AI Templates
-  description: >
-    7 pre-wired agentic AI solution packs for the Agentic AI Design Canvas.
-    Each pack ships with pre-placed nodes, wired edges, seeded risk register,
-    compliance baseline (NIST AI RMF, OWASP LLM, OMB), MITRE ATLAS scenarios,
-    and a quick-start wizard. Industries covered: Customer Service, Autonomous Coding,
-    Knowledge Research, Cybersecurity SOC, Healthcare Admin, Gov/Procurement, Multi-Agent Research.
+  description: '7 pre-wired agentic AI solution packs for the Agentic AI Design Canvas.
+    Each pack ships with pre-placed nodes, wired edges, seeded risk register, compliance
+    baseline (NIST AI RMF, OWASP LLM, OMB), MITRE ATLAS scenarios, and a quick-start
+    wizard. Industries covered: Customer Service, Autonomous Coding, Knowledge Research,
+    Cybersecurity SOC, Healthcare Admin, Gov/Procurement, Multi-Agent Research.
+
+    '
   task_prefix: aadc-sp-
   default_open: true
   briefs:
-    - 'sp1: solution_packs.py module (7 packs + risk seeds + ATLAS + quickstart routing)'
-    - 'sp2: DB seeding in init_db.py + blueprint.py routes + API endpoints'
-    - 'sp3: solution_packs.html gallery + quick_start.html wizard + templates.html update'
-    - 'sp4: icdev mirror + projects.yaml registration + V&V'
+  - 'sp1: solution_packs.py module (7 packs + risk seeds + ATLAS + quickstart routing)'
+  - 'sp2: DB seeding in init_db.py + blueprint.py routes + API endpoints'
+  - 'sp3: solution_packs.html gallery + quick_start.html wizard + templates.html update'
+  - 'sp4: icdev mirror + projects.yaml registration + V&V'
   epics:
-    - key: sp1
-      title: Solution Pack Definitions (module + risk seeds + ATLAS)
-      priority: critical
-    - key: sp2
-      title: DB Seeding + Blueprint Routes + Apply-with-Risks API
-      priority: critical
-    - key: sp3
-      title: HTML Gallery + Quick-Start Wizard + Templates Banner
-      priority: high
-    - key: sp4
-      title: icdev Mirror + Registration + V&V Gate
-      priority: high
+  - key: sp1
+    title: Solution Pack Definitions (module + risk seeds + ATLAS)
+    priority: critical
+  - key: sp2
+    title: DB Seeding + Blueprint Routes + Apply-with-Risks API
+    priority: critical
+  - key: sp3
+    title: HTML Gallery + Quick-Start Wizard + Templates Banner
+    priority: high
+  - key: sp4
+    title: icdev Mirror + Registration + V&V Gate
+    priority: high
 - key: add_a_cmmi
   name: Add A Cmmi Project
   description: Auto-registered project for tasks with prefix 'add-a-cmmi-'. Update
@@ -98,8 +104,8 @@ projects:
     aisg-b2-01..04, aisg-b3-01..03'
   - 'Phase C: Visual agent builder + autotune fine-tuning + Genesis graduated trust
     — aisg-c1-01..04, aisg-c2-01..04, aisg-c3-01..04'
-  - 'Phase D: AI ROI dashboard + skills gap tracker + talent retention package —
-    aisg-d1-01..03, aisg-d2-01..03, aisg-d3-01..02'
+  - 'Phase D: AI ROI dashboard + skills gap tracker + talent retention package — aisg-d1-01..03,
+    aisg-d2-01..03, aisg-d3-01..02'
   - 'V&V: companion sync + coherence gate + Playwright E2E all 10 pages — aisg-vv-01..02'
   epics:
   - key: a1
@@ -372,9 +378,9 @@ projects:
 - key: km
   name: Kanban Maintenance
   description: 'Two-phase Kanban engine hardening: (1) auto-close sweep for decomposed
-    parent tasks that get stuck when all children complete — requires manual DB
-    fix today; (2) multi-parent dependency support via junction table, replacing the
-    single depends_on_task_id scalar with a full DAG + DFS cycle detection.'
+    parent tasks that get stuck when all children complete — requires manual DB fix
+    today; (2) multi-parent dependency support via junction table, replacing the single
+    depends_on_task_id scalar with a full DAG + DFS cycle detection.'
   task_prefix: km-
   default_open: true
   briefs:
@@ -414,8 +420,7 @@ projects:
   default_open: true
   briefs:
   - 'E1 Light theme: CSS variables pass + base.html toggle + profile route — fde-e1-01..03'
-  - 'E2 Voice override: migration + get_voice_for_page() + settings UI + route —
-    fde-e2-01..04'
+  - 'E2 Voice override: migration + get_voice_for_page() + settings UI + route — fde-e2-01..04'
   - 'Wrap: manifest + coherence + companion + feature docs — fde-wrap-01, fde-vv-01'
   epics:
   - key: e1
@@ -674,8 +679,7 @@ projects:
   default_open: true
   briefs:
   - 'DB schema: 6 mc_net_* tables — nmig-db-01 (done)'
-  - 'Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01
-    (done)'
+  - 'Engine: vendor-agnostic parse/map/compat/convert/readiness — nmig-engine-01 (done)'
   - 'Blueprint: 23 network-migration API + page routes — nmig-engine-02 (done)'
   - 'UI: 8-step wizard (device/config/ports/compat/diff/test/cutover/ERB) — nmig-wizard-01/02/03
     (done)'
@@ -733,8 +737,8 @@ projects:
   - 'Opportunity scanner: NDC EOL, topology, MDC cross-canvas — mi-scan-01 (done)'
   - 'Strategy generator: 7R + roadmap builder — mi-strat-01 (done)'
   - 'Migration manager: 8-stage pipeline + daemon + CLI — mi-mgr-01 (done)'
-  - 'Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API —
-    mi-api-01 (done)'
+  - 'Flask blueprint: goals/opps/strategies/roadmaps/wishlist/budget/scans API — mi-api-01
+    (done)'
   - 'Dashboard UI: index.html with tabbed goals/opps/roadmaps/wishlist/chat — mi-ui-01
     (done)'
   - 'Genesis reflex: migration_intel.py autonomous 24h scan — mi-reflex-01 (done)'
@@ -1227,9 +1231,9 @@ projects:
     priority: medium
 - key: sim-chat
   name: TFW Simulation Chat Workbench
-  description: 'Canvas-agnostic simulation engine at /simulate/chat — upload any
-    diagram (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows
-    with color-coded Mermaid diagrams, troubleshoot auth and routing issues, and generate
+  description: 'Canvas-agnostic simulation engine at /simulate/chat — upload any diagram
+    (Mermaid, draw.io, Visio, image, PDF), explain traffic/service/event flows with
+    color-coded Mermaid diagrams, troubleshoot auth and routing issues, and generate
     compliance artifacts (PPSM, DFD, CIS, ISA, POA&M, OSCAL). Covers all 7 canvases:
     NDC, SDC, EDA, DDC, PDC, BDC, IDC. 35 dependency-chained tasks across 7 layers.
 
@@ -1927,9 +1931,9 @@ projects:
     model, and slide outline. Built on existing chat_manager.py so end users interact
     via a guided chat at /studio/narrate (no Claude CLI required). Depends on wfs-schema-01
     (narrative_context YAML block) and wfs-decomp-01 (composite node + sub_steps).
-    First template: ai_ml_transformation.yaml — 5-phase defense contractor AI/ML
-    workforce transformation with full training resource taxonomy (free/self-paced/ILT/OJT
-    including AWS SkillBuilder and DeepLearning.ai).
+    First template: ai_ml_transformation.yaml — 5-phase defense contractor AI/ML workforce
+    transformation with full training resource taxonomy (free/self-paced/ILT/OJT including
+    AWS SkillBuilder and DeepLearning.ai).
 
     '
   briefs:
@@ -2087,17 +2091,16 @@ projects:
 - key: pint
   name: Product Intelligence — 5 New Engines + Universal Orchestrator
   description: 'Build five new product-discovery engines and one universal orchestrator
-    that calls all eight. New engines: (1) Regulatory Foresight — scans proposed
-    legislation (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub,
-    DoD DARS) before mandates land; (2) Usage Analytics — instruments dashboard
-    routes and CLI invocations to reveal actual feature adoption; (3) Win/Loss Intelligence
-    — correlates GovCon proposal outcomes with ICDEV feature presence to surface
-    roadmap priorities; (4) Voice of Customer (VOC) — JTBD synthesis from first-party
-    support tickets, NPS verbatims, and debrief documents; (5) Technology Radar —
-    tracks adopt/trial/assess/hold ring movements for frameworks and tools. Universal
-    Orchestrator (tools/product_intel/ orchestrator.py) invokes all eight engines
-    in sequence, runs the federation router, stores a consolidated run record, and
-    exposes --run-all and --daemon modes.'
+    that calls all eight. New engines: (1) Regulatory Foresight — scans proposed legislation
+    (congress.gov, regulations.gov, NIST CSRC drafts, FedRAMP GitHub, DoD DARS) before
+    mandates land; (2) Usage Analytics — instruments dashboard routes and CLI invocations
+    to reveal actual feature adoption; (3) Win/Loss Intelligence — correlates GovCon
+    proposal outcomes with ICDEV feature presence to surface roadmap priorities; (4)
+    Voice of Customer (VOC) — JTBD synthesis from first-party support tickets, NPS
+    verbatims, and debrief documents; (5) Technology Radar — tracks adopt/trial/assess/hold
+    ring movements for frameworks and tools. Universal Orchestrator (tools/product_intel/
+    orchestrator.py) invokes all eight engines in sequence, runs the federation router,
+    stores a consolidated run record, and exposes --run-all and --daemon modes.'
   task_prefix: pint-
   default_open: true
   briefs:
@@ -2265,24 +2268,24 @@ projects:
     mechanic with Lanchester step + Blotto + OODA delta + turn log. (2) AI Strategic
     Advisor — war_council + strategy_agent assessment panel. (3) ORBAT Pre-population
     — seed Lanchester b0/r0 from sg_orbat_units.strength. (4) Monte Carlo Lanchester
-    — 500-iter stochastic attrition with p5/p50/p95 confidence bands. (5) Signal
-    feed → OODA refresh — 30s poll of sg_prioritized_signals, flash changed OODA
-    domains. (6) Export to Intel Brief — bundle scenario state into sg_intelligence_briefs.'
+    — 500-iter stochastic attrition with p5/p50/p95 confidence bands. (5) Signal feed
+    → OODA refresh — 30s poll of sg_prioritized_signals, flash changed OODA domains.
+    (6) Export to Intel Brief — bundle scenario state into sg_intelligence_briefs.'
   task_prefix: wge-
   default_open: true
   briefs:
   - 'Epic te: Turn Engine — sg_wargame_turns migration + advance_turn() + blueprint
     routes + UI controls + turn log'
-  - 'Epic ai: AI Strategic Advisor — wargame_advisor.py wrapping strategy_agent
-    + blueprint + assessment panel'
-  - 'Epic orbat: ORBAT Pre-pop — wargame_orbat.py + seed route + Load from ORBAT
-    button in Lanchester tab'
+  - 'Epic ai: AI Strategic Advisor — wargame_advisor.py wrapping strategy_agent +
+    blueprint + assessment panel'
+  - 'Epic orbat: ORBAT Pre-pop — wargame_orbat.py + seed route + Load from ORBAT button
+    in Lanchester tab'
   - 'Epic mc: Monte Carlo Lanchester — lanchester_monte_carlo() in ooda.py + blueprint
     + confidence band chart'
   - 'Epic sig: Signal→OODA Refresh — /ooda/live route + 30s frontend poll + domain
     flash'
-  - 'Epic exp: Export to Brief — wargame_exporter.py + blueprint + Export button
-    + brief link toast'
+  - 'Epic exp: Export to Brief — wargame_exporter.py + blueprint + Export button +
+    brief link toast'
   - 'Epic vv: V&V — manifest + companion sync + feature docs'
   epics:
   - key: te
@@ -2341,8 +2344,7 @@ projects:
   - 'Epic ui: floating panel HTML + CSS + base.html injection � sgc-ui-01..03'
   - 'Epic js: strategos-chat.js (open/close, init, send, poll, render, entity injection)
     � sgc-js-01..04'
-  - 'Epic rc: right-click context menu component + maritime/KG/ORBAT handlers �
-    sgc-rc-01..04'
+  - 'Epic rc: right-click context menu component + maritime/KG/ORBAT handlers � sgc-rc-01..04'
   - 'Epic nav: Strategos nav dropdown link � sgc-nav-01'
   - 'Epic vv: manifest + companion sync + feature docs � sgc-vv-01..03'
   epics:
@@ -2530,8 +2532,8 @@ projects:
   briefs:
   - 'Epic c1: Core foundation — module, DB, engine, templates, JS/CSS, registration
     — aadc-c1-01..07'
-  - 'Epic w1: Workflow engine — HITL templates, workflow.py, launcher.py, event
-    bus — aadc-w1-01..07'
+  - 'Epic w1: Workflow engine — HITL templates, workflow.py, launcher.py, event bus
+    — aadc-w1-01..07'
   - 'Epic t1: Templates gallery — 12 built-in solution architectures — aadc-t1-01..06'
   - 'Epic s1: Snippets library — 12 reusable subgraph patterns — aadc-s1-01..05'
   - 'Epic a1: Assessment engine — NIST AI RMF, OWASP LLM Top 10, artifacts — aadc-a1-01..07'
@@ -2551,8 +2553,8 @@ projects:
     tracker (EU AI Act/DoD/OMB), design comparison, executive summary report � aadc-p6-01..09'
   - 'Phase 7 Adversarial Security: AI red team engine (12 scenarios), design linter/auto-recommendations,
     accreditation package builder (ZIP) — aadc-p7-01..09'
-  - 'Phase 8 Design Intelligence: pattern detector (8 named AI patterns), cascade impact
-    analyzer (blast radius/SPOFs), portfolio analytics dashboard — aadc-p8-01..09'
+  - 'Phase 8 Design Intelligence: pattern detector (8 named AI patterns), cascade
+    impact analyzer (blast radius/SPOFs), portfolio analytics dashboard — aadc-p8-01..09'
   - 'Phase 9 Unified Scorecard & Deploy Gate: 8-dimension scorecard, APPROVED/CONDITIONAL/BLOCKED
     deploy gate with CI/CD YAML, findings inbox — aadc-p9-01..09'
   - 'Phase 10 Design Review, Lifecycle & Monitoring: lifecycle state machine, multi-reviewer
@@ -2581,16 +2583,14 @@ projects:
       legend, diff)
     priority: critical
   - key: p2
-    title: Phase 2 — Ecosystem Wiring (Genesis, MCP, activity feed, fine-tuning,
-      Kanban)
+    title: Phase 2 — Ecosystem Wiring (Genesis, MCP, activity feed, fine-tuning, Kanban)
     priority: high
   - key: p3
     title: Phase 3 — AADC-Unique (safety graph, coord matrix, provenance, simulation)
     priority: high
   - key: p4
-    title: Phase 4 — Competitive Edge (checkpoint/fork, HITL Gate node, parallel
-      exec graph, observability nodes, memory enrichment, streaming, A2A/sandbox,
-      PII guardrails)
+    title: Phase 4 — Competitive Edge (checkpoint/fork, HITL Gate node, parallel exec
+      graph, observability nodes, memory enrichment, streaming, A2A/sandbox, PII guardrails)
     priority: high
   - key: p5
     title: Phase 5 — Governance & Reporting (risk register, threat model, portfolio,
@@ -2609,8 +2609,8 @@ projects:
       portfolio analytics dashboard)
     priority: high
   - key: p9
-    title: Phase 9 — Unified Scorecard, Deploy Gate & Findings Inbox (8-dimension health
-      score, CI/CD gate YAML, cross-analysis findings feed)
+    title: Phase 9 — Unified Scorecard, Deploy Gate & Findings Inbox (8-dimension
+      health score, CI/CD gate YAML, cross-analysis findings feed)
     priority: high
   - key: p10
     title: Phase 10 — Design Review, Lifecycle & Monitoring (lifecycle state machine,
@@ -2618,38 +2618,105 @@ projects:
     priority: high
 - key: sysgraph
   name: Unified System Graph — Sigma.js Federated Graph Platform
-  description: >
-    Replace fragmented graph systems (JointJS /components-map, /knowledge-graph,
+  description: 'Replace fragmented graph systems (JointJS /components-map, /knowledge-graph,
     canvas KGs, kanban DAG) with a single /system-graph page powered by Sigma.js 3.0.2
     WebGL rendering + Graphology. Federates kg_nodes, canvas_kg_nodes, kanban_task_deps,
     goal→tool edges, and migration dependency chains into one interactive graph with
-    community detection clusters, filter chips, and sidebar detail panels.
-    Inspired by GitNexus's unified AST graph architecture.
+    community detection clusters, filter chips, and sidebar detail panels. Inspired
+    by GitNexus''s unified AST graph architecture.
+
+    '
   task_prefix: sg-
   default_open: true
   briefs:
-    - 'sg-v: Vendor Sigma.js 3.0.2 + Graphology 0.26.0 + ForceAtlas2 as static files (air-gap safe)'
-    - 'sg-m: tools/system_graph/ module — graph_builder.py federates 5 graph sources + constants.py'
-    - 'sg-r: blueprint.py routes + /api/system-graph/graph + /api/system-graph/node/<id> endpoints'
-    - 'sg-t: system_graph/page.html Sigma.js 3-pane template + icdev/ mirror + nav link'
-    - 'sg-c: Community detection via NetworkX — cluster_id + cluster_color on nodes'
-    - 'sg-vv: V&V gate — Playwright E2E + companion sync + coherence gate'
+  - 'sg-v: Vendor Sigma.js 3.0.2 + Graphology 0.26.0 + ForceAtlas2 as static files
+    (air-gap safe)'
+  - 'sg-m: tools/system_graph/ module — graph_builder.py federates 5 graph sources
+    + constants.py'
+  - 'sg-r: blueprint.py routes + /api/system-graph/graph + /api/system-graph/node/<id>
+    endpoints'
+  - 'sg-t: system_graph/page.html Sigma.js 3-pane template + icdev/ mirror + nav link'
+  - 'sg-c: Community detection via NetworkX — cluster_id + cluster_color on nodes'
+  - 'sg-vv: V&V gate — Playwright E2E + companion sync + coherence gate'
   epics:
-    - key: v
-      title: Vendor Sigma.js + Graphology Static Files
-      priority: critical
-    - key: m
-      title: system_graph Module — Federation + Constants
-      priority: critical
-    - key: r
-      title: Blueprint Routes + API Endpoints
-      priority: critical
-    - key: t
-      title: Sigma.js Template + Nav Link + icdev Mirror
-      priority: critical
-    - key: c
-      title: Community Detection (NetworkX clusters)
-      priority: high
-    - key: vv
-      title: V&V Gate — E2E + Companion + Coherence
-      priority: high
+  - key: v
+    title: Vendor Sigma.js + Graphology Static Files
+    priority: critical
+  - key: m
+    title: system_graph Module — Federation + Constants
+    priority: critical
+  - key: r
+    title: Blueprint Routes + API Endpoints
+    priority: critical
+  - key: t
+    title: Sigma.js Template + Nav Link + icdev Mirror
+    priority: critical
+  - key: c
+    title: Community Detection (NetworkX clusters)
+    priority: high
+  - key: vv
+    title: V&V Gate — E2E + Companion + Coherence
+    priority: high
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: t2
+    title: T2
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
