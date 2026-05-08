@@ -1345,3 +1345,16 @@ theater_detector:
     max_blocking_files: 0
     max_warn_files: 5
     min_clean_pct: 80
+
+# System Graph health gate — warns when any federated source returns 0 nodes,
+# indicating a broken DB connection or missing table.
+# Evaluated by the coherence_checker or a scheduled awareness health probe.
+system_graph:
+  warning:
+    - system_graph_source_empty    # a federation source returned 0 nodes (broken loader)
+    - system_graph_build_slow      # cold build > 10s (layout or DB query regression)
+  note: >
+    system_graph_source_empty fires when any loader in graph_builder.py returns an
+    empty node list for its source (awareness_kg, canvas_kg, kanban_deps, goals,
+    migrations, codebase). Check DB connectivity and table existence.
+    system_graph_build_slow fires when stats.build_ms > 10000 on an uncached request.

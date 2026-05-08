@@ -672,3 +672,5 @@
 | Migrate To Vault | tools\trading\credentials\migrate_to_vault.py | Auto-registered: credentials/migrate_to_vault.py | --json | JSON |
 | Certificates | tools\trading\lessons\certificates.py | Auto-registered: lessons/certificates.py | --json | JSON |
 | Bootstrap Hmm | tools\trading\ml\bootstrap_hmm.py | Auto-registered: ml/bootstrap_hmm.py | --json | JSON |
+
+| [system-graph](manifest/system-graph.md) | Unified federated graph (Sigma.js 3.0.2) — 6 sources, 3 500+ nodes |
