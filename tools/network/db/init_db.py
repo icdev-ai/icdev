@@ -1747,6 +1747,28 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 );
 CREATE INDEX IF NOT EXISTS idx_ncmsg_ctx  ON chat_messages(context_id);
 CREATE INDEX IF NOT EXISTS idx_ncmsg_turn ON chat_messages(context_id, turn_number);
+
+-- Subnet Calculator: history of CIDR calculations, deduped per project
+CREATE TABLE IF NOT EXISTS nc_subnet_calc_history (
+    id            TEXT PRIMARY KEY,
+    project_id    TEXT NOT NULL REFERENCES nc_projects(id) ON DELETE CASCADE,
+    cidr          TEXT NOT NULL,
+    network_addr  TEXT,
+    broadcast     TEXT,
+    first_host    TEXT,
+    last_host     TEXT,
+    total_hosts   INTEGER,
+    usable_hosts  INTEGER,
+    prefix_len    INTEGER,
+    subnet_mask   TEXT,
+    wildcard_mask TEXT,
+    address_family TEXT DEFAULT 'ipv4',
+    ip_class      TEXT,
+    notes         TEXT,
+    created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(cidr, project_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nc_subnet_calc_proj ON nc_subnet_calc_history(project_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
