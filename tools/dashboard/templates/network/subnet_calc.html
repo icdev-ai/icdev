@@ -255,11 +255,19 @@
                 data-af="{{ h.address_family }}">
               <td class="mono" style="color:#63b3ed;font-weight:600;">{{ h.cidr }}</td>
               <td class="mono" style="font-size:.78rem;">{{ h.network_addr }}</td>
-              <td class="mono">{{ "{:,}".format(h.usable_hosts) if h.usable_hosts else '0' }}</td>
+              <td class="mono">
+                {%- if h.address_family == 'ipv6' -%}
+                  <span data-v6prefix="{{ h.prefix_len or 128 }}">—</span>
+                {%- elif h.usable_hosts -%}
+                  {{ "{:,}".format(h.usable_hosts) }}
+                {%- else -%}
+                  0
+                {%- endif -%}
+              </td>
               <td class="mono" style="font-size:.78rem;">{{ h.subnet_mask }}</td>
               <td>
                 {% if h.address_family == 'ipv6' %}
-                <span class="badge-af badge-ipv6">v6</span>
+                <span class="badge-af badge-ipv6" title="{{ h.ip_class or 'IPv6' }}">v6</span>
                 {% elif h.ip_class and h.ip_class != 'N/A' %}
                 <span class="sc-class-badge class-{{ h.ip_class }}">{{ h.ip_class }}</span>
                 {% else %}<span style="color:var(--text-muted,#718096);">—</span>{% endif %}
@@ -864,6 +872,11 @@ function submitNewProject() {
 // Close modal on Escape
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeNewProject();
+});
+
+// Fill IPv6 host counts in server-rendered rows
+document.querySelectorAll('[data-v6prefix]').forEach(el => {
+  el.textContent = fmtIPv6Hosts(parseInt(el.dataset.v6prefix, 10));
 });
 </script>
 {% endblock %}
