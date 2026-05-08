@@ -206,8 +206,10 @@ def bulk_import_devices(topology_id: str, file_path: str, conn=None) -> dict:
         if not node_id and label:
             node_id = label_to_node_id.get(label.lower(), "")
         if not node_id:
-            skipped += 1
-            continue
+            # Auto-generate node_id for new devices not yet in topology
+            node_id = "imp-" + str(uuid.uuid4())[:8]
+            if label:
+                label_to_node_id[label.lower()] = node_id  # prevent dup on re-import
 
         result = upsert_device(
             topology_id, node_id, conn=conn,
