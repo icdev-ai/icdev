@@ -63,8 +63,6 @@ def generate_deploy_bundle(
         except Exception:
             nodes = []
 
-    edges = graph.get("edges", [])
-
     # Classify nodes
     agents, models, tools, memory, other = [], [], [], [], []
     for node in nodes:

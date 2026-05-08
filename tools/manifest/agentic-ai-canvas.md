@@ -261,6 +261,7 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `GET /agentic-ai/lifecycle/<id>` | `agentic_ai_canvas/lifecycle.html` |
 | `GET /agentic-ai/review/<id>` | `agentic_ai_canvas/review.html` |
 | `GET /agentic-ai/monitoring` | `agentic_ai_canvas/monitoring.html` |
+| `GET /agentic-ai/impact-graph` | `agentic_ai_canvas/impact_graph.html` |
 
 **API routes:**
 | Method + Route | Purpose |
@@ -418,11 +419,86 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 
 ---
 
+---
+
+## Enhancement Modules (Phase E — Canvas JS, Cost, IaC, Impact Graph)
+
+### `tools/agentic_ai_canvas/cost_estimator.py`
+Live cost estimation — token budget calculator, model-specific pricing, optimization hints.
+- `estimate_design_cost(graph, runs_per_month=1000)` → `{model_breakdown, total_per_run, total_monthly, runs_per_month, optimization_hints, has_local_models}`
+- Priced models: claude-opus-4, claude-sonnet-4, gpt-4o, gpt-4o-mini, llama-3.3-70b, llama-3.1-8b, mistral-large, gemini-1.5-pro, gemini-1.5-flash, qwen3-local (free), ollama-local (free)
+- Hints: swap expensive→cheaper if score ≥80; shared-proxy hint for N agents on same model; local-savings hint when Ollama detected
+- Persists results to `aadc_cost_estimates` table; wired as `POST /api/agentic-ai/designs/<id>/cost-estimate`
+
+### `tools/agentic_ai_canvas/iac_generator.py`
+One-click IaC export — Terraform HCL + Kubernetes Helm chart bundle from design graph.
+- `generate_deploy_bundle(graph, name, target_csp="auto", options=None)` → `{files: [{path, content}], manifest, summary, zip_bytes}`
+- Node→resource mapping: `agent-*` → `kubernetes_deployment`, `llm-local` → `helm_release` (Ollama), `vector-db` → `helm_release` (Chroma/Weaviate), `mcp-server` → `kubernetes_service`, `infra-k8s` → `kubernetes_namespace`, model nodes → provider ConfigMaps
+- Output ZIP: `{name}-iac/terraform/{main,variables,outputs,providers}.tf` + `helm/{Chart.yaml,values.yaml,templates/deployment-*.yaml,service-*.yaml,configmap-*.yaml}` + `README.md`
+- Wired as `GET /api/agentic-ai/designs/<id>/iac` (streams ZIP response)
+
+### `tools/dashboard/static/js/agentic-canvas.js`
+Dedicated AADC canvas JS — extends `design-canvas.js` globals without replacing them.
+- Autonomy level badges (L0–L5) on every agent node using `AUTONOMY_COLORS`
+- HITL path highlighter — edges from assessment `hitl_paths` colored green; L3+ without HITL colored red
+- Per-node compliance overlay circles (0–100) with click → findings tooltip (NIST/OWASP checks)
+- Threat count badges with hover → ATLAS threat popover
+- Risk register slide-in sidebar (320px) — severity-grouped risks + inline "Mitigate" button
+- Cost panel in right sidebar — $/run, $/month breakdown + "Optimize" button
+- Toolbar buttons injected into `#aadc-toolbar-extra`: 💰 Cost, ⚙ IaC, 🛡 Risks
+- Listens for `aadc:assessment:complete` custom event to refresh all overlays
+
+### `tools/dashboard/templates/agentic_ai_canvas/impact_graph.html`
+Cross-design impact graph page — Sigma.js force graph with blast-radius analysis.
+- `/agentic-ai/impact-graph` — two-panel layout (Sigma canvas + info panel)
+- Nodes colored by autonomy level, sized by blast_radius count
+- 50-iteration spring force layout (repulsion + attraction) for meaningful positioning
+- Blast-radius sidebar — lists downstream designs at risk if this node is compromised
+- Risk summary bar — total designs, high-risk count, max blast radius
+- Add-link / delete-link forms for managing cross-design dependencies
+- API: `GET /api/agentic-ai/impact-graph` returns `{nodes, edges, risk_summary}`; DFS computes blast_radius per node
+
+---
+
+## New API Routes (Phase E)
+
+| Method + Route | Purpose |
+|----------------|---------|
+| `POST /api/agentic-ai/designs/<id>/cost-estimate` | Run cost estimator, persist to `aadc_cost_estimates`, return breakdown |
+| `GET /api/agentic-ai/designs/<id>/iac` | Generate + stream Terraform+Helm ZIP |
+| `GET /api/agentic-ai/designs/<id>/links` | List design-to-design links |
+| `POST /api/agentic-ai/designs/<id>/links` | Create design-to-design link |
+| `DELETE /api/agentic-ai/designs/<id>/links/<lid>` | Remove a design link |
+| `GET /agentic-ai/impact-graph` | Impact graph page |
+| `GET /api/agentic-ai/impact-graph` | Impact graph JSON data |
+
+---
+
+## New Constants (Phase E — `constants.py`)
+
+| Constant | Purpose |
+|----------|---------|
+| `AUTONOMY_COLORS` | L0–L5 → hex color map (green to purple) |
+| `AADC_MODEL_COSTS` | 11 models → `{input, output, avg_in, avg_out}` pricing dict |
+| `AADC_IAC_NODE_MAP` | 30 node type prefixes → `(tf_resource, helm_template)` tuples |
+
+---
+
+## New DB Tables (Phase E)
+
+| Table | Purpose |
+|-------|---------|
+| `aadc_design_links` | Cross-design dependency edges (src→tgt, link_type, auto_detected) |
+| `aadc_cost_estimates` | Persisted cost estimate snapshots per design |
+
+---
+
 ## Static Assets
 
 | File | Purpose |
 |------|---------|
 | `tools/dashboard/static/css/agentic-canvas.css` | Node styling, palette, props panel, toolbar |
+| `tools/dashboard/static/js/agentic-canvas.js` | Phase E — autonomy badges, HITL highlights, overlays, risk sidebar, cost panel |
 
 ---
 

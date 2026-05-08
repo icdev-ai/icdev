@@ -235,6 +235,11 @@
 
   <span style="color:#334155;">|</span>
 
+  <!-- Enhancement toolbar buttons injected by agentic-canvas.js -->
+  <span id="aadc-toolbar-extra" style="display:inline-flex;align-items:center;"></span>
+
+  <span style="color:#334155;">|</span>
+
   {% if wf_status %}
   <div style="background:{% if wf_status.status=='approved' %}#052e16{% elif wf_status.status=='pending' %}#422006{% else %}#1e293b{% endif %};
        border:1px solid {% if wf_status.status=='approved' %}#166534{% elif wf_status.status=='pending' %}#7c2d12{% else %}#334155{% endif %};
@@ -2559,4 +2564,5 @@ function doOscalExport() {
 .sim-halted   { box-shadow: 0 0 0 3px #f97316, 0 0 12px #f9731688 !important; }
 .sim-filtered { box-shadow: 0 0 0 3px #fbbf24, 0 0 12px #fbbf2488 !important; }
 </style>
+<script src="/static/js/agentic-canvas.js" defer></script>
 {% endblock %}
