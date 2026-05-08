@@ -3103,7 +3103,7 @@ async function cfgDownloadAll() {
     if(!container) return;
     for(const [csp, objects] of Object.entries(data)){
       const section = document.createElement('div');
-      section.className = 'palette-section cloud-section';
+      section.className = `palette-section cloud-section csp-${csp}`;
       const iconClass = CSP_ICONS[csp]||'cloud-icon';
       section.innerHTML = `<div class="palette-cat">${CSP_LABELS[csp]||csp}</div><div class="palette-items">${
         objects.map(o=>`<div class="palette-item" draggable="true" data-type="${o.type}" ondragstart="onDragStart(event)" title="${o.desc}"><div class="pi-icon ${iconClass}">${o.icon}</div><span>${o.label}</span></div>`).join('')
