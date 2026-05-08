@@ -1698,4 +1698,94 @@ def create_migration_blueprint():
         )
         return xml
 
+    # ── Device ingestion routes ──────────────────────────────────────────────
+
+    @bp.route("/api/network-migration/import/topologies", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_import_topologies():
+        """Return list of existing topologies for the topology-import selector."""
+        try:
+            topos = _nm.list_topologies()
+            return jsonify({"topologies": topos, "count": len(topos)})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/network-migration/import/csv", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_import_csv():
+        """Bulk-import devices from an uploaded CSV or JSON file.
+
+        Accepts multipart file upload (field: 'file') or JSON body with
+        {'file_content': '...', 'filename': '...', 'topology_id': optional}.
+        """
+        try:
+            topology_id = None
+            if request.content_type and "multipart" in request.content_type:
+                f = request.files.get("file")
+                if not f:
+                    return jsonify({"error": "No file uploaded"}), 400
+                filename = f.filename or "upload.csv"
+                allowed = {".csv", ".json", ".txt"}
+                from pathlib import Path as _P
+                if _P(filename).suffix.lower() not in allowed:
+                    return jsonify({"error": f"Unsupported file type: {filename}"}), 400
+                content = f.read()
+                topology_id = request.form.get("topology_id") or None
+            else:
+                body = request.get_json(force=True) or {}
+                raw = body.get("file_content", "")
+                if not raw:
+                    return jsonify({"error": "file_content required"}), 400
+                content = raw.encode("utf-8") if isinstance(raw, str) else raw
+                filename = body.get("filename", "upload.csv")
+                topology_id = body.get("topology_id") or None
+
+            result = _nm.ingest_devices_csv(content, topology_id=topology_id, filename=filename)
+            if "error" in result:
+                return jsonify(result), 400
+            _audit(None, "import_csv", f"imported {result.get('created',0)} new, {result.get('updated',0)} updated")
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/network-migration/import/netbox", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_import_netbox():
+        """Sync devices from NetBox into ni_devices.
+
+        Body: {'topology_id': optional, 'test_only': bool}
+        """
+        try:
+            body = request.get_json(force=True) or {}
+            topology_id = body.get("topology_id") or None
+            test_only = bool(body.get("test_only", False))
+            result = _nm.ingest_devices_netbox(topology_id=topology_id, test_only=test_only)
+            if "error" in result:
+                return jsonify(result), 400
+            if not test_only:
+                _audit(None, "import_netbox", f"synced {result.get('total',0)} devices")
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/network-migration/import/topology", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_import_topology():
+        """Re-ingest nodes from an existing topology diagram into ni_devices.
+
+        Body: {'topology_id': required}
+        """
+        try:
+            body = request.get_json(force=True) or {}
+            src_id = body.get("topology_id", "")
+            if not src_id:
+                return jsonify({"error": "topology_id required"}), 400
+            result = _nm.ingest_devices_topology(src_id)
+            if "error" in result:
+                return jsonify(result), 400
+            _audit(None, "import_topology", f"ingested {result.get('total',0)} nodes from {src_id}")
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     return bp

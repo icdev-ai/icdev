@@ -2454,3 +2454,191 @@ def build_parallel_timeline(session_id: str) -> list[dict]:
         mc.commit()
 
     return all_milestones
+
+
+# ---------------------------------------------------------------------------
+# Device ingestion — 3 paths: CSV/JSON bulk, NetBox sync, topology re-import
+
+def _ensure_import_topology(label: str, nc_conn) -> str:
+    """Return existing topology id by label, or create a new one."""
+    import uuid as _uuid
+    row = nc_conn.execute(
+        "SELECT id FROM topologies WHERE name = ? LIMIT 1", (label,)
+    ).fetchone()
+    if row:
+        return row["id"] if hasattr(row, "keys") else row[0]
+    topology_id = "imp-" + str(_uuid.uuid4())[:8]
+    now = _now()
+    nc_conn.execute(
+        "INSERT INTO topologies (id, name, graph_json, classification, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (topology_id, label, "{}", "CUI // SP-CTI", now, now),
+    )
+    nc_conn.commit()
+    return topology_id
+
+
+def list_topologies() -> list[dict]:
+    """Return all topologies from network_canvas.db for the import panel selector."""
+    with _nc_conn() as nc:
+        rows = nc.execute(
+            "SELECT id, name, created_at FROM topologies ORDER BY created_at DESC"
+        ).fetchall()
+    return [{"id": r["id"], "name": r["name"], "created_at": r["created_at"]} for r in rows]
+
+
+def ingest_devices_csv(
+    file_content: bytes | str,
+    topology_id: str | None = None,
+    filename: str = "upload.csv",
+) -> dict:
+    """Import devices from CSV or JSON bytes/string into ni_devices.
+
+    topology_id: existing topology to attach devices to. If None, a dated
+    'Bulk Import YYYY-MM-DD' topology is auto-created.
+    """
+    import os
+
+    with _nc_conn() as nc:
+        if topology_id is None:
+            import datetime as _dt
+            label = "Bulk Import " + _dt.date.today().isoformat()
+            topology_id = _ensure_import_topology(label, nc)
+
+        # Write to temp file so bulk_import_devices can read it
+        suffix = ".json" if filename.lower().endswith(".json") else ".csv"
+        tmp_path = None
+        try:
+            import tempfile as _tmp
+            with _tmp.NamedTemporaryFile(suffix=suffix, delete=False, mode="wb") as f:
+                tmp_path = f.name
+                if isinstance(file_content, str):
+                    f.write(file_content.encode("utf-8"))
+                else:
+                    f.write(file_content)
+            from tools.network.device_manager import bulk_import_devices
+            result = bulk_import_devices(topology_id, tmp_path, conn=nc)
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    return {**result, "topology_id": topology_id}
+
+
+def ingest_devices_netbox(
+    topology_id: str | None = None,
+    test_only: bool = False,
+) -> dict:
+    """Sync devices from NetBox into ni_devices.
+
+    Reads NETBOX_URL and NETBOX_TOKEN from environment.
+    test_only=True: verifies connectivity only, no DB writes.
+    """
+    import os
+    nb_url = os.getenv("NETBOX_URL", "")
+    nb_token = os.getenv("NETBOX_TOKEN", "")
+    if not nb_url or not nb_token:
+        return {"error": "NETBOX_URL and NETBOX_TOKEN must be set in .env"}
+
+    try:
+        from tools.network.netbox_client import NetBoxClient
+        nc_client = NetBoxClient(nb_url, nb_token)
+        conn_info = nc_client.test_connection()
+    except Exception as exc:
+        return {"error": f"NetBox connection failed: {exc}"}
+
+    if test_only:
+        return {"ok": True, "netbox_version": conn_info.get("netbox_version"), "url": nb_url}
+
+    devices = nc_client.get_devices()
+    if not devices:
+        return {"ok": True, "created": 0, "updated": 0, "message": "No devices returned by NetBox"}
+
+    with _nc_conn() as nc:
+        if topology_id is None:
+            import datetime as _dt
+            label = "NetBox Import " + _dt.date.today().isoformat()
+            topology_id = _ensure_import_topology(label, nc)
+
+        from tools.network.device_manager import upsert_device
+        created, updated = 0, 0
+        for dev in devices:
+            node_id = f"nb-{dev['netbox_id']}"
+            result = upsert_device(
+                topology_id, node_id, conn=nc,
+                label=dev.get("label", node_id),
+                device_type=dev.get("type", "unknown"),
+                site=dev.get("site") or None,
+                rack_location=dev.get("rack") or None,
+            )
+            if result["action"] == "created":
+                created += 1
+            else:
+                updated += 1
+
+    return {
+        "ok": True,
+        "created": created,
+        "updated": updated,
+        "total": len(devices),
+        "topology_id": topology_id,
+        "netbox_version": conn_info.get("netbox_version"),
+    }
+
+
+def ingest_devices_topology(src_topology_id: str) -> dict:
+    """Re-ingest all nodes from an existing topology into ni_devices.
+
+    Uses the topology's graph_json nodes and upserts each into ni_devices
+    under the same topology_id (idempotent).
+    """
+    with _nc_conn() as nc:
+        row = nc.execute(
+            "SELECT id, name, graph_json FROM topologies WHERE id = ? LIMIT 1",
+            (src_topology_id,),
+        ).fetchone()
+        if not row:
+            return {"error": f"Topology not found: {src_topology_id}"}
+
+        import json as _json
+        topo_name = row["name"]
+        try:
+            graph = _json.loads(row["graph_json"] or "{}")
+        except Exception:
+            graph = {}
+
+        nodes = graph.get("nodes", [])
+        if not nodes:
+            return {"error": "Topology has no nodes", "topology_id": src_topology_id}
+
+        from tools.network.device_manager import upsert_device
+        created, updated = 0, 0
+        for node in nodes:
+            props = node.get("properties", {})
+            result = upsert_device(
+                src_topology_id,
+                node["id"],
+                conn=nc,
+                label=node.get("label", node["id"]),
+                device_type=node.get("type", "unknown"),
+                vendor=props.get("vendor") or None,
+                model=props.get("model") or None,
+                firmware_version=props.get("firmware_version") or None,
+                site=props.get("site") or None,
+            )
+            if result["action"] == "created":
+                created += 1
+            else:
+                updated += 1
+
+    return {
+        "ok": True,
+        "topology_id": src_topology_id,
+        "topology_name": topo_name,
+        "created": created,
+        "updated": updated,
+        "total": len(nodes),
+    }

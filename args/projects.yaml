@@ -669,6 +669,35 @@ projects:
   - key: wizard
     title: WIZARD
     priority: medium
+- key: nmi
+  name: Network Migration Inventory — 3-Path Device Ingestion
+  description: Adds 3 device ingestion paths to the Network Migration Canvas — CSV/JSON
+    bulk import, NetBox REST sync, and topology-diagram re-ingest — so ni_devices
+    can be populated with 10K+ real devices instead of the catalog fallback.
+  task_prefix: nmi-
+  default_open: true
+  briefs:
+  - 'E1: Fix bulk_import_devices() to auto-generate node_id for new records'
+  - 'E2: Add 5 ingestion functions to network_migration.py (complete)'
+  - 'E3: Add 4 import routes to blueprint.py (complete)'
+  - 'E4: Build 3-tab import panel in network_inventory.html (complete)'
+  - 'E5: V&V — health, Playwright E2E, companion sync'
+  epics:
+  - key: e1
+    title: Fix CSV Import Engine
+    priority: high
+  - key: e2
+    title: Backend Ingestion Functions
+    priority: high
+  - key: e3
+    title: API Routes
+    priority: high
+  - key: e4
+    title: Import Panel UI
+    priority: high
+  - key: e5
+    title: V&V
+    priority: medium
 - key: nmig
   name: Network Device Migration Workflow
   description: Vendor-agnostic network device migration workflow (chassis swap, peering
