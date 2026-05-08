@@ -3,7 +3,7 @@
 
 {% block title %}SOP Library — NDC{% endblock %}
 
-{% block extra_css %}
+{% block head %}
 <style>
 .sop-toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:14px 0 10px; }
 .sop-toolbar input, .sop-toolbar select {
@@ -251,7 +251,7 @@
 <div id="sop-empty" style="display:none;text-align:center;padding:40px;color:#546e7a;">No SOPs match your search.</div>
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
 function filterSOPs() {
   const q = document.getElementById('sop-search').value.toLowerCase();

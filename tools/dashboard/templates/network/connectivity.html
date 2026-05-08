@@ -3,7 +3,7 @@
 
 {% block title %}Connectivity Reference — NDC{% endblock %}
 
-{% block extra_css %}
+{% block head %}
 <style>
 .conn-tabs { display:flex; gap:0; border-bottom:2px solid #263238; margin-bottom:20px; }
 .conn-tab  { padding:10px 22px; color:#78909c; cursor:pointer; font-size:13px; border-bottom:2px solid transparent; margin-bottom:-2px; transition:color .15s; }
@@ -256,7 +256,7 @@
 </div>
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
 function showConnTab(name) {
   document.querySelectorAll('.conn-tab').forEach(function(t,i) {
