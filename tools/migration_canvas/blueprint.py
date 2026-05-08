@@ -104,6 +104,35 @@ def create_migration_blueprint():
                 )
         except Exception:
             pass
+        # Bridge to main icdev.db audit_trail for compliance chain
+        try:
+            from tools.db.storage import get_connection as _icdev_conn
+            import json as _json
+            import uuid as _uuid
+            with _icdev_conn() as _ic:
+                _ic.execute(
+                    "INSERT INTO audit_trail (id, event_type, actor, action, details, classification, created_at) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (
+                        str(_uuid.uuid4()),
+                        "migration_canvas",
+                        user_id or "system",
+                        action,
+                        _json.dumps({"session_id": design_id, "detail": detail}),
+                        "CUI // SP-CTI",
+                        now_isoformat(),
+                    ),
+                )
+        except Exception:
+            pass
+
+    def _notify(title: str, body: str, severity: str = "info"):
+        """Fire-and-forget notification — never raises."""
+        try:
+            from tools.notifications.adapters.telegram import send as _tg_send
+            _tg_send(title, body, severity=severity)
+        except Exception:
+            pass
 
     def _row_to_dict(row):
         return dict(row) if row else {}
@@ -759,6 +788,7 @@ def create_migration_blueprint():
             pass
 
         _audit(sid, "net_session_created", f"src={src_model} tgt={tgt_model}")
+        _notify("Network Migration Started", f"Session {sid}: {src_model} → {tgt_model or 'TBD'}", "info")
         return jsonify({"id": sid, "src_model": src_model, "tgt_model": tgt_model})
 
     @bp.route("/api/network-migration/<sid>", methods=["GET"])
@@ -1263,6 +1293,7 @@ def create_migration_blueprint():
             conn.commit()
 
         _audit(sid, "cutover_steps_saved", f"{len(steps)} steps")
+        _notify("Cutover Plan Saved", f"Session {sid}: {len(steps)} cutover steps recorded", "info")
         return jsonify({"ok": True, "count": len(steps), "steps": steps})
 
     @bp.route("/api/network-migration/<sid>/erb-metadata", methods=["POST"])
@@ -1468,6 +1499,7 @@ def create_migration_blueprint():
 
         _audit(sid, "net_session_created_from_inventory",
                f"device_id={device_id} config_auto_loaded={config_auto_loaded}")
+        _notify("Network Migration Started", f"Session {sid}: {src_model} (from inventory)", "info")
         return jsonify({
             "id": sid,
             "src_model": src_model,
@@ -1602,6 +1634,7 @@ def create_migration_blueprint():
         """Generate parallel operation milestone timeline."""
         milestones = _nm.build_parallel_timeline(sid)
         _audit(sid, "parallel_timeline_generated", f"milestones={len(milestones)}")
+        _notify("Cutover Timeline Ready", f"Session {sid}: {len(milestones)}-milestone parallel operation timeline generated", "info")
         return jsonify({"milestones": milestones, "count": len(milestones)})
 
     @bp.route("/api/network-migration/<sid>/export-diagram", methods=["GET"])

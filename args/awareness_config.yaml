@@ -151,3 +151,35 @@ promotion_filters:
 module_import_suppressions:
   - tools/db/migrate_alphadesk.py          # child app (AlphaDesk → FathomDesk); not in ICDEV core
   - tools/scripts/schedule_alphadesk_news_plan.py  # stale auto-added script; child app artifact
+
+# --------------------------------------------------------------------------
+# Network Migration Canvas (NMCE) — added 2026-05-08
+# Monitored routes, modules, and DB tables for health/drift/gap probes.
+# --------------------------------------------------------------------------
+nmce:
+  monitored_routes:
+    - /migration-canvas/network-migration/
+    - /migration-canvas/api/network-migration/inventory
+    - /migration-canvas/api/network-migration/import/topologies
+    - /migration-canvas/api/network-migration/import/csv
+    - /migration-canvas/api/network-migration/import/netbox
+    - /migration-canvas/api/network-migration/import/topology
+  monitored_modules:
+    - tools.migration_canvas.network_migration
+    - tools.migration_canvas.blueprint
+    - tools.migration_canvas.db.init_db
+    - tools.network.device_manager
+    - tools.network.netbox_client
+    - tools.genesis.reflexes.migration_canvas
+  monitored_db_tables:
+    - mc_net_sessions
+    - mc_net_port_map
+    - mc_net_compat_checks
+    - mc_net_test_cases
+    - mc_net_cutover_steps
+    - mc_net_erb_metadata
+    - mc_net_ai_sessions
+    - mc_net_protocol_plans
+    - mc_net_parallel_timelines
+    - ni_devices
+    - ni_device_configs

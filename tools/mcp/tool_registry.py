@@ -6179,6 +6179,121 @@ TOOL_REGISTRY = {
         "description": "Run ADN database migrations to create/update ad_news_* tables.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    # ── Network Migration Canvas (NMCE) ──────────────────────────────────────
+    "mc_net_get_inventory": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "get_network_inventory",
+        "description": "List network devices from ni_devices with EOL status, config-source chips, and active migration session links. Supports filters: site, device_type, vendor, eol_within_years.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "site": {"type": "string", "description": "Site/location filter"},
+                "device_type": {"type": "string", "description": "Device type filter (router/switch/firewall/etc.)"},
+                "vendor": {"type": "string", "description": "Vendor name filter"},
+                "eol_within_years": {"type": "number", "description": "Only include devices with EOL within N years"},
+            },
+        },
+    },
+    "mc_net_recommend_hardware": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "recommend_hardware",
+        "description": "AI-ranked top-3 hardware replacement recommendations from nc_hardware_profiles for a given source device. Deterministic fallback by throughput when LLM unavailable.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "device_info": {
+                    "type": "object",
+                    "description": "Source device dict with keys: vendor, model, device_type, throughput_gbps, eol_date",
+                },
+                "engineer_notes": {"type": "string", "description": "Optional engineer context or constraints"},
+                "session_id": {"type": "string", "description": "Migration session ID for audit trail"},
+            },
+            "required": ["device_info", "session_id"],
+        },
+    },
+    "mc_net_ai_assist": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ai_assist",
+        "description": "AI migration assistant — answers engineer questions with session context (BGP drain, optic compatibility, rollback steps, etc.). Saves conversation to mc_net_ai_sessions audit trail.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Migration session ID"},
+                "engineer_prompt": {"type": "string", "description": "Engineer question or task request"},
+            },
+            "required": ["session_id", "engineer_prompt"],
+        },
+    },
+    "mc_net_plan_protocol_migration": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "plan_protocol_migration",
+        "description": "Generate per-protocol migration steps (BGP/OSPF/VLAN/LAG/MPLS/ACL) from parsed device config. Upserts mc_net_protocol_plans. Requires src_config_raw in session.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Migration session ID with parsed config"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    "mc_net_build_parallel_timeline": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "build_parallel_timeline",
+        "description": "Generate 15–20 conditional milestones from D-30 to D+30 for a parallel network cutover operation. Writes mc_net_parallel_timelines.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Migration session ID"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    "mc_net_ingest_csv": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ingest_devices_csv",
+        "description": "Bulk-import network devices from CSV or JSON bytes into ni_devices. Auto-creates a dated topology if topology_id not supplied.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_content": {"type": "string", "description": "Raw CSV or JSON string content"},
+                "topology_id": {"type": "string", "description": "Existing topology ID to attach devices to (optional)"},
+                "filename": {"type": "string", "description": "Filename hint for format detection (.csv or .json)"},
+            },
+            "required": ["file_content"],
+        },
+    },
+    "mc_net_ingest_netbox": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ingest_devices_netbox",
+        "description": "Sync device inventory from NetBox into ni_devices. Reads NETBOX_URL and NETBOX_TOKEN from .env. Use test_only=true to verify connectivity without writing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topology_id": {"type": "string", "description": "Target topology ID (optional — auto-creates)"},
+                "test_only": {"type": "boolean", "description": "If true, only tests connectivity — no DB writes"},
+            },
+        },
+    },
+    "mc_net_ingest_topology": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ingest_devices_topology",
+        "description": "Re-ingest all nodes from an existing topology diagram into ni_devices. Idempotent — safe to re-run on the same topology.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "src_topology_id": {"type": "string", "description": "Source topology ID to ingest nodes from"},
+            },
+            "required": ["src_topology_id"],
+        },
+    },
 }
 
 
