@@ -367,6 +367,16 @@ def create_migration_blueprint():
         _audit(design_id, "delete", "Design deleted")
         return jsonify({"status": "deleted"})
 
+    @bp.route("/api/designs", methods=["DELETE"])
+    @mdc_login_required
+    def mc_api_delete_all_designs():
+        """Delete all migration designs."""
+        with get_connection() as conn:
+            ids = [r[0] for r in conn.execute("SELECT id FROM migration_designs").fetchall()]
+            conn.execute("DELETE FROM migration_designs")
+            conn.commit()
+        return jsonify({"deleted": len(ids)})
+
     # ====================================================================
     # API ROUTES — Assessment & Analysis
     # ====================================================================

@@ -40,7 +40,10 @@
   </div>
 
   <!-- Designs Table -->
-  <h2 style="color:#eaeaea;margin-top:2rem;">Designs</h2>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:2rem;margin-bottom:0;">
+    <h2 style="color:#eaeaea;margin:0;">Designs</h2>
+    {% if designs %}<button onclick="deleteAllDesigns()" style="background:none;border:1px solid #e74c3c;color:#e74c3c;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer;">Delete All</button>{% endif %}
+  </div>
   <div class="table-container">
     <table id="designs-table" aria-label="Quality designs" style="width:100%;border-collapse:collapse;">
       <thead>
@@ -135,9 +138,15 @@ function deleteDesign(designId) {
   fetch('/quality/api/designs/' + designId, {method: 'DELETE'})
     .then(function(r) { return r.json(); })
     .then(function(d) {
-      if (d.status === 'ok') { location.reload(); }
+      if (d.status === 'ok' || d.ok) { location.reload(); }
       else { alert('Delete failed: ' + (d.error || 'Unknown error')); }
     })
+    .catch(function(e) { alert('Error: ' + e.message); });
+}
+function deleteAllDesigns() {
+  if (!confirm('Delete ALL quality designs? This cannot be undone.')) return;
+  fetch('/quality/api/designs', {method: 'DELETE'})
+    .then(function(r) { if (r.ok) location.reload(); else alert('Delete all failed'); })
     .catch(function(e) { alert('Error: ' + e.message); });
 }
 </script>

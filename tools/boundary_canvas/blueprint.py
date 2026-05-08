@@ -422,6 +422,19 @@ def create_boundary_blueprint():
         _audit(design_id, "DELETE", "")
         return jsonify({"deleted": design_id})
 
+    @bp.route("/api/designs", methods=["DELETE"])
+    @bdc_login_required
+    def bdc_api_delete_all_designs():
+        """Delete all boundary designs and their related records."""
+        child_tables = ("bd_isa_tracker", "bd_assessments", "bd_versions")
+        with get_connection() as conn:
+            ids = [r[0] for r in conn.execute("SELECT id FROM boundary_designs").fetchall()]
+            for did in ids:
+                for table in child_tables:
+                    conn.execute(f"DELETE FROM {table} WHERE design_id=?", (did,))  # nosec B608
+                conn.execute("DELETE FROM boundary_designs WHERE id=?", (did,))
+        return jsonify({"deleted": len(ids)})
+
     # ====================================================================
     # API ROUTES — Assessment
     # ====================================================================

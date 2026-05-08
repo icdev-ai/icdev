@@ -485,6 +485,19 @@ def api_delete_design(design_id: str):
     return jsonify({"ok": True, "deleted": design_id})
 
 
+@qdc_bp.route("/api/designs", methods=["DELETE"])
+def api_delete_all_designs():
+    """Delete all quality designs."""
+    conn = _get_conn()
+    try:
+        ids = [r[0] for r in conn.execute("SELECT id FROM qdc_designs").fetchall()]
+        conn.execute("DELETE FROM qdc_designs")
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "deleted": len(ids)})
+
+
 # ===================================================================
 # API Endpoints — Assessments
 # ===================================================================
