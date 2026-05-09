@@ -375,3 +375,9 @@
 | Pdc Pipeline Stale | tools\genesis\reflexes\pdc_pipeline_stale.py | Auto-registered: reflexes/pdc_pipeline_stale.py | --json | JSON |
 | Qdc Gate Breach | tools\genesis\reflexes\qdc_gate_breach.py | Auto-registered: reflexes/qdc_gate_breach.py | --json | JSON |
 | Sdc Control Expiry | tools\genesis\reflexes\sdc_control_expiry.py | Auto-registered: reflexes/sdc_control_expiry.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Aadc Aimc Appmigration | tools\kanban\seed_aadc_aimc_appmigration.py | Auto-registered: kanban/seed_aadc_aimc_appmigration.py | --json | JSON |
