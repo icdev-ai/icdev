@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timezone
 
 from tools.data_canvas.constants import DS_QUERY_MAX_ROWS
-from tools.data_canvas.data_profiler import _open_connection, _fetchall_dicts
+from tools.data_canvas.data_profiler import _open_connection
 
 # ── Query validation ──────────────────────────────────────────────────────────
 

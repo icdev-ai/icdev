@@ -61,3 +61,23 @@ agent:
 logging:
   level: INFO
   audit_enabled: true
+
+# ── Data Science Extensions ──────────────────────────────────────────────────
+explore:
+  enabled: true
+  max_rows_profile: 50000
+  top_values_limit: 10
+  supported_backends: [sqlite, postgresql, duckdb]
+
+query:
+  enabled: true
+  max_rows: 1000
+  allowed_statement_types: [SELECT, WITH, EXPLAIN]
+  history_limit: 50
+
+quality:
+  enabled: true
+  check_types: [completeness, uniqueness, range, pattern, freshness]
+  default_threshold: 90.0
+  min_score_gate: 70
+  assessment_rule_id: DDC-QUA-001

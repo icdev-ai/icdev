@@ -10,10 +10,8 @@ Supported backends: sqlite, postgresql (psycopg2), duckdb.
 """
 
 import re
-import time
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from tools.data_canvas.constants import DS_CHECK_TYPES
 from tools.data_canvas.data_profiler import _open_connection
