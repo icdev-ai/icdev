@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from tools.agentic_ai_canvas.constants import (
     AGENT_NODES,
     ATLAS_THREAT_MAP,
+    AUTONOMY_LEVELS,
     NIST_AI_RMF_CHECKS,
     OWASP_LLM_CHECKS,
     OUTPUT_NODES,
@@ -199,6 +200,14 @@ def check_nist_ai_rmf(nodes: list[dict], edges: list[dict],
                         all_ok = False
                         break
                 passed = all_ok
+
+        elif check.get("check") == "ai_use_case_registered":
+            # NIST AI RMF 2.0 GOVERN-1.7: system-card/AI-BOM node OR use_case_id metadata
+            passed = (
+                bool(types & {"system-card", "ai-bom", "gov-system-card", "gov-ai-bom"})
+                or bool(design_meta.get("use_case_id"))
+                or bool(design_meta.get("system_card"))
+            )
 
         elif check.get("required_output"):
             passed = bool(types & {"inference-input"}) and bool(types & OUTPUT_NODES)
@@ -410,10 +419,11 @@ def assess_design(design_id: str, graph_json: str | dict,
     # Phase 4 execution check (bonus — not penalised if no agents)
     p4_exec_findings = _check_execution_nodes(nodes, edges)
 
-    # AIMC bridge: IL compatibility check for linked model refs
+    # AIMC bridge: IL compatibility check + OWASP LLM01 bridge security check
     il_compat_findings: list[dict] = []
+    bridge_sec_findings: list[dict] = []
     try:
-        from tools.agentic_ai_canvas.canvas_bridge import check_il_compatibility
+        from tools.agentic_ai_canvas.canvas_bridge import check_il_compatibility, bridge_security_check
         violations = check_il_compatibility(design_id)
         for v in violations:
             il_compat_findings.append({
@@ -424,14 +434,17 @@ def assess_design(design_id: str, graph_json: str | dict,
                 "detail": "; ".join(v.get("issues", [v.get("issue", "IL incompatibility")])),
                 "recommendation": "Select a model from AIMC catalog that supports the design's IL level.",
             })
+        bridge_sec_findings = bridge_security_check(design_id, nodes, edges)
     except Exception:
         pass
 
     all_findings = (rmf_findings + owasp_findings + hitl_findings
                     + obs_findings + a2a_findings + safety_ext_findings
-                    + p4_exec_findings + il_compat_findings)
+                    + p4_exec_findings + il_compat_findings + bridge_sec_findings)
 
     # L5 (unconstrained) agent is always a CRITICAL finding
+    # L3+ (Human-Initiated) without a HITL gate is a CAT1 finding
+    hitl_node_ids = {n["id"] for n in nodes if n.get("type") in ("hitl-gate", "caio-override", "approval-workflow")}
     for a, level in zip(agent_nodes, autonomy_levels):
         if level == 5:
             all_findings.append({
@@ -442,6 +455,19 @@ def assess_design(design_id: str, graph_json: str | dict,
                 "detail": f"Agent '{a.get('label', a['id'])}' has no circuit breaker, HITL gate, or confidence threshold.",
                 "recommendation": "Add circuit-breaker, confidence-threshold, and audit-logger nodes downstream.",
             })
+        elif level >= 3:
+            # Check if any downstream edge connects to a HITL gate
+            agent_downstream = {e["target"] for e in edges if e.get("source") == a["id"]}
+            has_hitl_downstream = bool(agent_downstream & hitl_node_ids)
+            if not has_hitl_downstream:
+                all_findings.append({
+                    "id": f"autonomy-l3plus-{a['id'][:6]}",
+                    "framework": "NIST AI RMF",
+                    "severity": "CAT1",
+                    "title": f"Autonomy L{level} agent without mandatory HITL gate",
+                    "detail": f"Agent '{a.get('label', a['id'])}' at L{level} ({AUTONOMY_LEVELS.get(level)}) has no HITL gate or approval-workflow downstream. DoD policy requires human oversight for L3+ autonomous systems.",
+                    "recommendation": "Add a hitl-gate or approval-workflow node on the agent's output path.",
+                })
 
     # OMB M-25-21 compliance flag
     omb_compliant = int((safety_impacting or rights_impacting) and not hitl_findings)
