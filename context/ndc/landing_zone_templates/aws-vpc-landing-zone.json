@@ -1,0 +1,43 @@
+{
+  "template_id": "ndc-tpl-aws-vpc",
+  "name": "AWS Landing Zone — Standard VPC",
+  "description": "AWS VPC topology: 3 AZs, public/private subnets, IGW, NAT Gateway, Transit Gateway, optional Direct Connect",
+  "cloud_provider": "aws",
+  "topology_type": "landing_zone",
+  "nodes": [
+    {"node_id": "igw", "label": "Internet Gateway", "node_type": "gateway", "properties": {"type": "IGW"}},
+    {"node_id": "tgw", "label": "Transit Gateway", "node_type": "gateway", "properties": {"type": "TGW", "asn": 64512}},
+    {"node_id": "public-subnet-1a", "label": "Public Subnet AZ-1a", "node_type": "subnet", "properties": {"cidr": "10.0.1.0/24", "az": "us-east-1a", "public": true}},
+    {"node_id": "public-subnet-1b", "label": "Public Subnet AZ-1b", "node_type": "subnet", "properties": {"cidr": "10.0.2.0/24", "az": "us-east-1b", "public": true}},
+    {"node_id": "public-subnet-1c", "label": "Public Subnet AZ-1c", "node_type": "subnet", "properties": {"cidr": "10.0.3.0/24", "az": "us-east-1c", "public": true}},
+    {"node_id": "private-subnet-1a", "label": "Private Subnet AZ-1a", "node_type": "subnet", "properties": {"cidr": "10.0.11.0/24", "az": "us-east-1a", "public": false}},
+    {"node_id": "private-subnet-1b", "label": "Private Subnet AZ-1b", "node_type": "subnet", "properties": {"cidr": "10.0.12.0/24", "az": "us-east-1b", "public": false}},
+    {"node_id": "private-subnet-1c", "label": "Private Subnet AZ-1c", "node_type": "subnet", "properties": {"cidr": "10.0.13.0/24", "az": "us-east-1c", "public": false}},
+    {"node_id": "nat-1a", "label": "NAT Gateway AZ-1a", "node_type": "nat", "properties": {"az": "us-east-1a", "eip": true}},
+    {"node_id": "nat-1b", "label": "NAT Gateway AZ-1b", "node_type": "nat", "properties": {"az": "us-east-1b", "eip": true}},
+    {"node_id": "nat-1c", "label": "NAT Gateway AZ-1c", "node_type": "nat", "properties": {"az": "us-east-1c", "eip": true}},
+    {"node_id": "dx-gw", "label": "Direct Connect Gateway", "node_type": "gateway", "properties": {"type": "DXGW", "bgp_asn": 64513, "optional": true}},
+    {"node_id": "on-prem", "label": "On-Premises Network", "node_type": "external", "properties": {"cidr": "192.168.0.0/16", "connection_type": "Direct Connect or VPN"}}
+  ],
+  "edges": [
+    {"source": "igw", "target": "public-subnet-1a", "edge_type": "route", "label": "0.0.0.0/0"},
+    {"source": "igw", "target": "public-subnet-1b", "edge_type": "route", "label": "0.0.0.0/0"},
+    {"source": "igw", "target": "public-subnet-1c", "edge_type": "route", "label": "0.0.0.0/0"},
+    {"source": "nat-1a", "target": "private-subnet-1a", "edge_type": "route", "label": "outbound"},
+    {"source": "nat-1b", "target": "private-subnet-1b", "edge_type": "route", "label": "outbound"},
+    {"source": "nat-1c", "target": "private-subnet-1c", "edge_type": "route", "label": "outbound"},
+    {"source": "tgw", "target": "private-subnet-1a", "edge_type": "attachment", "label": "TGW attachment"},
+    {"source": "tgw", "target": "private-subnet-1b", "edge_type": "attachment", "label": "TGW attachment"},
+    {"source": "tgw", "target": "private-subnet-1c", "edge_type": "attachment", "label": "TGW attachment"},
+    {"source": "dx-gw", "target": "tgw", "edge_type": "peering", "label": "DX association"},
+    {"source": "on-prem", "target": "dx-gw", "edge_type": "direct_connect", "label": "1Gbps or 10Gbps DX"}
+  ],
+  "security_controls": [
+    "VPC Flow Logs → CloudWatch / S3",
+    "Network ACLs on all subnets",
+    "Security Groups per workload tier",
+    "GuardDuty VPC threat detection",
+    "AWS Network Firewall (optional)"
+  ],
+  "sop_hints": ["dns swap", "blue/green validation"]
+}

@@ -1,0 +1,60 @@
+{
+  "template_id": "ddc-tpl-oracle-aurora",
+  "name": "Oracle → Aurora PostgreSQL Migration",
+  "description": "Data lineage template: Oracle source tables → DMS full-load + CDC → Aurora PostgreSQL target",
+  "source_tech": "oracle",
+  "target_tech": "aurora-postgresql",
+  "migration_tool": "dms",
+  "nodes": [
+    {
+      "node_id": "src-oracle-schema",
+      "label": "Oracle Schema",
+      "node_type": "source",
+      "tech": "oracle",
+      "properties": {"version": "19c", "schema": "APP_SCHEMA", "platform": "on-premises"}
+    },
+    {
+      "node_id": "src-oracle-tables",
+      "label": "Oracle Tables",
+      "node_type": "source",
+      "tech": "oracle",
+      "properties": {"estimated_tables": 50, "estimated_rows": 10000000}
+    },
+    {
+      "node_id": "transform-sct",
+      "label": "AWS SCT Conversion",
+      "node_type": "transform",
+      "tech": "sct",
+      "properties": {"tool": "AWS Schema Conversion Tool", "auto_convert_pct": 85}
+    },
+    {
+      "node_id": "transform-dms",
+      "label": "DMS Replication",
+      "node_type": "transform",
+      "tech": "dms",
+      "properties": {"task_type": "full-load-and-cdc", "replication_instance": "dms.r5.xlarge"}
+    },
+    {
+      "node_id": "tgt-aurora-schema",
+      "label": "Aurora PostgreSQL Schema",
+      "node_type": "target",
+      "tech": "aurora-postgresql",
+      "properties": {"version": "15.4", "engine_mode": "provisioned", "instance_class": "db.r6g.xlarge"}
+    },
+    {
+      "node_id": "tgt-aurora-pgvector",
+      "label": "pgvector Extension",
+      "node_type": "target",
+      "tech": "pgvector",
+      "properties": {"dimension": 1536, "index_type": "hnsw", "embedding_model": "bedrock-titan-embed"}
+    }
+  ],
+  "edges": [
+    {"source": "src-oracle-schema", "target": "transform-sct", "edge_type": "schema_conversion", "label": "SCT converts DDL"},
+    {"source": "src-oracle-tables", "target": "transform-dms", "edge_type": "replication", "label": "DMS full-load"},
+    {"source": "transform-sct", "target": "tgt-aurora-schema", "edge_type": "schema_apply", "label": "converted DDL applied"},
+    {"source": "transform-dms", "target": "tgt-aurora-schema", "edge_type": "data_load", "label": "CDC data flow"},
+    {"source": "tgt-aurora-schema", "target": "tgt-aurora-pgvector", "edge_type": "extension", "label": "semantic layer"}
+  ],
+  "sop_hints": ["oracle aurora sct", "aws dms full-load cdc", "aurora pgvector semantic search"]
+}

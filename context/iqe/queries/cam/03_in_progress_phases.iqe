@@ -1,0 +1,1 @@
+foreach ph in cam.phases where ph.status == "in_progress" select ph.project_name, ph.phase_num, ph.title, ph.wave_num, ph.duration_days

@@ -2327,6 +2327,7 @@ def create_app() -> Flask:
             "idc":        ("tools.iqe.adapters.infra",       ["infra.resources", "infra.snapshots", "infra.ai_decisions"]),
             "odc":        ("tools.iqe.adapters.observability", ["mitre.techniques", "mitre.coverage", "mitre.gaps", "observability.ai_decisions"]),
             "bdc":        ("tools.iqe.adapters.bdc",         ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts", "bdc.ai_decisions"]),
+            "cam":        ("tools.iqe.adapters.cam",          ["cam.projects", "cam.phases", "cam.app_components", "cam.ai_opportunities"]),
             "mc":         ("tools.iqe.adapters.mc",          ["mc.designs", "mc.waves", "mc.assessments", "mc.ai_decisions"]),
             "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts", "aadc.ai_decisions"]),
             "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts", "aimc.ai_decisions"]),

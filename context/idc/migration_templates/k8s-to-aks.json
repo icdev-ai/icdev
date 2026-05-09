@@ -1,0 +1,53 @@
+{
+  "template_id": "idc-tpl-k8s-aks",
+  "name": "Kubernetes → Azure AKS Migration",
+  "description": "Infrastructure migration template: on-premises K8s workloads to Azure Kubernetes Service with Workload Identity, AGIC, and Key Vault",
+  "source_platform": "kubernetes",
+  "target_platform": "azure-aks",
+  "nodes": [
+    {
+      "resource_id": "src-k8s-cluster",
+      "label": "K8s Cluster (on-prem)",
+      "resource_type": "kubernetes_cluster",
+      "platform": "on-premises",
+      "properties": {"k8s_version": "1.28"}
+    },
+    {
+      "resource_id": "tgt-aks-cluster",
+      "label": "AKS Cluster",
+      "resource_type": "aks_cluster",
+      "platform": "azure",
+      "properties": {"k8s_version": "1.29", "node_pool_vm_size": "Standard_D4s_v5", "availability_zones": [1, 2, 3]}
+    },
+    {
+      "resource_id": "tgt-workload-identity",
+      "label": "Azure Workload Identity",
+      "resource_type": "azure_workload_identity",
+      "platform": "azure",
+      "properties": {"federated_credentials": true}
+    },
+    {
+      "resource_id": "tgt-agic",
+      "label": "Application Gateway Ingress Controller",
+      "resource_type": "agic",
+      "platform": "azure",
+      "properties": {"sku": "WAF_v2", "waf_policy": "enabled"}
+    },
+    {
+      "resource_id": "tgt-key-vault",
+      "label": "Azure Key Vault",
+      "resource_type": "key_vault",
+      "platform": "azure",
+      "properties": {"csi_driver": "secrets-store-csi-driver-provider-azure", "soft_delete": true}
+    }
+  ],
+  "migration_steps": [
+    "Deploy AKS cluster with Workload Identity enabled",
+    "Install Azure CSI Secrets Store provider",
+    "Migrate K8s Secrets to Azure Key Vault",
+    "Map K8s service accounts to Entra ID managed identities",
+    "Deploy AGIC and migrate Ingress resources",
+    "Validate workloads and cutover DNS"
+  ],
+  "sop_hints": ["kubernetes namespace", "k8s secrets"]
+}

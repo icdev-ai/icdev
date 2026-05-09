@@ -3455,6 +3455,41 @@ def create_migration_blueprint():
             logger.warning("ServiceNow import error: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
+    # ── Cloud Application Migration (CAM) project hub ────────────────────────
+
+    @bp.route("/projects")
+    @mdc_login_required
+    def cam_projects():
+        """CAM project hub — list all cloud migration projects."""
+        from tools.migration_canvas.cam_engine import get_projects
+        projects = get_projects()
+        return render_template("migration_canvas/cam_projects.html", projects=projects)
+
+    @bp.route("/projects/<project_id>")
+    @mdc_login_required
+    def cam_project_detail(project_id):
+        """CAM project detail — phases, SOPs, app inventory, AI opportunities."""
+        from tools.migration_canvas.cam_engine import get_project_detail
+        project = get_project_detail(project_id=project_id)
+        if not project:
+            abort(404)
+        return render_template("migration_canvas/cam_project_detail.html", project=project)
+
+    @bp.route("/api/projects")
+    @mdc_login_required
+    def cam_api_projects():
+        from tools.migration_canvas.cam_engine import get_projects
+        return jsonify({"ok": True, "projects": get_projects()})
+
+    @bp.route("/api/projects/<project_id>")
+    @mdc_login_required
+    def cam_api_project_detail(project_id):
+        from tools.migration_canvas.cam_engine import get_project_detail
+        project = get_project_detail(project_id=project_id)
+        if not project:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "project": project})
+
     @bp.route("/api/ai-trace")
     @mdc_login_required
     def mc_api_ai_trace():

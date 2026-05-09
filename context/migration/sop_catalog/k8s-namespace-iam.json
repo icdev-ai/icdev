@@ -1,0 +1,16 @@
+{
+  "id": "idc-sop-k8s-iam-001",
+  "title": "Kubernetes Namespace + RBAC to AWS IAM Migration",
+  "category": "security-migration",
+  "sop_target_canvas": "idc",
+  "platform": "aws",
+  "source_tech": "kubernetes",
+  "target_tech": "eks-fargate",
+  "description": "Migrate K8s RBAC (ServiceAccounts, ClusterRoles, RoleBindings) to EKS IRSA (IAM Roles for Service Accounts).",
+  "steps": [
+    {"number": 1, "action": "Export K8s RBAC: kubectl get serviceaccount,clusterrole,clusterrolebinding,rolebinding -A -o yaml > k8s-rbac.yaml", "verify": "YAML file contains all service accounts and role bindings; review for over-privileged roles", "rollback": "N/A — read-only", "time_est": "1h"},
+    {"number": 2, "action": "Enable OIDC provider for EKS cluster: eksctl utils associate-iam-oidc-provider --cluster analytics-eks --approve", "verify": "aws iam list-open-id-connect-providers shows EKS OIDC provider ARN", "rollback": "Disassociate OIDC provider", "time_est": "10m"},
+    {"number": 3, "action": "Create IAM roles for each K8s ServiceAccount: eksctl create iamserviceaccount --name <sa-name> --namespace <ns> --cluster analytics-eks --attach-policy-arn <arn> --approve", "verify": "kubectl get serviceaccount <sa-name> -n <ns> -o yaml shows eks.amazonaws.com/role-arn annotation", "rollback": "eksctl delete iamserviceaccount", "time_est": "2h"},
+    {"number": 4, "action": "Update pod specs to use IRSA service accounts; remove explicit AWS_ACCESS_KEY_ID env vars from manifests", "verify": "kubectl exec <pod> -- aws sts get-caller-identity returns IRSA role ARN; no hardcoded credentials in env", "rollback": "Revert service account references in pod specs", "time_est": "2h"}
+  ]
+}
