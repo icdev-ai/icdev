@@ -1,8 +1,15 @@
 """CIPHER FORGE simulation — 4 teams, 5 injects, receipt gates, Academy bonuses."""
+import sys
 import io
 import json
 import random
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+from pathlib import Path as _Path
+_BASE = _Path(__file__).resolve().parents[3]
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
+
 
 from tools.ttx.engine import TTXEngine
 from tools.db.storage import get_connection
@@ -240,13 +247,6 @@ Doctrinal basis: standard joint operations framework. Recommend execution within
 def build_receipts(team, idx, session_id, team_id):
     """Pre-log receipts via engine so validate_receipts() counts them as verified."""
     count = team['receipts'][idx]
-import sys
-from pathlib import Path as _Path
-
-_BASE = _Path(__file__).resolve().parents[3]
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
-
     if count == 0:
         return []
     tools = INJECT_TOOLS[idx][:count]
