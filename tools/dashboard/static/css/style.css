@@ -607,6 +607,26 @@ tbody tr:hover {
     border: 1px solid var(--status-red);
 }
 
+/* --- Hamburger toggle button (hidden on desktop) --- */
+#nav-hamburger {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    padding: 4px 9px;
+    font-size: 1.1rem;
+    cursor: pointer;
+    line-height: 1;
+    margin-left: auto;
+    order: 99;
+    flex-shrink: 0;
+}
+#nav-hamburger:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
 /* --- Responsive --- */
 @media (max-width: 768px) {
     .main-content {
@@ -621,12 +641,74 @@ tbody tr:hover {
     .info-grid {
         grid-template-columns: 1fr;
     }
+    /* Hamburger appears; nav collapses */
+    #nav-hamburger {
+        display: block;
+    }
     .navbar {
-        padding: 0 8px;
+        flex-wrap: wrap;
+        padding: 6px 8px;
+        gap: 4px;
+    }
+    .navbar-brand {
+        flex: 1;
+    }
+    /* Nav + right controls collapse into hidden drawer */
+    .navbar-nav {
+        display: none;
+        flex-direction: column;
+        flex-wrap: wrap;
+        width: 100%;
+        order: 100;
+        gap: 0;
+        border-top: 1px solid var(--border-color);
+        padding-top: 4px;
+        margin-top: 4px;
+    }
+    .navbar-nav.mobile-open {
+        display: flex;
+    }
+    .navbar-right {
+        display: none;
+        flex-wrap: wrap;
+        width: 100%;
+        order: 101;
+        gap: 6px;
+        border-top: 1px solid var(--border-color);
+        padding: 6px 0 2px;
+    }
+    .navbar-right.mobile-open {
+        display: flex;
+    }
+    /* Dropdowns become static sub-lists on mobile */
+    .nav-dropdown {
+        width: 100%;
+    }
+    .nav-dropdown-trigger {
+        display: block;
+        width: 100%;
+        padding: 7px 10px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        border-bottom: none;
+    }
+    .nav-dropdown-menu {
+        position: static;
+        display: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding-left: 12px;
+        background: transparent;
+        max-height: none;
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: block;
     }
     .navbar-nav li a {
-        padding: 6px 7px;
-        font-size: 0.72rem;
+        padding: 6px 10px;
+        font-size: 0.82rem;
     }
 }
 

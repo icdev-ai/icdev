@@ -1,4 +1,5 @@
 # [TEMPLATE: CUI // SP-CTI]
+from __future__ import annotations
 """
 Dashboard authentication middleware (Phase 30 — D169-D172).
 
@@ -89,15 +90,15 @@ def log_auth_event(user_id, event_type, ip_address=None, user_agent=None, detail
 # ---------------------------------------------------------------------------
 
 
-def create_user(email, display_name, role="developer", created_by=None):
+def create_user(email, display_name, role="developer", created_by=None, tenant_id=None):
     """Create a new dashboard user. Returns user dict."""
     user_id = str(uuid.uuid4())
     conn = _get_db()
     try:
         conn.execute(
-            """INSERT INTO dashboard_users (id, email, display_name, role, created_by)
-               VALUES (?, ?, ?, ?, ?)""",
-            (user_id, email, display_name, role, created_by),
+            """INSERT INTO dashboard_users (id, email, display_name, role, created_by, tenant_id)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (user_id, email, display_name, role, created_by, tenant_id),
         )
         conn.commit()
     finally:
@@ -110,6 +111,7 @@ def create_user(email, display_name, role="developer", created_by=None):
         "display_name": display_name,
         "role": role,
         "status": "active",
+        "tenant_id": tenant_id,
     }
 
 

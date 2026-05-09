@@ -3305,6 +3305,7 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
     status TEXT NOT NULL DEFAULT 'active'
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
+    tenant_id TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

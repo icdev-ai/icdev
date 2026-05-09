@@ -121,7 +121,8 @@
     <!-- Navigation -->
     <nav class="navbar" role="navigation" aria-label="Main navigation">
         <a class="navbar-brand" href="/">ICDEV™</a>
-        <ul class="navbar-nav">
+        <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
+        <ul class="navbar-nav" id="navbar-nav">
 
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
 
@@ -449,6 +450,12 @@
 
         </ul>
         <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            {% if g.get('tenant_name') and g.tenant_name != 'System' %}
+            <span class="nav-tenant-badge" title="Active tenant: {{ g.tenant_name }}"
+                  style="background:var(--accent-color,#2563eb);color:#fff;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:600;letter-spacing:0.02em;white-space:nowrap;">
+                {{ g.tenant_name }}
+            </span>
+            {% endif %}
             {% if current_user %}
             <a href="/profile" class="user-badge" title="{{ current_user.email }}">
                 <span class="user-badge-name">{{ current_user.display_name }}</span>
@@ -511,6 +518,15 @@
     <script>
     // Theme toggle (FDE E1)
     window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleMobileNav = function() {
+        var nav = document.getElementById('navbar-nav');
+        var right = document.querySelector('.navbar-right');
+        var btn = document.getElementById('nav-hamburger');
+        var isOpen = nav && nav.classList.contains('mobile-open');
+        if (nav) nav.classList.toggle('mobile-open', !isOpen);
+        if (right) right.classList.toggle('mobile-open', !isOpen);
+        if (btn) btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+    };
     ICDEV.toggleTheme = function() {
         var html = document.documentElement;
         var cur = html.getAttribute('data-theme') || 'dark';
