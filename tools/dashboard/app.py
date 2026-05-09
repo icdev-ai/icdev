@@ -8856,6 +8856,11 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("fathomdesk.html", ticker=ticker)
 
+    @app.route("/fathomdesk/trap-events")
+    def fathomdesk_trap_events():
+        """FathomDesk — full trap event history with filters."""
+        return render_template("fathomdesk_trap_events.html")
+
     @app.route("/analysis")
     def analysis_page():
         """Market Analysis — Macro Intelligence, IV Skew & Term Structure."""
