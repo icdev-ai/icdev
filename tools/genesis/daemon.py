@@ -76,6 +76,7 @@ REFLEX_NAMES = [
     "canvas_indexer",
     "alphadesk_trap_scenarios",
     "migration_canvas",
+    "academy_reflex",
 ]
 
 # Backward-compat aliases for module-level access used by other code
