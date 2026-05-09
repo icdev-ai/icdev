@@ -1358,3 +1358,14 @@ system_graph:
     empty node list for its source (awareness_kg, canvas_kg, kanban_deps, goals,
     migrations, codebase). Check DB connectivity and table existence.
     system_graph_build_slow fires when stats.build_ms > 10000 on an uncached request.
+
+# Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
+gates:
+  - id: MCP-SEC-001
+    name: MCP Server Security Gate
+    description: Blocks on HIGH severity MCP server findings (unauthenticated transport, missing TLS, privilege escalation tools)
+    severity: HIGH
+    block_on: [unauthenticated_transport, privilege_escalation]
+    warn_on: [no_tls, missing_classification]
+    tool: tools/mcp/mcp_scanner.py
+    nist_controls: [SC-8, AC-3, AU-12]
