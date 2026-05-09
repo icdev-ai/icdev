@@ -282,8 +282,13 @@ def create_ops_hub_blueprint() -> Blueprint:
     @bp.route("/api/ops/topology")
     def api_ops_topology():
         from tools.ops_hub.aiops_engine import get_topology, get_airgap_paths
+        topo = get_topology()
+        graph = topo.get("graph", {})
         return jsonify({
-            "topology": get_topology(),
+            "nodes": graph.get("nodes", []),
+            "edges": graph.get("edges", []),
+            "spofs": topo.get("spofs", []),
+            "topology": topo,
             "airgap_paths": get_airgap_paths(),
         })
 
@@ -298,7 +303,13 @@ def create_ops_hub_blueprint() -> Blueprint:
     @bp.route("/api/ops/adapters")
     def api_ops_adapters():
         from tools.ops_hub.adapter_registry import probe_all
-        return jsonify(probe_all(persist=True))
+        raw = probe_all(persist=True)
+        # Normalize to dict keyed by adapter_name for consistent API shape
+        if isinstance(raw, list):
+            adapters = {a.get("adapter_name", str(i)): a for i, a in enumerate(raw)}
+        else:
+            adapters = raw
+        return jsonify({"adapters": adapters})
 
     # ── IQE Query ────────────────────────────────────────────────────────────
 
