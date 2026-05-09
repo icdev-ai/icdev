@@ -255,6 +255,78 @@ CREATE TABLE IF NOT EXISTS ddc_sop_approvals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ddc_sop_approvals_sop ON ddc_sop_approvals(sop_id);
+
+-- ── Data Science: Explore (Profiler) ──────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_explore_sessions (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    db_conn_json    TEXT DEFAULT '{}',
+    status          TEXT DEFAULT 'completed',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dd_explore_profiles (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    session_id      TEXT REFERENCES dd_explore_sessions(id) ON DELETE SET NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    profile_json    TEXT DEFAULT '{}',
+    table_count     INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_explore_profiles_design ON dd_explore_profiles(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_explore_sessions_design ON dd_explore_sessions(design_id);
+
+-- ── Data Science: Query Sandbox ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_query_history (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    user            TEXT DEFAULT '',
+    sql_text        TEXT NOT NULL,
+    db_conn_json    TEXT DEFAULT '{}',
+    row_count       INTEGER DEFAULT 0,
+    exec_ms         INTEGER DEFAULT 0,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_query_history_design ON dd_query_history(design_id);
+
+-- ── Data Science: Quality Rules ────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS dd_quality_rules (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT,
+    name            TEXT NOT NULL,
+    table_name      TEXT NOT NULL,
+    column_name     TEXT DEFAULT '',
+    check_type      TEXT NOT NULL,
+    threshold       REAL DEFAULT 90.0,
+    params_json     TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    enabled         INTEGER DEFAULT 1,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    CHECK (check_type IN ('completeness', 'uniqueness', 'range', 'pattern', 'freshness'))
+);
+
+CREATE TABLE IF NOT EXISTS dd_quality_runs (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT REFERENCES dd_quality_rules(id) ON DELETE CASCADE,
+    db_conn_json    TEXT DEFAULT '{}',
+    passed          INTEGER DEFAULT 0,
+    actual_value    REAL DEFAULT 0.0,
+    threshold       REAL DEFAULT 0.0,
+    detail          TEXT DEFAULT '',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_quality_rules_design ON dd_quality_rules(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_quality_runs_rule ON dd_quality_runs(rule_id);
 """
 
 

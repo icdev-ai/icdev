@@ -383,6 +383,13 @@ COLUMN_LINEAGE_TYPES = [
     "col-passthrough",      # Column copied unchanged (SELECT col FROM ...)
 ]
 
+# ── Data Science Constants ────────────────────────────────────────────────────
+
+DS_CHECK_TYPES = ["completeness", "uniqueness", "range", "pattern", "freshness"]
+DS_DB_TYPES = ["sqlite", "postgresql", "duckdb"]
+DS_PROFILER_MAX_ROWS = 50_000
+DS_QUERY_MAX_ROWS = 1_000
+
 # NIST 800-53 control families relevant to data design
 DATA_NIST_FAMILIES = {
     "AC": "Access Control",

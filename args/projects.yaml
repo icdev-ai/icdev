@@ -4,6 +4,37 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: dds
+  name: DDC Data Science — Explore, Query Sandbox, Quality Rules
+  description: >
+    Three data-science tabs integrated into the Data Design Canvas (DDC) at /data/.
+    Epic 1: classification-aware data profiler (/data/explore) — auto-profile connected DBs
+    with null%, cardinality, distributions, classification inheritance.
+    Epic 2: SQL Sandbox (/data/query) — read-only SQL editor with results grid, history,
+    classification stamping.
+    Epic 3: Data Quality Rules (/data/quality) — define completeness/uniqueness/range/pattern
+    expectations, run checks, feed pass/fail into the existing Assessment engine.
+  task_prefix: dds-
+  default_open: true
+  briefs:
+  - 'ex: data_profiler.py + DB tables (dd_explore_profiles, dd_explore_sessions) + /explore route + explore.html'
+  - 'qr: query_sandbox.py + DB table (dd_query_history) + /query route + query.html'
+  - 'ql: quality_engine.py + DB tables (dd_quality_rules, dd_quality_runs) + /quality route + quality.html + assessment bridge'
+  - 'inf: constants, args config, manifest shard, icdev mirrors, index.html nav, companion sync, V&V'
+  epics:
+  - key: ex
+    title: Data Profiler — /data/explore
+    priority: critical
+  - key: qr
+    title: SQL Sandbox — /data/query
+    priority: critical
+  - key: ql
+    title: Data Quality Rules — /data/quality
+    priority: high
+  - key: inf
+    title: Infrastructure + V&V Gate
+    priority: high
+
 - key: aadc-enh
   name: AADC Enhancements — Canvas JS, Cost Estimation, IaC, Impact Graph
   description: 'Four enhancements to the Agentic AI Design Canvas: (1) dedicated
