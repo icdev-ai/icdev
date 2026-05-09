@@ -103,6 +103,17 @@ class SageMakerAdapter(OpsAdapter):
             return {"status": "unavailable"}
         try:
             sm = self._clients()
+            if event_type == "create_trial_component":
+                kwargs: dict = {"TrialComponentName": payload["name"]}
+                if payload.get("display_name"):
+                    kwargs["DisplayName"] = payload["display_name"]
+                if payload.get("trial_name"):
+                    sm.associate_trial_component(
+                        TrialComponentName=payload["name"],
+                        TrialName=payload["trial_name"],
+                    )
+                resp = sm.create_trial_component(**kwargs)
+                return {"status": "ok", "arn": resp.get("TrialComponentArn", "")}
             if event_type == "transition_model_stage":
                 sm.update_model_package(
                     ModelPackageArn=payload.get("arn", ""),
