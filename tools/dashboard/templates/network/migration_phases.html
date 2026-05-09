@@ -2,7 +2,7 @@
 {% extends "network/base.html" %}
 {% block title %}Migration Phases — {{ topo_name }} — Network Design Canvas{% endblock %}
 
-{% block extra_css %}
+{% block head %}
 <style>
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 .mp-shell { display: flex; flex-direction: column; height: calc(100vh - 56px); overflow: hidden; }
@@ -106,7 +106,6 @@
 .resize-handle:hover { background: #27ae60; }
 </style>
 {% endblock %}
-
 {% block content %}
 <div class="mp-shell">
   <!-- Top Toolbar -->
@@ -258,7 +257,7 @@
 </div><!-- /.mp-shell -->
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
 const TOPO_ID = {{ topo_id|tojson }};
 const TOPO_NAME = {{ topo_name|tojson }};
