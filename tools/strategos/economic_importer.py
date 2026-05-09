@@ -29,7 +29,6 @@ import math
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterator
 
 _DB_PATH = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
 

@@ -329,6 +329,16 @@
         <span class="layer-dot" style="background: #a3e635; border-radius: 2px;"></span>
         Satellite
       </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-a2ad">
+        <span class="layer-dot" style="background: #ef4444; border: 1px dashed #fca5a5;"></span>
+        A2/AD Rings
+      </label>
+      <label class="sg-layer-toggle">
+        <input type="checkbox" id="toggle-frontlines">
+        <span class="layer-dot" style="background: #f97316;"></span>
+        Frontlines
+      </label>
     </div>
 
     <button id="sg-refresh-btn">&#8635; Refresh</button>
@@ -357,7 +367,9 @@
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const STATUS     = document.getElementById('sg-map-status');
 const TIP        = document.getElementById('sg-map-tooltip');
-const TOGGLE_ORBAT     = document.getElementById('toggle-orbat');
+const TOGGLE_ORBAT      = document.getElementById('toggle-orbat');
+const TOGGLE_A2AD       = document.getElementById('toggle-a2ad');
+const TOGGLE_FRONTLINES = document.getElementById('toggle-frontlines');
 const TOGGLE_GHOST     = document.getElementById('toggle-ghost');
 const TOGGLE_EVENTS    = document.getElementById('toggle-events');
 const TOGGLE_SUPPLY    = document.getElementById('toggle-supply');
@@ -412,11 +424,13 @@ function eventColor(eventType) {
 // ── Leaflet map ───────────────────────────────────────────────────────────────
 let map;
 const layers = {
-  orbat:     L.layerGroup(),
-  ghost:     L.layerGroup(),
-  events:    L.layerGroup(),
-  supply:    L.layerGroup(),
-  satellite: L.layerGroup(),
+  orbat:      L.layerGroup(),
+  ghost:      L.layerGroup(),
+  events:     L.layerGroup(),
+  supply:     L.layerGroup(),
+  satellite:  L.layerGroup(),
+  a2ad:       L.layerGroup(),
+  frontlines: L.layerGroup(),
 };
 
 function initMap() {
@@ -480,6 +494,42 @@ applyToggle(TOGGLE_ORBAT,  'orbat');
 applyToggle(TOGGLE_GHOST,  'ghost');
 applyToggle(TOGGLE_EVENTS, 'events');
 applyToggle(TOGGLE_SUPPLY, 'supply');
+
+// A2/AD toggle — lazy load on first enable
+var _a2adLoaded = false;
+TOGGLE_A2AD.addEventListener('change', function () {
+  if (this.checked) {
+    layers.a2ad.addTo(map);
+    if (!_a2adLoaded) {
+      _a2adLoaded = true;
+      var theater = document.querySelector('[data-theater]')?.dataset.theater || 'pacific';
+      fetch('/strategos/api/map/a2ad?theater=' + theater)
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { features: [] }; })
+        .then(function (geojson) { renderA2AD(geojson); });
+    }
+  } else {
+    layers.a2ad.removeFrom(map);
+  }
+});
+
+// Frontlines toggle — lazy load
+var _frontlinesLoaded = false;
+TOGGLE_FRONTLINES.addEventListener('change', function () {
+  if (this.checked) {
+    layers.frontlines.addTo(map);
+    if (!_frontlinesLoaded) {
+      _frontlinesLoaded = true;
+      var theater = document.querySelector('[data-theater]')?.dataset.theater || 'ukraine';
+      fetch('/strategos/api/map/frontlines?theater=' + theater)
+        .then(function (r) { return r.json(); })
+        .catch(function () { return { features: [] }; })
+        .then(function (geojson) { renderFrontlines(geojson); });
+    }
+  } else {
+    layers.frontlines.removeFrom(map);
+  }
+});
 
 // Satellite toggle uses lazy loading — fetch only on first enable
 var _satelliteLoaded = false;
@@ -651,6 +701,65 @@ function parseBboxWkt(wkt) {
     const p = pair.trim().split(/\s+/);
     // WKT stores lon lat; Leaflet needs [lat, lon]
     return [parseFloat(p[1]), parseFloat(p[0])];
+  });
+}
+
+function renderA2AD(geojson) {
+  layers.a2ad.clearLayers();
+  if (!geojson || !Array.isArray(geojson.features)) return;
+  geojson.features.forEach(function (feat) {
+    if (!feat.geometry) return;
+    var props = feat.properties || {};
+    var color = props.color || '#ef4444';
+    var opacity = props.opacity || 0.12;
+    if (feat.geometry.type === 'Polygon') {
+      var coords = feat.geometry.coordinates[0].map(function (c) { return [c[1], c[0]]; });
+      L.polygon(coords, {
+        color: color, fillColor: color, fillOpacity: opacity, weight: 1,
+        dashArray: '4 4',
+      }).bindTooltip(
+        '<b>' + (props.label || props.id) + '</b><br>' +
+        (props.threat_ring_nm ? props.threat_ring_nm + ' nm reach' : '') +
+        (props.weapon_type ? ' &bull; ' + props.weapon_type : ''),
+        { sticky: true }
+      ).addTo(layers.a2ad);
+    } else if (feat.geometry.type === 'Point') {
+      var c = feat.geometry.coordinates;
+      L.circleMarker([c[1], c[0]], {
+        radius: 6, color: color, fillColor: color, fillOpacity: 0.8, weight: 2,
+      }).bindTooltip(
+        '<b>' + (props.label || props.id) + '</b><br>' +
+        'Chokepoint &bull; ' + (props.width_nm || '?') + ' nm wide<br>' +
+        'PRC systems in range: ' + (props.prc_systems || 0) + '<br>' +
+        'Denial probability: ' + ((props.denial_probability || 0) * 100).toFixed(0) + '%',
+        { sticky: true }
+      ).addTo(layers.a2ad);
+    }
+  });
+}
+
+function renderFrontlines(geojson) {
+  layers.frontlines.clearLayers();
+  if (!geojson || !Array.isArray(geojson.features)) return;
+  geojson.features.forEach(function (feat) {
+    if (!feat.geometry) return;
+    var props = feat.properties || {};
+    var coords;
+    if (feat.geometry.type === 'LineString') {
+      coords = feat.geometry.coordinates.map(function (c) { return [c[1], c[0]]; });
+      L.polyline(coords, { color: '#f97316', weight: 2.5, opacity: 0.85 })
+        .bindTooltip(
+          'Frontline ' + (props.snapshot_date || '') +
+          (props.advance_km ? ' &bull; ' + props.advance_km + ' km advance' : '') +
+          ' &bull; ' + (props.source || ''),
+          { sticky: true }
+        ).addTo(layers.frontlines);
+    } else if (feat.geometry.type === 'MultiLineString') {
+      feat.geometry.coordinates.forEach(function (line) {
+        coords = line.map(function (c) { return [c[1], c[0]]; });
+        L.polyline(coords, { color: '#f97316', weight: 2.5, opacity: 0.85 }).addTo(layers.frontlines);
+      });
+    }
   });
 }
 
