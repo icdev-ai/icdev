@@ -10,12 +10,32 @@ import argparse
 import json
 import re
 import sys
+from dataclasses import dataclass, field
+from typing import Any, Dict, List
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+
+
+@dataclass
+class _RTMData:
+    """Structured input for _generate_rtm_markdown — replaces 12 positional params."""
+
+    forward_trace: List[Dict[str, Any]] = field(default_factory=list)
+    backward_trace: List[Dict[str, Any]] = field(default_factory=list)
+    gaps: Dict[str, Any] = field(default_factory=dict)
+    coverage: float = 0.0
+    traced_count: int = 0
+    total_count: int = 0
+    project: Dict[str, Any] = field(default_factory=dict)
+    cui_config: Dict[str, Any] = field(default_factory=dict)
+    requirements: List[Any] = field(default_factory=list)
+    design: List[Any] = field(default_factory=list)
+    code: List[Any] = field(default_factory=list)
+    tests: List[Any] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -828,25 +848,25 @@ def _calculate_coverage(forward_trace):
 # ---------------------------------------------------------------------------
 
 
-def _generate_rtm_markdown(
-    forward_trace,
-    backward_trace,
-    gaps,
-    coverage,
-    traced_count,
-    total_count,
-    project,
-    cui_config,
-    requirements,
-    design,
-    code,
-    tests,
-):
+def _generate_rtm_markdown(data: _RTMData) -> str:
     """Generate the RTM markdown report.
 
     Includes CUI headers/footers, project info, coverage summary,
     forward/backward trace tables, and gap analysis.
     """
+    forward_trace = data.forward_trace
+    backward_trace = data.backward_trace
+    gaps = data.gaps
+    coverage = data.coverage
+    traced_count = data.traced_count
+    total_count = data.total_count
+    project = data.project
+    cui_config = data.cui_config
+    requirements = data.requirements
+    design = data.design
+    code = data.code
+    tests = data.tests
+
     lines = []
 
     # CUI header
@@ -1099,20 +1119,20 @@ def generate_rtm(project_id, project_dir=None, output_path=None, db_path=None):
         cui_config = _load_cui_config()
 
         # 7. Generate markdown report
-        report_md = _generate_rtm_markdown(
-            forward_trace,
-            backward_trace,
-            gaps,
-            coverage,
-            traced_count,
-            total_count,
-            project,
-            cui_config,
-            requirements,
-            design,
-            code,
-            tests,
-        )
+        report_md = _generate_rtm_markdown(_RTMData(
+            forward_trace=forward_trace,
+            backward_trace=backward_trace,
+            gaps=gaps,
+            coverage=coverage,
+            traced_count=traced_count,
+            total_count=total_count,
+            project=project,
+            cui_config=cui_config,
+            requirements=requirements,
+            design=design,
+            code=code,
+            tests=tests,
+        ))
 
         # 8. Generate JSON data (machine-readable RTM)
         rtm_json_data = {
