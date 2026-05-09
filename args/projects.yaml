@@ -3131,3 +3131,29 @@ projects:
   - key: vv
     title: V&V — coherence + E2E + companion + docs
     priority: high
+
+- key: cs
+  name: Chat-Stream Integration — Claude CLI to Multi-Stream Chat API Bridge
+  description: >
+    Connects Claude CLI workflows (requirements intake, decomposition, implementation)
+    to the ICDEV multi-stream chat API (Phase 44-51). Three deliverables:
+    (1) tools/chat/cli_bridge.py — HTTP client for chat context lifecycle;
+    (2) tools/requirements/intake_api_client.py — replaces deprecated intake_engine.py;
+    (3) tools/requirements/intake_kanban_promoter.py — auto-promotes SAFe items to Kanban.
+    After this build, /icdev-intake runs through the chat UI at /chat and auto-queues tasks.
+  task_prefix: cs-
+  default_open: true
+  briefs:
+  - 'ep1: tools/chat/__init__.py + tools/chat/cli_bridge.py — create/send/poll/link-intake/close'
+  - 'ep2: tools/requirements/intake_api_client.py + updated /icdev-intake skill + link-intake API endpoint'
+  - 'ep3: tools/requirements/intake_kanban_promoter.py + args/intake_promoter.yaml + manifest update'
+  epics:
+  - key: ep1
+    title: CLI → Chat Context Bridge
+    priority: critical
+  - key: ep2
+    title: Intake API Client + Skill Rewire
+    priority: critical
+  - key: ep3
+    title: SAFe → Kanban Promoter
+    priority: critical

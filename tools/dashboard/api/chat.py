@@ -189,6 +189,27 @@ def get_messages(context_id):
 # ---------------------------------------------------------------------------
 
 
+@chat_api.route("/<context_id>/link-intake", methods=["PATCH"])
+def link_intake(context_id):
+    """Link an intake session to a chat context (activates RICOAS extension hooks).
+
+    Body: {intake_session_id}
+    """
+    err = _require_chat()
+    if err:
+        return err
+
+    data = request.get_json(force=True, silent=True) or {}
+    intake_session_id = data.get("intake_session_id", "").strip()
+    if not intake_session_id:
+        return jsonify({"error": "intake_session_id required"}), 400
+
+    result = chat_manager.link_intake_session(context_id, intake_session_id)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result)
+
+
 @chat_api.route("/<context_id>/state", methods=["GET"])
 def get_state(context_id):
     """Get context state with dirty-tracking (Feature 4).

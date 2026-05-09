@@ -1409,6 +1409,7 @@ def create_app() -> Flask:
         "qdc": "/quality",
         "mdc": "/migration-canvas",
         "aimc": "/ai-ml",
+        "ohc": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
