@@ -520,12 +520,14 @@
     window.ICDEV = window.ICDEV || {};
     ICDEV.toggleMobileNav = function() {
         var nav = document.getElementById('navbar-nav');
-        var right = document.querySelector('.navbar-right');
         var btn = document.getElementById('nav-hamburger');
-        var isOpen = nav && nav.classList.contains('mobile-open');
-        if (nav) nav.classList.toggle('mobile-open', !isOpen);
-        if (right) right.classList.toggle('mobile-open', !isOpen);
-        if (btn) btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+        if (!nav) return;
+        var isOpen = nav.classList.contains('mobile-open');
+        nav.classList.toggle('mobile-open', !isOpen);
+        if (btn) {
+            btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+            btn.textContent = !isOpen ? '✕' : '☰';
+        }
     };
     ICDEV.toggleTheme = function() {
         var html = document.documentElement;
@@ -562,20 +564,25 @@
                 if (!isOpen) li.classList.add('open');
             });
         });
-        // Close when clicking outside nav
+        // Close dropdowns when clicking outside nav
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.navbar-nav')) {
+            if (!e.target.closest('.navbar')) {
                 document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
                     el.classList.remove('open');
                 });
             }
         });
-        // Close when a sub-item link is clicked
+        // Close sub-item nav link: collapse dropdowns AND close mobile drawer
         document.querySelectorAll('.nav-dropdown-menu a').forEach(function(a) {
             a.addEventListener('click', function() {
                 document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
                     el.classList.remove('open');
                 });
+                // Also close mobile drawer on link click
+                var nav = document.getElementById('navbar-nav');
+                var btn = document.getElementById('nav-hamburger');
+                if (nav) nav.classList.remove('mobile-open');
+                if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.textContent = '☰'; }
             });
         });
     });

@@ -615,11 +615,9 @@ tbody tr:hover {
     color: var(--text-secondary);
     border-radius: 4px;
     padding: 4px 9px;
-    font-size: 1.1rem;
+    font-size: 1.2rem;
     cursor: pointer;
     line-height: 1;
-    margin-left: auto;
-    order: 99;
     flex-shrink: 0;
 }
 #nav-hamburger:hover {
@@ -641,74 +639,80 @@ tbody tr:hover {
     .info-grid {
         grid-template-columns: 1fr;
     }
-    /* Hamburger appears; nav collapses */
+    /* ── Mobile navbar layout ───────────────────────────────── */
+    /* Row 1: [brand] [☰] [user controls]                       */
+    /* Row 2: [nav drawer — full width, shown on open]          */
     #nav-hamburger {
-        display: block;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     .navbar {
         flex-wrap: wrap;
+        align-items: center;
         padding: 6px 8px;
-        gap: 4px;
+        gap: 0;
     }
     .navbar-brand {
         flex: 1;
+        min-width: 0;
     }
-    /* Nav + right controls collapse into hidden drawer */
+    /* Keep user controls on the same row — their inline display:flex wins */
+    .navbar-right {
+        order: 2;
+        flex-shrink: 0;
+        gap: 5px !important;
+        flex-wrap: wrap;
+    }
+    /* Nav collapses into full-width drawer below row 1 */
     .navbar-nav {
+        order: 10;
         display: none;
         flex-direction: column;
-        flex-wrap: wrap;
         width: 100%;
-        order: 100;
-        gap: 0;
         border-top: 1px solid var(--border-color);
-        padding-top: 4px;
+        padding: 4px 0 6px;
         margin-top: 4px;
+        gap: 0;
     }
     .navbar-nav.mobile-open {
-        display: flex;
+        display: flex !important;
     }
-    .navbar-right {
-        display: none;
-        flex-wrap: wrap;
-        width: 100%;
-        order: 101;
-        gap: 6px;
-        border-top: 1px solid var(--border-color);
-        padding: 6px 0 2px;
-    }
-    .navbar-right.mobile-open {
-        display: flex;
-    }
-    /* Dropdowns become static sub-lists on mobile */
+    /* Dropdowns: static position, accordion-style */
     .nav-dropdown {
         width: 100%;
+    }
+    .nav-dropdown:hover .nav-dropdown-menu {
+        display: none; /* disable hover on mobile — use click only */
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: block !important;
     }
     .nav-dropdown-trigger {
         display: block;
         width: 100%;
-        padding: 7px 10px;
+        padding: 7px 12px;
         font-size: 0.82rem;
         font-weight: 600;
         color: var(--text-secondary);
-        border-bottom: none;
     }
     .nav-dropdown-menu {
-        position: static;
-        display: none;
+        position: static !important;
         border: none;
         border-radius: 0;
         box-shadow: none;
         padding-left: 12px;
         background: transparent;
         max-height: none;
+        overflow: visible;
     }
-    .nav-dropdown.open .nav-dropdown-menu {
-        display: block;
+    .navbar-nav > li > a {
+        padding: 7px 12px;
+        font-size: 0.82rem;
     }
     .navbar-nav li a {
-        padding: 6px 10px;
-        font-size: 0.82rem;
+        padding: 5px 12px;
+        font-size: 0.8rem;
     }
 }
 
