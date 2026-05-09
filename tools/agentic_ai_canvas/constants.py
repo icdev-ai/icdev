@@ -123,6 +123,13 @@ NIST_AI_RMF_CHECKS: list[dict] = [
      "description": "Any autonomous agent must have a circuit-breaker downstream.",
      "check": "agent_has_circuit_breaker",
      "weight": 15},
+    # NIST AI RMF 2.0 — GOVERN-1.7: AI use case inventory registration
+    {"id": "gov-3", "function": "GOVERN", "category": "GOV-1.7",
+     "title": "AI use case registered in inventory",
+     "description": "NIST AI RMF 2.0 GOVERN-1.7 — Design must include a system-card or AI-BOM node, "
+                    "or declare a use_case_id in metadata, documenting the AI use case for inventory.",
+     "check": "ai_use_case_registered",
+     "weight": 10},
 ]
 
 # ---------------------------------------------------------------------------
