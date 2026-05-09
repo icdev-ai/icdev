@@ -432,3 +432,21 @@ IL_LEVEL_REQUIREMENTS = {
     'IL5': {'max_classification': 'CUI-High', 'commercial_ok': False, 'requires_govcloud': True, 'requires_disa_stig': True},
     'IL6': {'max_classification': 'SECRET', 'commercial_ok': False, 'requires_sipr': True},
 }
+
+
+# ── Wave & Dependency Constants ─────────────────────────────────────────────
+
+WAVE_STATUS = {
+    'planned':     {'label': 'Planned',     'color': '#6c757d'},
+    'in_progress': {'label': 'In Progress', 'color': '#fd7e14'},
+    'complete':    {'label': 'Complete',    'color': '#28a745'},
+    'blocked':     {'label': 'Blocked',     'color': '#dc3545'},
+}
+
+DEPENDENCY_TYPES = {
+    'network':     {'label': 'Network',       'color': '#17a2b8', 'icon': '🌐'},
+    'application': {'label': 'Application',   'color': '#6f42c1', 'icon': '📦'},
+    'database':    {'label': 'Database',      'color': '#e83e8c', 'icon': '🗄'},
+    'auth':        {'label': 'Auth/Identity', 'color': '#fd7e14', 'icon': '🔑'},
+    'storage':     {'label': 'Storage',       'color': '#20c997', 'icon': '💾'},
+}
