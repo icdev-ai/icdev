@@ -2089,14 +2089,29 @@
 }
 
 
-/* ── Canvas toolbar: scroll horizontally on small screens ─────────────── */
-/* Applies to all canvas editors (migration, boundary, data, infra)        */
-.dc-toolbar {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    flex-shrink: 0;
-    scrollbar-width: thin;
-    scrollbar-color: #1e3a6e transparent;
+/* ── Canvas editor layout: toolbar wraps, canvas area fills remaining height */
+/* Converts absolute-positioned toolbar+canvas to flex column.              */
+/* Applies to migration, boundary, data, and infra canvas editors.          */
+.dc-main {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
 }
-.dc-toolbar::-webkit-scrollbar { height: 3px; }
-.dc-toolbar::-webkit-scrollbar-thumb { background: #1e3a6e; border-radius: 2px; }
+.dc-toolbar {
+    position: relative !important;
+    height: auto !important;
+    min-height: 40px !important;
+    flex-wrap: wrap !important;
+    flex-shrink: 0 !important;
+    padding: 4px 12px !important;
+    gap: 6px !important;
+    row-gap: 4px !important;
+}
+.dc-canvas-area {
+    position: relative !important;
+    top: auto !important;
+    bottom: auto !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+}
