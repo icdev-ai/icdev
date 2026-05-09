@@ -7,8 +7,6 @@ import { test, expect } from '@playwright/test';
 const CUI_BANNER = 'CUI // SP-CTI';
 
 test.describe('Knowledge Search (RAG) Dashboard', () => {
-  test.setTimeout(60000); // vector search backend slow on cold start
-
   test('knowledge search page loads with heading and stat grid', async ({ page }) => {
     // Steps 8-17: Navigate and verify
     await page.goto('/knowledge-search');
