@@ -131,13 +131,17 @@ def save_design(design_id: str, graph: dict, name: str | None = None,
         updates: list[str] = ["graph_json=?", "updated_at=?"]
         params: list[Any] = [json.dumps(graph), _now()]
         if name is not None:
-            updates.append("name=?"); params.append(name)
+            updates.append("name=?")
+            params.append(name)
         if description is not None:
-            updates.append("description=?"); params.append(description)
+            updates.append("description=?")
+            params.append(description)
         if il_level is not None:
-            updates.append("il_level=?"); params.append(il_level)
+            updates.append("il_level=?")
+            params.append(il_level)
         if classification is not None:
-            updates.append("classification=?"); params.append(classification)
+            updates.append("classification=?")
+            params.append(classification)
         params.append(design_id)
 
         conn.execute(f"UPDATE aiml_designs SET {', '.join(updates)} WHERE id=?", params)
@@ -452,8 +456,10 @@ def generate_model_card(design_id: str) -> dict:
     first_model_node = llm_nodes[0] if llm_nodes else {}
     props = first_model_node.get("properties_json", {})
     if isinstance(props, str):
-        try: props = json.loads(props)
-        except Exception: props = {}
+        try:
+            props = json.loads(props)
+        except Exception:
+            props = {}
 
     model_id = props.get("model_id", "")
     model_meta = _model_by_id(model_id) or {}
@@ -540,10 +546,14 @@ def _card_training_section(adaptation: str, graph: dict, props: dict) -> dict:
 
 def _card_eval_section(graph: dict) -> dict:
     evals = []
-    if _has_node_type(graph, "eval-benchmark"): evals.append("Standard benchmark suite")
-    if _has_node_type(graph, "eval-rubric"):    evals.append("LLM-as-judge rubric (Prometheus pattern)")
-    if _has_node_type(graph, "eval-red-team"):  evals.append("Red team adversarial evaluation (MITRE ATLAS)")
-    if _has_node_type(graph, "eval-ab-test"):   evals.append("A/B model comparison")
+    if _has_node_type(graph, "eval-benchmark"):
+        evals.append("Standard benchmark suite")
+    if _has_node_type(graph, "eval-rubric"):
+        evals.append("LLM-as-judge rubric (Prometheus pattern)")
+    if _has_node_type(graph, "eval-red-team"):
+        evals.append("Red team adversarial evaluation (MITRE ATLAS)")
+    if _has_node_type(graph, "eval-ab-test"):
+        evals.append("A/B model comparison")
     return {
         "evaluation_methods": evals if evals else ["Evaluation not yet configured — add Eval nodes"],
         "judge_model": "Qwen3 (Local)" if _has_node_type(graph, "model-judge") else "N/A",
@@ -552,10 +562,14 @@ def _card_eval_section(graph: dict) -> dict:
 
 def _card_safety_measures(graph: dict) -> list[str]:
     measures = []
-    if _has_node_type(graph, "safety-guardrail"):        measures.append("Input prompt injection detection")
-    if _has_node_type(graph, "safety-output-validator"):  measures.append("Output content safety validation")
-    if _has_node_type(graph, "safety-pii-scrubber"):      measures.append("PII/CUI redaction (input + output)")
-    if _has_node_type(graph, "safety-content-filter"):    measures.append("Harmful content filtering")
+    if _has_node_type(graph, "safety-guardrail"):
+        measures.append("Input prompt injection detection")
+    if _has_node_type(graph, "safety-output-validator"):
+        measures.append("Output content safety validation")
+    if _has_node_type(graph, "safety-pii-scrubber"):
+        measures.append("PII/CUI redaction (input + output)")
+    if _has_node_type(graph, "safety-content-filter"):
+        measures.append("Harmful content filtering")
     return measures or ["No safety nodes configured — add Safety nodes to the canvas"]
 
 
@@ -573,8 +587,10 @@ def generate_deployment_manifest(design_id: str) -> dict:
         dtype = d.get("type", "")
         props = d.get("properties_json", {})
         if isinstance(props, str):
-            try: props = json.loads(props)
-            except Exception: props = {}
+            try:
+                props = json.loads(props)
+            except Exception:
+                props = {}
 
         svc_name = d.get("label", dtype).lower().replace(" ", "-")
         if dtype == "deploy-ollama":
