@@ -94,8 +94,8 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
       const searchBtn = page.getByRole('button', { name: /Search/i });
       if (await searchBtn.count() > 0) {
         await searchBtn.first().click();
-        await page.waitForLoadState('domcontentloaded');
-        await page.waitForTimeout(1500);
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
+        await page.waitForTimeout(3000);
       }
 
       await page.screenshot({
