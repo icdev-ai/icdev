@@ -11910,13 +11910,11 @@ Planning rules:
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
                    mp.maintenance_window, mp.dependencies, mp.status
             FROM nc_migration_phases mp
-            JOIN nc_projects proj ON proj.id = mp.project_id
-            WHERE proj.topology_id = ? OR mp.project_id IN (
-                SELECT id FROM nc_projects WHERE topology_id = ?
-            )
+            JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
+            WHERE pt.topology_id = ?
             ORDER BY mp.phase_num
             """,
-            (topo_id, topo_id),
+            (topo_id,),
         ).fetchall()
         conn.close()
 
@@ -11963,13 +11961,11 @@ Planning rules:
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
                    mp.maintenance_window, mp.dependencies, mp.status
             FROM nc_migration_phases mp
-            JOIN nc_projects proj ON proj.id = mp.project_id
-            WHERE proj.topology_id = ? OR mp.project_id IN (
-                SELECT id FROM nc_projects WHERE topology_id = ?
-            )
+            JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
+            WHERE pt.topology_id = ?
             ORDER BY mp.phase_num
             """,
-            (topo_id, topo_id),
+            (topo_id,),
         ).fetchall()
         conn.close()
 

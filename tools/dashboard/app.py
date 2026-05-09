@@ -1313,6 +1313,7 @@ def create_app() -> Flask:
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
             "ohc_enabled": _CANVAS_FLAGS.get("ohc", False),
+            "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
             "academy_enabled": _APP_FLAGS.get("forge_academy", False),
@@ -1555,6 +1556,18 @@ def create_app() -> Flask:
         app.logger.info("System Graph blueprint registered at /system-graph")
     except Exception as _exc:
         app.logger.warning("System Graph blueprint failed to register: %s", _exc)
+
+    # ---- GovLift Cloud Migration Tool ----
+    try:
+        from tools.govlift.blueprint import create_govlift_blueprint as _gv_factory
+        from tools.govlift.db.init_db import init_govlift_db as _gv_init
+        _gv_init()
+        _gv_bp = _gv_factory()
+        app.register_blueprint(_gv_bp)
+        _CANVAS_FLAGS["govlift"] = True
+        app.logger.info("GovLift blueprint registered at /govlift")
+    except Exception as _exc:
+        app.logger.warning("GovLift blueprint failed to register: %s", _exc)
 
 
     # ---- Convenience JSON routes that match the spec ----
@@ -2310,6 +2323,7 @@ def create_app() -> Flask:
             "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts"]),
             "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts"]),
             "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
+            "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
             "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
             "agents":     ("tools.iqe.adapters.core_agents", ["agents.registry"]),
