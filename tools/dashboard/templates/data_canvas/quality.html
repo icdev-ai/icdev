@@ -254,6 +254,34 @@
     {% endif %}
   </div>
 
+  <!-- Freshness Monitor -->
+  <section id="freshness-monitor" class="panel ql-full">
+    <h3>Freshness Monitor</h3>
+    <p style="color:#7a8cb0;font-size:11px;margin:0 0 12px;">Hourly reflex results for all freshness quality rules (via FreshnessGuardianReflex). Alerts sourced from <code>dd_freshness_alerts</code>.</p>
+    {% if freshness_alerts %}
+    <table class="runs-table">
+      <thead><tr>
+        <th>Rule</th><th>Design</th><th>Max Value</th><th>Cutoff</th><th>Status</th><th>Detail</th><th>Checked</th>
+      </tr></thead>
+      <tbody>
+        {% for a in freshness_alerts %}
+        <tr>
+          <td>{{ a.rule_name or a.rule_id }}</td>
+          <td style="color:#7a8cb0;">{{ a.design_id or '—' }}</td>
+          <td style="font-family:monospace;font-size:11px;">{{ a.actual_max_value or '—' }}</td>
+          <td style="font-family:monospace;font-size:11px;">{{ a.cutoff_value or '—' }}</td>
+          <td class="{{ 'pass' if a.passed else 'fail' }}">{{ '✓ PASS' if a.passed else '✗ BREACH' }}</td>
+          <td style="color:#7a8cb0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.detail }}">{{ a.detail or '—' }}</td>
+          <td style="color:#5a6e8c;white-space:nowrap;">{{ a.last_checked[:16] if a.last_checked else (a.created_at[:16] if a.created_at else '—') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No freshness alerts yet. The FreshnessGuardianReflex runs hourly and will populate this table once freshness rules are defined and checked.</div>
+    {% endif %}
+  </section>
+
   <!-- Run History -->
   <div class="panel ql-full">
     <h3>Run History</h3>
