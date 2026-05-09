@@ -471,6 +471,15 @@ def run_assessment(design_id: str):
 
     result["findings"] = json.loads(result["findings_json"])
     result["atlas"] = json.loads(result["atlas_threats"])
+    _record_decision(
+        canvas_type="aadc",
+        record_id=design_id,
+        decision_type="risk_score",
+        decision=f"Score {result.get('score',0)} — NIST RMF {result.get('nist_rmf_score',0)}, OWASP {result.get('owasp_score',0)}, OMB compliant={result.get('omb_compliant',False)}",
+        rationale=f"Autonomy level: {result.get('autonomy_max','?')}, safety_impacting={result.get('safety_impacting',False)}",
+        model_used=None,
+        confidence=result.get("score", 0) / 100.0 if result.get("score") else None,
+    )
     return jsonify(result)
 
 
@@ -2850,3 +2859,28 @@ def generate_ops_config_api(design_id: str):
         import logging
         logging.getLogger(__name__).error("Ops config generation error: %s", e)
         return jsonify({"error": str(e)}), 500
+
+
+@aadc_bp.route("/api/ai-trace")
+def aadc_api_ai_trace():
+    """Return recent AI decisions made by AADC assessment engines."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    record_id = request.args.get("record_id")
+    try:
+        from tools.db.storage import get_connection as _gc
+        with _gc() as _conn:
+            if record_id:
+                rows = _conn.execute(
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' AND record_id=? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (record_id, limit),
+                ).fetchall()
+            else:
+                rows = _conn.execute(
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return jsonify({"ok": True, "canvas": "aadc", "decisions": [dict(r) for r in rows]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500

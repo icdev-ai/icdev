@@ -50,6 +50,7 @@ _COLLECTIONS = [
     "network.groups",
     "network.cables",
     "network.cross_connects",
+    "network.ai_decisions",
 ]
 
 
@@ -126,6 +127,16 @@ class NDCAdapter(IQEAdapter):
         elif collection == "network.cross_connects":
             sql = f"SELECT * FROM nc_cross_connects {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
+        elif collection == "network.ai_decisions":
+            try:
+                from tools.db.storage import get_connection as _main_conn
+                with _main_conn() as _c:
+                    rows = [dict(r) for r in _c.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' ORDER BY created_at DESC"
+                    ).fetchall()]
+            except Exception:
+                rows = []
+            return rows
         else:
             raise ValueError(
                 f"NDCAdapter: unknown collection {collection!r}. "

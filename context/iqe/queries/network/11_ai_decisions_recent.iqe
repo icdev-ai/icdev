@@ -1,0 +1,7 @@
+# IQE-NDC-011: Recent AI decisions from the Network Design Canvas
+# Shows the latest AI-generated compliance findings, threat assessments,
+# and narrative decisions recorded by the canvas traceability layer.
+# Use: audit review, NIST AU-2 evidence, ATO traceability packages.
+
+foreach d in network.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

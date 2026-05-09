@@ -42,5 +42,20 @@ def snapshots_adapter(conn: Any) -> list[dict]:
     return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def ai_decisions_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return AI decision records for IDC from canvas_ai_decisions (main icdev.db)."""
+    try:
+        from tools.db.storage import get_connection as _main_conn  # noqa: PLC0415
+        with _main_conn() as _c:
+            cur = _c.execute(
+                "SELECT * FROM canvas_ai_decisions WHERE canvas_type='idc' ORDER BY created_at DESC"
+            )
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 register_collection("infra.resources", resources_adapter)
 register_collection("infra.snapshots", snapshots_adapter)
+register_collection("infra.ai_decisions", ai_decisions_adapter)
