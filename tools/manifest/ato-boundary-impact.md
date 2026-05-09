@@ -5,7 +5,7 @@
 ## ATO Boundary Impact (RICOAS Phase 2)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Boundary Analyzer | tools/requirements/boundary_analyzer.py | 4-tier ATO boundary impact assessment (GREEN/YELLOW/ORANGE/RED) with RED alternative COA generation | --project-id, --system-id, --requirement-id, --generate-alternatives, --json | Impact tier + alternatives |
+| [DEPRECATED] Boundary Analyzer | tools/requirements/boundary_analyzer.py | 4-tier ATO boundary impact assessment (GREEN/YELLOW/ORANGE/RED) with RED alternative COA generation | --project-id, --system-id, --requirement-id, --generate-alternatives, --json | Impact tier + alternatives |
 
 ## BDC cATO Twin (Phase 1) — CUI // SP-CTI
 | Tool | File | Description | Input | Output |
