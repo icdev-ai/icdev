@@ -53,25 +53,66 @@ def create_ops_hub_blueprint() -> Blueprint:
 
     @bp.route("/ops/models")
     def ops_models():
-        from tools.ops_hub.mlops_engine import get_mlops_summary
-        data = get_mlops_summary()
+        from tools.ops_hub.mlops_engine import (
+            list_experiments, list_runs, list_models, get_data_drift_summary,
+        )
+        experiments_list = list_experiments(limit=20)
+        runs_list = list_runs(limit=20)
+        models_list = list_models(limit=20)
+        drift = get_data_drift_summary(limit=10)
+        data = {
+            "experiments": {
+                "total_experiments": len(experiments_list),
+                "running_runs": sum(1 for r in runs_list if r.get("status") == "running"),
+                "recent_runs": runs_list,
+            },
+            "models": {
+                "total_models": len(models_list),
+                "models_in_production": sum(1 for m in models_list if m.get("stage") == "production"),
+                "registry": models_list,
+            },
+            "drift": drift,
+        }
         return render_template("ops_hub/models.html", data=data,
                                classification="CUI // SP-CTI")
 
     @bp.route("/ops/slos")
     def ops_slos():
         from tools.ops_hub.aiops_engine import get_slo_dashboard
-        data = get_slo_dashboard()
+        raw = get_slo_dashboard()
+        slos = raw.get("slos", [])
+        met = sum(1 for s in slos if s.get("status") == "met")
+        breached = sum(1 for s in slos if s.get("status") == "breached")
+        at_risk = len(slos) - met - breached
+        data = {
+            "slos": slos,
+            "summary": {
+                "total_slos": len(slos),
+                "met_count": met,
+                "at_risk_count": at_risk,
+                "breached_count": breached,
+            },
+        }
         return render_template("ops_hub/slos.html", data=data,
                                classification="CUI // SP-CTI")
 
     @bp.route("/ops/incidents")
     def ops_incidents():
-        from tools.ops_hub.aiops_engine import get_incident_dashboard, get_incidents
-        data = get_incident_dashboard()
+        from tools.ops_hub.aiops_engine import get_incidents
         incidents = get_incidents(limit=50)
+        open_c = sum(1 for i in incidents if i.get("status") == "open")
+        investigating_c = sum(1 for i in incidents if i.get("status") == "investigating")
+        resolved_24h = sum(1 for i in incidents if i.get("status") == "resolved")
+        data = {
+            "incidents": incidents,
+            "summary": {
+                "open_count": open_c,
+                "investigating_count": investigating_c,
+                "resolved_24h": resolved_24h,
+                "mttr_minutes": None,
+            },
+        }
         return render_template("ops_hub/incidents.html", data=data,
-                               incidents=incidents,
                                classification="CUI // SP-CTI")
 
     @bp.route("/ops/runbooks")
@@ -79,8 +120,17 @@ def create_ops_hub_blueprint() -> Blueprint:
         from tools.ops_hub.aiops_engine import get_runbooks, get_runbook_executions
         runbooks = get_runbooks()
         executions = get_runbook_executions(limit=20)
-        return render_template("ops_hub/runbooks.html",
-                               runbooks=runbooks, executions=executions,
+        auto_count = sum(1 for r in runbooks if r.get("auto_executable"))
+        data = {
+            "runbooks": runbooks,
+            "history": executions,
+            "summary": {
+                "total_runbooks": len(runbooks),
+                "auto_runbooks": auto_count,
+                "executions_24h": len(executions),
+            },
+        }
+        return render_template("ops_hub/runbooks.html", data=data,
                                classification="CUI // SP-CTI")
 
     @bp.route("/ops/topology")
@@ -92,11 +142,22 @@ def create_ops_hub_blueprint() -> Blueprint:
 
     @bp.route("/ops/self-healing")
     def ops_self_healing():
-        from tools.ops_hub.aiops_engine import get_self_healing_log, get_self_healing_stats
+        from tools.ops_hub.aiops_engine import get_self_healing_log
         log = get_self_healing_log(limit=50)
-        stats = get_self_healing_stats()
-        return render_template("ops_hub/self_healing.html",
-                               log=log, stats=stats,
+        auto_res = sum(1 for e in log if e.get("action") == "auto")
+        suggested = sum(1 for e in log if e.get("action") == "suggested")
+        confs = [e.get("confidence", 0) for e in log if e.get("confidence") is not None]
+        avg_conf = sum(confs) / len(confs) if confs else None
+        data = {
+            "log": log,
+            "summary": {
+                "total_events": len(log),
+                "auto_resolved": auto_res,
+                "suggested": suggested,
+                "avg_confidence": avg_conf,
+            },
+        }
+        return render_template("ops_hub/self_healing.html", data=data,
                                classification="CUI // SP-CTI")
 
     # ── JSON API Routes ──────────────────────────────────────────────────────

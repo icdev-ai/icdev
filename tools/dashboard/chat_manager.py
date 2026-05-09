@@ -402,6 +402,28 @@ class ChatManager:
             return restored.to_dict()
         return None
 
+    def link_intake_session(self, context_id: str, intake_session_id: str) -> dict:
+        """Link an intake session to a chat context (activates RICOAS extension hooks)."""
+        with self._lock:
+            ctx = self._contexts.get(context_id)
+            if not ctx:
+                return {"error": "Context not found"}
+            ctx._intake_session_id = intake_session_id
+
+        # Persist to DB
+        try:
+            conn = self._get_db()
+            conn.execute(
+                "UPDATE chat_contexts SET intake_session_id=? WHERE id=?",
+                (intake_session_id, context_id),
+            )
+            conn.commit()
+        except Exception:
+            pass  # in-memory state already updated; DB update is best-effort
+
+        _mark_dirty(context_id, "intake_linked", {"intake_session_id": intake_session_id})
+        return {"context_id": context_id, "intake_session_id": intake_session_id}
+
     def close_context(self, context_id: str) -> dict:
         """Close/archive a chat context."""
         with self._lock:
