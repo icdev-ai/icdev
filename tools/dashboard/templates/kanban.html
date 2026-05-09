@@ -938,4 +938,15 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 .kanban-move-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 </style>
+
+{% set iqe_canvas = "kanban" %}
+{% set iqe_api_route = "/api/kanban/iqe-query" %}
+{% set iqe_title = "Query Task Board" %}
+{% set iqe_examples = [
+    {"label": "In-progress tasks", "query": "foreach t in kanban.tasks where t.status == \"in_progress\" select t.id, t.title, t.priority, t.executor_type"},
+    {"label": "High priority backlog", "query": "foreach t in kanban.tasks where t.priority == \"high\" where t.status == \"backlog\" select t.id, t.title, t.task_type, t.created_at"},
+    {"label": "Failed tasks", "query": "foreach t in kanban.tasks where t.failure_count > 0 select t.id, t.title, t.failure_count, t.last_failure_reason"},
+    {"label": "Epic summary", "query": "foreach e in kanban.epics select e.epic_key, e.task_count, e.done_count, e.in_progress_count"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}
