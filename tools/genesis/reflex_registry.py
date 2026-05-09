@@ -87,6 +87,11 @@ REGISTRY: List[ReflexEntry] = [
                 "HITL feedback aggregation → wf_feedback_insights per canvas/template/type"),
     ReflexEntry("wf_ext_poller",           SUPPORT, 0.25,
                 "HITL external step poller — checks Jira/SNOW/GitHub/Confluence/SharePoint status"),
+    # Phase 71 — OHC Ops Hub Canvas reflexes
+    ReflexEntry("llmops_drift_sweep",      SUPPORT, 4.0,
+                "OHC: Quality drift check across all registered LLMs via llmops_engine"),
+    ReflexEntry("mlops_data_drift_sweep",  SUPPORT, 4.0,
+                "OHC: Evidently adapter data drift check for all registered datasets"),
 ]
 
 # Quick lookup: name → entry
