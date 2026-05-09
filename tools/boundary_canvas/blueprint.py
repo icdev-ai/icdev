@@ -69,6 +69,7 @@ from tools.boundary_canvas.boundary_engine import (  # noqa: E402
     generate_pps_matrix,
     detect_boundary_gaps,
 )
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_boundary_blueprint():
@@ -501,6 +502,15 @@ def create_boundary_blueprint():
             )
 
         _audit(design_id, "ASSESS", f"score={result.get('score', 0)} grade={result.get('grade')}")
+        record_canvas_decision(
+            canvas_type="bdc",
+            record_id=design_id,
+            decision_type="boundary_impact",
+            decision=f"Grade {result.get('grade','?')} — CAT1={result.get('cat1_findings',0)} CAT2={result.get('cat2_findings',0)} CAT3={result.get('cat3_findings',0)}",
+            rationale=f"Score: {result.get('score', 0)}",
+            model_used=None,
+            confidence=None,
+        )
 
         # Add gap analysis
         gaps = detect_boundary_gaps(result)
