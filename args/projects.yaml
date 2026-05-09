@@ -3227,3 +3227,32 @@ projects:
   - key: ep5
     title: V&V — GovLift E2E lifecycle test + IQE dispatch fix
     priority: high
+
+- key: ai-trace
+  name: AI Traceability, Observability & Visibility — Canvas-Wide Gap Remediation
+  description: >
+    Closes the AI traceability gap across all 10 design canvases (NDC/SDC/PDC/BDC/DDC/ODC/IDC/AADC/AIMC/MC).
+    Infrastructure already exists (LLM router spans, W3C PROV, XAI assessor, /traces /provenance /xai pages)
+    but zero canvases wire into it. Remediates NIST AI RMF MEASURE 2.5/2.7/2.8, DoD RAI "Traceable"
+    principle, FedRAMP SI-4, and OMB M-25-21. Four epics: shared DB table + one-import mixin,
+    IQE AI Evidence collections, Kanban/Genesis trace linkage, unified AI Observatory dashboard.
+  task_prefix: at-
+  default_open: true
+  briefs:
+  - 'ep1: Migration 121 (canvas_ai_decisions), Migration 122 (kanban+reflex trace_id), ai_trace_mixin.py, wire into 10 canvas blueprints'
+  - 'ep2: Extend 10 IQE adapters with <canvas>.ai_decisions collection, update iqe_dispatch in app.py'
+  - 'ep3: kanban_tasks trace_id, reflex_observer trace_id, confabulation detector production integration'
+  - 'ep4: AI Observatory /ai-observatory — all 8 components (template, route, analytics, constants, IQE, nav)'
+  epics:
+  - key: ep1
+    title: Canvas AI Trace Foundation — DB + Mixin + 10 Canvas Blueprints
+    priority: critical
+  - key: ep2
+    title: IQE AI Evidence Collections — 10 Adapter Extensions
+    priority: critical
+  - key: ep3
+    title: Kanban + Genesis Trace Linkage + Confabulation Integration
+    priority: high
+  - key: ep4
+    title: AI Observatory Dashboard — Unified Cross-Canvas AI Visibility
+    priority: high

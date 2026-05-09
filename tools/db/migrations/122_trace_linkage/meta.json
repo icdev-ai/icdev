@@ -1,0 +1,11 @@
+{
+  "id": "122",
+  "name": "trace_linkage",
+  "description": "Add trace_id + span_id columns to kanban_tasks and reflex_observations. Links AI-driven task decomposition and Genesis reflex executions back to OTel spans in otel_spans. Satisfies NIST AU-3.",
+  "created_at": "2026-05-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false,
+  "requires_downtime": false,
+  "notes": "Idempotent ALTER TABLE — silently skips if column already exists (SQLite duplicate column error)."
+}
