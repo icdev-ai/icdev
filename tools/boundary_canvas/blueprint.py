@@ -396,6 +396,15 @@ def create_boundary_blueprint():
             on_bdc_design_saved(design_id)
         except Exception:
             pass
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("bdc", "bdc.design.saved", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": "graph_json" in data,
+            }, target_canvas="odc")
+        except Exception:
+            pass
 
         # Incremental KG update: re-extract only if graph_json changed
         try:

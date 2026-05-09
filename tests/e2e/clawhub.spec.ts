@@ -3,12 +3,33 @@
 // Verifies the ClawHub Skill Browser page loads correctly with search, import queue, and action buttons.
 
 import { test, expect } from '@playwright/test';
+import * as net from 'net';
 
 const CUI_BANNER = 'CUI // SP-CTI';
 // ClawHub runs on its own port
 const CLAWHUB_URL = 'http://localhost:5077';
 
+/** Return true if a TCP connection to host:port succeeds within timeoutMs. */
+async function isPortOpen(host: string, port: number, timeoutMs = 2000): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const cleanup = (result: boolean) => { socket.destroy(); resolve(result); };
+    socket.setTimeout(timeoutMs);
+    socket.once('connect', () => cleanup(true));
+    socket.once('timeout', () => cleanup(false));
+    socket.once('error', () => cleanup(false));
+    socket.connect(port, host);
+  });
+}
+
 test.describe('ClawHub Skill Browser', () => {
+  test.beforeEach(async () => {
+    const up = await isPortOpen('localhost', 5077);
+    if (!up) {
+      test.skip(true, 'ClawHub service not running on port 5077 — skipping');
+    }
+  });
+
   test('clawhub page loads with heading and CUI banner', async ({ page }) => {
     // Steps 1-5: Navigate, wait, screenshot, verify heading and CUI
     await page.goto(`${CLAWHUB_URL}/clawhub`);

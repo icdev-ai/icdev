@@ -1386,3 +1386,11 @@ def idc_api_ask():
     )
     status = payload.pop("_status", 200)
     return jsonify(payload), status
+
+
+# Register IDC event bus subscriptions at import time
+try:
+    from tools.infra_canvas import bus_subscriber as _idc_bus
+    _idc_bus.register()
+except Exception:
+    pass

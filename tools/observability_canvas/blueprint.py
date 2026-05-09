@@ -86,6 +86,12 @@ def create_observability_blueprint():
     except Exception as exc:
         logger.warning("Observability Canvas DB init failed: %s", exc)
 
+    try:
+        from tools.observability_canvas import bus_subscriber as _odc_bus
+        _odc_bus.register()
+    except Exception as exc:
+        logger.warning("ODC bus subscriber registration failed: %s", exc)
+
     bp = Blueprint(
         "observability_canvas",
         __name__,
@@ -390,6 +396,15 @@ def create_observability_blueprint():
         finally:
             conn.close()
         _audit("UPDATE", design_id, data.get("name", ""))
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("odc", "odc.source.added", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": "graph_json" in data,
+            }, target_canvas="aadc")
+        except Exception:
+            pass
         # Hook: refresh ODC KG so /ask reflects the edit immediately
         from tools.knowledge_graph.canvas_ask import reindex_canvas_on_save
         reindex_canvas_on_save("odc")

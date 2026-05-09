@@ -333,6 +333,15 @@ def create_security_blueprint():
                 ),
             )
         _audit("CREATE", "design", design_id, name)
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("sdc", "sdc.topology.saved", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": True,
+            }, target_canvas="aadc")
+        except Exception:
+            pass
         return jsonify({"id": design_id, "name": name}), 201
 
     @bp.route("/api/designs/<design_id>", methods=["GET"])
@@ -373,6 +382,15 @@ def create_security_blueprint():
                 params,
             )
         _audit("UPDATE", "design", design_id, json.dumps(list(data.keys())))
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("sdc", "sdc.topology.saved", {
+                "design_id": design_id,
+                "classification": data.get("classification", "CUI"),
+                "graph_changed": "graph_json" in data,
+            }, target_canvas="aadc")
+        except Exception:
+            pass
         # Trigger security agent on design save
         try:
             from tools.security_canvas.agent import auto_assess

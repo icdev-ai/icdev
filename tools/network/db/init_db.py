@@ -1186,7 +1186,21 @@ CREATE TABLE IF NOT EXISTS nc_migration_phases (
     maintenance_window TEXT,
     dependencies TEXT DEFAULT '[]',       -- JSON array of predecessor phase IDs
     status      TEXT DEFAULT 'planned',   -- planned, in_progress, completed, rolled_back
+    classification TEXT DEFAULT 'CUI'
+        CHECK(classification IN ('PUBLIC','CUI','SECRET','TS')),
+    impact_level TEXT DEFAULT 'IL4'
+        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Topology Snapshots (captured when a migration phase completes)
+CREATE TABLE IF NOT EXISTS nc_topology_snapshots (
+    id         TEXT PRIMARY KEY,
+    topo_id    TEXT NOT NULL REFERENCES topologies(id),
+    phase_id   TEXT REFERENCES nc_migration_phases(id),
+    label      TEXT,
+    graph_json TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
 );
 
 -- Capacity Growth Projections
@@ -1655,6 +1669,7 @@ CREATE TABLE IF NOT EXISTS nc_traffic_flows (
     classification      TEXT DEFAULT 'NIPR' CHECK(classification IN
                             ('NIPR','SIPR','IL2','IL4','IL5','IL6')),
     path_nodes          TEXT DEFAULT '[]',
+    phase_id            TEXT REFERENCES nc_migration_phases(id),
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -13950,6 +13965,11 @@ def init_db():
             ("nc_security_domain_policies", "updated_at", "TEXT DEFAULT CURRENT_TIMESTAMP"),
             # Connectivity: csp column on ndc_sops for SOP library CSP filter
             ("ndc_sops", "csp", "TEXT DEFAULT 'multi'"),
+            # NDC↔Migration integration: phase lifecycle metadata
+            ("nc_migration_phases", "classification", "TEXT DEFAULT 'CUI'"),
+            ("nc_migration_phases", "impact_level", "TEXT DEFAULT 'IL4'"),
+            # NDC↔Migration integration: traffic flow ↔ phase link
+            ("nc_traffic_flows", "phase_id", "TEXT"),
         ]
         for table, col, coltype in _migrations:
             try:
