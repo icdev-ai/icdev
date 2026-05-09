@@ -108,6 +108,14 @@
 {% endblock %}
 
 {% block content %}
+{% if not_found %}
+<div style="max-width:600px;margin:4rem auto;text-align:center;padding:2rem;background:#1e293b;border:1px solid rgba(255,68,68,.3);border-radius:12px;">
+  <div style="font-size:2.5rem;margin-bottom:1rem;">⚠️</div>
+  <h2 style="color:#f87171;margin:0 0 .75rem;">Design Not Found</h2>
+  <p style="color:#94a3b8;margin:0 0 1.5rem;">Canvas design <code style="color:#a5b4fc;">{{ design_id }}</code> does not exist or has been deleted.</p>
+  <a href="/agentic-ai" style="background:rgba(99,102,241,.8);color:#fff;padding:.6rem 1.4rem;border-radius:8px;text-decoration:none;font-weight:600;">← Back to AADC</a>
+</div>
+{% else %}
 <div class="oc-header">
   <div class="oc-breadcrumb">
     <a href="/agentic-ai">AADC</a> →
@@ -302,4 +310,5 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
+{% endif %}
 {% endblock %}

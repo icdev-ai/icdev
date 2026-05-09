@@ -3157,3 +3157,40 @@ projects:
   - key: ep3
     title: SAFe → Kanban Promoter
     priority: critical
+- key: gv
+  name: GovLift — DoD IL4 Cloud Migration Tool
+  description: >
+    Full-stack cloud migration platform for DoD IL4 (CUI) workloads on AWS GovCloud.
+    Capabilities: Workload Discovery Scanner, Migration Wave Planner, Migration Executor,
+    Rollback Engine, STIG Compliance Checker, Executive Dashboard, ServiceNow/Splunk/eMASS
+    integrations. Auth via CAC/PIV SAML2, mTLS APIs, FIPS encryption, RBAC, 7-year audit
+    retention. MOSA-compliant (10 USC 4401). Intake session: sess-c1191aba5b76.
+    Chat context: ctx-a8c55ca0be8b.
+  task_prefix: gv-
+  default_open: true
+  briefs:
+  - 'ep1: Security foundation — CAC/PIV auth, RBAC, mTLS, FIPS, audit logging, STIG scanner'
+  - 'ep2: Core functional — WorkloadScanner, WavePlanner, MigrationExecutor, RollbackEngine'
+  - 'ep3: Integrations — ServiceNow, Splunk, AWS Control Tower, Tenable.io, eMASS'
+  - 'ep4: Performance — 2h/1000-server scan, 5min STIG check, 8h migration SLA, 99.9% uptime'
+  - 'ep5: Data governance — CUI classification, encryption at rest/transit, 7yr audit retention'
+  - 'ep6: Compliance — DISA RMF ATO extension, NIST 800-53 R5, FedRAMP Mod, CMMC L2, OMB M-25-21'
+  epics:
+  - key: ep1
+    title: Security Controls & Auth Foundation
+    priority: critical
+  - key: ep2
+    title: Core Migration Capabilities
+    priority: high
+  - key: ep3
+    title: External System Integrations
+    priority: high
+  - key: ep4
+    title: Performance SLAs & Observability
+    priority: medium
+  - key: ep5
+    title: Data Governance & CUI Handling
+    priority: medium
+  - key: ep6
+    title: Compliance Artifacts & ATO Package
+    priority: medium

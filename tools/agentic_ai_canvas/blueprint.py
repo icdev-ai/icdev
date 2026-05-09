@@ -2789,15 +2789,23 @@ def aadc_api_iqe_query():
 @aadc_bp.route("/canvas/<design_id>/ops-config", methods=["GET"])
 def ops_config_page(design_id: str):
     """Render the Ops Config modal page for a design."""
-    conn = _conn()
-    row = _row(conn.execute("SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
-    conn.close()
-    if not row:
-        return jsonify({"error": "design not found"}), 404
+    design_name = design_id
+    not_found = False
+    try:
+        conn = _conn()
+        row = _row(conn.execute("SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+        conn.close()
+        if row:
+            design_name = row.get("name", design_id)
+        else:
+            not_found = True
+    except Exception:
+        not_found = True
     return render_template(
         "agentic_ai_canvas/ops_config.html",
         design_id=design_id,
-        design_name=row.get("name", design_id),
+        design_name=design_name,
+        not_found=not_found,
     )
 
 
