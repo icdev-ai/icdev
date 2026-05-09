@@ -435,3 +435,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Audit Engine | tools\govlift\audit_engine.py | Auto-registered: govlift/audit_engine.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Migration Demo | tools\network\seed_migration_demo.py | Auto-registered: network/seed_migration_demo.py | --json | JSON |

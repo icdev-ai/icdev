@@ -1569,6 +1569,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("GovLift blueprint failed to register: %s", _exc)
 
+    # ---- AI Observatory (cross-canvas AI decision traceability) ----
+    try:
+        from tools.ai_observatory.blueprint import bp as _ao_bp
+        app.register_blueprint(_ao_bp)
+        app.logger.info("AI Observatory blueprint registered at /ai-observatory")
+    except Exception as _exc:
+        app.logger.warning("AI Observatory blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -2326,8 +2334,9 @@ def create_app() -> Flask:
             "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
             "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
-            "agents":     ("tools.iqe.adapters.core_agents", ["agents.registry"]),
-            "projects":   ("tools.iqe.adapters.core_agents", ["projects.list"]),
+            "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
+            "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
+            "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

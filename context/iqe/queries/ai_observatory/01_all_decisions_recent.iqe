@@ -1,0 +1,7 @@
+# IQE-OBS-001: All recent AI decisions across all canvases
+# Cross-canvas view of the canvas_ai_decisions table — provides a single
+# unified query surface for the AI Observatory dashboard and audit reviews.
+# Compliance: NIST AU-2, FedRAMP SI-4, OMB M-25-21 AI inventory.
+
+foreach d in observatory.decisions
+select d.canvas_type, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

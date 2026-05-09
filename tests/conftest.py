@@ -966,7 +966,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     last_failure_reason  TEXT,
     last_failure_at      TEXT,
     dispatch_source      TEXT DEFAULT 'unknown',
-    completed_via_bypass INTEGER NOT NULL DEFAULT 0
+    completed_via_bypass INTEGER NOT NULL DEFAULT 0,
+    trace_id             TEXT,
+    span_id              TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id);
 CREATE INDEX IF NOT EXISTS idx_kanban_failure_count ON kanban_tasks(failure_count);
@@ -1808,6 +1810,27 @@ CREATE TABLE IF NOT EXISTS mcp_tool_registry (
 );
 CREATE INDEX IF NOT EXISTS idx_mcp_tr_name   ON mcp_tool_registry (name);
 CREATE INDEX IF NOT EXISTS idx_mcp_tr_source ON mcp_tool_registry (source);
+
+CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
+    id            TEXT PRIMARY KEY,
+    canvas_type   TEXT NOT NULL,
+    record_id     TEXT,
+    decision_type TEXT NOT NULL,
+    decision      TEXT NOT NULL,
+    rationale     TEXT,
+    model_used    TEXT,
+    confidence    REAL,
+    alternatives  TEXT,
+    trace_id      TEXT,
+    span_id       TEXT,
+    actor         TEXT DEFAULT 'icdev-system',
+    project_id    TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at    TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cad_canvas_type ON canvas_ai_decisions (canvas_type);
+CREATE INDEX IF NOT EXISTS idx_cad_record_id   ON canvas_ai_decisions (record_id);
+CREATE INDEX IF NOT EXISTS idx_cad_trace_id    ON canvas_ai_decisions (trace_id);
 """
 
 # ---------------------------------------------------------------------------

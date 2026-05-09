@@ -1,0 +1,7 @@
+# IQE-ODC-006: ODC AI decisions with full OTel traceability
+# Decisions where trace_id is populated — fully traceable to LLM router span.
+# Use: OMB M-25-21 AI inventory evidence, NIST AI RMF MEASURE 2.7 audit.
+
+foreach d in observability.ai_decisions
+where d.trace_id != null
+select d.id, d.decision_type, d.decision, d.trace_id, d.model_used, d.created_at

@@ -75,6 +75,18 @@ def observe(
             obs_id, reflex_name, status, duration_ms, artifact_count,
         )
 
+        # Capture active OTel span identifiers for end-to-end traceability
+        _trace_id: str | None = None
+        _span_id: str | None = None
+        try:
+            from tools.observability import get_tracer  # noqa: PLC0415
+            _active = get_tracer().get_active_span()
+            if _active:
+                _trace_id = getattr(_active, "trace_id", None)
+                _span_id = getattr(_active, "span_id", None)
+        except Exception:
+            pass
+
         try:
             from tools.db.storage import get_connection
 
@@ -84,8 +96,9 @@ def observe(
                     """
                     INSERT INTO reflex_observations
                         (reflex_name, started_at, finished_at, duration_ms,
-                         status, artifact_count, error_msg, result_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                         status, artifact_count, error_msg, result_json,
+                         trace_id, span_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     [
                         reflex_name,
@@ -96,6 +109,8 @@ def observe(
                         artifact_count,
                         error_msg,
                         result_json,
+                        _trace_id,
+                        _span_id,
                     ],
                 )
                 conn.commit()

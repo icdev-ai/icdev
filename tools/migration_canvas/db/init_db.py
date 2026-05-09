@@ -1640,6 +1640,108 @@ SEED_SOPS = [
 ]
 
 
+# ── Cloud Application Migration (CAM) Schema ────────────────────────────────
+
+CAM_SCHEMA = """
+-- CAM Project coordinator: links cross-canvas designs + tracks migration projects
+CREATE TABLE IF NOT EXISTS mc_projects (
+    id                TEXT PRIMARY KEY,
+    name              TEXT NOT NULL,
+    description       TEXT DEFAULT '',
+    customer          TEXT DEFAULT '',
+    owner             TEXT DEFAULT '',
+    status            TEXT DEFAULT 'draft'
+        CHECK(status IN ('draft','in_review','approved','active','complete','archived')),
+    classification    TEXT DEFAULT 'CUI'
+        CHECK(classification IN ('PUBLIC','CUI','SECRET','TS')),
+    impact_level      TEXT DEFAULT 'IL4'
+        CHECK(impact_level IN ('IL2','IL4','IL5','IL6')),
+    mc_session_id     TEXT REFERENCES mc_srv_sessions(id),
+    ddc_design_id     TEXT,      -- pointer → data_canvas.db data_designs.id
+    idc_design_id     TEXT,      -- pointer → infra_canvas.db infra_designs.id
+    ndc_topology_id   TEXT,      -- pointer → network_canvas.db topologies.id
+    source_stack_json TEXT DEFAULT '[]',  -- [{tech, version, platform}, ...]
+    target_stack_json TEXT DEFAULT '[]',  -- [{tech, aws_service, strategy_7r}, ...]
+    notes             TEXT DEFAULT '',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Migration phases per project (mirrors nc_migration_phases in NDC)
+CREATE TABLE IF NOT EXISTS mc_project_phases (
+    id                  TEXT PRIMARY KEY,
+    project_id          TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    phase_num           INTEGER NOT NULL,
+    title               TEXT NOT NULL,
+    description         TEXT DEFAULT '',
+    wave_num            INTEGER DEFAULT 1,
+    duration_days       INTEGER DEFAULT 0,
+    maintenance_window  TEXT DEFAULT '',
+    rollback_criteria   TEXT DEFAULT '',
+    depends_on_phase_id TEXT,    -- predecessor phase for dependency tracking
+    status              TEXT DEFAULT 'planned'
+        CHECK(status IN ('planned','in_progress','completed','rolled_back')),
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_proj_phases_project ON mc_project_phases(project_id);
+CREATE INDEX IF NOT EXISTS idx_mc_proj_phases_status  ON mc_project_phases(status);
+
+-- Phase → SOP links (mirrors nc_phase_documents in NDC)
+CREATE TABLE IF NOT EXISTS mc_project_phase_sops (
+    id              TEXT PRIMARY KEY,
+    phase_id        TEXT NOT NULL REFERENCES mc_project_phases(id) ON DELETE CASCADE,
+    project_id      TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    sop_source      TEXT NOT NULL DEFAULT 'mc'
+        CHECK(sop_source IN ('mc','ddc','idc','ndc')),
+    sop_id          TEXT NOT NULL,  -- FK into sop_source canvas's sop table
+    sop_title       TEXT DEFAULT '',
+    relevance_note  TEXT DEFAULT '',
+    display_order   INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(phase_id, sop_id)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_phase_sops_phase   ON mc_project_phase_sops(phase_id);
+CREATE INDEX IF NOT EXISTS idx_mc_phase_sops_project ON mc_project_phase_sops(project_id);
+
+-- AI modernization opportunities per component
+CREATE TABLE IF NOT EXISTS mc_ai_opportunities (
+    id                TEXT PRIMARY KEY,
+    project_id        TEXT NOT NULL REFERENCES mc_projects(id) ON DELETE CASCADE,
+    app_id            TEXT REFERENCES mc_app_inventory(id),
+    component_name    TEXT NOT NULL,
+    opportunity_title TEXT NOT NULL,
+    aws_ai_service    TEXT NOT NULL,  -- e.g. 'bedrock-kb','pgvector','semantic-cache'
+    benefit_category  TEXT DEFAULT 'efficiency'
+        CHECK(benefit_category IN ('search','nlq','pipeline','caching','ux','analytics','security','efficiency')),
+    effort_days       INTEGER DEFAULT 0,
+    status            TEXT DEFAULT 'identified'
+        CHECK(status IN ('identified','scoped','in_progress','complete','deferred')),
+    notes             TEXT DEFAULT '',
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_ai_opps_project   ON mc_ai_opportunities(project_id);
+CREATE INDEX IF NOT EXISTS idx_mc_ai_opps_component ON mc_ai_opportunities(component_name);
+"""
+
+
+def _migrate_cam_tables(conn):
+    """Idempotently add CAM project/phase/SOP/AI-opportunity tables."""
+    conn.executescript(CAM_SCHEMA)
+    # Auto-seed demo project if none exist
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM mc_projects").fetchone()[0]
+        if count == 0:
+            try:
+                from tools.migration_canvas.cam_seed_demo import seed as _seed_cam
+                _seed_cam()
+            except Exception as _e:
+                import logging as _log
+                _log.getLogger(__name__).info("CAM demo seed skipped: %s", _e)
+    except Exception:
+        pass  # table may not exist yet if schema apply failed
+
+
 def init_db():
     """Create tables and seed templates, snippets, runbooks, SOPs, and cloud instances."""
     with get_connection() as conn:
@@ -1649,6 +1751,7 @@ def init_db():
         _migrate_wave_dep_tables(conn)
         _migrate_gap_fill_tables(conn)
         _migrate_app_tables(conn)
+        _migrate_cam_tables(conn)
         _seed_cloud_instances(conn)
 
         # Seed templates

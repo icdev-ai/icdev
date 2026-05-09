@@ -1359,8 +1359,29 @@ system_graph:
     migrations, codebase). Check DB connectivity and table existence.
     system_graph_build_slow fires when stats.build_ms > 10000 on an uncached request.
 
+# AI Traceability gate — warn if canvas_ai_decisions table is empty after 24h of activity
+# Evaluated by coherence_checker.py or a daily health probe.
+ai_trace:
+  warning:
+    - canvas_ai_decisions_empty   # no AI decisions recorded after >24h of canvas use
+  note: >
+    canvas_ai_decisions_empty fires when the table is empty more than 24 hours after
+    any canvas blueprint has been accessed (evidence that traceability hooks are not firing).
+    Check canvas blueprint wiring in tools/network/blueprint.py and peers.
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
+  - id: AI-TRACE-001
+    name: Canvas AI Traceability Gate
+    description: Warns when canvas_ai_decisions table is empty after 24h of canvas activity — indicates AI traceability hooks are not firing
+    severity: WARN
+    block_on: []
+    warn_on: [canvas_ai_decisions_empty]
+    table: canvas_ai_decisions
+    nist_controls: [AU-2, AU-3, SI-4]
+    dod_rai: [Traceable]
+    nist_ai_rmf: [MEASURE-2.5, MEASURE-2.7, MEASURE-2.8]
+
   - id: MCP-SEC-001
     name: MCP Server Security Gate
     description: Blocks on HIGH severity MCP server findings (unauthenticated transport, missing TLS, privilege escalation tools)

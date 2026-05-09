@@ -9863,7 +9863,9 @@ CREATE TABLE IF NOT EXISTS reflex_observations (
     status          TEXT NOT NULL DEFAULT 'running',
     artifact_count  INTEGER DEFAULT 0,
     error_msg       TEXT,
-    result_json     TEXT DEFAULT '{}'
+    result_json     TEXT DEFAULT '{}',
+    trace_id        TEXT,
+    span_id         TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reflex_obs_name
     ON reflex_observations(reflex_name);

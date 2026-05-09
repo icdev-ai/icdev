@@ -1,0 +1,7 @@
+# IQE-OBS-002: All confabulation flag decisions
+# Returns decisions where decision_type='confabulation_flag' — these are
+# AI outputs flagged by the NIST AI 600-1 GAI.1 confabulation detector.
+# Use: AI safety review, human-in-the-loop escalation queue.
+
+foreach d in observatory.confabulation_flags
+select d.canvas_type, d.decision, d.confidence, d.rationale, d.created_at
