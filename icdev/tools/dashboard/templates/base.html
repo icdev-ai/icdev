@@ -122,70 +122,83 @@
     <nav class="navbar" role="navigation" aria-label="Main navigation">
         <a class="navbar-brand" href="/">ICDEV™</a>
         <ul class="navbar-nav">
-            <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
-            <li><a href="/chat" class="{% if '/chat' in request.path %}active{% endif %}">Chat</a></li>
 
-            <!-- Operations -->
+            <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+
+            <!-- ── Ops ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/projects', '/agents', '/orchestration', '/monitoring', '/platform-health', '/activity', '/cicd', '/batch', '/simulation'] %}active{% endif %}">Ops</a>
+                <a href="#" class="{% if request.path in ['/projects','/agents','/orchestration','/monitoring','/platform-health','/activity','/cicd','/kanban','/batch','/simulation'] %}active{% endif %}">Ops</a>
                 <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">DevOps</li>
                     <li><a href="/projects">Projects</a></li>
                     <li><a href="/agents">Agents</a></li>
+                    <li><a href="/kanban">Task Board</a></li>
+                    <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/orchestration">Orchestration</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Monitor</li>
                     <li><a href="/monitoring">Monitoring</a></li>
                     <li><a href="/platform-health">Platform Health</a></li>
                     <li><a href="/activity">Activity</a></li>
-                    <li><a href="/cicd">CI/CD</a></li>
-                    <li><a href="/kanban">Task Board</a></li>
                     <li><a href="/batch">Batch</a></li>
-                    <li><a href="/simulation">Simulation</a></li>
                     <li><a href="/simulate/chat">Simulate Chat</a></li>
                 </ul>
             </li>
 
-            <!-- Compliance & ATO -->
+            <!-- ── Build ─────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/compliance', '/oscal', '/prod-audit', '/ai-transparency', '/ai-accountability', '/sbd', '/evidence', '/lineage', '/cato', '/compliance-debt', '/ato-package', '/control-inheritance', '/mosa', '/analytics', '/poam'] %}active{% endif %}">Compliance</a>
+                <a href="#" class="{% if request.path in ['/chat','/dev-profiles','/phases','/translations','/finetune','/diagrams','/ai-wizard','/ai-patterns','/connector-forge'] %}active{% endif %}">Build</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/poam">POA&amp;M Findings</a></li>
-                    <li><a href="/compliance">Compliance Hub</a></li>
-                    <li><a href="/oscal">OSCAL</a></li>
-                    <li><a href="/prod-audit">Production Audit</a></li>
-                    <li><a href="/ai-transparency">AI Transparency</a></li>
-                    <li><a href="/ai-accountability">AI Accountability</a></li>
-                    <li><a href="/sbd">Secure by Design</a></li>
-                    <li><a href="/cato">Continuous ATO</a></li>
-                    <li><a href="/compliance-debt">Compliance Debt</a></li>
-                    <li><a href="/ato-package">ATO Package Builder</a></li>
-                    <li><a href="/control-inheritance">Control Inheritance</a></li>
-                    <li><a href="/mosa">MOSA</a></li>
-                    <li><a href="/analytics">Funnel Analytics</a></li>
+                    <li><a href="/chat">Chat</a></li>
+                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Dev Tools</li>
+                    <li><a href="/dev-profiles">Dev Profiles</a></li>
+                    <li><a href="/phases">Phases</a></li>
+                    <li><a href="/finetune">Fine-Tuning</a></li>
+                    <li><a href="/diagrams">Diagrams</a></li>
+                    <li><a href="/connector-forge">Connector Forge</a></li>
+                    <li><a href="/translations">Translations</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
                 </ul>
             </li>
 
-            <!-- Security & Migration -->
+            <!-- ── Canvases ──────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path.startswith('/security') or request.path in ['/migration', '/pr-intel', '/iac', '/stig-manager', '/migration-cost'] %}active{% endif %}">Security</a>
+                <a href="#" class="{% if '/network' in request.path or '/devops' in request.path or '/infra' in request.path or '/data' in request.path or '/migration-canvas' in request.path or '/migration-intel' in request.path or '/boundary' in request.path or '/observability' in request.path or '/quality' in request.path or '/agentic-ai' in request.path or '/ai-ml' in request.path or '/canvas-compliance' in request.path or '/canvas-kg' in request.path %}active{% endif %}">Canvases</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/security/" style="color:#e94560;font-weight:600;">Security Design Canvas</a></li>
-                    <li><a href="/security-scan">Security Scans</a></li>
-                    <li><a href="/pr-intel">PR Intelligence</a></li>
-                    <li><a href="/stig-manager">STIG Manager</a></li>
-                    <li><a href="/migration">Migration</a></li>
-                    <li><a href="/migration-cost">Migration Cost</a></li>
-                    <li><a href="/iac">IaC Gallery</a></li>
-                    <li><a href="/sre">SRE Operations</a></li>
+                    <li class="nav-section-label">Infrastructure</li>
+                    {% if network_enabled %}<li><a href="/network/">Network</a></li>{% endif %}
+                    {% if pipeline_enabled %}<li><a href="/devops/">DevOps</a></li>{% endif %}
+                    {% if infra_canvas_enabled %}<li><a href="/infra/">Infrastructure</a></li>{% endif %}
+                    {% if data_canvas_enabled %}<li><a href="/data/">Data</a></li>{% endif %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Governance</li>
+                    {% if boundary_canvas_enabled %}<li><a href="/boundary/">Boundary</a></li>{% endif %}
+                    {% if migration_canvas_enabled %}<li><a href="/migration-canvas/">Migration</a></li>{% endif %}
+                    {% if observability_canvas_enabled %}<li><a href="/observability/">Observability</a></li>{% endif %}
+                    {% if qdc_enabled %}<li><a href="/quality/">QA/QC</a></li>{% endif %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI Design</li>
+                    {% if aadc_enabled %}<li><a href="/agentic-ai/" style="color:#a5b4fc;">Agentic AI</a></li>{% endif %}
+                    {% if aimc_enabled %}<li><a href="/ai-ml/" style="color:#818cf8;">AI/ML</a></li>{% endif %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Cross-Canvas</li>
+                    <li><a href="/canvas-compliance">Canvas Posture</a></li>
+                    {% if canvas_kg_enabled %}<li><a href="/canvas-kg">Canvas KG</a></li>{% endif %}
                 </ul>
             </li>
 
-            <!-- Intelligence -->
+            <!-- ── Intelligence ──────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/knowledge-search', '/code-quality', '/writeguard', '/system-graph', '/components-map', '/ask-icdev'] or (not airgap_mode and request.path in ['/research', '/autoresearch', '/pulse', '/clawhub']) %}active{% endif %}">Intelligence</a>
+                <a href="#" class="{% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub'] %}active{% endif %}">Intelligence</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/system-graph" style="font-weight:600;color:#42a5f5;">System Graph</a></li>
+                    <li class="nav-section-label">Awareness</li>
+                    <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
                     <li><a href="/components-map">Component Map</a></li>
                     <li><a href="/ask-icdev">Ask ICDEV</a></li>
-                    <li style="border-top:1px solid rgba(255,255,255,0.08);margin:4px 0;padding:0;"></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Research</li>
                     {% if not airgap_mode %}
                     <li><a href="/research">Research</a></li>
                     <li><a href="/autoresearch">Autoresearch</a></li>
@@ -194,283 +207,130 @@
                     <li><a href="/code-quality">Code Quality</a></li>
                     <li><a href="/writeguard">WriteGuard</a></li>
                     {% if not airgap_mode %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Publish</li>
                     <li><a href="/pulse">Pulse Blog</a></li>
                     <li><a href="/clawhub">ClawHub Skills</a></li>
                     {% endif %}
                 </ul>
             </li>
 
-            {% if hitl_enabled %}
-            <!-- HITL Workflow Management -->
+            <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if '/workflow' in request.path %}active{% endif %}">Workflow</a>
+                <a href="#" class="{% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost'] or request.path.startswith('/security') %}active{% endif %}">Compliance</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/workflow/">HITL Queue</a></li>
-                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if not airgap_mode %}
-            <!-- Genesis (all apps) -->
-            <li><a href="/genesis" class="{% if '/genesis' in request.path %}active{% endif %}">Genesis</a></li>
-            <li><a href="/oracle" class="{% if '/oracle' in request.path %}active{% endif %}">Oracle</a></li>
-            <!-- FathomDesk — Trading & Market Intelligence -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/fathomdesk', '/news', '/options', '/analysis', '/machine-momentum', '/quality-scores'] %}active{% endif %}" style="color:#8ab4ff;font-weight:600;">FathomDesk</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/fathomdesk">Trading Desk</a></li>
-                    <li><a href="/news">News</a></li>
-                    <li><a href="/options">Options</a></li>
-                    <li><a href="/analysis">Market Analysis</a></li>
-                    <li><a href="/machine-momentum">Machine Momentum</a></li>
-                    <li><a href="/quality-scores">Quality Scores</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            <!-- Build & Dev -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/dev-profiles', '/phases', '/translations', '/finetune', '/diagrams', '/ai-wizard'] %}active{% endif %}">Build</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
-                    <li><a href="/dev-profiles">Dev Profiles</a></li>
-                    <li><a href="/phases">Phases</a></li>
-                    <li><a href="/translations">Translations</a></li>
-                    <li><a href="/finetune">Fine-Tuning</a></li>
-                    <li><a href="/diagrams">Diagrams</a></li>
-                    <li><a href="/connector-forge">Connector Forge</a></li>
+                    <li class="nav-section-label">Risk &amp; ATO</li>
+                    <li><a href="/poam">POA&amp;M Findings</a></li>
+                    <li><a href="/compliance">Compliance Hub</a></li>
+                    <li><a href="/oscal">OSCAL</a></li>
+                    <li><a href="/cato">Continuous ATO</a></li>
+                    <li><a href="/ato-package">ATO Package Builder</a></li>
+                    <li><a href="/mosa">MOSA</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Security</li>
+                    <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
+                    <li><a href="/security-scan">Security Scans</a></li>
+                    <li><a href="/stig-manager">STIG Manager</a></li>
+                    <li><a href="/pr-intel">PR Intelligence</a></li>
+                    <li><a href="/sre">SRE Operations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI &amp; Policy</li>
+                    <li><a href="/sbd">Secure by Design</a></li>
+                    <li><a href="/ai-transparency">AI Transparency</a></li>
+                    <li><a href="/ai-accountability">AI Accountability</a></li>
+                    <li><a href="/control-inheritance">Control Inheritance</a></li>
+                    <li><a href="/compliance-debt">Compliance Debt</a></li>
+                    <li><a href="/prod-audit">Production Audit</a></li>
                 </ul>
             </li>
 
-            {% if govcon_enabled %}
-            <!-- GovCon -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/proposals', '/govcon'] or '/proposals' in request.path %}active{% endif %}">GovCon</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/proposals">Proposals</a></li>
-                    <li><a href="/govcon">Intelligence</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if network_enabled %}
-            <!-- Network Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/network' in request.path %}active{% endif %}">Network</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/network/">Dashboard</a></li>
-                    <li><a href="/network/canvas/new">New Topology</a></li>
-                    <li><a href="/network/templates">Templates</a></li>
-                    <li><a href="/network/circuits">Circuits</a></li>
-                    <li><a href="/network/customers">Customers</a></li>
-                    <li><a href="/network/ipam">IPAM</a></li>
-                    <li><a href="/network/cables">Cables</a></li>
-                    <li><a href="/network/projects">Projects</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if pipeline_enabled %}
-            <!-- DevOps Pipeline Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/devops' in request.path %}active{% endif %}">DevOps</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/devops/">Dashboard</a></li>
-                    <li><a href="/devops/canvas/new">New Pipeline</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if infra_canvas_enabled %}
-            <!-- Infrastructure Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/infra' in request.path %}active{% endif %}">Infra</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/infra/">Dashboard</a></li>
-                    <li><a href="/infra/canvas/new">New Design</a></li>
-                    <li><a href="/infra/templates">Templates</a></li>
-                    <li><a href="/infra/assessments">Assessments</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if data_canvas_enabled %}
-            <!-- Data Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/data' in request.path %}active{% endif %}">Data</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/data/">Dashboard</a></li>
-                    <li><a href="/data/canvas/new">New Design</a></li>
-                    <li><a href="/data/templates">Templates</a></li>
-                    <li><a href="/data/assessments">Assessments</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if migration_canvas_enabled %}
-            <!-- Migration Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/migration-canvas' in request.path or '/migration-intel' in request.path %}active{% endif %}" style="color:#27ae60;font-weight:600;">Migration</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/migration-canvas/network-migration/" style="font-weight:600">Network Migration</a></li>
-                    <li><a href="/migration-canvas/">Design Canvas</a></li>
-                    <li><a href="/migration-intel/">Intelligence Engine</a></li>
-                    <li><a href="/migration-canvas/canvas/new">New Design</a></li>
-                    <li><a href="/migration-canvas/templates">Templates</a></li>
-                    <li><a href="/migration-canvas/assessments">Assessments</a></li>
-                    <li><a href="/migration-canvas/sops">SOPs</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if boundary_canvas_enabled %}
-            <!-- Boundary Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/boundary' in request.path %}active{% endif %}">Boundary</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/boundary/">Dashboard</a></li>
-                    <li><a href="/boundary/canvas/new">New Design</a></li>
-                    <li><a href="/boundary/templates">Templates</a></li>
-                    <li><a href="/boundary/assessments">Assessments</a></li>
-                    <li><a href="/boundary/isa-tracker">ISA Tracker</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if observability_canvas_enabled %}
-            <!-- Observability Design Canvas -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/observability' in request.path %}active{% endif %}">Observability</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/observability/">Dashboard</a></li>
-                    <li><a href="/observability/canvas/new">New Design</a></li>
-                    <li><a href="/observability/templates">Templates</a></li>
-                    <li><a href="/observability/assessments">Assessments</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if qdc_enabled %}
-            <!-- Quality Design Canvas (QDC) -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/quality' in request.path %}active{% endif %}" style="color:#2196f3;">QA/QC</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/quality/">Dashboard</a></li>
-                    <li><a href="/quality/canvas/new">New Design</a></li>
-                    <li><a href="/quality/templates">Templates</a></li>
-                    <li><a href="/quality/snippets">Snippets</a></li>
-                    <li><a href="/quality/assessments">Assessments</a></li>
-                    <li><a href="/quality/runbooks">Runbooks</a></li>
-                    <li><a href="/quality/sops">SOPs</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if academy_enabled %}
-            <!-- FORGE Academy -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/academy' in request.path %}active{% endif %}" style="color:#10b981;">Academy</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/academy" style="color:#FF6B35;font-weight:600;">⬡ FORGE Academy</a></li>
-                    <li><a href="/academy/missions">Missions</a></li>
-                    <li><a href="/academy/skill-tree">Skill Tree</a></li>
-                    <li><a href="/academy/achievements">Achievements</a></li>
-                    <li><a href="/academy/leaderboard">Leaderboard</a></li>
-                    <li><a href="/academy/guild">Guild</a></li>
-                    <li><a href="/academy/arena" style="color:#FF6B35;">⚡ Arena</a></li>
-                    <li><a href="/academy/workflow-builder" style="color:#00D4FF;">⬡ Workflow Builder</a></li>
-                    <li><a href="/academy/profile">Profile Setup</a></li>
-                    <li><a href="/academy/oracle">Oracle Insights</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if gameday_enabled %}
-            <!-- AI GameDay TTX Platform -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/gameday' in request.path %}active{% endif %}" style="color:#f59e0b;">GameDay</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/gameday" style="color:#FFB800;font-weight:600;">🎮 Hub</a></li>
-                    <li><a href="/gameday/scenarios">Scenarios</a></li>
-                    <li><a href="/gameday/scenarios/builder">Scenario Builder</a></li>
-                    <li><a href="/gameday/simulation" style="color:#a78bfa;">⚡ Simulation</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            {% if aadc_enabled %}
-            <!-- Agentic AI Design Canvas (AADC) -->
-            <li class="nav-dropdown">
-                <a href="#" class="{% if '/agentic-ai' in request.path %}active{% endif %}" style="color:#a5b4fc;">Agentic AI</a>
-                <ul class="nav-dropdown-menu">
-                    <li><a href="/agentic-ai/">Dashboard</a></li>
-                    <li><a href="/agentic-ai/canvas/new">New Design</a></li>
-                    <li><a href="/agentic-ai/templates">Templates</a></li>
-                    <li><a href="/agentic-ai/snippets">Snippets</a></li>
-                </ul>
-            </li>
-            {% endif %}
-
-            <!-- Strategos — Strategic Intelligence Operations -->
+            <!-- ── Strategos ─────────────────────────────────────────────────── -->
             {% if strategos_enabled %}
             <li class="nav-dropdown">
-                <a href="#" class="{% if '/strategos' in request.path %}active{% endif %}" style="color:#f59e0b;font-weight:600;">Strategos</a>
+                <a href="#" class="{% if '/strategos' in request.path %}active{% endif %}" style="color:#f59e0b;">Strategos</a>
                 <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Command</li>
                     <li><a href="/strategos">Overview</a></li>
-                    <li><a href="/strategos/map" style="color:#f59e0b">&#9670; Map Dashboard</a></li>
-                    <li><a href="/strategos/orbat">ORBAT Tracker</a></li>
-                    <li><a href="/strategos/ghost">Ghost Signals</a></li>
-                    <li><a href="/strategos/iw">IW Effects</a></li>
-                    <li><a href="/strategos/wargame">Wargame</a></li>
+                    <li><a href="/strategos/map" style="color:#f59e0b;">Map Dashboard</a></li>
+                    <li><a href="/strategos/commander" style="color:#e94560;font-weight:600;">Commander Dashboard</a></li>
+                    <li><a href="/strategos/war-council" style="color:#f59e0b;">War Council</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Intel</li>
+                    <li><a href="/strategos/pir" style="color:#fb923c;">PIR / CCIR / EEI</a></li>
+                    <li><a href="/strategos/intsum" style="color:#06b6d4;">INTSUM Generator</a></li>
+                    <li><a href="/strategos/indicators" style="color:#f59e0b;">I&amp;W Indicators</a></li>
+                    <li><a href="/strategos/briefs" style="color:#a78bfa;">Intel Briefs
+                        <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
+                    </a></li>
                     <li><a href="/strategos/kg">Knowledge Graph</a></li>
-                    <li><a href="/strategos/hitl">HITL Queue</a></li>
-                    <li><a href="/strategos/pir" style="color:#fb923c">&#9670; PIR / CCIR / EEI</a></li>
-                    <li><a href="/strategos/maritime" style="color:#22d3ee">&#9670; Maritime Tracking</a></li>
-                    <li><a href="/strategos/airspace" style="color:#3b82f6">&#9670; Multi-Domain COP</a></li>
-                    <li><a href="/strategos/cyber" style="color:#ef4444">&#9670; Cyber Dashboard</a></li>
-                    <li><a href="/strategos/simulate">Simulate</a></li>
-                    <li><a href="/strategos/supply" style="color:#e94560">&#9670; DIB Supply Chain</a></li>
-                    <li><a href="/strategos/war-council" style="color:#f59e0b">&#9670; War Council</a></li>
                     <li><a href="/strategos/osint">OSINT Panel</a></li>
-                    <li><a href='/strategos/darkweb' style='color:#a855f7'>&#9670; Dark Web Monitor</a></li>
-                    <li><a href='/strategos/commander' style='color:#e94560;font-weight:600'>&#9670; Commander Dashboard</a></li>
-                    <li><a href='/strategos/intsum' style='color:#06b6d4'>&#9670; INTSUM Generator</a></li>
-                    <li><a href='/strategos/ipb' style='color:#3b82f6'>&#9670; IPB Canvas</a></li>
-                    <li><a href='/strategos/indicators' style='color:#f59e0b'>&#9670; I&amp;W Indicators</a></li>
-                    <li><a href='/strategos/f3ead' style='color:#e94560'>&#9670; F3EAD Targeting</a></li>
-                    <li><a href='/strategos/bda' style='color:#10b981'>&#9670; BDA</a></li>
-                    <li><a href='/strategos/opord' style='color:#8b5cf6'>&#9670; OPORD Generator</a></li>
-                    <li><a href='/strategos/red-cell' style='color:#e94560'>&#9670; Red Cell</a></li>
-                    <li><a href='/strategos/mett-tc' style='color:#06b6d4'>&#9670; METT-TC</a></li>
-                    <li><a href='/strategos/sync-matrix' style='color:#f97316'>&#9670; Sync Matrix</a></li>
-                    <li><a href='/strategos/isr-planner' style='color:#a855f7'>&#9670; ISR Planner</a></li>
-                    <li><a href='/strategos/sources' style='color:#34d399'>&#9670; Source Registry</a></li>
-                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600">&#9670; Intelligence Chat</a></li>
-                    <li>
-                        <a href="/strategos/briefs" style="color:#a78bfa">&#9670; Intel Briefs
-                            <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
-                        </a>
-                    </li>
+                    <li><a href="/strategos/ghost">Ghost Signals</a></li>
+                    <li><a href="/strategos/darkweb" style="color:#a855f7;">Dark Web Monitor</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Ops</li>
+                    <li><a href="/strategos/orbat">ORBAT Tracker</a></li>
+                    <li><a href="/strategos/wargame">Wargame</a></li>
+                    <li><a href="/strategos/iw">IW Effects</a></li>
+                    <li><a href="/strategos/f3ead" style="color:#e94560;">F3EAD Targeting</a></li>
+                    <li><a href="/strategos/bda" style="color:#10b981;">BDA</a></li>
+                    <li><a href="/strategos/red-cell" style="color:#e94560;">Red Cell</a></li>
+                    <li><a href="/strategos/opord" style="color:#8b5cf6;">OPORD Generator</a></li>
+                    <li><a href="/strategos/mett-tc" style="color:#06b6d4;">METT-TC</a></li>
+                    <li><a href="/strategos/sync-matrix" style="color:#f97316;">Sync Matrix</a></li>
+                    <li><a href="/strategos/isr-planner" style="color:#a855f7;">ISR Planner</a></li>
+                    <li><a href="/strategos/ipb" style="color:#3b82f6;">IPB Canvas</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Domain</li>
+                    <li><a href="/strategos/maritime" style="color:#22d3ee;">Maritime Tracking</a></li>
+                    <li><a href="/strategos/airspace" style="color:#3b82f6;">Multi-Domain COP</a></li>
+                    <li><a href="/strategos/cyber" style="color:#ef4444;">Cyber Dashboard</a></li>
+                    <li><a href="/strategos/supply" style="color:#e94560;">DIB Supply Chain</a></li>
+                    <li><a href="/strategos/sources" style="color:#34d399;">Source Registry</a></li>
+                    <li><a href="/strategos/simulate">Simulate</a></li>
+                    <li><a href="/strategos/hitl">HITL Queue</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600;">Intelligence Chat</a></li>
                 </ul>
             </li>
             {% endif %}
 
-            <!-- Canvas Compliance (Cross-Canvas Integration) -->
-            <li>
-                <a href="/canvas-compliance" class="{% if '/canvas-compliance' in request.path %}active{% endif %}" style="color:#e94560;font-weight:600;">Canvas Posture</a>
-            </li>
-
-            {% if canvas_kg_enabled %}
-            <!-- Canvas Knowledge Graph -->
-            <li>
-                <a href="/canvas-kg" class="{% if '/canvas-kg' in request.path %}active{% endif %}" style="color:#9b59b6;font-weight:600;">Canvas KG</a>
-            </li>
-            {% endif %}
-
-            <!-- Studio (Phase 72) -->
+            <!-- ── Platforms ─────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if '/studio' in request.path %}active{% endif %}" style="color: var(--accent-blue-light);">Studio</a>
+                <a href="#" class="{% if request.path in ['/fathomdesk','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon'] or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path %}active{% endif %}">Platforms</a>
+                <ul class="nav-dropdown-menu">
+                    {% if not airgap_mode %}
+                    <li class="nav-section-label">Market &amp; AI</li>
+                    <li><a href="/fathomdesk" style="color:#8ab4ff;">FathomDesk</a></li>
+                    <li><a href="/genesis">Genesis</a></li>
+                    <li><a href="/oracle">Oracle</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    <li class="nav-section-label">Geospatial</li>
+                    <li><a href="/geosigint/" style="color:#06b6d4;">GeoSIGINT</a></li>
+                    <li><a href="/geosigint/a2ad">A2/AD Zone Mapper</a></li>
+                    <li><a href="/geosigint/strait-crossing">Strait Crossing</a></li>
+                    <li><a href="/geosigint/island-chain">Island Chain Defense</a></li>
+                    <li><a href="/geosigint/amphibious">Amphibious Assessment</a></li>
+                    <li><a href="/geosigint/militia">Militia Classifier</a></li>
+                    <li><a href="/geosigint/semiconductor">Semiconductor Chain</a></li>
+                    {% if govcon_enabled %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">GovCon</li>
+                    <li><a href="/proposals">Proposals</a></li>
+                    <li><a href="/govcon">Intelligence</a></li>
+                    {% endif %}
+                    {% if gameday_enabled or academy_enabled %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Training</li>
+                    {% if gameday_enabled %}<li><a href="/gameday" style="color:#f59e0b;">GameDay</a></li>{% endif %}
+                    {% if academy_enabled %}<li><a href="/academy" style="color:#10b981;">FORGE Academy</a></li>{% endif %}
+                    {% endif %}
+                </ul>
+            </li>
+
+            <!-- ── Studio ────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/studio' in request.path %}active{% endif %}" style="color:var(--accent-blue-light);">Studio</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/studio/app-builder">App Builder</a></li>
                     <li><a href="/studio/workflows">Workflow Builder</a></li>
@@ -484,23 +344,32 @@
                 </ul>
             </li>
 
-            <!-- Utility -->
+            <!-- ── More ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="#" class="{% if request.path in ['/usage', '/quick-paths', '/wizard', '/ai-wizard', '/ai-patterns', '/notifications', '/profile'] %}active{% endif %}">More</a>
+                <a href="#" class="{% if request.path in ['/usage','/quick-paths','/wizard','/notifications','/profile','/analytics'] or '/workflow' in request.path or '/admin' in request.path %}active{% endif %}">More</a>
                 <ul class="nav-dropdown-menu">
-                    <li><a href="/usage">Usage</a></li>
-                    <li><a href="/notifications">Notifications</a></li>
-                    <li><a href="/quick-paths">Quick Paths</a></li>
+                    {% if hitl_enabled %}
+                    <li class="nav-section-label">Workflow</li>
+                    <li><a href="/workflow/">HITL Queue</a></li>
+                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    <li class="nav-section-label">Account</li>
                     <li><a href="/profile">Profile &amp; Settings</a></li>
-                    <li><a href="/wizard" style="color: var(--accent-blue-light);">Get Started</a></li>
-                    <li><a href="/ai-wizard" style="color: var(--accent-blue-light);">AI Launchpad Wizard</a></li>
-                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                    <li><a href="/notifications">Notifications</a></li>
+                    <li><a href="/usage">Usage</a></li>
+                    <li><a href="/analytics">Analytics</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Help</li>
+                    <li><a href="/wizard" style="color:var(--accent-blue-light);">Get Started</a></li>
+                    <li><a href="/quick-paths">Quick Paths</a></li>
+                    {% if current_user and current_user.role == 'admin' %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="/admin/users">Admin</a></li>
+                    {% endif %}
                 </ul>
             </li>
 
-            {% if current_user and current_user.role == 'admin' %}
-            <li><a href="/admin/users" class="{% if '/admin' in request.path %}active{% endif %}">Admin</a></li>
-            {% endif %}
         </ul>
         <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
             {% if current_user %}
