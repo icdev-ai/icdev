@@ -208,7 +208,6 @@ def _success_result_for(test_file: Optional[str]) -> E2ETestResult:
 
 def _server_is_up(url: str = "http://localhost:5050", timeout: int = 3) -> bool:
     """Return True if the dashboard server is already listening."""
-    import socket
     import urllib.request
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:

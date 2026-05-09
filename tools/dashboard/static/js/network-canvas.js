@@ -185,6 +185,25 @@ const NODE_STYLES = {
   'internet-exchange':{ fill: '#0f2b1a', stroke: '#66bb6a', label: 'IXP',           symbol: 'IXP'},
   'cloud-region':     { fill: '#1a1a2e', stroke: '#636e72', label: 'Region',        symbol: 'REG'},
   'cloud':            { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'Cloud',         symbol: '☁' },
+  // ── DoD JWICS (SECRET/TS — red family, classified crimson) ──────────────────
+  'dod-jwics-backbone':    { fill: '#2b0808', stroke: '#e74c3c', label: 'JWICS Backbone',     symbol: 'JWX' },
+  'dod-jwics-gateway':     { fill: '#2b0808', stroke: '#ff6b6b', label: 'JWICS Gateway',      symbol: 'JWG' },
+  'dod-jwics-dns':         { fill: '#2b0a0a', stroke: '#ff4757', label: 'JWICS DNS',           symbol: 'JDN' },
+  'dod-jwics-mail-relay':  { fill: '#2b0a0a', stroke: '#e84393', label: 'JWICS Mail Relay',   symbol: 'JMR' },
+  'dod-type1-encryptor':   { fill: '#2b0f0f', stroke: '#ff4757', label: 'Type 1 Encryptor',   symbol: 'T1E' },
+  'dod-scif-lan':          { fill: '#1a0808', stroke: '#c0392b', label: 'SCIF LAN',            symbol: 'SCF' },
+  // ── DoD C2S — AWS Secret Region (amber-red, classified orange) ───────────
+  'dod-c2s-direct-connect':{ fill: '#2b1200', stroke: '#e67e22', label: 'C2S ClassifiedConnect', symbol: 'C2D' },
+  'dod-c2s-tgw':           { fill: '#2b1200', stroke: '#ff9800', label: 'C2S Transit GW',     symbol: 'C2T' },
+  'dod-c2s-vpc':           { fill: '#2b1200', stroke: '#ffb300', label: 'C2S VPC',             symbol: 'C2V' },
+  'dod-c2s-dns-phz':       { fill: '#2b1000', stroke: '#ffa000', label: 'C2S Route 53 PHZ',   symbol: 'C2Z' },
+  // ── DoD C2E — Azure Government Secret (dark violet, classified purple) ───
+  'dod-c2e-expressroute':  { fill: '#120a2b', stroke: '#8e44ad', label: 'C2E ExpressRoute',   symbol: 'C2X' },
+  'dod-c2e-vnet':          { fill: '#120a2b', stroke: '#9b59b6', label: 'C2E VNet',            symbol: 'C2N' },
+  'dod-c2e-dns-private':   { fill: '#120a2b', stroke: '#a569bd', label: 'C2E Private DNS',    symbol: 'C2P' },
+  // ── Shared DISA Secret-side ───────────────────────────────────────────────
+  'dod-secret-bcap':       { fill: '#2b0808', stroke: '#ff4757', label: 'Secret BCAP/CAP',    symbol: 'SBC' },
+  'dod-cds':               { fill: '#1a0a1a', stroke: '#ff7675', label: 'Cross-Domain (CDS)', symbol: 'CDS' },
   // Aliases for ingester types (so they never show '?')
   'vpn_gateway':      { fill: '#0f2b2b', stroke: '#00bcd4',  label: 'VPN GW',        symbol: '🔒' },
   'wan_link':         { fill: '#0f0f2b', stroke: '#7f8c8d',  label: 'WAN',           symbol: '☁' },
@@ -2763,6 +2782,7 @@ const TYPE_SETS = {
   ]),
   TYPE1_ENCRYPTOR: new Set([
     'type1-encryptor', 'kg-175d', 'kg-175g', 'kg-250', 'kg-340', 'kg-245x', 'kg-255',
+    'dod-type1-encryptor',
   ]),
   FIPS_ENCRYPTOR: new Set([
     'fips-140-l1', 'fips-140-l2', 'fips-140-l3', 'fips-140-l4',
@@ -2794,12 +2814,28 @@ const PHYS_TO_LOGICAL = {
   'az-vnet':         'vrf',
   'gcp-vpc':         'vrf',
   'oci-vcn':         'vrf',
-  'type1-encryptor': 'security-zone',
-  'fips-140-l1':     'security-zone',
-  'fips-140-l2':     'security-zone',
-  'fips-140-l3':     'security-zone',
-  'fips-140-l4':     'security-zone',
-  'hsm':             'security-zone',
+  'type1-encryptor':        'security-zone',
+  'fips-140-l1':            'security-zone',
+  'fips-140-l2':            'security-zone',
+  'fips-140-l3':            'security-zone',
+  'fips-140-l4':            'security-zone',
+  'hsm':                    'security-zone',
+  // DoD classified types
+  'dod-jwics-backbone':     'vrf',
+  'dod-jwics-gateway':      'vrf',
+  'dod-jwics-dns':          'security-zone',
+  'dod-jwics-mail-relay':   'security-zone',
+  'dod-type1-encryptor':    'security-zone',
+  'dod-scif-lan':           'security-zone',
+  'dod-c2s-direct-connect': 'vrf',
+  'dod-c2s-tgw':            'vrf',
+  'dod-c2s-vpc':            'vrf',
+  'dod-c2s-dns-phz':        'security-zone',
+  'dod-c2e-expressroute':   'vrf',
+  'dod-c2e-vnet':           'vrf',
+  'dod-c2e-dns-private':    'security-zone',
+  'dod-secret-bcap':        'security-zone',
+  'dod-cds':                'security-zone',
 };
 
 // Physical-layer types dropped when rendering the logical view (no logical equivalent).
