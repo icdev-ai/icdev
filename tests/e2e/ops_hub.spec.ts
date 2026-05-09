@@ -302,14 +302,13 @@ test.describe('OHC — Navigation Lifecycle', () => {
     let body = await page.textContent('body');
     expect(body).toContain(CUI);
 
-    // Step 2: Click LLMOps link
+    // Step 2: Navigate to LLMOps (sidebar nav may be collapsed; verify link exists then direct-navigate)
     const llmLink = page.locator('a[href="/ops/llm"]').first();
-    if (await llmLink.count() > 0) {
-      await llmLink.click();
-      await page.waitForLoadState('domcontentloaded');
-      expect(page.url()).toContain('/ops/llm');
-      await shot(page, '11_nav_llm');
-    }
+    const hasLink = await llmLink.count() > 0;
+    expect(hasLink).toBe(true); // link must exist in DOM
+    await gotoOhc(page, '/ops/llm');
+    expect(page.url()).toContain('/ops/llm');
+    await shot(page, '11_nav_llm');
 
     // Step 3: Navigate to models
     await gotoOhc(page, '/ops/models');

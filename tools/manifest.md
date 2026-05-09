@@ -416,3 +416,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Ops Config Generator | tools\agentic_ai_canvas\ops_config_generator.py | Auto-registered: agentic_ai_canvas/ops_config_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Academy Reflex | tools\genesis\reflexes\academy_reflex.py | Auto-registered: reflexes/academy_reflex.py | --json | JSON |
