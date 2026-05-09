@@ -53,8 +53,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--target",  required=True, choices=_TARGETS,
                    help="IaC target")
-    p.add_argument("--project", required=True, metavar="<id|graph.json>",
+    p.add_argument("--project-id", dest="project_id",
+                   metavar="<id|graph.json>",
                    help="Design ID (DB lookup) or path to a graph JSON file")
+    p.add_argument("--project", dest="project_id", help=argparse.SUPPRESS)  # backward compat — use --project-id
     p.add_argument("--csp",     required=True, choices=_CSPS,
                    help="Target cloud provider")
     p.add_argument("--out",     required=True, metavar="<dir>",
@@ -175,13 +177,16 @@ def _emit_helm(
 def main(argv: list[str] | None = None) -> None:
     args = _parse_args(argv)
 
+    if not args.project_id:
+        _fail("--project-id is required")
+
     if args.csp not in _SUPPORTED_CSPS[args.target]:
         _fail(
             f"CSP {args.csp!r} is not supported for --target {args.target!r}. "
             f"Supported: {sorted(_SUPPORTED_CSPS[args.target])}"
         )
 
-    graph = _load_graph(args.project)
+    graph = _load_graph(args.project_id)
     nodes: list[Node] = graph.get("nodes", [])
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -193,13 +198,13 @@ def main(argv: list[str] | None = None) -> None:
     elif args.target == "pulumi":
         written, skipped = _emit_pulumi(nodes, args.csp, out_dir)
     else:  # helm
-        written, skipped = _emit_helm(nodes, args.csp, out_dir, args.project)
+        written, skipped = _emit_helm(nodes, args.csp, out_dir, args.project_id)
 
     if args.json:
         summary = {
             "target": args.target,
             "csp": args.csp,
-            "project": args.project,
+            "project_id": args.project_id,
             "node_count": len(nodes),
             "emitted_count": len(nodes) - skipped,
             "skipped_count": skipped,

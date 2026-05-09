@@ -20,6 +20,7 @@ __pycache__ clearing.
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
@@ -57,6 +58,11 @@ def main():
         "--once",
         action="store_true",
         help="Run one cycle and exit (for Task Scheduler)",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON status output (useful with --once for scripted callers)",
     )
     args = parser.parse_args()
 
@@ -185,12 +191,23 @@ def main():
         reflex_name = kanban_run.__module__.rsplit(".", 1)[-1]
         result = observe(reflex_name, kanban_run, dummy_config, dummy_trust)
         details = result.get("details", {})
+        activated = details.get("tasks_activated", 0)
+        completed = details.get("completed_this_cycle", [])
+        running = details.get("running", [])
         logger.info(
             "Cycle complete: activated=%s, completed=%s, running=%s",
-            details.get("tasks_activated", 0),
-            len(details.get("completed_this_cycle", [])),
-            len(details.get("running", [])),
+            activated,
+            len(completed),
+            len(running),
         )
+        if args.json:
+            print(json.dumps({
+                "cycle": 1,
+                "status": details.get("status", "ok"),
+                "tasks_activated": activated,
+                "completed": len(completed),
+                "running": len(running),
+            }))
         return
 
     logger.info("Kanban scheduler started (interval=%ds)", args.interval)

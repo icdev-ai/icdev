@@ -389,7 +389,8 @@ def _q(conn, sql, params=()):
 
 def main():
     parser = argparse.ArgumentParser(description="Live Risk Monitor — composite + CPARS scoring")
-    parser.add_argument("--project", help="Project ID for composite risk")
+    parser.add_argument("--project-id", dest="project_id", help="Project ID for composite risk")
+    parser.add_argument("--project", dest="project_id", help=argparse.SUPPRESS)  # backward compat — use --project-id
     parser.add_argument("--contract", help="Contract ID for CPARS risk")
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--gate", action="store_true", help="Exit 1 if RED/unsatisfactory")
@@ -398,8 +399,8 @@ def main():
 
     results = []
 
-    if args.project:
-        r = calculate_composite_risk(args.project)
+    if args.project_id:
+        r = calculate_composite_risk(args.project_id)
         if args.persist:
             _persist_risk_snapshot(r, "composite")
         results.append(r)
