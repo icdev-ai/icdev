@@ -415,3 +415,20 @@ MIGRATION_TOOLS = {
     "v2v_hypervisor":  ["VMware vMotion", "StarWind V2V", "qemu-img convert", "Microsoft SCVMM"],
     "v2v_cloud2cloud": ["AWS MGN", "Azure Site Recovery", "Zerto", "Velero (K8s)"],
 }
+
+
+# ── Compliance Frameworks ───────────────────────────────────────────────────
+
+COMPLIANCE_FRAMEWORKS = {
+    'fedramp': {'label': 'FedRAMP', 'applies_to_envs': ['AWS GovCloud', 'Azure Government', 'GCP Gov'], 'url': 'https://fedramp.gov'},
+    'disa_stig': {'label': 'DISA STIG', 'applies_to_ils': ['IL4', 'IL5', 'IL6']},
+    'nist_800_53': {'label': 'NIST 800-53', 'applies_to_ils': ['IL2', 'IL4', 'IL5', 'IL6']},
+    'cmmc2': {'label': 'CMMC 2.0', 'applies_to_envs': ['On-Prem', 'Hybrid']},
+}
+
+IL_LEVEL_REQUIREMENTS = {
+    'IL2': {'max_classification': 'Unclassified', 'commercial_ok': True},
+    'IL4': {'max_classification': 'CUI', 'commercial_ok': False, 'requires_govcloud': True},
+    'IL5': {'max_classification': 'CUI-High', 'commercial_ok': False, 'requires_govcloud': True, 'requires_disa_stig': True},
+    'IL6': {'max_classification': 'SECRET', 'commercial_ok': False, 'requires_sipr': True},
+}
