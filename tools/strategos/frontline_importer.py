@@ -85,7 +85,6 @@ def parse_geojson(data: dict, theater_id: str, default_source: str = "imported")
 def load_file(path: Path, theater_id: str) -> list[dict]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
-    m = _DATE_RE.search(path.stem)
     default_source = path.stem
     return parse_geojson(data, theater_id, default_source)
 

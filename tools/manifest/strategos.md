@@ -63,3 +63,16 @@
 |------|---------|--------|
 | args/theaters/pacific.yaml | Indo-Pacific (Taiwan Strait) | Full — 6 actors, weapon systems, 10-level escalation |
 | args/theaters/ukraine.yaml | Russo-Ukrainian Conflict | Stub — 4 actors, 8 domains, 10-level escalation, placeholder ORBAT |
+
+## STRATEGOS I&W Analysis Layer (sg-iw + sg-import epics)
+| Tool | File | Description | Key Functions |
+|------|------|-------------|---------------|
+| ACLED Importer | tools/strategos/acled_importer.py | Parses ACLED CSV/JSON → sg_conflict_events (source='acled'). Deduplication on external_id. | `parse_csv()`, `parse_json_file()`, `write_events()` |
+| Oryx Importer | tools/strategos/oryx_importer.py | Parses Oryx equipment loss JSON → sg_entities (Equipment) + sg_conflict_events. | `parse_oryx_json()`, `write_all()` |
+| Frontline Importer | tools/strategos/frontline_importer.py | Parses GeoJSON FeatureCollections → sg_frontline_segments. Supports file or directory. | `load_file()`, `load_directory()`, `write_segments()` |
+| Economic Importer | tools/strategos/economic_importer.py | WorldBank/FAO/JSON → sg_economic_signals with CUSUM anomaly detection. | `parse_worldbank_csv()`, `parse_fao_csv()`, `parse_generic_json()`, `write_signals()` |
+| Historical Baselines | tools/strategos/historical_baselines.py | 23 historical pre-war case signatures → sg_war_readiness_events. Used for DTW + Bayesian training. | `seed_baselines()`, `get_pattern_matrix()`, `list_cases()` |
+| IW Domain Scorers | tools/strategos/iw_scorers.py | Five PMESII-PT domain scorers: EconomicSignalScorer, MilitarySignalScorer, DiplomaticSignalScorer, InfrastructureScorer, InformationScorer. Each reads from live DB. | `score_all_domains(theater_id)` |
+| Bayesian IW Updater | tools/strategos/iw_bayesian.py | Sequential Bayesian P(war) updater + pure-Python GBM Exercise vs Pre-War classifier (trained on 23 cases). | `BayesianIWUpdater.update()`, `ExerciseVsPreWarClassifier.predict()` |
+| DTW Pattern Matcher | tools/strategos/iw_pattern_matcher.py | DTW similarity search against 23 historical cases + Weibull TTE estimator for onset probability. | `DTWPatternMatcher.find_similar()`, `WeibullTTEEstimator.estimate_days_to_onset()` |
+| A2/AD Mapper | tools/strategos/a2ad_mapper.py | Computes PRC A2/AD threat rings (DF-21D/DF-26/DF-17/YJ-18/S-400) as GeoJSON + chokepoint analysis. | `A2ADMapper.compute_threat_rings()`, `analyze_chokepoints()`, `full_overlay()` |

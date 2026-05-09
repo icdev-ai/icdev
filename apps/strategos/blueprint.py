@@ -2384,13 +2384,33 @@ def strategos_map():
 
 @_bp.route("/api/kg")
 def strategos_api_kg_proxy():
-    nodes = _safe_fetch(
-        "SELECT node_id, node_type, label FROM sg_kg_nodes ORDER BY node_type LIMIT 500"
-    )
-    edges = _safe_fetch(
-        "SELECT source_id, target_id, relation FROM sg_kg_edges LIMIT 1000"
-    )
-    return jsonify({"nodes": nodes, "edges": edges})
+    graph_filter = request.args.get("graph", "")
+    ph = "%s" if is_pg() else "?"
+    if graph_filter == "war":
+        from tools.strategos.war_kg import WAR_GRAPH_ID  # noqa: PLC0415
+        nodes = _safe_fetch(
+            f"SELECT id AS node_id, entity_type AS node_type, label FROM kg_nodes WHERE graph_id = {ph} LIMIT 500",
+            (WAR_GRAPH_ID,),
+        )
+        edges = _safe_fetch(
+            f"SELECT source_id, target_id, relationship AS relation FROM kg_edges WHERE graph_id = {ph} LIMIT 1000",
+            (WAR_GRAPH_ID,),
+        )
+    else:
+        nodes = _safe_fetch(
+            "SELECT node_id, node_type, label FROM sg_kg_nodes ORDER BY node_type LIMIT 500"
+        )
+        edges = _safe_fetch(
+            "SELECT source_id, target_id, relation FROM sg_kg_edges LIMIT 1000"
+        )
+    schema = {}
+    if graph_filter == "war":
+        try:
+            from tools.strategos.war_kg import get_schema_summary  # noqa: PLC0415
+            schema = get_schema_summary()
+        except Exception:
+            pass
+    return jsonify({"nodes": nodes, "edges": edges, "schema": schema})
 
 
 # ---------------------------------------------------------------------------
@@ -3584,6 +3604,51 @@ def strategos_api_map_supply():
         "FROM sg_supply_nodes WHERE lat IS NOT NULL AND lon IS NOT NULL"
     )
     return jsonify({"nodes": rows})
+
+
+@_bp.route("/api/map/a2ad")
+def strategos_api_map_a2ad():
+    """A2/AD threat rings + chokepoints overlay for current theater."""
+    theater_id = request.args.get("theater", "pacific")
+    try:
+        from tools.strategos.a2ad_mapper import A2ADMapper  # noqa: PLC0415
+        mapper = A2ADMapper()
+        overlay = mapper.full_overlay(theater_id)
+        return jsonify(overlay)
+    except Exception as exc:
+        return jsonify({"type": "FeatureCollection", "features": [], "error": str(exc)}), 200
+
+
+@_bp.route("/api/map/frontlines")
+def strategos_api_map_frontlines():
+    """Latest frontline segments for the given theater."""
+    theater_id = request.args.get("theater", "ukraine")
+    limit = min(int(request.args.get("limit", 100)), 500)
+    ph = "%s" if is_pg() else "?"
+    rows = _safe_fetch(
+        f"SELECT id, snapshot_date, geometry_json, advance_km, source "
+        f"FROM sg_frontline_segments WHERE theater = {ph} "
+        f"ORDER BY snapshot_date DESC LIMIT {ph}",
+        (theater_id, limit),
+    )
+    features = []
+    for row in rows:
+        try:
+            geom = json.loads(row.get("geometry_json") or "{}")
+            if geom:
+                features.append({
+                    "type": "Feature",
+                    "geometry": geom,
+                    "properties": {
+                        "id": row.get("id"),
+                        "snapshot_date": row.get("snapshot_date"),
+                        "advance_km": row.get("advance_km", 0),
+                        "source": row.get("source"),
+                    },
+                })
+        except Exception:
+            pass
+    return jsonify({"type": "FeatureCollection", "features": features})
 
 
 # ---------------------------------------------------------------------------

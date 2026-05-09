@@ -697,3 +697,14 @@
 | Quality Engine | tools\data_canvas\quality_engine.py | Auto-registered: data_canvas/quality_engine.py | --json | JSON |
 
 - [DDC Data Science — Explore, Query Sandbox, Quality Rules](manifest/ddc-data-science.md)
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Acled Importer | tools\strategos\acled_importer.py | Auto-registered: strategos/acled_importer.py | --json | JSON |
+| Economic Importer | tools\strategos\economic_importer.py | Auto-registered: strategos/economic_importer.py | --json | JSON |
+| Historical Baselines | tools\strategos\historical_baselines.py | Auto-registered: strategos/historical_baselines.py | --json | JSON |
+| Iw Bayesian | tools\strategos\iw_bayesian.py | Auto-registered: strategos/iw_bayesian.py | --json | JSON |
+| Iw Pattern Matcher | tools\strategos\iw_pattern_matcher.py | Auto-registered: strategos/iw_pattern_matcher.py | --json | JSON |
+| Iw Scorers | tools\strategos\iw_scorers.py | Auto-registered: strategos/iw_scorers.py | --json | JSON |
+| Oryx Importer | tools\strategos\oryx_importer.py | Auto-registered: strategos/oryx_importer.py | --json | JSON |
