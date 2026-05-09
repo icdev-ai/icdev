@@ -8433,6 +8433,10 @@ SP/Carrier:   mpls-pe, mpls-p, route-reflector, pop, sonet-adm, roadm, oadm, edf
 Media:        media-fiber, media-ge, media-10ge, media-100ge
 Colo:         meet-me-room, cross-connect
 Drawing:      draw-rect, draw-rounded-rect, text-heading, text-label, text-badge
+DoD JWICS:    dod-jwics-backbone, dod-jwics-gateway, dod-jwics-dns, dod-jwics-mail-relay, dod-type1-encryptor, dod-scif-lan
+DoD C2S:      dod-c2s-direct-connect, dod-c2s-tgw, dod-c2s-vpc, dod-c2s-dns-phz
+DoD C2E:      dod-c2e-expressroute, dod-c2e-vnet, dod-c2e-dns-private
+DoD Shared:   dod-secret-bcap, dod-cds
 
 Use vendor-specific types when the user names a vendor product (e.g., Juniper PTX10003 → juniper-ptx10003, Juniper MX304 → juniper-mx304, Cisco ASR → cisco-router, Cisco Catalyst → cisco-switch-l3, Cisco ASA → cisco-firewall).
 
@@ -8503,8 +8507,40 @@ Structure:
 Each legend entry: text-label with "• <description>" and appropriate _textColor.
 Spacing: 22px between entries, 30px between sections.
 
+═══ DoD SECRET / CLASSIFIED NETWORK TOPOLOGIES ═══
+Use dod-* types when user mentions: JWICS, SCIF, C2S, C2E, SIPR, classified network, SECRET network, DISA, BCAP, SCCA, Type 1, CDS, cross-domain, IL6, DIA, or NSA encryption.
+
+STANDARD JWICS AGENCY CONNECTION (left → right):
+  dod-scif-lan → dod-type1-encryptor → dod-jwics-gateway → dod-jwics-backbone → [DIA hub: router] → dod-jwics-dns, dod-jwics-mail-relay, server (app)
+
+JWICS → C2S (AWS Secret Region):
+  dod-scif-lan → dod-type1-encryptor → dod-jwics-gateway → dod-jwics-backbone → dod-secret-bcap → dod-c2s-direct-connect → dod-c2s-tgw → dod-c2s-vpc → dod-c2s-dns-phz
+
+JWICS → C2E (Azure Government Secret):
+  dod-scif-lan → dod-type1-encryptor → dod-jwics-gateway → dod-jwics-backbone → dod-secret-bcap → dod-c2e-expressroute → dod-c2e-vnet → dod-c2e-dns-private
+
+FULL DISA PANORAMA (3-row layout — stack vertically, 280px row spacing):
+  TOP ROW (NIPR, y=80):   endpoint-pc → router → firewall → [dod-secret-bcap optional NIPR side] → aws-vpc / az-vnet
+  MID ROW (DISN, y=360):  router (DISN backbone) → siem → server (ACAS/HBSS)
+  BOT ROW (SECRET, y=640): dod-scif-lan → dod-type1-encryptor → dod-jwics-backbone → dod-secret-bcap → dod-c2s-vpc / dod-c2e-vnet
+  CDS bridging MID ↔ BOT: place dod-cds node between MID row and BOT row (y=500)
+
+CROSS-DOMAIN SOLUTION: place dod-cds between NIPR (unclassified) and JWICS (SECRET) segments.
+DNS FLOW diagram: dod-scif-lan → endpoint-pc (SCIF user) → server (stub resolver) → dod-jwics-dns (JWICS recursive) → server (DIA authoritative)
+EMAIL FLOW diagram: endpoint-pc (SCIF sender) → server (agency SMTP relay) → dod-jwics-mail-relay → server (DIA relay) → endpoint-pc (recipient)
+
+ZONE COLORS for classified:
+  SECRET zone: Red   {"_fill": "#1a0808", "_stroke": "#e74c3c"}
+  JWICS zone:  Red   {"_fill": "#2b0808", "_stroke": "#ff4757"}
+  C2S zone:    Amber {"_fill": "#1a0f00", "_stroke": "#e67e22"}
+  C2E zone:    Purple{"_fill": "#0f0820", "_stroke": "#8e44ad"}
+  CDS bridge:  Red   {"_fill": "#1a0a1a", "_stroke": "#ff7675"}
+  NIPR zone:   Blue  (standard)
+
+EDGE LABELS for classified: "Type 1 AES-256 HAIPE", "OSPF Area 0", "ClassifiedConnect 10G", "BGP eBGP MD5", "UDP/53 DNSSEC", "SMTP/S 587", "LDAPS/636"
+
 ═══ PROTOCOLS (use realistic ones) ═══
-OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, STP, VXLAN, BGP EVPN, GRE
+OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, STP, VXLAN, BGP EVPN, GRE, Type 1 AES-256, DNSSEC, S/MIME, HAIPE
 
 Output ONLY the JSON object. No other text."""
 
@@ -8517,6 +8553,16 @@ Output ONLY the JSON object. No other text."""
         "data center", "datacenter", "cloud", "hub", "spoke", "mesh",
         "three tier", "three-tier", "two tier", "two-tier", "spine", "leaf",
         "core", "distribution", "access layer",
+        # DoD / classified network keywords
+        "jwics", "scif", "sipr", "niprnet", "c2s", "c2e",
+        "classified", "secret network", "il6", "il5", "il4",
+        "disa", "bcap", "scca", "vdss", "vdms", "tccm",
+        "type 1", "type-1", "taclane", "kg-250", "kg-175",
+        "cds", "cross-domain", "cross domain",
+        "classifiedconnect", "classified connect",
+        "dia hub", "dia network", "jwics backbone",
+        "secret region", "aws secret", "azure secret",
+        "agency connect", "dod agency", "dod network",
     }
 
     # Migration scenario keywords — trigger multi-phase layout + migration canvas session
