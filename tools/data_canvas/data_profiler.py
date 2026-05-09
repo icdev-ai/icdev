@@ -121,7 +121,17 @@ def _get_column_info(conn, db_kind: str, table: str) -> list[dict]:
     """Return [{name, type_str}] for each column in table."""
     if db_kind == "sqlite":
         cur = conn.execute(f"PRAGMA table_info({table})")
-        return [{"name": r[1], "type_str": r[2] or ""} for r in cur.fetchall()]
+        cols = [{"name": r[1], "type_str": r[2] or ""} for r in cur.fetchall()]
+        if not cols and table in ("sqlite_master", "sqlite_schema"):
+            # Virtual catalog table — PRAGMA returns nothing; use known schema
+            cols = [
+                {"name": "type", "type_str": "TEXT"},
+                {"name": "name", "type_str": "TEXT"},
+                {"name": "tbl_name", "type_str": "TEXT"},
+                {"name": "rootpage", "type_str": "INTEGER"},
+                {"name": "sql", "type_str": "TEXT"},
+            ]
+        return cols
     if db_kind == "postgresql":
         cur = conn.cursor()
         cur.execute(
