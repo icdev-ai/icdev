@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Kanban Scheduler -- standalone process that runs the kanban reflex on a loop.
 

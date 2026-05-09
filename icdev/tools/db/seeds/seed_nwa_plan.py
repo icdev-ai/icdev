@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Seed: nWave Methodology Adaptation — 3 epics, 25 tasks.
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Genesis Goal Learner — Self-Improving Goals from Experience (D-GEN-GL-1).
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Seed: Workflow Studio — Node Decomposition (composite type + drill-down navigation).
 

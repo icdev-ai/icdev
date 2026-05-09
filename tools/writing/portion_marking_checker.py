@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Portion Marking Checker — DoDM 5200.01 compliance validation.
 

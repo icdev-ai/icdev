@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Dependency Scanner — inventories all project dependencies with version staleness.
 

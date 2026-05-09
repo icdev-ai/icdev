@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Ansible playbook emitter for IDC graph nodes (config-mgmt scope).
 

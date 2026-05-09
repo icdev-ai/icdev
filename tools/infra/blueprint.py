@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Flask blueprint: IaC generation API for canvas designs.
 

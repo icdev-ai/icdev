@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 # SPARKPILOT Workflow State Management
 # Adapted from ADW state.py

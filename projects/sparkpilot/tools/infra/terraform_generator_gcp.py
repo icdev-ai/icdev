@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Generate Terraform configurations for GCP Government (Assured Workloads) deployments.
 Produces provider.tf, variables.tf, outputs.tf, main.tf, and modules

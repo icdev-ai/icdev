@@ -1049,8 +1049,8 @@ def create_app() -> Flask:
         from flask import jsonify as _j
         from tools.db.storage import get_connection as _gc
 
-        hb_path = pathlib.Path(".tmp/kanban_scheduler.heartbeat")
-        log_path = pathlib.Path(".tmp/kanban_scheduler.log")
+        hb_path = BASE_DIR / ".tmp" / "kanban_scheduler.heartbeat"
+        log_path = BASE_DIR / ".tmp" / "kanban_scheduler.log"
         sched_secs = None
         for _p in (hb_path, log_path):
             if _p.exists():

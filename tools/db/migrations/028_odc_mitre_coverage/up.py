@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Migration 028: Add mitre_coverage table for ODC Twin.
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 # SPARKPILOT E2E — Playwright browser verification workflow
 

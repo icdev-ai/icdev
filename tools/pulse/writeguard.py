@@ -1,3 +1,4 @@
+from __future__ import annotations
 """WriteGuard integration bridge for ICDEV™ Pulse.
 
 FORGE-compliant: All checks are deterministic (no LLM). Rewriting is

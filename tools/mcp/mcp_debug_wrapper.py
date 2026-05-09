@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-"""Debug wrapper: logs all stdin/stdout to a file then proxies to unified_server."""
-import sys
+from __future__ import annotations
+"""Debug wrapper: logs all stdin/stdout to a file then proxies to unified_server.
+
+Goose / Claude Code config.yaml example:
+  command: python $ICDEV_PROJECT_ROOT/tools/mcp/mcp_debug_wrapper.py
+"""
+import datetime
 import os
 import subprocess
+import sys
 import threading
-import datetime
+from pathlib import Path as _Path
 
-LOG = r"C:\Users\schuo\Downloads\ICDev\.tmp\mcp_debug.log"
-SERVER = r"C:\Users\schuo\Downloads\ICDev\tools\mcp\unified_server.py"
+_ROOT = _Path(__file__).resolve().parent.parent.parent
+LOG = str(_ROOT / ".tmp" / "mcp_debug.log")
+SERVER = str(_ROOT / "tools" / "mcp" / "unified_server.py")
 PYTHON = sys.executable
 
 os.makedirs(os.path.dirname(LOG), exist_ok=True)

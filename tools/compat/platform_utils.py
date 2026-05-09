@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# ruff: noqa: E501
 """Cross-platform compatibility utilities for ICDEV™.
 
 Centralizes OS detection and platform-specific behavior (D145).
@@ -13,11 +14,16 @@ Usage:
     )
 """
 
+from __future__ import annotations
+
+import ctypes
 import os
 import platform
+import signal
 import sys
 import tempfile
 from pathlib import Path
+from typing import List
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +104,125 @@ def normalize_path(path_str: str) -> Path:
         return p.resolve()
     except OSError:
         return p
+
+
+# ---------------------------------------------------------------------------
+# Process utilities (cross-platform — psutil preferred, stdlib fallback)
+# ---------------------------------------------------------------------------
+def pid_exists(pid: int) -> bool:
+    """Return True if a process with *pid* is alive — cross-platform.
+
+    Uses psutil when available; falls back to os.kill on POSIX and
+    ctypes.OpenProcess on Windows.
+    """
+    try:
+        import psutil as _ps  # optional dep
+        return _ps.pid_exists(pid)
+    except ImportError:
+        pass
+    if IS_WINDOWS:
+        SYNCHRONIZE = 0x00100000
+        h = ctypes.windll.kernel32.OpenProcess(SYNCHRONIZE, False, pid)  # type: ignore[attr-defined]
+        if h:
+            ctypes.windll.kernel32.CloseHandle(h)  # type: ignore[attr-defined]
+            return True
+        return False
+    # POSIX: signal 0 = existence check (no signal sent)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Process exists but we can't signal it (different user)
+        return True
+    except OSError:
+        return False
+
+
+def kill_process(pid: int, force: bool = True) -> bool:
+    """Terminate a process by PID — cross-platform.
+
+    Returns True if the signal was sent, False if the process was not found.
+    Uses psutil when available; falls back to os.kill on POSIX and
+    ctypes.TerminateProcess on Windows.
+    """
+    try:
+        import psutil as _ps  # optional dep
+        try:
+            p = _ps.Process(pid)
+            if force:
+                p.kill()
+            else:
+                p.terminate()
+            return True
+        except _ps.NoSuchProcess:
+            return False
+    except ImportError:
+        pass
+    if IS_WINDOWS:
+        PROCESS_TERMINATE = 0x0001
+        h = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)  # type: ignore[attr-defined]
+        if not h:
+            return False
+        ctypes.windll.kernel32.TerminateProcess(h, 1)  # type: ignore[attr-defined]
+        ctypes.windll.kernel32.CloseHandle(h)  # type: ignore[attr-defined]
+        return True
+    # POSIX
+    sig = signal.SIGKILL if force else signal.SIGTERM
+    try:
+        os.kill(pid, sig)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return False
+
+
+def find_pids_by_cmdline(fragment: str) -> List[int]:
+    """Return PIDs whose command-line contains *fragment* — cross-platform.
+
+    Uses psutil when available; falls back to pgrep on POSIX or wmic on Windows.
+    """
+    try:
+        import psutil as _ps  # optional dep
+        result = []
+        for proc in _ps.process_iter(["pid", "cmdline"]):
+            try:
+                cmdline = " ".join(proc.info.get("cmdline") or [])
+                if fragment in cmdline:
+                    result.append(proc.info["pid"])
+            except (_ps.NoSuchProcess, _ps.AccessDenied):
+                pass
+        return result
+    except ImportError:
+        pass
+    if IS_WINDOWS:
+        import subprocess
+        try:
+            out = subprocess.run(
+                ["wmic", "process", "get", "ProcessId,CommandLine", "/format:csv"],
+                capture_output=True, text=True, timeout=10,
+            ).stdout
+            pids = []
+            for line in out.splitlines():
+                if fragment in line:
+                    parts = line.rsplit(",", 1)
+                    if len(parts) == 2 and parts[-1].strip().isdigit():
+                        pids.append(int(parts[-1].strip()))
+            return pids
+        except Exception:
+            return []
+    # POSIX: pgrep -f
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["pgrep", "-f", fragment],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        return [int(p) for p in out.split() if p.isdigit()]
+    except FileNotFoundError:
+        return []
 
 
 # ---------------------------------------------------------------------------

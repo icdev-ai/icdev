@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Migration Canvas — hypervisor adapter package.
 

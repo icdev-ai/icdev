@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Kanban Task Board API — CRUD for task cards on the dashboard Kanban."""
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 """OSCAL ecosystem integration — oscal-cli, oscal-pydantic, NIST OSCAL Content.
 

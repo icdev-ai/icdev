@@ -336,9 +336,171 @@
 
     </div><!-- /pd-side -->
   </div><!-- /pd-layout -->
+
+  <!-- Code Refactoring Section -->
+  <div id="refactor-section" style="margin-top:24px;">
+    <div class="panel">
+      <div class="panel-header" style="justify-content:space-between;">
+        <h3 class="panel-title">🔧 Code Refactoring &amp; Modernization</h3>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="refactor-count" style="font-size:0.72rem;color:var(--tx3);">loading…</span>
+          <button onclick="runRefactor()" id="refactor-btn"
+            style="font-size:0.72rem;padding:4px 12px;background:#1a3a6e;border:1px solid #3d6bce;color:#93bbff;border-radius:5px;cursor:pointer;">
+            ▶ Run All Jobs
+          </button>
+          <button onclick="dispatchRefactor()" id="dispatch-btn"
+            style="font-size:0.72rem;padding:4px 12px;background:var(--bg2);border:1px solid var(--bd);color:var(--tx2);border-radius:5px;cursor:pointer;">
+            + Queue Jobs
+          </button>
+        </div>
+      </div>
+      <div class="panel-body" id="refactor-body">
+        <div style="color:var(--tx3);font-size:0.78rem;">Loading refactor jobs…</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
+const PROJECT_ID = {{ project.id | tojson }};
+
+async function loadRefactorJobs() {
+  try {
+    const resp = await fetch(`/migration-canvas/api/projects/${PROJECT_ID}/refactor-jobs`);
+    const data = await resp.json();
+    renderRefactorJobs(data.jobs || []);
+  } catch (e) {
+    document.getElementById('refactor-body').innerHTML =
+      `<div style="color:#f87171;font-size:0.78rem;">Failed to load jobs: ${e.message}</div>`;
+  }
+}
+
+function statusColor(s) {
+  return {queued:'#60a5fa',running:'#fbbf24',completed:'#34d399',failed:'#f87171',skipped:'#6b7280'}[s] || '#aaa';
+}
+
+function statusIcon(s) {
+  return {queued:'⏳',running:'⚙️',completed:'✓',failed:'✗',skipped:'—'}[s] || '?';
+}
+
+function renderRefactorJobs(jobs) {
+  const el = document.getElementById('refactor-body');
+  const count = document.getElementById('refactor-count');
+  const done = jobs.filter(j => j.status === 'completed').length;
+  count.textContent = `${done}/${jobs.length} completed`;
+
+  if (!jobs.length) {
+    el.innerHTML = `<div style="color:var(--tx3);font-size:0.78rem;">
+      No refactor jobs queued yet. Click <strong>+ Queue Jobs</strong> to dispatch jobs based on your component stack.</div>`;
+    return;
+  }
+
+  const rows = jobs.map(j => {
+    const arts = Array.isArray(j.artifacts) ? j.artifacts : JSON.parse(j.artifacts_json || '[]');
+    const artHtml = arts.map(a =>
+      `<div style="font-size:0.69rem;color:#60a5fa;padding:1px 0;">
+        📄 <span style="color:var(--tx2);">${a.name}</span>
+        <span style="color:var(--tx3);"> (${(a.size_bytes/1024).toFixed(1)} KB)</span>
+       </div>`
+    ).join('');
+    const artBlock = arts.length
+      ? `<div class="refactor-artifacts" id="art-${j.id}" style="display:none;background:var(--bg1);border-radius:4px;padding:6px 10px;margin-top:4px;">${artHtml}</div>`
+      : '';
+    const artToggle = arts.length
+      ? `<button onclick="document.getElementById('art-${j.id}').style.display=document.getElementById('art-${j.id}').style.display==='none'?'block':'none'"
+           style="font-size:0.69rem;color:var(--tx3);background:none;border:none;cursor:pointer;padding:0;">
+           📦 ${arts.length} artifact${arts.length!==1?'s':''}
+         </button>` : '';
+    const runBtn = j.status === 'queued' || j.status === 'failed'
+      ? `<button onclick="runSingleJob('${j.id}')"
+           style="font-size:0.68rem;padding:2px 8px;background:#1a3a6e;border:1px solid #3d6bce;color:#93bbff;border-radius:4px;cursor:pointer;">Run</button>`
+      : '';
+
+    return `<tr>
+      <td style="padding:7px 10px;font-size:0.78rem;color:var(--tx);">${j.component_name}</td>
+      <td style="padding:7px 10px;font-size:0.72rem;color:var(--tx2);">${j.refactor_type.replace(/_/g,' ')}</td>
+      <td style="padding:7px 10px;">
+        <span style="color:${statusColor(j.status)};font-size:0.75rem;">${statusIcon(j.status)} ${j.status}</span>
+      </td>
+      <td style="padding:7px 10px;font-size:0.72rem;color:var(--tx3);">${j.result_summary||'—'}</td>
+      <td style="padding:7px 10px;">${artToggle} ${runBtn}</td>
+    </tr>
+    <tr><td colspan="5" style="padding:0 10px 4px 10px;">${artBlock}</td></tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:1px solid var(--bd);">
+          <th style="padding:6px 10px;font-size:0.7rem;color:var(--tx3);text-align:left;font-weight:600;">Component</th>
+          <th style="padding:6px 10px;font-size:0.7rem;color:var(--tx3);text-align:left;font-weight:600;">Type</th>
+          <th style="padding:6px 10px;font-size:0.7rem;color:var(--tx3);text-align:left;font-weight:600;">Status</th>
+          <th style="padding:6px 10px;font-size:0.7rem;color:var(--tx3);text-align:left;font-weight:600;">Summary</th>
+          <th style="padding:6px 10px;font-size:0.7rem;color:var(--tx3);text-align:left;font-weight:600;">Artifacts</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function runRefactor() {
+  const btn = document.getElementById('refactor-btn');
+  btn.disabled = true; btn.textContent = '⚙️ Running…';
+  try {
+    const resp = await fetch(`/migration-canvas/api/projects/${PROJECT_ID}/refactor`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({run: true})
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || 'Unknown error');
+    await loadRefactorJobs();
+    btn.textContent = `✓ Done (${data.completed||0}/${data.total||0})`;
+  } catch(e) {
+    btn.textContent = '✗ Error — retry';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function dispatchRefactor() {
+  const btn = document.getElementById('dispatch-btn');
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const resp = await fetch(`/migration-canvas/api/projects/${PROJECT_ID}/refactor`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({run: false})
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error || 'Unknown error');
+    await loadRefactorJobs();
+    btn.textContent = `+ Queue Jobs`;
+  } catch(e) {
+    btn.textContent = '+ Queue Jobs';
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runSingleJob(jobId) {
+  try {
+    const resp = await fetch(`/migration-canvas/api/projects/${PROJECT_ID}/refactor-jobs/${jobId}/run`, {
+      method: 'POST'
+    });
+    const data = await resp.json();
+    if (!data.ok) throw new Error(data.error);
+    await loadRefactorJobs();
+  } catch(e) {
+    console.error('Job run failed:', e);
+  }
+}
+
+// Load jobs on page load
+loadRefactorJobs();
+
 function togglePhase(header) {
   header.classList.toggle('open');
   const body = header.nextElementSibling;

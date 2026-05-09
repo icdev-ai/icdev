@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI — ICDEV Data Design Canvas — Data Profiler
 """Classification-aware data profiler for the DDC Explore tab.
 

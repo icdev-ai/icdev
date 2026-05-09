@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """FathomDesk Data Gateway — unified market-data facade.
 
 Aggregates OpenBB (fundamentals/options), Alpaca (broker), and yfinance

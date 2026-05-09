@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Usage analytics: event collection and Flask middleware for dashboard routes."""
 
 import hashlib

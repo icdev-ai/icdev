@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Dashboard API: WriteGuard — Content Quality Analysis, Export & History.
 
