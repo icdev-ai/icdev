@@ -1821,6 +1821,23 @@ CREATE TABLE IF NOT EXISTS nc_consolidation_analysis (
     updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_nc_consolidation_topo ON nc_consolidation_analysis(topo_id);
+
+-- Migration Hub: join table linking documents/runbooks/SOPs to specific phases
+CREATE TABLE IF NOT EXISTS nc_phase_documents (
+    id              TEXT PRIMARY KEY,
+    phase_id        TEXT REFERENCES nc_migration_phases(id) ON DELETE CASCADE,
+    project_id      TEXT REFERENCES nc_projects(id) ON DELETE CASCADE,
+    doc_source      TEXT NOT NULL
+        CHECK(doc_source IN ('document','runbook','sop','external')),
+    doc_id          TEXT NOT NULL,   -- FK into nc_documents / ndc_runbooks / ndc_sops
+    doc_title       TEXT,
+    doc_type        TEXT,            -- mirrors type from source table for quick display
+    relevance_note  TEXT,            -- why this doc is relevant to this phase
+    display_order   INTEGER DEFAULT 0,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_phase ON nc_phase_documents(phase_id);
+CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_project ON nc_phase_documents(project_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

@@ -299,7 +299,7 @@ def profile_database(conn_params: dict, classification: str = "CUI // SP-CTI", t
     target_tables = tables if tables else all_tables
     profiled = []
     for tname in target_tables:
-        if tname in all_tables:
+        if tables or tname in all_tables:
             profiled.append(profile_table(conn_params, tname, classification))
 
     exec_ms = int((time.monotonic() - t0) * 1000)
