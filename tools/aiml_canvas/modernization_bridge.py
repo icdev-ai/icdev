@@ -11,7 +11,25 @@ Given current stack (language, architecture style, data state) returns:
 
 from __future__ import annotations
 
+import os
+import sys
 from dataclasses import dataclass, field
+
+# Ensure the ICDev project root is on sys.path so apps.forge_academy resolves
+# correctly even when icdev/ package prepends its own apps/ to sys.path.
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+
+def _get_pattern_by_id() -> dict:
+    """Import PATTERN_BY_ID using a direct file path to avoid icdev/apps/ shadowing."""
+    import importlib.util
+    _pat_file = os.path.join(_PROJECT_ROOT, "apps", "forge_academy", "patterns.py")
+    spec = importlib.util.spec_from_file_location("_forge_academy_patterns", _pat_file)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.PATTERN_BY_ID
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +177,7 @@ def recommend(
         learning_path.append(sdk_mission)
 
     # Phase determination
-    from apps.forge_academy.patterns import PATTERN_BY_ID
+    PATTERN_BY_ID = _get_pattern_by_id()
     pattern = PATTERN_BY_ID.get(pattern_id, {})
     phase = pattern.get("phase", "Phase 1 — Quick Win")
     phase_tag = pattern.get("phase_tag", "phase1")
@@ -192,7 +210,7 @@ def recommend(
 def recommend_json(inputs: dict) -> dict:
     """Convenience wrapper returning a JSON-serializable dict."""
     rec = recommend(**inputs)
-    from apps.forge_academy.patterns import PATTERN_BY_ID
+    PATTERN_BY_ID = _get_pattern_by_id()
     pattern = PATTERN_BY_ID.get(rec.pattern_id, {})
     return {
         "pattern_id": rec.pattern_id,

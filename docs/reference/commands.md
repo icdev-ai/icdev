@@ -1997,6 +1997,28 @@ python tools/llm/model_monitor.py --gate                                        
 
 ---
 
+## Ops Hub Canvas (OHC) — Phase 71
+
+```bash
+# Adapter health check (all 11 adapters: 6 OSS + 5 CSP)
+python tools/ops_hub/cli.py --health --json
+
+# CI/CD gate — exits 1 if overall ops status is critical
+python tools/ops_hub/cli.py --gate
+
+# Per-adapter status table
+python tools/ops_hub/cli.py --adapters
+
+# Initialise OHC database (creates 7 tables in data/ohc_canvas.db)
+python tools/ops_hub/db/init_db.py
+
+# Apply migration 120
+python tools/db/migrations/120_ops_hub/up.py
+
+# Seed Kanban tasks (48 tasks across 8 epics)
+python _seed_ohc_kanban.py
+```
+
 ## SRE Tools — SLO Manager, Runbook Executor, Incident Commander
 
 ```bash
