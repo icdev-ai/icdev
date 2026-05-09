@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Innovation Pipeline — FORGE IGNITE{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --ig-gold:#FFB800; --ig-green:#00FF88; --ig-blue:#4A90E2;
+  --ig-red:#FF4444;  --ig-bg:#0a0a14;   --ig-card:#12192b;
+  --ig-border:rgba(74,144,217,0.25);
+}
+.ig-hero {
+  background: linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom: 1px solid var(--ig-border);
+  padding: 2rem 2rem 1.5rem;
+}
+.ig-hero h1 { font-size:1.6rem; font-weight:700; color:var(--ig-gold); margin:0 0 .25rem; }
+.ig-hero p  { color:#8899aa; margin:0; font-size:.9rem; }
+.ig-header-row {
+  display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:1rem; padding:1rem 2rem;
+}
+.ig-stat-strip {
+  display:flex; gap:1.5rem; flex-wrap:wrap;
+}
+.ig-stat { text-align:center; }
+.ig-stat .val { font-size:1.4rem; font-weight:700; color:var(--ig-gold); }
+.ig-stat .lbl { font-size:.75rem; color:#8899aa; text-transform:uppercase; letter-spacing:.06em; }
+.ig-actions { display:flex; gap:.75rem; }
+.ig-btn {
+  padding:.5rem 1.1rem; border-radius:8px; font-size:.85rem; font-weight:600;
+  border:none; cursor:pointer; text-decoration:none; display:inline-block;
+}
+.ig-btn-primary { background:var(--ig-gold); color:#000; }
+.ig-btn-secondary { background:rgba(255,255,255,.08); color:#e0e0e0; }
+.ig-btn:hover { opacity:.85; }
+
+/* Filters */
+.ig-filters {
+  display:flex; gap:.5rem; flex-wrap:wrap; padding:.75rem 2rem;
+  border-bottom: 1px solid var(--ig-border);
+}
+.ig-filter-chip {
+  padding:.3rem .75rem; border-radius:20px; font-size:.8rem; cursor:pointer;
+  border:1px solid transparent; background:rgba(255,255,255,.05); color:#aab;
+  text-decoration:none; transition:all .15s;
+}
+.ig-filter-chip:hover, .ig-filter-chip.active {
+  background:var(--ig-gold); color:#000; border-color:var(--ig-gold);
+}
+
+/* Pipeline board */
+.ig-board { display:flex; gap:1rem; padding:1.5rem 2rem; overflow-x:auto; min-height:65vh; }
+.ig-lane {
+  flex:0 0 220px; min-width:220px;
+}
+.ig-lane-header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:.75rem; padding:.4rem .6rem;
+  border-radius:8px; background:rgba(255,255,255,.04);
+}
+.ig-lane-title { font-size:.85rem; font-weight:600; }
+.ig-lane-count {
+  font-size:.75rem; background:rgba(255,255,255,.1); border-radius:10px;
+  padding:.1rem .45rem; color:#aab;
+}
+.ig-card {
+  background:var(--ig-card); border:1px solid var(--ig-border);
+  border-radius:10px; padding:.85rem; margin-bottom:.6rem;
+  cursor:pointer; transition:border-color .2s, box-shadow .2s;
+  text-decoration:none; display:block; color:inherit;
+}
+.ig-card:hover {
+  border-color:var(--ig-gold); box-shadow:0 2px 12px rgba(255,184,0,.12);
+}
+.ig-card-title { font-size:.875rem; font-weight:600; color:#e0e0e0; margin:0 0 .35rem; }
+.ig-card-meta  { font-size:.75rem; color:#8899aa; }
+.ig-card-footer { display:flex; align-items:center; justify-content:space-between; margin-top:.5rem; }
+.ig-phase-dot {
+  width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:.3rem;
+}
+.ig-score-badge {
+  font-size:.72rem; font-weight:700; padding:.15rem .4rem;
+  border-radius:4px; background:rgba(255,184,0,.15); color:var(--ig-gold);
+}
+.ig-role-tag {
+  font-size:.7rem; padding:.1rem .4rem; border-radius:4px;
+  background:rgba(74,144,226,.15); color:#4A90E2;
+}
+.ig-empty { color:#555; font-size:.85rem; text-align:center; padding:1rem .5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ig-hero">
+  <div style="font-size:.78rem;color:#FFB800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
+    FORGE IGNITE
+  </div>
+  <h1>AI Innovation Pipeline</h1>
+  <p>Capture ideas, assess feasibility, run pilots, measure impact.</p>
+</div>
+
+<!-- Stats + actions -->
+<div class="ig-header-row">
+  <div class="ig-stat-strip">
+    <div class="ig-stat">
+      <div class="val">{{ stats.total }}</div>
+      <div class="lbl">Total Ideas</div>
+    </div>
+    <div class="ig-stat">
+      <div class="val" style="color:#00FF88;">{{ stats.stage_counts.get('pilot',0) + stats.stage_counts.get('measure',0) }}</div>
+      <div class="lbl">Active Pilots</div>
+    </div>
+    <div class="ig-stat">
+      <div class="val" style="color:#FF6B35;">{{ stats.stage_counts.get('scale',0) }}</div>
+      <div class="lbl">Scaled</div>
+    </div>
+    <div class="ig-stat">
+      <div class="val">{{ stats.submitted_this_month }}</div>
+      <div class="lbl">This Month</div>
+    </div>
+    <div class="ig-stat">
+      <div class="val" style="color:#4A90E2;">{{ stats.avg_score }}</div>
+      <div class="lbl">Avg Score</div>
+    </div>
+  </div>
+  <div class="ig-actions">
+    <a href="/innovation/dashboard" class="ig-btn ig-btn-secondary">📊 Dashboard</a>
+    <a href="/innovation/new" class="ig-btn ig-btn-primary">+ Submit Idea</a>
+  </div>
+</div>
+
+<!-- Filters -->
+<div class="ig-filters">
+  <span style="font-size:.8rem;color:#8899aa;align-self:center;">Filter:</span>
+  <a href="/innovation" class="ig-filter-chip {% if not status_filter and not phase_filter %}active{% endif %}">All</a>
+  {% for stage in stages %}
+  <a href="/innovation?status={{ stage.id }}"
+     class="ig-filter-chip {% if status_filter == stage.id %}active{% endif %}"
+     style="{% if status_filter == stage.id %}background:{{ stage.color }};color:#000;{% endif %}">
+    {{ stage.label }}
+  </a>
+  {% endfor %}
+  <span style="color:#333;margin:0 .25rem;">|</span>
+  <a href="/innovation?phase=phase1" class="ig-filter-chip {% if phase_filter=='phase1' %}active{% endif %}">🟢 Phase 1</a>
+  <a href="/innovation?phase=phase2" class="ig-filter-chip {% if phase_filter=='phase2' %}active{% endif %}">🟡 Phase 2</a>
+  <a href="/innovation?phase=phase3" class="ig-filter-chip {% if phase_filter=='phase3' %}active{% endif %}">🔴 Phase 3</a>
+  <a href="/innovation?phase=deferred" class="ig-filter-chip {% if phase_filter=='deferred' %}active{% endif %}">⚪ Deferred</a>
+</div>
+
+<!-- Kanban board -->
+<div class="ig-board">
+  {% for stage in stages %}
+  {% set lane_ideas = ideas | selectattr('status','equalto', stage.id) | list %}
+  <div class="ig-lane">
+    <div class="ig-lane-header">
+      <span class="ig-lane-title" style="color:{{ stage.color }};">{{ stage.label }}</span>
+      <span class="ig-lane-count">{{ lane_ideas | length }}</span>
+    </div>
+
+    {% if lane_ideas %}
+      {% for idea in lane_ideas %}
+      <a href="/innovation/{{ idea.id }}" class="ig-card">
+        <div class="ig-card-title">{{ idea.title | truncate(60) }}</div>
+        <div class="ig-card-meta">
+          {% if idea.submitter_name %}{{ idea.submitter_name }}{% endif %}
+          {% if idea.department %} · {{ idea.department }}{% endif %}
+        </div>
+        <div class="ig-card-footer">
+          {% set phase_colors = {'phase1':'#00FF88','phase2':'#FFB800','phase3':'#FF4444','deferred':'#888'} %}
+          {% set phase_emojis = {'phase1':'🟢','phase2':'🟡','phase3':'🔴','deferred':'⚪'} %}
+          <span>
+            <span class="ig-phase-dot" style="background:{{ phase_colors.get(idea.phase_tag,'#888') }};"></span>
+            <span style="font-size:.72rem;color:#8899aa;">{{ phase_emojis.get(idea.phase_tag,'') }} {{ (idea.phase_tag or 'unknown').replace('_',' ').title() }}</span>
+          </span>
+          {% if idea.score_total %}
+          <span class="ig-score-badge">{{ idea.score_total | round(0) | int }}/100</span>
+          {% endif %}
+        </div>
+        {% if idea.submitter_role %}
+        <div style="margin-top:.4rem;">
+          <span class="ig-role-tag">{{ idea.submitter_role }}</span>
+        </div>
+        {% endif %}
+      </a>
+      {% endfor %}
+    {% else %}
+      <div class="ig-empty">No ideas here yet</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

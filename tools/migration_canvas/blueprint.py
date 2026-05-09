@@ -2969,4 +2969,479 @@ def create_migration_blueprint():
             logger.warning("MC IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
+    # ====================================================================
+    # APPLICATION MIGRATION MODULE API
+    # ====================================================================
+
+    @bp.route("/api/app-inventory", methods=["GET"])
+    @mdc_login_required
+    def app_inventory_list():
+        """List app inventory records with optional filters."""
+        session_id = request.args.get("session_id")
+        criticality = request.args.get("criticality")
+        environment = request.args.get("environment")
+        with get_connection() as db:
+            sql = "SELECT * FROM mc_app_inventory WHERE 1=1"
+            params: list = []
+            if session_id:
+                sql += " AND session_id=?"
+                params.append(session_id)
+            if criticality:
+                sql += " AND criticality=?"
+                params.append(criticality)
+            if environment:
+                sql += " AND environment=?"
+                params.append(environment)
+            sql += " ORDER BY created_at DESC"
+            rows = [dict(r) for r in db.execute(sql, params).fetchall()]
+        return jsonify({"apps": rows, "count": len(rows)})
+
+    @bp.route("/api/app-inventory", methods=["POST"])
+    @mdc_login_required
+    def app_inventory_create():
+        """Create a new app inventory record."""
+        data = request.get_json(silent=True) or {}
+        if not data.get("name"):
+            return jsonify({"error": "name is required"}), 400
+        app_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        with get_connection() as db:
+            db.execute(
+                """INSERT INTO mc_app_inventory
+                   (id, session_id, name, version, language, framework, app_type,
+                    owner, team, criticality, environment, stig_category,
+                    license_type, license_expiry, source_repo, artifact_url,
+                    dependencies_json, migration_strategy, migration_status,
+                    notes, classification, created_at, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    app_id,
+                    data.get("session_id"),
+                    data["name"],
+                    data.get("version"),
+                    data.get("language"),
+                    data.get("framework"),
+                    data.get("app_type"),
+                    data.get("owner"),
+                    data.get("team"),
+                    data.get("criticality"),
+                    data.get("environment"),
+                    data.get("stig_category"),
+                    data.get("license_type"),
+                    data.get("license_expiry"),
+                    data.get("source_repo"),
+                    data.get("artifact_url"),
+                    data.get("dependencies_json", "[]"),
+                    data.get("migration_strategy"),
+                    data.get("migration_status", "pending"),
+                    data.get("notes"),
+                    data.get("classification", "CUI"),
+                    now, now,
+                ),
+            )
+        _audit(app_id, "APP_CREATED", data.get("name", ""))
+        return jsonify({"ok": True, "id": app_id}), 201
+
+    @bp.route("/api/app-inventory/<app_id>", methods=["GET"])
+    @mdc_login_required
+    def app_inventory_get(app_id):
+        """Get a single app inventory record."""
+        with get_connection() as db:
+            row = db.execute("SELECT * FROM mc_app_inventory WHERE id=?", (app_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(dict(row))
+
+    @bp.route("/api/app-inventory/<app_id>", methods=["PUT"])
+    @mdc_login_required
+    def app_inventory_update(app_id):
+        """Update an app inventory record."""
+        data = request.get_json(silent=True) or {}
+        allowed = {
+            "name", "version", "language", "framework", "app_type", "owner", "team",
+            "criticality", "environment", "stig_category", "license_type", "license_expiry",
+            "source_repo", "artifact_url", "dependencies_json", "migration_strategy",
+            "migration_status", "notes", "classification",
+        }
+        updates = {k: v for k, v in data.items() if k in allowed}
+        if not updates:
+            return jsonify({"error": "No valid fields to update"}), 400
+        updates["updated_at"] = now_isoformat()
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        vals = list(updates.values()) + [app_id]
+        with get_connection() as db:
+            db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=?", vals)
+        _audit(app_id, "APP_UPDATED", str(list(updates.keys())))
+        return jsonify({"ok": True})
+
+    @bp.route("/api/app-inventory/<app_id>", methods=["DELETE"])
+    @mdc_login_required
+    def app_inventory_delete(app_id):
+        """Delete an app inventory record."""
+        with get_connection() as db:
+            db.execute("DELETE FROM mc_app_inventory WHERE id=?", (app_id,))
+        _audit(app_id, "APP_DELETED", "")
+        return jsonify({"ok": True})
+
+    @bp.route("/api/app-inventory/import", methods=["POST"])
+    @mdc_login_required
+    def app_inventory_import_csv():
+        """Bulk import apps from CSV body or JSON list."""
+        import csv, io
+        data = request.get_json(silent=True)
+        if data and isinstance(data, list):
+            rows_data = data
+        else:
+            raw = request.get_data(as_text=True)
+            reader = csv.DictReader(io.StringIO(raw))
+            rows_data = list(reader)
+        if not rows_data:
+            return jsonify({"error": "No rows provided"}), 400
+        inserted = 0
+        now = now_isoformat()
+        with get_connection() as db:
+            for row in rows_data:
+                app_id = str(_uuid.uuid4())
+                name = row.get("name", "").strip()
+                if not name:
+                    continue
+                db.execute(
+                    """INSERT INTO mc_app_inventory
+                       (id, name, version, language, framework, app_type,
+                        owner, criticality, environment, stig_category,
+                        license_type, classification, created_at, updated_at)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        app_id, name,
+                        row.get("version", ""),
+                        row.get("language", ""),
+                        row.get("framework", ""),
+                        row.get("app_type", ""),
+                        row.get("owner", ""),
+                        row.get("criticality", "medium"),
+                        row.get("environment", "production"),
+                        row.get("stig_category", "na"),
+                        row.get("license_type", ""),
+                        row.get("classification", "CUI"),
+                        now, now,
+                    ),
+                )
+                inserted += 1
+        return jsonify({"ok": True, "inserted": inserted})
+
+    # ── App-to-Server Bindings ───────────────────────────────────────────────
+
+    @bp.route("/api/app-inventory/<app_id>/servers", methods=["POST"])
+    @mdc_login_required
+    def app_bind_server(app_id):
+        """Bind an app to a server."""
+        data = request.get_json(silent=True) or {}
+        server_id = data.get("server_id")
+        if not server_id:
+            return jsonify({"error": "server_id required"}), 400
+        binding_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        with get_connection() as db:
+            try:
+                db.execute(
+                    """INSERT INTO mc_app_server_bindings
+                       (id, app_id, server_id, role, port, protocol, notes, created_at)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (binding_id, app_id, server_id,
+                     data.get("role", "primary"),
+                     data.get("port"),
+                     data.get("protocol"),
+                     data.get("notes"),
+                     now),
+                )
+            except Exception as exc:
+                if "UNIQUE" in str(exc):
+                    return jsonify({"error": "Binding already exists"}), 409
+                raise
+        return jsonify({"ok": True, "id": binding_id}), 201
+
+    @bp.route("/api/app-inventory/<app_id>/servers", methods=["GET"])
+    @mdc_login_required
+    def app_list_servers(app_id):
+        """List servers bound to an app."""
+        with get_connection() as db:
+            rows = db.execute(
+                "SELECT * FROM mc_app_server_bindings WHERE app_id=? ORDER BY created_at",
+                (app_id,),
+            ).fetchall()
+        return jsonify({"bindings": [dict(r) for r in rows]})
+
+    @bp.route("/api/app-inventory/<app_id>/servers/<server_id>", methods=["DELETE"])
+    @mdc_login_required
+    def app_unbind_server(app_id, server_id):
+        """Remove app-server binding."""
+        with get_connection() as db:
+            db.execute(
+                "DELETE FROM mc_app_server_bindings WHERE app_id=? AND server_id=?",
+                (app_id, server_id),
+            )
+        return jsonify({"ok": True})
+
+    @bp.route("/api/server-migration/inventory/<server_id>/apps", methods=["GET"])
+    @mdc_login_required
+    def server_list_apps(server_id):
+        """List apps bound to a server."""
+        with get_connection() as db:
+            rows = db.execute(
+                """SELECT b.*, a.name as app_name, a.criticality, a.migration_strategy
+                   FROM mc_app_server_bindings b
+                   JOIN mc_app_inventory a ON a.id = b.app_id
+                   WHERE b.server_id=? ORDER BY b.created_at""",
+                (server_id,),
+            ).fetchall()
+        return jsonify({"apps": [dict(r) for r in rows]})
+
+    # ── App Dependency Graph ─────────────────────────────────────────────────
+
+    @bp.route("/api/app-inventory/<app_id>/dependencies", methods=["POST"])
+    @mdc_login_required
+    def app_dep_create(app_id):
+        """Add a dependency edge from this app."""
+        data = request.get_json(silent=True) or {}
+        if not data.get("target_app_id") and not data.get("target_server_id"):
+            return jsonify({"error": "target_app_id or target_server_id required"}), 400
+        dep_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        with get_connection() as db:
+            db.execute(
+                """INSERT INTO mc_app_dependencies
+                   (id, source_app_id, target_app_id, target_server_id, target_service,
+                    dep_type, protocol, port, latency_sla_ms, notes, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    dep_id, app_id,
+                    data.get("target_app_id"),
+                    data.get("target_server_id"),
+                    data.get("target_service"),
+                    data.get("dep_type", "hard"),
+                    data.get("protocol"),
+                    data.get("port"),
+                    data.get("latency_sla_ms"),
+                    data.get("notes"),
+                    now,
+                ),
+            )
+        return jsonify({"ok": True, "id": dep_id}), 201
+
+    @bp.route("/api/app-inventory/<app_id>/dependencies", methods=["GET"])
+    @mdc_login_required
+    def app_dep_list(app_id):
+        """List direct dependencies for an app."""
+        with get_connection() as db:
+            rows = db.execute(
+                "SELECT * FROM mc_app_dependencies WHERE source_app_id=? ORDER BY created_at",
+                (app_id,),
+            ).fetchall()
+        return jsonify({"dependencies": [dict(r) for r in rows]})
+
+    @bp.route("/api/app-inventory/<app_id>/dependencies/<dep_id>", methods=["DELETE"])
+    @mdc_login_required
+    def app_dep_delete(app_id, dep_id):
+        """Remove a dependency edge."""
+        with get_connection() as db:
+            db.execute(
+                "DELETE FROM mc_app_dependencies WHERE id=? AND source_app_id=?",
+                (dep_id, app_id),
+            )
+        return jsonify({"ok": True})
+
+    @bp.route("/api/app-inventory/<app_id>/dependency-graph", methods=["GET"])
+    @mdc_login_required
+    def app_dep_graph(app_id):
+        """Transitive closure of app dependencies (BFS, max depth 10)."""
+        with get_connection() as db:
+            visited_apps: set = set()
+            nodes: list = []
+            edges: list = []
+            queue = [app_id]
+            depth = 0
+            while queue and depth < 10:
+                next_queue: list = []
+                for aid in queue:
+                    if aid in visited_apps:
+                        continue
+                    visited_apps.add(aid)
+                    row = db.execute(
+                        "SELECT id, name, app_type FROM mc_app_inventory WHERE id=?", (aid,)
+                    ).fetchone()
+                    if row:
+                        nodes.append({"id": row["id"], "name": row["name"], "type": row["app_type"] or "app"})
+                    deps = db.execute(
+                        "SELECT * FROM mc_app_dependencies WHERE source_app_id=?", (aid,)
+                    ).fetchall()
+                    for dep in deps:
+                        edges.append({
+                            "source": aid,
+                            "target": dep["target_app_id"] or dep["target_server_id"],
+                            "dep_type": dep["dep_type"],
+                            "service": dep["target_service"],
+                        })
+                        if dep["target_app_id"] and dep["target_app_id"] not in visited_apps:
+                            next_queue.append(dep["target_app_id"])
+                queue = next_queue
+                depth += 1
+        return jsonify({"nodes": nodes, "edges": edges})
+
+    @bp.route("/api/app-inventory/migration-order", methods=["GET"])
+    @mdc_login_required
+    def app_migration_order():
+        """Topological sort of apps by hard dependencies (no-dep apps first)."""
+        with get_connection() as db:
+            all_apps = {r["id"]: dict(r) for r in db.execute("SELECT * FROM mc_app_inventory").fetchall()}
+            hard_deps = db.execute(
+                "SELECT source_app_id, target_app_id FROM mc_app_dependencies "
+                "WHERE dep_type='hard' AND target_app_id IS NOT NULL"
+            ).fetchall()
+        in_degree: dict = {aid: 0 for aid in all_apps}
+        dependents: dict = {aid: [] for aid in all_apps}
+        for dep in hard_deps:
+            src, tgt = dep["source_app_id"], dep["target_app_id"]
+            if src in in_degree and tgt in in_degree:
+                in_degree[src] += 1
+                dependents[tgt].append(src)
+        queue = [aid for aid, deg in in_degree.items() if deg == 0]
+        order: list = []
+        wave = 1
+        while queue:
+            next_q: list = []
+            for aid in sorted(queue):
+                order.append({**all_apps[aid], "suggested_wave": wave})
+                for dep_src in dependents.get(aid, []):
+                    in_degree[dep_src] -= 1
+                    if in_degree[dep_src] == 0:
+                        next_q.append(dep_src)
+            queue = next_q
+            wave += 1
+        remaining = [aid for aid, deg in in_degree.items() if deg > 0]
+        for aid in remaining:
+            order.append({**all_apps[aid], "suggested_wave": wave, "cycle_detected": True})
+        return jsonify({"order": order, "total": len(order)})
+
+    # ── Data Migration Planner ───────────────────────────────────────────────
+
+    @bp.route("/api/data-migration", methods=["POST"])
+    @mdc_login_required
+    def data_migration_create():
+        """Create a data migration plan record."""
+        data = request.get_json(silent=True) or {}
+        dm_id = str(_uuid.uuid4())
+        now = now_isoformat()
+        with get_connection() as db:
+            db.execute(
+                """INSERT INTO mc_data_migration
+                   (id, session_id, app_id, source_type, source_host, source_db, source_schema,
+                    target_type, target_host, target_db, target_schema, migration_method,
+                    estimated_size_gb, estimated_duration_minutes, validation_query,
+                    cutover_type, rollback_procedure, status, notes, classification, created_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    dm_id,
+                    data.get("session_id"),
+                    data.get("app_id"),
+                    data.get("source_type"),
+                    data.get("source_host"),
+                    data.get("source_db"),
+                    data.get("source_schema"),
+                    data.get("target_type"),
+                    data.get("target_host"),
+                    data.get("target_db"),
+                    data.get("target_schema"),
+                    data.get("migration_method"),
+                    data.get("estimated_size_gb"),
+                    data.get("estimated_duration_minutes"),
+                    data.get("validation_query"),
+                    data.get("cutover_type"),
+                    data.get("rollback_procedure"),
+                    data.get("status", "planned"),
+                    data.get("notes"),
+                    data.get("classification", "CUI"),
+                    now,
+                ),
+            )
+        return jsonify({"ok": True, "id": dm_id}), 201
+
+    @bp.route("/api/data-migration/<dm_id>", methods=["GET"])
+    @mdc_login_required
+    def data_migration_get(dm_id):
+        """Get a data migration plan by ID."""
+        with get_connection() as db:
+            row = db.execute("SELECT * FROM mc_data_migration WHERE id=?", (dm_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(dict(row))
+
+    @bp.route("/api/data-migration/<dm_id>/status", methods=["PUT"])
+    @mdc_login_required
+    def data_migration_update_status(dm_id):
+        """Update status of a data migration plan."""
+        data = request.get_json(silent=True) or {}
+        status = data.get("status")
+        if not status:
+            return jsonify({"error": "status required"}), 400
+        now = now_isoformat()
+        updates = {"status": status}
+        if status == "in_progress":
+            updates["started_at"] = now
+        elif status in ("done", "failed"):
+            updates["completed_at"] = now
+        set_clause = ", ".join(f"{k}=?" for k in updates)
+        vals = list(updates.values()) + [dm_id]
+        with get_connection() as db:
+            db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=?", vals)
+        return jsonify({"ok": True})
+
+    # ── ServiceNow CMDB Import ───────────────────────────────────────────────
+
+    @bp.route("/api/app-inventory/import/servicenow", methods=["GET"])
+    @mdc_login_required
+    def app_inventory_import_servicenow():
+        """Pull cmdb_ci_appl records from ServiceNow and import into mc_app_inventory."""
+        base_url = request.args.get("base_url", "")
+        username = request.args.get("username", "")
+        password = request.args.get("password", "")
+        bearer = request.args.get("bearer_token", "")
+        if not base_url:
+            return jsonify({"error": "base_url required"}), 400
+        try:
+            from tools.databridge.connectors.servicenow_connector import ServiceNowCMDBConnector
+            connector = ServiceNowCMDBConnector()
+            cfg: dict = {"base_url": base_url}
+            if bearer:
+                cfg["bearer_token"] = bearer
+            elif username:
+                cfg.update({"username": username, "password": password})
+            else:
+                return jsonify({"error": "Authentication required (bearer_token or username/password)"}), 400
+            connector._config = cfg
+            connector._base_url = base_url.rstrip("/")
+            connector._auth_headers = connector._build_auth_headers(cfg)
+            connector._connected = True
+            apps = connector.fetch_table("applications")
+            inserted = 0
+            now = now_isoformat()
+            with get_connection() as db:
+                for snow_app in apps:
+                    mapped = connector.map_app_to_inventory(snow_app)
+                    app_id = str(_uuid.uuid4())
+                    db.execute(
+                        """INSERT INTO mc_app_inventory
+                           (id, name, version, owner, team, criticality, notes,
+                            classification, created_at, updated_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (app_id, mapped["name"], mapped.get("version", ""),
+                         mapped.get("owner", ""), mapped.get("team", ""),
+                         mapped.get("criticality", "medium"), mapped.get("notes", ""),
+                         "CUI", now, now),
+                    )
+                    inserted += 1
+            return jsonify({"ok": True, "imported": inserted})
+        except Exception as exc:
+            logger.warning("ServiceNow import error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
     return bp
