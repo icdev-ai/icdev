@@ -1,0 +1,382 @@
+<!-- CUI // SP-CTI — MCE Wave Planner — Phase 4 -->
+{% extends "base.html" %}
+{% block title %}Wave Planner — {{ srv_session.src_hostname or sid }} — ICDEV{% endblock %}
+{% block extra_css %}
+<style>
+/* ── Layout ───────────────────────────────────────────────────── */
+.wp-shell { display:flex; height:calc(100vh - 56px); overflow:hidden; }
+.wp-sidebar { width:300px; min-width:300px; background:#0d1b2e; border-right:1px solid #1e3a6e; display:flex; flex-direction:column; overflow:hidden; }
+.wp-sidebar-hdr { padding:16px; border-bottom:1px solid #1e3a6e; display:flex; align-items:center; justify-content:space-between; }
+.wp-sidebar-hdr h3 { margin:0; font-size:14px; color:#eaeaea; }
+.wp-waves-list { flex:1; overflow-y:auto; padding:8px; }
+.wp-main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+.wp-toolbar { padding:10px 16px; border-bottom:1px solid #1e3a6e; display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.wp-toolbar-title { font-size:13px; color:#7a8cb0; flex:1; }
+.wp-graph { flex:1; position:relative; background:#060f1e; }
+#sigma-container { width:100%; height:100%; }
+.wp-legend { position:absolute; bottom:16px; left:16px; background:rgba(13,27,46,0.92); border:1px solid #1e3a6e; border-radius:6px; padding:10px 14px; font-size:11px; }
+.wp-legend-item { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+.wp-legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+/* ── Wave cards ───────────────────────────────────────────────── */
+.wave-card { background:#16213e; border:1px solid #1e3a6e; border-radius:6px; margin-bottom:8px; overflow:hidden; }
+.wave-card-hdr { padding:10px 12px; display:flex; align-items:center; gap:8px; cursor:pointer; }
+.wave-card-hdr:hover { background:#111f35; }
+.wave-num { width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; }
+.wave-name { flex:1; font-size:13px; color:#eaeaea; }
+.wave-status { font-size:10px; padding:2px 7px; border-radius:10px; }
+.wave-status.planned    { background:#1a2d4a; color:#7a8cb0; }
+.wave-status.in_progress{ background:#1a3a2a; color:#27ae60; }
+.wave-status.complete   { background:#1a3a2a; color:#2ecc71; }
+.wave-status.blocked    { background:#3a1a1a; color:#e74c3c; }
+.wave-body { padding:8px 12px 12px; border-top:1px solid #1e3a6e; display:none; }
+.wave-body.open { display:block; }
+.wave-servers { font-size:11px; color:#7a8cb0; margin-bottom:8px; min-height:16px; }
+.wave-servers .srv-chip { display:inline-block; background:#0a1624; border:1px solid #1e3a6e; border-radius:10px; padding:1px 8px; margin:2px; }
+.wave-actions { display:flex; gap:6px; }
+.btn { padding:6px 14px; border-radius:5px; border:none; cursor:pointer; font-size:12px; font-weight:600; }
+.btn-primary { background:#2980b9; color:#fff; }
+.btn-primary:hover { background:#2471a3; }
+.btn-secondary { background:#1e3a6e; color:#eaeaea; }
+.btn-secondary:hover { background:#254d8e; }
+.btn-success { background:#27ae60; color:#fff; }
+.btn-success:hover { background:#219a52; }
+.btn-danger { background:#922b21; color:#fff; }
+.btn-danger:hover { background:#7b241c; }
+.btn-sm { padding:3px 9px; font-size:11px; }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+
+/* ── Modal ────────────────────────────────────────────────────── */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:200; display:none; align-items:center; justify-content:center; }
+.modal-overlay.open { display:flex; }
+.modal-box { background:#16213e; border:1px solid #1e3a6e; border-radius:8px; padding:24px; width:440px; max-width:94vw; }
+.modal-box h4 { margin:0 0 16px; font-size:15px; }
+.form-group { margin-bottom:12px; }
+.form-group label { display:block; font-size:11px; color:#7a8cb0; margin-bottom:4px; }
+.form-group input, .form-group select, .form-group textarea {
+  width:100%; background:#0a1624; border:1px solid #1a2d4a; color:#eaeaea;
+  padding:7px 10px; border-radius:5px; font-size:13px; box-sizing:border-box;
+}
+.form-group input:focus, .form-group select:focus { outline:none; border-color:#2980b9; }
+.modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; }
+
+/* ── Toast ────────────────────────────────────────────────────── */
+.toast { position:fixed; bottom:20px; right:20px; background:#16213e; border:1px solid #1e3a6e;
+  color:#eaeaea; padding:10px 16px; border-radius:6px; font-size:13px; z-index:500;
+  display:none; box-shadow:0 4px 20px rgba(0,0,0,0.4); }
+.toast.show { display:block; }
+.toast.ok { border-color:#27ae60; }
+.toast.err { border-color:#e74c3c; }
+
+/* ── Empty state ──────────────────────────────────────────────── */
+.wp-empty { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; color:#4a6080; }
+.wp-empty p { margin:8px 0 16px; font-size:14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="toast" class="toast"></div>
+
+<!-- Wave Edit Modal -->
+<div class="modal-overlay" id="wave-modal">
+  <div class="modal-box">
+    <h4 id="wave-modal-title">Add Wave</h4>
+    <input type="hidden" id="wm-id">
+    <div class="form-group">
+      <label>Wave Number</label>
+      <input type="number" id="wm-num" min="1" value="1">
+    </div>
+    <div class="form-group">
+      <label>Name</label>
+      <input type="text" id="wm-name" placeholder="Wave 1 — Rehost">
+    </div>
+    <div class="form-group">
+      <label>Planned Cutover Date</label>
+      <input type="date" id="wm-date">
+    </div>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="wm-status">
+        <option value="planned">Planned</option>
+        <option value="in_progress">In Progress</option>
+        <option value="complete">Complete</option>
+        <option value="blocked">Blocked</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Notes</label>
+      <textarea id="wm-notes" rows="2" style="resize:vertical"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeWaveModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveWave()">Save Wave</button>
+    </div>
+  </div>
+</div>
+
+<div class="wp-shell">
+  <!-- Sidebar: Wave List -->
+  <div class="wp-sidebar">
+    <div class="wp-sidebar-hdr">
+      <h3>Migration Waves</h3>
+      <button class="btn btn-primary btn-sm" onclick="openWaveModal()">+ Add</button>
+    </div>
+    <div class="wp-waves-list" id="waves-list">
+      <div class="wp-empty" style="padding:40px 0;height:auto">
+        <p>Loading waves…</p>
+      </div>
+    </div>
+    <div style="padding:12px;border-top:1px solid #1e3a6e">
+      <div style="font-size:11px;color:#4a6080;margin-bottom:6px">Session</div>
+      <div style="font-size:12px;color:#eaeaea;font-weight:600">{{ srv_session.src_hostname or sid }}</div>
+      <div style="font-size:11px;color:#7a8cb0;margin-top:2px">{{ sid }}</div>
+    </div>
+  </div>
+
+  <!-- Main: Graph -->
+  <div class="wp-main">
+    <div class="wp-toolbar">
+      <span class="wp-toolbar-title">
+        Server Dependency Graph &nbsp;·&nbsp;
+        <span id="graph-node-count" style="color:#2980b9">0</span> servers,
+        <span id="graph-edge-count" style="color:#2980b9">0</span> dependencies
+      </span>
+      <button class="btn btn-success" id="btn-auto-assign" onclick="autoAssignWaves()">
+        Auto-Assign Waves
+      </button>
+      <a href="/migration-canvas/server-migration/{{ sid }}" class="btn btn-secondary">
+        ← Back to Session
+      </a>
+    </div>
+    <div class="wp-graph">
+      <div id="sigma-container"></div>
+      <div class="wp-legend">
+        <div style="font-size:10px;color:#4a6080;margin-bottom:6px;font-weight:600">WAVE LEGEND</div>
+        <div class="wp-legend-item"><div class="wp-legend-dot" style="background:#27ae60"></div><span style="color:#eaeaea">Wave 1 — Rehost</span></div>
+        <div class="wp-legend-item"><div class="wp-legend-dot" style="background:#e67e22"></div><span style="color:#eaeaea">Wave 2 — Replatform</span></div>
+        <div class="wp-legend-item"><div class="wp-legend-dot" style="background:#c0392b"></div><span style="color:#eaeaea">Wave 3 — Refactor</span></div>
+        <div class="wp-legend-item"><div class="wp-legend-dot" style="background:#4a6080"></div><span style="color:#7a8cb0">Unassigned</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Sigma.js v2 -->
+<script src="https://cdn.jsdelivr.net/npm/sigma@2/build/sigma.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/graphology@0.25.4/dist/graphology.umd.min.js"></script>
+<script>
+const SID = {{ sid | tojson }};
+let sigma = null;
+let graphData = { nodes: [], edges: [] };
+let wavesData = [];
+
+// ── Toast ──────────────────────────────────────────────────────
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + type;
+  setTimeout(() => el.className = 'toast', 2800);
+}
+
+// ── Load ───────────────────────────────────────────────────────
+async function loadWaves() {
+  try {
+    const r = await fetch(`/migration-canvas/api/server-migration/${SID}/waves`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Load failed');
+    wavesData = data.waves || [];
+    graphData = data.graph || { nodes: [], edges: [] };
+    renderWaveList();
+    renderGraph();
+  } catch (e) {
+    toast('Failed to load waves: ' + e.message, 'err');
+  }
+}
+
+// ── Render Wave List ───────────────────────────────────────────
+const WAVE_COLORS = ['#27ae60','#e67e22','#c0392b','#8e44ad','#2980b9'];
+
+function renderWaveList() {
+  const el = document.getElementById('waves-list');
+  if (!wavesData.length) {
+    el.innerHTML = `<div class="wp-empty" style="padding:40px 16px;height:auto;text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">🌊</div>
+      <p>No waves yet.</p>
+      <button class="btn btn-primary btn-sm" onclick="openWaveModal()">+ Add Wave</button>
+    </div>`;
+    return;
+  }
+  el.innerHTML = wavesData.map((w, i) => {
+    const color = WAVE_COLORS[(w.wave_number - 1) % WAVE_COLORS.length] || '#4a6080';
+    const srvs = (w.server_ids || []).map(s => `<span class="srv-chip">${s}</span>`).join('') || '<span style="color:#4a6080">—</span>';
+    return `<div class="wave-card">
+      <div class="wave-card-hdr" onclick="toggleWave(${i})">
+        <div class="wave-num" style="background:${color};color:#fff">${w.wave_number}</div>
+        <div class="wave-name">${w.name || 'Wave ' + w.wave_number}</div>
+        <span class="wave-status ${w.status || 'planned'}">${(w.status||'planned').replace('_',' ')}</span>
+      </div>
+      <div class="wave-body" id="wave-body-${i}">
+        <div class="wave-servers">${srvs}</div>
+        <div style="font-size:11px;color:#4a6080;margin-bottom:8px">${w.notes || ''}</div>
+        <div class="wave-actions">
+          <button class="btn btn-secondary btn-sm" onclick="editWave(${i})">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteWave('${w.id}')">Delete</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleWave(idx) {
+  const body = document.getElementById('wave-body-' + idx);
+  if (body) body.classList.toggle('open');
+}
+
+// ── Sigma Graph ────────────────────────────────────────────────
+function renderGraph() {
+  document.getElementById('graph-node-count').textContent = graphData.nodes.length;
+  document.getElementById('graph-edge-count').textContent = graphData.edges.length;
+
+  const container = document.getElementById('sigma-container');
+
+  if (sigma) { sigma.kill(); sigma = null; }
+
+  if (!graphData.nodes.length) {
+    container.innerHTML = `<div class="wp-empty">
+      <div style="font-size:48px;margin-bottom:12px">🌐</div>
+      <p>No servers assigned to waves yet.</p>
+      <p style="font-size:12px">Click <strong>Auto-Assign Waves</strong> to get started.</p>
+    </div>`;
+    return;
+  }
+
+  container.innerHTML = '';
+  const g = new graphology.Graph({ multi: false, allowSelfLoops: false });
+
+  graphData.nodes.forEach(n => {
+    g.addNode(n.id, {
+      label: n.label || n.id,
+      x: n.x || Math.random() * 500,
+      y: n.y || Math.random() * 400,
+      size: n.size || 10,
+      color: n.color || '#4a6080',
+    });
+  });
+
+  graphData.edges.forEach(e => {
+    try {
+      g.addEdge(e.source, e.target, {
+        label: e.label || '',
+        color: e.color || '#2980b9',
+        size: e.size || 1,
+      });
+    } catch (_) {}
+  });
+
+  sigma = new Sigma(g, container, {
+    renderEdgeLabels: false,
+    defaultNodeColor: '#4a6080',
+    defaultEdgeColor: '#2980b9',
+    labelColor: { color: '#eaeaea' },
+    labelSize: 11,
+    minCameraRatio: 0.1,
+    maxCameraRatio: 10,
+  });
+}
+
+// ── Wave Modal ─────────────────────────────────────────────────
+function openWaveModal(wave) {
+  document.getElementById('wave-modal-title').textContent = wave ? 'Edit Wave' : 'Add Wave';
+  document.getElementById('wm-id').value = wave ? wave.id : '';
+  document.getElementById('wm-num').value = wave ? wave.wave_number : (wavesData.length + 1);
+  document.getElementById('wm-name').value = wave ? wave.name : '';
+  document.getElementById('wm-date').value = wave ? (wave.cutover_date || '') : '';
+  document.getElementById('wm-status').value = wave ? (wave.status || 'planned') : 'planned';
+  document.getElementById('wm-notes').value = wave ? (wave.notes || '') : '';
+  document.getElementById('wave-modal').classList.add('open');
+}
+
+function editWave(idx) {
+  openWaveModal(wavesData[idx]);
+}
+
+function closeWaveModal() {
+  document.getElementById('wave-modal').classList.remove('open');
+}
+
+async function saveWave() {
+  const waveId = document.getElementById('wm-id').value;
+  const body = {
+    id: waveId || undefined,
+    wave_number: parseInt(document.getElementById('wm-num').value) || 1,
+    name: document.getElementById('wm-name').value.trim(),
+    cutover_date: document.getElementById('wm-date').value || null,
+    status: document.getElementById('wm-status').value,
+    notes: document.getElementById('wm-notes').value.trim(),
+  };
+  if (!body.name) { toast('Wave name is required', 'err'); return; }
+  try {
+    const r = await fetch(`/migration-canvas/api/server-migration/${SID}/waves`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Save failed');
+    closeWaveModal();
+    toast('Wave saved');
+    loadWaves();
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+async function deleteWave(wid) {
+  if (!confirm('Delete this wave?')) return;
+  try {
+    const r = await fetch(`/migration-canvas/api/server-migration/${SID}/waves/${wid}`, {
+      method: 'DELETE',
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Delete failed');
+    toast('Wave deleted');
+    loadWaves();
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  }
+}
+
+// ── Auto-Assign ────────────────────────────────────────────────
+async function autoAssignWaves() {
+  const btn = document.getElementById('btn-auto-assign');
+  btn.disabled = true;
+  btn.textContent = 'Assigning…';
+  try {
+    const r = await fetch(`/migration-canvas/api/server-migration/${SID}/waves/auto-assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Auto-assign failed');
+    toast(`Auto-assigned ${data.total_servers || 0} servers to ${(data.waves||[]).length} waves`);
+    loadWaves();
+  } catch (e) {
+    toast('Error: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Auto-Assign Waves';
+  }
+}
+
+// Close modal on overlay click
+document.getElementById('wave-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeWaveModal();
+});
+
+// Init
+loadWaves();
+</script>
+{% endblock %}

@@ -4,6 +4,43 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: aimc
+  name: AI/ML Model Canvas (AIMC) — Foundation Model Lifecycle Designer
+  description: >
+    9th ICDEV canvas: visual design surface for the foundation model lifecycle.
+    Covers model selection (catalog), adaptation strategy (prompt/RAG/fine-tune/hybrid),
+    prompt chain design, eval suite, safety layers, deployment planning (Ollama/vLLM/Bedrock),
+    and governance (NIST AI RMF, MITRE ATLAS, OWASP LLM Top 10, DoD RAI, OMB M-25-21).
+    Distinct from AADC (agent topology) — AIMC focuses on the model layer.
+  task_prefix: aimc-
+  default_open: true
+  briefs:
+  - 'foundation: constants.py + db/ + __init__.py'
+  - 'engines: aiml_engine.py + adaptation_engine.py + deployment_planner.py + governance_assessor.py'
+  - 'blueprint: blueprint.py — all Flask routes'
+  - 'templates: index + canvas + templates + snippets + assessments + model_catalog HTML'
+  - 'wiring: app.py + base.html nav + projects.yaml + manifest shard + icdev/ mirror'
+  - 'vv: companion sync + coherence check + E2E smoke'
+  epics:
+  - key: foundation
+    title: Foundation — DB, constants, config
+    priority: critical
+  - key: engines
+    title: Core Engines — aiml, adaptation, deployment, governance
+    priority: critical
+  - key: blueprint
+    title: Flask Blueprint — all routes
+    priority: critical
+  - key: templates
+    title: HTML Templates — canvas, index, model catalog
+    priority: critical
+  - key: wiring
+    title: Wiring — app.py, nav, manifest, icdev/ mirror
+    priority: critical
+  - key: vv
+    title: V&V — companion sync + coherence + E2E smoke
+    priority: high
+
 - key: dds
   name: DDC Data Science — Explore, Query Sandbox, Quality Rules
   description: >

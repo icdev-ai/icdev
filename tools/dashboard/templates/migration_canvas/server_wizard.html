@@ -484,6 +484,14 @@
         <div id="ovf-parse-result" style="margin-top:10px;font-size:12px;color:#7a8cb0"></div>
       </div>
 
+      <!-- Research Intelligence callout -->
+      <div id="guidance-panel-step2" class="guidance-callout" style="display:none;margin-top:24px;padding:14px 18px;border-left:4px solid #4a9eff;background:#1a2540;border-radius:6px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="font-size:13px;font-weight:600;color:#4a9eff;letter-spacing:.04em">RESEARCH INTELLIGENCE</span>
+        </div>
+        <div id="guidance-items-step2" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
       <div class="nw-actions">
         <button class="btn btn-secondary" onclick="switchStep(1)">← Back</button>
         <button class="btn btn-primary" onclick="step2Save()">Save Inventory →</button>
@@ -916,6 +924,7 @@ function switchStep(n) {
   if (page) page.classList.add('active');
   if (link) link.classList.add('active');
   STATE.step = n;
+  if (n === 2) loadGuidanceStep2();
   if (n === 4) loadCatalog();
   if (n === 5) loadCompatChecks();
   if (n === 6) loadMaps();
@@ -965,6 +974,30 @@ async function loadGuidance(step) {
   panel.classList.remove('open'); // collapsed by default
 }
 
+async function loadGuidanceStep2() {
+  const panel = document.getElementById('guidance-panel-step2');
+  const container = document.getElementById('guidance-items-step2');
+  if (!panel || !container) return;
+  const mtype = document.querySelector('input[name=migration_type]:checked')?.value || '';
+  try {
+    const res = await fetch(`/migration-canvas/api/server-migration/guidance/2?type=${encodeURIComponent(mtype)}`);
+    const data = await res.json();
+    if (!data.ok || !data.items || data.items.length === 0) { panel.style.display = 'none'; return; }
+    const sevColor = { critical: '#ff4f4f', high: '#ff8c00', notable: '#4a9eff', low: '#7a8cb0' };
+    container.innerHTML = data.items.map(item => {
+      const color = sevColor[item.severity] || sevColor.notable;
+      return `<div style="display:flex;gap:10px;align-items:flex-start">
+        <span style="min-width:6px;height:6px;width:6px;border-radius:50%;background:${color};margin-top:6px;flex-shrink:0"></span>
+        <div><span style="font-size:12px;font-weight:600;color:#c8d4f0">${item.title}</span>
+        ${item.description ? `<p style="font-size:11px;color:#7a8cb0;margin:2px 0 0">${item.description}</p>` : ''}</div>
+      </div>`;
+    }).join('');
+    panel.style.display = 'block';
+  } catch (_) {
+    panel.style.display = 'none';
+  }
+}
+
 function markStepDone(n) {
   const link = document.getElementById('step-link-' + n);
   if (link) link.classList.add('done');
@@ -1012,10 +1045,10 @@ async function step1Next() {
 
   STATE.migrationType = mtype;
   if (STATE.sid) {
-    await api(`/api/server-migration/${STATE.sid}`, 'PATCH', body);
+    await api(`/migration-canvas/api/server-migration/${STATE.sid}`, 'PATCH', body);
     toast('Session updated');
   } else {
-    const r = await api('/api/server-migration', 'POST', body);
+    const r = await api('/migration-canvas/api/server-migration', 'POST', body);
     if (r.error) { toast(r.error, 'err'); return; }
     STATE.sid = r.id;
     history.replaceState(null, '', `/migration-canvas/server-migration/${STATE.sid}`);
@@ -1081,7 +1114,7 @@ async function parseInventory(fmt) {
   const raw = fmt === 'csv'
     ? document.getElementById('inv-csv-data').value
     : document.getElementById('inv-ovf-data').value;
-  const r = await api(`/api/server-migration/${STATE.sid}/inventory`, 'POST', { raw, fmt });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/inventory`, 'POST', { raw, fmt });
   const resId = fmt === 'csv' ? 'csv-parse-result' : 'ovf-parse-result';
   if (r.error) {
     document.getElementById(resId).textContent = 'Error: ' + r.error;
@@ -1123,9 +1156,9 @@ async function step2Save() {
     bios_type: document.getElementById('inv-bios').value,
     virtualization_ext: document.getElementById('inv-virt').value,
   };
-  const r = await api(`/api/server-migration/${STATE.sid}/inventory`, 'POST', { inventory: inv, nics, disks, services });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/inventory`, 'POST', { inventory: inv, nics, disks, services });
   if (r.error) { toast(r.error, 'err'); return; }
-  await api(`/api/server-migration/${STATE.sid}/services`, 'POST', { services });
+  await api(`/migration-canvas/api/server-migration/${STATE.sid}/services`, 'POST', { services });
   toast('Inventory saved');
   markStepDone(2);
   switchStep(3);
@@ -1159,7 +1192,7 @@ async function step3Save() {
     sample_period_days: +document.getElementById('perf-period').value || 30,
     source: document.getElementById('perf-source').value,
   };
-  const r = await api(`/api/server-migration/${STATE.sid}/performance`, 'POST', body);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/performance`, 'POST', body);
   if (r.error) { toast(r.error, 'err'); return; }
   toast('Performance data saved');
   markStepDone(3);
@@ -1183,7 +1216,7 @@ async function loadCatalog() {
   if (cost) params.set('cost_tier', cost);
   const tb = document.getElementById('catalog-tbody');
   tb.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:20px;color:#4a6080"><span class="spinner"></span></td></tr>';
-  const r = await api('/api/server-migration/instance-catalog?' + params);
+  const r = await api('/migration-canvas/api/server-migration/instance-catalog?' + params);
   STATE.catalogItems = r.instances || [];
 
   const hasApi = STATE.catalogItems.some(i => i.source === 'api');
@@ -1231,7 +1264,7 @@ async function refreshCatalog() {
   const btn = document.getElementById('sync-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Syncing…';
-  const r = await api('/api/server-migration/catalog-sync', 'POST', {});
+  const r = await api('/migration-canvas/api/server-migration/catalog-sync', 'POST', {});
   btn.disabled = false;
   btn.textContent = 'Refresh Catalog';
   if (r.status === 'airgap') {
@@ -1251,7 +1284,7 @@ async function getRecommendations() {
   const btn = document.getElementById('rec-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Analyzing…';
-  const r = await api(`/api/server-migration/${STATE.sid}/recommend`, 'POST');
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/recommend`, 'POST');
   btn.disabled = false;
   btn.textContent = 'Get Recommendations';
   if (r.error) { toast(r.error, 'err'); return; }
@@ -1276,7 +1309,7 @@ function selectRecInstance(instanceType) {
 async function step4Save() {
   if (!STATE.sid) { toast('Create session first', 'err'); return; }
   if (!STATE.selectedInstanceId) { toast('Select an instance from the catalog', 'err'); return; }
-  const r = await api(`/api/server-migration/${STATE.sid}`, 'PATCH', { tgt_instance_id: STATE.selectedInstanceId });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}`, 'PATCH', { tgt_instance_id: STATE.selectedInstanceId });
   if (r.error) { toast(r.error, 'err'); return; }
   toast('Target instance saved');
   markStepDone(4);
@@ -1289,7 +1322,7 @@ async function runCompatChecks() {
   const btn = document.getElementById('run-checks-btn');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Running…';
-  const r = await api(`/api/server-migration/${STATE.sid}/compat-check`, 'POST');
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/compat-check`, 'POST');
   btn.disabled = false;
   btn.textContent = 'Run Checks';
   if (r.error) { toast(r.error, 'err'); return; }
@@ -1298,7 +1331,7 @@ async function runCompatChecks() {
 
 async function loadCompatChecks() {
   if (!STATE.sid) return;
-  const r = await api(`/api/server-migration/${STATE.sid}/compat-check`);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/compat-check`);
   if (r.checks) renderCompatChecks(r.checks);
 }
 
@@ -1368,7 +1401,7 @@ function toggleOverride(id) {
 async function applyOverride(id) {
   const reason = document.getElementById('override-reason-' + id)?.value?.trim();
   if (!reason) { toast('Reason required', 'err'); return; }
-  const r = await api(`/api/server-migration/${STATE.sid}/compat-check/${id}/override`, 'POST', { reason });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/compat-check/${id}/override`, 'POST', { reason });
   if (r.error) { toast(r.error, 'err'); return; }
   toast('Override applied');
   loadCompatChecks();
@@ -1387,7 +1420,7 @@ function mapTab(name) {
 
 async function loadMaps() {
   if (!STATE.sid) return;
-  const r = await api(`/api/server-migration/${STATE.sid}/inventory`);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/inventory`);
   if (r.nics) {
     const tb = document.getElementById('nic-map-tbody');
     tb.innerHTML = '';
@@ -1398,7 +1431,7 @@ async function loadMaps() {
     tb.innerHTML = '';
     r.storage.forEach(s => addStorageMapRow(s));
   }
-  const dr = await api(`/api/server-migration/${STATE.sid}/dependencies`);
+  const dr = await api(`/migration-canvas/api/server-migration/${STATE.sid}/dependencies`);
   if (dr.dependencies) {
     const tb = document.getElementById('dep-tbody');
     tb.innerHTML = '';
@@ -1497,9 +1530,9 @@ async function step6Save() {
     });
   });
   await Promise.all([
-    api(`/api/server-migration/${STATE.sid}/nic-map`, 'POST', { nics }),
-    api(`/api/server-migration/${STATE.sid}/storage-map`, 'POST', { disks }),
-    api(`/api/server-migration/${STATE.sid}/dependencies`, 'POST', { dependencies: deps }),
+    api(`/migration-canvas/api/server-migration/${STATE.sid}/nic-map`, 'POST', { nics }),
+    api(`/migration-canvas/api/server-migration/${STATE.sid}/storage-map`, 'POST', { disks }),
+    api(`/migration-canvas/api/server-migration/${STATE.sid}/dependencies`, 'POST', { dependencies: deps }),
   ]);
   toast('Maps saved');
   markStepDone(6);
@@ -1509,7 +1542,7 @@ async function step6Save() {
 // ── Step 7 ───────────────────────────────────────────────────────────
 async function loadCutoverSteps() {
   if (!STATE.sid) return;
-  const r = await api(`/api/server-migration/${STATE.sid}/cutover-steps?seed=true`);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/cutover-steps?seed=true`);
   STATE.cutoverSteps = r.steps || [];
   renderCutoverSteps();
 }
@@ -1517,7 +1550,7 @@ async function loadCutoverSteps() {
 async function seedCutoverTemplate() {
   if (!STATE.sid) { toast('Create session first', 'err'); return; }
   const mtype = document.querySelector('input[name=migration_type]:checked')?.value || 'p2v_cloud';
-  const r = await api(`/api/server-migration/${STATE.sid}/cutover-steps`, 'POST', { action: 'seed', migration_type: mtype });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/cutover-steps`, 'POST', { action: 'seed', migration_type: mtype });
   if (r.error) { toast(r.error, 'err'); return; }
   toast('Template seeded: ' + r.steps + ' steps');
   loadCutoverSteps();
@@ -1605,7 +1638,7 @@ function addCutoverStep() {
 
 async function step7Save() {
   if (!STATE.sid) { toast('Create session first', 'err'); return; }
-  const r = await api(`/api/server-migration/${STATE.sid}/cutover-steps`, 'POST', { steps: STATE.cutoverSteps });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/cutover-steps`, 'POST', { steps: STATE.cutoverSteps });
   if (r.error) { toast(r.error, 'err'); return; }
   toast('Runbook saved: ' + r.steps + ' steps');
   markStepDone(7);
@@ -1625,7 +1658,7 @@ function erb8Tab(name) {
 
 async function refreshReadiness() {
   if (!STATE.sid) return;
-  const r = await api(`/api/server-migration/${STATE.sid}/readiness`);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/readiness`);
   const score = Math.round(r.score || 0);
   updateSidebarScore(score);
   const gate = document.getElementById('readiness-gate-box');
@@ -1643,14 +1676,14 @@ async function refreshReadiness() {
 
 async function loadTestCases() {
   if (!STATE.sid) return;
-  const r = await api(`/api/server-migration/${STATE.sid}/test-cases?seed=true`);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/test-cases?seed=true`);
   STATE.testCases = r.test_cases || [];
   renderTestCases();
 }
 
 async function seedTestCases() {
   if (!STATE.sid) { toast('Create session first', 'err'); return; }
-  const r = await api(`/api/server-migration/${STATE.sid}/test-cases`, 'POST', { action: 'seed' });
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/test-cases`, 'POST', { action: 'seed' });
   if (r.error) { toast(r.error, 'err'); return; }
   toast('Test cases seeded: ' + r.test_cases);
   loadTestCases();
@@ -1695,7 +1728,7 @@ async function setTestResult(id, passed) {
   const tc = STATE.testCases.find(t => t.id === id);
   if (tc) tc.passed = passed;
   renderTestCases();
-  await api(`/api/server-migration/${STATE.sid}/test-cases`, 'POST', { id, passed });
+  await api(`/migration-canvas/api/server-migration/${STATE.sid}/test-cases`, 'POST', { id, passed });
   refreshReadiness();
 }
 
@@ -1703,7 +1736,7 @@ async function updateTestActual(id, actual) {
   if (!STATE.sid) return;
   const tc = STATE.testCases.find(t => t.id === id);
   if (tc) tc.actual_result = actual;
-  await api(`/api/server-migration/${STATE.sid}/test-cases`, 'POST', { id, actual_result: actual });
+  await api(`/migration-canvas/api/server-migration/${STATE.sid}/test-cases`, 'POST', { id, actual_result: actual });
 }
 
 async function saveERB() {
@@ -1721,7 +1754,7 @@ async function saveERB() {
     impact_summary: document.getElementById('erb-impact').value,
     rollback_plan: document.getElementById('erb-rollback').value,
   };
-  const r = await api(`/api/server-migration/${STATE.sid}/erb`, 'POST', body);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/erb`, 'POST', body);
   if (r.error) { toast(r.error, 'err'); return; }
   toast('ERB saved');
   markStepDone(8);
@@ -1730,7 +1763,7 @@ async function saveERB() {
 
 async function exportERB() {
   if (!STATE.sid) { toast('Create session first', 'err'); return; }
-  const r = await api(`/api/server-migration/${STATE.sid}/erb`);
+  const r = await api(`/migration-canvas/api/server-migration/${STATE.sid}/erb`);
   const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

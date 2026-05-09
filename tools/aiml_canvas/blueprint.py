@@ -1,0 +1,402 @@
+# CUI // SP-CTI
+"""AIMC — AI/ML Model Canvas Flask Blueprint.
+
+Routes:
+  GET  /ai-ml/                              index (design list + stats)
+  GET  /ai-ml/canvas/new                   new design wizard
+  GET  /ai-ml/canvas/<id>                  canvas editor
+  GET  /ai-ml/templates                    template gallery
+  GET  /ai-ml/snippets                     snippet library
+  GET  /ai-ml/model-catalog                foundation model browser
+  GET  /ai-ml/assessments/<id>             assessment detail
+
+  POST /ai-ml/api/designs                  create design
+  GET  /ai-ml/api/designs                  list designs (JSON)
+  GET  /ai-ml/api/designs/<id>             get design (JSON)
+  PUT  /ai-ml/api/designs/<id>             save design graph
+  DELETE /ai-ml/api/designs/<id>           delete design
+
+  POST /ai-ml/api/designs/<id>/assess      run canvas compliance assessment
+  POST /ai-ml/api/designs/<id>/assess-gov  run governance assessment (DoD RAI + IL + OMB)
+  POST /ai-ml/api/designs/<id>/adapt       get adaptation strategy recommendation
+  POST /ai-ml/api/designs/<id>/deploy-plan get deployment plan for a model
+  POST /ai-ml/api/designs/<id>/artifact/model-card      generate model card
+  POST /ai-ml/api/designs/<id>/artifact/deploy-manifest generate deployment manifest
+
+  GET  /ai-ml/api/templates                list templates
+  POST /ai-ml/api/templates/<tid>/apply/<did>  apply template to design
+  GET  /ai-ml/api/snippets                 list snippets
+  POST /ai-ml/api/snippets/<sid>/insert/<did>  insert snippet into design
+
+  GET  /ai-ml/api/models                   list foundation model catalog
+  GET  /ai-ml/api/models/rank              rank models for IL level
+  POST /ai-ml/api/adapt/recommend          adaptation recommendation (no design required)
+  POST /ai-ml/api/deploy/plan              deployment plan (no design required)
+
+  GET  /ai-ml/api/designs/<id>/versions    version history
+  GET  /ai-ml/api/designs/<id>/artifacts   artifact list
+  GET  /ai-ml/api/stats                    dashboard stats
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
+
+log = logging.getLogger(__name__)
+
+_AIMC_ENABLED = os.environ.get("ICDEV_AIML_CANVAS_ENABLED", "true").lower() not in ("0", "false", "no")
+
+
+def create_aiml_blueprint() -> Blueprint | None:
+    if not _AIMC_ENABLED:
+        log.info("AIMC disabled via ICDEV_AIML_CANVAS_ENABLED=false")
+        return None
+
+    # Init DB on first import
+    try:
+        from tools.aiml_canvas.db.init_db import init_db
+        init_db(verbose=False)
+    except Exception as exc:
+        log.warning("AIMC DB init failed: %s", exc)
+
+    bp = Blueprint("aiml_canvas", __name__, template_folder="../../tools/dashboard/templates")
+
+    from tools.aiml_canvas import aiml_engine as eng
+    from tools.aiml_canvas import adaptation_engine as adapt_eng
+    from tools.aiml_canvas import deployment_planner as dep_plan
+    from tools.aiml_canvas import governance_assessor as gov_eng
+    from tools.aiml_canvas.constants import (
+        AIMC_NODE_PALETTE, FOUNDATION_MODELS, IL_LEVELS,
+        ADAPTATION_MATRIX,
+    )
+
+    # ── Pages ─────────────────────────────────────────────────────────────────
+
+    @bp.route("/")
+    def index():
+        designs = eng.list_designs()
+        stats = eng.get_stats()
+        return render_template(
+            "aiml_canvas/index.html",
+            designs=designs,
+            stats=stats,
+            il_levels=IL_LEVELS,
+        )
+
+    @bp.route("/canvas/new")
+    def new_canvas():
+        templates = eng.list_templates()
+        return render_template(
+            "aiml_canvas/canvas.html",
+            design=None,
+            templates=templates,
+            palette=AIMC_NODE_PALETTE,
+            models=FOUNDATION_MODELS,
+            il_levels=IL_LEVELS,
+            adaptation_matrix=ADAPTATION_MATRIX,
+            new_design=True,
+        )
+
+    @bp.route("/canvas/<design_id>")
+    def canvas(design_id: str):
+        design = eng.get_design(design_id)
+        if not design:
+            return redirect(url_for("aiml_canvas.index"))
+        templates = eng.list_templates()
+        snippets = eng.list_snippets()
+        return render_template(
+            "aiml_canvas/canvas.html",
+            design=design,
+            design_json=json.dumps(design),
+            templates=templates,
+            snippets=snippets,
+            palette=AIMC_NODE_PALETTE,
+            models=FOUNDATION_MODELS,
+            il_levels=IL_LEVELS,
+            adaptation_matrix=ADAPTATION_MATRIX,
+            new_design=False,
+        )
+
+    @bp.route("/templates")
+    def templates_page():
+        templates = eng.list_templates()
+        return render_template("aiml_canvas/templates.html", templates=templates, il_levels=IL_LEVELS)
+
+    @bp.route("/snippets")
+    def snippets_page():
+        snippets = eng.list_snippets()
+        return render_template("aiml_canvas/snippets.html", snippets=snippets)
+
+    @bp.route("/model-catalog")
+    def model_catalog():
+        return render_template(
+            "aiml_canvas/model_catalog.html",
+            models=FOUNDATION_MODELS,
+            il_levels=IL_LEVELS,
+        )
+
+    @bp.route("/assessments/<assessment_id>")
+    def assessment_detail(assessment_id: str):
+        from tools.aiml_canvas.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT * FROM aiml_assessments WHERE id=?", (assessment_id,)
+            ).fetchone()
+            if not row:
+                return redirect(url_for("aiml_canvas.index"))
+            assessment = dict(row)
+            assessment["findings"] = json.loads(assessment.get("findings_json") or "[]")
+            design = eng.get_design(assessment["design_id"])
+        finally:
+            conn.close()
+        return render_template("aiml_canvas/assessments.html", assessment=assessment, design=design)
+
+    # ── API: Designs ──────────────────────────────────────────────────────────
+
+    @bp.route("/api/designs", methods=["GET"])
+    def api_list_designs():
+        return jsonify(eng.list_designs())
+
+    @bp.route("/api/designs", methods=["POST"])
+    def api_create_design():
+        data = request.get_json(silent=True) or {}
+        name = data.get("name", "Untitled AI/ML Design")
+        design = eng.create_design(
+            name=name,
+            description=data.get("description", ""),
+            classification=data.get("classification", "CUI"),
+            il_level=data.get("il_level", "IL4"),
+            primary_use_case=data.get("primary_use_case", ""),
+            adaptation_strategy=data.get("adaptation_strategy", "prompt"),
+            template_id=data.get("template_id"),
+        )
+        return jsonify(design), 201
+
+    @bp.route("/api/designs/<design_id>", methods=["GET"])
+    def api_get_design(design_id: str):
+        design = eng.get_design(design_id)
+        if not design:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(design)
+
+    @bp.route("/api/designs/<design_id>", methods=["PUT"])
+    def api_save_design(design_id: str):
+        data = request.get_json(silent=True) or {}
+        try:
+            design = eng.save_design(
+                design_id,
+                graph=data.get("graph", data.get("graph_json", {})),
+                name=data.get("name"),
+                description=data.get("description"),
+                il_level=data.get("il_level"),
+                classification=data.get("classification"),
+            )
+            return jsonify(design)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+    @bp.route("/api/designs/<design_id>", methods=["DELETE"])
+    def api_delete_design(design_id: str):
+        deleted = eng.delete_design(design_id)
+        return jsonify({"deleted": deleted}), 200 if deleted else 404
+
+    # ── API: Assessment ───────────────────────────────────────────────────────
+
+    @bp.route("/api/designs/<design_id>/assess", methods=["POST"])
+    def api_assess(design_id: str):
+        try:
+            result = eng.run_assessment(design_id)
+            return jsonify(result)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+    @bp.route("/api/designs/<design_id>/assess-gov", methods=["POST"])
+    def api_assess_gov(design_id: str):
+        design = eng.get_design(design_id)
+        if not design:
+            return jsonify({"error": "not found"}), 404
+        result = gov_eng.run_all(design.get("graph", {}), design)
+        return jsonify(result)
+
+    # ── API: Adaptation Recommendation ───────────────────────────────────────
+
+    @bp.route("/api/designs/<design_id>/adapt", methods=["POST"])
+    def api_adapt(design_id: str):
+        data = request.get_json(silent=True) or {}
+        rec = adapt_eng.recommend(**{k: v for k, v in data.items()
+                                     if k in adapt_eng.recommend.__code__.co_varnames})
+        return jsonify(rec)
+
+    @bp.route("/api/adapt/recommend", methods=["POST"])
+    def api_adapt_recommend():
+        data = request.get_json(silent=True) or {}
+        valid_keys = {
+            "has_corpus", "has_training_data", "training_examples", "has_gpu",
+            "vram_gb", "latency_budget_ms", "accuracy_target_pct", "il_level",
+            "knowledge_changes_frequently", "requires_source_citation",
+            "requires_consistent_format", "domain_specific_reasoning",
+        }
+        kwargs = {k: v for k, v in data.items() if k in valid_keys}
+        rec = adapt_eng.recommend(**kwargs)
+        return jsonify(rec)
+
+    # ── API: Deployment Plan ──────────────────────────────────────────────────
+
+    @bp.route("/api/designs/<design_id>/deploy-plan", methods=["POST"])
+    def api_deploy_plan(design_id: str):
+        design = eng.get_design(design_id)
+        if not design:
+            return jsonify({"error": "not found"}), 404
+        data = request.get_json(silent=True) or {}
+        plan = dep_plan.plan(
+            model_id=data.get("model_id", "qwen3-local"),
+            il_level=design.get("il_level", "IL4"),
+            vram_gb=float(data.get("vram_gb", 8)),
+            latency_target_ms=int(data.get("latency_target_ms", 2000)),
+            throughput_rps=int(data.get("throughput_rps", 1)),
+        )
+        return jsonify(plan)
+
+    @bp.route("/api/deploy/plan", methods=["POST"])
+    def api_deploy_plan_standalone():
+        data = request.get_json(silent=True) or {}
+        plan = dep_plan.plan(
+            model_id=data.get("model_id", "qwen3-local"),
+            il_level=data.get("il_level", "IL4"),
+            vram_gb=float(data.get("vram_gb", 8)),
+            latency_target_ms=int(data.get("latency_target_ms", 2000)),
+            throughput_rps=int(data.get("throughput_rps", 1)),
+            air_gap_required=data.get("air_gap_required"),
+        )
+        return jsonify(plan)
+
+    # ── API: Artifacts ────────────────────────────────────────────────────────
+
+    @bp.route("/api/designs/<design_id>/artifacts", methods=["GET"])
+    def api_list_artifacts(design_id: str):
+        from tools.aiml_canvas.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, design_id, artifact_type, title, format, created_at "
+                "FROM aiml_artifacts WHERE design_id=? ORDER BY created_at DESC",
+                (design_id,),
+            ).fetchall()
+            return jsonify([dict(r) for r in rows])
+        finally:
+            conn.close()
+
+    @bp.route("/api/designs/<design_id>/artifact/model-card", methods=["POST"])
+    def api_artifact_model_card(design_id: str):
+        try:
+            result = eng.generate_model_card(design_id)
+            return jsonify(result), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+    @bp.route("/api/designs/<design_id>/artifact/deploy-manifest", methods=["POST"])
+    def api_artifact_deploy_manifest(design_id: str):
+        try:
+            result = eng.generate_deployment_manifest(design_id)
+            return jsonify(result), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+
+    # ── API: Templates + Snippets ─────────────────────────────────────────────
+
+    @bp.route("/api/templates", methods=["GET"])
+    def api_list_templates():
+        return jsonify(eng.list_templates())
+
+    @bp.route("/api/templates/<template_id>/apply/<design_id>", methods=["POST"])
+    def api_apply_template(template_id: str, design_id: str):
+        tpl = eng.get_template(template_id)
+        if not tpl:
+            return jsonify({"error": "template not found"}), 404
+        design = eng.get_design(design_id)
+        if not design:
+            return jsonify({"error": "design not found"}), 404
+        saved = eng.save_design(design_id, graph=tpl["graph"])
+        return jsonify(saved)
+
+    @bp.route("/api/snippets", methods=["GET"])
+    def api_list_snippets():
+        cat = request.args.get("category")
+        return jsonify(eng.list_snippets(category=cat))
+
+    @bp.route("/api/snippets/<snippet_id>/insert/<design_id>", methods=["POST"])
+    def api_insert_snippet(snippet_id: str, design_id: str):
+        snippets = eng.list_snippets()
+        snp = next((s for s in snippets if s["id"] == snippet_id), None)
+        if not snp:
+            return jsonify({"error": "snippet not found"}), 404
+        design = eng.get_design(design_id)
+        if not design:
+            return jsonify({"error": "design not found"}), 404
+        data = request.get_json(silent=True) or {}
+        offset_x = float(data.get("offset_x", 100))
+        offset_y = float(data.get("offset_y", 100))
+
+        graph = design.get("graph", {"nodes": [], "edges": [], "boundaries": []})
+        snp_graph = snp.get("graph", {})
+        import uuid as _uuid
+        id_map: dict[str, str] = {}
+
+        for node in snp_graph.get("nodes", []):
+            new_id = str(_uuid.uuid4())
+            id_map[node["id"]] = new_id
+            new_node = {**node, "id": new_id,
+                        "x": node.get("x", 0) + offset_x,
+                        "y": node.get("y", 0) + offset_y}
+            graph["nodes"].append(new_node)
+
+        for edge in snp_graph.get("edges", []):
+            new_edge = {**edge, "id": str(_uuid.uuid4()),
+                        "source": id_map.get(edge["source"], edge["source"]),
+                        "target": id_map.get(edge["target"], edge["target"])}
+            graph["edges"].append(new_edge)
+
+        saved = eng.save_design(design_id, graph=graph)
+        return jsonify(saved)
+
+    # ── API: Models ───────────────────────────────────────────────────────────
+
+    @bp.route("/api/models", methods=["GET"])
+    def api_list_models():
+        model_type = request.args.get("type")
+        models = FOUNDATION_MODELS
+        if model_type:
+            models = [m for m in models if m.get("type") == model_type]
+        return jsonify(models)
+
+    @bp.route("/api/models/rank", methods=["GET"])
+    def api_rank_models():
+        il_level = request.args.get("il_level", "IL4")
+        ranked = adapt_eng.rank_models_for_il(il_level)
+        return jsonify(ranked)
+
+    # ── API: Versions ─────────────────────────────────────────────────────────
+
+    @bp.route("/api/designs/<design_id>/versions", methods=["GET"])
+    def api_list_versions(design_id: str):
+        return jsonify(eng.list_versions(design_id))
+
+    @bp.route("/api/designs/<design_id>/versions/<version_id>", methods=["GET"])
+    def api_get_version(design_id: str, version_id: str):
+        v = eng.get_version(version_id)
+        if not v or v["design_id"] != design_id:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(v)
+
+    # ── API: Stats ────────────────────────────────────────────────────────────
+
+    @bp.route("/api/stats", methods=["GET"])
+    def api_stats():
+        return jsonify(eng.get_stats())
+
+    return bp

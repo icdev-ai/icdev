@@ -154,6 +154,7 @@ _CANVAS_DEFS = [
     ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
     ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
+    ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -1308,6 +1309,7 @@ def create_app() -> Flask:
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
+            "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
             "academy_enabled": _APP_FLAGS.get("forge_academy", False),
@@ -1403,6 +1405,7 @@ def create_app() -> Flask:
         "ddc": "/data",
         "qdc": "/quality",
         "mdc": "/migration-canvas",
+        "aimc": "/ai-ml",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:

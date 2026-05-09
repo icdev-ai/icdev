@@ -137,6 +137,7 @@
 - [FathomDesk Trading Engine](manifest/fathomdesk-trading-engine.md)
 - [Auto-Registered (Coherence Fix)](manifest/auto-registered.md)
 - [Air-Gap Mode (OPT-51/OPT-61)](manifest/air-gap-mode.md)
+- [AI/ML Model Canvas (AIMC)](manifest/aiml-canvas.md)
 - [Design Canvases (7-Canvas Suite)](manifest/design-canvases.md)
 - [Migration Canvas](manifest/migration-canvas.md)
 - [Canvas Auto-Remediation](manifest/canvas-auto-remediation.md)
@@ -708,3 +709,22 @@
 | Iw Pattern Matcher | tools\strategos\iw_pattern_matcher.py | Auto-registered: strategos/iw_pattern_matcher.py | --json | JSON |
 | Iw Scorers | tools\strategos\iw_scorers.py | Auto-registered: strategos/iw_scorers.py | --json | JSON |
 | Oryx Importer | tools\strategos\oryx_importer.py | Auto-registered: strategos/oryx_importer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Dossier Advisor | tools\migration_canvas\dossier_advisor.py | Auto-registered: migration_canvas/dossier_advisor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Wave Planner | tools\migration_canvas\wave_planner.py | Auto-registered: migration_canvas/wave_planner.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Code Lens | tools\analysis\code_lens.py | Auto-registered: analysis/code_lens.py | --json | JSON |
+| Anomaly Detector | tools\data_canvas\anomaly_detector.py | Auto-registered: data_canvas/anomaly_detector.py | --json | JSON |
