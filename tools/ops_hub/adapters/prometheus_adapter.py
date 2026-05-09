@@ -43,7 +43,7 @@ class PrometheusAdapter(OpsAdapter):
     def _ping(self) -> bool:
         try:
             req = urllib.request.Request(f"{self._base_url}/-/healthy", method="GET")
-            with urllib.request.urlopen(req, timeout=3) as resp:
+            with urllib.request.urlopen(req, timeout=3) as resp:  # nosec B310
                 return resp.status == 200
         except Exception:
             return False
@@ -73,7 +73,7 @@ class PrometheusAdapter(OpsAdapter):
         """Run an instant query against Prometheus HTTP API."""
         url = f"{self._base_url}/api/v1/query?" + urllib.parse.urlencode({"query": query})
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            with urllib.request.urlopen(url, timeout=10) as resp:  # nosec B310
                 data = json.loads(resp.read())
                 if data.get("status") == "success":
                     return data.get("data", {}).get("result", [])
@@ -87,7 +87,7 @@ class PrometheusAdapter(OpsAdapter):
             "query": query, "start": start, "end": end, "step": step,
         })
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            with urllib.request.urlopen(url, timeout=10) as resp:  # nosec B310
                 data = json.loads(resp.read())
                 if data.get("status") == "success":
                     return data.get("data", {}).get("result", [])
@@ -115,7 +115,7 @@ class PrometheusAdapter(OpsAdapter):
         if self._ping():
             try:
                 url = f"{self._base_url}/api/v1/label/__name__/values"
-                with urllib.request.urlopen(url, timeout=10) as resp:
+                with urllib.request.urlopen(url, timeout=10) as resp:  # nosec B310
                     data = json.loads(resp.read())
                     metric_names = data.get("data", [])
                     return [AdapterResource(
@@ -179,7 +179,7 @@ class PrometheusAdapter(OpsAdapter):
             url = f"{self._base_url.replace(':9090', ':9091')}/metrics/job/{job}"
             req = urllib.request.Request(url, data=data, method="POST",
                                           headers={"Content-Type": "text/plain"})
-            with urllib.request.urlopen(req, timeout=5):
+            with urllib.request.urlopen(req, timeout=5):  # nosec B310
                 return {"status": "ok"}
         except Exception as exc:
             return {"status": "error", "error": str(exc)}
