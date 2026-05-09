@@ -1,0 +1,6 @@
+# IQE-SDC-004: Recent AI decisions from the Security Design Canvas
+# Shows threat assessments and attack path analyses recorded by the
+# canvas AI traceability layer for NIST AU-2 / FedRAMP SI-4 evidence.
+
+foreach d in security.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

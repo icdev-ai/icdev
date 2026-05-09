@@ -1,0 +1,7 @@
+# IQE-SDC-006: High-confidence SDC AI decisions (confidence >= 0.85)
+# Auto-remediable candidates per self-healing policy (>= 0.7 threshold).
+# Use: self-healing gate evidence, DoD RAI Traceable principle audit.
+
+foreach d in security.ai_decisions
+where d.confidence >= 0.85
+select d.id, d.decision_type, d.decision, d.confidence, d.model_used, d.created_at

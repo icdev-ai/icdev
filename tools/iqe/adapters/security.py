@@ -110,6 +110,21 @@ def paths_adapter(conn: Any, src: str | None = None, goal: str | None = None) ->
     return results
 
 
+def ai_decisions_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return AI decision records for SDC from canvas_ai_decisions (main icdev.db)."""
+    try:
+        from tools.db.storage import get_connection as _main_conn  # noqa: PLC0415
+        with _main_conn() as _c:
+            cur = _c.execute(
+                "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' ORDER BY created_at DESC"
+            )
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+
+
 register_collection("attack.nodes", nodes_adapter)
 register_collection("attack.edges", edges_adapter)
 register_collection("attack.paths", paths_adapter)
+register_collection("security.ai_decisions", ai_decisions_adapter)

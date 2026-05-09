@@ -119,6 +119,7 @@ def create_network_blueprint():
         nc_login_required,
         _now,
         _row_to_dict,
+        _normalize_sop_step,
         _audit,
         _notify,
         _crud_list,
@@ -1097,6 +1098,13 @@ def create_network_blueprint():
                             doc[field] = json.loads(raw)
                         except Exception:
                             doc[field] = []
+                # Normalize steps to canonical {number, text, verify, time_est, rollback}
+                # regardless of which schema variant the SOP was seeded with.
+                if doc.get('steps') and isinstance(doc['steps'], list):
+                    doc['steps'] = [
+                        _normalize_sop_step(s) for s in doc['steps']
+                        if isinstance(s, dict)
+                    ]
             mphase['linked_docs'] = linked_docs
             mphase['steps'] = [
                 s.strip().rstrip('.')

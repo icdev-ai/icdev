@@ -1,0 +1,7 @@
+# IQE-SDC-005: AI-generated threat assessments from Security Design Canvas
+# Scope: decision_type == threat_assessment.
+# Use: threat model review, NIST RA-3 risk assessment traceability.
+
+foreach d in security.ai_decisions
+where d.decision_type == "threat_assessment"
+select d.record_id, d.decision, d.rationale, d.model_used, d.confidence, d.trace_id
