@@ -65,16 +65,35 @@ _RISK_ORDER = {"high": 3, "medium": 2, "low": 1, "none": 0}
 
 _CLASSIFICATION_LEVELS_HIGH_RISK = {"public", "unclassified"}
 
+# Technical/metadata column-name prefixes that, when combined with a PII-looking
+# suffix (e.g. "name", "id"), do NOT indicate personal data.
+# Examples: column_name, table_name, schema_id, rule_type are metadata.
+_TECHNICAL_NON_PII_PREFIXES = {
+    "column", "table", "schema", "database", "db", "field", "attribute",
+    "property", "type", "class", "object", "method", "function",
+    "module", "variable", "constant", "enum", "param", "parameter",
+    "config", "setting", "option", "path", "file", "dir", "directory",
+    "folder", "label", "tag", "category", "status", "state", "code",
+    "value", "item", "entity", "resource", "index", "sort",
+    "group", "parent", "child", "source", "target", "rule",
+    "check", "constraint", "format", "pattern", "template", "query",
+    "filter", "action", "event", "audit", "metric", "key", "hash",
+}
 
-def _col_name_severity(col_lower: str) -> str | None:
+
+def _col_name_severity(col_lower: str) -> tuple[str | None, str | None]:
+    """Return (severity, matched_pii_term) or (None, None)."""
     col_parts = set(re.split(r"[_\-. ]", col_lower))
+    # Compound technical names like column_name / table_name are metadata, not PII
+    if len(col_parts) > 1 and (col_parts & _TECHNICAL_NON_PII_PREFIXES):
+        return None, None
     for part in col_parts:
         if part in _PII_HIGH or col_lower in _PII_HIGH:
-            return "high"
+            return "high", part
     for part in col_parts:
         if part in _PII_MEDIUM or col_lower in _PII_MEDIUM:
-            return "medium"
-    return None
+            return "medium", part if part in _PII_MEDIUM else col_lower
+    return None, None
 
 
 def _pattern_match(top_values: list[str]) -> list[str]:
@@ -99,7 +118,7 @@ def check_column(
 ) -> dict[str, Any] | None:
     """Return a PII finding dict or None if no concern detected."""
     col_lower = col_name.lower().replace("-", "_")
-    name_sev = _col_name_severity(col_lower)
+    name_sev, matched_term = _col_name_severity(col_lower)
     top_values = stats.get("top_values") or []
     distinct_count = stats.get("distinct_count") or 0
     row_count = stats.get("row_count") or 0
@@ -135,9 +154,18 @@ def check_column(
     else:
         return None
 
+    # Derive a human-readable PII type label for UI display
+    if matched_term:
+        pii_type = matched_term.upper()
+    elif pattern_hits:
+        pii_type = pattern_hits[0].upper()
+    else:
+        pii_type = "PII"
+
     return {
         "column": col_name,
         "severity": severity,
+        "pii_type": pii_type,
         "finding_type": "pii_risk",
         "description": reason,
         "pattern_matches": pattern_hits,
