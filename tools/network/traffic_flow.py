@@ -58,6 +58,30 @@ DOMAIN_ACTION_MAP: dict[tuple[str, str], list[str]] = {
     ("csp_il5", "ipsec_tunnel"): ["terminate", "decrypt", "fips-check", "app-deliver"],
     ("csp_il5", "bgp"):          ["peer", "route-import", "fips-check", "app-deliver"],
     ("csp_il5", "dns"):          ["resolve", "filter", "fips-check", "app-deliver"],
+    # jwics — JWICS SECRET network: Type 1 decrypt + HBSS + ACAS + NSS-PKI
+    ("jwics", "sso_saml"):       ["type1-decrypt", "cac-authenticate", "nss-pki-validate", "app-deliver"],
+    ("jwics", "sso_oauth"):      ["type1-decrypt", "cac-authenticate", "nss-pki-validate", "app-deliver"],
+    ("jwics", "api_rest"):       ["type1-decrypt", "hbss-scan", "acas-check", "app-deliver"],
+    ("jwics", "ipsec_tunnel"):   ["type1-decrypt", "route", "re-encrypt", "forward"],
+    ("jwics", "bgp"):            ["ospf-neighbor", "route-advertise", "forward"],
+    ("jwics", "dns"):            ["stub-resolve", "jwics-recursive", "dia-authoritative", "dnssec-validate"],
+    ("jwics", "email"):          ["smime-sign", "smtp-relay", "hbss-content-scan", "dia-relay-deliver"],
+    # c2s — AWS Secret Region (C2S): ClassifiedConnect + GuardDuty + CloudTrail
+    ("c2s", "sso_saml"):         ["cac-authenticate", "iam-idc-validate", "fips-check", "app-deliver"],
+    ("c2s", "sso_oauth"):        ["cac-authenticate", "iam-idc-validate", "fips-check", "app-deliver"],
+    ("c2s", "api_rest"):         ["cac-authenticate", "api-gateway", "vpc-flowlog", "app-deliver"],
+    ("c2s", "ipsec_tunnel"):     ["classifiedconnect-route", "tgw-attach", "vpc-deliver"],
+    ("c2s", "bgp"):              ["classifiedconnect-bgp", "tgw-propagate", "forward"],
+    ("c2s", "dns"):              ["route53-phz-resolve", "disa-dns-forward", "dnssec-validate"],
+    ("c2s", "email"):            ["ses-internal-submit", "disa-gateway-route", "jwics-relay-deliver"],
+    # c2e — Azure Government Secret (C2E): ExpressRoute + Defender + Private DNS
+    ("c2e", "sso_saml"):         ["cac-authenticate", "entra-id-gov-validate", "fips-check", "app-deliver"],
+    ("c2e", "sso_oauth"):        ["cac-authenticate", "entra-id-gov-validate", "fips-check", "app-deliver"],
+    ("c2e", "api_rest"):         ["cac-authenticate", "apim-gateway", "azure-monitor-log", "app-deliver"],
+    ("c2e", "ipsec_tunnel"):     ["expressroute-route", "vnet-gw-terminate", "vnet-deliver"],
+    ("c2e", "bgp"):              ["expressroute-bgp", "vnet-route-propagate", "forward"],
+    ("c2e", "dns"):              ["azure-private-dns-resolve", "disa-dns-forward", "dnssec-validate"],
+    ("c2e", "email"):            ["exchange-online-gov-submit", "expressroute-dlp-check", "disa-gateway-route", "jwics-relay-deliver"],
 }
 
 # ── Protocol table ────────────────────────────────────────────────────────────
@@ -86,6 +110,13 @@ PROTOCOL_TABLE: dict[str, list[dict[str, Any]]] = {
     "dns": [
         {"port": 53, "protocol": "udp", "service": "DNS"},
         {"port": 53, "protocol": "tcp", "service": "DNS-TCP"},
+        {"port": 853, "protocol": "tcp", "service": "DNS-over-TLS"},
+    ],
+    "email": [
+        {"port": 587, "protocol": "tcp", "service": "SMTP-STARTTLS (submission)"},
+        {"port": 25,  "protocol": "tcp", "service": "SMTP (relay MTA-to-MTA)"},
+        {"port": 993, "protocol": "tcp", "service": "IMAP-over-TLS (delivery)"},
+        {"port": 636, "protocol": "tcp", "service": "LDAPS (cert/PKI lookup)"},
     ],
 }
 
@@ -129,6 +160,115 @@ DOMAIN_DEFAULTS: dict[str, dict[str, Any]] = {
         "pki_required": "DoD-PKI",
         "fips_140_2": True,
     },
+    "jwics": {
+        "inspection_type": "Type 1 decrypt + HBSS malware scan + ACAS vuln check + SIEM",
+        "encryption_required": True,
+        "encryption_method": "NSA Type 1 (AES-256, HAIPE-compliant)",
+        "mfa_required": True,
+        "mfa_method": "CAC + PIN (NSS PKI)",
+        "pki_required": "NSS (National Security System) CA",
+        "fips_140_2": True,
+        "classification": "SECRET",
+        "dns_resolver": "JWICS recursive resolver (DIA-managed, not Internet-accessible)",
+        "email_gateway": "JWICS SMTP relay — S/MIME mandatory, NSS PKI cert required",
+        "routing_protocol": "OSPF Area 0 (JWICS backbone)",
+        "physical_separation": "Physically isolated from NIPRNet; no shared infrastructure",
+    },
+    "c2s": {
+        "inspection_type": "C2S VPC flow logs + AWS GuardDuty + CloudTrail + HBSS agent on EC2",
+        "encryption_required": True,
+        "encryption_method": "TLS 1.2+ FIPS 140-2 in-transit + NSA Type 1 on ClassifiedConnect circuit",
+        "mfa_required": True,
+        "mfa_method": "CAC + PIV + AWS IAM Identity Center (SSO)",
+        "pki_required": "NSS CA + AWS Private CA (ACM-PCA in Secret Region)",
+        "fips_140_2": True,
+        "classification": "SECRET",
+        "dns_resolver": "C2S Route 53 Private Hosted Zone (.c2s.ic.gov); DISA DNS via ClassifiedConnect for .smil.mil",
+        "email_gateway": "SES internal endpoint in C2S (not public SES) → DISA Email Gateway → JWICS relay",
+        "connectivity": "ClassifiedConnect (AWS Direct Connect variant) from DISA Secret CAP",
+        "cloud_region": "us-gov-secret-1 (AWS Secret Region)",
+    },
+    "c2e": {
+        "inspection_type": "Azure Firewall Premium IDPS + Defender for Cloud + Azure Monitor + HBSS agent on VMs",
+        "encryption_required": True,
+        "encryption_method": "TLS 1.2+ FIPS 140-2 in-transit + NSA Type 1 on ExpressRoute circuit",
+        "mfa_required": True,
+        "mfa_method": "CAC + PIV + Entra ID (Azure AD for Azure Government Secret)",
+        "pki_required": "NSS CA + Azure Government PKI (Azure Key Vault HSM-backed)",
+        "fips_140_2": True,
+        "classification": "SECRET",
+        "dns_resolver": "C2E Azure Private DNS Zone (.c2e.microsoft.com); conditional forwarder to DISA DNS for .smil.mil",
+        "email_gateway": "Exchange Online for Government Secret → DLP policy → ExpressRoute → DISA Email Gateway → JWICS relay",
+        "connectivity": "ExpressRoute from DISA Secret CAP to Azure Government Secret",
+        "cloud_region": "Azure Government Secret (usgovsecret)",
+    },
+}
+
+# ── Per-domain per-app narrative steps ───────────────────────────────────────
+# Used by walkthrough generator to enrich hop descriptions with domain-specific detail.
+
+FLOW_NARRATIVES: dict[tuple[str, str], list[str]] = {
+    # DNS flows
+    ("jwics", "dns"): [
+        "SCIF workstation stub resolver sends query to JWICS recursive resolver (10.x.x.x:53 — DIA-assigned address, not Internet-routable).",
+        "JWICS recursive resolver checks local cache (TTL 300s); on cache miss, queries DIA authoritative name server over JWICS backbone.",
+        "DIA authoritative resolves within classified zones: *.jwics.gov, *.dia.smil.mil, and agency-delegated subzones.",
+        "DNSSEC validation performed using keys distributed via JWICS PKI (not Internet IANA chain).",
+        "Signed response returned to SCIF workstation. BLOCKED: No Internet DNS. No NIPRNet resolvers. CDS required for any cross-domain lookup.",
+    ],
+    ("c2s", "dns"): [
+        "EC2 instance queries DHCP-assigned resolver — Route 53 Resolver at VPC+2 address (169.254.169.253).",
+        "Route 53 Resolver evaluates Private Hosted Zone (PHZ) rules for .c2s.ic.gov zone; returns local record on hit.",
+        "On miss: Resolver outbound endpoint forwards query to DISA-managed DNS via ClassifiedConnect circuit (not Internet path).",
+        "Split-horizon: *.c2s.ic.gov → C2S PHZ; *.smil.mil → JWICS recursive resolver via Resolver Rule; *.mil catch-all → DISA DNS.",
+        "DNSSEC validation enforced on all outbound Resolver Rules. Response returned to EC2. BLOCKED: Public Internet DNS (8.8.8.8) unreachable from C2S VNet.",
+    ],
+    ("c2e", "dns"): [
+        "VM queries Azure recursive resolver at 168.63.129.16 — the VNet-level DNS server (not Internet).",
+        "Azure Private DNS Zone is checked for .c2e.microsoft.com and any custom private zones registered in the subscription.",
+        "Conditional DNS forwarder sends .smil.mil queries to DISA DNS via ExpressRoute circuit (DISA Secret CAP endpoint).",
+        "Azure Private Resolver inbound endpoint receives DISA-side queries forwarded from JWICS for C2E-hosted resources.",
+        "Response returned. BLOCKED: Public Azure DNS resolver (equivalent of 8.8.8.8) is unreachable from C2E VNet by design.",
+    ],
+    # Email flows
+    ("jwics", "email"): [
+        "User on SCIF workstation composes message in Outlook/Thunderbird; client auto-signs with NSS PKI S/MIME cert (DoD CA chain).",
+        "MUA submits to agency SMTP relay on port 587 with STARTTLS; CAC + PIN authentication required.",
+        "Agency SMTP relay resolves recipient MX record via JWICS DNS (no Internet DNS); routes *.dia.smil.mil to DIA JWICS relay.",
+        "DIA JWICS relay performs HBSS content scan and keyword policy check; rejects classified spills or oversized attachments.",
+        "DIA relay delivers to recipient agency mail server over SMTP/S; recipient MUA verifies S/MIME signature against NSS PKI.",
+        "BLOCKED: No Internet relay path. Cross-domain to NIPRNet requires NSA-evaluated CDS email guard appliance.",
+    ],
+    ("c2s", "email"): [
+        "Application in C2S VPC sends via SES SMTP endpoint (internal VPC endpoint — not public SES; region us-gov-secret-1).",
+        "SES routes outbound mail to DISA Email Gateway in C2S via ClassifiedConnect (no Internet egress).",
+        "DISA Gateway stamps classification header, applies DLP policy, routes to JWICS relay for .smil.mil recipients.",
+        "Inbound path: JWICS relay → DISA Email Gateway in C2S → SES receive rule → S3 bucket or Lambda for processing.",
+        "BLOCKED: Public-region SES (us-east-1, etc.) is not accessible from C2S. All mail must traverse DISA Email Gateway.",
+    ],
+    ("c2e", "email"): [
+        "Application sends via Exchange Online for Government Secret SMTP relay endpoint (not public O365).",
+        "Exchange Online applies DLP policy: blocks outbound to non-.mil/.gov domains; rejects unclassified domains by default.",
+        "Exchange routes outbound via ExpressRoute to DISA Email Gateway (Secret CAP); DISA Gateway applies classification marking.",
+        "DISA Gateway delivers to JWICS relay for .smil.mil recipients; SMTP TLS + S/MIME required end-to-end.",
+        "BLOCKED: Exchange Online Government Secret cannot relay to public O365 or commercial SMTP servers — air-gapped by design.",
+    ],
+    # BGP flows on JWICS/C2S/C2E
+    ("jwics", "bgp"): [
+        "Agency JWICS gateway establishes OSPF adjacency with DIA hub router over JWICS backbone (Area 0).",
+        "Agency advertises its assigned JWICS subnet; DIA hub redistributes into JWICS backbone routing table.",
+        "No BGP to Internet — JWICS uses OSPF internally; only DISA-managed inter-domain routing.",
+    ],
+    ("c2s", "bgp"): [
+        "DISA Secret CAP establishes BGP session with AWS C2S TGW over ClassifiedConnect circuit (eBGP, MD5 auth).",
+        "DISA advertises on-prem JWICS prefixes; C2S TGW propagates to all attached VPC route tables.",
+        "C2S VPCs advertise VPC CIDRs back to DISA; routes appear in JWICS backbone via Secret CAP.",
+    ],
+    ("c2e", "bgp"): [
+        "DISA Secret CAP establishes BGP session with Azure ExpressRoute gateway (eBGP, private peering, MD5 auth).",
+        "DISA advertises JWICS prefixes; Azure VNet route table updated with on-prem routes automatically.",
+        "C2E VNets advertise address space back via ExpressRoute; DISA CAP redistributes into JWICS routing.",
+    ],
 }
 
 # ── Domain type resolver ──────────────────────────────────────────────────────
@@ -136,7 +276,7 @@ DOMAIN_DEFAULTS: dict[str, dict[str, Any]] = {
 def resolve_domain_type(node: dict) -> str:
     """Infer domain_type from node properties (type, label, config).
 
-    Returns one of: on_prem, nipr, bcap_vdms, bcap_vdss, csp_il4, csp_il5.
+    Returns one of: on_prem, nipr, bcap_vdms, bcap_vdss, csp_il4, csp_il5, jwics, c2s, c2e.
     Falls back to 'on_prem' when no pattern matches.
     """
     label = (node.get("label") or "").lower()
@@ -162,6 +302,16 @@ def resolve_domain_type(node: dict) -> str:
 
     if "nipr" in label or "nipr" in ntype:
         return "nipr"
+
+    # JWICS / C2S / C2E (must check before generic cloud)
+    if any(k in label or k in ntype for k in ("jwics", "scif", "type1", "t1e", "jwx", "jwg")):
+        return "jwics"
+    if any(k in label or k in ntype for k in ("c2s", "classifiedconnect", "secret-region", "c2d", "c2t", "c2v", "c2z")):
+        return "c2s"
+    if any(k in label or k in ntype for k in ("c2e", "expressroute-secret", "azure-secret", "c2x", "c2n", "c2p")):
+        return "c2e"
+    if any(k in label or k in ntype for k in ("secret-bcap", "sbc", "secret-cap")):
+        return "jwics"  # secret BCAP/CAP sits at the JWICS boundary
 
     if any(k in label or k in ntype for k in ("on.prem", "on_prem", "workstation", "endpoint", "user")):
         return "on_prem"

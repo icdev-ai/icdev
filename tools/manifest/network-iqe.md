@@ -371,3 +371,40 @@ print('Components:', [c['key'] for c in f['components']])
 - `GET /network/api/connectivity/matrix` — Full CSP×type matrix JSON
 - `GET /network/api/connectivity/onprem-pattern?csp=<csp>&type=<type>` — Single on-prem→CSP pattern JSON
 - `GET /network/api/connectivity/c2c-patterns?src=<csp>&dst=<csp>` — C2C pattern list JSON
+
+---
+
+## NDC — Analysis Routes (Gap Fill — 2026-05-09)
+
+Replaced 231-byte stub `tools/network/routes/analysis.py` with 5 full route implementations.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/topologies/<topo_id>/analysis/summary` | GET | Aggregate counts: devices, links, open findings, compliance score, EOL device count |
+| `/api/topologies/<topo_id>/analysis/topology-health` | GET | 5-dimension health score: compliance (25%), security (25%), eol (20%), redundancy (20%), capacity (10%) |
+| `/api/topologies/<topo_id>/analysis/risk-matrix` | GET | Likelihood × impact matrix from nc_compliance_findings; grouped by severity (cat1/cat2/cat3) |
+| `/api/topologies/<topo_id>/analysis/trend` | GET | Compliance score over time from nc_versions snapshot history |
+| `/api/topologies/<topo_id>/analysis/export` | GET | Full analysis JSON or PDF summary (delegates to pdf_export.py); `?format=pdf` |
+
+**Reads from:** `nc_compliance_findings`, `nc_objects`, `nc_circuits`, `nc_intent_validations`, `nc_versions`.
+
+---
+
+## NDC — Governance Routes (Gap Fill — 2026-05-09)
+
+Replaced 231-byte stub `tools/network/routes/governance.py` with 5 full route implementations.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/api/topologies/<topo_id>/governance/change-requests` | GET, POST | List (with optional `?status=` filter) or create change requests; `POST` body: `{title, change_type, risk_level?, description?, items[]}` |
+| `/api/topologies/<topo_id>/governance/change-requests/<cr_id>` | GET, PATCH, DELETE | Fetch full CR + line items; update status/risk/approval fields; delete |
+| `/api/topologies/<topo_id>/governance/intent-policies` | GET, POST | List or create intent policies; `POST` body: `{name, description?, rule: {type, ...}, severity?}` |
+| `/api/topologies/<topo_id>/governance/intent-policies/<policy_id>/validate` | POST | Evaluate intent rule against topology; writes result to `nc_intent_validations`; rule types: `no_single_points_of_failure`, `no_open_cat1_findings`, `all_devices_managed` |
+| `/api/governance/dashboard` | GET | Cross-topology summary: open CRs by topology, failed intent policies, pending approvals |
+
+**Reads/Writes:** `nc_change_requests`, `nc_change_request_items`, `nc_intent_policies`, `nc_intent_validations`.
+
+**`_evaluate_intent_rule()` supported types:**
+- `no_single_points_of_failure` — delegates to `tools.network.twin.blast_radius()` if available
+- `no_open_cat1_findings` — counts open CAT1 rows in nc_compliance_findings
+- `all_devices_managed` — counts unmanaged=0 devices in nc_objects

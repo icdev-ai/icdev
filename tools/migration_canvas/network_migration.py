@@ -2240,7 +2240,114 @@ def _acl_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
     return {"steps": steps, "risk_level": "medium", "filter_count": len(filters)}
 
 
-def plan_protocol_migration(session_id: str) -> dict:
+def _bgp_plan_advanced(parsed: dict, src_vendor: str, tgt_vendor: str, variant: str) -> dict:
+    """Advanced BGP migration plans for multipath, route reflectors, and graceful restart."""
+    base = _bgp_plan(parsed, src_vendor, tgt_vendor)
+    if variant == "multipath":
+        base["steps"] += [
+            "Configure BGP multipath (ECMP) — verify max-paths setting matches source.",
+            "Validate ECMP load-balancing hash algorithm is consistent across fabric.",
+            "Test failover: withdraw one path; confirm traffic redistributes within SLA.",
+        ]
+        base["variant"] = "multipath"
+    elif variant == "route_reflector":
+        base["steps"] += [
+            "Configure new device as Route Reflector (RR) client or add as RR peer.",
+            "Verify RR cluster-ID is set to avoid routing loops.",
+            "Confirm all iBGP peers receive full routing table from new RR.",
+        ]
+        base["variant"] = "route_reflector"
+    elif variant == "graceful_restart":
+        base["steps"] += [
+            "Enable BGP Graceful Restart on new device (restart-time 120s, stale-path-time 360s).",
+            "Verify all BGP peers support GR — check capability negotiation.",
+            "Test GR: simulate control-plane restart; confirm forwarding continues during reconvergence.",
+        ]
+        base["variant"] = "graceful_restart"
+    return base
+
+
+def _ospf_plan_advanced(parsed: dict, src_vendor: str, tgt_vendor: str, variant: str) -> dict:
+    """Advanced OSPF migration plans for multi-area, stub, and NSSA."""
+    base = _ospf_plan(parsed, src_vendor, tgt_vendor)
+    areas = parsed.get("ospf_areas", [])
+    if variant == "multi_area":
+        base["steps"] += [
+            f"Configure Area Border Router (ABR) role on new device for areas: {', '.join(areas)}.",
+            "Verify inter-area LSAs are generated correctly after cutover.",
+            "Confirm route summarization at ABR matches source configuration.",
+        ]
+        base["variant"] = "multi_area"
+    elif variant == "stub_nssa":
+        base["steps"] += [
+            "Configure stub or NSSA area flags — ensure all routers in area agree.",
+            "Verify default route injection into stub/NSSA area from ABR.",
+            "For NSSA: confirm NSSA-LSA (Type-7) translation to External-LSA (Type-5) at ABR.",
+        ]
+        base["variant"] = "stub_nssa"
+    elif variant == "virtual_link":
+        base["steps"] += [
+            "Configure OSPF virtual link to connect discontiguous area 0.",
+            "Verify virtual link adjacency reaches FULL state.",
+            "Monitor SPF calculations — virtual link adds latency to reconvergence.",
+        ]
+        base["variant"] = "virtual_link"
+    return base
+
+
+def _mpls_plan_advanced(parsed: dict, src_vendor: str, tgt_vendor: str, variant: str) -> dict:
+    """Advanced MPLS plans: VRF-lite, L3VPN, segment routing, EVPN/VXLAN."""
+    base = _mpls_plan(parsed, src_vendor, tgt_vendor)
+    vrfs = parsed.get("l3vpn_vrfs", [])
+    if variant == "vrf_lite":
+        base["steps"] = [
+            f"Configure {len(vrfs)} VRF(s) with import/export route-targets on new device.",
+            "Assign interfaces to VRFs — verify no interface is in default VRF unintentionally.",
+            "Configure per-VRF BGP peering or static routes for inter-VRF connectivity.",
+            "Validate VRF routing tables are complete after cutover.",
+        ]
+        base["variant"] = "vrf_lite"
+    elif variant == "segment_routing":
+        base["steps"] = [
+            "Enable Segment Routing (SR-MPLS) globally on new device.",
+            "Configure SR global block (SRGB) — ensure no overlap with existing labels.",
+            "Migrate existing RSVP-TE LSPs to SR-TE policies (Traffic Engineering Database sync).",
+            "Enable TI-LFA (Topology-Independent Loop-Free Alternates) for fast reroute.",
+            "Validate end-to-end SR path computation with SR-PCE if present.",
+        ]
+        base["variant"] = "segment_routing"
+    elif variant == "evpn_vxlan":
+        base["steps"] = [
+            "Configure VXLAN VTEP on new device with correct VNI-to-VLAN mappings.",
+            "Enable BGP EVPN address family — configure route-distinguisher and route-targets per VNI.",
+            "Enable MAC mobility timer — verify duplicate MAC detection.",
+            "Configure ARP suppression (proxy ARP via EVPN Type-2 routes).",
+            "Verify BUM traffic (broadcast/unknown-unicast/multicast) replication policy (ingress or underlay multicast).",
+            "Test: ping across VTEPs; verify MAC and IP route type-2 advertisements.",
+        ]
+        base["variant"] = "evpn_vxlan"
+    return base
+
+
+def _sdwan_plan(parsed: dict, src_vendor: str, tgt_vendor: str) -> dict:
+    """SD-WAN migration steps (replaces legacy WAN/MPLS)."""
+    return {
+        "steps": [
+            "Deploy SD-WAN controller stack (vManage/vBond/vSmart or equivalent).",
+            "Bootstrap SD-WAN edge device (ZTP or manual) — attach to controller.",
+            "Create device templates to replace per-device legacy router config.",
+            "Migrate routing policies to OMP (Overlay Management Protocol) or equivalent.",
+            "Configure application-aware routing (AAR) policies — define SLA classes for voice/video/data.",
+            "Enable dual-transport (MPLS + DIA) — retain MPLS as backup during transition.",
+            "Validate data-plane IPSec tunnels between all sites.",
+            "Cut over site-by-site; monitor OMP route convergence and failover.",
+        ],
+        "risk_level": "high",
+        "variant": "standard",
+    }
+
+
+def plan_protocol_migration(session_id: str, variant_overrides: dict | None = None) -> dict:
     """Generate per-protocol migration steps from parsed source config.
 
     Detects protocols present in the config and generates ordered steps
@@ -2276,15 +2383,31 @@ def plan_protocol_migration(session_id: str) -> dict:
     plans: dict[str, dict] = {}
     now = _now()
 
+    overrides = variant_overrides or {}
+
     protocol_handlers = []
     if parsed.get("bgp_neighbors"):
-        protocol_handlers.append(("bgp", _bgp_plan))
+        variant = overrides.get("bgp", "standard")
+        if variant != "standard":
+            protocol_handlers.append(("bgp", lambda p, s, t, v=variant: _bgp_plan_advanced(p, s, t, v)))
+        else:
+            protocol_handlers.append(("bgp", _bgp_plan))
     if parsed.get("ospf_areas"):
-        protocol_handlers.append(("ospf", _ospf_plan))
+        variant = overrides.get("ospf", "standard")
+        if variant != "standard":
+            protocol_handlers.append(("ospf", lambda p, s, t, v=variant: _ospf_plan_advanced(p, s, t, v)))
+        else:
+            protocol_handlers.append(("ospf", _ospf_plan))
     if parsed.get("lag_count", 0):
         protocol_handlers.append(("lag", _lag_plan))
     if parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces") or parsed.get("l3vpn_vrfs"):
-        protocol_handlers.append(("mpls", _mpls_plan))
+        variant = overrides.get("mpls", "standard")
+        if variant != "standard":
+            protocol_handlers.append(("mpls", lambda p, s, t, v=variant: _mpls_plan_advanced(p, s, t, v)))
+        else:
+            protocol_handlers.append(("mpls", _mpls_plan))
+    if overrides.get("sdwan"):
+        protocol_handlers.append(("sdwan", _sdwan_plan))
     if parsed.get("firewall_filters"):
         protocol_handlers.append(("acl", _acl_plan))
     # Always include VLAN
@@ -2295,14 +2418,18 @@ def plan_protocol_migration(session_id: str) -> dict:
             plan = handler(parsed, src_vendor, tgt_vendor)
             steps = plan.pop("steps", [])
             risk = plan.pop("risk_level", "medium")
-            plans[protocol] = {**plan, "steps": steps, "risk_level": risk}
+            variant_used = plan.pop("variant", overrides.get(protocol, "standard"))
+            adv_cfg = {k: v for k, v in plan.items()}
+            plans[protocol] = {"steps": steps, "risk_level": risk, "variant": variant_used, **adv_cfg}
 
             mc.execute(
                 "INSERT OR REPLACE INTO mc_net_protocol_plans "
-                "(id, session_id, protocol, migration_steps_json, risk_level, status, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "(id, session_id, protocol, migration_steps_json, risk_level, status, "
+                "variant, advanced_config, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
                 (str(uuid.uuid4()), session_id, protocol,
-                 json.dumps(steps), risk, "draft", now, now),
+                 json.dumps(steps), risk, "draft",
+                 variant_used, json.dumps(adv_cfg), now, now),
             )
         mc.commit()
 

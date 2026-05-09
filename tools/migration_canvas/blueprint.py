@@ -2745,4 +2745,195 @@ def create_migration_blueprint():
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ── Hypervisor Live Import ────────────────────────────────────────────────
+
+    @bp.route("/api/srv/<session_id>/hypervisor-pull", methods=["POST"])
+    @mdc_login_required
+    def srv_hypervisor_pull(session_id):
+        """Pull live VM inventory from a hypervisor and import into the session."""
+        from tools.migration_canvas.server_migration import import_from_hypervisor
+        body = request.json or {}
+        adapter = body.get("adapter_type", "")
+        host = body.get("host", "")
+        user = body.get("user", "")
+        password = body.get("password", "")
+        if not all([adapter, host, user, password]):
+            return jsonify({"error": "adapter_type, host, user, password required"}), 400
+        try:
+            result = import_from_hypervisor(
+                session_id, adapter, host, user, password,
+                datacenter=body.get("datacenter"),
+                cluster=body.get("cluster"),
+            )
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("Hypervisor pull error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/srv/<session_id>/hypervisor-sessions", methods=["GET"])
+    @mdc_login_required
+    def srv_hypervisor_sessions(session_id):
+        """List prior hypervisor pull sessions for this migration session."""
+        from tools.migration_canvas.db.init_db import get_connection
+        with get_connection() as db:
+            rows = db.execute(
+                "SELECT id, adapter_type, host, pulled_at, vm_count, status, error_msg "
+                "FROM mc_srv_hypervisor_sessions WHERE session_id=? ORDER BY pulled_at DESC",
+                (session_id,),
+            ).fetchall()
+        return jsonify({"sessions": [dict(r) for r in rows]})
+
+    # ── Advanced Cloud Catalog ────────────────────────────────────────────────
+
+    @bp.route("/api/srv/cloud-catalog/advanced", methods=["GET"])
+    @mdc_login_required
+    def srv_cloud_catalog_advanced():
+        """Return cloud instances with spot/reserved/savings-plan pricing."""
+        from tools.migration_canvas.server_migration import get_cloud_instances_advanced
+        provider = request.args.get("provider", "all")
+        pricing = request.args.get("pricing", "on_demand")
+        vcpu_min = int(request.args.get("vcpu_min", 0))
+        ram_min = float(request.args.get("ram_min", 0))
+        instances = get_cloud_instances_advanced(
+            provider, pricing_model=pricing, vcpu_min=vcpu_min, ram_min=ram_min,
+        )
+        return jsonify({"instances": instances, "pricing_model": pricing, "total": len(instances)})
+
+    # ── Post-Migration Validation (server) ───────────────────────────────────
+
+    @bp.route("/api/srv/<session_id>/validate", methods=["POST"])
+    @mdc_login_required
+    def srv_validate(session_id):
+        """Run post-migration validation checks against target servers."""
+        from tools.migration_canvas.post_migration_validator import run_validation_suite
+        body = request.json or {}
+        targets = body.get("targets", [])
+        if not targets:
+            return jsonify({"error": "targets list required"}), 400
+        try:
+            result = run_validation_suite(session_id, targets)
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("Post-migration validation error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/srv/<session_id>/validation-runs", methods=["GET"])
+    @mdc_login_required
+    def srv_validation_runs(session_id):
+        """List prior post-migration validation runs for this session."""
+        from tools.migration_canvas.db.init_db import get_connection
+        with get_connection() as db:
+            rows = db.execute(
+                "SELECT id, run_at, check_type, target, status, detail, elapsed_ms "
+                "FROM mc_srv_post_migration_tests WHERE session_id=? ORDER BY run_at DESC LIMIT 200",
+                (session_id,),
+            ).fetchall()
+        return jsonify({"results": [dict(r) for r in rows], "total": len(rows)})
+
+    # ── Vendor EOL Sync (network) ────────────────────────────────────────────
+
+    @bp.route("/api/net/eol-sync", methods=["POST"])
+    @mdc_login_required
+    def net_eol_sync():
+        """Trigger a vendor EOL database sync."""
+        from tools.migration_canvas.eol_sync import sync_eol_database
+        body = request.json or {}
+        vendors = body.get("vendors")
+        force = body.get("force", False)
+        try:
+            result = sync_eol_database(vendors=vendors, force=force)
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("EOL sync error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/net/eol/<session_id>/flags", methods=["GET"])
+    @mdc_login_required
+    def net_eol_flags(session_id):
+        """Return EOL flags for all devices in a network migration session."""
+        from tools.migration_canvas.eol_sync import flag_eol_devices
+        from tools.migration_canvas.db.init_db import get_connection
+        with get_connection() as db:
+            rows = db.execute(
+                "SELECT id, src_model AS model, src_device_name AS hostname "
+                "FROM mc_net_sessions WHERE id=?",
+                (session_id,),
+            ).fetchall()
+            port_devices = db.execute(
+                "SELECT DISTINCT far_end_device AS model FROM mc_net_port_map "
+                "WHERE session_id=? AND far_end_device != ''",
+                (session_id,),
+            ).fetchall()
+        devices = [dict(r) for r in rows] + [{"model": r[0]} for r in port_devices]
+        flagged = flag_eol_devices(devices)
+        return jsonify({"devices": flagged, "session_id": session_id})
+
+    # ── Vendor Migration Paths ────────────────────────────────────────────────
+
+    @bp.route("/api/net/migration-paths", methods=["GET"])
+    @mdc_login_required
+    def net_migration_paths():
+        """List all vendor migration paths."""
+        from tools.migration_canvas.vendor_migration_paths import list_all_paths
+        paths = list_all_paths()
+        # Strip sensitive detail — return summary
+        summary = [
+            {
+                "id": p.get("id"),
+                "source_vendor": p.get("source_vendor"),
+                "source_family": p.get("source_family"),
+                "target_vendor": p.get("target_vendor"),
+                "target_family": p.get("target_family"),
+                "migration_type": p.get("migration_type"),
+                "complexity": p.get("complexity"),
+                "estimated_hours": p.get("estimated_hours"),
+            }
+            for p in paths
+        ]
+        return jsonify({"paths": summary, "total": len(summary)})
+
+    @bp.route("/api/net/migration-paths/<source_vendor>/<source_family>", methods=["GET"])
+    @mdc_login_required
+    def net_migration_path_targets(source_vendor, source_family):
+        """List compatible migration targets for a source device."""
+        from tools.migration_canvas.vendor_migration_paths import (
+            list_compatible_targets, get_migration_path,
+        )
+        target_vendor = request.args.get("target_vendor", "")
+        if target_vendor:
+            path = get_migration_path(source_vendor, source_family, target_vendor)
+            if not path:
+                return jsonify({"error": "No migration path found"}), 404
+            return jsonify(path)
+        targets = list_compatible_targets(source_vendor, source_family)
+        return jsonify({"targets": targets, "total": len(targets)})
+
+    # ── Post-Migration Config Validation (network) ───────────────────────────
+
+    @bp.route("/api/net/<session_id>/validate-config", methods=["POST"])
+    @mdc_login_required
+    def net_validate_config(session_id):
+        """Run post-migration config diff for a network migration session."""
+        from tools.migration_canvas.network_config_validator import validate_migration_completeness
+        try:
+            result = validate_migration_completeness(session_id)
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("Network config validation error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/net/<session_id>/validation", methods=["GET"])
+    @mdc_login_required
+    def net_validation_result(session_id):
+        """Get the most recent config validation result for a session."""
+        from tools.migration_canvas.db.init_db import get_connection
+        with get_connection() as db:
+            row = db.execute(
+                "SELECT * FROM mc_net_config_validation WHERE session_id=? ORDER BY run_at DESC LIMIT 1",
+                (session_id,),
+            ).fetchone()
+        if not row:
+            return jsonify({"message": "No validation runs yet"}), 404
+        return jsonify(dict(row))
+
     return bp

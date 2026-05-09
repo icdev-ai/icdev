@@ -349,8 +349,11 @@ def main() -> None:
         if "error" in result:
             print(f"ERROR: {result['error']}", file=sys.stderr)
             sys.exit(1)
-        for tbl in result.get("tables", []):
-            print(tbl)
+        if args.output_json:
+            print(_json.dumps(result, indent=2))
+        else:
+            for tbl in result.get("tables", []):
+                print(tbl)
         return
 
     result = profile_database(conn_params, classification=args.classification, tables=args.tables)
