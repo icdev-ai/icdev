@@ -2130,7 +2130,8 @@ body:has(.dc-wrap) {
     position: relative !important;
     top: auto !important;
     bottom: auto !important;
-    flex: 1 !important;
+    height: 0 !important;       /* explicit value so child height:100% resolves in flex context */
+    flex: 1 1 0 !important;
     min-height: 0 !important;
     overflow: auto !important;
 }
