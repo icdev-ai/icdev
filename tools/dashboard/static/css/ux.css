@@ -2087,3 +2087,16 @@
 .btn-sm.btn-danger:hover {
     background: rgba(220, 53, 69, 0.15);
 }
+
+
+/* ── Canvas toolbar: scroll horizontally on small screens ─────────────── */
+/* Applies to all canvas editors (migration, boundary, data, infra)        */
+.dc-toolbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-shrink: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #1e3a6e transparent;
+}
+.dc-toolbar::-webkit-scrollbar { height: 3px; }
+.dc-toolbar::-webkit-scrollbar-thumb { background: #1e3a6e; border-radius: 2px; }
