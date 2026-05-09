@@ -520,6 +520,7 @@ function buildProjectCard(proj) {
                 </div>
             </div>
             <span class="toggle-icon" style="font-size:1.1rem;color:#a0aec0;">▾</span>
+            <a href="/network/projects/${proj.id}" target="_blank" onclick="event.stopPropagation()" class="qa-btn" style="font-size:11px;padding:3px 10px;margin-left:6px;" title="Open unified project dashboard">📊 Dashboard</a>
         </div>
         <div class="project-card-body" style="display:none;">
             ${buildPhaseTimeline(proj, phases)}
@@ -631,11 +632,14 @@ function renderSidebar(data) {
     const topoEl = document.getElementById('sideTopo');
     if (topos.length) {
         topoEl.innerHTML = topos.map(t => `
-            <div class="lib-item" onclick="window.open('/network/migration-phases/${t.id}','_blank')">
+            <div class="lib-item">
                 <span class="lib-icon">🗺️</span>
-                <div>
+                <div style="flex:1;min-width:0;">
                     <div class="lib-title">${esc(t.name)}</div>
-                    <div class="lib-sub">3-Panel Migration View</div>
+                    <div class="lib-sub" style="display:flex;gap:8px;margin-top:4px;">
+                        <button class="tb-btn" style="font-size:11px;padding:2px 8px;" onclick="window.open('/network/canvas/${t.id}','_blank')" title="Open topology in canvas editor">✏ Open Canvas</button>
+                        <button class="tb-btn" style="font-size:11px;padding:2px 8px;color:#a29bfe;" onclick="window.open('/network/migration-phases/${t.id}','_blank')" title="View migration phases for this topology">Migration Phases</button>
+                    </div>
                 </div>
             </div>`).join('');
     } else {

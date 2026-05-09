@@ -8584,6 +8584,34 @@ Output ONLY the JSON object. No other text."""
         "decommission", "decomm", "retire", "swap", "upgrade router", "upgrade switch",
     }
 
+    _AI_MIGRATION_PLAN_PROMPT = """You are a DoD network migration planner.
+Given a plain-English description of a migration, decompose it into an ordered list of phases.
+
+Output ONLY a valid JSON array — no markdown, no explanation:
+[
+  {
+    "phase_num": 1,
+    "title": "Short imperative title",
+    "description": "3-4 sentences: what changes, what stays, dependencies",
+    "duration_days": 14,
+    "parallel_run": 0,
+    "rollback_criteria": "One sentence: condition that triggers rollback",
+    "maintenance_window": "Sat 02:00-06:00 EST",
+    "classification": "CUI",
+    "impact_level": "IL4"
+  }
+]
+
+Rules:
+1. Phase titles must be short imperatives (e.g. "Deploy Edge Routers", "Migrate DNS to C2S")
+2. duration_days: realistic estimate in days (minimum 1, typical 7-30)
+3. parallel_run: 1 if old and new systems run simultaneously during this phase, else 0
+4. classification: PUBLIC | CUI | SECRET | TS (match the project classification)
+5. impact_level: IL2 | IL4 | IL5 | IL6
+6. Order phases so each depends only on completed prior phases
+7. Always include a final "Decommission Legacy" or "Validate and Close" phase
+8. Minimum 2 phases, maximum 12 phases"""
+
     @bp.route("/api/ai-generate", methods=["POST"])
     @nc_login_required
     def nc_api_ai_generate():
@@ -8856,8 +8884,25 @@ Output ONLY the JSON object. No other text."""
         if not description:
             return jsonify({"error": "message is required"}), 400
 
+        phase_context = data.get("phase_context") or {}
+        phase_header = ""
+        if phase_context:
+            ph_num = phase_context.get("phase_num", "?")
+            ph_title = phase_context.get("title", "")
+            ph_cls = phase_context.get("classification", "CUI")
+            ph_il = phase_context.get("impact_level", "IL4")
+            ph_status = phase_context.get("status", "planned")
+            phase_header = (
+                f"\n\n## ACTIVE MIGRATION PHASE CONTEXT\n"
+                f"Phase {ph_num}: {ph_title}\n"
+                f"Classification: {ph_cls} | Impact Level: {ph_il} | Status: {ph_status}\n"
+                f"All responses must respect {ph_cls}/{ph_il} constraints, applicable STIG/RMF controls, "
+                f"and DoD network migration best practices for this classification level.\n"
+            )
+
         qa_system = (  # noqa: F841
             _AI_TOPO_SYSTEM_PROMPT
+            + phase_header
             + "\n\nYou are also a network expert who can answer questions directly"
             " without generating JSON. When the user asks a question (rather than"
             " requesting a diagram), respond in plain English with a clear, concise"
@@ -11362,6 +11407,7 @@ Respond with ONLY this JSON (no other text):
         body = request.get_json(silent=True) or {}
         personas = body.get("personas") or None
         use_llm = bool(body.get("use_llm", True))
+        phase_id_filter = request.args.get("phase_id") or body.get("phase_id")
 
         try:
             conn = get_connection()
@@ -11375,6 +11421,8 @@ Respond with ONLY this JSON (no other text):
             if engine_cls:
                 engine = engine_cls()
                 engine._ensure_tables(conn)
+                if phase_id_filter:
+                    engine.generate_walkthrough(flow_id, conn, phase_id=phase_id_filter)
 
             # Verify flow belongs to this topology
             flow_row = conn.execute(
@@ -12044,6 +12092,97 @@ Planning rules:
 
         return jsonify({"error": f"Unknown format: {fmt}"}), 400
 
+    # ── AI Migration Plan Generator ────────────────────────────────────────
+    @bp.route("/api/migration-plan/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_migration_plan_generate():
+        """Decompose a NL description into migration phases using LLM.
+
+        Body: {"description": "...", "project_id": "...", "topo_id": "..."}
+        Returns: {"phases_created": N, "phase_ids": [...]}
+        """
+        import uuid as _uuid
+        from tools.http.client import request as _req_request
+
+        data = request.get_json(force=True, silent=True) or {}
+        description = (data.get("description") or "").strip()
+        project_id = (data.get("project_id") or "").strip()
+        if not description:
+            return jsonify({"error": "description is required"}), 400
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return jsonify({"error": "No ANTHROPIC_API_KEY set"}), 503
+
+        try:
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 2048,
+                    "system": _AI_MIGRATION_PLAN_PROMPT,
+                    "messages": [{"role": "user", "content": description}],
+                },
+                timeout=60,
+            )
+            if r.status_code != 200:
+                return jsonify({"error": f"LLM API error {r.status_code}"}), 503
+
+            raw_text = r.json()["content"][0]["text"].strip()
+            # Strip markdown fences if present
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            phases_data = json.loads(raw_text)
+            if not isinstance(phases_data, list):
+                return jsonify({"error": "LLM returned unexpected format"}), 500
+        except Exception as exc:
+            logger.exception("migration-plan/generate LLM call failed")
+            return jsonify({"error": str(exc)}), 500
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        conn = get_connection()
+        try:
+            phase_ids = []
+            for ph in phases_data:
+                pid = str(_uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO nc_migration_phases
+                       (id, project_id, phase_num, title, description,
+                        duration_days, parallel_run, rollback_criteria,
+                        maintenance_window, classification, impact_level, status)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,'planned')""",
+                    (
+                        pid,
+                        project_id,
+                        int(ph.get("phase_num", len(phase_ids) + 1)),
+                        str(ph.get("title", f"Phase {len(phase_ids)+1}")),
+                        str(ph.get("description", "")),
+                        int(ph.get("duration_days", 7)),
+                        int(ph.get("parallel_run", 0)),
+                        str(ph.get("rollback_criteria", "")),
+                        str(ph.get("maintenance_window", "")),
+                        str(ph.get("classification", "CUI")),
+                        str(ph.get("impact_level", "IL4")),
+                    ),
+                )
+                phase_ids.append(pid)
+            conn.commit()
+            return jsonify({"phases_created": len(phase_ids), "phase_ids": phase_ids}), 201
+        except Exception as exc:
+            logger.warning("migration-plan insert error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
     # ── Phase Status Update + Snapshot ────────────────────────────────────
     @bp.route("/api/migration-phases/<topo_id>/<phase_id>/status", methods=["PUT"])
     @nc_login_required
@@ -12273,6 +12412,84 @@ Planning rules:
             conn.execute("DELETE FROM nc_phase_documents WHERE id = ?", (doc_link_id,))
             conn.commit()
             return jsonify({"status": "deleted"})
+        finally:
+            conn.close()
+
+    # ── Unified Project Dashboard ──────────────────────────────────────────
+    @bp.route("/projects/<project_id>")
+    @nc_login_required
+    def nc_project_dashboard(project_id):
+        """Unified 4-panel view: phases + canvas + SOPs per phase + traffic flows."""
+        conn = get_connection()
+        try:
+            project_row = conn.execute(
+                "SELECT * FROM nc_projects WHERE id=?", (project_id,)
+            ).fetchone()
+            if not project_row:
+                return "Project not found", 404
+            project = dict(project_row)
+
+            phases = [dict(r) for r in conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                (project_id,),
+            ).fetchall()]
+
+            topo_row = conn.execute(
+                "SELECT t.id, t.name, t.graph_json FROM topologies t "
+                "JOIN nc_project_topologies pt ON pt.topology_id = t.id "
+                "WHERE pt.project_id=? LIMIT 1",
+                (project_id,),
+            ).fetchone()
+            topology = dict(topo_row) if topo_row else None
+            topo_id = topology["id"] if topology else None
+
+            snapshots = [dict(r) for r in conn.execute(
+                "SELECT id, phase_id, label, created_at FROM nc_topology_snapshots "
+                "WHERE topo_id=? ORDER BY created_at DESC",
+                (topo_id,),
+            ).fetchall()] if topo_id else []
+
+            phase_ids = [ph["id"] for ph in phases]
+            sops_by_phase: dict = {ph["id"]: [] for ph in phases}
+            if phase_ids:
+                placeholders = ",".join("?" * len(phase_ids))
+                doc_rows = conn.execute(
+                    f"SELECT pd.phase_id, s.sop_id, s.title, s.category, s.csp "
+                    f"FROM nc_phase_documents pd "
+                    f"JOIN ndc_sops s ON s.sop_id = pd.doc_id "
+                    f"WHERE pd.phase_id IN ({placeholders}) AND pd.doc_source='sop'",
+                    phase_ids,
+                ).fetchall()
+                for r in doc_rows:
+                    sops_by_phase.setdefault(r[0], []).append({
+                        "sop_id": r[1], "title": r[2], "category": r[3], "csp": r[4]
+                    })
+
+            flows_by_phase: dict = {ph["id"]: [] for ph in phases}
+            if topo_id and phase_ids:
+                placeholders = ",".join("?" * len(phase_ids))
+                flow_rows = conn.execute(
+                    f"SELECT id, name, source_zone, destination_zone, classification, phase_id "
+                    f"FROM nc_traffic_flows WHERE topology_id=? AND phase_id IN ({placeholders})",
+                    [topo_id] + phase_ids,
+                ).fetchall()
+                for r in flow_rows:
+                    flows_by_phase.setdefault(r[5], []).append({
+                        "id": r[0], "name": r[1],
+                        "source_zone": r[2], "destination_zone": r[3],
+                        "classification": r[4],
+                    })
+
+            return render_template(
+                "network/project_dashboard.html",
+                project=project,
+                phases=phases,
+                topology=topology,
+                topo_id=topo_id,
+                snapshots=snapshots,
+                sops_by_phase=sops_by_phase,
+                flows_by_phase=flows_by_phase,
+            )
         finally:
             conn.close()
 

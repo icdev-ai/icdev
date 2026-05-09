@@ -473,12 +473,12 @@ class TrafficFlowEngine:
 
     # ── Walkthrough generation ────────────────────────────────────────────────
 
-    def generate_walkthrough(self, flow_id: str, conn) -> list[dict]:
+    def generate_walkthrough(self, flow_id: str, conn, phase_id: str | None = None) -> list[dict]:
         """Build hop-by-hop walkthrough for a flow and persist it.
 
         Steps:
           1. Load flow from nc_traffic_flows
-          2. Load topology graph_json; convert nodes list → dict by id
+          2. Load topology graph_json; if phase_id given, project topology to that phase state
           3. BFS path via path_analyzer.find_paths()
           4. For each hop: resolve domain_type, look up domain policy (DB then DOMAIN_DEFAULTS)
           5. Build step dict, persist to nc_flow_walkthrough_steps
@@ -502,6 +502,19 @@ class TrafficFlowEngine:
         nodes_dict: dict[str, dict] = {}
         if topo_row and topo_row["graph_json"]:
             raw_graph = json.loads(topo_row["graph_json"])
+
+            # If phase_id provided, project the topology to that phase's post-state
+            if phase_id:
+                try:
+                    from tools.network.migration_phases import generate_phase_graph
+                    phase_row = conn.execute(
+                        "SELECT * FROM nc_migration_phases WHERE id=?", (phase_id,)
+                    ).fetchone()
+                    if phase_row:
+                        raw_graph = generate_phase_graph(raw_graph, dict(phase_row))
+                except Exception:
+                    pass  # fall back to current topology if projection fails
+
             nodes_list: list[dict] = raw_graph.get("nodes", [])
             edges: list[dict] = raw_graph.get("edges", [])
             nodes_dict = {n["id"]: n for n in nodes_list}
