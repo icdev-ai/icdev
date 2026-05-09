@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -275,18 +274,16 @@ def create_kanban_tasks(kanban_tasks: list[dict]) -> list[int]:
         meta_json = json.dumps(task.get("metadata", {}))
         try:
             cur = conn.execute(
-                """INSERT INTO tasks
-                   (id, title, description, status, priority, tags, metadata_json,
-                    created_at, updated_at, source)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                """INSERT INTO kanban_tasks
+                   (id, title, description, status, priority,
+                    created_at, updated_at, dispatch_source)
+                   VALUES (?,?,?,?,?,?,?,?)""",
                 (
                     str(uuid.uuid4()),
                     task["title"],
                     task["description"],
                     "backlog",
                     task.get("priority", "medium"),
-                    tags_json,
-                    meta_json,
                     now, now,
                     "ops_config_generator",
                 ),

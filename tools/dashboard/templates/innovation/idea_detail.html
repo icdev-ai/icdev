@@ -189,13 +189,21 @@
   <!-- Feasibility Study -->
   {% if assessment and assessment.feasibility_study_text %}
   <div class="ig-section">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.75rem;margin-bottom:1rem;">
       <div class="ig-section-title" style="margin:0;border:none;padding:0;">Detailed Feasibility Study</div>
-      {% if not assessment.human_approved %}
-      <button class="ig-btn ig-btn-success" onclick="approveAssessment()">✓ Approve</button>
-      {% else %}
-      <span style="color:var(--ig-green);font-size:.85rem;">✓ Approved</span>
-      {% endif %}
+      <div style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;">
+        {% if idea.aadc_design_id %}
+        <a href="/agentic-ai/canvas/{{ idea.aadc_design_id }}/ops-config"
+           style="background:#FFB800;color:#000;padding:.35rem .9rem;border-radius:6px;font-size:.8rem;font-weight:600;text-decoration:none;">
+          ⚙️ Generate Ops Config →
+        </a>
+        {% endif %}
+        {% if not assessment.human_approved %}
+        <button class="ig-btn ig-btn-success" onclick="approveAssessment()">✓ Approve</button>
+        {% else %}
+        <span style="color:var(--ig-green);font-size:.85rem;">✓ Approved</span>
+        {% endif %}
+      </div>
     </div>
     <div class="ig-brief-body" id="studyBody"></div>
     <script>
