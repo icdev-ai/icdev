@@ -94,6 +94,18 @@
   {% endfor %}
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "pipeline" %}
+{% set iqe_api_route = "/devops/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Pipeline Canvas" %}
+{% set iqe_examples = [
+  {"label": "All snapshots", "query": "foreach s in pipeline.snapshots select s.pipeline_id, s.snapshot_type, s.created_at"},
+  {"label": "Build runner nodes", "query": "foreach n in pipeline.nodes where n.node_type == \"build-runner\" select n.pipeline_id, n.node_type"},
+  {"label": "All pipeline edges", "query": "foreach e in pipeline.edges select e.pipeline_id, e.source, e.target"},
+  {"label": "SLSA signed nodes", "query": "foreach n in pipeline.nodes where n.signed == true select n.pipeline_id, n.node_type, n.id"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 <script>
 function loadTemplate(tplId) {
   fetch(`/devops/api/templates/${tplId}/load`, { method: 'POST', headers: { 'Content-Type': 'application/json' } })

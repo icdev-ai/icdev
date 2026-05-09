@@ -68,6 +68,19 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "observability" %}
+{% set iqe_api_route = "/observability/api/iqe-query" %}
+{% set iqe_title = "IQE Query — MITRE ATT&CK Coverage" %}
+{% set iqe_examples = [
+  {"label": "All coverage gaps", "query": "foreach g in mitre.gaps select g.technique_id, g.technique_name, g.tactic_id, g.recommended_signal"},
+  {"label": "Fully covered techniques", "query": "foreach c in mitre.coverage where c.coverage_state == \"full\" select c.technique_id, c.technique_name, c.design_name"},
+  {"label": "Techniques by tactic", "query": "foreach t in mitre.techniques where t.tactic_id == \"TA0001\" select t.id, t.name"},
+  {"label": "Sub-techniques", "query": "foreach t in mitre.techniques where t.is_sub_technique == true select t.id, t.name, t.parent_id"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>
