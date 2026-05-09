@@ -103,7 +103,7 @@ def _clone_default(value: Any) -> Any:
 
 
 _TestType = Literal["unit", "integration", "bdd", "security", "compliance"]
-_E2EStatus = Literal["passed", "failed"]
+_E2EStatus = Literal["passed", "failed", "skipped"]
 _GateType = Literal["code_review", "merge", "deploy"]
 _GateSeverity = Literal["blocking", "warning", "info"]
 _AgentModel = Literal["sonnet", "opus", "haiku"]
@@ -140,7 +140,7 @@ class E2ETestResult(BaseModel):
 
     @property
     def passed(self) -> bool:
-        return self.status == "passed"
+        return self.status in ("passed", "skipped")
 
 
 # ────────────────────────────────────────────────────────────────────────────

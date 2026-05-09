@@ -408,3 +408,86 @@ Replaced 231-byte stub `tools/network/routes/governance.py` with 5 full route im
 - `no_single_points_of_failure` — delegates to `tools.network.twin.blast_radius()` if available
 - `no_open_cat1_findings` — counts open CAT1 rows in nc_compliance_findings
 - `all_devices_managed` — counts unmanaged=0 devices in nc_objects
+
+---
+
+## IQE Full Ecosystem Integration (2026-05-09)
+
+IQE is now wired across all 9 canvases + ICDEV core. Every canvas has a `POST /api/iqe-query` route and an embedded widget. A global dispatch route accepts any canvas name.
+
+### New Adapters
+
+| Adapter | Path | Collections |
+|---------|------|-------------|
+| BDC | `tools/iqe/adapters/bdc.py` | `bdc.designs`, `bdc.assessments`, `bdc.isas`, `bdc.alerts` |
+| MC (Migration) | `tools/iqe/adapters/mc.py` | `mc.designs`, `mc.waves`, `mc.assessments` |
+| AADC (Agentic AI) | `tools/iqe/adapters/aadc.py` | `aadc.designs`, `aadc.assessments`, `aadc.artifacts` |
+| AIMC (AI/ML) | `tools/iqe/adapters/aimc.py` | `aimc.designs`, `aimc.nodes`, `aimc.assessments`, `aimc.artifacts` |
+| Core Kanban | `tools/iqe/adapters/core_kanban.py` | `kanban.tasks`, `kanban.epics` |
+| Core Agents/Projects | `tools/iqe/adapters/core_agents.py` | `agents.registry`, `projects.list` |
+
+NDC adapter (`tools/iqe/adapters/ndc.py`) now registers all 13 `network.*` collections on the module-level executor (in addition to the class-based `NDCAdapter` pattern) so the dispatch route can use it.
+
+### Per-Canvas Routes
+
+| Canvas | Route | Blueprint |
+|--------|-------|-----------|
+| SDC | `POST /security/api/iqe-query` | `tools/security_canvas/blueprint.py` |
+| PDC | `POST /devops/api/iqe-query` | `tools/pipeline/blueprint.py` |
+| DDC | `POST /data/api/iqe-query` | `tools/data_canvas/blueprint.py` |
+| IDC | `POST /infra/api/iqe-query` | `tools/infra_canvas/blueprint.py` |
+| ODC | `POST /observability/api/iqe-query` | `tools/observability_canvas/blueprint.py` |
+| BDC | `POST /boundary/api/iqe-query` | `tools/boundary_canvas/blueprint.py` |
+| MC | `POST /migration-canvas/api/iqe-query` | `tools/migration_canvas/blueprint.py` |
+| AADC | `POST /agentic-ai/api/iqe-query` | `tools/agentic_ai_canvas/blueprint.py` |
+| AIMC | `POST /ai-ml/api/iqe-query` | `tools/aiml_canvas/blueprint.py` |
+| Compliance | `POST /api/compliance/iqe-query` | `tools/dashboard/api/compliance.py` |
+| Kanban | `POST /api/kanban/iqe-query` | `tools/dashboard/api/kanban.py` |
+| Agents/Projects | `POST /api/core/iqe-query` | `tools/dashboard/app.py` |
+
+**Route contract (all canvases):**
+```
+POST /api/iqe-query (or per-canvas path above)
+Body:    {"question": "natural language question", "execute": true}
+Returns: {"ok": true, "iqe": "...", "explanation": "...", "results": [...], "row_count": N}
+Error:   {"error": "...", "iqe": "..."}  HTTP 500
+```
+
+### Global Dispatch Route
+
+`POST /api/iqe/dispatch` — canvas-aware dispatcher in `tools/dashboard/app.py`.
+
+```json
+{"question": "show all attack paths", "canvas": "sdc"}
+```
+
+Valid `canvas` values: `ndc`, `sdc`, `pdc`, `ddc`, `idc`, `odc`, `bdc`, `mc`, `aadc`, `aimc`, `compliance`, `kanban`, `agents`, `projects`.
+
+### Shared Widget
+
+`tools/dashboard/templates/includes/iqe_query_widget.html` — reusable Jinja2 partial included in every canvas template.
+
+Include with:
+```jinja
+{% set iqe_canvas = "sdc" %}
+{% set iqe_api_route = "/security/api/iqe-query" %}
+{% set iqe_title = "Query Security Data" %}
+{% set iqe_examples = [{"label": "...", "query": "..."}] %}
+{% include "includes/iqe_query_widget.html" %}
+```
+
+### Global Mini-bar
+
+`tools/dashboard/templates/base.html` — collapsible bottom drawer available on every dashboard page.
+
+- Toggle: `Ctrl+Shift+Q`
+- Auto-detects current canvas from `window.location.pathname`
+- Dispatches to `POST /api/iqe/dispatch`
+
+### Seed Queries
+
+| Directory | Files | Canvas |
+|-----------|-------|--------|
+| `context/iqe/queries/migration/` | 5 | MC |
+| `context/iqe/queries/aadc/` | 5 | AADC |
+| `context/iqe/queries/aimc/` | 3 | AIMC |

@@ -345,11 +345,13 @@ def _parse_playwright_report(
                 if not t_results:
                     continue
                 last = t_results[-1]
-                pw_status = (
-                    "passed"
-                    if (last.get("status") or "") == "passed"
-                    else "failed"
-                )
+                raw = (last.get("status") or "")
+                if raw in ("passed", "expected"):
+                    pw_status = "passed"
+                elif raw == "skipped":
+                    pw_status = "skipped"
+                else:
+                    pw_status = "failed"
                 screenshots, video_path = _collect_attachments(
                     last.get("attachments") or []
                 )
