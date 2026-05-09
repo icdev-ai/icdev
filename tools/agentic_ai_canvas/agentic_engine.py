@@ -201,6 +201,14 @@ def check_nist_ai_rmf(nodes: list[dict], edges: list[dict],
                         break
                 passed = all_ok
 
+        elif check.get("check") == "ai_use_case_registered":
+            # NIST AI RMF 2.0 GOVERN-1.7: system-card/AI-BOM node OR use_case_id metadata
+            passed = (
+                bool(types & {"system-card", "ai-bom", "gov-system-card", "gov-ai-bom"})
+                or bool(design_meta.get("use_case_id"))
+                or bool(design_meta.get("system_card"))
+            )
+
         elif check.get("required_output"):
             passed = bool(types & {"inference-input"}) and bool(types & OUTPUT_NODES)
 
