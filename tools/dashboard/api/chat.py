@@ -253,6 +253,65 @@ def close_context(context_id):
 
 
 # ---------------------------------------------------------------------------
+# Kanban task routes (Chat-Kanban integration)
+# ---------------------------------------------------------------------------
+
+
+@chat_api.route("/<context_id>/tasks", methods=["GET"])
+def list_context_tasks(context_id):
+    """List kanban tasks linked to this chat context.
+
+    Returns tasks tagged with dispatch_source='chat:{context_id}'.
+    """
+    try:
+        from tools.chat.kanban_bridge import list_context_tasks as _list
+        tasks = _list(context_id)
+        return jsonify({"tasks": tasks, "total": len(tasks), "context_id": context_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc), "tasks": [], "total": 0}), 500
+
+
+@chat_api.route("/<context_id>/tasks", methods=["POST"])
+def create_context_task(context_id):
+    """Create a kanban task linked to this chat context.
+
+    Body: {title, description?, task_type?, priority?, depends_on?}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    title = data.get("title", "").strip()
+    if not title:
+        return jsonify({"error": "title required"}), 400
+    try:
+        from tools.chat.kanban_bridge import create_context_task as _create
+        task = _create(
+            context_id,
+            title=title,
+            description=data.get("description", ""),
+            task_type=data.get("task_type", "build"),
+            priority=data.get("priority", "medium"),
+            depends_on=data.get("depends_on"),
+        )
+        return jsonify(task), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@chat_api.route("/<context_id>/vv-chain", methods=["POST"])
+def create_vv_chain(context_id):
+    """Auto-create CodeLens + Coherence + E2E tasks linked to this context.
+
+    Body: {canvas?}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    try:
+        from tools.chat.kanban_bridge import create_vv_chain as _chain
+        tasks = _chain(context_id, canvas=data.get("canvas", ""))
+        return jsonify({"tasks": tasks, "total": len(tasks)}), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
 

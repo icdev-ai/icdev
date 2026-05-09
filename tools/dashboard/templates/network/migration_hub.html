@@ -563,7 +563,7 @@ function buildPhaseDrawer(ph, proj) {
             <div class="phase-drawer-header">
                 <h4>Phase ${ph.phase_num}: ${esc(ph.title)}</h4>
                 <div style="display:flex;gap:8px;">
-                    ${proj.id ? `<a href="/network/migration-phases/${proj.id}" class="qa-btn" target="_blank">Open 3-Panel Diagram</a>` : ''}
+                    ${proj.topology_id ? `<a href="/network/migration-phases/${proj.topology_id}" class="qa-btn" target="_blank">Open 3-Panel Diagram</a>` : ''}
                 </div>
             </div>
             <div class="phase-detail-grid">
@@ -584,7 +584,7 @@ function buildPhaseDrawer(ph, proj) {
                     <div class="value">${parallel}</div>
                 </div>
             </div>
-            ${ph.description ? `<p style="font-size:0.82rem;color:#4a5568;margin:0 0 10px;">${esc(ph.description)}</p>` : ''}
+            ${ph.description ? buildStepsList(ph.description) : ''}
             ${ph.rollback_criteria ? `
             <div class="docs-section-title" style="margin-bottom:6px;">Rollback Criteria</div>
             <p style="font-size:0.82rem;color:#4a5568;margin:0 0 14px;">${esc(ph.rollback_criteria)}</p>
@@ -753,6 +753,20 @@ function filterHub() {
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
+function buildStepsList(description) {
+  if (!description) return '';
+  const steps = description.split('. ').map(s => s.trim().replace(/\.$/, '')).filter(Boolean);
+  if (steps.length <= 1) {
+    return `<p style="font-size:0.82rem;color:#4a5568;margin:0 0 10px;">${esc(description)}</p>`;
+  }
+  const rows = steps.map((s, i) => `
+    <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f0f4f8;align-items:flex-start;">
+      <span style="width:20px;height:20px;border-radius:50%;background:#ebf8ff;color:#2b6cb0;font-size:0.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">${i+1}</span>
+      <span style="font-size:0.81rem;color:#2d3748;line-height:1.45;">${esc(s)}</span>
+    </div>`).join('');
+  return `<div style="margin:0 0 12px;">${rows}</div>`;
+}
+
 function esc(s) {
     if (!s) return '';
     return String(s)
