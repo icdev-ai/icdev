@@ -417,6 +417,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "genesis_reflex_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
         "mc_net_ai_sessions",
+        # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
+        "sg_war_readiness_events",
     ]
 
     if tool_name == "Bash":
