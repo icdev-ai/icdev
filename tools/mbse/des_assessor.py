@@ -1,5 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """DoDI 5000.87 Digital Engineering Strategy (DES) compliance assessor.
 
 Loads DES requirements from context/mbse/des_requirements.json, performs automated
