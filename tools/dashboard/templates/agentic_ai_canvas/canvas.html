@@ -181,6 +181,10 @@
       <button onclick="showCoordMatrix()"><span>⊡</span> Coord. Matrix</button>
       <button onclick="showProvenance()"><span>🔗</span> Model Provenance</button>
       <hr class="aadc-menu-sep">
+      {% if design.id %}
+      <a href="/agentic-ai/canvas/{{ design.id }}/ops-config" style="color:var(--fa-gold,#FFB800);font-weight:600;"><span>⚙️</span> Generate Ops Config</a>
+      {% endif %}
+      <hr class="aadc-menu-sep">
       <button onclick="showThreatModel()"><span>🗡</span> Threat Model</button>
       <button onclick="doOscalExport()"><span>📋</span> OSCAL Export</button>
       {% if design.id %}<a href="/agentic-ai/risks/{{ design.id }}"><span>⚠</span> Risk Register</a>{% endif %}

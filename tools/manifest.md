@@ -410,3 +410,9 @@
 |------|------|-------------|-------|--------|
 | Modernization Bridge | tools\aiml_canvas\modernization_bridge.py | Auto-registered: aiml_canvas/modernization_bridge.py | --json | JSON |
 | Seed Ohc Kanban | tools\kanban\seed_ohc_kanban.py | Auto-registered: kanban/seed_ohc_kanban.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ops Config Generator | tools\agentic_ai_canvas\ops_config_generator.py | Auto-registered: agentic_ai_canvas/ops_config_generator.py | --json | JSON |

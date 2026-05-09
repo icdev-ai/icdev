@@ -2780,3 +2780,60 @@ def aadc_api_iqe_query():
     except Exception as exc:
         _log.getLogger(__name__).warning('AADC IQE query error: %s', exc)
         return jsonify({'error': str(exc), 'iqe': iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Track B — AADC Ops Config Generator
+# ---------------------------------------------------------------------------
+
+@aadc_bp.route("/canvas/<design_id>/ops-config", methods=["GET"])
+def ops_config_page(design_id: str):
+    """Render the Ops Config modal page for a design."""
+    conn = _conn()
+    row = _row(conn.execute("SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    conn.close()
+    if not row:
+        return jsonify({"error": "design not found"}), 404
+    return render_template(
+        "agentic_ai_canvas/ops_config.html",
+        design_id=design_id,
+        design_name=row.get("name", design_id),
+    )
+
+
+@aadc_bp.route("/api/designs/<design_id>/ops-config", methods=["POST"])
+def generate_ops_config_api(design_id: str):
+    """Generate ops config and (optionally) create Kanban tasks."""
+    import json as _json
+    from tools.agentic_ai_canvas.ops_config_generator import (
+        generate_ops_config,
+        create_kanban_tasks,
+    )
+
+    data = request.get_json(force=True, silent=True) or {}
+    create_tasks = data.get("create_tasks", True)
+
+    try:
+        result = generate_ops_config(design_id)
+        if create_tasks and result["kanban_tasks"]:
+            task_ids = create_kanban_tasks(result["kanban_tasks"])
+            result["created_task_ids"] = task_ids
+        else:
+            result["created_task_ids"] = []
+
+        return jsonify({
+            "ok": True,
+            "config_path": result["config_path"],
+            "design_name": result["design_name"],
+            "matched_nodes": result["matched_nodes"],
+            "unmatched_nodes": result["unmatched_nodes"],
+            "kanban_tasks": result["kanban_tasks"],
+            "created_task_ids": result.get("created_task_ids", []),
+            "config_preview": _json.dumps(result["config"], indent=2, ensure_ascii=False)[:4000],
+        })
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 404
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("Ops config generation error: %s", e)
+        return jsonify({"error": str(e)}), 500
