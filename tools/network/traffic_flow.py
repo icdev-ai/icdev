@@ -64,7 +64,7 @@ DOMAIN_ACTION_MAP: dict[tuple[str, str], list[str]] = {
     ("jwics", "api_rest"):       ["type1-decrypt", "hbss-scan", "acas-check", "app-deliver"],
     ("jwics", "ipsec_tunnel"):   ["type1-decrypt", "route", "re-encrypt", "forward"],
     ("jwics", "bgp"):            ["ospf-neighbor", "route-advertise", "forward"],
-    ("jwics", "dns"):            ["stub-resolve", "jwics-recursive", "dia-authoritative", "dnssec-validate"],
+    ("jwics", "dns"):            ["stub-resolve", "agency-recursive", "jwics-recursive", "dia-authoritative", "dnssec-validate", "response-cache"],
     ("jwics", "email"):          ["smime-sign", "smtp-relay", "hbss-content-scan", "dia-relay-deliver"],
     # c2s — AWS Secret Region (C2S): ClassifiedConnect + GuardDuty + CloudTrail
     ("c2s", "sso_saml"):         ["cac-authenticate", "iam-idc-validate", "fips-check", "app-deliver"],
@@ -210,11 +210,30 @@ DOMAIN_DEFAULTS: dict[str, dict[str, Any]] = {
 FLOW_NARRATIVES: dict[tuple[str, str], list[str]] = {
     # DNS flows
     ("jwics", "dns"): [
-        "SCIF workstation stub resolver sends query to JWICS recursive resolver (10.x.x.x:53 — DIA-assigned address, not Internet-routable).",
-        "JWICS recursive resolver checks local cache (TTL 300s); on cache miss, queries DIA authoritative name server over JWICS backbone.",
-        "DIA authoritative resolves within classified zones: *.jwics.gov, *.dia.smil.mil, and agency-delegated subzones.",
-        "DNSSEC validation performed using keys distributed via JWICS PKI (not Internet IANA chain).",
-        "Signed response returned to SCIF workstation. BLOCKED: No Internet DNS. No NIPRNet resolvers. CDS required for any cross-domain lookup.",
+        "SCIF workstation OS stub resolver issues query to the agency JWICS DNS resolver "
+        "(DISA-IPAM-assigned address inside the SCIF network, e.g. 10.x.x.1:53). "
+        "The resolver IP is distributed to all SCIF hosts via DHCP option 6 — no Internet DNS entries are configured.",
+        "Agency JWICS DNS resolver (BIND 9 on DISA-hardened RHEL) checks its local cache. "
+        "Cache hit returns immediately (default TTL 300 s). "
+        "Cache miss triggers a forward to the DIA JWICS recursive resolver.",
+        "Agency resolver forwards the query over the JWICS backbone to the DIA JWICS recursive resolver "
+        "(DIA-managed, 10.x.x.x:53, not Internet-routable). "
+        "The forwarder is configured with 'forward only' — the agency resolver does NOT perform its own iterative resolution.",
+        "DIA JWICS recursive resolver checks its cache. On miss, it queries the DIA authoritative name server "
+        "for the classified zones it owns: *.jwics.gov, *.dia.smil.mil, *.smil.mil, and any agency-delegated subzones. "
+        "All queries stay within the JWICS backbone — no Internet path exists.",
+        "DIA authoritative DNS returns the signed RRset (A/AAAA/PTR/MX). "
+        "DNSSEC validation is performed at the DIA recursive resolver using the JWICS PKI trust anchor "
+        "(not the Internet IANA root chain). "
+        "The 'ad' (Authenticated Data) flag is set in the response when validation passes.",
+        "DIA recursive resolver returns the validated response to the agency resolver, "
+        "which caches the record (TTL from the authoritative zone, typically 300 s) "
+        "and forwards the answer to the SCIF workstation stub resolver.",
+        "Workstation application receives the resolved IP and opens the connection. "
+        "The agency resolver logs the query to the DISA SIEM (syslog, AU-2 compliance). "
+        "BLOCKED: Internet DNS (8.8.8.8, ISP resolvers) is unreachable from JWICS. "
+        "NIPRNet resolvers are unreachable. Cross-domain lookups (JWICS → NIPR namespace) "
+        "require an NSA-evaluated CDS DNS guard — they do not traverse the standard resolver chain.",
     ],
     ("c2s", "dns"): [
         "EC2 instance queries DHCP-assigned resolver — Route 53 Resolver at VPC+2 address (169.254.169.253).",
