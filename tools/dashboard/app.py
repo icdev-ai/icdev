@@ -155,6 +155,7 @@ _CANVAS_DEFS = [
     ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
     ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
+    ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -1311,6 +1312,7 @@ def create_app() -> Flask:
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
+            "ohc_enabled": _CANVAS_FLAGS.get("ohc", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
             "academy_enabled": _APP_FLAGS.get("forge_academy", False),
@@ -2306,6 +2308,7 @@ def create_app() -> Flask:
             "mc":         ("tools.iqe.adapters.mc",          ["mc.designs", "mc.waves", "mc.assessments"]),
             "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts"]),
             "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts"]),
+            "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
             "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
             "agents":     ("tools.iqe.adapters.core_agents", ["agents.registry"]),

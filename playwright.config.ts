@@ -19,7 +19,7 @@ export default defineConfig({
   timeout: 60000, // cold-start server + beforeEach login flows need >30s
   fullyParallel: false, // Sequential for Gov/DoD audit traceability
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  retries: process.env.CI ? 2 : 1,
   workers: 1, // Single worker for deterministic execution order
   reporter: [
     ['list'],

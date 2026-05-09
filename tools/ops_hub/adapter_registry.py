@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from tools.ops_hub.adapter_base import OpsAdapter, AdapterHealth
+    from tools.ops_hub.adapter_base import OpsAdapter
 
 # Ordered list of adapter module paths → class names
 _ADAPTER_MAP: dict[str, str] = {

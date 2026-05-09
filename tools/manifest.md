@@ -381,3 +381,25 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Seed Aadc Aimc Appmigration | tools\kanban\seed_aadc_aimc_appmigration.py | Auto-registered: kanban/seed_aadc_aimc_appmigration.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Adapter Registry | tools\ops_hub\adapter_registry.py | Auto-registered: ops_hub/adapter_registry.py | --json | JSON |
+| Aiops Engine | tools\ops_hub\aiops_engine.py | Auto-registered: ops_hub/aiops_engine.py | --json | JSON |
+| Llmops Engine | tools\ops_hub\llmops_engine.py | Auto-registered: ops_hub/llmops_engine.py | --json | JSON |
+| Mlops Engine | tools\ops_hub\mlops_engine.py | Auto-registered: ops_hub/mlops_engine.py | --json | JSON |
+| Ops Aggregator | tools\ops_hub\ops_aggregator.py | Auto-registered: ops_hub/ops_aggregator.py | --json | JSON |
+| Azureml Adapter | tools\ops_hub\adapters\azureml_adapter.py | Auto-registered: adapters/azureml_adapter.py | --json | JSON |
+| Bedrock Guardrails Adapter | tools\ops_hub\adapters\bedrock_guardrails_adapter.py | Auto-registered: adapters/bedrock_guardrails_adapter.py | --json | JSON |
+| Cloudwatch Adapter | tools\ops_hub\adapters\cloudwatch_adapter.py | Auto-registered: adapters/cloudwatch_adapter.py | --json | JSON |
+| Dvc Adapter | tools\ops_hub\adapters\dvc_adapter.py | Auto-registered: adapters/dvc_adapter.py | --json | JSON |
+| Evidently Adapter | tools\ops_hub\adapters\evidently_adapter.py | Auto-registered: adapters/evidently_adapter.py | --json | JSON |
+| Langfuse Adapter | tools\ops_hub\adapters\langfuse_adapter.py | Auto-registered: adapters/langfuse_adapter.py | --json | JSON |
+| Mlflow Adapter | tools\ops_hub\adapters\mlflow_adapter.py | Auto-registered: adapters/mlflow_adapter.py | --json | JSON |
+| Onnx Adapter | tools\ops_hub\adapters\onnx_adapter.py | Auto-registered: adapters/onnx_adapter.py | --json | JSON |
+| Prometheus Adapter | tools\ops_hub\adapters\prometheus_adapter.py | Auto-registered: adapters/prometheus_adapter.py | --json | JSON |
+| Sagemaker Adapter | tools\ops_hub\adapters\sagemaker_adapter.py | Auto-registered: adapters/sagemaker_adapter.py | --json | JSON |
+| Vertexai Adapter | tools\ops_hub\adapters\vertexai_adapter.py | Auto-registered: adapters/vertexai_adapter.py | --json | JSON |
+| Ohc | tools\iqe\adapters\ohc.py | Auto-registered: adapters/ohc.py | --json | JSON |

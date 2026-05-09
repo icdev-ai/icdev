@@ -1,0 +1,11 @@
+{
+  "id": "120",
+  "name": "ops_hub",
+  "description": "Create OHC (Ops Hub Canvas) tables: ohc_experiments, ohc_experiment_runs, ohc_model_registry, ohc_dataset_versions, ohc_adapter_status, ohc_adapter_health_log, ohc_data_drift_events.",
+  "created_at": "2026-05-09",
+  "author": "icdev-builder",
+  "database": "ohc_canvas",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Idempotent — uses CREATE TABLE IF NOT EXISTS. Targets ohc_canvas.db (not icdev.db). Managed by tools/ops_hub/db/init_db.py."
+}
