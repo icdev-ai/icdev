@@ -1652,4 +1652,37 @@ def create_observability_blueprint():
         _audit("correlator_run", details=f"window={window_hours}h edges={result.get('edges_written',0)}")
         return jsonify(result)
 
+    @bp.route("/api/iqe-query", methods=["POST"])
+    @oc_login_required
+    def odc_api_iqe_query():
+        """IQE structured query — translate NL to IQE and execute against ODC MITRE coverage data."""
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.observability  # noqa: F401 — registers mitre.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["mitre.techniques", "mitre.coverage", "mitre.gaps"]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("ODC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
     return bp

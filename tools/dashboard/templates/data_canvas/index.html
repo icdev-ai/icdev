@@ -81,6 +81,19 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Data Lineage & Classifications" %}
+{% set iqe_examples = [
+  {"label": "All lineage edges", "query": "foreach e in data.lineage.edges select e.source_node_id, e.target_node_id, e.classification"},
+  {"label": "PII lineage edges", "query": "foreach e in data.lineage.edges where e.classification contains \"PII\" select e.source_node_id, e.target_node_id, e.classification"},
+  {"label": "CUI designs", "query": "foreach d in data.classifications where d.classification contains \"CUI\" select d.name, d.classification"},
+  {"label": "Cross-region paths", "query": "foreach e in data.lineage.edges where e.lineage_type == \"cross-region\" select *"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

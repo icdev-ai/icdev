@@ -61,6 +61,19 @@
   <p style="color:#7a8cb0; padding: 0 30px;">No infrastructure designs yet. Click <b>+ New Infrastructure Design</b> to get started.</p>
   {% endfor %}
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "infra" %}
+{% set iqe_api_route = "/infra/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Infrastructure Resources" %}
+{% set iqe_examples = [
+  {"label": "All resources", "query": "foreach r in infra.resources select r.resource_name, r.csp, r.region, r.classification"},
+  {"label": "CUI resources over $500/mo", "query": "foreach r in infra.resources where r.classification == \"CUI\" where r.cost_per_month > 500 select r.resource_name, r.csp, r.cost_per_month"},
+  {"label": "AWS resources", "query": "foreach r in infra.resources where r.csp == \"aws\" select r.resource_name, r.region, r.resource_type"},
+  {"label": "All snapshots", "query": "foreach s in infra.snapshots select s.snapshot_id, s.csp, s.resource_count, s.taken_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>
