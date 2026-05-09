@@ -32,7 +32,7 @@ import argparse
 import json
 import re
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, List, Optional
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
