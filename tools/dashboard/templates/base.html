@@ -245,6 +245,16 @@
                     <li><a href="/ops/incidents">Incidents</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
+                    {% if govlift_enabled %}
+                    <li class="nav-section-label">Cloud Migration</li>
+                    <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
+                    <li><a href="/govlift/workloads">Workloads</a></li>
+                    <li><a href="/govlift/waves">Waves</a></li>
+                    <li><a href="/govlift/executor">Executor</a></li>
+                    <li><a href="/govlift/stig">STIG</a></li>
+                    <li><a href="/govlift/audit">Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
                     <li class="nav-section-label">Cross-Canvas</li>
                     <li><a href="/canvas-compliance">Canvas Posture</a></li>
                     {% if canvas_kg_enabled %}<li><a href="/canvas-kg">Canvas KG</a></li>{% endif %}
@@ -716,6 +726,7 @@
             [/^\/agentic-ai/, 'aadc'],
             [/^\/ai-ml/, 'aimc'],
             [/^\/ops/, 'ohc'],
+            [/^\/govlift/, 'govlift'],
             [/^\/kanban/, 'kanban'],
             [/^\/compliance/, 'compliance'],
             [/^\/agents/, 'agents'],
