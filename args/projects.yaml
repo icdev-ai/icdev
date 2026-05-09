@@ -3194,3 +3194,36 @@ projects:
   - key: ep6
     title: Compliance Artifacts & ATO Package
     priority: medium
+
+- key: ck
+  name: Chat-Kanban Integration — Build Visibility in Multi-Stream Chat
+  description: >
+    Links multi-stream chat contexts to kanban_tasks for build progress visibility.
+    Tasks tab in chat right panel shows build tasks with status badges and auto-polls
+    every 8s. V&V chain button queues CodeLens + Coherence + E2E tasks. Extension 081
+    auto-detects build completion signals and creates V&V chains automatically.
+    Fixes the gap where builds triggered via chat had zero Kanban visibility.
+  task_prefix: ck-
+  default_open: false
+  briefs:
+  - 'ep1: tools/chat/kanban_bridge.py — list/create/vv-chain CLI + library'
+  - 'ep2: chat API — GET/POST /api/chat/<ctx>/tasks + /vv-chain routes'
+  - 'ep3: chat.html Tasks tab + chat.js loadContextTasks + CSS'
+  - 'ep4: tools/extensions/builtins/081_build_kanban_sync.py — auto-chain on build signals'
+  - 'ep5: E2E + govlift lifecycle test + coherence gate + IQE dispatch fix'
+  epics:
+  - key: ep1
+    title: Kanban Bridge Library + CLI
+    priority: high
+  - key: ep2
+    title: Chat API — task list/create/vv-chain endpoints
+    priority: high
+  - key: ep3
+    title: Chat UI — Tasks tab, status badges, polling
+    priority: high
+  - key: ep4
+    title: Build Sync Extension — auto V&V chain on completion signals
+    priority: medium
+  - key: ep5
+    title: V&V — GovLift E2E lifecycle test + IQE dispatch fix
+    priority: high

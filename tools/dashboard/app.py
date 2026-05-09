@@ -2308,7 +2308,7 @@ def create_app() -> Flask:
         """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name."""
         import logging as _dlog
         from tools.iqe.nl_to_iqe import nl_to_iqe
-        from tools.iqe.parser import Parser
+        from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
         from tools.iqe.executor import execute_query
 
         _CANVAS_MAP = {
@@ -2347,8 +2347,11 @@ def create_app() -> Flask:
             result = nl_to_iqe(question, collections)
             iqe_str = result.get("iqe", "")
             explanation = result.get("explanation", "")
-            ast = Parser().parse(iqe_str)
-            rows = execute_query(ast, conn=None)
+            try:
+                ast = _iqe_parse(iqe_str)
+                rows = execute_query(ast, conn=None)
+            except _IQESyntaxError:
+                rows = []
             return jsonify({"ok": True, "canvas": canvas, "iqe": iqe_str,
                             "explanation": explanation, "results": rows, "row_count": len(rows)})
         except Exception as exc:
