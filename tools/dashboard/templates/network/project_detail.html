@@ -111,6 +111,160 @@
   <div id="impact-results" style="display:none;padding:10px 16px;border-top:1px solid var(--border);"></div>
 </section>
 
+<!-- ═══════════════ MIGRATION PLAN ═══════════════ -->
+<section class="panel panel-wide" id="migration-plan-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">Migration Plan</h2>
+    <div style="display:flex;gap:6px;">
+      <a href="/network/migration-hub" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;">Migration Hub</a>
+      {% if first_topo_id %}
+      <a href="/network/migration-phases/{{ first_topo_id }}" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" target="_blank">3-Panel Diagram</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if migration_phases %}
+  <style>
+  .mp-plan-card { border:1px solid var(--border,#e2e8f0); border-radius:8px; margin:10px 16px; overflow:hidden; }
+  .mp-plan-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface,#f7f9fc); cursor:pointer; user-select:none; }
+  .mp-plan-header:hover { background:var(--hover,#eef2f9); }
+  .mp-plan-num { width:28px; height:28px; border-radius:50%; background:#3182ce; color:#fff; font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .mp-plan-title { font-weight:700; font-size:0.9rem; flex:1; }
+  .mp-plan-status { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:10px; text-transform:uppercase; }
+  .status-pending,.status-planned { background:#e9ecef; color:#495057; }
+  .status-in_progress { background:#cce5ff; color:#004085; }
+  .status-completed { background:#d4edda; color:#155724; }
+  .status-rolled_back { background:#f8d7da; color:#721c24; }
+  .mp-plan-dur { font-size:0.75rem; color:#718096; flex-shrink:0; }
+  .mp-plan-chevron { color:#a0aec0; transition:transform .2s; }
+  .mp-plan-card.open .mp-plan-chevron { transform:rotate(180deg); }
+  .mp-plan-body { display:none; padding:14px 16px; border-top:1px solid var(--border,#e2e8f0); }
+  .mp-plan-card.open .mp-plan-body { display:block; }
+  .mp-meta-strip { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; font-size:0.8rem; color:#4a5568; }
+  .mp-meta-strip .meta-item { display:flex; align-items:flex-start; gap:5px; }
+  .mp-meta-strip .meta-label { font-weight:700; color:#718096; white-space:nowrap; }
+  .mp-steps-list { margin:0 0 14px; padding:0; list-style:none; }
+  .mp-step-row { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid #f0f4f8; align-items:flex-start; }
+  .mp-step-row:last-child { border-bottom:none; }
+  .mp-step-index { width:22px; height:22px; border-radius:50%; background:#ebf8ff; color:#2b6cb0; font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+  .mp-step-text { font-size:0.83rem; color:#2d3748; line-height:1.45; }
+  .mp-sop-section { margin-top:12px; }
+  .mp-sop-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#718096; margin-bottom:8px; }
+  .mp-sop-entry { border:1px solid #e2e8f0; border-radius:6px; margin-bottom:8px; overflow:hidden; }
+  .mp-sop-entry-hdr { display:flex; align-items:center; gap:8px; padding:7px 12px; background:#fafbfc; cursor:pointer; }
+  .mp-sop-entry-hdr:hover { background:#f0f4f8; }
+  .mp-sop-badge { font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:10px; background:#dbeafe; color:#1e40af; }
+  .mp-sop-name { font-size:0.82rem; font-weight:600; color:#2d3748; flex:1; }
+  .mp-sop-steps-body { display:none; padding:10px 12px; border-top:1px solid #e2e8f0; background:#fff; }
+  .mp-sop-entry.open .mp-sop-steps-body { display:block; }
+  .sop-step-row { display:flex; gap:8px; padding:5px 0; font-size:0.8rem; border-bottom:1px solid #f0f4f8; }
+  .sop-step-row:last-child { border-bottom:none; }
+  .sop-step-n { color:#3182ce; font-weight:700; flex-shrink:0; width:18px; }
+  .sop-step-action { flex:1; color:#2d3748; }
+  .sop-step-verify { font-size:0.72rem; color:#48bb78; margin-top:2px; }
+  .sop-step-time { font-size:0.7rem; color:#a0aec0; flex-shrink:0; }
+  .sop-prereq { font-size:0.78rem; color:#4a5568; margin-bottom:8px; }
+  .sop-prereq span { background:#fef3c7; color:#92400e; padding:2px 7px; border-radius:10px; margin:2px; display:inline-block; font-size:0.72rem; }
+  </style>
+
+  {% for ph in migration_phases %}
+  <div class="mp-plan-card" id="mpcard-{{ ph.phase_num }}">
+    <div class="mp-plan-header" onclick="toggleMpCard('mpcard-{{ ph.phase_num }}')">
+      <div class="mp-plan-num">{{ ph.phase_num }}</div>
+      <div class="mp-plan-title">{{ ph.title or 'Phase ' ~ ph.phase_num }}</div>
+      <span class="mp-plan-status status-{{ ph.status or 'pending' }}">{{ (ph.status or 'pending')|title }}</span>
+      {% if ph.duration_days %}<span class="mp-plan-dur">{{ ph.duration_days }}d</span>{% endif %}
+      <span class="mp-plan-chevron">▾</span>
+    </div>
+    <div class="mp-plan-body">
+      <div class="mp-meta-strip">
+        <div class="meta-item"><span class="meta-label">🕐 Window:</span> {{ ph.maintenance_window or 'TBD' }}</div>
+        {% if ph.rollback_criteria %}
+        <div class="meta-item"><span class="meta-label">↩ Rollback:</span> {{ ph.rollback_criteria }}</div>
+        {% endif %}
+        {% if ph.dependencies and ph.dependencies != '[]' %}
+        <div class="meta-item"><span class="meta-label">⛔ Depends on:</span> {{ ph.dependencies }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Prescriptive Steps -->
+      {% if ph.steps %}
+      <ul class="mp-steps-list">
+        {% for step in ph.steps %}
+        {% if step %}
+        <li class="mp-step-row">
+          <div class="mp-step-index">{{ loop.index }}</div>
+          <div class="mp-step-text">{{ step }}</div>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <!-- Linked SOPs -->
+      {% if ph.linked_docs %}
+      <div class="mp-sop-section">
+        <div class="mp-sop-label">📄 Reference SOPs ({{ ph.linked_docs|length }})</div>
+        {% for doc in ph.linked_docs %}
+        <div class="mp-sop-entry {% if doc.steps %}clickable{% endif %}" {% if doc.steps %}onclick="toggleSopEntry(this)"{% endif %}>
+          <div class="mp-sop-entry-hdr">
+            <span class="mp-sop-badge">{{ (doc.doc_type or doc.doc_source or 'SOP')|upper }}</span>
+            <span class="mp-sop-name">{{ doc.doc_title }}</span>
+            {% if doc.steps %}<span style="font-size:0.7rem;color:#a0aec0;">{{ doc.steps|length }} steps ▾</span>{% endif %}
+            {% if doc.relevance_note %}<span style="font-size:0.7rem;color:#718096;font-style:italic;">{{ doc.relevance_note }}</span>{% endif %}
+          </div>
+          {% if doc.steps %}
+          <div class="mp-sop-steps-body">
+            {% if doc.prerequisites %}
+            <div class="sop-prereq">
+              <strong>Prerequisites:</strong>
+              {% for p in doc.prerequisites %}<span>{{ p }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% for step in doc.steps %}
+            <div class="sop-step-row">
+              <span class="sop-step-n">{{ step.number }}.</span>
+              <div style="flex:1;">
+                <div class="sop-step-action">{{ step.action }}</div>
+                {% if step.verify %}<div class="sop-step-verify">✓ Verify: {{ step.verify }}</div>{% endif %}
+              </div>
+              {% if step.time_est %}<span class="sop-step-time">{{ step.time_est }}</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+
+  <script>
+  function toggleMpCard(id) {
+    const card = document.getElementById(id);
+    if (card) card.classList.toggle('open');
+  }
+  function toggleSopEntry(el) {
+    el.classList.toggle('open');
+  }
+  // Auto-open Phase 1 on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const first = document.querySelector('.mp-plan-card');
+    if (first) first.classList.add('open');
+  });
+  </script>
+
+  {% else %}
+  <div style="padding:20px 16px;color:#a0aec0;font-size:0.85rem;">
+    No migration phases defined for this project.
+    <a href="/network/migration-hub" style="color:#3182ce;">Create one in the Migration Hub →</a>
+  </div>
+  {% endif %}
+</section>
+
 <!-- Submit Review Modal -->
 <div id="review-modal" class="modal" style="display:none;">
   <div class="modal-content">

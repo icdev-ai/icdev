@@ -1068,6 +1068,44 @@ def create_network_blueprint():
             except Exception:
                 safe_bridge["roi"] = {}
 
+        # Migration phases with linked SOPs and parsed steps
+        migration_phases_raw = [
+            _row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                (proj_id,)
+            ).fetchall()
+        ]
+        for mphase in migration_phases_raw:
+            linked_docs = [
+                _row_to_dict(r) for r in conn.execute(
+                    """SELECT pd.doc_title, pd.doc_type, pd.doc_source, pd.relevance_note,
+                              s.steps, s.prerequisites, s.validation,
+                              s.rollback AS sop_rollback, s.escalation
+                       FROM nc_phase_documents pd
+                       LEFT JOIN ndc_sops s ON s.sop_id = pd.doc_id
+                       WHERE pd.phase_id = ?
+                       ORDER BY pd.display_order""",
+                    (mphase['id'],)
+                ).fetchall()
+            ]
+            for doc in linked_docs:
+                for field in ('steps', 'prerequisites', 'validation', 'escalation'):
+                    raw = doc.get(field)
+                    if raw:
+                        try:
+                            doc[field] = json.loads(raw)
+                        except Exception:
+                            doc[field] = []
+            mphase['linked_docs'] = linked_docs
+            mphase['steps'] = [
+                s.strip().rstrip('.')
+                for s in (mphase.get('description') or '').split('. ')
+                if s.strip()
+            ]
+
+        # First topology ID for 3-panel diagram link
+        first_topo_id = topos[0]['id'] if topos else None
+
         conn.close()
         return render_template(
             "network/project_detail.html",
@@ -1090,6 +1128,8 @@ def create_network_blueprint():
             board_reviews=board_reviews,
             project_phases=project_phases,
             safe_bridge=safe_bridge,
+            migration_phases=migration_phases_raw,
+            first_topo_id=first_topo_id,
         )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -12394,6 +12434,13 @@ Planning rules:
             ).fetchall()
             topos = [dict(r) for r in topos_raw]
 
+            # First topology per project (for 3-panel diagram links)
+            topo_by_project = {}
+            for r in conn.execute(
+                "SELECT project_id, topology_id FROM nc_project_topologies"
+            ).fetchall():
+                topo_by_project.setdefault(r[0], r[1])
+
             # Attach phases and docs to projects
             for proj in projects:
                 pid = proj["id"]
@@ -12402,6 +12449,7 @@ Planning rules:
                     phase["documents"] = docs_by_phase.get(phase["id"], [])
                 proj["phases"] = proj_phases
                 proj["documents"] = docs_by_project.get(pid, [])
+                proj["topology_id"] = topo_by_project.get(pid)
 
             return jsonify({
                 "projects": projects,

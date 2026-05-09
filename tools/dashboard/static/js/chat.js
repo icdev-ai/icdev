@@ -213,6 +213,7 @@
             renderMessages(ctx.messages || []);
             updateInterventionBar(ctx.is_processing);
             startPolling(ctxId);
+            loadContextTasks(ctxId);
         });
     }
 
@@ -1772,6 +1773,108 @@
     ns.refreshDocumentList = refreshDocumentList;
     ns.updateKgAttribution = updateKgAttribution;
 
+    // ── Tasks Panel (Kanban-Chat integration) ────────────────────────────
+    var _tasksCtxId = null;
+    var _tasksTimer = null;
+
+    var STATUS_COLORS = {
+        done: '#4caf50', in_progress: '#4a90e2', scheduled: '#f39c12',
+        suggested: '#9b59b6', failed: '#e74c3c'
+    };
+    var STATUS_LABELS = {
+        done: 'Done', in_progress: 'Running', scheduled: 'Queued',
+        suggested: 'Suggested', failed: 'Failed'
+    };
+
+    function loadContextTasks(ctxId) {
+        _tasksCtxId = ctxId;
+        if (_tasksTimer) clearInterval(_tasksTimer);
+        fetchAndRenderTasks(ctxId);
+        _tasksTimer = setInterval(function() {
+            if (_tasksCtxId === ctxId) fetchAndRenderTasks(ctxId);
+            else clearInterval(_tasksTimer);
+        }, 8000);
+    }
+
+    function fetchAndRenderTasks(ctxId) {
+        fetch('/api/chat/' + ctxId + '/tasks')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(data) {
+                if (!data) return;
+                renderTasksList(data.tasks || []);
+            })
+            .catch(function() {});
+    }
+
+    function renderTasksList(tasks) {
+        var listEl = document.getElementById('tasks-list');
+        var emptyEl = document.getElementById('tasks-empty');
+        var badge = document.getElementById('tasks-badge');
+        if (!listEl) return;
+
+        if (!tasks.length) {
+            listEl.innerHTML = '';
+            if (emptyEl) emptyEl.style.display = 'block';
+            if (badge) badge.style.display = 'none';
+            return;
+        }
+        if (emptyEl) emptyEl.style.display = 'none';
+
+        // Badge count of non-done tasks
+        var pending = tasks.filter(function(t) { return t.status !== 'done'; }).length;
+        if (badge) {
+            badge.textContent = pending;
+            badge.style.display = pending > 0 ? 'inline-flex' : 'none';
+        }
+
+        listEl.innerHTML = tasks.map(function(t) {
+            var color = STATUS_COLORS[t.status] || '#888';
+            var label = STATUS_LABELS[t.status] || t.status;
+            var typeIcon = t.task_type === 'test' ? '&#x2713;' :
+                           t.task_type === 'chore' ? '&#x2699;' : '&#x25B6;';
+            return '<div class="chat-task-item chat-task-item--' + t.status + '">' +
+                   '<div class="chat-task-item__header">' +
+                   '<span class="chat-task-badge" style="background:' + color + '22;color:' + color + ';border-color:' + color + '44;">' + label + '</span>' +
+                   '<span class="chat-task-type-icon">' + typeIcon + '</span>' +
+                   '</div>' +
+                   '<div class="chat-task-item__title">' + escapeHtml(t.title) + '</div>' +
+                   (t.depends_on_task_id ? '<div class="chat-task-dep">depends on ' + escapeHtml(t.depends_on_task_id) + '</div>' : '') +
+                   '</div>';
+        }).join('');
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // V&V chain button
+    document.addEventListener('DOMContentLoaded', function() {
+        var vvBtn = document.getElementById('btn-vv-chain');
+        if (vvBtn) {
+            vvBtn.addEventListener('click', function() {
+                if (!_tasksCtxId) { alert('Select a chat context first.'); return; }
+                var canvas = prompt('Canvas name (e.g. govlift, network, fathomdesk):', '') || '';
+                vvBtn.disabled = true;
+                vvBtn.textContent = 'Queuing...';
+                fetch('/api/chat/' + _tasksCtxId + '/vv-chain', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({canvas: canvas})
+                }).then(function(r) { return r.json(); }).then(function(d) {
+                    vvBtn.disabled = false;
+                    vvBtn.innerHTML = '+ V&amp;V Chain';
+                    fetchAndRenderTasks(_tasksCtxId);
+                    // Switch to tasks tab
+                    var tabEl = document.getElementById('tab-tasks');
+                    if (tabEl) tabEl.click();
+                }).catch(function() {
+                    vvBtn.disabled = false;
+                    vvBtn.innerHTML = '+ V&amp;V Chain';
+                });
+            });
+        }
+    });
+
     // Multi-stream API
     ns.chatStreams = {
         createContext: createContext,
@@ -1780,7 +1883,8 @@
         intervene: intervene,
         pollContextState: pollContextState,
         refreshContextList: refreshContextList,
-        closeContext: closeContext
+        closeContext: closeContext,
+        loadContextTasks: loadContextTasks
     };
 
     window.ICDEV = ns;
