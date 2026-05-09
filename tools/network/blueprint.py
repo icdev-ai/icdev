@@ -8584,33 +8584,40 @@ Output ONLY the JSON object. No other text."""
         "decommission", "decomm", "retire", "swap", "upgrade router", "upgrade switch",
     }
 
-    _AI_MIGRATION_PLAN_PROMPT = """You are a DoD network migration planner.
-Given a plain-English description of a migration, decompose it into an ordered list of phases.
+    _AI_MIGRATION_PLAN_PROMPT = """You are a network migration planner. You work with any vendor \
+(Cisco, Juniper, Arista, Palo Alto, Fortinet, HPE, Brocade, etc.), any device type \
+(routers, switches, firewalls, load balancers, wireless controllers, SD-WAN), any ISP or \
+carrier, and any partner network (government, commercial, DISA, NIPR, SIPR, or private).
+Given a plain-English description of a migration, decompose it into an ordered list of phases \
+that are specific to the described devices and connections — do NOT assume any vendor, protocol, \
+or peer unless the description explicitly names them.
 
 Output ONLY a valid JSON array — no markdown, no explanation:
 [
   {
     "phase_num": 1,
     "title": "Short imperative title",
-    "description": "3-4 sentences: what changes, what stays, dependencies",
+    "description": "3-4 sentences: what changes, what stays, dependencies, and any coordination required",
     "duration_days": 14,
     "parallel_run": 0,
-    "rollback_criteria": "One sentence: condition that triggers rollback",
-    "maintenance_window": "Sat 02:00-06:00 EST",
+    "rollback_criteria": "One sentence: condition and steps that trigger rollback",
+    "maintenance_window": "Sat 02:00-06:00 local time",
     "classification": "CUI",
     "impact_level": "IL4"
   }
 ]
 
 Rules:
-1. Phase titles must be short imperatives (e.g. "Deploy Edge Routers", "Migrate DNS to C2S")
-2. duration_days: realistic estimate in days (minimum 1, typical 7-30)
-3. parallel_run: 1 if old and new systems run simultaneously during this phase, else 0
-4. classification: PUBLIC | CUI | SECRET | TS (match the project classification)
-5. impact_level: IL2 | IL4 | IL5 | IL6
-6. Order phases so each depends only on completed prior phases
-7. Always include a final "Decommission Legacy" or "Validate and Close" phase
-8. Minimum 2 phases, maximum 12 phases"""
+1. Phase titles must be short imperatives specific to the described devices (e.g. "Stage Cisco ASR Config", "Cut Over ISP BGP", "Migrate VLANs to New Core Switch")
+2. Infer phases from the actual topology: north-side partners, south-side peers, protocols (BGP, OSPF, EIGRP, MPLS, etc.) and physical connections (trunk, LAG, port-channel, SFP) mentioned
+3. duration_days: realistic estimate in days (minimum 1, typical 7-30 for production cuts)
+4. parallel_run: 1 if old and new devices run simultaneously during this phase, else 0
+5. classification: PUBLIC | CUI | SECRET | TS — infer from context or default to CUI
+6. impact_level: IL2 | IL4 | IL5 | IL6 — infer from context or default to IL4
+7. Phases must be ordered so each depends only on prior completed phases
+8. Always end with a decommission or final validation phase
+9. Minimum 2 phases, maximum 12 phases
+10. If partner coordination is needed (ISP, government agency, carrier), add a dedicated coordination step within the relevant phase description"""
 
     @bp.route("/api/ai-generate", methods=["POST"])
     @nc_login_required
@@ -12175,6 +12182,33 @@ Planning rules:
                     ),
                 )
                 phase_ids.append(pid)
+                # Auto-link SOPs: extract meaningful tokens from phase text, match against SOP titles
+                _stop = {"the","and","or","for","with","from","that","this","into","will","phase",
+                         "have","been","each","only","when","also","are","was","were","all","not"}
+                phase_text = f"{ph.get('title','')} {ph.get('description','')}".lower()
+                import re as _re
+                raw_tokens = _re.findall(r"[a-z][a-z0-9\-]{3,}", phase_text)
+                sop_keywords = {t for t in raw_tokens if t not in _stop}
+                if sop_keywords:
+                    sop_rows = conn.execute(
+                        "SELECT sop_id, title FROM ndc_sops WHERE status = 'approved'"
+                    ).fetchall()
+                    for sop_row in sop_rows:
+                        sop_title_lower = (sop_row["title"] or "").lower()
+                        if any(kw in sop_title_lower for kw in sop_keywords):
+                            link_id = str(_uuid.uuid4())
+                            try:
+                                conn.execute(
+                                    """INSERT OR IGNORE INTO nc_phase_documents
+                                       (id, phase_id, project_id, doc_source, doc_id,
+                                        doc_title, doc_type, relevance_note, display_order)
+                                       VALUES (?,?,?,?,?,?,?,?,0)""",
+                                    (link_id, pid, project_id, "sop",
+                                     sop_row["sop_id"], sop_row["title"],
+                                     "sop", "auto-linked by keyword match"),
+                                )
+                            except Exception:
+                                pass
             conn.commit()
             return jsonify({"phases_created": len(phase_ids), "phase_ids": phase_ids}), 201
         except Exception as exc:
@@ -12285,7 +12319,7 @@ Planning rules:
     @bp.route("/api/migration-hub/data", methods=["GET"])
     def migration_hub_data():
         """Return all projects + phases + linked docs as JSON for the hub."""
-        conn = get_db_connection()
+        conn = get_connection()
         try:
             # Projects
             projects = [dict(r) for r in conn.execute(
@@ -12296,7 +12330,7 @@ Planning rules:
             phases_raw = conn.execute(
                 """SELECT id, project_id, phase_num, title, description,
                           duration_days, status, maintenance_window, rollback_criteria,
-                          dependencies, created_at
+                          dependencies, classification, impact_level, created_at
                    FROM nc_migration_phases
                    ORDER BY project_id, phase_num"""
             ).fetchall()
@@ -12379,7 +12413,7 @@ Planning rules:
         if missing := required - data.keys():
             return jsonify({"error": f"Missing fields: {missing}"}), 400
 
-        conn = get_db_connection()
+        conn = get_connection()
         try:
             doc_id = str(_uuid.uuid4())
             conn.execute(
@@ -12407,7 +12441,7 @@ Planning rules:
     @bp.route("/api/migration-hub/phase-docs/<doc_link_id>", methods=["DELETE"])
     def migration_hub_unlink_doc(doc_link_id: str):
         """Remove a document link from a migration phase."""
-        conn = get_db_connection()
+        conn = get_connection()
         try:
             conn.execute("DELETE FROM nc_phase_documents WHERE id = ?", (doc_link_id,))
             conn.commit()
