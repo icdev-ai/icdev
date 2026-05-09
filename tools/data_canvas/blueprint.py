@@ -2464,4 +2464,29 @@ def create_data_canvas_blueprint():
             logger.warning("DDC IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
+    @bp.route("/api/ai-trace")
+    @dc_login_required
+    def dc_api_ai_trace():
+        """Return recent AI decisions made by DDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ddc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ddc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "ddc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
     return bp
