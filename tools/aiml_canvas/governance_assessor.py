@@ -127,8 +127,10 @@ def assess_il_suitability(graph: dict, design: dict) -> dict:
     for node in _model_nodes(graph):
         props = node.get("properties_json", {})
         if isinstance(props, str):
-            try: props = json.loads(props)
-            except Exception: props = {}
+            try:
+                props = json.loads(props)
+            except Exception:
+                props = {}
         model_id = props.get("model_id", "")
         m = next((fm for fm in FOUNDATION_MODELS if fm["id"] == model_id), None)
         if not m:

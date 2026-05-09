@@ -160,17 +160,28 @@ def run_regulatory_analysis(
     has_desc = bool(design_meta.get("description", "").strip())
 
     def _check(key: str) -> bool:
-        if key == "risk_register":         return has_risks
-        if key == "has_data_nodes":        return bool(types & _DATA_TYPES)
-        if key == "has_audit_logger":      return bool(types & _AUDIT_TYPES)
-        if key == "has_hitl":              return bool(types & _HITL_TYPES)
-        if key == "has_hitl_if_safety":    return (not safety_impacting) or bool(types & _HITL_TYPES)
-        if key == "has_safety_node":       return bool(types & _SAFETY_TYPES)
-        if key == "has_governance":        return bool(types & _GOV_TYPES)
-        if key == "has_monitor":           return bool(types & _MONITOR_TYPES)
-        if key == "has_circuit_breaker":   return bool(types & _CB_TYPES)
-        if key == "has_provenance":        return has_provenance
-        if key == "has_name_desc":         return has_name and has_desc
+        if key == "risk_register":
+            return has_risks
+        if key == "has_data_nodes":
+            return bool(types & _DATA_TYPES)
+        if key == "has_audit_logger":
+            return bool(types & _AUDIT_TYPES)
+        if key == "has_hitl":
+            return bool(types & _HITL_TYPES)
+        if key == "has_hitl_if_safety":
+            return (not safety_impacting) or bool(types & _HITL_TYPES)
+        if key == "has_safety_node":
+            return bool(types & _SAFETY_TYPES)
+        if key == "has_governance":
+            return bool(types & _GOV_TYPES)
+        if key == "has_monitor":
+            return bool(types & _MONITOR_TYPES)
+        if key == "has_circuit_breaker":
+            return bool(types & _CB_TYPES)
+        if key == "has_provenance":
+            return has_provenance
+        if key == "has_name_desc":
+            return has_name and has_desc
         return False
 
     gaps = []

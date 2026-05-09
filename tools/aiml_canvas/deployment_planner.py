@@ -184,7 +184,10 @@ def _select_server(model: dict, il_level: str, air_gap: bool, rps: int, vram_gb:
 
 
 def _recommend_gpu(vram_needed: float) -> str:
-    if vram_needed <= 8:   return "NVIDIA RTX 4060 Ti 8GB (development) / L4 24GB (production)"
-    if vram_needed <= 24:  return "NVIDIA RTX 4090 24GB / L40S 48GB"
-    if vram_needed <= 48:  return "NVIDIA A100 40GB or L40S 48GB"
+    if vram_needed <= 8:
+        return "NVIDIA RTX 4060 Ti 8GB (development) / L4 24GB (production)"
+    if vram_needed <= 24:
+        return "NVIDIA RTX 4090 24GB / L40S 48GB"
+    if vram_needed <= 48:
+        return "NVIDIA A100 40GB or L40S 48GB"
     return "NVIDIA A100 80GB or H100 80GB"
