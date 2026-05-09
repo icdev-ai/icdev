@@ -201,3 +201,63 @@ def unlink_model_node(ref_id: str) -> bool:
         return cur.rowcount > 0
     finally:
         conn.close()
+
+
+def bridge_security_check(aadc_design_id: str, nodes: list[dict], edges: list[dict]) -> list[dict]:
+    """OWASP LLM01 bridge check — for every AADC node linked to an LLM-type AIMC model,
+    verify an input-sanitizer exists upstream. Returns CAT2 findings for violations.
+    """
+    refs = get_model_refs(aadc_design_id)
+    if not refs:
+        return []
+
+    llm_model_types = {"llm", "vlm", "code", "judge"}
+    llm_linked_node_ids = {
+        r["aadc_node_id"]
+        for r in refs
+        if r.get("model") and r["model"].get("type") in llm_model_types
+    }
+    if not llm_linked_node_ids:
+        return []
+
+    # Build reverse adjacency (predecessor map) for upstream checks
+    predecessors: dict[str, set[str]] = {}
+    for e in edges:
+        src, tgt = e.get("source", ""), e.get("target", "")
+        predecessors.setdefault(tgt, set()).add(src)
+
+    def _upstream_types(node_id: str, visited: set | None = None) -> set[str]:
+        visited = visited or set()
+        result: set[str] = set()
+        for pred_id in predecessors.get(node_id, set()):
+            if pred_id in visited:
+                continue
+            visited.add(pred_id)
+            pred_node = next((n for n in nodes if n["id"] == pred_id), None)
+            if pred_node:
+                result.add(pred_node.get("type", ""))
+                result |= _upstream_types(pred_id, visited)
+        return result
+
+    SANITIZER_TYPES = {"input-sanitizer", "safety-guardrail", "safety-content-filter", "pii-scrubber"}
+    findings: list[dict] = []
+    for node_id in llm_linked_node_ids:
+        node = next((n for n in nodes if n["id"] == node_id), None)
+        if not node:
+            continue
+        upstream = _upstream_types(node_id)
+        if not (upstream & SANITIZER_TYPES):
+            ref = next((r for r in refs if r["aadc_node_id"] == node_id), {})
+            model_name = (ref.get("model") or {}).get("name", ref.get("aimc_model_id", "?"))
+            findings.append({
+                "id": f"bridge-llm01-{node_id}",
+                "framework": "OWASP LLM (Bridge)",
+                "category": "LLM01",
+                "severity": "CAT2",
+                "title": f"LLM node '{node.get('label', node_id)}' missing input sanitizer",
+                "detail": f"Node is linked to LLM model '{model_name}' via AIMC bridge but has no "
+                          "input-sanitizer, safety-guardrail, or content-filter upstream. "
+                          "Risk: prompt injection attacks.",
+                "recommendation": "Add an input-sanitizer or safety-guardrail node upstream of this node.",
+            })
+    return findings
