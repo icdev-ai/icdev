@@ -62,12 +62,368 @@ theater:
       color: "#E9C46A"          # gold
       force_designator: PN
 
-  # ── PLAN Order of Battle ─────────────────────────────────────────────────
+  # ── Active domains ───────────────────────────────────────────────────────
+  active_domains:
+    - sea
+    - air
+    - space
+    - cyber
+    - land
+    - ew
+    - info
+
+  # ── Escalation ladder (Taiwan Strait / Pacific-specific) ──────────────────
+  escalation_ladder:
+    - level: 1
+      label: "Gray Zone"
+      description: "Maritime militia incursions, island-building, fly-overs, disinformation"
+      color: "#27ae60"
+    - level: 2
+      label: "Crisis Signaling"
+      description: "PLAN exercise in Taiwan Strait, carrier deployments, sanctions threat"
+      color: "#2ecc71"
+    - level: 3
+      label: "Quarantine / Blockade"
+      description: "Maritime blockade of Taiwan, air exclusion zone, missile warning shots"
+      color: "#f39c12"
+    - level: 4
+      label: "Limited Strikes"
+      description: "Conventional missile strikes on air bases, radar, command nodes"
+      color: "#e67e22"
+    - level: 5
+      label: "Amphibious Assault"
+      description: "PLAN amphibious assault on Taiwan — LHD/LPD surge, airborne drops"
+      color: "#e74c3c"
+    - level: 6
+      label: "Expanded Conflict"
+      description: "USN/JMSDF intervention, Second Island Chain engagement, Guam strikes"
+      color: "#c0392b"
+    - level: 7
+      label: "Nuclear Signaling"
+      description: "DF-5B / JL-3 dispersal, PRC nuclear rhetoric, DEFCON elevation"
+      color: "#8e44ad"
+    - level: 8
+      label: "EMP / Limited Nuclear"
+      description: "High-altitude EMP test, tactical nuclear options on table"
+      color: "#6c3483"
+    - level: 9
+      label: "Strategic Nuclear"
+      description: "Theater nuclear exchange threatened; US triad on alert"
+      color: "#4a235a"
+    - level: 10
+      label: "Existential"
+      description: "Full strategic nuclear exchange"
+      color: "#1a1a2e"
+
+  # ── ORBAT (theater.py actor/units format) ─────────────────────────────────
+  # Parsed by Theater._from_dict() → OrbatUnit dataclass
+  orbat:
+    - actor: PRC
+      units:
+        - id: plan-cv-liaoning
+          name: Liaoning (CV-16)
+          type: surface
+          count: 1
+          lat: 36.05
+          lon: 120.35
+          status: active
+          vessel_class: Kuznetsov-modified
+          vessel_type: CV
+          threat_ring_nm: 300
+        - id: plan-cv-shandong
+          name: Shandong (CV-17)
+          type: surface
+          count: 1
+          lat: 18.22
+          lon: 109.50
+          status: active
+          vessel_class: Type001A
+          vessel_type: CV
+          threat_ring_nm: 300
+        - id: plan-cv-fujian
+          name: Fujian (CV-18)
+          type: surface
+          count: 1
+          lat: 31.40
+          lon: 121.50
+          status: active
+          vessel_class: Type003
+          vessel_type: CV
+          threat_ring_nm: 400
+        - id: plan-ddg-055-batch1
+          name: Type 055 DDG (Renhai-class)
+          type: surface
+          count: 8
+          lat: 22.50
+          lon: 114.20
+          status: active
+          vessel_type: DDG
+          threat_ring_nm: 540
+        - id: plan-ddg-052d
+          name: Type 052D DDG (Luyang III)
+          type: surface
+          count: 25
+          lat: 22.25
+          lon: 113.90
+          status: active
+          vessel_type: DDG
+          threat_ring_nm: 300
+        - id: plan-ssk-yuan
+          name: Type 039A/B SSK (Yuan-class)
+          type: submarine
+          count: 22
+          lat: 20.10
+          lon: 110.30
+          status: active
+          vessel_type: SSK
+          threat_ring_nm: 290
+        - id: plan-ssn-shang
+          name: Type 093B SSN (Shang II)
+          type: submarine
+          count: 6
+          lat: 20.08
+          lon: 110.28
+          status: active
+          vessel_type: SSN
+          threat_ring_nm: 500
+        - id: plan-ssbn-jin
+          name: Type 094A SSBN (Jin-class)
+          type: submarine
+          count: 6
+          lat: 18.20
+          lon: 109.52
+          status: active
+          vessel_type: SSBN
+          threat_ring_nm: 7400
+        - id: plan-lhd-075
+          name: Type 075 LHD (Yushen-class)
+          type: surface
+          count: 3
+          lat: 22.10
+          lon: 114.10
+          status: active
+          vessel_type: LHD
+          threat_ring_nm: 50
+          marines_embarked: 1800
+        - id: plan-ff-054a
+          name: Type 054A FF (Jiangkai II)
+          type: surface
+          count: 30
+          lat: 21.90
+          lon: 113.85
+          status: active
+          vessel_type: FF
+          threat_ring_nm: 200
+        - id: pla-df21d-mobile
+          name: DF-21D ASBM Battery (East Theater)
+          type: ground
+          count: 6
+          lat: 26.05
+          lon: 119.30
+          status: active
+          weapon_type: ASBM
+          threat_ring_nm: 900
+        - id: pla-df26-battery
+          name: DF-26 IRBM Battery (Central)
+          type: ground
+          count: 12
+          lat: 30.20
+          lon: 110.50
+          status: active
+          weapon_type: IRBM
+          threat_ring_nm: 3500
+        - id: plan-air-j20
+          name: J-20 (Chengdu) Stealth Fighter
+          type: aircraft
+          count: 150
+          lat: 24.48
+          lon: 118.05
+          status: active
+          aircraft_type: stealth_fighter
+          threat_ring_nm: 400
+        - id: plan-air-h6k
+          name: H-6K Strategic Bomber
+          type: aircraft
+          count: 60
+          lat: 22.63
+          lon: 108.17
+          status: active
+          aircraft_type: strategic_bomber
+          threat_ring_nm: 1500
+
+    - actor: USA
+      units:
+        - id: usn-cvn-reagan
+          name: USS Ronald Reagan (CVN-76)
+          type: surface
+          count: 1
+          lat: 13.38
+          lon: 144.65
+          status: active
+          homeport: Yokosuka
+          vessel_type: CVN
+          threat_ring_nm: 500
+        - id: usn-cvn-nimitz
+          name: USS Carl Vinson (CVN-70)
+          type: surface
+          count: 1
+          lat: 21.31
+          lon: -157.86
+          status: active
+          homeport: Bremerton
+          vessel_type: CVN
+          threat_ring_nm: 500
+        - id: usn-ddg-arleigh-burke-7thflt
+          name: Arleigh Burke DDG (7th Fleet)
+          type: surface
+          count: 12
+          lat: 13.40
+          lon: 144.70
+          status: active
+          vessel_type: DDG
+          threat_ring_nm: 500
+        - id: usn-ssn-virginia-pac
+          name: Virginia-class SSN (Pacific)
+          type: submarine
+          count: 10
+          lat: 21.30
+          lon: -157.85
+          status: active
+          vessel_type: SSN
+          threat_ring_nm: 1000
+        - id: usn-lhd-wasp-7thflt
+          name: Wasp-class LHD (7th Fleet)
+          type: surface
+          count: 2
+          lat: 13.42
+          lon: 144.68
+          status: active
+          vessel_type: LHD
+          marines_embarked: 2000
+          threat_ring_nm: 100
+        - id: usaf-b52-guam
+          name: B-52H Stratofortress (Andersen AFB)
+          type: aircraft
+          count: 6
+          lat: 13.54
+          lon: 144.93
+          status: active
+          aircraft_type: strategic_bomber
+          threat_ring_nm: 8800
+        - id: usaf-f22-pac
+          name: F-22A Raptor (Pacific Air Forces)
+          type: aircraft
+          count: 48
+          lat: 13.54
+          lon: 144.93
+          status: active
+          aircraft_type: stealth_fighter
+          threat_ring_nm: 500
+        - id: usa-thaad-korea
+          name: THAAD Battery (ROK)
+          type: ground
+          count: 1
+          lat: 35.90
+          lon: 127.60
+          status: active
+          system_type: BMD
+          threat_ring_nm: 200
+
+    - actor: TWN
+      units:
+        - id: rocn-ffg-perry
+          name: Oliver Hazard Perry FFG
+          type: surface
+          count: 4
+          lat: 25.05
+          lon: 121.55
+          status: active
+          vessel_type: FFG
+          threat_ring_nm: 150
+        - id: rocn-sub-hai-lung
+          name: Hai Lung-class SSK
+          type: submarine
+          count: 2
+          lat: 24.50
+          lon: 121.70
+          status: active
+          vessel_type: SSK
+          threat_ring_nm: 200
+        - id: roc-patriot-pac3
+          name: Patriot PAC-3 Battery
+          type: ground
+          count: 6
+          lat: 25.03
+          lon: 121.56
+          status: active
+          system_type: SAM
+          threat_ring_nm: 70
+        - id: roc-f16v
+          name: F-16V Block 70
+          type: aircraft
+          count: 66
+          lat: 24.27
+          lon: 120.62
+          status: active
+          aircraft_type: fighter
+          threat_ring_nm: 400
+        - id: rocn-corvette-tuo-chiang
+          name: Tuo Chiang-class Corvette
+          type: surface
+          count: 12
+          lat: 25.05
+          lon: 121.55
+          status: active
+          vessel_type: corvette
+          weapon_type: YJ-subsonicASCM
+          threat_ring_nm: 150
+
+    - actor: JPN
+      units:
+        - id: jmsdf-ddh-izumo
+          name: Izumo-class DDH (F-35B carrier conversion)
+          type: surface
+          count: 2
+          lat: 35.45
+          lon: 139.64
+          status: active
+          homeport: Yokosuka/Kure
+          vessel_type: DDH
+          threat_ring_nm: 350
+        - id: jmsdf-atago-ddg
+          name: Atago-class DDG (Aegis)
+          type: surface
+          count: 2
+          lat: 35.45
+          lon: 139.64
+          status: active
+          vessel_type: DDG
+          threat_ring_nm: 500
+        - id: jmsdf-maya-ddg
+          name: Maya-class DDG (Aegis BMD)
+          type: surface
+          count: 2
+          lat: 35.45
+          lon: 139.64
+          status: active
+          vessel_type: DDG
+          threat_ring_nm: 500
+        - id: jasdf-f35a
+          name: F-35A Lightning II (JASDF)
+          type: aircraft
+          count: 42
+          lat: 35.77
+          lon: 140.40
+          status: active
+          aircraft_type: stealth_fighter
+          threat_ring_nm: 400
+
+  # ── PLAN ORBAT Detail (vessel-centric, for intelligence analysis) ──────────
   # Sources: open-source OSINT (USNI News, Jane's, CSIS China Power Project).
   # displacement_t: full-load displacement in metric tons.
   # threat_ring_nm: approximate weapons engagement radius (nautical miles).
   # status: assessed operational readiness (active / trials / fitting_out).
-  orbat:
+  vessel_inventory:
 
     # ── Aircraft Carriers (CV/CVN) ─────────────────────────────────────────
     - hull_number: "16"
