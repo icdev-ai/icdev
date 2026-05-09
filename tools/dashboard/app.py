@@ -184,6 +184,7 @@ _APP_DEFS = [
     ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
     ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
     ("gameday",       "ICDEV_GAMEDAY_ENABLED",         "apps.ai_gameday.blueprint",     "bp"),
+    ("innovation",    "ICDEV_INNOVATION_ENABLED",      "apps.innovation.blueprint",     "innovation_bp"),
 ]
 
 for _key, _env, _mod, _attr in _APP_DEFS:

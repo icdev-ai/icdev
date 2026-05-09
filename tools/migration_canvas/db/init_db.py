@@ -303,6 +303,36 @@ CREATE TABLE IF NOT EXISTS mc_app_migration_steps (
 
 CREATE INDEX IF NOT EXISTS idx_mc_app_steps_app   ON mc_app_migration_steps(app_id);
 CREATE INDEX IF NOT EXISTS idx_mc_app_steps_phase ON mc_app_migration_steps(phase);
+
+CREATE TABLE IF NOT EXISTS mc_data_migration (
+    id                          TEXT PRIMARY KEY,
+    session_id                  TEXT,
+    app_id                      TEXT REFERENCES mc_app_inventory(id),
+    source_type                 TEXT CHECK(source_type IN ('postgresql','mysql','oracle','mssql','mongodb','redis','files','s3')),
+    source_host                 TEXT,
+    source_db                   TEXT,
+    source_schema               TEXT,
+    target_type                 TEXT,
+    target_host                 TEXT,
+    target_db                   TEXT,
+    target_schema               TEXT,
+    migration_method            TEXT CHECK(migration_method IN ('dump_restore','cdc','pgloader','mysqldump','mongodump','rsync','aws_dms')),
+    estimated_size_gb           REAL,
+    estimated_duration_minutes  INTEGER,
+    validation_query            TEXT,
+    validation_status           TEXT DEFAULT 'pending',
+    cutover_type                TEXT CHECK(cutover_type IN ('offline','online_with_cdc','snapshot')),
+    rollback_procedure          TEXT,
+    status                      TEXT DEFAULT 'planned',
+    started_at                  TEXT,
+    completed_at                TEXT,
+    notes                       TEXT,
+    classification              TEXT DEFAULT 'CUI',
+    created_at                  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_data_mig_app ON mc_data_migration(app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_data_mig_status ON mc_data_migration(status);
 """
 
 

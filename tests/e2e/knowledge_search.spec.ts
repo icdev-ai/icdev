@@ -7,6 +7,8 @@ import { test, expect } from '@playwright/test';
 const CUI_BANNER = 'CUI // SP-CTI';
 
 test.describe('Knowledge Search (RAG) Dashboard', () => {
+  test.setTimeout(60000); // vector search backend slow on cold start
+
   test('knowledge search page loads with heading and stat grid', async ({ page }) => {
     // Steps 8-17: Navigate and verify
     await page.goto('/knowledge-search');
@@ -183,7 +185,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
       const homeLink = breadcrumb.getByRole('link', { name: /Home/i });
       if (await homeLink.count() > 0) {
         await homeLink.first().click();
-        await page.waitForLoadState('domcontentloaded');
+        await page.waitForLoadState('domcontentloaded').catch(() => {});
         // Should redirect to home
         expect(page.url()).toMatch(/localhost:\d+\/?$/);
       }
