@@ -1,0 +1,6 @@
+# IQE-ODC-004: Recent AI decisions from the Observability Design Canvas
+# Shows maturity assessments and MITRE coverage decisions recorded
+# by the ODC AI traceability layer.
+
+foreach d in observability.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at

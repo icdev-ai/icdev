@@ -4,6 +4,55 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: cam
+  name: Cloud App Migration — Analytics Platform K8s→AWS + AI Modernization (Cross-Canvas)
+  description: >
+    Cross-canvas project hub in Migration Canvas (/migration-canvas/projects): phase/SOP
+    tracking with 4 new tables (mc_projects, mc_project_phases, mc_project_phase_sops,
+    mc_ai_opportunities). Reuses mc_app_inventory, mc_data_migration, mc_wave_plans, mc_sops.
+    Cross-links to DDC (Oracle→Aurora schema lineage), IDC (K8s→EKS infra), NDC (AWS VPC).
+    AI opportunities: pgvector, Bedrock KB, semantic cache, Bedrock Data Automation, Bedrock Agents.
+    Fully config-driven: project YAMLs in context/migration/projects/, SOP JSONs in
+    context/migration/sop_catalog/, service mappings in context/migration/service_mappings.yaml.
+    Canvas extensibility: dd_migration_jobs (DDC), idc_migration_baselines (IDC), landing zone
+    templates (NDC), migration snippet templates for all canvases.
+  task_prefix: cam-
+  default_open: true
+  briefs:
+  - 'db: 4 new mc_project* + mc_ai_opportunities tables + auto-seed in migration_canvas/db/init_db.py'
+  - 'engine: cam_engine.py + cam_constants.py + cam_seed_sops.py + cam_seed_demo.py'
+  - 'config: context/migration/projects/ + sop_catalog/ + service_mappings.yaml'
+  - 'canvas-ext: dd_migration_jobs (DDC) + idc_migration_baselines (IDC) + template dirs'
+  - 'routes: 4 new routes in migration_canvas/blueprint.py + MC nav link'
+  - 'templates: cam_projects.html + cam_project_detail.html + icdev/ mirrors'
+  - 'iqe: adapters/cam.py + _CANVAS_MAP entry + PATH_CANVAS entry + 6 seed queries'
+  - 'wiring: manifest shard + companion sync + coherence check'
+  epics:
+  - key: db
+    title: DB — 4 mc_project* tables + mc_ai_opportunities + auto-seed
+    priority: critical
+  - key: config
+    title: Config — service_mappings.yaml + sop_catalog/ + project YAMLs + cam_constants.py
+    priority: critical
+  - key: canvas-ext
+    title: Canvas Ext — dd_migration_jobs + idc_migration_baselines + snippet templates
+    priority: critical
+  - key: engine
+    title: Engines — cam_engine.py + cam_seed_sops.py + cam_seed_demo.py
+    priority: critical
+  - key: routes
+    title: Routes — 4 new routes in migration_canvas/blueprint.py
+    priority: critical
+  - key: templates
+    title: Templates — cam_projects.html + cam_project_detail.html (dark-mode)
+    priority: critical
+  - key: iqe
+    title: IQE — adapter/cam.py + _CANVAS_MAP + PATH_CANVAS + 6 queries
+    priority: high
+  - key: wiring
+    title: Wiring — manifest shard + companion sync + coherence
+    priority: medium
+
 - key: nmpe
   name: Network Migration Phases Engine — Three-Phase Diagram View with Info Boxes & Exports
   description: >

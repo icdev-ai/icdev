@@ -1,0 +1,7 @@
+# IQE-AADC-006: Low-confidence AADC AI decisions (confidence < 0.7)
+# Agentic AI designs with uncertain risk scores require human review
+# per NIST AI RMF MEASURE 2.5 — uncertainty quantification.
+
+foreach d in aadc.ai_decisions
+where d.confidence < 0.7
+select d.id, d.decision_type, d.decision, d.confidence, d.rationale, d.created_at

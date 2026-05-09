@@ -1308,16 +1308,29 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
                 f"Parent: {task.get('title', '')}"
             )
             now = _utcnow_iso()
+            # Capture active span so each decomposed task carries a trace link
+            _decomp_trace_id: str | None = None
+            _decomp_span_id: str | None = None
+            try:
+                from tools.observability import get_tracer as _get_tracer  # noqa: PLC0415
+                _sp = _get_tracer().get_active_span()
+                if _sp:
+                    _decomp_trace_id = getattr(_sp, "trace_id", None)
+                    _decomp_span_id = getattr(_sp, "span_id", None)
+            except Exception:
+                pass
             try:
                 conn.execute(
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, "
-                    " executor_type, source_prediction_id, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " executor_type, source_prediction_id, created_at, updated_at, "
+                    " trace_id, span_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         child_id, child_title, child_desc, parent_type,
                         parent_priority, "backlog", "claude_cli",
                         source_pred, now, now,
+                        _decomp_trace_id, _decomp_span_id,
                     ),
                 )
                 child_task = {
@@ -1408,6 +1421,17 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
         # Decompose into 5 sub-tasks
         prev_dep = task.get("depends_on_task_id")
         now = _utcnow_iso()
+        # Capture active span for phase-gate sub-tasks
+        _gate_trace_id: str | None = None
+        _gate_span_id: str | None = None
+        try:
+            from tools.observability import get_tracer as _gt  # noqa: PLC0415
+            _gsp = _gt().get_active_span()
+            if _gsp:
+                _gate_trace_id = getattr(_gsp, "trace_id", None)
+                _gate_span_id = getattr(_gsp, "span_id", None)
+        except Exception:
+            pass
         created = 0
         for idx, (slug, label, desc) in enumerate(_PHASE_GATE_STEPS, start=1):
             child_id = f"{task_id}-{idx}-{slug}"
@@ -1417,14 +1441,16 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, "
                     " scheduled_at, created_at, updated_at, "
-                    " executor_type, depends_on_task_id, dispatch_source, failure_count) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " executor_type, depends_on_task_id, dispatch_source, failure_count, "
+                    " trace_id, span_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         child_id, child_title, desc,
                         task.get("task_type") or "test",
                         task.get("priority") or "high",
                         "scheduled", now, now, now, "claude_cli",
                         prev_dep, "auto_decomp_phase_gate", 0,
+                        _gate_trace_id, _gate_span_id,
                     ),
                 )
                 created += 1

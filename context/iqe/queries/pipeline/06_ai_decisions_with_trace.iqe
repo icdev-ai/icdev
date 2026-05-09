@@ -1,0 +1,7 @@
+# IQE-PDC-006: PDC AI decisions that have an associated OTel trace
+# Only rows where trace_id is not null — these are fully traceable
+# end-to-end to the LLM router span. Use: audit evidence completeness check.
+
+foreach d in pipeline.ai_decisions
+where d.trace_id != null
+select d.id, d.decision_type, d.decision, d.trace_id, d.span_id, d.created_at

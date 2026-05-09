@@ -1,0 +1,8 @@
+# IQE-OBS-003: Low-confidence decisions across all canvases
+# Decisions with confidence < 0.3 require immediate human review per
+# ICDEV self-healing policy — below the "suggest fix, require approval" threshold.
+# Use: daily HITL review queue, NIST AI RMF MEASURE 2.5 evidence.
+
+foreach d in observatory.decisions
+where d.confidence < 0.3
+select d.canvas_type, d.decision_type, d.decision, d.confidence, d.model_used, d.created_at

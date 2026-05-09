@@ -426,6 +426,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ohc_data_drift_events",
         # GovLift DoD IL4 Cloud Migration (NIST AU — audit log append-only)
         "govlift_audit_log",
+        # AI Traceability (migration 121 — cross-canvas AI decision audit log, NIST AU-2/AU-3)
+        "canvas_ai_decisions",
     ]
 
     if tool_name == "Bash":

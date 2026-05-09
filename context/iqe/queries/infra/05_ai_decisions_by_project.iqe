@@ -1,0 +1,7 @@
+# IQE-IDC-005: IDC AI decisions filtered by project
+# Group AI decisions by project_id to identify which projects have the
+# most AI assessment activity — useful for portfolio-level traceability.
+
+foreach d in infra.ai_decisions
+where d.project_id != null
+select d.project_id, d.decision_type, d.decision, d.confidence, d.created_at

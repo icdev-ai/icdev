@@ -1,0 +1,7 @@
+# IQE-MC-006: High-confidence migration AI decisions (confidence >= 0.8)
+# Migration recommendations with high AI confidence — auto-actionable
+# per self-healing policy. Use: wave planning evidence, PMO reporting.
+
+foreach d in mc.ai_decisions
+where d.confidence >= 0.8
+select d.id, d.decision_type, d.decision, d.confidence, d.model_used, d.created_at

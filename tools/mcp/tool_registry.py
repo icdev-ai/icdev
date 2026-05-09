@@ -6484,4 +6484,29 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # ============================================================
+    # AI TRACEABILITY (migration 121 — canvas AI decision audit)
+    # ============================================================
+    "record_canvas_decision": {
+        "category": "ai_trace",
+        "module": "tools.canvas.ai_trace_mixin",
+        "handler": "record_canvas_decision",
+        "description": "Record an AI decision from a canvas assessment to canvas_ai_decisions (NIST AU-2, DoD RAI Traceable). Returns the new decision UUID.",
+        "input_schema": {
+            "type": "object",
+            "required": ["canvas_type", "decision_type", "decision"],
+            "properties": {
+                "canvas_type": {"type": "string", "enum": ["ndc", "sdc", "pdc", "bdc", "ddc", "odc", "idc", "aadc", "aimc", "mc", "genesis"], "description": "Source canvas identifier"},
+                "decision_type": {"type": "string", "description": "Decision category (compliance_finding, threat_assessment, risk_score, etc.)"},
+                "decision": {"type": "string", "description": "The AI decision or finding text"},
+                "record_id": {"type": "string", "description": "Canvas record ID (topology_id, design_id, etc.)"},
+                "rationale": {"type": "string", "description": "LLM-generated explanation"},
+                "model_used": {"type": "string", "description": "Model ID from LLM router"},
+                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Decision confidence 0.0–1.0"},
+                "alternatives": {"type": "array", "items": {"type": "string"}, "description": "Other options considered"},
+                "project_id": {"type": "string", "description": "Project ID"},
+                "classification": {"type": "string", "default": "CUI", "description": "Data classification"},
+            },
+        },
+    },
 }

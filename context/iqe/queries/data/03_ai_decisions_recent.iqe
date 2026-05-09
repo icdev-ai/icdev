@@ -1,0 +1,6 @@
+# IQE-DDC-003: Recent AI decisions from the Data Design Canvas
+# Shows PII/PHI classification decisions and anomaly detections
+# recorded by the DDC AI traceability layer.
+
+foreach d in data.ai_decisions
+select d.id, d.decision_type, d.decision, d.model_used, d.confidence, d.created_at
