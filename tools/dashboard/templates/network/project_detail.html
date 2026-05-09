@@ -125,46 +125,46 @@
 
   {% if migration_phases %}
   <style>
-  .mp-plan-card { border:1px solid var(--border,#e2e8f0); border-radius:8px; margin:10px 16px; overflow:hidden; }
-  .mp-plan-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:var(--surface,#f7f9fc); cursor:pointer; user-select:none; }
-  .mp-plan-header:hover { background:var(--hover,#eef2f9); }
-  .mp-plan-num { width:28px; height:28px; border-radius:50%; background:#3182ce; color:#fff; font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-  .mp-plan-title { font-weight:700; font-size:0.9rem; flex:1; }
+  .mp-plan-card { border:1px solid #1e3a6e; border-radius:8px; margin:10px 16px; overflow:hidden; background:#0d1b2e; }
+  .mp-plan-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#111f35; cursor:pointer; user-select:none; }
+  .mp-plan-header:hover { background:#1a2d48; }
+  .mp-plan-num { width:28px; height:28px; border-radius:50%; background:#2563eb; color:#fff; font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .mp-plan-title { font-weight:700; font-size:0.9rem; flex:1; color:#e2e8f0; }
   .mp-plan-status { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:10px; text-transform:uppercase; }
-  .status-pending,.status-planned { background:#e9ecef; color:#495057; }
-  .status-in_progress { background:#cce5ff; color:#004085; }
-  .status-completed { background:#d4edda; color:#155724; }
-  .status-rolled_back { background:#f8d7da; color:#721c24; }
-  .mp-plan-dur { font-size:0.75rem; color:#718096; flex-shrink:0; }
-  .mp-plan-chevron { color:#4a5568; transition:transform .2s; }
+  .status-pending,.status-planned { background:#2a4a8a; color:#c0d4f0; }
+  .status-in_progress { background:#1a4a8e; color:#90c0f0; }
+  .status-completed { background:#0f3a20; color:#4ade80; }
+  .status-rolled_back { background:#3d1515; color:#f87171; }
+  .mp-plan-dur { font-size:0.75rem; color:#a0b8d0; flex-shrink:0; }
+  .mp-plan-chevron { color:#a0b8d0; transition:transform .2s; }
   .mp-plan-card.open .mp-plan-chevron { transform:rotate(180deg); }
-  .mp-plan-body { display:none; padding:14px 16px; border-top:1px solid var(--border,#e2e8f0); }
+  .mp-plan-body { display:none; padding:14px 16px; border-top:1px solid #1e3a6e; background:#0a1628; }
   .mp-plan-card.open .mp-plan-body { display:block; }
-  .mp-meta-strip { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; font-size:0.8rem; color:#4a5568; }
+  .mp-meta-strip { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; font-size:0.8rem; color:#b0c4dc; }
   .mp-meta-strip .meta-item { display:flex; align-items:flex-start; gap:5px; }
-  .mp-meta-strip .meta-label { font-weight:700; color:#718096; white-space:nowrap; }
+  .mp-meta-strip .meta-label { font-weight:700; color:#8099b8; white-space:nowrap; }
   .mp-steps-list { margin:0 0 14px; padding:0; list-style:none; }
-  .mp-step-row { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid #f0f4f8; align-items:flex-start; }
+  .mp-step-row { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid #1e3a6e; align-items:flex-start; }
   .mp-step-row:last-child { border-bottom:none; }
-  .mp-step-index { width:22px; height:22px; border-radius:50%; background:#ebf8ff; color:#2b6cb0; font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
-  .mp-step-text { font-size:0.83rem; color:#2d3748; line-height:1.45; }
+  .mp-step-index { width:22px; height:22px; border-radius:50%; background:#1e3a8a; color:#93c5fd; font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+  .mp-step-text { font-size:0.83rem; color:#e2e8f0; line-height:1.45; }
   .mp-sop-section { margin-top:12px; }
-  .mp-sop-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#718096; margin-bottom:8px; }
-  .mp-sop-entry { border:1px solid #e2e8f0; border-radius:6px; margin-bottom:8px; overflow:hidden; }
-  .mp-sop-entry-hdr { display:flex; align-items:center; gap:8px; padding:7px 12px; background:#fafbfc; cursor:pointer; }
-  .mp-sop-entry-hdr:hover { background:#f0f4f8; }
-  .mp-sop-badge { font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:10px; background:#dbeafe; color:#1e40af; }
-  .mp-sop-name { font-size:0.82rem; font-weight:600; color:#2d3748; flex:1; }
-  .mp-sop-steps-body { display:none; padding:10px 12px; border-top:1px solid #e2e8f0; background:#fff; }
+  .mp-sop-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8099b8; margin-bottom:8px; }
+  .mp-sop-entry { border:1px solid #1e3a6e; border-radius:6px; margin-bottom:8px; overflow:hidden; }
+  .mp-sop-entry-hdr { display:flex; align-items:center; gap:8px; padding:7px 12px; background:#111f35; cursor:pointer; }
+  .mp-sop-entry-hdr:hover { background:#1a2d48; }
+  .mp-sop-badge { font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:10px; background:#1e3a8a; color:#93c5fd; }
+  .mp-sop-name { font-size:0.82rem; font-weight:600; color:#e2e8f0; flex:1; }
+  .mp-sop-steps-body { display:none; padding:10px 12px; border-top:1px solid #1e3a6e; background:#0a1628; }
   .mp-sop-entry.open .mp-sop-steps-body { display:block; }
-  .sop-step-row { display:flex; gap:8px; padding:5px 0; font-size:0.8rem; border-bottom:1px solid #f0f4f8; }
+  .sop-step-row { display:flex; gap:8px; padding:5px 0; font-size:0.8rem; border-bottom:1px solid #1e3a6e; }
   .sop-step-row:last-child { border-bottom:none; }
-  .sop-step-n { color:#3182ce; font-weight:700; flex-shrink:0; width:18px; }
-  .sop-step-action { flex:1; color:#2d3748; }
-  .sop-step-verify { font-size:0.72rem; color:#48bb78; margin-top:2px; }
-  .sop-step-time { font-size:0.7rem; color:#718096; flex-shrink:0; }
-  .sop-prereq { font-size:0.78rem; color:#4a5568; margin-bottom:8px; }
-  .sop-prereq span { background:#fef3c7; color:#92400e; padding:2px 7px; border-radius:10px; margin:2px; display:inline-block; font-size:0.72rem; }
+  .sop-step-n { color:#60a5fa; font-weight:700; flex-shrink:0; width:18px; }
+  .sop-step-action { flex:1; color:#e2e8f0; }
+  .sop-step-verify { font-size:0.72rem; color:#4ade80; margin-top:2px; }
+  .sop-step-time { font-size:0.7rem; color:#a0b8d0; flex-shrink:0; }
+  .sop-prereq { font-size:0.78rem; color:#b0c4dc; margin-bottom:8px; }
+  .sop-prereq span { background:#2a4a8a; color:#c0d4f0; padding:2px 7px; border-radius:10px; margin:2px; display:inline-block; font-size:0.72rem; }
   </style>
 
   {% for ph in migration_phases %}
@@ -258,9 +258,9 @@
   </script>
 
   {% else %}
-  <div style="padding:20px 16px;color:#718096;font-size:0.85rem;">
+  <div style="padding:20px 16px;color:#a0b8d0;font-size:0.85rem;">
     No migration phases defined for this project.
-    <a href="/network/migration-hub" style="color:#3182ce;">Create one in the Migration Hub →</a>
+    <a href="/network/migration-hub" style="color:#60a5fa;">Create one in the Migration Hub →</a>
   </div>
   {% endif %}
 </section>
