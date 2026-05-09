@@ -15,6 +15,11 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger("icdev.data_canvas.anomaly_detector")
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 _PII_NAMES = {"email", "ssn", "phone", "dob", "zip", "phone_number", "social_security",
               "date_of_birth", "zipcode", "postal_code", "mobile", "cell", "fax"}
 
@@ -220,12 +225,22 @@ def detect_anomalies(
     if not llm_used:
         findings = _rule_based_findings(profile_dict)
 
-    return {
+    result = {
         "findings": findings,
         "overall_risk": _compute_overall_risk(findings),
         "classification": classification,
         "analyzed_at": analyzed_at,
     }
+    _record_decision(
+        canvas_type="ddc",
+        record_id=profile_dict.get("dataset_id") or profile_dict.get("design_id"),
+        decision_type="anomaly",
+        decision=f"{len(findings)} anomaly finding(s), overall_risk={result['overall_risk']}",
+        rationale="LLM-assisted" if llm_used else "Rule-based",
+        model_used=None,
+        classification=classification,
+    )
+    return result
 
 
 # ── Persistence helpers ───────────────────────────────────────────────────────

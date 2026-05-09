@@ -46,6 +46,11 @@ from tools.infra_canvas.infra_engine import (
     suggest_equivalents,
 )
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 infra_bp = Blueprint(
     "infra_canvas",
     __name__,
@@ -653,6 +658,14 @@ def run_assessment(design_id):
             ),
         )
         conn.commit()
+        _record_decision(
+            canvas_type="idc",
+            record_id=design_id,
+            decision_type="compliance_finding",
+            decision=f"Score {result.get('score',0)} — {len(result.get('findings',[]))} finding(s)",
+            rationale=f"CSP coverage: {csp_info}",
+            model_used=None,
+        )
         return jsonify(result)
     finally:
         conn.close()
@@ -1420,6 +1433,31 @@ def idc_api_iqe_query():
     except Exception as exc:
         _log.getLogger(__name__).warning("IDC IQE query error: %s", exc)
         return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+@infra_bp.route("/api/ai-trace")
+def idc_api_ai_trace():
+    """Return recent AI decisions made by IDC assessment engines."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    record_id = request.args.get("record_id")
+    try:
+        from tools.db.storage import get_connection as _gc
+        with _gc() as _conn:
+            if record_id:
+                rows = _conn.execute(
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='idc' AND record_id=? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (record_id, limit),
+                ).fetchall()
+            else:
+                rows = _conn.execute(
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='idc' "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        return jsonify({"ok": True, "canvas": "idc", "decisions": [dict(r) for r in rows]})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 # Register IDC event bus subscriptions at import time

@@ -511,6 +511,15 @@ def create_observability_blueprint():
             conn.close()
 
         _audit("ASSESS", design_id, f"Score: {assessment['score']}, Grade: {assessment['grade']}")
+        record_canvas_decision(
+            canvas_type="odc",
+            record_id=design_id,
+            decision_type="compliance_finding",
+            decision=f"Grade {assessment.get('grade','?')} — Score {assessment.get('score',0)}, MITRE coverage {mitre.get('coverage_pct',0):.0f}%",
+            rationale=f"Gaps detected: {len(gaps)}",
+            model_used=None,
+            confidence=None,
+        )
 
         return jsonify(
             {
@@ -1685,5 +1694,30 @@ def create_observability_blueprint():
         except Exception as exc:
             logger.warning("ODC IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/api/ai-trace")
+    @oc_login_required
+    def oc_api_ai_trace():
+        """Return recent AI decisions made by ODC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='odc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "odc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

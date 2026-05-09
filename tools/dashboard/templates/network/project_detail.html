@@ -222,11 +222,16 @@
             </div>
             {% endif %}
             {% for step in doc.steps %}
+            {% set step_text = step.action if step.action else (step.title if step.title else '') %}
+            {% set verify_text = step.verify if step.verify else '' %}
+            {% if not verify_text and step.verification %}
+              {% for v in step.verification[:1] %}{% set verify_text = v.expected_output if v.expected_output else '' %}{% endfor %}
+            {% endif %}
             <div class="sop-step-row">
               <span class="sop-step-n">{{ step.number }}.</span>
               <div style="flex:1;">
-                <div class="sop-step-action">{{ step.action }}</div>
-                {% if step.verify %}<div class="sop-step-verify">✓ Verify: {{ step.verify }}</div>{% endif %}
+                <div class="sop-step-action">{{ step_text }}</div>
+                {% if verify_text %}<div class="sop-step-verify">✓ {{ verify_text }}</div>{% endif %}
               </div>
               {% if step.time_est %}<span class="sop-step-time">{{ step.time_est }}</span>{% endif %}
             </div>

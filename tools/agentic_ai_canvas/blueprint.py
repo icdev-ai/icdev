@@ -63,6 +63,11 @@ except ImportError:
     _estimate_cost = None
     _gen_iac = None
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 aadc_bp = Blueprint(

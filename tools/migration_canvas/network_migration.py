@@ -23,6 +23,11 @@ from typing import Any
 
 logger = logging.getLogger("icdev.migration_canvas.network_migration")
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _MC_DB_PATH = _ICDEV_ROOT / "data" / "migration_canvas.db"
 _NC_DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
@@ -2032,6 +2037,16 @@ def recommend_hardware(
 
     result.setdefault("recommendations", [])
     result["model"] = model_used
+    _top = result["recommendations"][0] if result["recommendations"] else {}
+    _record_decision(
+        canvas_type="mc",
+        record_id=session_id,
+        decision_type="readiness_assessment",
+        decision=f"HW replacement top pick: {_top.get('rationale', 'N/A')[:200]}",
+        rationale=f"LLM-assisted" if model_used else "Rule-based fallback",
+        model_used=model_used or None,
+        confidence=(_top.get("score", 0) / 100.0) if _top.get("score") else None,
+    )
     return result
 
 

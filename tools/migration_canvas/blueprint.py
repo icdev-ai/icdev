@@ -47,6 +47,7 @@ from tools.migration_canvas.migration_engine import (  # noqa: E402
     compute_readiness_score,
     get_design_stats,
 )
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_migration_blueprint():
@@ -466,6 +467,15 @@ def create_migration_blueprint():
             conn.commit()
 
         _audit(design_id, "assess", f"Assessment score: {result['score']} ({result['grade']})")
+        record_canvas_decision(
+            canvas_type="mc",
+            record_id=design_id,
+            decision_type="readiness_assessment",
+            decision=f"Grade {result.get('grade','?')} — Score {result.get('score',0)}, Readiness {readiness.get('overall',0)}%",
+            rationale=f"CAT1={result.get('cat1_count',0)} CAT2={result.get('cat2_count',0)} CAT3={result.get('cat3_count',0)}",
+            model_used=None,
+            confidence=result.get("score", 0) / 100.0 if result.get("score") else None,
+        )
         return jsonify({
             "assessment_id": assessment_id,
             **result,
@@ -3444,5 +3454,30 @@ def create_migration_blueprint():
         except Exception as exc:
             logger.warning("ServiceNow import error: %s", exc)
             return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/ai-trace")
+    @mdc_login_required
+    def mc_api_ai_trace():
+        """Return recent AI decisions made by MC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='mc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='mc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "mc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

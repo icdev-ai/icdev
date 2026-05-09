@@ -48,6 +48,11 @@ from flask import Blueprint, jsonify, redirect, render_template, request, url_fo
 
 log = logging.getLogger(__name__)
 
+try:
+    from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision
+except Exception:
+    def _record_decision(**_kw): pass  # type: ignore[assignment]
+
 _AIMC_ENABLED = os.environ.get("ICDEV_AIML_CANVAS_ENABLED", "true").lower() not in ("0", "false", "no")
 
 
@@ -211,6 +216,14 @@ def create_aiml_blueprint() -> Blueprint | None:
     def api_assess(design_id: str):
         try:
             result = eng.run_assessment(design_id)
+            _record_decision(
+                canvas_type="aimc",
+                record_id=design_id,
+                decision_type="risk_score",
+                decision=f"Score={result.get('score', result.get('overall_score', '?'))} Grade={result.get('grade', '?')}",
+                rationale=f"Findings: {len(result.get('findings', []))}",
+                model_used=None,
+            )
             return jsonify(result)
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 404
@@ -221,6 +234,14 @@ def create_aiml_blueprint() -> Blueprint | None:
         if not design:
             return jsonify({"error": "not found"}), 404
         result = gov_eng.run_all(design.get("graph", {}), design)
+        _record_decision(
+            canvas_type="aimc",
+            record_id=design_id,
+            decision_type="compliance_finding",
+            decision=f"Gov assessment score={result.get('score','?')}",
+            rationale=f"IL={design.get('il_level','?')}",
+            model_used=None,
+        )
         return jsonify(result)
 
     # ── API: Adaptation Recommendation ───────────────────────────────────────
@@ -475,5 +496,29 @@ def create_aiml_blueprint() -> Blueprint | None:
             return jsonify({"ok": True, "recommendation": result})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/ai-trace")
+    def aimc_api_ai_trace():
+        """Return recent AI decisions made by AIMC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "aimc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp
