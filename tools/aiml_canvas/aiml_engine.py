@@ -212,156 +212,179 @@ def _edge_exists(graph: dict, source_type: str, target_type: str) -> bool:
     return False
 
 
+def _resolve_props(node: dict) -> dict:
+    props = node.get("properties_json", {})
+    if isinstance(props, str):
+        try:
+            return json.loads(props)
+        except Exception:
+            return {}
+    return props
+
+
+def _chk_il_model_air_gap(graph, model_nodes, il_level, il_int, **_):
+    if il_int < 5:
+        return True, ""
+    for node in model_nodes:
+        m = _model_by_id(_resolve_props(node).get("model_id", ""))
+        if m and not m.get("air_gap_ready", False):
+            return False, f"Node '{node.get('label', node['id'])}' uses non-air-gap model at {il_level}"
+    return True, ""
+
+
+def _chk_model_il_coverage(graph, model_nodes, il_level, il_int, **_):
+    required = il_int
+    for node in model_nodes:
+        m = _model_by_id(_resolve_props(node).get("model_id", ""))
+        if m:
+            supported = [int(str(x).replace("IL", "").replace("il", "")) for x in m.get("il_suitability", [])]
+            if required not in supported:
+                return False, f"Model '{m['name']}' does not support {il_level}"
+    return True, ""
+
+
+def _chk_input_guardrail(graph, llm_nodes, **_):
+    for node in llm_nodes:
+        if not _node_has_safety_on_incoming(graph, node["id"], "safety-guardrail"):
+            return False, f"LLM '{node.get('label', node['id'])}' has no Input Guardrail on incoming path"
+    return True, ""
+
+
+def _chk_output_validator(graph, llm_nodes, **_):
+    ov_ids = {n["id"] for n in graph.get("nodes", []) if n.get("type") == "safety-output-validator"}
+    for node in llm_nodes:
+        has_ov = any(e.get("source") == node["id"] and e.get("target") in ov_ids for e in graph.get("edges", []))
+        if not has_ov:
+            return False, f"LLM '{node.get('label', node['id'])}' has no Output Validator downstream"
+    return True, ""
+
+
+def _chk_pii_scrubber(graph, il_level, il_int, **_):
+    if il_int >= 4 and not _has_node_type(graph, "safety-pii-scrubber"):
+        return False, f"{il_level} design missing PII Scrubber node on classified data path"
+    return True, ""
+
+
+def _chk_model_card(graph, model_nodes, **_):
+    for node in model_nodes:
+        if not _node_has_governance_edge(graph, node["id"], "gov-model-card"):
+            return False, f"Model '{node.get('label', node['id'])}' not connected to a Model Card"
+    return True, ""
+
+
+def _chk_nist_ai_rmf(graph, **_):
+    if not _has_node_type(graph, "gov-nist-ai-rmf"):
+        return False, "No NIST AI RMF governance node found in design"
+    return True, ""
+
+
+def _chk_dod_rai(graph, il_level, il_int, **_):
+    if il_int >= 4 and not _has_node_type(graph, "gov-dod-rai"):
+        return False, f"DoD {il_level} design missing DoD RAI governance node"
+    return True, ""
+
+
+def _chk_ai_bom(graph, model_nodes, **_):
+    if model_nodes and not _has_node_type(graph, "gov-ai-bom"):
+        return False, "No AI BOM governance node connected to model nodes"
+    return True, ""
+
+
+def _chk_eval_before_deploy(graph, deploy_nodes, eval_nodes, **_):
+    if deploy_nodes and not eval_nodes:
+        return False, "Design has Deployment node but no Evaluation node"
+    return True, ""
+
+
+def _chk_red_team(graph, il_level, il_int, **_):
+    if il_int >= 4 and not _has_node_type(graph, "eval-red-team"):
+        return False, f"Classified {il_level} design should include Red Team evaluation set"
+    return True, ""
+
+
+def _chk_rag_vector_store(graph, rag_nodes, **_):
+    if rag_nodes and not _has_node_type(graph, "data-vector-store"):
+        return False, "RAG Pipeline node present but no Vector Store data node"
+    return True, ""
+
+
+def _chk_finetune_dataset(graph, ft_nodes, **_):
+    if ft_nodes and not _has_node_type(graph, "data-dataset"):
+        return False, "Fine-Tune Job node present but no Training Dataset node"
+    return True, ""
+
+
+def _chk_il6_local_deploy(graph, il_int, deploy_nodes, **_):
+    if il_int >= 6:
+        for node in deploy_nodes:
+            if node.get("type") not in ("deploy-ollama", "deploy-vllm"):
+                return False, f"IL6 enclave has non-local deployment node: '{node.get('label', '')}'"
+    return True, ""
+
+
+def _chk_components_classified(graph, **_):
+    unzoned = [
+        node.get("label") or node["id"]
+        for node in graph.get("nodes", [])
+        if not node.get("type", "").startswith("bnd-") and _boundary_containing_node(graph, node["id"]) is None
+    ]
+    if unzoned:
+        return False, f"Ungrouped nodes (no zone boundary): {', '.join(unzoned[:3])}"
+    return True, ""
+
+
+_CHECK_DISPATCH: dict[str, Any] = {
+    "il_model_air_gap": _chk_il_model_air_gap,
+    "model_il_coverage": _chk_model_il_coverage,
+    "input_guardrail_present": _chk_input_guardrail,
+    "output_validator_present": _chk_output_validator,
+    "pii_scrubber_on_classified_input": _chk_pii_scrubber,
+    "model_card_connected": _chk_model_card,
+    "nist_ai_rmf_present": _chk_nist_ai_rmf,
+    "dod_rai_present_for_dod_il": _chk_dod_rai,
+    "ai_bom_connected": _chk_ai_bom,
+    "eval_before_deploy": _chk_eval_before_deploy,
+    "red_team_for_classified": _chk_red_team,
+    "rag_has_vector_store": _chk_rag_vector_store,
+    "finetune_has_dataset": _chk_finetune_dataset,
+    "il6_local_deploy_only": _chk_il6_local_deploy,
+    "components_classified": _chk_components_classified,
+}
+
+
 def assess_graph(graph: dict, design: dict) -> list[dict]:
     """Run deterministic compliance checks. Returns list of findings."""
-    findings: list[dict] = []
     il_level = design.get("il_level", "IL4")
     il_int = int(il_level.replace("IL", "")) if il_level.startswith("IL") else 4
-
-    llm_nodes   = _get_nodes_by_type(graph, "model-llm")
-    vlm_nodes   = _get_nodes_by_type(graph, "model-vlm")
-    model_nodes = llm_nodes + vlm_nodes
-    rag_nodes   = _get_nodes_by_type(graph, "adapt-rag")
-    ft_nodes    = _get_nodes_by_type(graph, "adapt-finetune")
-    deploy_nodes = _get_nodes_by_type(graph, "deploy-")
-    eval_nodes  = (
-        _get_nodes_by_type(graph, "eval-benchmark") +
-        _get_nodes_by_type(graph, "eval-rubric") +
-        _get_nodes_by_type(graph, "eval-red-team") +
-        _get_nodes_by_type(graph, "eval-ab-test")
-    )
-
+    llm_nodes = _get_nodes_by_type(graph, "model-llm")
+    ctx = {
+        "graph": graph,
+        "il_level": il_level,
+        "il_int": il_int,
+        "llm_nodes": llm_nodes,
+        "model_nodes": llm_nodes + _get_nodes_by_type(graph, "model-vlm"),
+        "rag_nodes": _get_nodes_by_type(graph, "adapt-rag"),
+        "ft_nodes": _get_nodes_by_type(graph, "adapt-finetune"),
+        "deploy_nodes": _get_nodes_by_type(graph, "deploy-"),
+        "eval_nodes": (
+            _get_nodes_by_type(graph, "eval-benchmark") +
+            _get_nodes_by_type(graph, "eval-rubric") +
+            _get_nodes_by_type(graph, "eval-red-team") +
+            _get_nodes_by_type(graph, "eval-ab-test")
+        ),
+    }
+    findings: list[dict] = []
     for rule in AIMC_COMPLIANCE_RULES:
-        check = rule["check"]
-        passed = True
-        detail = ""
-
-        if check == "il_model_air_gap" and il_int >= 5:
-            for node in model_nodes:
-                props = node.get("properties_json", {})
-                if isinstance(props, str):
-                    try: props = json.loads(props)
-                    except Exception: props = {}
-                model_id = props.get("model_id", "")
-                m = _model_by_id(model_id)
-                if m and not m.get("air_gap_ready", False):
-                    passed = False
-                    detail = f"Node '{node.get('label', node['id'])}' uses non-air-gap model at {il_level}"
-                    break
-
-        elif check == "model_il_coverage":
-            for node in model_nodes:
-                props = node.get("properties_json", {})
-                if isinstance(props, str):
-                    try: props = json.loads(props)
-                    except Exception: props = {}
-                model_id = props.get("model_id", "")
-                m = _model_by_id(model_id)
-                if m:
-                    required_il = int(il_level.replace("IL", ""))
-                    supported = [int(str(x).replace("IL", "").replace("il", "")) for x in m.get("il_suitability", [])]
-                    if required_il not in supported:
-                        passed = False
-                        detail = f"Model '{m['name']}' does not support {il_level}"
-                        break
-
-        elif check == "input_guardrail_present":
-            for node in llm_nodes:
-                if not _node_has_safety_on_incoming(graph, node["id"], "safety-guardrail"):
-                    passed = False
-                    detail = f"LLM '{node.get('label', node['id'])}' has no Input Guardrail on incoming path"
-                    break
-
-        elif check == "output_validator_present":
-            for node in llm_nodes:
-                # Check if output validator is downstream
-                ov_ids = {n["id"] for n in graph.get("nodes", []) if n.get("type") == "safety-output-validator"}
-                has_ov = any(
-                    e.get("source") == node["id"] and e.get("target") in ov_ids
-                    for e in graph.get("edges", [])
-                )
-                if not has_ov:
-                    passed = False
-                    detail = f"LLM '{node.get('label', node['id'])}' has no Output Validator downstream"
-                    break
-
-        elif check == "pii_scrubber_on_classified_input":
-            if il_int >= 4 and not _has_node_type(graph, "safety-pii-scrubber"):
-                passed = False
-                detail = f"{il_level} design missing PII Scrubber node on classified data path"
-
-        elif check == "model_card_connected":
-            for node in model_nodes:
-                if not _node_has_governance_edge(graph, node["id"], "gov-model-card"):
-                    passed = False
-                    detail = f"Model '{node.get('label', node['id'])}' not connected to a Model Card"
-                    break
-
-        elif check == "nist_ai_rmf_present":
-            if not _has_node_type(graph, "gov-nist-ai-rmf"):
-                passed = False
-                detail = "No NIST AI RMF governance node found in design"
-
-        elif check == "dod_rai_present_for_dod_il":
-            if il_int >= 4 and not _has_node_type(graph, "gov-dod-rai"):
-                passed = False
-                detail = f"DoD {il_level} design missing DoD RAI governance node"
-
-        elif check == "ai_bom_connected":
-            if model_nodes and not _has_node_type(graph, "gov-ai-bom"):
-                passed = False
-                detail = "No AI BOM governance node connected to model nodes"
-
-        elif check == "eval_before_deploy":
-            if deploy_nodes and not eval_nodes:
-                passed = False
-                detail = "Design has Deployment node but no Evaluation node"
-
-        elif check == "red_team_for_classified":
-            if il_int >= 4 and not _has_node_type(graph, "eval-red-team"):
-                passed = False
-                detail = f"Classified {il_level} design should include Red Team evaluation set"
-
-        elif check == "rag_has_vector_store":
-            if rag_nodes and not _has_node_type(graph, "data-vector-store"):
-                passed = False
-                detail = "RAG Pipeline node present but no Vector Store data node"
-
-        elif check == "finetune_has_dataset":
-            if ft_nodes and not _has_node_type(graph, "data-dataset"):
-                passed = False
-                detail = "Fine-Tune Job node present but no Training Dataset node"
-
-        elif check == "il6_local_deploy_only":
-            if il_int >= 6:
-                for node in deploy_nodes:
-                    if node.get("type") not in ("deploy-ollama", "deploy-vllm"):
-                        passed = False
-                        detail = f"IL6 enclave has non-local deployment node: '{node.get('label', '')}'"
-                        break
-
-        elif check == "components_classified":
-            unzoned = []
-            for node in graph.get("nodes", []):
-                if node.get("type", "").startswith("bnd-"):
-                    continue
-                b = _boundary_containing_node(graph, node["id"])
-                if b is None:
-                    unzoned.append(node.get("label") or node["id"])
-            if unzoned:
-                passed = False
-                detail = f"Ungrouped nodes (no zone boundary): {', '.join(unzoned[:3])}"
-
-        severity = rule["severity"]
+        handler = _CHECK_DISPATCH.get(rule["check"])
+        passed, detail = handler(**ctx) if handler else (True, "")
         findings.append({
             "rule_id": rule["id"],
             "title": rule["title"],
-            "severity": severity,
+            "severity": rule["severity"],
             "category": rule["category"],
             "passed": passed,
             "detail": detail if not passed else "OK",
         })
-
     return findings
 
 
