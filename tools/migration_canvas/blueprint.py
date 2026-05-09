@@ -3490,6 +3490,55 @@ def create_migration_blueprint():
             return jsonify({"ok": False, "error": "not found"}), 404
         return jsonify({"ok": True, "project": project})
 
+    @bp.route("/api/projects/<project_id>/refactor-jobs")
+    @mdc_login_required
+    def cam_api_refactor_jobs(project_id):
+        """List all refactor jobs for a CAM project."""
+        from tools.migration_canvas.cam_refactor_engine import get_jobs
+        jobs = get_jobs(project_id)
+        return jsonify({"ok": True, "project_id": project_id, "jobs": jobs, "total": len(jobs)})
+
+    @bp.route("/api/projects/<project_id>/refactor", methods=["POST"])
+    @mdc_login_required
+    def cam_api_refactor_dispatch(project_id):
+        """Dispatch (and optionally run) refactor jobs for a CAM project."""
+        from tools.migration_canvas.cam_refactor_engine import dispatch, run_all
+        data = request.get_json(silent=True) or {}
+        component = data.get("component_name")
+        dry_run = bool(data.get("dry_run", False))
+        run = bool(data.get("run", True))
+        try:
+            if run and not dry_run:
+                result = run_all(project_id, component_name=component, dry_run=False)
+            else:
+                queued = dispatch(project_id, component_name=component, dry_run=dry_run)
+                result = {"dry_run": dry_run, "queued": len(queued), "jobs": queued}
+            return jsonify({"ok": True, "project_id": project_id, **result})
+        except Exception as exc:
+            logger.exception("cam_api_refactor_dispatch error: %s", exc)
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/projects/<project_id>/refactor-jobs/<job_id>")
+    @mdc_login_required
+    def cam_api_refactor_job_detail(project_id, job_id):
+        """Return detail for a single refactor job, including artifacts."""
+        from tools.migration_canvas.cam_refactor_engine import get_job_detail
+        job = get_job_detail(job_id)
+        if not job or job.get("project_id") != project_id:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "job": job})
+
+    @bp.route("/api/projects/<project_id>/refactor-jobs/<job_id>/run", methods=["POST"])
+    @mdc_login_required
+    def cam_api_refactor_run_job(project_id, job_id):
+        """Execute a single queued refactor job."""
+        from tools.migration_canvas.cam_refactor_engine import run_job, get_job_detail
+        job_check = get_job_detail(job_id)
+        if not job_check or job_check.get("project_id") != project_id:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        result = run_job(job_id)
+        return jsonify({"ok": True, "job": result})
+
     @bp.route("/api/ai-trace")
     @mdc_login_required
     def mc_api_ai_trace():

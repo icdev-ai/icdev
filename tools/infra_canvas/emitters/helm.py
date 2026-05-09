@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Helm chart emitter for IDC graph nodes (K8s scope).
 

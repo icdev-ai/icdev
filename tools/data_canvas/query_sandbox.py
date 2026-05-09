@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI — ICDEV Data Design Canvas — SQL Sandbox
 """Read-only SQL sandbox for the DDC Query tab.
 

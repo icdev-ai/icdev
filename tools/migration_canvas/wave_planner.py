@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Wave Planner — server migration wave grouping and dependency visualization.
 

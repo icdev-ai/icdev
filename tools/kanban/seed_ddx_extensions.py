@@ -1,3 +1,4 @@
+from __future__ import annotations
 """Seed DDX — DDC Data Science Extensions (5 epics, 26 tasks).
 CUI // SP-CTI
 Run: python tools/kanban/seed_ddx_extensions.py

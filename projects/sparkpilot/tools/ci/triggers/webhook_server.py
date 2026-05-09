@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 # SPARKPILOT Webhook Server — GitHub + GitLab + Slack + Mattermost webhook support
 # Refactored to use EventEnvelope + EventRouter (D132, D133)

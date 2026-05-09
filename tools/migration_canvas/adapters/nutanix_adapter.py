@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Nutanix Prism REST adapter — pull live VM inventory.
 

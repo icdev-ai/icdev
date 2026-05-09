@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Seed: wne-core-06 — WriteGuard integration in narrative_generator.py."""
 import sys

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI

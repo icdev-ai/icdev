@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 """Claude Code hook compatibility layer.
 

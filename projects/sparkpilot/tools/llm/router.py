@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 """Config-driven LLM router.
 

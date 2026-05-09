@@ -47,15 +47,15 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: icdev
-      POSTGRES_PASSWORD: icdev_dev_2026
-      POSTGRES_DB: icdev
+      POSTGRES_USER: ${ICDEV_PG_USER:-icdev}
+      POSTGRES_PASSWORD: ${ICDEV_PG_PASSWORD:?ICDEV_PG_PASSWORD must be set in .env}
+      POSTGRES_DB: ${ICDEV_PG_DB:-icdev}
     volumes:
       - ./data/pgdata:/var/lib/postgresql/data
     networks:
       - icdev-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U icdev -d icdev"]
+      test: ["CMD-SHELL", "pg_isready -U ${ICDEV_PG_USER:-icdev} -d ${ICDEV_PG_DB:-icdev}"]
       <<: *healthcheck-defaults
     logging: *default-logging
     restart: unless-stopped
@@ -705,6 +705,8 @@ services:
       - .env
     volumes:
       - icdev-data:/app/data
+    tmpfs:
+      - /app/.tmp:size=256m,mode=1777
     networks:
       - icdev-net
     healthcheck:

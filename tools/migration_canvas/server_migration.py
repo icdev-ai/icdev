@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Server Migration Canvas engine.
 

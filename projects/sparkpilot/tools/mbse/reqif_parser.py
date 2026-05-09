@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
 """ReqIF 1.2 parser for IBM DOORS NG requirement exports.

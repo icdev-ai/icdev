@@ -39,6 +39,10 @@ RUN chmod -R 750 /app && \
 # Data directory for SQLite (mounted as volume in production)
 RUN mkdir -p /app/data && chown icdev:icdev /app/data
 
+# Runtime scratch dir — overlaid by tmpfs in production compose;
+# created here so bare 'docker run' without --tmpfs also works.
+RUN mkdir -p /app/.tmp/genesis && chown -R icdev:icdev /app/.tmp
+
 ENV PYTHONUNBUFFERED=1
 
 # STIG: Run as non-root

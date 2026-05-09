@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Apply CUI classification markings to files.
 Loads marking configuration from args/cui_markings.yaml and applies

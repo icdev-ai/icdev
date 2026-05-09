@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Seed: Product Intelligence — 5 new engines + Universal Orchestrator.
 

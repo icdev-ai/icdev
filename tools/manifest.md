@@ -441,3 +441,9 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Seed Migration Demo | tools\network\seed_migration_demo.py | Auto-registered: network/seed_migration_demo.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Fix Py39 Annotations | tools\compat\fix_py39_annotations.py | Auto-registered: compat/fix_py39_annotations.py | --json | JSON |

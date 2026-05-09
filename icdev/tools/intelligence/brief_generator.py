@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Intelligence Brief Generator — Jinja2 template engine for intelligence products.
 

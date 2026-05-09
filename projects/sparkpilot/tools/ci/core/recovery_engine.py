@@ -1,3 +1,4 @@
+from __future__ import annotations
 # [TEMPLATE: CUI // SP-CTI]
 # SPARKPILOT Recovery Engine — self-recovery from test/lint failures (D134)
 

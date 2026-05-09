@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI — PDC Pipeline Twin Engine
 """Pre-merge what-if simulation for DevSecOps pipelines.
 

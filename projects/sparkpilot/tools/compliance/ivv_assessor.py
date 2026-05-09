@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """IV&V assessment tool per IEEE 1012 and DoD standards.
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """
 WSGI strangler-fig proxy middleware for the ICDEV™ dashboard.

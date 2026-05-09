@@ -78,6 +78,10 @@ Pillow>=12.1.1           # CVE-2026-25990: OOB write in PSD loader
 pyOpenSSL>=26.0.0        # CVE-2026-27448, CVE-2026-27459: callback bypass
 setuptools>=78.1.1       # CVE-2025-47273: path traversal
 
+# === Process Management ===
+psutil>=5.9              # Cross-platform process utilities (pid_exists, kill_process, find_pids_by_cmdline)
+                         # musl/Alpine: musllinux wheel available for 5.9.8+; air-gap safe
+
 feedparser>=6.0          # air-gap compat verified 2026-04-15
 pyais>=2.0               # AIS (Automatic Identification System) NMEA decoder — air-gap safe, no system deps
 
