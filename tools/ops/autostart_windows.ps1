@@ -1,12 +1,15 @@
-# ICDEV Dashboard Autostart Script (Windows)
+# CUI // SP-CTI
+# ICDEV™ Dashboard Autostart Script (Windows)
 # Starts the ICDEV dashboard and verifies it is reachable.
 # Intended to be called by the Windows Task Scheduler at user logon
 # (registered by register_autostart.ps1).
 #
-# Usage: powershell.exe -WindowStyle Hidden -File autostart_windows.ps1
+# Derives project root from script location — no hardcoded paths.
+#
+# Usage: powershell.exe -WindowStyle Hidden -File tools\ops\autostart_windows.ps1
 
 $ErrorActionPreference = "Stop"
-$ProjectDir = "C:\Users\schuo\Downloads\ICDev"
+$ProjectDir = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 
 # ------------------------------------------------------------------
 # 1. Change to project root

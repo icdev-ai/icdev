@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 """Manifest verification tool.
 
 Checks that a given tools/ file is registered in the manifest — searching

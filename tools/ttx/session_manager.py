@@ -31,6 +31,7 @@ def create_session(
     duration_minutes: int = 120,
     max_teams: int = 8,
     config: dict | None = None,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
     conn = get_connection()
     code = _join_code()
@@ -38,10 +39,10 @@ def create_session(
     conn.execute(
         """INSERT INTO ttx_sessions
            (scenario_slug, session_mode, state, facilitator_name,
-            join_code, duration_minutes, max_teams, config_json, created_at)
-           VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?)""",
+            join_code, duration_minutes, max_teams, config_json, created_at, tenant_id)
+           VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)""",
         (scenario_slug, session_mode, facilitator_name,
-         code, duration_minutes, max_teams, cfg, _now()),
+         code, duration_minutes, max_teams, cfg, _now(), tenant_id),
     )
     conn.commit()
     row = conn.execute(
@@ -66,17 +67,23 @@ def get_session_by_code(join_code: str) -> dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def list_sessions(state: str | None = None) -> list[dict[str, Any]]:
+def list_sessions(state: str | None = None, tenant_id: str | None = None) -> list[dict[str, Any]]:
     conn = get_connection()
+    params: list[Any] = []
+    clauses: list[str] = []
     if state:
-        rows = conn.execute(
-            "SELECT * FROM ttx_sessions WHERE state = ? ORDER BY created_at DESC",
-            (state,),
-        ).fetchall()
+        clauses.append("state = ?")
+        params.append(state)
+    if tenant_id:
+        clauses.append("tenant_id = ?")
+        params.append(tenant_id)
     else:
-        rows = conn.execute(
-            "SELECT * FROM ttx_sessions ORDER BY created_at DESC LIMIT 100"
-        ).fetchall()
+        clauses.append("(tenant_id IS NULL OR tenant_id = '')")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM ttx_sessions {where} ORDER BY created_at DESC LIMIT 100",
+        params,
+    ).fetchall()
     return [dict(r) for r in rows]
 
 

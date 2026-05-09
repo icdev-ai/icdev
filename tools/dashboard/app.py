@@ -1044,7 +1044,6 @@ def create_app() -> Flask:
     @app.route("/api/live-check", methods=["GET"])
     def api_live_check():
         """Scheduler heartbeat + in_progress task count for the Live Activity panel."""
-        import pathlib
         import time as _t
         from flask import jsonify as _j
         from tools.db.storage import get_connection as _gc

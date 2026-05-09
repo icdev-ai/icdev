@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Tests for the Prompt Chain Executor (Phase 61, Feature 2).
 

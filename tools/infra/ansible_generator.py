@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """Generate Ansible playbooks for STIG hardening, application deployment,
 and monitoring configuration. All generated files include CUI headers."""

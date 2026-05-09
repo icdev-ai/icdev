@@ -39,6 +39,14 @@ def _ensure_init() -> None:
             logging.getLogger(__name__).warning("AI GameDay init failed: %s", exc)
 
 
+def _gameday_tenant_id() -> str | None:
+    try:
+        from tools.saas.auth.middleware import get_current_tenant_id
+        return get_current_tenant_id()
+    except Exception:
+        return None
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -50,9 +58,10 @@ def _now() -> str:
 @bp.route("/gameday")
 def hub():
     _ensure_init()
-    active = list_sessions(state="active")
-    pending = list_sessions(state="pending")
-    ended = list_sessions(state="ended")[-10:]
+    _tid = _gameday_tenant_id()
+    active = list_sessions(state="active", tenant_id=_tid)
+    pending = list_sessions(state="pending", tenant_id=_tid)
+    ended = list_sessions(state="ended", tenant_id=_tid)[-10:]
     scenarios = list_scenario_slugs()
     return render_template(
         "ai_gameday/hub.html",
@@ -262,7 +271,7 @@ def api_create_session():
     facilitator = data.get("facilitator_name", "Facilitator")
     mode = data.get("session_mode")
     try:
-        session = _engine.create_session(slug, facilitator, session_mode=mode)
+        session = _engine.create_session(slug, facilitator, session_mode=mode, tenant_id=_gameday_tenant_id())
         return jsonify({"ok": True, "session": session}), 201
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -553,9 +562,10 @@ def simulation_landing():
     """Session picker for the simulation. Auto-redirects if exactly one active session."""
     _ensure_init()
     from flask import redirect
-    active = list_sessions(state="active")
-    pending = list_sessions(state="pending")
-    ended = list_sessions(state="ended")[-10:]
+    _tid = _gameday_tenant_id()
+    active = list_sessions(state="active", tenant_id=_tid)
+    pending = list_sessions(state="pending", tenant_id=_tid)
+    ended = list_sessions(state="ended", tenant_id=_tid)[-10:]
     if len(active) == 1 and not pending:
         return redirect(f"/gameday/session/{active[0]['session_id']}/simulate")
     return render_template(

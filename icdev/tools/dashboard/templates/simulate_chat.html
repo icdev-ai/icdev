@@ -1,5 +1,100 @@
 {% extends "base.html" %}
-{% block title %}Simulate Chat — ICDEV™ Dashboard{% endblock %}
+{% block title %}{% if page_title %}{{ page_title }}{% else %}Simulate Chat{% endif %} — ICDEV™ Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+/* COA card styles */
+.coa-card {
+  border: 1px solid #e0e0e0;
+  border-radius: 10px;
+  padding: 1rem;
+  margin-bottom: 0.85rem;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  position: relative;
+}
+.coa-card--recommended {
+  border-color: #1976d2;
+  background: #f0f7ff;
+}
+.coa-card__badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-right: 0.35rem;
+}
+.badge--strategy { background: #e8f5e9; color: #1b5e20; }
+.badge--effort-low { background: #e8f5e9; color: #1b5e20; }
+.badge--effort-medium { background: #fff3e0; color: #e65100; }
+.badge--effort-high { background: #ffebee; color: #b71c1c; }
+.badge--risk-low { background: #e8f5e9; color: #1b5e20; }
+.badge--risk-medium { background: #fff3e0; color: #e65100; }
+.badge--risk-high { background: #ffebee; color: #b71c1c; }
+.badge--recommended { background: #1976d2; color: #fff; }
+.coa-card__title { font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; }
+.coa-card__meta { margin-bottom: 0.6rem; font-size: 0.82rem; }
+.coa-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.5rem 0; }
+.coa-col__label { font-weight: 700; font-size: 0.78rem; text-transform: uppercase; color: #555; margin-bottom: 0.25rem; }
+.coa-col--pros .coa-col__label { color: #2e7d32; }
+.coa-col--cons .coa-col__label { color: #c62828; }
+.coa-col ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.coa-col--pros ul li::marker { color: #43a047; }
+.coa-col--cons ul li::marker { color: #e53935; }
+.coa-card__tools { font-size: 0.82rem; color: #555; margin-top: 0.35rem; }
+.coa-card__actions { margin-top: 0.65rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.coa-btn {
+  padding: 0.3rem 0.85rem;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: none;
+  display: inline-block;
+}
+.coa-btn--primary { background: #1976d2; color: #fff; }
+.coa-btn--secondary { background: #f5f5f5; color: #333; border: 1px solid #ccc; }
+.coa-btn--ai { background: #7b1fa2; color: #fff; }
+.dep-warning {
+  background: #fff3e0;
+  border-left: 4px solid #e65100;
+  border-radius: 6px;
+  padding: 0.65rem 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.88rem;
+}
+.dep-warning--critical {
+  background: #ffebee;
+  border-color: #c62828;
+}
+.cam-welcome {
+  background: linear-gradient(135deg, #1a237e 0%, #283593 60%, #3949ab 100%);
+  color: #fff;
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1rem;
+}
+.cam-welcome h3 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.cam-welcome p { margin: 0; font-size: 0.88rem; opacity: 0.9; }
+.cam-commands { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.6rem; }
+.cam-cmd-chip {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 12px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  color: #fff;
+  font-family: monospace;
+}
+.cam-cmd-chip:hover { background: rgba(255,255,255,0.25); }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container" style="max-width:1200px;">
   <!-- Breadcrumb -->
@@ -8,16 +103,27 @@
     <span style="color:#999;"> &gt; </span>
     <span><a href="/simulation" style="color:#1976d2;text-decoration:none;">Simulation</a></span>
     <span style="color:#999;"> &gt; </span>
-    <span style="color:#333;">Chat</span>
+    <span style="color:#333;">{% if page_title %}{{ page_title }}{% else %}Chat{% endif %}</span>
   </nav>
 
-  <h1 style="margin-bottom:0.25rem;">Simulation Chat</h1>
-  <p class="text-muted" style="margin-bottom:1.5rem;">Conversational Digital Program Twin — EXPLAIN, TROUBLESHOOT, REFINE across canvas types.</p>
+  <h1 style="margin-bottom:0.25rem;">{% if page_title %}{{ page_title }}{% else %}Simulation Chat{% endif %}</h1>
+  <p class="text-muted" style="margin-bottom:1.5rem;">
+    {% if canvas_type == 'cam' %}
+      Migration Intelligence Workspace — COA analysis, deprecated code detection, refactor dispatch, and cross-canvas navigation.
+    {% else %}
+      Conversational Digital Program Twin — EXPLAIN, TROUBLESHOOT, REFINE across canvas types.
+    {% endif %}
+  </p>
 
   <!-- Canvas Type Selector -->
   <div style="margin-bottom:1.25rem;">
     <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Canvas Type</label>
     <div class="canvas-selector" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button class="canvas-chip" data-canvas-type="cam" data-canvas="cam"
+              onclick="selectCanvas('cam')"
+              style="padding:0.4rem 1rem;border:2px solid #3949ab;border-radius:20px;background:#e8eaf6;color:#1a237e;cursor:pointer;font-weight:600;">
+        CAM
+      </button>
       <button class="canvas-chip" data-canvas-type="ndc" data-canvas="ndc"
               onclick="selectCanvas('ndc')"
               style="padding:0.4rem 1rem;border:2px solid #1976d2;border-radius:20px;background:#e3f2fd;color:#1565c0;cursor:pointer;font-weight:600;">
@@ -76,14 +182,30 @@
     <div style="font-size:0.78rem;color:#999;">Accepted: PNG, JPG, PDF, draw.io, XML, VSDX</div>
   </div>
 
+  <!-- CAM Welcome Panel (shown only for cam canvas) -->
+  <div id="cam-welcome" style="display:none;">
+    <div class="cam-welcome">
+      <h3>Migration Intelligence Workspace</h3>
+      <p>AI-powered migration path advisor. Ask about any technology, check deprecation status, generate Courses of Action with pros/cons, dispatch code refactoring jobs, and navigate to DDC/IDC/NDC canvases — all from one place.</p>
+      <div class="cam-commands">
+        <span class="cam-cmd-chip" onclick="insertCommand('/coa oracle')">/coa oracle</span>
+        <span class="cam-cmd-chip" onclick="insertCommand('/deprecated elasticsearch7')">/deprecated elasticsearch7</span>
+        <span class="cam-cmd-chip" onclick="insertCommand('/refactor ')">/refactor &lt;component&gt;</span>
+        <span class="cam-cmd-chip" onclick="insertCommand('/status')">/status</span>
+        <span class="cam-cmd-chip" onclick="insertCommand('/components')">/components</span>
+        <span class="cam-cmd-chip" onclick="insertCommand('/analyze ')">/analyze &lt;code&gt;</span>
+      </div>
+    </div>
+  </div>
+
   <!-- Chat Window -->
   <div style="display:flex;gap:1.25rem;align-items:flex-start;">
     <!-- Messages -->
     <div style="flex:1;">
       <div id="chat-messages"
-           style="border:1px solid #e0e0e0;border-radius:8px;padding:1rem;min-height:350px;max-height:500px;overflow-y:auto;background:#fff;margin-bottom:0.75rem;">
+           style="border:1px solid #e0e0e0;border-radius:8px;padding:1rem;min-height:350px;max-height:580px;overflow-y:auto;background:#fff;margin-bottom:0.75rem;">
         <div class="mermaid-diagram" id="mermaid-output" style="margin-bottom:0.5rem;"></div>
-        <div style="color:#9e9e9e;font-style:italic;font-size:0.9rem;">Session ready. Select a canvas type and start chatting.</div>
+        <div id="chat-placeholder" style="color:#9e9e9e;font-style:italic;font-size:0.9rem;">Session ready. Select a canvas type and start chatting.</div>
       </div>
 
       <!-- Input -->
@@ -127,6 +249,164 @@ var _sessionId = null;
 var _canvasType = 'ndc';
 // canvas_type → slash command lists (fetched from /api/simulate/slash-commands on canvas switch)
 var _canvasCmds = {};
+
+// ---------------------------------------------------------------------------
+// COA Card renderer
+// ---------------------------------------------------------------------------
+function _effortBadgeClass(effort) {
+  return {'low':'badge--effort-low','medium':'badge--effort-medium','high':'badge--effort-high'}[effort] || 'badge--effort-low';
+}
+function _riskBadgeClass(risk) {
+  return {'low':'badge--risk-low','medium':'badge--risk-medium','high':'badge--risk-high'}[risk] || 'badge--risk-low';
+}
+function _esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function renderCOACards(coas, techName) {
+  if (!coas || !coas.length) return '';
+  var html = '<div style="margin-top:0.5rem;">';
+  coas.forEach(function(coa) {
+    var isRec = coa.recommended;
+    html += '<div class="coa-card' + (isRec ? ' coa-card--recommended' : '') + '">';
+    // Header
+    if (isRec) {
+      html += '<span class="coa-card__badge badge--recommended">Recommended</span>';
+    }
+    html += '<div class="coa-card__title">' + _esc(coa.title) + '</div>';
+    html += '<div class="coa-card__meta">';
+    html += '<span class="coa-card__badge badge--strategy">' + _esc(coa.strategy_label || coa.strategy) + '</span>';
+    html += '<span class="coa-card__badge ' + _effortBadgeClass(coa.effort) + '">' + _esc(coa.effort_days) + 'd</span>';
+    html += '<span class="coa-card__badge ' + _riskBadgeClass(coa.risk) + '">Risk: ' + _esc(coa.risk_label || coa.risk) + '</span>';
+    if (coa.timeline_weeks) {
+      html += '<span style="font-size:0.78rem;color:#777;margin-left:0.3rem;">~' + _esc(coa.timeline_weeks) + ' weeks</span>';
+    }
+    html += '</div>';
+    // Recommended reason
+    if (isRec && coa.recommended_reason) {
+      html += '<div style="font-size:0.83rem;color:#1565c0;margin-bottom:0.5rem;font-style:italic;">' + _esc(coa.recommended_reason) + '</div>';
+    }
+    // Pros / Cons columns
+    var pros = coa.pros || [];
+    var cons = coa.cons || [];
+    if (pros.length || cons.length) {
+      html += '<div class="coa-cols">';
+      html += '<div class="coa-col coa-col--pros"><div class="coa-col__label">Pros</div><ul>';
+      pros.slice(0,5).forEach(function(p) { html += '<li>' + _esc(p) + '</li>'; });
+      html += '</ul></div>';
+      html += '<div class="coa-col coa-col--cons"><div class="coa-col__label">Cons</div><ul>';
+      cons.slice(0,5).forEach(function(c) { html += '<li>' + _esc(c) + '</li>'; });
+      html += '</ul></div>';
+      html += '</div>';
+    }
+    // Tools
+    var tools = coa.tools || [];
+    if (tools.length) {
+      html += '<div class="coa-card__tools"><strong>Tools:</strong> ';
+      html += tools.map(function(t){ return '<code style="background:#f5f5f5;padding:0.1rem 0.3rem;border-radius:3px;">' + _esc(t) + '</code>'; }).join(' ');
+      html += '</div>';
+    }
+    // AI Opportunities
+    var aiOpps = coa.ai_opportunities || [];
+    if (aiOpps.length) {
+      html += '<div style="margin-top:0.4rem;font-size:0.82rem;"><strong style="color:#7b1fa2;">AI Opportunities:</strong> ';
+      html += aiOpps.map(function(o){ return '<span style="color:#7b1fa2;">' + _esc(o.title || o.id) + '</span>'; }).join(', ');
+      html += '</div>';
+    }
+    // Action buttons
+    html += '<div class="coa-card__actions">';
+    if (coa.canvas_hints) {
+      if (coa.canvas_hints.mc) {
+        html += '<a href="/migration-canvas/projects" target="_blank" class="coa-btn coa-btn--primary">Migration Canvas</a>';
+      }
+      if (coa.canvas_hints.ddc) {
+        html += '<a href="/data/canvas" target="_blank" class="coa-btn coa-btn--secondary">DDC</a>';
+      }
+      if (coa.canvas_hints.idc) {
+        html += '<a href="/infra/canvas" target="_blank" class="coa-btn coa-btn--secondary">IDC</a>';
+      }
+      if (coa.canvas_hints.ndc) {
+        html += '<a href="/network/topologies" target="_blank" class="coa-btn coa-btn--secondary">NDC</a>';
+      }
+    }
+    if (aiOpps.length) {
+      html += '<button onclick="insertCommand(\'/refactor ' + _esc(techName||'') + '\')" class="coa-btn coa-btn--ai">Dispatch Refactor Jobs</button>';
+    }
+    html += '</div>'; // actions
+    html += '</div>'; // coa-card
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderDepWarning(dep) {
+  if (!dep || dep.status === 'active' || dep.status === 'unknown') return '';
+  var isCrit = dep.severity === 'critical' || dep.severity === 'high';
+  var icon = isCrit ? '🔴' : '🟡';
+  return (
+    '<div class="dep-warning' + (isCrit ? ' dep-warning--critical' : '') + '">' +
+    icon + ' <strong>' + _esc(dep.tech) + ' ' + (dep.eol_date ? '(EOL: ' + _esc(dep.eol_date) + ')' : 'AT RISK') + '</strong>' +
+    (dep.successor ? ' — Successor: <strong>' + _esc(dep.successor) + '</strong>' : '') +
+    '</div>'
+  );
+}
+
+// Append a message bubble to the chat window
+function _appendMessage(role, content, extraHtml) {
+  var placeholder = document.getElementById('chat-placeholder');
+  if (placeholder) { placeholder.style.display = 'none'; }
+  var msgs = document.getElementById('chat-messages');
+  var el = document.createElement('div');
+  el.style.marginBottom = '0.85rem';
+  if (role === 'user') {
+    el.innerHTML = '<div style="text-align:right;"><span style="display:inline-block;background:#1976d2;color:#fff;border-radius:12px 12px 2px 12px;padding:0.45rem 0.9rem;max-width:70%;font-size:0.93rem;">' + _esc(content) + '</span></div>';
+  } else {
+    var mdHtml = _renderMarkdown(content);
+    el.innerHTML = '<div style="display:flex;gap:0.5rem;"><span style="font-size:1.1rem;flex-shrink:0;">🤖</span><div style="flex:1;background:#f5f7fa;border-radius:2px 12px 12px 12px;padding:0.5rem 0.9rem;font-size:0.92rem;">' + mdHtml + '</div></div>';
+    if (extraHtml) { el.innerHTML += extraHtml; }
+  }
+  msgs.appendChild(el);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+// Very light markdown → HTML (bold, code, links, lists)
+function _renderMarkdown(text) {
+  var s = _esc(text);
+  // code blocks
+  s = s.replace(/```[\w]*\n([\s\S]*?)```/g, function(m, code){ return '<pre style="background:#f5f5f5;border-radius:4px;padding:0.5rem;overflow-x:auto;font-size:0.82rem;">' + code + '</pre>'; });
+  // inline code
+  s = s.replace(/`([^`]+)`/g, '<code style="background:#f5f5f5;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.88em;">$1</code>');
+  // bold
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  // headers
+  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:0.5rem 0 0.25rem;">$1</h4>');
+  s = s.replace(/^## (.+)$/gm, '<h3 style="margin:0.5rem 0 0.25rem;">$1</h3>');
+  s = s.replace(/^# (.+)$/gm, '<h2 style="margin:0.5rem 0 0.25rem;">$1</h2>');
+  // horizontal rule
+  s = s.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #e0e0e0;margin:0.5rem 0;">');
+  // blockquote
+  s = s.replace(/^&gt; (.+)$/gm, '<blockquote style="border-left:3px solid #1976d2;margin:0.25rem 0;padding:0.25rem 0.75rem;color:#555;">$1</blockquote>');
+  // markdown links
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#1976d2;">$1</a>');
+  // list items
+  s = s.replace(/^  [\-\*] (.+)$/gm, '<li style="margin-left:1.5rem;">$1</li>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+  s = s.replace(/\+ (.+)/g, '<li style="color:#2e7d32;">$1</li>');
+  s = s.replace(/\- (.+)/g, '<li style="color:#c62828;">$1</li>');
+  // table (basic)
+  s = s.replace(/\|(.+)\|/g, function(m) {
+    var cells = m.split('|').filter(function(c){ return c.trim(); });
+    if (cells[0] && cells[0].trim().match(/^[-:]+$/)) return '';
+    var tdHtml = cells.map(function(c){ return '<td style="padding:0.2rem 0.6rem;border:1px solid #e0e0e0;">' + c.trim() + '</td>'; }).join('');
+    return '<tr>' + tdHtml + '</tr>';
+  });
+  s = s.replace(/<tr>/g, function(m, offset, str) {
+    var before = str.slice(Math.max(0, offset-10), offset);
+    return before.includes('<table') ? m : '<table style="border-collapse:collapse;width:100%;font-size:0.85rem;margin:0.5rem 0;"><tr>';
+  });
+  if (s.includes('</tr>') && !s.includes('</table>')) s += '</table>';
+  // newlines
+  s = s.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
+  return s;
+}
 
 function _fetchCanvasCommands(ct) {
   if (_canvasCmds[ct]) { _renderSlashHints(ct, _canvasCmds[ct]); return; }
@@ -194,6 +474,18 @@ function selectCanvas(ct) {
     el.style.boxShadow = el.dataset.canvasType === ct ? '0 0 0 3px rgba(25,118,210,0.35)' : '';
   });
   _fetchCanvasCommands(ct);
+  // Show/hide CAM welcome panel
+  var camWelcome = document.getElementById('cam-welcome');
+  if (camWelcome) camWelcome.style.display = ct === 'cam' ? 'block' : 'none';
+  // Update input placeholder
+  var inp = document.getElementById('chat-input');
+  if (inp) {
+    inp.placeholder = ct === 'cam'
+      ? '/coa oracle  |  /deprecated elasticsearch  |  /status  |  Ask anything about migration'
+      : '/explain — describe your architecture';
+  }
+  // Auto-start session if cam
+  if (ct === 'cam' && !_sessionId) startSession();
 }
 
 function startSession() {
@@ -204,8 +496,8 @@ function startSession() {
     body: JSON.stringify({canvas_type: ct})
   }).then(function(r) { return r.json(); }).then(function(d) {
     _sessionId = d.session_id || d.id;
-    document.getElementById('session-info').textContent = 'ID: ' + (_sessionId || 'unknown') + '\nCanvas: ' + ct;
-    document.getElementById('bundle-section').style.display = 'block';
+    document.getElementById('session-info').textContent = 'ID: ' + (_sessionId || 'unknown') + '\nCanvas: ' + ct.toUpperCase();
+    if (ct !== 'cam') document.getElementById('bundle-section').style.display = 'block';
     document.getElementById('chat-status').textContent = 'Session started (' + ct.toUpperCase() + ')';
   }).catch(function(e) {
     document.getElementById('chat-status').textContent = 'Error: ' + e;
@@ -215,39 +507,54 @@ function startSession() {
 function sendMessage() {
   var content = document.getElementById('chat-input').value.trim();
   if (!content) return;
-  if (!_sessionId) { startSession(); return; }
-  // Echo user message
-  var msgs = document.getElementById('chat-messages');
-  var userEl = document.createElement('div');
-  userEl.style.marginBottom = '0.5rem';
-  userEl.innerHTML = '<strong style="color:#1565c0;">You:</strong> <span style="font-size:0.93rem;">' + content.replace(/</g,'&lt;') + '</span>';
-  msgs.appendChild(userEl);
-  msgs.scrollTop = msgs.scrollHeight;
+  if (!_sessionId) {
+    startSession();
+    // Retry after session starts
+    setTimeout(function(){ if (_sessionId) sendMessage(); }, 800);
+    return;
+  }
+  _appendMessage('user', content);
   document.getElementById('chat-input').value = '';
-  document.getElementById('chat-status').textContent = 'Sending...';
+  document.getElementById('chat-status').textContent = 'Thinking...';
+
   fetch('/api/simulate/message', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({session_id: _sessionId, content: content})
+    body: JSON.stringify({session_id: _sessionId, content: content, canvas_type: _canvasType})
   }).then(function(r) { return r.json(); }).then(function(d) {
-    var msgs = document.getElementById('chat-messages');
     var reply = d.reply || d.content || d.message || JSON.stringify(d);
-    var el = document.createElement('div');
-    el.style.marginBottom = '0.5rem';
-    el.innerHTML = '<strong>Assistant:</strong> <pre style="white-space:pre-wrap;margin:0.25rem 0;">' + reply + '</pre>';
-    msgs.appendChild(el);
-    msgs.scrollTop = msgs.scrollHeight;
-    document.getElementById('chat-input').value = '';
     document.getElementById('chat-status').textContent = '';
-    // Render mermaid if present
-    var mermaidMatch = reply.match(/```mermaid\n([\s\S]*?)```/);
-    if (mermaidMatch) {
-      var out = document.getElementById('mermaid-output');
-      out.innerHTML = '<div class="mermaid">' + mermaidMatch[1] + '</div>';
-      if (window.mermaid) { mermaid.init(undefined, out.querySelectorAll('.mermaid')); }
+
+    if (_canvasType === 'cam') {
+      // Rich rendering for CAM canvas
+      var extraHtml = '';
+      var displayReply = reply;
+      // Deprecation warning banner
+      if (d.deprecation && d.deprecation.status && d.deprecation.status !== 'unknown') {
+        extraHtml += renderDepWarning(d.deprecation);
+      }
+      // COA cards — when present, suppress the full markdown body to avoid duplication
+      if (d.coa_cards && d.coa_cards.length) {
+        extraHtml += renderCOACards(d.coa_cards, d.tech || '');
+        // Keep only the header line (up to the first COA block) from the text reply
+        var headerEnd = reply.indexOf('\n### COA');
+        displayReply = headerEnd > 0 ? reply.slice(0, headerEnd).trim() : '';
+      }
+      _appendMessage('assistant', displayReply, extraHtml);
+    } else {
+      // Standard rendering for other canvases
+      _appendMessage('assistant', reply);
+      // Render mermaid if present
+      var mermaidMatch = reply.match(/```mermaid\n([\s\S]*?)```/);
+      if (mermaidMatch) {
+        var out = document.getElementById('mermaid-output');
+        out.innerHTML = '<div class="mermaid">' + mermaidMatch[1] + '</div>';
+        if (window.mermaid) { mermaid.init(undefined, out.querySelectorAll('.mermaid')); }
+      }
     }
   }).catch(function(e) {
     document.getElementById('chat-status').textContent = 'Error: ' + e;
+    _appendMessage('assistant', '[Error] ' + e);
   });
 }
 
@@ -270,6 +577,14 @@ document.addEventListener('DOMContentLoaded', function() {
   var presel = document.getElementById('active-canvas-type').value || 'ndc';
   _canvasType = presel;
   selectCanvas(presel);
+  // Add nav link to main /chat for cross-reference
+  if (presel !== 'cam') {
+    var camLink = document.createElement('div');
+    camLink.style.cssText = 'margin-top:0.5rem;font-size:0.82rem;color:#555;';
+    camLink.innerHTML = '💡 For migration intelligence, switch to <strong>CAM</strong> canvas above or go to <a href="/simulate/chat?canvas=cam" style="color:#3949ab;">Migration Chat</a>';
+    var selector = document.querySelector('.canvas-selector');
+    if (selector && selector.parentNode) selector.parentNode.appendChild(camLink);
+  }
 });
 </script>
 {% endblock %}

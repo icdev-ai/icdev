@@ -142,6 +142,7 @@
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/batch">Batch</a></li>
                     <li><a href="/simulate/chat">Simulate Chat</a></li>
+                    <li><a href="/simulate/chat?canvas=cam" title="AI migration path advisor — COAs, deprecated code detection, refactor dispatch">Migration Chat</a></li>
                 </ul>
             </li>
 
@@ -206,6 +207,8 @@
                     <li><a href="/migration-canvas/">Design Canvas</a></li>
                     <li><a href="/migration-canvas/network-migration/">Network Migration</a></li>
                     <li><a href="/migration-canvas/server-migration/">Server Migration</a></li>
+                    <li><a href="/migration-canvas/projects">Cloud App Projects</a></li>
+                    <li><a href="/simulate/chat?canvas=cam">Migration Chat</a></li>
                     <li><a href="/migration-intel/">Intelligence Engine</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
@@ -723,6 +726,7 @@
             [/^\/infra/, 'idc'],
             [/^\/observability/, 'odc'],
             [/^\/boundary/, 'bdc'],
+            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
             [/^\/migration-canvas\/projects/, 'cam'],
             [/^\/migration-canvas/, 'mc'],
             [/^\/agentic-ai/, 'aadc'],
