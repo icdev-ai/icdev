@@ -187,6 +187,21 @@ CREATE INDEX IF NOT EXISTS idx_mc_runbooks_design ON mc_runbooks(design_id);
 CREATE INDEX IF NOT EXISTS idx_mc_runbooks_trigger ON mc_runbooks(trigger_event);
 CREATE INDEX IF NOT EXISTS idx_mc_oracle_design ON mc_oracle_predictions(design_id);
 CREATE INDEX IF NOT EXISTS idx_mc_oracle_severity ON mc_oracle_predictions(severity);
+
+CREATE TABLE IF NOT EXISTS mc_inventory_imports (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    format              TEXT NOT NULL CHECK(format IN ('csv','json','aws_hub','azure_migrate','manual')),
+    filename            TEXT,
+    row_count           INTEGER DEFAULT 0,
+    parsed_servers_json TEXT DEFAULT '[]',
+    status              TEXT NOT NULL CHECK(status IN ('pending','parsed','error')) DEFAULT 'pending',
+    error_msg           TEXT,
+    imported_at         TEXT NOT NULL,
+    classification      TEXT DEFAULT 'CUI'
+) WITHOUT ROWID;
+
+CREATE INDEX IF NOT EXISTS idx_mc_inv_session ON mc_inventory_imports(session_id);
 """
 
 
