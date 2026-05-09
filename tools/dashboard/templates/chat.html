@@ -38,7 +38,10 @@
     <div class="chat-sidebar" id="chat-sidebar">
         <div class="chat-sidebar__header">
             <strong>Contexts</strong>
-            <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">+ New</button>
+            <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><line x1="5" y1="1" x2="5" y2="9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                New
+            </button>
         </div>
         <div id="context-list" class="chat-sidebar__list"></div>
     </div>
@@ -51,6 +54,7 @@
         <!-- Chat header -->
         <div id="chat-header" class="chat-header">
             <span id="chat-title" class="chat-header__title">Select or create a context</span>
+            <span id="chat-model-chip" class="chat-model-chip" style="display:none;"></span>
             <div class="chat-header__actions">
                 <span id="chat-status" class="badge chat-header__status"></span>
                 <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle RICOAS sidebar">RICOAS</button>
@@ -90,9 +94,18 @@
     <div id="input-area" class="chat-input-area">
         <div class="chat-input-area__inner">
             <input type="file" id="chat-file-input" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" accept=".txt,.md,.rst,.pdf,.docx,.doc,.yaml,.yml,.json,.png,.jpg,.jpeg,.gif,.webp,.svg,.csv,.xml" multiple>
-            <button id="chat-upload-btn" class="chat-upload-btn" type="button" onclick="document.getElementById('chat-file-input').click()" title="Upload document, spec, or diagram (PDF, DOCX, TXT, MD, PNG, JPG)" aria-label="Upload file">&#x1F4CE; Upload</button>
+            <button id="chat-upload-btn" class="chat-upload-btn" type="button" onclick="document.getElementById('chat-file-input').click()" title="Upload document, spec, or diagram (PDF, DOCX, TXT, MD, PNG, JPG)" aria-label="Upload file">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="flex-shrink:0"><path d="M7 9V2M4 5l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v1.5A0.5 0.5 0 002.5 12h9a0.5 0.5 0 00.5-.5V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                Upload
+            </button>
             <textarea id="message-input" class="chat-message-input" placeholder="Type a message… or drag &amp; drop a file" rows="1" disabled></textarea>
-            <button id="btn-send" class="chat-send-btn" type="button" disabled title="Send message" aria-label="Send">&#x2191;</button>
+            <button id="btn-send" class="chat-send-btn" type="button" disabled title="Send message (Enter)" aria-label="Send">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+        </div>
+        <div class="chat-input-footer">
+            <span class="chat-input-shortcut">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</span>
+            <span class="chat-char-counter" id="chat-char-counter"></span>
         </div>
     </div>
 
@@ -103,9 +116,18 @@
     <div id="right-sidebar" class="chat-right-panel">
         <!-- Tabs -->
         <div class="chat-right-tabs" id="right-sidebar-tabs">
-            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas">RICOAS</button>
-            <button class="chat-right-tab" data-tab="gov" id="tab-gov">Gov</button>
-            <button class="chat-right-tab" data-tab="intel" id="tab-intel">Intel</button>
+            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas" title="Requirements Intake (RICOAS)">
+                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="2" y="1" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><line x1="4.5" y1="4.5" x2="9.5" y2="4.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><line x1="4.5" y1="7" x2="9.5" y2="7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><line x1="4.5" y1="9.5" x2="7.5" y2="9.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+                RICOAS
+            </button>
+            <button class="chat-right-tab" data-tab="gov" id="tab-gov" title="AI Governance">
+                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 1.5L2 4v2c0 3.3 2.1 5.8 5 6.5 2.9-.7 5-3.2 5-6.5V4L7 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
+                Gov
+            </button>
+            <button class="chat-right-tab" data-tab="intel" id="tab-intel" title="Intelligence (RAG, KG, Bayesian)">
+                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><line x1="9" y1="9" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                Intel
+            </button>
         </div>
 
         <!-- RICOAS Tab Content -->
@@ -556,16 +578,33 @@
     });
 })();
 
-// Textarea auto-resize
+// Model chip: exposed for chat.js to call on context selection
+window.ICDEV_setModelChip = function(modelName) {
+    var chip = document.getElementById('chat-model-chip');
+    if (!chip) return;
+    if (modelName) { chip.textContent = modelName; chip.style.display = ''; }
+    else           { chip.textContent = ''; chip.style.display = 'none'; }
+};
+
+// Textarea auto-resize + character counter
 (function() {
     document.addEventListener('DOMContentLoaded', function() {
         var ta = document.getElementById('message-input');
+        var counter = document.getElementById('chat-char-counter');
         if (!ta) return;
         function resize() {
             ta.style.height = 'auto';
             ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
         }
-        ta.addEventListener('input', resize);
+        ta.addEventListener('input', function() {
+            resize();
+            if (!counter) return;
+            var len = ta.value.length;
+            if (len === 0) { counter.textContent = ''; return; }
+            counter.textContent = len.toLocaleString();
+            counter.className = 'chat-char-counter' +
+                (len >= 4000 ? ' chat-char-counter--limit' : len >= 3600 ? ' chat-char-counter--warn' : '');
+        });
     });
 })();
 
