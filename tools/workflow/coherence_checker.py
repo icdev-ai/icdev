@@ -72,6 +72,12 @@ class CoherenceCheck:
     def to_dict(self) -> dict:
         return dataclasses.asdict(self)
 
+    def __getitem__(self, key: str):
+        # 'check' is an alias for check_id for backward-compat with dict-style access
+        if key == "check":
+            return self.check_id
+        return self.to_dict()[key]
+
     @property
     def passed(self) -> bool:
         return self.status == "pass"
@@ -2553,7 +2559,7 @@ def check_mcp_security() -> CoherenceCheck:
     # Check 2: scanner returns required keys
     if not issues:
         try:
-            import importlib.util, sys as _sys
+            import importlib.util
             spec = importlib.util.spec_from_file_location("mcp_scanner_check", scanner_path)
             mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
             spec.loader.exec_module(mod)  # type: ignore[union-attr]
