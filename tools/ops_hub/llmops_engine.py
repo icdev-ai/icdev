@@ -137,6 +137,33 @@ def get_langfuse_traces(limit: int = 20) -> list[dict]:
     return []
 
 
+def get_langfuse_cost_by_model() -> list[dict]:
+    """Return cost-per-model breakdown from Langfuse trace data."""
+    try:
+        from tools.ops_hub.adapter_registry import get_adapter
+        adapter = get_adapter("langfuse")
+        if adapter and adapter.available():
+            metrics = adapter.get_metrics("cost_per_model")
+            return metrics.values
+    except Exception:
+        pass
+    return []
+
+
+def get_langfuse_latency_p95() -> dict:
+    """Return p95 latency (ms) across recent Langfuse traces."""
+    try:
+        from tools.ops_hub.adapter_registry import get_adapter
+        adapter = get_adapter("langfuse")
+        if adapter and adapter.available():
+            metrics = adapter.get_metrics("latency_p95")
+            if metrics.values:
+                return metrics.values[0]
+    except Exception:
+        pass
+    return {}
+
+
 # ── Unified Summary ───────────────────────────────────────────────────────────
 
 def get_llmops_summary() -> dict[str, Any]:
@@ -144,6 +171,9 @@ def get_llmops_summary() -> dict[str, Any]:
     gateway = get_gateway_stats()
     cost = get_cost_report()
     health = get_model_health()
+    langfuse_traces = get_langfuse_traces(limit=5)
+    langfuse_cost = get_langfuse_cost_by_model()
+    langfuse_latency = get_langfuse_latency_p95()
 
     # Derive a simple health status
     has_drift = bool(get_drift_events(limit=1))
@@ -162,5 +192,11 @@ def get_llmops_summary() -> dict[str, Any]:
         "model_health": health,
         "has_drift": has_drift,
         "has_cost_anomaly": has_anomaly,
+        "langfuse": {
+            "trace_count": len(langfuse_traces),
+            "recent_traces": langfuse_traces,
+            "cost_by_model": langfuse_cost,
+            "latency_p95": langfuse_latency,
+        },
         "domain": "llmops",
     }
