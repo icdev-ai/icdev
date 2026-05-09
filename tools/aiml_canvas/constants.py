@@ -196,6 +196,13 @@ AIMC_NODE_PALETTE = {
             "desc": "Model A vs B comparison — side-by-side evaluation on matched prompts",
             "color": "#14b8a6",
         },
+        {
+            "type": "eval-agentic-red-team",
+            "label": "Agentic Red Team",
+            "icon": "ART",
+            "desc": "Multi-turn agentic adversarial testing — tool-abuse, agent impersonation, indirect injection (MITRE ATLAS AML.T0054)",
+            "color": "#7f1d1d",
+        },
     ],
     "deployment": [
         {
@@ -268,6 +275,13 @@ AIMC_NODE_PALETTE = {
             "desc": "IBM watsonx.ai Deployment Space — Granite + partner models, IBM GovCloud FedRAMP High",
             "color": "#0f62fe",
         },
+        {
+            "type": "deploy-kserve",
+            "label": "KServe (Kubernetes)",
+            "icon": "KSV",
+            "desc": "KServe Kubernetes Model Inference Platform — multi-framework serving (TensorFlow/PyTorch/ONNX), air-gap IL5/IL6 on-prem",
+            "color": "#326ce5",
+        },
     ],
     "vector-stores": [
         {
@@ -327,6 +341,20 @@ AIMC_NODE_PALETTE = {
             "icon": "VFT",
             "desc": "GCP Vertex AI Supervised Tuning — Gemini model fine-tuning with training dataset from Cloud Storage",
             "color": "#4285f4",
+        },
+        {
+            "type": "adapt-oci-ft",
+            "label": "OCI GenAI Fine-Tuning",
+            "icon": "OFT",
+            "desc": "OCI GenAI Dedicated AI Cluster fine-tuning — Cohere Command R custom model, OCI GovCloud",
+            "color": "#f80000",
+        },
+        {
+            "type": "adapt-watsonx-ft",
+            "label": "IBM watsonx Fine-Tuning",
+            "icon": "WFT",
+            "desc": "IBM watsonx.ai AutoAI Experiment or Tuning Studio — Granite and custom models, IBM GovCloud",
+            "color": "#0f62fe",
         },
     ],
     "governance": [

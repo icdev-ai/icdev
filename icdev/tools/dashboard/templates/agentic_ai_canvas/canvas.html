@@ -125,6 +125,24 @@
   background:#0f172a; border:1px solid #1e3a6e; border-radius:8px;
   width:340px; box-shadow:0 8px 32px rgba(0,0,0,0.7);
 }
+
+/* ── Model Linker drawer ── */
+#model-linker-drawer {
+  display:none; position:fixed; top:60px; right:16px; z-index:201;
+  background:#0f172a; border:1px solid #6366f1; border-radius:8px;
+  width:420px; max-height:70vh; overflow-y:auto;
+  box-shadow:0 8px 32px rgba(0,0,0,0.8);
+}
+.ml-row {
+  display:flex; align-items:center; gap:8px; padding:7px 14px;
+  border-bottom:1px solid #1e293b;
+}
+.ml-node-name { flex:0 0 120px; font-size:11px; color:#e2e8f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ml-select { flex:1; background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:4px; font-size:11px; padding:3px 5px; }
+.ml-badge { flex:0 0 40px; text-align:center; font-size:10px; font-weight:700; padding:2px 5px; border-radius:3px; }
+.ml-badge.pass { background:#052e16; color:#4ade80; border:1px solid #166534; }
+.ml-badge.fail { background:#450a0a; color:#fca5a5; border:1px solid #7f1d1d; }
+.ml-unlink { flex:0 0 22px; background:none; border:none; color:#f87171; cursor:pointer; font-size:13px; padding:0; }
 </style>
 {% endblock %}
 {% block content %}
@@ -235,6 +253,11 @@
 
   <span style="color:#334155;">|</span>
 
+  <!-- Enhancement toolbar buttons injected by agentic-canvas.js -->
+  <span id="aadc-toolbar-extra" style="display:inline-flex;align-items:center;"></span>
+
+  <span style="color:#334155;">|</span>
+
   {% if wf_status %}
   <div style="background:{% if wf_status.status=='approved' %}#052e16{% elif wf_status.status=='pending' %}#422006{% else %}#1e293b{% endif %};
        border:1px solid {% if wf_status.status=='approved' %}#166534{% elif wf_status.status=='pending' %}#7c2d12{% else %}#334155{% endif %};
@@ -261,6 +284,8 @@
     style="background:#1e293b;color:#4ade80;padding:5px 10px;border:1px solid #166534;border-radius:4px;cursor:pointer;font-size:12px;" title="Safety Redundancy Map">🛡 Safety Map</button>
   <button id="btn-simulate" onclick="toggleSimPanel(event)"
     style="background:#1e293b;color:#fbbf24;padding:5px 10px;border:1px solid #92400e;border-radius:4px;cursor:pointer;font-size:12px;" title="Agent Behavior Simulation">▶ Simulate</button>
+  <button id="btn-model-linker" onclick="toggleModelLinker(event)"
+    style="background:#1e293b;color:#818cf8;padding:5px 10px;border:1px solid #4338ca;border-radius:4px;cursor:pointer;font-size:12px;" title="Link AIMC Models to AADC nodes">&#128279; Link Models</button>
 
   <button onclick="saveDesign()" id="save-btn"
     style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
@@ -662,6 +687,23 @@
 </div>
 
 <!-- ── Phase 4: Checkpoints Drawer ── -->
+<!-- ── AIMC Model Linker Drawer ── -->
+<div id="model-linker-drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #4338ca;flex-shrink:0;">
+    <span style="color:#818cf8;font-size:13px;font-weight:600;">&#128279; Link AIMC Models</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span id="ml-il-badge" style="font-size:10px;color:#64748b;"></span>
+      <button onclick="toggleModelLinker()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+  </div>
+  <div id="ml-body" style="padding:8px 0;">
+    <div style="padding:12px 16px;color:#475569;font-size:12px;">Loading catalog&#8230;</div>
+  </div>
+  <div style="padding:8px 14px;border-top:1px solid #1e293b;font-size:10px;color:#475569;line-height:1.5;">
+    Select a model from the catalog for each AI node. IL badges show compatibility with this design's classification.
+  </div>
+</div>
+
 <div id="checkpoints-drawer">
   <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #1e3a6e;">
     <span style="color:#c084fc;font-size:13px;font-weight:600;">💾 Checkpoints & Forks</span>
@@ -2528,6 +2570,108 @@ function renderThreatModal(d) {
 }
 
 // ────────────────────────────────────────────────
+// AIMC Model Linker
+// ────────────────────────────────────────────────
+const ML_NODE_TYPES = new Set(['llm','llm-local','embedding-model','classifier','fine-tuned-adapter','swarm-agent','fan-out-coordinator','fan-in-aggregator']);
+
+function _classToIL() {
+  const cls = (document.getElementById('design-class')?.value || '{{ design.classification }}' || 'CUI');
+  if (cls === 'SECRET') return 'IL6';
+  if (cls === 'UNCLASSIFIED') return 'IL2';
+  return 'IL4';
+}
+
+function toggleModelLinker(e) {
+  if (e) e.stopPropagation();
+  const d = document.getElementById('model-linker-drawer');
+  if (d.style.display === 'block') { d.style.display = 'none'; return; }
+  d.style.display = 'block';
+  loadModelLinker();
+}
+
+function loadModelLinker() {
+  if (!DESIGN_ID) {
+    document.getElementById('ml-body').innerHTML =
+      '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Save the design first before linking models.</div>';
+    return;
+  }
+  const il = _classToIL();
+  document.getElementById('ml-il-badge').textContent = il;
+  const aiNodes = (graph.nodes || []).filter(n => ML_NODE_TYPES.has(n.type));
+  if (!aiNodes.length) {
+    document.getElementById('ml-body').innerHTML =
+      '<div style="padding:12px 16px;color:#475569;font-size:12px;">No AI agent or model nodes in this design. Add LLM, embedding, classifier, or swarm-agent nodes first.</div>';
+    return;
+  }
+  document.getElementById('ml-body').innerHTML =
+    '<div style="padding:12px 16px;color:#475569;font-size:12px;">Loading catalog&#8230;</div>';
+
+  Promise.all([
+    fetch('/agentic-ai/api/aimc-catalog?il_level=' + il).then(r => r.json()),
+    fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs').then(r => r.json()),
+  ]).then(([catalog, refsData]) => {
+    renderModelLinker(aiNodes, catalog, refsData.refs || [], refsData.il_violations || []);
+  }).catch(err => {
+    document.getElementById('ml-body').innerHTML =
+      '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Error: ' + err + '</div>';
+  });
+}
+
+function renderModelLinker(aiNodes, catalog, refs, violations) {
+  const refsByNode = {};
+  for (const r of refs) refsByNode[r.aadc_node_id] = r;
+  const violNodeIds = new Set(violations.map(v => v.aadc_node_id));
+
+  let html = '';
+  html += '<div style="padding:4px 14px 2px;font-size:10px;color:#475569;display:flex;gap:8px;align-items:center;">';
+  html += '<span style="flex:0 0 120px;">Node</span><span style="flex:1;">AIMC Model</span><span style="flex:0 0 40px;">IL</span><span style="flex:0 0 22px;"></span></div>';
+
+  for (const node of aiNodes) {
+    const ref = refsByNode[node.id];
+    const linked = !!ref;
+    const fail = violNodeIds.has(node.id);
+    const badge = linked ? (fail ? '<span class="ml-badge fail">FAIL</span>' : '<span class="ml-badge pass">PASS</span>') : '<span style="flex:0 0 40px;"></span>';
+
+    let opts = '<option value="">— none —</option>';
+    for (const m of catalog) {
+      const sel = ref && ref.aimc_model_id === m.id ? ' selected' : '';
+      opts += '<option value="' + _esc(m.id) + '"' + sel + '>' + _esc(m.name) + ' (' + _esc(m.provider) + ')</option>';
+    }
+    const unlinkBtn = linked
+      ? '<button class="ml-unlink" onclick="unlinkNodeModel(\'' + ref.id + '\',\'' + node.id + '\')" title="Unlink model">&#215;</button>'
+      : '<span style="flex:0 0 22px;"></span>';
+
+    html += '<div class="ml-row">';
+    html += '<span class="ml-node-name" title="' + _esc(node.label || node.type) + '">' + _esc(node.label || node.type) + '</span>';
+    html += '<select class="ml-select" onchange="linkNodeModel(\'' + node.id + '\',this.value)">' + opts + '</select>';
+    html += badge + unlinkBtn;
+    html += '</div>';
+  }
+  document.getElementById('ml-body').innerHTML = html;
+}
+
+function linkNodeModel(nodeId, modelId) {
+  if (!DESIGN_ID || !modelId) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/link-model', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({aadc_node_id: nodeId, aimc_model_id: modelId}),
+  }).then(r => r.json()).then(() => loadModelLinker())
+    .catch(err => setStatus('Link model error: ' + err));
+}
+
+function unlinkNodeModel(refId, nodeId) {
+  if (!DESIGN_ID) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs/' + refId, {method: 'DELETE'})
+    .then(() => loadModelLinker())
+    .catch(err => setStatus('Unlink error: ' + err));
+}
+
+function _esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ────────────────────────────────────────────────
 // PHASE 5 — OSCAL Export
 // ────────────────────────────────────────────────
 function doOscalExport() {
@@ -2559,4 +2703,5 @@ function doOscalExport() {
 .sim-halted   { box-shadow: 0 0 0 3px #f97316, 0 0 12px #f9731688 !important; }
 .sim-filtered { box-shadow: 0 0 0 3px #fbbf24, 0 0 12px #fbbf2488 !important; }
 </style>
+<script src="/static/js/agentic-canvas.js" defer></script>
 {% endblock %}
