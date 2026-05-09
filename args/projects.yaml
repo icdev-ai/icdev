@@ -3085,3 +3085,49 @@ projects:
   - key: wire
     title: Wiring — OpenLineage, requirements, manifest, V&V
     priority: high
+
+- key: ohc
+  name: Ops Hub Canvas (OHC) — Unified LLMOps · MLOps · AIOps
+  description: >
+    Unified operations canvas at /ops covering all three ops disciplines: LLMOps
+    (gateway, cost, drift, prompts, evals), MLOps (experiments, model registry,
+    data drift), and AIOps (SLOs, incidents, runbooks, topology, self-healing).
+    Canvas views on top of Phase 70 backend tools. Dual-mode adapter layer for
+    open source (MLflow, Evidently, Langfuse, Prometheus, ONNX, DVC) and CSP
+    native tools (SageMaker, Azure ML, Vertex AI, Bedrock Guardrails, CloudWatch).
+  task_prefix: ohc-
+  default_open: true
+  briefs:
+    - 'foundation: constants + adapter_base + adapter_registry + DB + migration 120'
+    - 'engine: llmops_engine + mlops_engine + aiops_engine + ops_aggregator + cli'
+    - 'blueprint: all Flask routes across 8 sub-pages + JSON API endpoints'
+    - 'templates: index + llm + models + slos + incidents + runbooks + topology + self_healing'
+    - 'oss: 6 open source adapters (mlflow/evidently/langfuse/prometheus/onnx/dvc)'
+    - 'csp: 5 CSP adapters (sagemaker/azureml/vertexai/bedrock-guardrails/cloudwatch)'
+    - 'wiring: app.py + base.html + IQE + nav + manifest + MCP tools + Genesis reflexes'
+    - 'vv: companion sync + coherence + E2E smoke + feature docs'
+  epics:
+  - key: foundation
+    title: Foundation — DB, constants, adapter base
+    priority: critical
+  - key: engine
+    title: Engines — llmops/mlops/aiops/aggregator
+    priority: critical
+  - key: blueprint
+    title: Flask Blueprint — all routes
+    priority: critical
+  - key: templates
+    title: HTML Templates — 8 sub-pages
+    priority: critical
+  - key: oss
+    title: OSS Adapters — MLflow/Evidently/Langfuse/Prometheus/ONNX/DVC
+    priority: high
+  - key: csp
+    title: CSP Adapters — SageMaker/AzureML/VertexAI/Bedrock/CloudWatch
+    priority: high
+  - key: wiring
+    title: Wiring — app.py, nav, IQE, MCP, Genesis
+    priority: critical
+  - key: vv
+    title: V&V — coherence + E2E + companion + docs
+    priority: high

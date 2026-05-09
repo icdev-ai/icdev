@@ -444,4 +444,36 @@ def create_aiml_blueprint() -> Blueprint | None:
             _log.getLogger(__name__).warning("AIMC IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
+    @bp.route("/modernize")
+    def modernize_page():
+        from tools.aiml_canvas.modernization_bridge import (
+            LANGUAGES, ARCHITECTURES, DATA_STATES, USER_GOALS, TEAM_AI_READINESS,
+        )
+        from apps.forge_academy.patterns import INJECTION_PATTERNS
+        return render_template(
+            "aiml_canvas/modernize.html",
+            languages=LANGUAGES,
+            architectures=ARCHITECTURES,
+            data_states=DATA_STATES,
+            user_goals=USER_GOALS,
+            team_readiness_options=TEAM_AI_READINESS,
+            patterns=INJECTION_PATTERNS,
+        )
+
+    @bp.route("/api/modernize/recommend", methods=["POST"])
+    def api_modernize_recommend():
+        data = request.get_json(silent=True) or {}
+        from tools.aiml_canvas.modernization_bridge import recommend_json
+        try:
+            result = recommend_json({
+                "language": data.get("language", ""),
+                "architecture": data.get("architecture", ""),
+                "data_state": data.get("data_state", ""),
+                "goal": data.get("goal", ""),
+                "team_readiness": data.get("team_readiness", ""),
+            })
+            return jsonify({"ok": True, "recommendation": result})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     return bp
