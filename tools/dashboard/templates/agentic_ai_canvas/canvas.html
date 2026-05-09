@@ -416,6 +416,16 @@
           </label>
         </div>
 
+        <!-- AIMC Model Linker inline panel (visible for ML/agent node types) -->
+        <div id="prop-aimc-wrap" style="display:none;margin-bottom:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+          <div style="color:#38bdf8;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">LINKED AIMC MODEL</div>
+          <select id="prop-aimc-select" onchange="linkNodeModelFromPanel(this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;box-sizing:border-box;margin-bottom:5px;">
+            <option value="">— none —</option>
+          </select>
+          <div id="prop-aimc-badge" style="display:none;font-size:11px;padding:3px 8px;border-radius:3px;"></div>
+        </div>
+
         <!-- Phase 3: Model Provenance fields (visible for model nodes only) -->
         <div id="prop-provenance-wrap" style="display:none;margin-bottom:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
           <div style="color:#a78bfa;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">MODEL PROVENANCE</div>
@@ -1192,6 +1202,9 @@ function selectNode(node) {
   if (linkedTaskId && DESIGN_ID) {
     refreshKanbanBadgeForNode(node.id, linkedTaskId);
   }
+
+  // AIMC model linker panel — visible for ML/agent node types
+  _loadNodeAIMCPanel(node);
 
   render();
 }
@@ -2567,6 +2580,87 @@ function renderThreatModal(d) {
   }
 
   body.innerHTML = html;
+}
+
+// ────────────────────────────────────────────────
+// AIMC Model Linker — node-panel inline functions
+// ────────────────────────────────────────────────
+function _loadNodeAIMCPanel(node) {
+  const wrap = document.getElementById('prop-aimc-wrap');
+  const sel  = document.getElementById('prop-aimc-select');
+  const badge = document.getElementById('prop-aimc-badge');
+  if (!ML_NODE_TYPES.has(node.type)) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  sel.innerHTML = '<option value="">Loading…</option>';
+  badge.style.display = 'none';
+  if (!DESIGN_ID) {
+    sel.innerHTML = '<option value="">Save design first</option>';
+    return;
+  }
+  const il = _classToIL();
+  Promise.all([
+    fetch('/agentic-ai/api/aimc-catalog?il_level=' + il).then(r => r.json()),
+    fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs').then(r => r.json()),
+  ]).then(([catalog, refsData]) => {
+    const refs = refsData.refs || [];
+    const violNodeIds = new Set((refsData.il_violations || []).map(v => v.aadc_node_id));
+    const ref = refs.find(r => r.aadc_node_id === node.id);
+
+    let opts = '<option value="">— none —</option>';
+    for (const m of catalog) {
+      const selected = ref && ref.aimc_model_id === m.id ? ' selected' : '';
+      opts += '<option value="' + _esc(m.id) + '"' + selected + '>' + _esc(m.name) + ' (' + _esc(m.provider) + ')</option>';
+    }
+    sel.innerHTML = opts;
+
+    if (ref) {
+      const isFail = violNodeIds.has(node.id);
+      const linkedModel = catalog.find(m => m.id === ref.aimc_model_id);
+      const label = linkedModel
+        ? (isFail ? '⚠ ' : '✓ ') + linkedModel.name + (isFail ? ' — CAT1 Violation' : ' — IL Compatible')
+        : (isFail ? '⚠ CAT1 Violation' : '✓ IL Compatible');
+      badge.textContent = label;
+      badge.style.display = 'inline-block';
+      badge.style.background = isFail ? '#450a0a' : '#052e16';
+      badge.style.color      = isFail ? '#f87171' : '#4ade80';
+      badge.style.border     = '1px solid ' + (isFail ? '#7f1d1d' : '#166534');
+    } else {
+      badge.style.display = 'none';
+    }
+  }).catch(() => {
+    sel.innerHTML = '<option value="">Error loading catalog</option>';
+  });
+}
+
+function linkNodeModelFromPanel(modelId) {
+  if (!selectedNode || !DESIGN_ID) return;
+  const nodeId = selectedNode.id;
+  if (!modelId) {
+    // Unlink: find the ref for this node then DELETE it
+    fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs')
+      .then(r => r.json())
+      .then(data => {
+        const ref = (data.refs || []).find(r => r.aadc_node_id === nodeId);
+        if (!ref) return;
+        fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs/' + ref.id, {method: 'DELETE'})
+          .then(() => {
+            _loadNodeAIMCPanel(selectedNode);
+            const d = document.getElementById('model-linker-drawer');
+            if (d && d.style.display === 'block') loadModelLinker();
+          })
+          .catch(err => setStatus('Unlink error: ' + err));
+      });
+    return;
+  }
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/link-model', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({aadc_node_id: nodeId, aimc_model_id: modelId}),
+  }).then(r => r.json()).then(() => {
+    _loadNodeAIMCPanel(selectedNode);
+    const d = document.getElementById('model-linker-drawer');
+    if (d && d.style.display === 'block') loadModelLinker();
+  }).catch(err => setStatus('Link model error: ' + err));
 }
 
 // ────────────────────────────────────────────────
