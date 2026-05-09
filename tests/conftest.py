@@ -2207,6 +2207,95 @@ CREATE TABLE IF NOT EXISTS nc_simulation_artifacts (
     content TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS ohc_experiments (
+    id TEXT PRIMARY KEY,
+    experiment_name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    framework TEXT DEFAULT 'mlflow',
+    status TEXT NOT NULL DEFAULT 'active',
+    artifact_location TEXT,
+    tags TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_experiment_runs (
+    id TEXT PRIMARY KEY,
+    experiment_id TEXT NOT NULL,
+    run_name TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    start_time TEXT NOT NULL DEFAULT (datetime('now')),
+    end_time TEXT,
+    duration_ms INTEGER,
+    params TEXT DEFAULT '{}',
+    metrics TEXT DEFAULT '{}',
+    tags TEXT DEFAULT '{}',
+    artifact_uri TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_model_registry (
+    id TEXT PRIMARY KEY,
+    model_name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1',
+    stage TEXT NOT NULL DEFAULT 'none',
+    framework TEXT,
+    run_id TEXT,
+    artifact_uri TEXT,
+    description TEXT,
+    metrics TEXT DEFAULT '{}',
+    tags TEXT DEFAULT '{}',
+    promoted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_dataset_versions (
+    id TEXT PRIMARY KEY,
+    dataset_name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1',
+    path TEXT,
+    size_bytes INTEGER,
+    hash_sha256 TEXT,
+    drift_flag INTEGER NOT NULL DEFAULT 0,
+    drift_score REAL,
+    schema_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_adapter_status (
+    adapter_name TEXT PRIMARY KEY,
+    adapter_type TEXT,
+    domain TEXT,
+    available INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL,
+    version TEXT,
+    error TEXT,
+    details TEXT DEFAULT '{}',
+    last_checked TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_adapter_health_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adapter_name TEXT NOT NULL,
+    available INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL,
+    error TEXT,
+    details TEXT DEFAULT '{}',
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_data_drift_events (
+    id TEXT PRIMARY KEY,
+    dataset_name TEXT NOT NULL,
+    reference_path TEXT,
+    current_path TEXT,
+    drift_detected INTEGER NOT NULL DEFAULT 0,
+    drift_score REAL,
+    feature_drift_json TEXT DEFAULT '{}',
+    report_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
