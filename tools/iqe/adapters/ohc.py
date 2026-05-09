@@ -2,15 +2,15 @@
 """IQE Ops Hub Canvas collection adapters.
 
 Importing this module registers six collections on the module-level Executor:
-  ohc.experiments     — Experiment tracking (ohc_experiments); filter by status, framework.
+  ohc.experiments     — Experiment tracking (ohc_experiments); filter by name, classification.
   ohc.runs            — Experiment run metrics (ohc_experiment_runs); filter by status, experiment_id.
   ohc.models          — Model registry (ohc_model_registry); filter by stage, framework.
-  ohc.datasets        — Dataset versions (ohc_dataset_versions); filter by drift_flag.
+  ohc.datasets        — Dataset versions (ohc_dataset_versions); filter by name, drift_score.
   ohc.adapters        — Adapter health status (ohc_adapter_status); filter by domain, available.
-  ohc.drift_events    — Data drift events (ohc_data_drift_events); filter by drift_detected.
+  ohc.drift_events    — Data drift events (ohc_data_drift_events); filter by dataset_name, passed.
 
-Note: tables are created by tools/ops_hub/db/init_db.py. If tables are absent the
-adapters return [] gracefully rather than raising an exception.
+Note: tables are created by tools/ops_hub/db/init_db.py (ohc_canvas.db). If tables are
+absent the adapters return [] gracefully rather than raising an exception.
 """
 from __future__ import annotations
 
@@ -42,8 +42,8 @@ def experiments_adapter(conn: Any) -> list[dict]:
     try:
         return _safe_fetch(
             c,
-            "SELECT id, experiment_name, description, framework, status, "
-            "artifact_location, tags, created_at, updated_at "
+            "SELECT id, name, description, tags_json, classification, "
+            "created_at, updated_at "
             "FROM ohc_experiments ORDER BY created_at DESC",
         )
     finally:
@@ -58,7 +58,8 @@ def runs_adapter(conn: Any) -> list[dict]:
         return _safe_fetch(
             c,
             "SELECT id, experiment_id, run_name, status, start_time, end_time, "
-            "duration_ms, params, metrics, tags, artifact_uri, created_at "
+            "duration_ms, params_json, metrics_json, tags_json, artifacts_json, "
+            "source_adapter, classification, created_at, updated_at "
             "FROM ohc_experiment_runs ORDER BY created_at DESC LIMIT 200",
         )
     finally:
@@ -72,8 +73,9 @@ def models_adapter(conn: Any) -> list[dict]:
     try:
         return _safe_fetch(
             c,
-            "SELECT id, model_name, version, stage, framework, run_id, "
-            "artifact_uri, description, metrics, tags, promoted_at, created_at "
+            "SELECT id, name, version, stage, description, run_id, "
+            "artifact_path, model_type, framework, metrics_json, tags_json, "
+            "source_adapter, classification, created_at, updated_at "
             "FROM ohc_model_registry ORDER BY created_at DESC",
         )
     finally:
@@ -87,8 +89,9 @@ def datasets_adapter(conn: Any) -> list[dict]:
     try:
         return _safe_fetch(
             c,
-            "SELECT id, dataset_name, version, path, size_bytes, hash_sha256, "
-            "drift_flag, drift_score, schema_json, created_at "
+            "SELECT id, name, version, description, path, size_bytes, row_count, "
+            "schema_json, drift_score, quality_score, tags_json, source_adapter, "
+            "classification, created_at "
             "FROM ohc_dataset_versions ORDER BY created_at DESC",
         )
     finally:
@@ -102,8 +105,8 @@ def adapters_adapter(conn: Any) -> list[dict]:
     try:
         return _safe_fetch(
             c,
-            "SELECT adapter_name, adapter_type, domain, available, latency_ms, "
-            "version, error, details, last_checked "
+            "SELECT id, adapter_name, adapter_type, domain, available, version, "
+            "endpoint, last_probe, probe_result, classification, created_at, updated_at "
             "FROM ohc_adapter_status ORDER BY domain, adapter_name",
         )
     finally:
@@ -117,9 +120,9 @@ def drift_events_adapter(conn: Any) -> list[dict]:
     try:
         return _safe_fetch(
             c,
-            "SELECT id, dataset_name, reference_path, current_path, "
-            "drift_detected, drift_score, feature_drift_json, report_json, created_at "
-            "FROM ohc_data_drift_events ORDER BY created_at DESC LIMIT 100",
+            "SELECT id, dataset_name, drift_type, drift_score, threshold, passed, "
+            "details_json, source_adapter, classification, detected_at "
+            "FROM ohc_data_drift_events ORDER BY detected_at DESC LIMIT 100",
         )
     finally:
         if owned:
