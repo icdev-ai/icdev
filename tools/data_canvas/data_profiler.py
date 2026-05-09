@@ -24,6 +24,11 @@ _NUMERIC_RE = re.compile(r"(int|float|real|numeric|decimal|double|bigint|smallin
 _DATE_RE = re.compile(r"(date|time|timestamp)", re.I)
 
 
+def _ident(name: str) -> str:
+    """Double-quote a SQL identifier, escaping embedded quotes per SQL-92."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _open_connection(conn_params: dict):
     """Return a DB-API 2.0 connection for the given params dict.
 
@@ -120,7 +125,7 @@ def _get_table_list(conn, db_kind: str) -> list[str]:
 def _get_column_info(conn, db_kind: str, table: str) -> list[dict]:
     """Return [{name, type_str}] for each column in table."""
     if db_kind == "sqlite":
-        cur = conn.execute(f"PRAGMA table_info({table})")
+        cur = conn.execute(f"PRAGMA table_info({_ident(table)})")  # nosec B608
         cols = [{"name": r[1], "type_str": r[2] or ""} for r in cur.fetchall()]
         if not cols and table in ("sqlite_master", "sqlite_schema"):
             # Virtual catalog table — PRAGMA returns nothing; use known schema
@@ -141,7 +146,7 @@ def _get_column_info(conn, db_kind: str, table: str) -> list[dict]:
         )
         return [{"name": r[0], "type_str": r[1] or ""} for r in cur.fetchall()]
     if db_kind == "duckdb":
-        cur = conn.execute(f"DESCRIBE {table}")
+        cur = conn.execute(f"DESCRIBE {_ident(table)}")  # nosec B608
         rows = cur.fetchall()
         return [{"name": r[0], "type_str": r[1] or ""} for r in rows]
     return []
@@ -161,10 +166,10 @@ class _ProfileCtx:
 def _fetch_null_stats(ctx: _ProfileCtx, safe_col: str, safe_table: str, row_count: int) -> tuple[int, float]:
     if ctx.db_kind == "postgresql":
         cur = ctx.conn.cursor()
-        cur.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")
+        cur.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")  # nosec B608
         null_count = cur.fetchone()[0] or 0
     else:
-        cur = ctx.conn.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")
+        cur = ctx.conn.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")  # nosec B608
         null_count = _scalar(cur, ctx.db_kind) or 0
     null_pct = round(null_count / row_count * 100, 2) if row_count else 0.0
     return null_count, null_pct
@@ -173,9 +178,9 @@ def _fetch_null_stats(ctx: _ProfileCtx, safe_col: str, safe_table: str, row_coun
 def _fetch_distinct_count(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> int:
     if ctx.db_kind == "postgresql":
         cur = ctx.conn.cursor()
-        cur.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")
+        cur.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")  # nosec B608
         return cur.fetchone()[0] or 0
-    cur = ctx.conn.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")
+    cur = ctx.conn.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")  # nosec B608
     return _scalar(cur, ctx.db_kind) or 0
 
 
@@ -190,10 +195,10 @@ def _infer_col_type(type_str: str) -> str:
 def _fetch_min_max(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> tuple[Any, Any]:
     if ctx.db_kind == "postgresql":
         cur = ctx.conn.cursor()
-        cur.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")
+        cur.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")  # nosec B608
         row = cur.fetchone()
     else:
-        cur = ctx.conn.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")
+        cur = ctx.conn.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")  # nosec B608
         row = cur.fetchone()
     if row:
         return (str(row[0]) if row[0] is not None else None, str(row[1]) if row[1] is not None else None)
@@ -205,12 +210,12 @@ def _fetch_top_values(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> list[
     if ctx.db_kind == "postgresql":
         cur = ctx.conn.cursor()
         cur.execute(
-            f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "
+            f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "  # nosec B608
             f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
         )
     else:
         cur = ctx.conn.execute(
-            f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "
+            f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "  # nosec B608
             f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT ?", (limit,),
         )
     return [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
@@ -219,7 +224,7 @@ def _fetch_top_values(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> list[
 def _profile_column(ctx: _ProfileCtx, col: dict, row_count: int) -> dict:
     """Profile a single column. Returns dict with stats."""
     name, type_str = col["name"], col["type_str"]
-    safe_col, safe_table = f'"{name}"', f'"{ctx.table}"'
+    safe_col, safe_table = _ident(name), _ident(ctx.table)
     result: dict[str, Any] = {
         "name": name, "type_str": type_str, "classification": ctx.classification,
         "null_count": 0, "null_pct": 0.0, "distinct_count": 0,
@@ -251,15 +256,15 @@ def profile_table(conn_params: dict, table: str, classification: str = "CUI // S
     """
     try:
         conn, db_kind = _open_connection(conn_params)
-        safe_table = f'"{table}"'
+        safe_table = _ident(table)
 
-        # Row count
+        # Row count — safe_table is a properly-quoted identifier from DB metadata
         if db_kind == "postgresql":
             cur = conn.cursor()
-            cur.execute(f"SELECT COUNT(*) FROM {safe_table}")
+            cur.execute(f"SELECT COUNT(*) FROM {safe_table}")  # nosec B608
             row_count = cur.fetchone()[0] or 0
         else:
-            cur = conn.execute(f"SELECT COUNT(*) FROM {safe_table}")
+            cur = conn.execute(f"SELECT COUNT(*) FROM {safe_table}")  # nosec B608
             row_count = _scalar(cur, db_kind) or 0
 
         if row_count > DS_PROFILER_MAX_ROWS:
