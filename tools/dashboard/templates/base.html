@@ -414,6 +414,20 @@
             </li>
             {% endif %}
 
+            {% if aimc_enabled %}
+            <!-- AI/ML Model Canvas (AIMC) -->
+            <li class="nav-dropdown">
+                <a href="#" class="{% if '/ai-ml' in request.path %}active{% endif %}" style="color:#818cf8;">AI/ML</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/ai-ml/">Dashboard</a></li>
+                    <li><a href="/ai-ml/canvas/new">New Design</a></li>
+                    <li><a href="/ai-ml/templates">Templates</a></li>
+                    <li><a href="/ai-ml/snippets">Snippets</a></li>
+                    <li><a href="/ai-ml/model-catalog" style="font-weight:600">Model Catalog</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
             <!-- Strategos — Strategic Intelligence Operations -->
             {% if strategos_enabled %}
             <li class="nav-dropdown">

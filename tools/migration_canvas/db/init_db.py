@@ -651,6 +651,36 @@ CREATE TABLE IF NOT EXISTS mc_srv_erb_metadata (
 CREATE INDEX IF NOT EXISTS idx_mc_srv_erb_session ON mc_srv_erb_metadata(session_id);
 """
 
+# ── Wave + Dependency Schema ─────────────────────────────────────────────────
+
+WAVE_DEP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS mc_migration_waves (
+    id               TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL,
+    wave_number      INTEGER NOT NULL,
+    name             TEXT NOT NULL,
+    cutover_date     TEXT,
+    status           TEXT CHECK(status IN ('planned','in_progress','complete','blocked')) DEFAULT 'planned',
+    server_ids_json  TEXT DEFAULT '[]',
+    notes            TEXT,
+    created_at       TEXT NOT NULL,
+    classification   TEXT DEFAULT 'CUI'
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_waves_num ON mc_migration_waves(session_id, wave_number);
+
+CREATE TABLE IF NOT EXISTS mc_server_dependencies (
+    id               TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL,
+    source_server_id TEXT NOT NULL,
+    target_server_id TEXT NOT NULL,
+    dep_type         TEXT CHECK(dep_type IN ('network','application','database','auth','storage')) DEFAULT 'network',
+    direction        TEXT CHECK(direction IN ('inbound','outbound','bidirectional')) DEFAULT 'bidirectional',
+    notes            TEXT,
+    created_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mc_deps_session ON mc_server_dependencies(session_id);
+"""
+
 
 def _migrate_server_tables(conn):
     """Idempotently add server migration tables to existing DBs."""
@@ -669,6 +699,11 @@ def _migrate_server_tables(conn):
                 conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
             except Exception:
                 pass  # PG / already-exists race — safe to ignore
+
+
+def _migrate_wave_dep_tables(conn):
+    """Idempotently add wave-planning and server-dependency tables to existing DBs."""
+    conn.executescript(WAVE_DEP_SCHEMA)
 
 
 # ── Cloud Instance Seed Data ─────────────────────────────────────────────────
@@ -1369,6 +1404,7 @@ def init_db():
         conn.executescript(SCHEMA)
         _migrate_network_tables(conn)
         _migrate_server_tables(conn)
+        _migrate_wave_dep_tables(conn)
         _seed_cloud_instances(conn)
 
         # Seed templates

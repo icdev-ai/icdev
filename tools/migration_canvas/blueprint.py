@@ -267,6 +267,26 @@ def create_migration_blueprint():
             sop_types=SOP_TYPES,
         )
 
+    @bp.route("/compliance-wizard")
+    @mdc_login_required
+    def mc_compliance_wizard():
+        """Compliance gate wizard page."""
+        return render_template("migration_canvas/compliance_wizard.html")
+
+    @bp.route("/api/compliance-gate", methods=["POST"])
+    @mdc_login_required
+    def mc_api_compliance_gate():
+        """Run the migration compliance gate check."""
+        from tools.migration_canvas.compliance_gate import check_migration_compliance
+        body = request.get_json(force=True, silent=True) or {}
+        result = check_migration_compliance(
+            il_level=body.get("il_level", ""),
+            target_env=body.get("target_env", ""),
+            migration_type=body.get("migration_type"),
+            frameworks=body.get("frameworks"),
+        )
+        return jsonify(result)
+
     # ====================================================================
     # API ROUTES — Designs CRUD
     # ====================================================================
@@ -1907,6 +1927,28 @@ def create_migration_blueprint():
             MIGRATION_TOOLS=MIGRATION_TOOLS,
         )
 
+    @bp.route("/server-migration/<sid>/inventory/import")
+    @mdc_login_required
+    def mc_srv_inventory_import(sid):
+        """Dedicated inventory import page — upload zone + format tabs."""
+        try:
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT id, src_hostname, migration_type, tgt_platform, status "
+                "FROM mc_srv_sessions WHERE id=?", (sid,)
+            ).fetchone()
+            conn.close()
+            srv_session = dict(zip(
+                ["id", "src_hostname", "migration_type", "tgt_platform", "status"], row
+            )) if row else {"id": sid, "src_hostname": sid, "migration_type": "", "tgt_platform": "", "status": "draft"}
+        except Exception:
+            srv_session = {"id": sid, "src_hostname": sid, "migration_type": "", "tgt_platform": "", "status": "draft"}
+        return render_template(
+            "migration_canvas/server_inventory_import.html",
+            sid=sid,
+            srv_session=srv_session,
+        )
+
     # ── Session CRUD ──────────────────────────────────────────────────────
 
     @bp.route("/api/server-migration", methods=["POST"])
@@ -2601,6 +2643,105 @@ def create_migration_blueprint():
             result["score"] = result.get("overall", 0)
             result["cat1_blockers"] = result.get("blockers", [])
             return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/guidance/<int:step>", methods=["GET"])
+    def mc_srv_api_guidance(step):
+        from tools.migration_canvas.dossier_advisor import get_guidance_for_step
+        migration_type = request.args.get("type")
+        items = get_guidance_for_step(step, migration_type=migration_type)
+        return jsonify({"ok": True, "items": items})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # WAVE PLANNER — Phase 4
+    # ══════════════════════════════════════════════════════════════════════
+
+    try:
+        from tools.migration_canvas import wave_planner as _wp
+    except Exception as _wp_exc:
+        logger.warning("wave_planner import failed: %s", _wp_exc)
+        _wp = None  # type: ignore
+
+    @bp.route("/server-migration/<sid>/waves")
+    @mdc_login_required
+    def mc_srv_wave_planner(sid):
+        srv_session = None
+        try:
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT id, src_hostname, migration_type, tgt_platform, status, readiness_score "
+                "FROM mc_srv_sessions WHERE id=?", (sid,)
+            ).fetchone()
+            conn.close()
+            if row:
+                srv_session = dict(zip(
+                    ["id", "src_hostname", "migration_type", "tgt_platform", "status", "readiness_score"],
+                    row,
+                ))
+        except Exception:
+            pass
+        srv_session = srv_session or {"id": sid, "src_hostname": sid, "readiness_score": 0}
+        return render_template(
+            "migration_canvas/wave_planner.html",
+            sid=sid,
+            srv_session=srv_session,
+        )
+
+    @bp.route("/api/server-migration/<sid>/waves", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_waves_get(sid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            waves = _wp.get_waves(sid)
+            graph = _wp.build_graph(sid)
+            return jsonify({"waves": waves, "graph": graph})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_waves_post(sid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            body = request.get_json(force=True) or {}
+            wave = _wp.upsert_wave(sid, body)
+            return jsonify({"ok": True, "wave": wave})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/<wid>", methods=["DELETE"])
+    @mdc_login_required
+    def mc_srv_waves_delete(sid, wid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            removed = _wp.delete_wave(wid, sid)
+            return jsonify({"ok": removed})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/auto-assign", methods=["POST"])
+    @mdc_login_required
+    def mc_srv_waves_auto_assign(sid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            result = _wp.auto_assign_waves(sid)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/server-migration/<sid>/waves/graph", methods=["GET"])
+    @mdc_login_required
+    def mc_srv_waves_graph(sid):
+        if _wp is None:
+            return jsonify({"error": "wave_planner module unavailable"}), 503
+        try:
+            graph = _wp.build_graph(sid)
+            return jsonify(graph)
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
