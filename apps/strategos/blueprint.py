@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 # reload-trigger: 2026-04-30
 """Strategos Blueprint — Strategic Intelligence Operations.
