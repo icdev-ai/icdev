@@ -133,4 +133,17 @@ function deleteDesign(id, btn) {
     .then(() => location.reload());
 }
 </script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "aimc" %}
+{% set iqe_api_route = "/ai-ml/api/iqe-query" %}
+{% set iqe_title = "IQE Query — AI/ML Model Canvas" %}
+{% set iqe_examples = [
+  {"label": "All designs", "query": "foreach d in aimc.designs select d.name, d.il_level, d.adaptation_strategy, d.classification"},
+  {"label": "Foundation model nodes", "query": "foreach n in aimc.nodes where n.node_type == \"foundation-model\" select n.design_id, n.label, n.classification"},
+  {"label": "Passing assessments", "query": "foreach a in aimc.assessments where a.passed == 1 select a.design_name, a.framework_name, a.score"},
+  {"label": "All artifacts", "query": "foreach a in aimc.artifacts select a.design_id, a.artifact_type, a.title, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}

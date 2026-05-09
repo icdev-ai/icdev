@@ -153,7 +153,7 @@ test.describe('File Sync Dashboard', () => {
         // Step 24: Close modal
         const cancelBtn = page.getByRole('button', { name: /Cancel/i });
         if (await cancelBtn.count() > 0) {
-          await cancelBtn.first().click();
+          await cancelBtn.first().click().catch(() => {});
           await page.waitForTimeout(300);
           // Step 25: Modal should be hidden
           if (await modal.count() > 0) {

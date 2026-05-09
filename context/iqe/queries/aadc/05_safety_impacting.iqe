@@ -1,0 +1,3 @@
+foreach d in aadc.designs
+  where d.safety_impacting == 1
+  select d.name, d.domain, d.autonomy_max, d.classification

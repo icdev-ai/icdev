@@ -1,0 +1,1 @@
+foreach d in aadc.designs select d.name, d.domain, d.classification, d.autonomy_max, d.hitl_required
