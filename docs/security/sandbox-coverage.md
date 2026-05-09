@@ -244,3 +244,12 @@ When a new `tools/` module ingests user-provided content:
 - D-SEC-11 — 6-path sandbox integration (Phase 72)
 - Phase 72 feature doc: [phase-72-sandbox-integration.md](../features/phase-72-sandbox-integration.md)
 - `tools/security/sandbox_executor.py` — runtime implementation
+
+## STRATEGOS Foundation Layer (sg-foundation, migration 118)
+
+| Module | Classification | Rationale |
+|--------|---------------|-----------|
+| `tools/strategos/theater.py` | **trusted-first-party** | Loads YAML from `args/theaters/` (controlled path, no user input). Pure data loading — no code execution, no shell calls. |
+| `tools/strategos/war_kg.py` | **trusted-first-party** | Reads/writes to icdev.db kg_nodes/kg_edges via parameterized queries. No user-supplied SQL. Input: typed Python dicts. |
+| `apps/strategos/static/fetch_vendor.py` | **bypass-documented** | Dev-only utility script. Downloads vendor JS assets. Runs only on network-connected machines, never in prod pipeline. |
+| `tools/db/migrations/118_strategos_core_tables/up.py` | **trusted-first-party** | DDL migration. No user input. Runs only at migration time. |

@@ -38,3 +38,28 @@
 | METT-TC Worksheet | tools/strategos/mett_tc.py | METT-TC Mission Analysis Framework (FM 6-0 / MDMP Step 2). auto_populate(theater) pulls live DB data (ORBAT counts, active PIRs, signal counts, CCIR triggers, terrain) to pre-fill all six factors: Mission, Enemy, Terrain & Weather, Troops & Support Available, Time, Civil Considerations. Returns a structured worksheet dict suitable for OPORD generation or commander review. | --theater TEXT (default: unspecified), --json | {mission, enemy, terrain_weather, troops, time, civil, theater, populated_at} |
 | OPORD Generator | tools/strategos/opord.py | Five-Paragraph Operations Order (OPORD) generator (FM 5-0 / JP 5-0). Synthesizes a full OPORD from METT-TC data, War Council COA, and INTSUM into the standard format: Para 1 Situation, Para 2 Mission, Para 3 Execution (with COA, tasks, coordinating instructions), Para 4 Sustainment, Para 5 Command & Signal. Uses LLM to draft each paragraph; persists to sg_opords. | --theater TEXT, --scenario TEXT, --intent TEXT, --dry-run, --json | {opord_id, paragraphs[{num, title, content}], theater, generated_at, error} |
 | Synchronization Matrix | tools/strategos/sync_matrix.py | Time-phased operational effects synchronization matrix (MDMP). create_matrix() initializes a matrix for a given operation; add_effect() records a planned effect at a specific phase/time against a target; render_matrix() returns the full matrix as a list of rows sorted by phase and time. Persists to sg_sync_matrices and sg_sync_effects; supports export to Markdown table. | Python API: create_matrix(operation_name, theater), add_effect(matrix_id, phase, time, target, effect, asset), render_matrix(matrix_id) | {matrix_id, rows[{phase, time, target, effect, asset}], operation_name} |
+
+## STRATEGOS Foundation Layer (sg-foundation epic)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Theater Abstraction Layer | tools/strategos/theater.py | Conflict-agnostic theater base class for all 14 STRATEGOS epics. Loads theater YAML from args/theaters/<id>.yaml. Exposes TheaterBounds, TheaterActor, OrbatUnit, EscalationLevel dataclasses. Registry auto-loads all YAMLs in args/theaters/. DOMAIN_REGISTRY maps 8 domains (land/sea/air/cyber/space/ew/info/supply) to importers + agents. | `Theater.load(theater_id)`, `get_theater(id)`, `list_theaters()` | Theater dataclass / summary dict |
+| War Knowledge Graph Schema | tools/strategos/war_kg.py | Defines 9 war-domain KG node types (MilitaryUnit, Equipment, ConflictEvent, CyberOperation, Vessel, Infrastructure, LogisticsNode, BehaviorProfile, WarReadinessEvent) and 7 edge types (DEPLOYED_AT, ATTACKED, PRECEDES, CORRELATES, LAUNCHED_FROM, SUPPLIES, DAMAGED). Uses existing icdev.db kg_nodes/kg_edges tables (migration 031). Graph ID: strategos-war-kg. | `ensure_war_graph()`, `upsert_node(entity_type, label, props)`, `upsert_edge(src, tgt, rel)`, `get_schema_summary()` | node_id str / edge_id str / schema dict |
+| Vendor Bundle Fetcher | apps/strategos/static/fetch_vendor.py | Downloads all 8 air-gap JS/CSS vendor assets (leaflet, pmtiles, d3, plotly, cytoscape, vis-network, vis-timeline, chart.js) into apps/strategos/static/js+css/. Run once on network-connected machine; templated paths then work air-gapped. | `python apps/strategos/static/fetch_vendor.py [--dry-run]` | Downloaded files in static/js/ and static/css/ |
+
+## STRATEGOS Core DB Tables (migration 118)
+| Table | Description |
+|-------|-------------|
+| sg_theaters | Theater registry (pacific, ukraine, ...) — id, bounds_json, actors_json, active_domains |
+| sg_entities | ORBAT units, vessels, aircraft, installations — theater_id, entity_type, actor, domain, lat/lon, status |
+| sg_conflict_events | ACLED/Oryx/OSINT events — theater_id, event_type, date, lat/lon, fatalities, source |
+| sg_tracks | Live AIS/ADS-B/TLE position tracks — entity_id, mmsi, icao24, lat/lon, speed, heading, timestamp |
+| sg_economic_signals | Economic indicator time-series — indicator, country, date, value, cusum_alert |
+| sg_war_readiness_events | Append-only I&W composite event log (NIST AU) — event_class, domain, composite_score, escalation_lvl |
+| sg_ghost_tracks | Behavioral anomaly / ghost track registry — mmsi, anomaly_type, confidence, kalman_state, hitl_status |
+| sg_coa_decisions | COA decision capture from HITL agent — operator, coa_selected, rationale, escalation_lvl |
+
+## Theater YAML Files (args/theaters/)
+| File | Theater | Status |
+|------|---------|--------|
+| args/theaters/pacific.yaml | Indo-Pacific (Taiwan Strait) | Full — 6 actors, weapon systems, 10-level escalation |
+| args/theaters/ukraine.yaml | Russo-Ukrainian Conflict | Stub — 4 actors, 8 domains, 10-level escalation, placeholder ORBAT |
