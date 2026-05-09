@@ -1755,4 +1755,37 @@ def create_boundary_blueprint():
         result = boundary_chat_to_delta(message, data.get("graph_json"))
         return jsonify(result), (500 if "error" in result else 200)
 
+    @bp.route("/api/iqe-query", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_iqe_query():
+        """IQE structured query — translate NL to IQE and execute against BDC boundary data."""
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.bdc  # noqa: F401 — registers bdc.* collections
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts"]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("BDC IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
     return bp

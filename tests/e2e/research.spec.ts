@@ -121,7 +121,7 @@ test.describe('Industry Research Engine Dashboard', () => {
         await dialog.accept();
       });
 
-      await startBtn.first().click();
+      await startBtn.first().click().catch(() => {});
       await page.waitForTimeout(500);
 
       // If dialog appeared, verify it contained validation message

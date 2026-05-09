@@ -1,0 +1,1 @@
+foreach d in aimc.designs select d.name, d.il_level, d.adaptation_strategy, d.classification, d.updated_at

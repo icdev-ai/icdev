@@ -2746,3 +2746,37 @@ def api_delete_model_ref(design_id: str, ref_id: str):
     from tools.agentic_ai_canvas.canvas_bridge import unlink_model_node
     deleted = unlink_model_node(ref_id)
     return jsonify({'deleted': deleted}), 200 if deleted else 404
+
+
+@aadc_bp.route('/api/iqe-query', methods=['POST'])
+def aadc_api_iqe_query():
+    """IQE structured query — translate NL to IQE and execute against AADC agentic AI data."""
+    import logging as _log
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import IQESyntaxError, parse
+    from tools.iqe.executor import execute_query
+    import tools.iqe.adapters.aadc  # noqa: F401 — registers aadc.* collections
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get('question') or '').strip()
+    if not question:
+        return jsonify({'error': 'question is required'}), 400
+
+    collections = ['aadc.designs', 'aadc.assessments', 'aadc.artifacts']
+    translation = nl_to_iqe(question, collections)
+    iqe_str = translation.get('iqe', '')
+    explanation = translation.get('explanation', '')
+
+    if not data.get('execute', True):
+        return jsonify({'ok': True, 'iqe': iqe_str, 'explanation': explanation}), 200
+
+    try:
+        ast = parse(iqe_str)
+        rows = execute_query(ast, None)
+        return jsonify({'ok': True, 'iqe': iqe_str, 'explanation': explanation,
+                        'results': rows, 'row_count': len(rows)}), 200
+    except IQESyntaxError as exc:
+        return jsonify({'error': f'IQE syntax error: {exc}', 'iqe': iqe_str}), 400
+    except Exception as exc:
+        _log.getLogger(__name__).warning('AADC IQE query error: %s', exc)
+        return jsonify({'error': str(exc), 'iqe': iqe_str}), 500
