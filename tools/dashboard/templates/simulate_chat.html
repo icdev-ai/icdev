@@ -3,19 +3,19 @@
 
 {% block extra_css %}
 <style>
-/* COA card styles */
+/* ── Dark-theme-aware COA card styles ──────────────────────────────── */
 .coa-card {
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--border-color, #2a2a40);
   border-radius: 10px;
   padding: 1rem;
   margin-bottom: 0.85rem;
-  background: #fff;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  background: var(--bg-card, #16213e);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.25);
   position: relative;
 }
 .coa-card--recommended {
-  border-color: #1976d2;
-  background: #f0f7ff;
+  border-color: #4a90d9;
+  background: rgba(74,144,217,0.08);
 }
 .coa-card__badge {
   display: inline-block;
@@ -27,24 +27,24 @@
   letter-spacing: 0.04em;
   margin-right: 0.35rem;
 }
-.badge--strategy { background: #e8f5e9; color: #1b5e20; }
-.badge--effort-low { background: #e8f5e9; color: #1b5e20; }
-.badge--effort-medium { background: #fff3e0; color: #e65100; }
-.badge--effort-high { background: #ffebee; color: #b71c1c; }
-.badge--risk-low { background: #e8f5e9; color: #1b5e20; }
-.badge--risk-medium { background: #fff3e0; color: #e65100; }
-.badge--risk-high { background: #ffebee; color: #b71c1c; }
+.badge--strategy { background: rgba(40,167,69,0.2); color: #4ade80; }
+.badge--effort-low { background: rgba(40,167,69,0.2); color: #4ade80; }
+.badge--effort-medium { background: rgba(251,146,60,0.2); color: #fb923c; }
+.badge--effort-high { background: rgba(220,53,69,0.2); color: #f87171; }
+.badge--risk-low { background: rgba(40,167,69,0.2); color: #4ade80; }
+.badge--risk-medium { background: rgba(251,146,60,0.2); color: #fb923c; }
+.badge--risk-high { background: rgba(220,53,69,0.2); color: #f87171; }
 .badge--recommended { background: #1976d2; color: #fff; }
-.coa-card__title { font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; }
+.coa-card__title { font-weight: 700; font-size: 1rem; margin-bottom: 0.4rem; color: var(--text-primary, #e0e0e0); }
 .coa-card__meta { margin-bottom: 0.6rem; font-size: 0.82rem; }
 .coa-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin: 0.5rem 0; }
-.coa-col__label { font-weight: 700; font-size: 0.78rem; text-transform: uppercase; color: #555; margin-bottom: 0.25rem; }
-.coa-col--pros .coa-col__label { color: #2e7d32; }
-.coa-col--cons .coa-col__label { color: #c62828; }
-.coa-col ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; }
-.coa-col--pros ul li::marker { color: #43a047; }
-.coa-col--cons ul li::marker { color: #e53935; }
-.coa-card__tools { font-size: 0.82rem; color: #555; margin-top: 0.35rem; }
+.coa-col__label { font-weight: 700; font-size: 0.78rem; text-transform: uppercase; color: var(--text-secondary, #a0a0b8); margin-bottom: 0.25rem; }
+.coa-col--pros .coa-col__label { color: #4ade80; }
+.coa-col--cons .coa-col__label { color: #f87171; }
+.coa-col ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--text-primary, #e0e0e0); }
+.coa-col--pros ul li::marker { color: #4ade80; }
+.coa-col--cons ul li::marker { color: #f87171; }
+.coa-card__tools { font-size: 0.82rem; color: var(--text-secondary, #a0a0b8); margin-top: 0.35rem; }
 .coa-card__actions { margin-top: 0.65rem; display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .coa-btn {
   padding: 0.3rem 0.85rem;
@@ -57,19 +57,20 @@
   display: inline-block;
 }
 .coa-btn--primary { background: #1976d2; color: #fff; }
-.coa-btn--secondary { background: #f5f5f5; color: #333; border: 1px solid #ccc; }
+.coa-btn--secondary { background: var(--bg-secondary, #1a1a2e); color: var(--text-primary, #e0e0e0); border: 1px solid var(--border-color, #2a2a40); }
 .coa-btn--ai { background: #7b1fa2; color: #fff; }
 .dep-warning {
-  background: #fff3e0;
-  border-left: 4px solid #e65100;
+  background: rgba(230,81,0,0.15);
+  border-left: 4px solid #fb923c;
   border-radius: 6px;
   padding: 0.65rem 1rem;
   margin-bottom: 0.75rem;
   font-size: 0.88rem;
+  color: var(--text-primary, #e0e0e0);
 }
 .dep-warning--critical {
-  background: #ffebee;
-  border-color: #c62828;
+  background: rgba(198,40,40,0.15);
+  border-color: #f87171;
 }
 .cam-welcome {
   background: linear-gradient(135deg, #1a237e 0%, #283593 60%, #3949ab 100%);
@@ -92,6 +93,92 @@
   font-family: monospace;
 }
 .cam-cmd-chip:hover { background: rgba(255,255,255,0.25); }
+
+/* ── Chat window ─────────────────────────────────────────────────── */
+.sim-chat-window {
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px;
+  padding: 1rem;
+  min-height: 350px;
+  max-height: 580px;
+  overflow-y: auto;
+  background: var(--bg-card, #16213e);
+  margin-bottom: 0.75rem;
+}
+.sim-input {
+  flex: 1;
+  padding: 0.65rem 1rem;
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: var(--bg-input, #0d1b2a);
+  color: var(--text-primary, #e0e0e0);
+}
+.sim-input::placeholder { color: var(--text-muted, #6c6c80); }
+.sim-input:focus { outline: none; border-color: var(--accent-blue, #4a90d9); }
+.sim-sidebar {
+  width: 220px;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 8px;
+  background: var(--bg-secondary, #1a1a2e);
+  font-size: 0.85rem;
+}
+.sim-upload-panel {
+  margin-bottom: 1.25rem;
+  padding: 1rem;
+  border: 2px dashed var(--border-light, #3a3a55);
+  border-radius: 8px;
+  background: var(--bg-secondary, #1a1a2e);
+}
+.sim-slash-bar {
+  margin-bottom: 1rem;
+  padding: 0.6rem 1rem;
+  background: var(--bg-secondary, #1a1a2e);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: var(--text-secondary, #a0a0b8);
+  position: relative;
+}
+.sim-slash-dropdown {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 200;
+  background: var(--bg-card, #16213e);
+  border: 1px solid var(--border-color, #2a2a40);
+  border-radius: 6px;
+  min-width: 180px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.slash-cmd {
+  cursor: pointer;
+  color: var(--accent-blue-light, #6db3f8);
+  text-decoration: underline dotted;
+  font-family: monospace;
+}
+
+/* ── Canvas chips ────────────────────────────────────────────────── */
+.canvas-chip {
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  transition: box-shadow 0.15s;
+}
+.canvas-chip[data-canvas="cam"] { border: 2px solid #3949ab; background: rgba(57,73,171,0.25); color: #a5b4fc; }
+.canvas-chip[data-canvas="ndc"] { border: 2px solid #1976d2; background: rgba(25,118,210,0.25); color: #60a5fa; }
+.canvas-chip[data-canvas="sdc"] { border: 2px solid #e53935; background: rgba(229,57,53,0.25); color: #f87171; }
+.canvas-chip[data-canvas="eda"] { border: 2px solid #388e3c; background: rgba(56,142,60,0.25); color: #34d399; }
+.canvas-chip[data-canvas="ddc"] { border: 2px solid #f57c00; background: rgba(245,124,0,0.25); color: #fb923c; }
+
+@media (max-width: 640px) {
+  .sim-chat-layout { flex-direction: column !important; }
+  .sim-sidebar { width: 100% !important; }
+  .coa-cols { grid-template-columns: 1fr !important; }
+}
 </style>
 {% endblock %}
 
@@ -99,11 +186,11 @@
 <div class="container" style="max-width:1200px;">
   <!-- Breadcrumb -->
   <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
-    <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
-    <span style="color:#999;"> &gt; </span>
-    <span><a href="/simulation" style="color:#1976d2;text-decoration:none;">Simulation</a></span>
-    <span style="color:#999;"> &gt; </span>
-    <span style="color:#333;">{% if page_title %}{{ page_title }}{% else %}Chat{% endif %}</span>
+    <span><a href="/">Home</a></span>
+    <span style="color:var(--text-muted);"> &gt; </span>
+    <span><a href="/simulation">Simulation</a></span>
+    <span style="color:var(--text-muted);"> &gt; </span>
+    <span style="color:var(--text-secondary);">{% if page_title %}{{ page_title }}{% else %}Chat{% endif %}</span>
   </nav>
 
   <h1 style="margin-bottom:0.25rem;">{% if page_title %}{{ page_title }}{% else %}Simulation Chat{% endif %}</h1>
@@ -117,39 +204,19 @@
 
   <!-- Canvas Type Selector -->
   <div style="margin-bottom:1.25rem;">
-    <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Canvas Type</label>
+    <label style="font-weight:600;display:block;margin-bottom:0.5rem;color:var(--text-primary);">Canvas Type</label>
     <div class="canvas-selector" style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-      <button class="canvas-chip" data-canvas-type="cam" data-canvas="cam"
-              onclick="selectCanvas('cam')"
-              style="padding:0.4rem 1rem;border:2px solid #3949ab;border-radius:20px;background:#e8eaf6;color:#1a237e;cursor:pointer;font-weight:600;">
-        CAM
-      </button>
-      <button class="canvas-chip" data-canvas-type="ndc" data-canvas="ndc"
-              onclick="selectCanvas('ndc')"
-              style="padding:0.4rem 1rem;border:2px solid #1976d2;border-radius:20px;background:#e3f2fd;color:#1565c0;cursor:pointer;font-weight:600;">
-        NDC
-      </button>
-      <button class="canvas-chip" data-canvas-type="sdc" data-canvas="sdc"
-              onclick="selectCanvas('sdc')"
-              style="padding:0.4rem 1rem;border:2px solid #e53935;border-radius:20px;background:#ffebee;color:#b71c1c;cursor:pointer;font-weight:600;">
-        SDC
-      </button>
-      <button class="canvas-chip" data-canvas-type="eda" data-canvas="eda"
-              onclick="selectCanvas('eda')"
-              style="padding:0.4rem 1rem;border:2px solid #388e3c;border-radius:20px;background:#e8f5e9;color:#1b5e20;cursor:pointer;font-weight:600;">
-        EDA
-      </button>
-      <button class="canvas-chip" data-canvas-type="ddc" data-canvas="ddc"
-              onclick="selectCanvas('ddc')"
-              style="padding:0.4rem 1rem;border:2px solid #f57c00;border-radius:20px;background:#fff3e0;color:#e65100;cursor:pointer;font-weight:600;">
-        DDC
-      </button>
+      <button class="canvas-chip" data-canvas-type="cam" data-canvas="cam" onclick="selectCanvas('cam')">CAM</button>
+      <button class="canvas-chip" data-canvas-type="ndc" data-canvas="ndc" onclick="selectCanvas('ndc')">NDC</button>
+      <button class="canvas-chip" data-canvas-type="sdc" data-canvas="sdc" onclick="selectCanvas('sdc')">SDC</button>
+      <button class="canvas-chip" data-canvas-type="eda" data-canvas="eda" onclick="selectCanvas('eda')">EDA</button>
+      <button class="canvas-chip" data-canvas-type="ddc" data-canvas="ddc" onclick="selectCanvas('ddc')">DDC</button>
     </div>
     <input type="hidden" id="active-canvas-type" value="{{ canvas_type|default('ndc') }}" />
   </div>
 
   <!-- Slash-command autocomplete hints (context-sensitive, canvas-filtered) -->
-  <div id="slash-autocomplete" style="margin-bottom:1rem;padding:0.6rem 1rem;background:#f5f5f5;border-radius:8px;font-size:0.85rem;color:#555;position:relative;">
+  <div class="sim-slash-bar">
     <span id="slash-hint-text">
       <strong>NDC commands:</strong>
       <span class="slash-cmd">/explain</span> &bull;
@@ -166,20 +233,17 @@
       <span class="slash-cmd">/diff</span> &bull;
       <span class="slash-cmd">/spec</span>
     </span>
-    <!-- Dropdown for interactive autocomplete -->
-    <div id="slash-dropdown" style="display:none;position:absolute;left:0;top:100%;z-index:200;
-         background:#fff;border:1px solid #ccc;border-radius:6px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.12);">
-    </div>
+    <div id="slash-dropdown" class="sim-slash-dropdown"></div>
   </div>
 
   <!-- Upload Panel -->
-  <div style="margin-bottom:1.25rem;padding:1rem;border:2px dashed #bdbdbd;border-radius:8px;background:#fafafa;">
-    <label style="font-weight:600;display:block;margin-bottom:0.5rem;">Upload Diagram / Document</label>
-    <p style="font-size:0.85rem;color:#777;margin:0 0 0.75rem;">Drag and drop or browse to upload architecture diagrams, PDFs, or design files.</p>
+  <div class="sim-upload-panel">
+    <label style="font-weight:600;display:block;margin-bottom:0.5rem;color:var(--text-primary);">Upload Diagram / Document</label>
+    <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 0.75rem;">Drag and drop or browse to upload architecture diagrams, PDFs, or design files.</p>
     <input type="file" id="sim-upload" name="file"
            accept=".png,.jpg,.jpeg,.pdf,.drawio,.xml,.vsdx,image/png,image/jpeg,application/pdf"
            style="margin-bottom:0.5rem;" />
-    <div style="font-size:0.78rem;color:#999;">Accepted: PNG, JPG, PDF, draw.io, XML, VSDX</div>
+    <div style="font-size:0.78rem;color:var(--text-muted);">Accepted: PNG, JPG, PDF, draw.io, XML, VSDX</div>
   </div>
 
   <!-- CAM Welcome Panel (shown only for cam canvas) -->
@@ -199,19 +263,18 @@
   </div>
 
   <!-- Chat Window -->
-  <div style="display:flex;gap:1.25rem;align-items:flex-start;">
+  <div class="sim-chat-layout" style="display:flex;gap:1.25rem;align-items:flex-start;">
     <!-- Messages -->
-    <div style="flex:1;">
-      <div id="chat-messages"
-           style="border:1px solid #e0e0e0;border-radius:8px;padding:1rem;min-height:350px;max-height:580px;overflow-y:auto;background:#fff;margin-bottom:0.75rem;">
+    <div style="flex:1;min-width:0;">
+      <div id="chat-messages" class="sim-chat-window">
         <div class="mermaid-diagram" id="mermaid-output" style="margin-bottom:0.5rem;"></div>
-        <div id="chat-placeholder" style="color:#9e9e9e;font-style:italic;font-size:0.9rem;">Session ready. Select a canvas type and start chatting.</div>
+        <div id="chat-placeholder" style="color:var(--text-muted);font-style:italic;font-size:0.9rem;">Session ready. Select a canvas type and start chatting.</div>
       </div>
 
       <!-- Input -->
       <div style="display:flex;gap:0.5rem;">
         <input id="chat-input" type="text" placeholder='/explain — describe your architecture'
-               style="flex:1;padding:0.65rem 1rem;border:1px solid #ccc;border-radius:8px;font-size:0.95rem;"
+               class="sim-input"
                onkeydown="if(event.key==='Enter'){hideSlashDropdown();sendMessage();} else if(event.key==='Escape')hideSlashDropdown();"
                oninput="_updateSlashDropdown(this.value.trim())"
                onblur="setTimeout(hideSlashDropdown,150)" />
@@ -220,13 +283,13 @@
           Send
         </button>
       </div>
-      <div id="chat-status" style="font-size:0.82rem;color:#999;margin-top:0.4rem;"></div>
+      <div id="chat-status" style="font-size:0.82rem;color:var(--text-muted);margin-top:0.4rem;"></div>
     </div>
 
     <!-- Session info sidebar -->
-    <div style="width:220px;padding:1rem;border:1px solid #e0e0e0;border-radius:8px;background:#fafafa;font-size:0.85rem;">
-      <strong>Session</strong>
-      <div style="margin-top:0.5rem;word-break:break-all;color:#555;" id="session-info">No active session</div>
+    <div class="sim-sidebar">
+      <strong style="color:var(--text-primary);">Session</strong>
+      <div style="margin-top:0.5rem;word-break:break-all;color:var(--text-secondary);" id="session-info">No active session</div>
       <div style="margin-top:1rem;">
         <button onclick="startSession()"
                 style="width:100%;padding:0.5rem;background:#388e3c;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;">
@@ -247,7 +310,6 @@
 <script>
 var _sessionId = null;
 var _canvasType = 'ndc';
-// canvas_type → slash command lists (fetched from /api/simulate/slash-commands on canvas switch)
 var _canvasCmds = {};
 
 // ---------------------------------------------------------------------------
@@ -267,7 +329,6 @@ function renderCOACards(coas, techName) {
   coas.forEach(function(coa) {
     var isRec = coa.recommended;
     html += '<div class="coa-card' + (isRec ? ' coa-card--recommended' : '') + '">';
-    // Header
     if (isRec) {
       html += '<span class="coa-card__badge badge--recommended">Recommended</span>';
     }
@@ -277,14 +338,12 @@ function renderCOACards(coas, techName) {
     html += '<span class="coa-card__badge ' + _effortBadgeClass(coa.effort) + '">' + _esc(coa.effort_days) + 'd</span>';
     html += '<span class="coa-card__badge ' + _riskBadgeClass(coa.risk) + '">Risk: ' + _esc(coa.risk_label || coa.risk) + '</span>';
     if (coa.timeline_weeks) {
-      html += '<span style="font-size:0.78rem;color:#777;margin-left:0.3rem;">~' + _esc(coa.timeline_weeks) + ' weeks</span>';
+      html += '<span style="font-size:0.78rem;color:var(--text-muted);margin-left:0.3rem;">~' + _esc(coa.timeline_weeks) + ' weeks</span>';
     }
     html += '</div>';
-    // Recommended reason
     if (isRec && coa.recommended_reason) {
-      html += '<div style="font-size:0.83rem;color:#1565c0;margin-bottom:0.5rem;font-style:italic;">' + _esc(coa.recommended_reason) + '</div>';
+      html += '<div style="font-size:0.83rem;color:#60a5fa;margin-bottom:0.5rem;font-style:italic;">' + _esc(coa.recommended_reason) + '</div>';
     }
-    // Pros / Cons columns
     var pros = coa.pros || [];
     var cons = coa.cons || [];
     if (pros.length || cons.length) {
@@ -297,21 +356,18 @@ function renderCOACards(coas, techName) {
       html += '</ul></div>';
       html += '</div>';
     }
-    // Tools
     var tools = coa.tools || [];
     if (tools.length) {
       html += '<div class="coa-card__tools"><strong>Tools:</strong> ';
-      html += tools.map(function(t){ return '<code style="background:#f5f5f5;padding:0.1rem 0.3rem;border-radius:3px;">' + _esc(t) + '</code>'; }).join(' ');
+      html += tools.map(function(t){ return '<code style="background:rgba(255,255,255,0.08);padding:0.1rem 0.3rem;border-radius:3px;color:var(--accent-blue-light);">' + _esc(t) + '</code>'; }).join(' ');
       html += '</div>';
     }
-    // AI Opportunities
     var aiOpps = coa.ai_opportunities || [];
     if (aiOpps.length) {
-      html += '<div style="margin-top:0.4rem;font-size:0.82rem;"><strong style="color:#7b1fa2;">AI Opportunities:</strong> ';
-      html += aiOpps.map(function(o){ return '<span style="color:#7b1fa2;">' + _esc(o.title || o.id) + '</span>'; }).join(', ');
+      html += '<div style="margin-top:0.4rem;font-size:0.82rem;"><strong style="color:#c084fc;">AI Opportunities:</strong> ';
+      html += aiOpps.map(function(o){ return '<span style="color:#c084fc;">' + _esc(o.title || o.id) + '</span>'; }).join(', ');
       html += '</div>';
     }
-    // Action buttons
     html += '<div class="coa-card__actions">';
     if (coa.canvas_hints) {
       if (coa.canvas_hints.mc) {
@@ -330,8 +386,7 @@ function renderCOACards(coas, techName) {
     if (aiOpps.length) {
       html += '<button onclick="insertCommand(\'/refactor ' + _esc(techName||'') + '\')" class="coa-btn coa-btn--ai">Dispatch Refactor Jobs</button>';
     }
-    html += '</div>'; // actions
-    html += '</div>'; // coa-card
+    html += '</div></div>';
   });
   html += '</div>';
   return html;
@@ -349,7 +404,6 @@ function renderDepWarning(dep) {
   );
 }
 
-// Append a message bubble to the chat window
 function _appendMessage(role, content, extraHtml) {
   var placeholder = document.getElementById('chat-placeholder');
   if (placeholder) { placeholder.style.display = 'none'; }
@@ -360,42 +414,32 @@ function _appendMessage(role, content, extraHtml) {
     el.innerHTML = '<div style="text-align:right;"><span style="display:inline-block;background:#1976d2;color:#fff;border-radius:12px 12px 2px 12px;padding:0.45rem 0.9rem;max-width:70%;font-size:0.93rem;">' + _esc(content) + '</span></div>';
   } else {
     var mdHtml = _renderMarkdown(content);
-    el.innerHTML = '<div style="display:flex;gap:0.5rem;"><span style="font-size:1.1rem;flex-shrink:0;">🤖</span><div style="flex:1;background:#f5f7fa;border-radius:2px 12px 12px 12px;padding:0.5rem 0.9rem;font-size:0.92rem;">' + mdHtml + '</div></div>';
+    el.innerHTML = '<div style="display:flex;gap:0.5rem;"><span style="font-size:1.1rem;flex-shrink:0;">🤖</span><div style="flex:1;background:var(--bg-secondary, #1a1a2e);border-radius:2px 12px 12px 12px;padding:0.5rem 0.9rem;font-size:0.92rem;color:var(--text-primary);">' + mdHtml + '</div></div>';
     if (extraHtml) { el.innerHTML += extraHtml; }
   }
   msgs.appendChild(el);
   msgs.scrollTop = msgs.scrollHeight;
 }
 
-// Very light markdown → HTML (bold, code, links, lists)
 function _renderMarkdown(text) {
   var s = _esc(text);
-  // code blocks
-  s = s.replace(/```[\w]*\n([\s\S]*?)```/g, function(m, code){ return '<pre style="background:#f5f5f5;border-radius:4px;padding:0.5rem;overflow-x:auto;font-size:0.82rem;">' + code + '</pre>'; });
-  // inline code
-  s = s.replace(/`([^`]+)`/g, '<code style="background:#f5f5f5;padding:0.1rem 0.3rem;border-radius:3px;font-size:0.88em;">$1</code>');
-  // bold
+  s = s.replace(/```[\w]*\n([\s\S]*?)```/g, function(m, code){ return '<pre style="background:var(--bg-secondary);border-radius:4px;padding:0.5rem;overflow-x:auto;font-size:0.82rem;color:var(--text-primary);border:1px solid var(--border-color);">' + code + '</pre>'; });
+  s = s.replace(/`([^`]+)`/g, '<code style="background:rgba(255,255,255,0.08);padding:0.1rem 0.3rem;border-radius:3px;font-size:0.88em;color:var(--accent-blue-light);">$1</code>');
   s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // headers
-  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:0.5rem 0 0.25rem;">$1</h4>');
-  s = s.replace(/^## (.+)$/gm, '<h3 style="margin:0.5rem 0 0.25rem;">$1</h3>');
-  s = s.replace(/^# (.+)$/gm, '<h2 style="margin:0.5rem 0 0.25rem;">$1</h2>');
-  // horizontal rule
-  s = s.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid #e0e0e0;margin:0.5rem 0;">');
-  // blockquote
-  s = s.replace(/^&gt; (.+)$/gm, '<blockquote style="border-left:3px solid #1976d2;margin:0.25rem 0;padding:0.25rem 0.75rem;color:#555;">$1</blockquote>');
-  // markdown links
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#1976d2;">$1</a>');
-  // list items
-  s = s.replace(/^  [\-\*] (.+)$/gm, '<li style="margin-left:1.5rem;">$1</li>');
-  s = s.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
-  s = s.replace(/\+ (.+)/g, '<li style="color:#2e7d32;">$1</li>');
-  s = s.replace(/\- (.+)/g, '<li style="color:#c62828;">$1</li>');
-  // table (basic)
+  s = s.replace(/^### (.+)$/gm, '<h4 style="margin:0.5rem 0 0.25rem;color:var(--text-primary);">$1</h4>');
+  s = s.replace(/^## (.+)$/gm, '<h3 style="margin:0.5rem 0 0.25rem;color:var(--text-primary);">$1</h3>');
+  s = s.replace(/^# (.+)$/gm, '<h2 style="margin:0.5rem 0 0.25rem;color:var(--text-primary);">$1</h2>');
+  s = s.replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border-color);margin:0.5rem 0;">');
+  s = s.replace(/^&gt; (.+)$/gm, '<blockquote style="border-left:3px solid var(--accent-blue);margin:0.25rem 0;padding:0.25rem 0.75rem;color:var(--text-secondary);">$1</blockquote>');
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:var(--accent-blue-light);">$1</a>');
+  s = s.replace(/^  [\-\*] (.+)$/gm, '<li style="margin-left:1.5rem;color:var(--text-primary);">$1</li>');
+  s = s.replace(/^[\-\*] (.+)$/gm, '<li style="color:var(--text-primary);">$1</li>');
+  s = s.replace(/\+ (.+)/g, '<li style="color:#4ade80;">$1</li>');
+  s = s.replace(/\- (.+)/g, '<li style="color:#f87171;">$1</li>');
   s = s.replace(/\|(.+)\|/g, function(m) {
     var cells = m.split('|').filter(function(c){ return c.trim(); });
     if (cells[0] && cells[0].trim().match(/^[-:]+$/)) return '';
-    var tdHtml = cells.map(function(c){ return '<td style="padding:0.2rem 0.6rem;border:1px solid #e0e0e0;">' + c.trim() + '</td>'; }).join('');
+    var tdHtml = cells.map(function(c){ return '<td style="padding:0.2rem 0.6rem;border:1px solid var(--border-color);color:var(--text-primary);">' + c.trim() + '</td>'; }).join('');
     return '<tr>' + tdHtml + '</tr>';
   });
   s = s.replace(/<tr>/g, function(m, offset, str) {
@@ -403,7 +447,6 @@ function _renderMarkdown(text) {
     return before.includes('<table') ? m : '<table style="border-collapse:collapse;width:100%;font-size:0.85rem;margin:0.5rem 0;"><tr>';
   });
   if (s.includes('</tr>') && !s.includes('</table>')) s += '</table>';
-  // newlines
   s = s.replace(/\n\n/g, '<br><br>').replace(/\n/g, '<br>');
   return s;
 }
@@ -417,11 +460,11 @@ function _fetchCanvasCommands(ct) {
       _renderSlashHints(ct, _canvasCmds[ct]);
     })
     .catch(function() {
-      // Fallback static commands if API unavailable
       var fallback = {
         ndc: ['/explain', '/troubleshoot', '/refine', '/audit', '/ppsm', '/dfd', '/cis', '/isa', '/poam', '/oscal', '/bundle', '/diff', '/spec'],
         sdc: ['/explain', '/troubleshoot', '/audit', '/api-surface', '/dfd', '/cis', '/isa', '/poam', '/oscal', '/bundle', '/diff', '/spec'],
         eda: ['/explain', '/troubleshoot', '/refine', '/audit', '/event-catalog', '/dfd', '/cis', '/isa', '/poam', '/oscal', '/bundle', '/diff', '/spec'],
+        cam: ['/coa', '/deprecated', '/refactor', '/status', '/analyze', '/components'],
       };
       _canvasCmds[ct] = fallback[ct] || fallback['ndc'];
       _renderSlashHints(ct, _canvasCmds[ct]);
@@ -432,9 +475,7 @@ function _renderSlashHints(ct, cmds) {
   var displayName = ct.toUpperCase();
   var parts = ['<strong>' + displayName + ' commands:</strong>'];
   cmds.forEach(function(cmd) {
-    parts.push('<span class="slash-cmd" onclick="insertCommand(\'' + cmd + '\')" '
-      + 'style="cursor:pointer;color:#1565c0;text-decoration:underline dotted;">'
-      + cmd + '</span>');
+    parts.push('<span class="slash-cmd" onclick="insertCommand(\'' + cmd + '\')">' + cmd + '</span>');
   });
   document.getElementById('slash-hint-text').innerHTML = parts.join(' &bull; ');
 }
@@ -446,7 +487,6 @@ function insertCommand(cmd) {
   hideSlashDropdown();
 }
 
-// Interactive dropdown autocomplete when user types "/"
 function _updateSlashDropdown(val) {
   var dropdown = document.getElementById('slash-dropdown');
   if (!val.startsWith('/')) { hideSlashDropdown(); return; }
@@ -455,8 +495,8 @@ function _updateSlashDropdown(val) {
   if (!matches.length) { hideSlashDropdown(); return; }
   dropdown.innerHTML = matches.map(function(c) {
     return '<div class="slash-drop-item" onclick="insertCommand(\'' + c + '\')" '
-      + 'style="padding:0.4rem 1rem;cursor:pointer;font-size:0.85rem;" '
-      + 'onmouseover="this.style.background=\'#e3f2fd\'" '
+      + 'style="padding:0.4rem 1rem;cursor:pointer;font-size:0.85rem;color:var(--text-primary);" '
+      + 'onmouseover="this.style.background=\'rgba(74,144,217,0.2)\'" '
       + 'onmouseout="this.style.background=\'\'"><code>' + c + '</code></div>';
   }).join('');
   dropdown.style.display = 'block';
@@ -471,20 +511,17 @@ function selectCanvas(ct) {
   document.getElementById('active-canvas-type').value = ct;
   document.querySelectorAll('.canvas-chip').forEach(function(el) {
     el.style.fontWeight = el.dataset.canvasType === ct ? '800' : '600';
-    el.style.boxShadow = el.dataset.canvasType === ct ? '0 0 0 3px rgba(25,118,210,0.35)' : '';
+    el.style.boxShadow = el.dataset.canvasType === ct ? '0 0 0 3px rgba(74,144,217,0.45)' : '';
   });
   _fetchCanvasCommands(ct);
-  // Show/hide CAM welcome panel
   var camWelcome = document.getElementById('cam-welcome');
   if (camWelcome) camWelcome.style.display = ct === 'cam' ? 'block' : 'none';
-  // Update input placeholder
   var inp = document.getElementById('chat-input');
   if (inp) {
     inp.placeholder = ct === 'cam'
       ? '/coa oracle  |  /deprecated elasticsearch  |  /status  |  Ask anything about migration'
       : '/explain — describe your architecture';
   }
-  // Auto-start session if cam
   if (ct === 'cam' && !_sessionId) startSession();
 }
 
@@ -509,7 +546,6 @@ function sendMessage() {
   if (!content) return;
   if (!_sessionId) {
     startSession();
-    // Retry after session starts
     setTimeout(function(){ if (_sessionId) sendMessage(); }, 800);
     return;
   }
@@ -526,25 +562,19 @@ function sendMessage() {
     document.getElementById('chat-status').textContent = '';
 
     if (_canvasType === 'cam') {
-      // Rich rendering for CAM canvas
       var extraHtml = '';
       var displayReply = reply;
-      // Deprecation warning banner
       if (d.deprecation && d.deprecation.status && d.deprecation.status !== 'unknown') {
         extraHtml += renderDepWarning(d.deprecation);
       }
-      // COA cards — when present, suppress the full markdown body to avoid duplication
       if (d.coa_cards && d.coa_cards.length) {
         extraHtml += renderCOACards(d.coa_cards, d.tech || '');
-        // Keep only the header line (up to the first COA block) from the text reply
         var headerEnd = reply.indexOf('\n### COA');
         displayReply = headerEnd > 0 ? reply.slice(0, headerEnd).trim() : '';
       }
       _appendMessage('assistant', displayReply, extraHtml);
     } else {
-      // Standard rendering for other canvases
       _appendMessage('assistant', reply);
-      // Render mermaid if present
       var mermaidMatch = reply.match(/```mermaid\n([\s\S]*?)```/);
       if (mermaidMatch) {
         var out = document.getElementById('mermaid-output');
@@ -572,16 +602,14 @@ function downloadBundle() {
   });
 }
 
-// Auto-start session on page load; pre-select canvas from server-rendered value
 document.addEventListener('DOMContentLoaded', function() {
   var presel = document.getElementById('active-canvas-type').value || 'ndc';
   _canvasType = presel;
   selectCanvas(presel);
-  // Add nav link to main /chat for cross-reference
   if (presel !== 'cam') {
     var camLink = document.createElement('div');
-    camLink.style.cssText = 'margin-top:0.5rem;font-size:0.82rem;color:#555;';
-    camLink.innerHTML = '💡 For migration intelligence, switch to <strong>CAM</strong> canvas above or go to <a href="/simulate/chat?canvas=cam" style="color:#3949ab;">Migration Chat</a>';
+    camLink.style.cssText = 'margin-top:0.5rem;font-size:0.82rem;color:var(--text-secondary);';
+    camLink.innerHTML = '💡 For migration intelligence, switch to <strong>CAM</strong> canvas above or go to <a href="/simulate/chat?canvas=cam">Migration Chat</a>';
     var selector = document.querySelector('.canvas-selector');
     if (selector && selector.parentNode) selector.parentNode.appendChild(camLink);
   }

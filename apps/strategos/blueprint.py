@@ -102,6 +102,15 @@ from tools.strategos.ooda import (
     COA_CRITERIA,
 )
 
+
+def _strategos_tenant_id() -> str | None:
+    try:
+        from tools.saas.auth.middleware import get_current_tenant_id
+        return get_current_tenant_id()
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # Signal-queue helpers
 # ---------------------------------------------------------------------------

@@ -297,8 +297,9 @@ def get_current_tenant_id() -> str | None:
     try:
         from flask import g
         return getattr(g, "tenant_id", None)
-    except RuntimeError:
-        # Called outside of a Flask request context (e.g. CLI scripts, tests)
+    except Exception:
+        # RuntimeError: outside Flask request context (CLI/tests)
+        # ImportError/ModuleNotFoundError: Flask not installed in this env
         return None
 
 
@@ -307,5 +308,5 @@ def get_current_tenant_name() -> str:
     try:
         from flask import g
         return getattr(g, "tenant_name", None) or "System"
-    except RuntimeError:
+    except Exception:
         return "System"

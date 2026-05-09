@@ -447,3 +447,26 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Fix Py39 Annotations | tools\compat\fix_py39_annotations.py | Auto-registered: compat/fix_py39_annotations.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Ddx Extensions | tools\kanban\seed_ddx_extensions.py | Auto-registered: kanban/seed_ddx_extensions.py | --json | JSON |
+| Mcp Debug Wrapper | tools\mcp\mcp_debug_wrapper.py | Auto-registered: mcp/mcp_debug_wrapper.py | --json | JSON |
+| Commander Dashboard | tools\strategos\commander_dashboard.py | Auto-registered: strategos/commander_dashboard.py | --json | JSON |
+| Trap Db | tools\trading\ta\trap_db.py | Auto-registered: ta/trap_db.py | --json | JSON |
+| 090 Migration Advisory Chat | tools\extensions\builtins\090_migration_advisory_chat.py | Auto-registered: builtins/090_migration_advisory_chat.py | --json | JSON |
+| 021 Sg Sigint Events | tools\db\migrations\021_sg_sigint_events.py | Auto-registered: migrations/021_sg_sigint_events.py | --json | JSON |
+| 022 Sg Eo Signals | tools\db\migrations\022_sg_eo_signals.py | Auto-registered: migrations/022_sg_eo_signals.py | --json | JSON |
+| 023 Sg Socmint Signals | tools\db\migrations\023_sg_socmint_signals.py | Auto-registered: migrations/023_sg_socmint_signals.py | --json | JSON |
+| Seed Sgx Osint Epics | tools\db\seeds\seed_sgx_osint_epics.py | Auto-registered: seeds/seed_sgx_osint_epics.py | --json | JSON |
+| Seed Sg Cyber Ext | tools\db\seeds\seed_sg_cyber_ext.py | Auto-registered: seeds/seed_sg_cyber_ext.py | --json | JSON |
+| Seed Sg Theaters | tools\db\seeds\seed_sg_theaters.py | Auto-registered: seeds/seed_sg_theaters.py | --json | JSON |
+| Seed Sg Twin | tools\db\seeds\seed_sg_twin.py | Auto-registered: seeds/seed_sg_twin.py | --json | JSON |
+| Seed Supply Kg Edges | tools\db\seeds\seed_supply_kg_edges.py | Auto-registered: seeds/seed_supply_kg_edges.py | --json | JSON |
+| Seed Wfs Decomp | tools\db\seeds\seed_wfs_decomp.py | Auto-registered: seeds/seed_wfs_decomp.py | --json | JSON |
+| Seed Wfs Plan | tools\db\seeds\seed_wfs_plan.py | Auto-registered: seeds/seed_wfs_plan.py | --json | JSON |
+| Seed Wne Plan | tools\db\seeds\seed_wne_plan.py | Auto-registered: seeds/seed_wne_plan.py | --json | JSON |
+| Seed Wne Writeguard | tools\db\seeds\seed_wne_writeguard.py | Auto-registered: seeds/seed_wne_writeguard.py | --json | JSON |
+| Safety Monitor | tools\dashboard\api\safety_monitor.py | Auto-registered: api/safety_monitor.py | --json | JSON |

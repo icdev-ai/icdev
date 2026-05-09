@@ -36,22 +36,40 @@ def tor_available() -> bool:
 # Signal retrieval
 # ---------------------------------------------------------------------------
 
-def get_signals(status: Optional[str] = None) -> list[dict]:
+def get_signals(status: Optional[str] = None, tenant_id: Optional[str] = None) -> list[dict]:
     """Return dark web signals from the DB, optionally filtered by status."""
+    # Attempt to infer tenant from request context if not provided
+    if tenant_id is None:
+        try:
+            from tools.saas.auth.middleware import get_current_tenant_id
+            tenant_id = get_current_tenant_id()
+        except Exception:
+            pass
     try:
         from tools.db.storage import get_connection
         with get_connection() as conn:
             cur = conn.cursor()
+            tenant_clause = (
+                " AND (tenant_id = ? OR tenant_id IS NULL)"
+                if tenant_id
+                else " AND (tenant_id IS NULL OR tenant_id = '')"
+            )
+            tenant_params: tuple = (tenant_id,) if tenant_id else ()
             if status and status != "all":
                 cur.execute(
                     "SELECT id, score, signal_type, title, source, collected_at, status "
-                    "FROM strategos_darkweb_signals WHERE status = ? ORDER BY score DESC, collected_at DESC",
-                    (status,),
+                    "FROM strategos_darkweb_signals WHERE status = ?"
+                    + tenant_clause
+                    + " ORDER BY score DESC, collected_at DESC",
+                    (status,) + tenant_params,
                 )
             else:
                 cur.execute(
                     "SELECT id, score, signal_type, title, source, collected_at, status "
-                    "FROM strategos_darkweb_signals ORDER BY score DESC, collected_at DESC"
+                    "FROM strategos_darkweb_signals WHERE 1=1"
+                    + tenant_clause
+                    + " ORDER BY score DESC, collected_at DESC",
+                    tenant_params,
                 )
             rows = cur.fetchall()
     except Exception:
