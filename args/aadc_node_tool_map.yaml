@@ -1,0 +1,123 @@
+# CUI // SP-CTI
+# AADC Node Type → Runtime Tool Mapping
+# Change this file to reroute any node to a different tool without code changes.
+# Keys are AADC canvas node type strings.  Values define the tool to activate.
+#
+# Fields per entry:
+#   tool_path   : Python module path relative to project root
+#   cli_command : CLI invocation example for the Kanban task instructions
+#   config_key  : key in the generated ops_config YAML for this tool's settings
+#   description : human-readable description of what the tool does at runtime
+#   task_title  : title of the Kanban task generated for this tool
+#   docs_link   : relevant ICDEV docs or mission slug
+
+node_tool_map:
+
+  # ── Monitoring / Observability ──────────────────────────────────────────────
+  drift-detector:
+    tool_path: tools/llm/model_monitor.py
+    cli_command: "python tools/llm/model_monitor.py --model <model_id> --function <fn> --check"
+    config_key: drift_detector
+    description: Detects quality/latency/token drift against a rolling baseline. Fires model_drift_events on threshold breach.
+    task_title: "Wire drift-detector node → model_monitor.py"
+    docs_link: m-sre-ai-02-drift-detection
+
+  baseline-snapshot:
+    tool_path: tools/llm/model_monitor.py
+    cli_command: "python -c \"from tools.llm.model_monitor import reset_baseline; reset_baseline('<model_id>', '<fn>')\""
+    config_key: baseline_snapshot
+    description: Records current quality/latency/token baselines. Must be run after a clean deployment before drift detection starts.
+    task_title: "Capture initial baseline snapshot → model_monitor.reset_baseline()"
+    docs_link: m-sre-ai-02-drift-detection
+
+  trace-collector:
+    tool_path: tools/observability/otel_tracer.py
+    cli_command: "python tools/observability/otel_tracer.py --endpoint http://localhost:4317"
+    config_key: trace_collector
+    description: OpenTelemetry trace exporter. Sends span data to configured OTLP endpoint. Wires into every LLM call.
+    task_title: "Wire trace-collector node → otel_tracer.py"
+    docs_link: m-sre-ai-01-llm-observability
+
+  span-recorder:
+    tool_path: tools/observability/sqlite_tracer.py
+    cli_command: "python tools/observability/sqlite_tracer.py --db data/icdev.db"
+    config_key: span_recorder
+    description: SQLite-backed span recorder for air-gap environments without OTLP infrastructure.
+    task_title: "Wire span-recorder node → sqlite_tracer.py"
+    docs_link: m-sre-ai-01-llm-observability
+
+  token-budget:
+    tool_path: tools/agent/token_tracker.py
+    cli_command: "python tools/agent/token_tracker.py --set-budget <agent_id> <monthly_usd>"
+    config_key: token_budget
+    description: Per-agent monthly token budget enforcement. check_budget() returns allow/warn/block before each LLM invoke.
+    task_title: "Wire token-budget node → token_tracker.py"
+    docs_link: m-sre-ai-01-llm-observability
+
+  # ── Safety / Guardrails ─────────────────────────────────────────────────────
+  guardrail:
+    tool_path: tools/security/ai_telemetry_logger.py
+    cli_command: "python -c \"from tools.security.ai_telemetry_logger import log_security_event; ...\""
+    config_key: guardrail
+    description: Input/output safety filter. Logs all guardrail events to ai_telemetry_log. Wires injection detector and output sanitizer.
+    task_title: "Wire guardrail node → ai_telemetry_logger.py"
+    docs_link: m-secops-ai-01-prompt-injection
+
+  circuit-breaker:
+    tool_path: tools/agentic_ai_canvas/safety_layer.py
+    cli_command: "python -c \"from tools.agentic_ai_canvas.safety_layer import check_safety; ...\""
+    config_key: circuit_breaker
+    description: Emergency stop for runaway agents. Trips on consecutive failures, budget exhaustion, or manual override.
+    task_title: "Wire circuit-breaker node → safety_layer.py"
+    docs_link: m-sre-ai-04-incident-response
+
+  input-sanitizer:
+    tool_path: tools/security/ai_telemetry_logger.py
+    cli_command: "python -c \"from tools.security.ai_telemetry_logger import log_security_event; ...\""
+    config_key: input_sanitizer
+    description: Strips PII/CUI and known injection patterns before prompt reaches LLM.
+    task_title: "Wire input-sanitizer node → ai_telemetry_logger.py (sanitize mode)"
+    docs_link: m-secops-ai-01-prompt-injection
+
+  # ── Governance / Compliance ──────────────────────────────────────────────────
+  audit-logger:
+    tool_path: tools/compliance/classification_manager.py
+    cli_command: "python -c \"from tools.compliance.classification_manager import get_manager; m=get_manager(); ...\""
+    config_key: audit_logger
+    description: Append-only audit trail for all LLM interactions. NIST AU-2/AU-9 compliant. Writes to icdev.db audit tables.
+    task_title: "Wire audit-logger node → classification_manager.py (audit mode)"
+    docs_link: m-sre-ai-04-incident-response
+
+  prompt-registry:
+    tool_path: tools/llm/prompt_registry.py
+    cli_command: "python tools/llm/prompt_registry.py --list"
+    config_key: prompt_registry
+    description: Versioned prompt template store. All prompts fetched from registry; changes tracked with diff history.
+    task_title: "Wire prompt-registry node → prompt_registry.py"
+    docs_link: m-sre-ai-03-cost-optimization
+
+  # ── Model Lifecycle ──────────────────────────────────────────────────────────
+  retrain-trigger:
+    tool_path: tools/finetune/retrain_trigger.py
+    cli_command: "python tools/finetune/retrain_trigger.py --model <model_id> --reason drift"
+    config_key: retrain_trigger
+    description: Fires a retraining job when drift events or quality gates breach thresholds. Integrates with AIMC training pipeline.
+    task_title: "Wire retrain-trigger node → retrain_trigger.py"
+    docs_link: m-dataops-05-fine-tuning
+
+  trusted-monitor:
+    tool_path: tools/llm/model_monitor.py
+    cli_command: "python tools/llm/model_monitor.py --model <model_id> --health"
+    config_key: trusted_monitor
+    description: Continuously evaluates model output quality against trusted reference answers. Feeds quality_scores table.
+    task_title: "Wire trusted-monitor node → model_monitor.get_model_health()"
+    docs_link: m-sre-ai-02-drift-detection
+
+  # ── Compliance / Reporting ───────────────────────────────────────────────────
+  compliance-reporter:
+    tool_path: tools/compliance/classification_manager.py
+    cli_command: "python -c \"from tools.compliance.classification_manager import get_manager; get_manager().generate_report()\""
+    config_key: compliance_reporter
+    description: Generates CUI-marked compliance reports from audit trail data. FedRAMP AU control evidence export.
+    task_title: "Wire compliance-reporter node → classification_manager.py (report mode)"
+    docs_link: m-leadership-04-govern-ai
