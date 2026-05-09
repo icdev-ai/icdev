@@ -686,6 +686,7 @@ services:
     build:
       context: .
       dockerfile: docker/Dockerfile.dashboard
+      target: ${ICDEV_DOCKER_TARGET:-debian-runtime}
     image: icdev/dashboard:latest
     container_name: icdev-dashboard
     depends_on:

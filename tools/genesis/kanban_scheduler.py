@@ -306,27 +306,11 @@ def _cleanup_orphan_processes() -> None:
             pid_file.unlink(missing_ok=True)
             continue
         try:
-            import subprocess
-            import os
-            # Check if process still running (Windows + Unix)
-            if os.name == "nt":
-                result = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}"],
-                    capture_output=True, text=True, timeout=5,
-                )
-                if str(pid) in result.stdout and "claude" in result.stdout.lower():
-                    subprocess.run(
-                        ["taskkill", "/F", "/PID", str(pid)],
-                        capture_output=True, timeout=5,
-                    )
+            from tools.compat.platform_utils import pid_exists, kill_process, find_pids_by_cmdline
+            claude_pids = set(find_pids_by_cmdline("claude"))
+            if pid in claude_pids and pid_exists(pid):
+                if kill_process(pid, force=True):
                     killed += 1
-            else:
-                try:
-                    os.kill(pid, 0)
-                    os.kill(pid, 9)
-                    killed += 1
-                except ProcessLookupError:
-                    pass
         except Exception as exc:
             logger.debug("orphan cleanup error for pid %s: %s", pid, exc)
         finally:
