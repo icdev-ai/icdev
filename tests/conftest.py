@@ -2296,6 +2296,90 @@ CREATE TABLE IF NOT EXISTS ohc_data_drift_events (
     report_json TEXT DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS govlift_workloads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    workload_type TEXT,
+    os_name TEXT,
+    os_version TEXT,
+    environment TEXT DEFAULT 'production',
+    ip_address TEXT,
+    cpu_cores INTEGER,
+    memory_gb REAL,
+    storage_tb REAL,
+    classification TEXT DEFAULT 'CUI',
+    risk_level TEXT DEFAULT 'medium',
+    migration_status TEXT DEFAULT 'discovered',
+    wave_id TEXT,
+    last_scanned TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_waves (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sequence_num INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'planned',
+    planned_start TEXT,
+    planned_end TEXT,
+    workload_count INTEGER DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_migrations (
+    id TEXT PRIMARY KEY,
+    workload_id TEXT NOT NULL,
+    wave_id TEXT,
+    status TEXT DEFAULT 'pending',
+    started_at TEXT,
+    completed_at TEXT,
+    executor_log TEXT,
+    pre_check_passed INTEGER,
+    post_check_passed INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_stig_checks (
+    id TEXT PRIMARY KEY,
+    workload_id TEXT NOT NULL,
+    stig_benchmark TEXT,
+    check_id TEXT,
+    check_name TEXT,
+    severity TEXT DEFAULT 'cat2',
+    status TEXT DEFAULT 'not_reviewed',
+    finding TEXT,
+    remediation TEXT,
+    checked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_audit_log (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    action TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id TEXT,
+    details TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    ip_address TEXT,
+    session_id TEXT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_integrations (
+    id TEXT PRIMARY KEY,
+    system_name TEXT UNIQUE NOT NULL,
+    status TEXT DEFAULT 'disconnected',
+    endpoint TEXT,
+    last_sync TEXT,
+    sync_count INTEGER DEFAULT 0,
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
