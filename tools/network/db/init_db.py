@@ -14970,6 +14970,31 @@ def init_db():
             conn.commit()
             print(f"[init_db] Seeded {len(_sops)} NDC SOPs.")
 
+        # ── Auto-seed full SOP library if approved count is low ────────────
+        approved_count = conn.execute(
+            "SELECT COUNT(*) FROM ndc_sops WHERE status='approved'"
+        ).fetchone()[0]
+        if approved_count < 20:
+            try:
+                from tools.network.seed_sops import seed as _seed_sops
+                result = _seed_sops(status="approved")
+                if result["seeded"] > 0:
+                    print(f"[init_db] Auto-seeded {result['seeded']} approved SOPs via seed_sops.")
+            except Exception as _e:
+                print(f"[init_db] seed_sops auto-seed skipped: {_e}")
+
+        # ── Auto-seed demo migration projects if none exist ────────────────
+        migration_count = conn.execute(
+            "SELECT COUNT(*) FROM nc_migration_phases"
+        ).fetchone()[0]
+        if migration_count == 0:
+            try:
+                from tools.network.seed_migration_demo import seed_demo_migrations
+                seed_demo_migrations()
+                print("[init_db] Auto-seeded demo migration projects.")
+            except Exception as _e:
+                print(f"[init_db] demo migration seed skipped: {_e}")
+
         conn.execute(
             "INSERT INTO nc_audit (action, entity_type, details) VALUES (?,?,?)",
             ("INIT", "database", f"Schema initialized at {datetime.now(timezone.utc).isoformat()}"),
