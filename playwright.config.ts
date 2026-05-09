@@ -16,6 +16,7 @@ import { defineConfig, devices } from '@playwright/test';
  */
 export default defineConfig({
   testDir: './tests/e2e',
+  timeout: 60000, // cold-start server + beforeEach login flows need >30s
   fullyParallel: false, // Sequential for Gov/DoD audit traceability
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
