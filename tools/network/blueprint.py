@@ -8584,11 +8584,20 @@ Output ONLY the JSON object. No other text."""
         "decommission", "decomm", "retire", "swap", "upgrade router", "upgrade switch",
     }
 
-    _AI_MIGRATION_PLAN_PROMPT = """You are a network migration planner. You work with any vendor \
-(Cisco, Juniper, Arista, Palo Alto, Fortinet, HPE, Brocade, etc.), any device type \
-(routers, switches, firewalls, load balancers, wireless controllers, SD-WAN), any ISP or \
-carrier, any CSP (AWS, Azure, GCP, OCI, IBM Cloud, Cloudflare, Akamai, etc.), and any partner \
-network (government, commercial, DISA, NIPR, SIPR, or private).
+    _AI_MIGRATION_PLAN_PROMPT = """You are a DoD/government network migration planner. \
+You work with any vendor (Cisco, Juniper, Arista, Palo Alto, Fortinet, HPE, Brocade, etc.), \
+any device type (routers, switches, firewalls, load balancers, wireless controllers, SD-WAN), \
+any ISP or carrier, and any partner network (government, commercial, NIPR, SIPR, or private).
+
+CRITICAL ARCHITECTURE RULE — DoD Cloud Connectivity:
+CSPs (AWS GovCloud, Azure Government, GCP, OCI, IBM Cloud, etc.) do NOT connect directly to \
+the edge router or to NIPR. In DoD networks, ALL CSP connectivity is routed through DISA BCAP \
+(Boundary Cloud Access Point). The topology is always:
+  Edge Router → DISA BCAP → CSP
+NEVER model a direct edge-router-to-CSP connection. Any migration involving cloud workloads \
+must include DISA BCAP as an intermediate node on the north side, and must include DISA \
+coordination steps in the relevant phases.
+
 Given a plain-English description of a migration, decompose it into an ordered list of phases \
 that are specific to the described devices and connections — do NOT assume any vendor, protocol, \
 or peer unless the description explicitly names them.
@@ -8611,14 +8620,15 @@ Output ONLY a valid JSON array — no markdown, no explanation:
 Rules:
 1. Phase titles must be short imperatives specific to the described devices (e.g. "Stage Cisco ASR Config", "Cut Over ISP BGP", "Migrate VLANs to New Core Switch")
 2. Infer phases from the actual topology: north-side partners, south-side peers, protocols (BGP, OSPF, EIGRP, MPLS, etc.) and physical connections (trunk, LAG, port-channel, SFP) mentioned
-3. duration_days: realistic estimate in days (minimum 1, typical 7-30 for production cuts)
-4. parallel_run: 1 if old and new devices run simultaneously during this phase, else 0
-5. classification: PUBLIC | CUI | SECRET | TS — infer from context or default to CUI
-6. impact_level: IL2 | IL4 | IL5 | IL6 — infer from context or default to IL4
-7. Phases must be ordered so each depends only on prior completed phases
-8. Always end with a decommission or final validation phase
-9. Minimum 2 phases, maximum 12 phases
-10. If partner coordination is needed (ISP, government agency, carrier), add a dedicated coordination step within the relevant phase description"""
+3. If CSP connectivity is mentioned (cloud workloads, AWS, Azure, GCP, etc.), always model it as going through DISA BCAP — generate a BCAP coordination phase
+4. duration_days: realistic estimate in days (minimum 1, typical 7-30 for production cuts)
+5. parallel_run: 1 if old and new devices run simultaneously during this phase, else 0
+6. classification: PUBLIC | CUI | SECRET | TS — infer from context or default to CUI
+7. impact_level: IL2 | IL4 | IL5 | IL6 — infer from context or default to IL4
+8. Phases must be ordered so each depends only on prior completed phases
+9. Always end with a decommission or final validation phase
+10. Minimum 2 phases, maximum 12 phases
+11. If partner coordination is needed (ISP, DISA, government agency, carrier), add a dedicated coordination step within the relevant phase description"""
 
     @bp.route("/api/ai-generate", methods=["POST"])
     @nc_login_required
