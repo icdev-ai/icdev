@@ -44,4 +44,14 @@
         </tbody>
     </table>
 </div>
+
+{% set iqe_canvas = "projects" %}
+{% set iqe_api_route = "/api/core/iqe-query" %}
+{% set iqe_title = "Query Project Registry" %}
+{% set iqe_examples = [
+    {"label": "Active projects", "query": "foreach p in projects.list where p.status == \"active\" select p.name, p.type, p.classification, p.created_at"},
+    {"label": "CUI projects", "query": "foreach p in projects.list where p.classification == \"CUI\" select p.name, p.type, p.status, p.created_at"},
+    {"label": "All projects", "query": "foreach p in projects.list select p.name, p.type, p.status, p.classification, p.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}

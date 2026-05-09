@@ -644,5 +644,168 @@
         setInterval(refreshBriefsBadge, 120000);
     })();
     </script>
+
+    <!-- IQE Global Mini-bar (Ctrl+Shift+Q) -->
+    <div id="iqe-minibar" style="
+        position:fixed; bottom:0; left:0; right:0; z-index:9000;
+        background:var(--bg-secondary,#1a1d27); border-top:2px solid var(--accent,#4f8ef7);
+        box-shadow:0 -4px 24px rgba(0,0,0,0.35); font-family:inherit;
+        transform:translateY(100%); transition:transform 0.22s cubic-bezier(.4,0,.2,1);
+    " aria-label="IQE Global Query Bar" role="complementary">
+      <div style="max-width:1100px; margin:0 auto; padding:0.7rem 1rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
+          <span style="font-size:0.72rem; font-weight:700; letter-spacing:.05em;
+              color:var(--accent,#4f8ef7); text-transform:uppercase; white-space:nowrap;">IQE</span>
+          <span id="iqe-mb-canvas-badge" style="font-size:0.68rem; padding:1px 7px; border-radius:999px;
+              background:var(--bg-tertiary,#252836); color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);">
+            global
+          </span>
+          <input id="iqe-mb-input" type="text" placeholder="Ask anything… (Ctrl+Shift+Q to toggle)"
+              autocomplete="off" spellcheck="false"
+              style="flex:1; background:var(--bg-input,#13151f); border:1px solid var(--border,#2e3347);
+                  border-radius:6px; padding:0.35rem 0.7rem; color:var(--text-primary,#e2e8f0);
+                  font-size:0.85rem; outline:none; min-width:0;"
+          />
+          <button onclick="icdevMBRun()" style="
+              background:var(--accent,#4f8ef7); color:#fff; border:none; border-radius:6px;
+              padding:0.35rem 1rem; font-size:0.82rem; font-weight:600; cursor:pointer; white-space:nowrap;">
+            Run
+          </button>
+          <button onclick="icdevMBClose()" style="
+              background:transparent; color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);
+              border-radius:6px; padding:0.3rem 0.55rem; font-size:0.82rem; cursor:pointer;" title="Close (Esc)">
+            ✕
+          </button>
+        </div>
+        <div id="iqe-mb-iqe-preview" style="display:none; font-size:0.75rem; font-family:monospace;
+            padding:0.25rem 0.6rem; background:var(--bg-tertiary,#252836); border-radius:4px;
+            color:var(--text-secondary,#a0aec0); margin-bottom:0.3rem; overflow-x:auto;"></div>
+        <div id="iqe-mb-status" style="font-size:0.75rem; color:var(--text-dim,#8892a4); min-height:1rem;"></div>
+        <div id="iqe-mb-results" style="display:none; margin-top:0.4rem; max-height:220px; overflow-y:auto; border-radius:6px;"></div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+        var bar = document.getElementById('iqe-minibar');
+        var input = document.getElementById('iqe-mb-input');
+        var badge = document.getElementById('iqe-mb-canvas-badge');
+        var status = document.getElementById('iqe-mb-status');
+        var preview = document.getElementById('iqe-mb-iqe-preview');
+        var results = document.getElementById('iqe-mb-results');
+        var _open = false;
+
+        var PATH_CANVAS = [
+            [/^\/network|^\/twin/, 'ndc'],
+            [/^\/security/, 'sdc'],
+            [/^\/devops/, 'pdc'],
+            [/^\/data/, 'ddc'],
+            [/^\/infra/, 'idc'],
+            [/^\/observability/, 'odc'],
+            [/^\/boundary/, 'bdc'],
+            [/^\/migration-canvas/, 'mc'],
+            [/^\/agentic-ai/, 'aadc'],
+            [/^\/ai-ml/, 'aimc'],
+            [/^\/kanban/, 'kanban'],
+            [/^\/compliance/, 'compliance'],
+            [/^\/agents/, 'agents'],
+            [/^\/projects/, 'projects'],
+        ];
+
+        function detectCanvas() {
+            var p = window.location.pathname;
+            for (var i = 0; i < PATH_CANVAS.length; i++) {
+                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+            }
+            return 'ndc';
+        }
+
+        function open() {
+            _open = true;
+            bar.style.transform = 'translateY(0)';
+            var canvas = detectCanvas();
+            badge.textContent = canvas;
+            setTimeout(function() { input.focus(); }, 60);
+        }
+
+        window.icdevMBClose = function() {
+            _open = false;
+            bar.style.transform = 'translateY(100%)';
+            status.textContent = '';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+        };
+
+        window.icdevMBRun = function() {
+            var question = input.value.trim();
+            if (!question) return;
+            var canvas = detectCanvas();
+            status.textContent = 'Translating…';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+            fetch('/api/iqe/dispatch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: question, canvas: canvas})
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d.iqe) {
+                    preview.textContent = d.iqe;
+                    preview.style.display = 'block';
+                }
+                if (!d.ok) {
+                    status.textContent = '✗ ' + (d.error || 'Error');
+                    status.style.color = '#f56565';
+                    return;
+                }
+                status.textContent = '✓ ' + d.row_count + ' row' + (d.row_count !== 1 ? 's' : '');
+                status.style.color = 'var(--success, #68d391)';
+                if (d.results && d.results.length > 0) {
+                    var cols = Object.keys(d.results[0]);
+                    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.75rem;">'
+                        + '<thead><tr>' + cols.map(function(c) {
+                            return '<th style="padding:3px 8px;text-align:left;background:var(--bg-tertiary,#252836);'
+                                + 'color:var(--text-dim,#8892a4);border-bottom:1px solid var(--border,#2e3347);">'
+                                + c + '</th>';
+                        }).join('') + '</tr></thead><tbody>';
+                    var show = Math.min(d.results.length, 100);
+                    for (var i = 0; i < show; i++) {
+                        html += '<tr>' + cols.map(function(c) {
+                            var v = d.results[i][c];
+                            return '<td style="padding:3px 8px;border-bottom:1px solid var(--border,#2e3347);'
+                                + 'color:var(--text-secondary,#a0aec0);max-width:200px;overflow:hidden;text-overflow:ellipsis;">'
+                                + (v === null || v === undefined ? '—' : String(v)) + '</td>';
+                        }).join('') + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    if (d.results.length > 100) {
+                        html += '<div style="font-size:0.7rem;color:var(--text-dim,#8892a4);padding:4px 8px;">showing 100 of ' + d.results.length + '</div>';
+                    }
+                    results.innerHTML = html;
+                    results.style.display = 'block';
+                } else {
+                    results.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim,#8892a4);padding:4px 8px;">No results</div>';
+                    results.style.display = 'block';
+                }
+            }).catch(function(e) {
+                status.textContent = '✗ ' + e.message;
+                status.style.color = '#f56565';
+            });
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
+                e.preventDefault();
+                if (_open) icdevMBClose(); else open();
+            }
+            if (e.key === 'Escape' && _open) icdevMBClose();
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') icdevMBRun();
+        });
+    })();
+    </script>
 </body>
 </html>

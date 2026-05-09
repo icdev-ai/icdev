@@ -1320,3 +1320,36 @@ def remove_task_tag(task_id, tag_id):
     finally:
         conn.close()
 
+
+@kanban_api.route("/iqe-query", methods=["POST"])
+def kanban_iqe_query():
+    """Natural-language IQE query against Kanban collections."""
+    import logging as _log
+    import tools.iqe.adapters.core_kanban  # noqa: F401 — registers kanban.* collections
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import Parser
+    from tools.iqe.executor import execute_query
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["kanban.tasks", "kanban.epics"]
+    iqe_str = ""
+    try:
+        result = nl_to_iqe(question, collections)
+        iqe_str = result.get("iqe", "")
+        explanation = result.get("explanation", "")
+        ast = Parser().parse(iqe_str)
+        conn = get_connection()
+        try:
+            rows = execute_query(ast, conn)
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)})
+    except Exception as exc:
+        _log.getLogger(__name__).warning("kanban IQE error: %s", exc)
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+

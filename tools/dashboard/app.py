@@ -2254,6 +2254,88 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/core/iqe-query", methods=["POST"])
+    def core_iqe_query():
+        """Natural-language IQE query against agents and projects collections."""
+        import logging as _log
+        import tools.iqe.adapters.core_agents  # noqa: F401 — registers agents.* + projects.* collections
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import Parser
+        from tools.iqe.executor import execute_query
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["agents.registry", "projects.list"]
+        iqe_str = ""
+        try:
+            result = nl_to_iqe(question, collections)
+            iqe_str = result.get("iqe", "")
+            explanation = result.get("explanation", "")
+            ast = Parser().parse(iqe_str)
+            conn = _get_db()
+            try:
+                rows = execute_query(ast, conn)
+            finally:
+                conn.close()
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)})
+        except Exception as exc:
+            _log.getLogger(__name__).warning("core IQE error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @app.route("/api/iqe/dispatch", methods=["POST"])
+    def iqe_dispatch():
+        """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name."""
+        import logging as _dlog
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import Parser
+        from tools.iqe.executor import execute_query
+
+        _CANVAS_MAP = {
+            "ndc":        ("tools.iqe.adapters.ndc",         ["ndc.nodes", "ndc.edges", "ndc.devices", "ndc.interfaces"]),
+            "sdc":        ("tools.iqe.adapters.security",    ["attack.nodes", "attack.edges", "attack.paths"]),
+            "pdc":        ("tools.iqe.adapters.pipeline",    ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges"]),
+            "ddc":        ("tools.iqe.adapters.data",        ["data.lineage.edges", "data.classifications"]),
+            "idc":        ("tools.iqe.adapters.infra",       ["infra.resources", "infra.snapshots"]),
+            "odc":        ("tools.iqe.adapters.observability", ["mitre.techniques", "mitre.coverage", "mitre.gaps"]),
+            "bdc":        ("tools.iqe.adapters.bdc",         ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts"]),
+            "mc":         ("tools.iqe.adapters.mc",          ["mc.designs", "mc.waves", "mc.assessments"]),
+            "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts"]),
+            "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts"]),
+            "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
+            "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
+            "agents":     ("tools.iqe.adapters.core_agents", ["agents.registry"]),
+            "projects":   ("tools.iqe.adapters.core_agents", ["projects.list"]),
+        }
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        canvas = (data.get("canvas") or "").strip().lower()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        if canvas not in _CANVAS_MAP:
+            return jsonify({"error": f"unknown canvas '{canvas}'. Valid: {sorted(_CANVAS_MAP)}"}), 400
+
+        adapter_module, collections = _CANVAS_MAP[canvas]
+        iqe_str = ""
+        try:
+            import importlib
+            importlib.import_module(adapter_module)
+            result = nl_to_iqe(question, collections)
+            iqe_str = result.get("iqe", "")
+            explanation = result.get("explanation", "")
+            ast = Parser().parse(iqe_str)
+            rows = execute_query(ast, conn=None)
+            return jsonify({"ok": True, "canvas": canvas, "iqe": iqe_str,
+                            "explanation": explanation, "results": rows, "row_count": len(rows)})
+        except Exception as exc:
+            _dlog.getLogger(__name__).warning("IQE dispatch error [%s]: %s", canvas, exc)
+            return jsonify({"error": str(exc), "canvas": canvas, "iqe": iqe_str}), 500
+
     @app.route("/monitoring")
     def monitoring_overview():
         """Monitoring overview page."""

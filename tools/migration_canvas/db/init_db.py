@@ -205,6 +205,107 @@ CREATE INDEX IF NOT EXISTS idx_mc_inv_session ON mc_inventory_imports(session_id
 """
 
 
+# ── Application Migration Schema ─────────────────────────────────────────────
+
+APP_MIGRATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS mc_app_inventory (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT REFERENCES mc_srv_sessions(id),
+    name                TEXT NOT NULL,
+    version             TEXT,
+    language            TEXT,
+    framework           TEXT,
+    app_type            TEXT CHECK(app_type IN ('web','api','batch','database','middleware','desktop','mobile','iot','saas')),
+    owner               TEXT,
+    team                TEXT,
+    criticality         TEXT CHECK(criticality IN ('mission_critical','high','medium','low')),
+    environment         TEXT CHECK(environment IN ('production','staging','development')),
+    stig_category       TEXT CHECK(stig_category IN ('cat1','cat2','cat3','na')),
+    license_type        TEXT,
+    license_expiry      TEXT,
+    source_repo         TEXT,
+    artifact_url        TEXT,
+    dependencies_json   TEXT DEFAULT '[]',
+    migration_strategy  TEXT CHECK(migration_strategy IN ('rehost','replatform','refactor','rearchitect','repurchase','retire','retain')),
+    migration_status    TEXT DEFAULT 'pending',
+    notes               TEXT,
+    classification      TEXT DEFAULT 'CUI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_inv_session    ON mc_app_inventory(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_inv_criticality ON mc_app_inventory(criticality);
+
+CREATE TABLE IF NOT EXISTS mc_app_server_bindings (
+    id          TEXT PRIMARY KEY,
+    app_id      TEXT NOT NULL REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    server_id   TEXT NOT NULL REFERENCES mc_srv_inventory(id) ON DELETE CASCADE,
+    role        TEXT CHECK(role IN ('primary','replica','standby','worker','scheduler')),
+    port        INTEGER,
+    protocol    TEXT,
+    notes       TEXT,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(app_id, server_id, role)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_srv_app    ON mc_app_server_bindings(app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_srv_server ON mc_app_server_bindings(server_id);
+
+CREATE TABLE IF NOT EXISTS mc_app_data_sources (
+    id                      TEXT PRIMARY KEY,
+    app_id                  TEXT REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    source_type             TEXT CHECK(source_type IN ('postgresql','mysql','oracle','mssql','mongodb','redis','elasticsearch','s3','sftp','api')),
+    host                    TEXT,
+    port                    INTEGER,
+    database_name           TEXT,
+    schema_version          TEXT,
+    estimated_size_gb       REAL,
+    replication_lag_seconds INTEGER,
+    migration_method        TEXT CHECK(migration_method IN ('dump_restore','cdc','replication','manual')),
+    migration_status        TEXT DEFAULT 'pending',
+    notes                   TEXT,
+    created_at              TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mc_app_dependencies (
+    id              TEXT PRIMARY KEY,
+    source_app_id   TEXT REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    target_app_id   TEXT REFERENCES mc_app_inventory(id),
+    target_server_id TEXT REFERENCES mc_srv_inventory(id),
+    target_service  TEXT CHECK(target_service IN ('database','cache','message_queue','api','auth','storage','cdn','monitor')),
+    dep_type        TEXT CHECK(dep_type IN ('hard','soft','optional')),
+    protocol        TEXT,
+    port            INTEGER,
+    latency_sla_ms  INTEGER,
+    notes           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    CHECK(target_app_id IS NOT NULL OR target_server_id IS NOT NULL)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_dep_source ON mc_app_dependencies(source_app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_dep_target ON mc_app_dependencies(target_app_id);
+
+CREATE TABLE IF NOT EXISTS mc_app_migration_steps (
+    id              TEXT PRIMARY KEY,
+    app_id          TEXT REFERENCES mc_app_inventory(id) ON DELETE CASCADE,
+    step_order      INTEGER,
+    phase           TEXT CHECK(phase IN ('pre','cutover','post','rollback')),
+    action          TEXT,
+    command         TEXT,
+    expected_output TEXT,
+    timeout_seconds INTEGER,
+    status          TEXT DEFAULT 'pending',
+    executed_at     TEXT,
+    result          TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_mc_app_steps_app   ON mc_app_migration_steps(app_id);
+CREATE INDEX IF NOT EXISTS idx_mc_app_steps_phase ON mc_app_migration_steps(phase);
+"""
+
+
 # ── Network Device Migration Schema ─────────────────────────────────────────
 
 NETWORK_MIGRATION_SCHEMA = """
@@ -955,6 +1056,11 @@ for _prov in _ONPREM_PROVIDERS:
         ))
 
 
+def _migrate_app_tables(conn):
+    """Idempotently add application migration tables to existing DBs."""
+    conn.executescript(APP_MIGRATION_SCHEMA)
+
+
 def _seed_cloud_instances(conn):
     """Seed mc_cloud_instances with ~150 pre-built rows (air-gap baseline).
 
@@ -1510,6 +1616,7 @@ def init_db():
         _migrate_server_tables(conn)
         _migrate_wave_dep_tables(conn)
         _migrate_gap_fill_tables(conn)
+        _migrate_app_tables(conn)
         _seed_cloud_instances(conn)
 
         # Seed templates
