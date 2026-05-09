@@ -208,6 +208,26 @@
 .session-card-host { font-size: 14px; font-weight: 700; }
 .session-card-meta { font-size: 12px; color: #7a8cb0; margin-top: 4px; }
 .session-card-score { font-size: 22px; font-weight: 700; color: #2980b9; text-align: center; }
+
+/* ── Guidance callout ─────────────────────────────────────────── */
+.guidance-panel { background: #111f35; border: 1px solid #1e4a7e; border-radius: 8px; margin-top: 20px; overflow: hidden; }
+.guidance-toggle { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; cursor: pointer; user-select: none; }
+.guidance-toggle:hover { background: #162d4a; }
+.guidance-title { font-size: 12px; font-weight: 700; color: #4a9ade; text-transform: uppercase; letter-spacing: 0.5px; }
+.guidance-chevron { font-size: 12px; color: #4a6080; transition: transform 0.2s; }
+.guidance-panel.open .guidance-chevron { transform: rotate(180deg); }
+.guidance-body { display: none; padding: 0 14px 14px; }
+.guidance-panel.open .guidance-body { display: block; }
+.challenge-card { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; }
+.challenge-card:last-child { margin-bottom: 0; }
+.challenge-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.challenge-card-title { font-size: 12px; font-weight: 600; color: #eaeaea; }
+.challenge-card-desc { font-size: 11px; color: #7a8cb0; margin-bottom: 4px; }
+.challenge-card-source { font-size: 10px; color: #4a6080; font-style: italic; }
+.badge-critical { background: #3d1515; color: #e74c3c; }
+.badge-high { background: #3d2200; color: #e67e22; }
+.badge-medium { background: #3d3200; color: #f1c40f; }
+.badge-low { background: #2a2a2a; color: #7a8cb0; }
 </style>
 {% endblock %}
 
@@ -846,6 +866,15 @@
       </div>
     </div>
 
+    <!-- ── Guidance callout ──────────────────────────────────────── -->
+    <div id="guidance-panel" class="guidance-panel" style="display:none">
+      <div class="guidance-toggle" onclick="this.closest('.guidance-panel').classList.toggle('open')">
+        <span class="guidance-title">Research Intelligence — Common Issues at This Step</span>
+        <span class="guidance-chevron">▼</span>
+      </div>
+      <div class="guidance-body" id="guidance-body"></div>
+    </div>
+
   </main>
 </div>
 {% endif %}
@@ -857,6 +886,7 @@
 const STATE = {
   sid: {{ ('"' + sid + '"') | safe if sid else 'null' }},
   step: 1,
+  migrationType: {{ ('"' + srv_session.migration_type + '"') | safe if (srv_session and srv_session.migration_type) else 'null' }},
   catalogItems: [],
   selectedInstanceId: null,
   cutoverSteps: [],
@@ -891,6 +921,48 @@ function switchStep(n) {
   if (n === 6) loadMaps();
   if (n === 7) loadCutoverSteps();
   if (n === 8) { loadTestCases(); refreshReadiness(); }
+  loadGuidance(n);
+}
+
+// ── Guidance callout ─────────────────────────────────────────────────
+async function loadGuidance(step) {
+  const panel = document.getElementById('guidance-panel');
+  const body  = document.getElementById('guidance-body');
+  if (!panel || !body) return;
+
+  const mtype = STATE.migrationType ||
+    document.querySelector('input[name=migration_type]:checked')?.value || '';
+  const qs = `step=${step}${mtype ? '&type=' + encodeURIComponent(mtype) : ''}`;
+
+  let guidance = [];
+  try {
+    const r = await api(`/migration-canvas/server-migration/guidance?${qs}`);
+    guidance = Array.isArray(r) ? r : (Array.isArray(r.guidance) ? r.guidance : []);
+  } catch (_) { /* network error — hide panel */ }
+
+  if (!guidance.length) {
+    panel.style.display = 'none';
+    return;
+  }
+
+  const SEV_CLASS = { critical: 'critical', high: 'high', medium: 'medium', low: 'low' };
+  body.innerHTML = guidance.slice(0, 3).map(g => {
+    const sev = (g.severity || 'low').toLowerCase();
+    const cls = SEV_CLASS[sev] || 'low';
+    const desc = (g.description || g.body || '').slice(0, 120);
+    const title = g.title || g.challenge || '';
+    return `<div class="challenge-card">
+      <div class="challenge-card-header">
+        <span class="badge badge-${cls}">${sev}</span>
+        <span class="challenge-card-title">${title}</span>
+      </div>
+      <div class="challenge-card-desc">${desc}</div>
+      <div class="challenge-card-source">Source: Research Engine — Application &amp; Cloud Migration Dossier</div>
+    </div>`;
+  }).join('');
+
+  panel.style.display = '';
+  panel.classList.remove('open'); // collapsed by default
 }
 
 function markStepDone(n) {
@@ -938,6 +1010,7 @@ async function step1Next() {
     classification: document.getElementById('s1-classification').value,
   };
 
+  STATE.migrationType = mtype;
   if (STATE.sid) {
     await api(`/api/server-migration/${STATE.sid}`, 'PATCH', body);
     toast('Session updated');
