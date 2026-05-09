@@ -8,25 +8,25 @@
 
 {% block content %}
 <div class="page-header">
-    <h1>Chat</h1>
-    <p class="text-muted">Multi-stream agent chat with requirements intake, COA generation, and build pipeline.</p>
+    <h1>Multi-Stream Chat</h1>
+    <p class="text-muted">Parallel agent conversations with requirements intake, COA generation, and build pipeline — up to 5 concurrent contexts.</p>
 </div>
 
 <!-- Stats bar -->
 <div class="stat-grid" id="chat-top-stats">
-    <div class="stat-card">
+    <div class="stat-card" data-stat="active">
         <div class="stat-value" id="stat-active">0</div>
         <div class="stat-label">Active Chats</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" data-stat="processing">
         <div class="stat-value" id="stat-processing">0</div>
         <div class="stat-label">Processing</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" data-stat="queued">
         <div class="stat-value" id="stat-queued">0</div>
         <div class="stat-label">Queued Messages</div>
     </div>
-    <div class="stat-card">
+    <div class="stat-card" data-stat="total">
         <div class="stat-value" id="stat-total">0</div>
         <div class="stat-label">Total Contexts</div>
     </div>
