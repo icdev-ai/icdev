@@ -364,3 +364,14 @@
 | Riverbed Netim Adapter | tools\network\adapters\riverbed_netim_adapter.py | Auto-registered: adapters/riverbed_netim_adapter.py | --json | JSON |
 | Splunk Adapter | tools\network\adapters\splunk_adapter.py | Auto-registered: adapters/splunk_adapter.py | --json | JSON |
 | Splunk Connector | tools\databridge\connectors\splunk_connector.py | Auto-registered: connectors/splunk_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Idc Cloud Drift | tools\genesis\reflexes\idc_cloud_drift.py | Auto-registered: reflexes/idc_cloud_drift.py | --json | JSON |
+| Mdc Cutover Countdown | tools\genesis\reflexes\mdc_cutover_countdown.py | Auto-registered: reflexes/mdc_cutover_countdown.py | --json | JSON |
+| Ndc Topology Drift | tools\genesis\reflexes\ndc_topology_drift.py | Auto-registered: reflexes/ndc_topology_drift.py | --json | JSON |
+| Pdc Pipeline Stale | tools\genesis\reflexes\pdc_pipeline_stale.py | Auto-registered: reflexes/pdc_pipeline_stale.py | --json | JSON |
+| Qdc Gate Breach | tools\genesis\reflexes\qdc_gate_breach.py | Auto-registered: reflexes/qdc_gate_breach.py | --json | JSON |
+| Sdc Control Expiry | tools\genesis\reflexes\sdc_control_expiry.py | Auto-registered: reflexes/sdc_control_expiry.py | --json | JSON |
