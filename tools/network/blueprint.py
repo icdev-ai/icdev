@@ -8587,7 +8587,8 @@ Output ONLY the JSON object. No other text."""
     _AI_MIGRATION_PLAN_PROMPT = """You are a network migration planner. You work with any vendor \
 (Cisco, Juniper, Arista, Palo Alto, Fortinet, HPE, Brocade, etc.), any device type \
 (routers, switches, firewalls, load balancers, wireless controllers, SD-WAN), any ISP or \
-carrier, and any partner network (government, commercial, DISA, NIPR, SIPR, or private).
+carrier, any CSP (AWS, Azure, GCP, OCI, IBM Cloud, Cloudflare, Akamai, etc.), and any partner \
+network (government, commercial, DISA, NIPR, SIPR, or private).
 Given a plain-English description of a migration, decompose it into an ordered list of phases \
 that are specific to the described devices and connections — do NOT assume any vendor, protocol, \
 or peer unless the description explicitly names them.
