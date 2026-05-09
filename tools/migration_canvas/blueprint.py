@@ -3087,7 +3087,8 @@ def create_migration_blueprint():
     @mdc_login_required
     def app_inventory_import_csv():
         """Bulk import apps from CSV body or JSON list."""
-        import csv, io
+        import csv
+        import io
         data = request.get_json(silent=True)
         if data and isinstance(data, list):
             rows_data = data
