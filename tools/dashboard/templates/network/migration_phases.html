@@ -13,13 +13,13 @@
 
 /* ── Phase Navigator ──────────────────────────────────────────────────────── */
 .mp-nav { width: 200px; min-width: 200px; background: #081525; border-right: 1px solid #1e3a6e; display: flex; flex-direction: column; overflow-y: auto; }
-.mp-nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #4a6080; padding: 12px 14px 6px; }
-.mp-nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; color: #7a8cb0; font-size: 12px; border-left: 3px solid transparent; transition: all 0.15s; }
+.mp-nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #8099b8; padding: 12px 14px 6px; }
+.mp-nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; color: #b0c4dc; font-size: 12px; border-left: 3px solid transparent; transition: all 0.15s; }
 .mp-nav-item:hover { color: #eaeaea; background: #111f35; }
 .mp-nav-item.active { color: #27ae60; border-left-color: #27ae60; background: #0f1e30; }
 .mp-nav-item.current { border-left-color: #2980b9; }
 .mp-nav-item.final { border-left-color: #8e44ad; }
-.mp-nav-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #1e3a6e; color: #7a8cb0; margin-left: auto; }
+.mp-nav-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #2a4a8a; color: #c0d4f0; margin-left: auto; }
 .mp-nav-item.active .mp-nav-badge { background: #1a5e2d; color: #27ae60; }
 .mp-nav-sep { height: 1px; background: #1e3a6e; margin: 6px 0; }
 
@@ -36,7 +36,7 @@
 
 /* ── Export Toolbar ───────────────────────────────────────────────────────── */
 .export-toolbar { display: flex; gap: 6px; }
-.export-btn { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 4px; border: 1px solid #2d4a7a; background: #111f35; color: #7a8cb0; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
+.export-btn { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 4px; border: 1px solid #2d4a7a; background: #111f35; color: #b0c4dc; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
 .export-btn:hover { background: #1e3a6e; color: #eaeaea; border-color: #4a6ea0; }
 .export-btn.pdf { border-color: #6e2d2d; color: #e07070; }
 .export-btn.pdf:hover { background: #3d1515; color: #ef9090; }
@@ -52,9 +52,9 @@
 
 /* ── Info Boxes Panel ─────────────────────────────────────────────────────── */
 .mp-infoboxes { width: 320px; min-width: 280px; overflow-y: auto; background: #081525; border-left: 1px solid #1e3a6e; display: flex; flex-direction: column; }
-.mp-infoboxes-header { padding: 10px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #4a6080; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+.mp-infoboxes-header { padding: 10px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8099b8; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 .mp-infoboxes-header span { flex: 1; }
-.infoboxes-toggle-all { font-size: 10px; color: #4a6080; cursor: pointer; padding: 2px 6px; background: #1e3a6e; border-radius: 3px; border: none; }
+.infoboxes-toggle-all { font-size: 10px; color: #8099b8; cursor: pointer; padding: 2px 6px; background: #1e3a6e; border-radius: 3px; border: none; }
 .infoboxes-toggle-all:hover { color: #eaeaea; }
 
 /* ── Single Info Box ──────────────────────────────────────────────────────── */
@@ -69,7 +69,7 @@
 .infobox.collapsed .infobox-body { display: none; }
 .infobox-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; border-top: 1px solid #0f1e30; font-size: 11px; }
 .infobox-row:first-child { border-top: none; }
-.infobox-label { color: #7a8cb0; }
+.infobox-label { color: #a0b8d0; }
 .infobox-value { font-weight: 600; color: #eaeaea; text-align: right; }
 .infobox-value.ok { color: #27ae60; }
 .infobox-value.warn { color: #f39c12; }
@@ -78,18 +78,19 @@
 
 /* ── Phase Status Badge ───────────────────────────────────────────────────── */
 .phase-status { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
-.phase-status.planned { background: #1e3a6e; color: #7a8cb0; }
+.phase-status.planned { background: #2a4a8a; color: #c0d4f0; }
+.phase-status.pending { background: #2a4a8a; color: #c0d4f0; }
 .phase-status.in_progress { background: #1a4a2e; color: #27ae60; }
 .phase-status.completed { background: #0f3a20; color: #1abc9c; }
 .phase-status.rolled_back { background: #3d1515; color: #e74c3c; }
 
 /* ── Legend bar ───────────────────────────────────────────────────────────── */
 .mp-legend { display: flex; gap: 12px; align-items: center; padding: 6px 14px; background: #0a1628; border-top: 1px solid #1e3a6e; flex-shrink: 0; }
-.legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #7a8cb0; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #a8bdd6; }
 .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 
 /* ── Loading / empty states ───────────────────────────────────────────────── */
-.mp-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: #4a6080; font-size: 13px; flex-direction: column; gap: 12px; }
+.mp-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: #8099b8; font-size: 13px; flex-direction: column; gap: 12px; }
 .mp-spinner { width: 28px; height: 28px; border: 3px solid #1e3a6e; border-top-color: #27ae60; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -99,7 +100,7 @@
 .consol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .consol-stat { text-align: center; }
 .consol-stat .cval { font-size: 18px; font-weight: 700; color: #27ae60; }
-.consol-stat .clbl { font-size: 10px; color: #4a6080; }
+.consol-stat .clbl { font-size: 10px; color: #8099b8; }
 
 /* ── Resize handle ────────────────────────────────────────────────────────── */
 .resize-handle { width: 5px; cursor: col-resize; background: #1e3a6e; flex-shrink: 0; transition: background 0.15s; }
@@ -152,8 +153,8 @@
 
       <!-- Consolidation Quick Stats -->
       <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #1e3a6e">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4a6080;margin-bottom:8px">Consolidation</div>
-        <div id="nav-consol-stats" style="color:#4a6080;font-size:11px">Loading…</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#8099b8;margin-bottom:8px">Consolidation</div>
+        <div id="nav-consol-stats" style="color:#a0b8d0;font-size:11px">Loading…</div>
       </div>
     </nav>
 
