@@ -2078,4 +2078,316 @@ def create_data_canvas_blueprint():
         result = data_chat_to_delta(message, data.get("graph_json"))
         return jsonify(result), (500 if "error" in result else 200)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA SCIENCE — EXPLORE (Profiler)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/explore")
+    @dc_login_required
+    def dc_explore():
+        conn = get_connection()
+        designs = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, classification FROM data_designs ORDER BY updated_at DESC LIMIT 50"
+            ).fetchall()
+        ]
+        profiles = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, design_id, table_count, classification, created_at "
+                "FROM dd_explore_profiles ORDER BY created_at DESC LIMIT 20"
+            ).fetchall()
+        ]
+        conn.close()
+        return render_template(
+            "data_canvas/explore.html",
+            designs=designs,
+            profiles=profiles,
+        )
+
+    @bp.route("/api/explore/profile", methods=["POST"])
+    @dc_login_required
+    def dc_api_explore_profile():
+        from tools.data_canvas.data_profiler import profile_database
+        data = request.get_json(silent=True) or {}
+        design_id = data.get("design_id", "")
+        tables = data.get("tables") or None
+        classification = data.get("classification", "CUI // SP-CTI")
+        conn_params = {
+            "db_type": data.get("db_type", "sqlite"),
+            "host": data.get("host", "localhost"),
+            "port": data.get("port", 5432),
+            "user": data.get("user", ""),
+            "password": data.get("password", ""),
+            "database": data.get("database", ""),
+            "path": data.get("path", ""),
+        }
+        result = profile_database(conn_params, classification, tables)
+        if "error" in result:
+            return jsonify(result), 400
+
+        # Persist profile
+        conn = get_connection()
+        sid = str(_uuid.uuid4())[:8]
+        pid = str(_uuid.uuid4())[:8]
+        conn.execute(
+            "INSERT INTO dd_explore_sessions (id, design_id, user, db_conn_json, classification, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (sid, design_id, session.get("user_id", ""), json.dumps({k: v for k, v in conn_params.items() if k != "password"}), classification, now_isoformat()),
+        )
+        conn.execute(
+            "INSERT INTO dd_explore_profiles (id, design_id, session_id, db_conn_json, profile_json, table_count, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (pid, design_id, sid, json.dumps({k: v for k, v in conn_params.items() if k != "password"}), json.dumps(result), result.get("table_count", 0), classification, now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        _audit(design_id, session.get("user_id", ""), "explore_profile", f"tables={result.get('table_count',0)}", classification)
+        return jsonify({"profile_id": pid, **result}), 200
+
+    @bp.route("/api/explore/profiles", methods=["GET"])
+    @dc_login_required
+    def dc_api_explore_list():
+        design_id = request.args.get("design_id")
+        conn = get_connection()
+        if design_id:
+            rows = conn.execute(
+                "SELECT id, design_id, table_count, classification, created_at FROM dd_explore_profiles WHERE design_id=? ORDER BY created_at DESC LIMIT 50",
+                (design_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, design_id, table_count, classification, created_at FROM dd_explore_profiles ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows]), 200
+
+    @bp.route("/api/explore/sessions", methods=["GET"])
+    @dc_login_required
+    def dc_api_explore_sessions():
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, design_id, user, status, classification, created_at FROM dd_explore_sessions ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows]), 200
+
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA SCIENCE — QUERY SANDBOX
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/query")
+    @dc_login_required
+    def dc_query():
+        conn = get_connection()
+        designs = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, classification FROM data_designs ORDER BY updated_at DESC LIMIT 50"
+            ).fetchall()
+        ]
+        history = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at "
+                "FROM dd_query_history ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()
+        ]
+        conn.close()
+        return render_template(
+            "data_canvas/query.html",
+            designs=designs,
+            history=history,
+        )
+
+    @bp.route("/api/query/execute", methods=["POST"])
+    @dc_login_required
+    def dc_api_query_execute():
+        from tools.data_canvas.query_sandbox import execute_query
+        data = request.get_json(silent=True) or {}
+        sql_text = (data.get("sql") or "").strip()
+        design_id = data.get("design_id", "")
+        classification = data.get("classification", "CUI // SP-CTI")
+        conn_params = {
+            "db_type": data.get("db_type", "sqlite"),
+            "host": data.get("host", "localhost"),
+            "port": data.get("port", 5432),
+            "user": data.get("user", ""),
+            "password": data.get("password", ""),
+            "database": data.get("database", ""),
+            "path": data.get("path", ""),
+        }
+        result = execute_query(sql_text, conn_params, classification)
+        if "error" in result:
+            # Persist failed query to history (row_count=0)
+            conn = get_connection()
+            conn.execute(
+                "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (str(_uuid.uuid4())[:8], design_id, session.get("user_id", ""), sql_text[:2000], "{}", 0, result.get("exec_ms", 0), classification, now_isoformat()),
+            )
+            conn.commit()
+            conn.close()
+            return jsonify(result), 400
+
+        # Persist to history
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO dd_query_history (id, design_id, user, sql_text, db_conn_json, row_count, exec_ms, classification, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(_uuid.uuid4())[:8], design_id, session.get("user_id", ""), sql_text[:2000], json.dumps({k: v for k, v in conn_params.items() if k != "password"}), result.get("row_count", 0), result.get("exec_ms", 0), classification, now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        _audit(design_id, session.get("user_id", ""), "query_execute", f"rows={result.get('row_count',0)}", classification)
+        return jsonify(result), 200
+
+    @bp.route("/api/query/history", methods=["GET"])
+    @dc_login_required
+    def dc_api_query_history():
+        design_id = request.args.get("design_id")
+        conn = get_connection()
+        if design_id:
+            rows = conn.execute(
+                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history WHERE design_id=? ORDER BY created_at DESC LIMIT 50",
+                (design_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, design_id, user, sql_text, row_count, exec_ms, classification, created_at FROM dd_query_history ORDER BY created_at DESC LIMIT 50"
+            ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows]), 200
+
+    # ══════════════════════════════════════════════════════════════════════
+    # DATA SCIENCE — QUALITY RULES
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/quality")
+    @dc_login_required
+    def dc_quality():
+        conn = get_connection()
+        designs = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT id, name, classification FROM data_designs ORDER BY updated_at DESC LIMIT 50"
+            ).fetchall()
+        ]
+        rules = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT * FROM dd_quality_rules ORDER BY created_at DESC LIMIT 200"
+            ).fetchall()
+        ]
+        runs = [
+            row_to_dict(r)
+            for r in conn.execute(
+                "SELECT r.id, r.rule_id, r.passed, r.actual_value, r.threshold, r.detail, r.classification, r.created_at, q.name AS rule_name "
+                "FROM dd_quality_runs r LEFT JOIN dd_quality_rules q ON q.id=r.rule_id "
+                "ORDER BY r.created_at DESC LIMIT 100"
+            ).fetchall()
+        ]
+        conn.close()
+        from tools.data_canvas.quality_engine import quality_score
+        score = quality_score([{"result": {"passed": r["passed"]}} for r in runs]) if runs else None
+        return render_template(
+            "data_canvas/quality.html",
+            designs=designs,
+            rules=rules,
+            runs=runs,
+            quality_score=score,
+        )
+
+    @bp.route("/api/quality/rules", methods=["GET"])
+    @dc_login_required
+    def dc_api_quality_rules_list():
+        design_id = request.args.get("design_id")
+        conn = get_connection()
+        if design_id:
+            rows = conn.execute("SELECT * FROM dd_quality_rules WHERE design_id=? ORDER BY created_at DESC", (design_id,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM dd_quality_rules ORDER BY created_at DESC LIMIT 200").fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows]), 200
+
+    @bp.route("/api/quality/rules", methods=["POST"])
+    @dc_login_required
+    def dc_api_quality_rules_create():
+        from tools.data_canvas.quality_engine import validate_rule
+        data = request.get_json(silent=True) or {}
+        v = validate_rule(data)
+        if not v["valid"]:
+            return jsonify({"error": v["error"]}), 400
+        rule_id = str(_uuid.uuid4())[:12]
+        conn = get_connection()
+        conn.execute(
+            """INSERT INTO dd_quality_rules
+               (id, design_id, name, table_name, column_name, check_type, threshold, params_json, classification, enabled, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)""",
+            (
+                rule_id,
+                data.get("design_id", ""),
+                data.get("name", f"{data.get('check_type','rule')}-{data.get('table_name','')}"),
+                data.get("table_name", ""),
+                data.get("column_name", ""),
+                data.get("check_type", ""),
+                float(data.get("threshold", 90)),
+                json.dumps(data.get("params", {})),
+                data.get("classification", "CUI // SP-CTI"),
+                now_isoformat(), now_isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"id": rule_id, "status": "created"}), 201
+
+    @bp.route("/api/quality/rules/<rule_id>", methods=["DELETE"])
+    @dc_login_required
+    def dc_api_quality_rules_delete(rule_id):
+        conn = get_connection()
+        conn.execute("DELETE FROM dd_quality_rules WHERE id=?", (rule_id,))
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "deleted"}), 200
+
+    @bp.route("/api/quality/run", methods=["POST"])
+    @dc_login_required
+    def dc_api_quality_run():
+        from tools.data_canvas.quality_engine import run_all_rules, quality_score
+        data = request.get_json(silent=True) or {}
+        design_id = data.get("design_id", "")
+        conn_params = {
+            "db_type": data.get("db_type", "sqlite"),
+            "host": data.get("host", "localhost"),
+            "port": data.get("port", 5432),
+            "user": data.get("user", ""),
+            "password": data.get("password", ""),
+            "database": data.get("database", ""),
+            "path": data.get("path", ""),
+        }
+        conn = get_connection()
+        results = run_all_rules(design_id, conn_params, conn)
+        score = quality_score(results)
+        conn.close()
+        _audit(design_id, session.get("user_id", ""), "quality_run", f"rules={len(results)} score={score}", data.get("classification", "CUI // SP-CTI"))
+        return jsonify({"rules_run": len(results), "quality_score": score, "results": results}), 200
+
+    @bp.route("/api/quality/runs", methods=["GET"])
+    @dc_login_required
+    def dc_api_quality_runs_list():
+        design_id = request.args.get("design_id")
+        conn = get_connection()
+        if design_id:
+            rows = conn.execute(
+                "SELECT r.*, q.name AS rule_name, q.table_name, q.column_name, q.check_type "
+                "FROM dd_quality_runs r LEFT JOIN dd_quality_rules q ON q.id=r.rule_id "
+                "WHERE q.design_id=? ORDER BY r.created_at DESC LIMIT 100",
+                (design_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT r.*, q.name AS rule_name, q.table_name, q.column_name, q.check_type "
+                "FROM dd_quality_runs r LEFT JOIN dd_quality_rules q ON q.id=r.rule_id "
+                "ORDER BY r.created_at DESC LIMIT 100"
+            ).fetchall()
+        conn.close()
+        return jsonify([row_to_dict(r) for r in rows]), 200
+
     return bp
