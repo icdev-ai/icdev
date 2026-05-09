@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI
 """Tests for tools/observability_canvas/exporters/splunk.py
 

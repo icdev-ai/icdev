@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# CUI // SP-CTI
+from __future__ import annotations
 """ICDEV™ SaaS — Authentication & Authorization Middleware.
 CUI // SP-CTI
 
@@ -228,6 +230,7 @@ def register_auth_middleware(app):
         g.user_id = auth_info["user_id"]
         g.user_role = auth_info["role"]
         g.auth_info = auth_info
+        g.tenant_name = auth_info.get("tenant_name") or auth_info.get("tenant_slug") or "System"
 
         # Check RBAC
         from tools.saas.auth.rbac import require_permission
@@ -283,3 +286,26 @@ def register_auth_middleware(app):
         # CUI marking header
         response.headers["X-Classification"] = os.environ.get("CLASSIFICATION", "CUI")
         return response
+
+
+def get_current_tenant_id() -> str | None:
+    """Return the tenant_id for the current Flask request, or None for unauthenticated/system requests.
+
+    All application blueprints should import only this function — no direct
+    ``flask.g`` access in app code — so the source of truth is centralised here.
+    """
+    try:
+        from flask import g
+        return getattr(g, "tenant_id", None)
+    except RuntimeError:
+        # Called outside of a Flask request context (e.g. CLI scripts, tests)
+        return None
+
+
+def get_current_tenant_name() -> str:
+    """Return the human-readable tenant name for the current request, defaulting to 'System'."""
+    try:
+        from flask import g
+        return getattr(g, "tenant_name", None) or "System"
+    except RuntimeError:
+        return "System"

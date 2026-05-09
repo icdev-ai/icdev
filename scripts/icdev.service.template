@@ -1,0 +1,51 @@
+# CUI // SP-CTI
+# ICDEV™ systemd service unit template for Linux bare-metal deployment.
+#
+# Installation:
+#   1. Copy to ~/.config/systemd/user/icdev.service (user-level) or
+#      /etc/systemd/system/icdev.service (system-level, requires root).
+#   2. Replace %h with your home directory if using user-level systemd.
+#   3. systemctl --user daemon-reload
+#   4. systemctl --user enable --now icdev
+#
+# Or use the installer helper:
+#   python tools/filesync/service_manager.py --install --platform linux
+
+[Unit]
+Description=ICDEV™ — Intelligent Certified Development Services
+Documentation=https://github.com/your-org/icdev
+After=network.target
+# If Ollama is managed by systemd on this machine, uncomment:
+# After=ollama.service
+# Wants=ollama.service
+
+[Service]
+Type=simple
+# Change to the user that owns the ICDEV™ installation
+User=icdev
+WorkingDirectory=%h/icdev
+ExecStart=%h/icdev/scripts/start-production.sh
+Restart=on-failure
+RestartSec=30s
+# Graceful shutdown timeout (SIGTERM then SIGKILL)
+TimeoutStopSec=60
+
+# Environment — use EnvironmentFile to keep secrets out of the unit file
+EnvironmentFile=%h/icdev/.env
+Environment=PYTHONIOENCODING=utf-8
+Environment=PYTHONUNBUFFERED=1
+Environment=ICDEV_GENESIS_ENABLED=true
+
+# Security hardening (optional — uncomment for stricter sandboxing)
+# NoNewPrivileges=yes
+# PrivateTmp=yes
+# ReadOnlyPaths=/usr /etc
+# ReadWritePaths=%h/icdev/data %h/icdev/.tmp
+
+# Stdout/stderr go to journald (use: journalctl -u icdev -f)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=icdev
+
+[Install]
+WantedBy=default.target

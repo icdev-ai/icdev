@@ -7,7 +7,8 @@
 # To remove the scheduled task:
 #   Unregister-ScheduledTask -TaskName "ICDEV-Dashboard-Autostart" -Confirm:$false
 
-$AutostartScript = "C:\Users\schuo\Downloads\ICDev\tools\ops\autostart_windows.ps1"
+$ProjectDir      = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+$AutostartScript = Join-Path $ProjectDir "tools\ops\autostart_windows.ps1"
 
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `

@@ -1,3 +1,4 @@
+from __future__ import annotations
 # CUI // SP-CTI — ICDEV Pipeline Design Canvas Deployment Generator
 # Classification: CUI — Controlled Unclassified Information
 """

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 # CUI // SP-CTI
 """PROFILE.md Generator — human-readable narrative from resolved dev profiles.
 

@@ -37,6 +37,7 @@ class TTXEngine:
         facilitator_name: str,
         session_mode: str | None = None,
         config: dict | None = None,
+        tenant_id: str | None = None,
     ) -> dict[str, Any]:
         scenario = load_scenario(scenario_slug)
         mode = session_mode or scenario.get("session_mode", "live")
@@ -49,6 +50,7 @@ class TTXEngine:
             duration_minutes=duration,
             max_teams=max_teams,
             config={"scenario": scenario, **(config or {})},
+            tenant_id=tenant_id,
         )
         session_id = session["session_id"]
         seed_injects(session_id, scenario)

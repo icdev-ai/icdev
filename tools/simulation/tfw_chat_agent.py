@@ -45,6 +45,9 @@ logger = logging.getLogger("icdev.tfw_chat_agent")
 # ---------------------------------------------------------------------------
 
 CANVAS_SLASH_COMMANDS: dict[str, list[str]] = {
+    "cam": [
+        "/coa", "/deprecated", "/refactor", "/status", "/analyze", "/components",
+    ],
     "ndc": [
         "/explain", "/troubleshoot", "/refine", "/audit",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
