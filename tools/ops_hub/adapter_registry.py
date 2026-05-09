@@ -33,6 +33,9 @@ _ADAPTER_MAP: dict[str, str] = {
     "cloudwatch":            "tools.ops_hub.adapters.cloudwatch_adapter.CloudWatchAdapter",
 }
 
+# Explicit list of the 6 OSS adapters for targeted probing
+OSS_ADAPTERS: list[str] = ["mlflow", "evidently", "langfuse", "prometheus", "onnx", "dvc"]
+
 _loaded: dict[str, "OpsAdapter"] = {}
 
 
@@ -151,6 +154,48 @@ def _persist_health(name: str, health: dict, now: str) -> None:
         conn.close()
     except Exception:
         pass  # Never crash the probe loop due to DB errors
+
+
+def probe_oss(persist: bool = True) -> list[dict]:
+    """Health-probe the 6 OSS adapters only (mlflow, evidently, langfuse, prometheus, onnx, dvc)."""
+    results = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    for name in OSS_ADAPTERS:
+        adapter = get_adapter(name)
+        if adapter is None:
+            health_dict = {
+                "available": False,
+                "adapter_name": name,
+                "adapter_type": "oss",
+                "domain": "unknown",
+                "version": "",
+                "latency_ms": 0,
+                "error": "adapter class failed to load",
+                "details": {},
+            }
+        else:
+            try:
+                health = adapter.health_check()
+                health_dict = health.to_dict()
+            except Exception as exc:
+                health_dict = {
+                    "available": False,
+                    "adapter_name": name,
+                    "adapter_type": "oss",
+                    "domain": getattr(adapter, "DOMAIN", "unknown"),
+                    "version": "",
+                    "latency_ms": 0,
+                    "error": str(exc),
+                    "details": {},
+                }
+
+        results.append(health_dict)
+
+        if persist:
+            _persist_health(name, health_dict, now)
+
+    return results
 
 
 def available_adapters() -> list[str]:

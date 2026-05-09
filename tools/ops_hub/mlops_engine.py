@@ -171,7 +171,19 @@ def register_model(name: str, version: str, run_id: str = "", artifact_path: str
     except Exception:
         pass
 
-    return {"id": mid, "name": name, "version": version, "stage": "none"}
+    # Inspect ONNX metadata if the artifact is a .onnx file
+    onnx_meta: dict = {}
+    if artifact_path and artifact_path.endswith(".onnx"):
+        try:
+            from tools.ops_hub.adapter_registry import get_adapter as _ga
+            onnx = _ga("onnx")
+            if onnx and onnx.available():
+                onnx_meta = onnx._inspect_model(artifact_path)
+        except Exception:
+            pass
+
+    return {"id": mid, "name": name, "version": version, "stage": "none",
+            **({"onnx_meta": onnx_meta} if onnx_meta else {})}
 
 
 def transition_model_stage(name: str, version: str, stage: str) -> dict:
@@ -255,6 +267,21 @@ def get_data_drift_summary(dataset_name: str = "", limit: int = 20) -> list[dict
         conn.close()
 
 
+# ── ONNX Model Inspection ─────────────────────────────────────────────────────
+
+def list_onnx_models() -> list[dict]:
+    """List ONNX model files from the configured model directory via the ONNX adapter."""
+    try:
+        from tools.ops_hub.adapter_registry import get_adapter
+        onnx = get_adapter("onnx")
+        if onnx and onnx.available():
+            resources = onnx.list_resources("onnx_models")
+            return [r.to_dict() for r in resources]
+    except Exception:
+        pass
+    return []
+
+
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 def get_mlops_summary() -> dict[str, Any]:
@@ -264,6 +291,7 @@ def get_mlops_summary() -> dict[str, Any]:
     models_prod = list_models(stage="production", limit=5)
     drift = get_data_drift_summary(limit=3)
     failed_drift = [d for d in drift if not d.get("passed", True)]
+    onnx_models = list_onnx_models()
 
     status = "healthy"
     if failed_drift:
@@ -277,7 +305,9 @@ def get_mlops_summary() -> dict[str, Any]:
         "running_runs": len(runs),
         "models_in_production": len(models_prod),
         "drift_failures": len(failed_drift),
+        "onnx_model_count": len(onnx_models),
         "recent_experiments": experiments[:3],
         "recent_runs": runs[:3],
+        "onnx_models": onnx_models[:5],
         "domain": "mlops",
     }
