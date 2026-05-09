@@ -1,0 +1,11 @@
+{
+  "id": "118",
+  "name": "strategos_core_tables",
+  "description": "STRATEGOS core tables: sg_theaters, sg_entities, sg_conflict_events, sg_tracks, sg_economic_signals, sg_war_readiness_events, sg_ghost_tracks, sg_coa_decisions.",
+  "created_at": "2026-05-09",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Safe to re-run (CREATE TABLE IF NOT EXISTS). sg_war_readiness_events is append-only (NIST AU). All geometry stored as lat/lon REAL columns for SpatiaLite compatibility."
+}
