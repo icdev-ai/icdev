@@ -403,3 +403,10 @@
 | Sagemaker Adapter | tools\ops_hub\adapters\sagemaker_adapter.py | Auto-registered: adapters/sagemaker_adapter.py | --json | JSON |
 | Vertexai Adapter | tools\ops_hub\adapters\vertexai_adapter.py | Auto-registered: adapters/vertexai_adapter.py | --json | JSON |
 | Ohc | tools\iqe\adapters\ohc.py | Auto-registered: adapters/ohc.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Modernization Bridge | tools\aiml_canvas\modernization_bridge.py | Auto-registered: aiml_canvas/modernization_bridge.py | --json | JSON |
+| Seed Ohc Kanban | tools\kanban\seed_ohc_kanban.py | Auto-registered: kanban/seed_ohc_kanban.py | --json | JSON |

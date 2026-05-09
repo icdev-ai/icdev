@@ -6378,4 +6378,110 @@ RESOURCE_REGISTRY = {
         "handler": "stats_resource_handler",
         "mime_type": "application/json",
     },
+    # ── OHC — Ops Hub Canvas (Phase 71) ──────────────────────────────────────
+    "ohc_overview": {
+        "category": "ohc",
+        "module": "tools.ops_hub.ops_aggregator",
+        "handler": "get_ops_overview",
+        "description": "Return cross-domain Ops Hub health overview: score (0-100), domain status cards, adapter grid, top alerts.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_llmops_summary": {
+        "category": "ohc",
+        "module": "tools.ops_hub.llmops_engine",
+        "handler": "get_llmops_summary",
+        "description": "LLMOps roll-up: gateway invocations, injection blocks, model health, drift events, cost anomalies.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_mlops_experiments": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "list_experiments",
+        "description": "List MLflow-tracked experiments with run counts and status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max number of experiments to return (default 20)"},
+            },
+        },
+    },
+    "ohc_model_registry": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "list_models",
+        "description": "List registered models from the OHC model registry with stage and version info.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stage": {"type": "string", "enum": ["none", "staging", "production", "archived"], "description": "Filter by model stage"},
+            },
+        },
+    },
+    "ohc_slos": {
+        "category": "ohc",
+        "module": "tools.ops_hub.aiops_engine",
+        "handler": "get_slo_dashboard",
+        "description": "Return SLO dashboard: SLO definitions, current values, burn rates, error budgets.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_incidents": {
+        "category": "ohc",
+        "module": "tools.ops_hub.aiops_engine",
+        "handler": "get_incidents",
+        "description": "Return open and recent incidents with severity, MTTR, and status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "Filter by status (open, investigating, resolved)"},
+            },
+        },
+    },
+    "ohc_topology": {
+        "category": "ohc",
+        "module": "tools.ops_hub.aiops_engine",
+        "handler": "get_topology",
+        "description": "Return agent topology graph: nodes, edges, SPOF analysis, tier breakdown.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_adapter_health": {
+        "category": "ohc",
+        "module": "tools.ops_hub.adapter_registry",
+        "handler": "probe_all",
+        "description": "Probe all 11 ops adapters (6 OSS + 5 CSP) and return health status. Persists results to ohc_adapter_status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "persist": {"type": "boolean", "description": "Write health results to DB (default true)"},
+            },
+        },
+    },
+    "ohc_run_experiment": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "create_run",
+        "description": "Create a new experiment run and return the run ID.",
+        "input_schema": {
+            "type": "object",
+            "required": ["experiment_id"],
+            "properties": {
+                "experiment_id": {"type": "string", "description": "ID of the parent experiment"},
+                "run_name": {"type": "string", "description": "Optional run name"},
+                "params": {"type": "object", "description": "Run hyperparameters as key-value pairs"},
+            },
+        },
+    },
+    "ohc_promote_model": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "transition_model_stage",
+        "description": "Promote a registered model to a new stage (staging → production → archived).",
+        "input_schema": {
+            "type": "object",
+            "required": ["model_id", "new_stage"],
+            "properties": {
+                "model_id": {"type": "string", "description": "Model registry ID"},
+                "new_stage": {"type": "string", "enum": ["staging", "production", "archived"], "description": "Target stage"},
+            },
+        },
+    },
 }
