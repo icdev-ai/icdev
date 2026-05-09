@@ -39,6 +39,15 @@
 | `sync_cloud_catalog` | tools/migration_canvas/server_migration.py | Check connectivity (tools.airgap + socket); if online fetch public AWS/Azure/GCP/OCI pricing APIs and upsert with source='api'; returns airgap status if offline | providers (list\|None), force (bool) | {status, providers_synced, rows_upserted, skipped_reason} |
 | Server Wizard Template | tools/dashboard/templates/migration_canvas/server_wizard.html | 8-step wizard at /migration-canvas/server-migration/ — migration type, inventory, performance, target selection, compat checks, NIC+storage map, cutover planner, ERB & test plan | (template) | HTML 8-step wizard |
 
+## Migration Canvas Extensions (MCE)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Compliance Gate | tools/migration_canvas/compliance_gate.py | Deterministic IL-level / target-environment compliance checks — NIST 800-53, FedRAMP, DISA STIG; no LLM; CLI: `--il-level`, `--target-env`, `--migration-type`, `--frameworks` | il_level, target_env, migration_type?, frameworks? | {proceed, status, findings, frameworks_applied} |
+| Inventory Scanner | tools/migration_canvas/inventory_scanner.py | Parses server/VM inventory from CSV, JSON, or Nmap XML and populates mc_srv_inventory + mc_inventory_imports; CLI: `--csv`/`--json`/`--nmap`, `--session-id`, `--dry-run` | file path, session_id | {inserted, skipped, import_id, dry_run} |
+| Wave Planner | tools/migration_canvas/wave_planner.py | Groups server migration sessions into sequenced waves based on readiness score; builds Sigma.js-compatible dependency graph; CLI: `--list`/`--graph`/`--auto-assign`/`--deps` | session_id | waves list / graph {nodes, edges} / assignments dict |
+| Dossier Advisor | tools/migration_canvas/dossier_advisor.py | Surfaces relevant research challenges from Research Engine DB per wizard step; maps step → conceptual category → DB category → top-k challenges by composite_score; CLI: `--step`, `--top-k` | wizard_step (1–7), migration_type?, top_k | list[{title, description, severity, category}] |
+
 ## Migration Intelligence Engine (MI)
 
 | Tool | File | Description | Input | Output |

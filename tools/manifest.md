@@ -728,3 +728,11 @@
 |------|------|-------------|-------|--------|
 | Code Lens | tools\analysis\code_lens.py | Auto-registered: analysis/code_lens.py | --json | JSON |
 | Anomaly Detector | tools\data_canvas\anomaly_detector.py | Auto-registered: data_canvas/anomaly_detector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Freshness Guardian | tools\data_canvas\freshness_guardian.py | Auto-registered: data_canvas/freshness_guardian.py | --json | JSON |
+| Pii Scanner | tools\data_canvas\pii_scanner.py | Auto-registered: data_canvas/pii_scanner.py | --json | JSON |
+| Inventory Scanner | tools\migration_canvas\inventory_scanner.py | Auto-registered: migration_canvas/inventory_scanner.py | --json | JSON |

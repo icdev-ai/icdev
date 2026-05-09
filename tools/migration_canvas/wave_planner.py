@@ -312,3 +312,43 @@ def build_graph(session_id: str) -> dict:
         })
 
     return {"nodes": nodes, "edges": edges}
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    import argparse
+    import json
+
+    ap = argparse.ArgumentParser(description="MCE Wave Planner — manage migration waves via CLI")
+    ap.add_argument("--session-id", required=True, help="Migration session ID")
+    action_grp = ap.add_mutually_exclusive_group(required=True)
+    action_grp.add_argument("--list", action="store_true", help="List waves for the session")
+    action_grp.add_argument("--graph", action="store_true", help="Output Sigma.js graph data")
+    action_grp.add_argument("--auto-assign", action="store_true", help="Auto-assign servers to waves")
+    action_grp.add_argument("--deps", action="store_true", help="List server dependencies")
+    ap.add_argument("--output-json", action="store_true", help="Emit JSON to stdout")
+    args = ap.parse_args()
+
+    if args.list:
+        result = get_waves(args.session_id)
+    elif args.graph:
+        result = build_graph(args.session_id)
+    elif args.auto_assign:
+        result = auto_assign_waves(args.session_id)
+    else:
+        result = get_dependencies(args.session_id)
+
+    if args.output_json:
+        print(json.dumps(result, indent=2))
+    else:
+        if isinstance(result, list):
+            print(f"[wave_planner] {len(result)} item(s) for session {args.session_id}")
+            for item in result[:10]:
+                print(f"  {item}")
+        else:
+            print(f"[wave_planner] {result}")
+
+
+if __name__ == "__main__":
+    main()

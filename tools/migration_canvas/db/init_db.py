@@ -679,6 +679,21 @@ CREATE TABLE IF NOT EXISTS mc_server_dependencies (
     created_at       TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mc_deps_session ON mc_server_dependencies(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_compliance_checks (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT,
+    design_id       TEXT,
+    il_level        TEXT NOT NULL,
+    target_env      TEXT NOT NULL,
+    migration_type  TEXT,
+    status          TEXT CHECK(status IN ('pass','warn','block')) DEFAULT 'pass',
+    findings_json   TEXT DEFAULT '[]',
+    frameworks_json TEXT DEFAULT '[]',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_cc_session ON mc_compliance_checks(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_cc_design  ON mc_compliance_checks(design_id);
 """
 
 

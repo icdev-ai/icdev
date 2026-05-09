@@ -126,3 +126,41 @@ def check_migration_compliance(
         "findings": findings,
         "frameworks_applied": list(dict.fromkeys(frameworks_applied)),
     }
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    import argparse
+    import json
+
+    ap = argparse.ArgumentParser(description="MCE Compliance Gate — check migration IL/environment compliance")
+    ap.add_argument("--il-level", default="IL4", help="Impact level: IL2, IL4, IL5, IL6 (default: IL4)")
+    ap.add_argument("--target-env", required=True, help="Target environment (govcloud, commercial, dod, ...)")
+    ap.add_argument("--migration-type", default=None, help="Migration type hint (p2v, p2c, v2c, ...)")
+    ap.add_argument("--frameworks", default=None, help="Comma-separated declared frameworks (e.g. fedramp,nist_800_53)")
+    ap.add_argument("--output-json", action="store_true", help="Emit JSON to stdout")
+    args = ap.parse_args()
+
+    fw_list = [f.strip() for f in args.frameworks.split(",")] if args.frameworks else None
+    result = check_migration_compliance(
+        il_level=args.il_level,
+        target_env=args.target_env,
+        migration_type=args.migration_type,
+        frameworks=fw_list,
+    )
+
+    if args.output_json:
+        print(json.dumps(result, indent=2))
+    else:
+        status_icon = {"pass": "✓", "warn": "⚠", "block": "✗"}.get(result["status"], "?")
+        print(f"[compliance_gate] {status_icon} {result['status'].upper()} — proceed={result['proceed']}")
+        for f in result["findings"]:
+            print(f"  [{f['severity'].upper():5s}] [{f['rule']}] {f['message']}")
+        if not result["findings"]:
+            print("  All compliance checks passed.")
+        print(f"  Frameworks: {', '.join(result['frameworks_applied'])}")
+
+
+if __name__ == "__main__":
+    main()
