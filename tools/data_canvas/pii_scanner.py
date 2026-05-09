@@ -192,6 +192,36 @@ def scan_profile(
     }
 
 
+def scan_result(
+    col_names: list[str],
+    rows: list[list[str]],
+    classification: str = "CUI // SP-CTI",
+) -> dict[str, Any]:
+    """Scan query result rows for PII exposure risk.
+
+    Samples up to 20 rows for pattern detection. Advisory only — never blocks.
+
+    Returns:
+        {warnings: [...], has_warnings: bool}
+        Each warning: {column, severity, description, pattern_matches}
+    """
+    warnings: list[dict] = []
+    sample_rows = rows[:20]
+
+    for idx, col_name in enumerate(col_names):
+        top_values = [row[idx] for row in sample_rows if idx < len(row)]
+        stats = {
+            "top_values": top_values,
+            "distinct_count": len(set(top_values)),
+            "row_count": len(rows),
+        }
+        finding = check_column(col_name, stats, classification)
+        if finding:
+            warnings.append(finding)
+
+    return {"warnings": warnings, "has_warnings": bool(warnings)}
+
+
 def save_pii_scan(result: dict, design_id: str | None = None) -> str:
     """Persist PII scan result to dd_pii_scans."""
     import uuid

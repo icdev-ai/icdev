@@ -15,6 +15,11 @@ from datetime import datetime, timezone
 from tools.data_canvas.constants import DS_QUERY_MAX_ROWS
 from tools.data_canvas.data_profiler import _open_connection
 
+try:
+    from tools.data_canvas.pii_scanner import scan_result as pii_scan
+except ImportError:
+    pii_scan = None
+
 # ── Query validation ──────────────────────────────────────────────────────────
 
 # Strip SQL comments and leading whitespace before checking
@@ -68,6 +73,8 @@ def execute_query(sql: str, conn_params: dict, classification: str = "CUI // SP-
     Rows are list-of-lists (values serialised to str for JSON safety).
     Never raises — returns error dict on failure.
     """
+    _empty_pii = {"warnings": [], "has_warnings": False}
+
     validation = validate_query(sql)
     if not validation["valid"]:
         return {
@@ -77,6 +84,7 @@ def execute_query(sql: str, conn_params: dict, classification: str = "CUI // SP-
             "row_count": 0,
             "exec_ms": 0,
             "classification": classification,
+            "pii_warnings": _empty_pii,
         }
 
     t0 = time.monotonic()
@@ -108,6 +116,11 @@ def execute_query(sql: str, conn_params: dict, classification: str = "CUI // SP-
 
         conn.close()
         exec_ms = int((time.monotonic() - t0) * 1000)
+        pii_warnings = (
+            pii_scan(col_names, rows, classification)
+            if pii_scan is not None
+            else _empty_pii
+        )
         return {
             "columns": col_names,
             "rows": rows,
@@ -116,6 +129,7 @@ def execute_query(sql: str, conn_params: dict, classification: str = "CUI // SP-
             "exec_ms": exec_ms,
             "classification": classification,
             "executed_at": datetime.now(timezone.utc).isoformat(),
+            "pii_warnings": pii_warnings,
         }
 
     except Exception as exc:
@@ -127,6 +141,7 @@ def execute_query(sql: str, conn_params: dict, classification: str = "CUI // SP-
             "row_count": 0,
             "exec_ms": exec_ms,
             "classification": classification,
+            "pii_warnings": _empty_pii,
         }
 
 
