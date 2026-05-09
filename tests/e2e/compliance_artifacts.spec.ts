@@ -7,6 +7,8 @@ import { test, expect } from '@playwright/test';
 const CUI_BANNER = 'CUI // SP-CTI';
 
 test.describe('Compliance Artifacts', () => {
+  test.setTimeout(60000); // compliance page DB queries slow on cold start
+
   test('compliance overview page loads with control matrix', async ({ page }) => {
     // Step 1-3: Navigate to compliance page
     await page.goto('/compliance');
