@@ -123,8 +123,8 @@ a:hover {
     border-bottom: 1px solid var(--border-color);
     padding: 0 16px;
     display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
+    align-items: flex-start;  /* allow rows of different height */
+    flex-wrap: wrap;           /* brand+controls on row 1, nav wraps to row 2 if needed */
     min-height: 42px;
     gap: 0;
     position: relative;
@@ -136,6 +136,8 @@ a:hover {
     color: var(--text-primary);
     margin-right: 16px;
     white-space: nowrap;
+    padding: 10px 0;           /* vertical centering within row */
+    flex-shrink: 0;
 }
 .navbar-brand:hover {
     text-decoration: none;
@@ -144,12 +146,13 @@ a:hover {
 .navbar-nav {
     list-style: none;
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;           /* items wrap to next line when they overflow */
     gap: 0;
     margin: 0;
     padding: 0;
     flex: 1;
     min-width: 0;
+    align-items: center;
 }
 .navbar-nav li a {
     display: block;
@@ -625,30 +628,22 @@ tbody tr:hover {
     color: var(--text-primary);
 }
 
-/* ── Nav collapse: kicks in at 1200px where items start to overlap ── */
-@media (max-width: 1200px) {
-    /* Show hamburger, hide the horizontal nav */
+/* ── Nav wraps naturally — base flex-wrap:wrap handles medium screens ── */
+/* No hamburger collapse until very small screens (≤600px) */
+
+/* ── Hamburger: only for very small screens ── */
+@media (max-width: 600px) {
     #nav-hamburger {
         display: inline-flex;
         align-items: center;
         justify-content: center;
     }
     .navbar {
-        flex-wrap: wrap;
-        align-items: center;
         padding: 6px 10px;
-        gap: 0;
     }
     .navbar-brand {
         flex: 1;
         min-width: 0;
-    }
-    /* User controls stay on row 1 — inline display:flex wins over CSS */
-    .navbar-right {
-        order: 2;
-        flex-shrink: 0;
-        gap: 5px !important;
-        flex-wrap: wrap;
     }
     /* Nav drawer: hidden by default, full-width row below brand+controls */
     .navbar-nav {
@@ -669,7 +664,7 @@ tbody tr:hover {
         width: 100%;
     }
     .nav-dropdown:hover .nav-dropdown-menu {
-        display: none; /* hover disabled — click/tap only */
+        display: none;
     }
     .nav-dropdown.open .nav-dropdown-menu {
         display: block !important;
