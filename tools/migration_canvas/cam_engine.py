@@ -232,5 +232,5 @@ def get_canvas_links(project: dict) -> dict:
     return {
         "ddc": f"/data/canvas/{project.get('ddc_design_id')}" if project.get("ddc_design_id") else None,
         "idc": f"/infra/canvas/{project.get('idc_design_id')}" if project.get("idc_design_id") else None,
-        "ndc": f"/network/topologies/{project.get('ndc_topology_id')}" if project.get("ndc_topology_id") else None,
+        "ndc": f"/network/canvas/{project.get('ndc_topology_id')}" if project.get("ndc_topology_id") else None,
     }

@@ -123,8 +123,8 @@ a:hover {
     border-bottom: 1px solid var(--border-color);
     padding: 0 16px;
     display: flex;
-    align-items: center;
-    flex-wrap: nowrap;
+    align-items: flex-start;  /* allow rows of different height */
+    flex-wrap: wrap;           /* brand+controls on row 1, nav wraps to row 2 if needed */
     min-height: 42px;
     gap: 0;
     position: relative;
@@ -136,6 +136,8 @@ a:hover {
     color: var(--text-primary);
     margin-right: 16px;
     white-space: nowrap;
+    padding: 10px 0;           /* vertical centering within row */
+    flex-shrink: 0;
 }
 .navbar-brand:hover {
     text-decoration: none;
@@ -144,12 +146,13 @@ a:hover {
 .navbar-nav {
     list-style: none;
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;           /* items wrap to next line when they overflow */
     gap: 0;
     margin: 0;
     padding: 0;
     flex: 1;
     min-width: 0;
+    align-items: center;
 }
 .navbar-nav li a {
     display: block;
@@ -607,7 +610,102 @@ tbody tr:hover {
     border: 1px solid var(--status-red);
 }
 
-/* --- Responsive --- */
+/* --- Hamburger toggle button (hidden on wide desktop) --- */
+#nav-hamburger {
+    display: none;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    padding: 4px 9px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    line-height: 1;
+    flex-shrink: 0;
+}
+#nav-hamburger:hover {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* ── Nav wraps naturally — base flex-wrap:wrap handles medium screens ── */
+/* No hamburger collapse until very small screens (≤600px) */
+
+/* ── Hamburger: only for very small screens ── */
+@media (max-width: 600px) {
+    #nav-hamburger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .navbar {
+        padding: 6px 10px;
+    }
+    .navbar-brand {
+        flex: 1;
+        min-width: 0;
+    }
+    /* Nav drawer: hidden by default, full-width row below brand+controls */
+    .navbar-nav {
+        order: 10;
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        border-top: 1px solid var(--border-color);
+        padding: 4px 0 8px;
+        margin-top: 4px;
+        gap: 0;
+    }
+    .navbar-nav.mobile-open {
+        display: flex !important;
+    }
+    /* Dropdowns: accordion instead of floating */
+    .nav-dropdown {
+        width: 100%;
+    }
+    .nav-dropdown:hover .nav-dropdown-menu {
+        display: none;
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: block !important;
+    }
+    .nav-dropdown-trigger {
+        display: block;
+        width: 100%;
+        padding: 8px 14px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+    .nav-dropdown-trigger:hover {
+        color: var(--text-primary);
+        background: rgba(255,255,255,0.04);
+    }
+    .nav-dropdown-menu {
+        position: static !important;
+        display: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding-left: 16px;
+        background: transparent;
+        max-height: none;
+        overflow: visible;
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: block !important;
+    }
+    .navbar-nav > li > a {
+        padding: 8px 14px;
+        font-size: 0.85rem;
+    }
+    .navbar-nav li a {
+        padding: 5px 14px;
+        font-size: 0.82rem;
+    }
+}
+
+/* --- Small screen layout adjustments --- */
 @media (max-width: 768px) {
     .main-content {
         padding: 16px;
@@ -621,12 +719,12 @@ tbody tr:hover {
     .info-grid {
         grid-template-columns: 1fr;
     }
-    .navbar {
-        padding: 0 8px;
+    /* Compact user controls row on very small screens */
+    .navbar-right {
+        font-size: 0.75rem;
     }
-    .navbar-nav li a {
-        padding: 6px 7px;
-        font-size: 0.72rem;
+    .user-badge-role {
+        display: none;
     }
 }
 
