@@ -1,4 +1,5 @@
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """ICDEV™ end-to-end test orchestrator.
 
 Drives the full ICDEV test gauntlet for one project: syntax → quality

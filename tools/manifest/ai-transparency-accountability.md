@@ -13,7 +13,7 @@
 | AI Reassessment Scheduler | tools/compliance/ai_reassessment_scheduler.py | Reassessment schedule manager (D316) | --create, --overdue, --json | Schedule records |
 | AI Transparency Audit | tools/compliance/ai_transparency_audit.py | Cross-framework transparency audit (D307-D315) | --project-id, --json, --human | Audit report |
 | Classification Resolver | tools/compliance/classification_resolver.py | Dynamic classification resolution per project | (library) | Classification level |
-| Compliance Exporter | tools/compliance/compliance_exporter.py | Multi-format compliance artifact export | --project-id, --format, --json | Exported artifacts |
+| Compliance Exporter [DEPRECATED] | tools/compliance/compliance_exporter.py | Multi-format compliance artifact export | --project-id, --format, --json | Exported artifacts |
 | Fairness Assessor | tools/compliance/fairness_assessor.py | AI fairness compliance assessment (D311) | --project-id, --gate, --json | Fairness assessment |
 | GAO AI Assessor | tools/compliance/gao_ai_assessor.py | GAO-21-519SP AI accountability assessment | --project-id, --json | Assessment results |
 | GAO Evidence Builder | tools/compliance/gao_evidence_builder.py | GAO evidence collection from ICDEV™ data (D313) | --project-id, --json | Evidence bundle |

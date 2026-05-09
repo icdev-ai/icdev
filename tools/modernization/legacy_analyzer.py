@@ -1,5 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """Legacy Code Static Analysis Engine for ICDEV™ DoD Modernization.
 
 Performs comprehensive static analysis of legacy applications written in Python,

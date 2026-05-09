@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """Generate a System Security Plan (SSP) from template and project data.
 Fills {{variables}} from project data in icdev.db, pulls control implementations
 from project_controls table, applies CUI markings, saves to project compliance

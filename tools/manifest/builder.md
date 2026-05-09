@@ -5,8 +5,8 @@
 ## Builder (TDD)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Code Generator | tools/builder/code_generator.py | Generate code from specifications (Python, Java, Go, Rust, C#, TypeScript) | --project, --spec, --language | Generated file paths |
-| Test Writer | tools/builder/test_writer.py | Generate BDD tests — Gherkin + language-specific step defs (6 languages) | --project, --requirement, --language | Feature file paths |
+| Code Generator [DEPRECATED] | tools/builder/code_generator.py | Generate code from specifications (Python, Java, Go, Rust, C#, TypeScript) | --project, --spec, --language | Generated file paths |
+| Test Writer [DEPRECATED] | tools/builder/test_writer.py | Generate BDD tests — Gherkin + language-specific step defs (6 languages) | --project, --requirement, --language | Feature file paths |
 | Scaffolder | tools/builder/scaffolder.py | Project scaffolding from templates (6 languages) | --project, --type | Directory tree |
 | Scaffolder Extended | tools/builder/scaffolder_extended.py | Java, Go, Rust, C#, TypeScript scaffold functions | (imported by scaffolder.py) | — |
 | Language Support | tools/builder/language_support.py | Unified language registry, detection, CUI headers, dep file finder | --detect, --list, --profile | Language profiles |

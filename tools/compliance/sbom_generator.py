@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """Generate CycloneDX Software Bill of Materials (SBOM).
 Detects project type, parses dependency files, generates CycloneDX 1.4 JSON
 format SBOM with CUI classification metadata, records in sbom_records table,
