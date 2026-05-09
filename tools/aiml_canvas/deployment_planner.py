@@ -90,6 +90,50 @@ def _select_quantization(model_vram_fp16: float, available_vram: float) -> str:
     return "Q4_K_M"
 
 
+_CSP_SERVER_MAP: dict[str, dict] = {
+    "Azure OpenAI": {
+        "name": "Azure ML Managed Online Endpoint",
+        "type": "deploy-azure-ml",
+        "api_compatible": "Azure OpenAI REST API (OpenAI-compatible)",
+        "latency_p50_ms": 400,
+        "cost_per_hour_usd": 0.0,  # per-token pricing
+        "notes": "Azure Government for IL4; FedRAMP High; auto-scaling",
+    },
+    "GCP Vertex AI": {
+        "name": "Vertex AI Prediction",
+        "type": "deploy-vertex-ai",
+        "api_compatible": "Vertex AI REST API",
+        "latency_p50_ms": 500,
+        "cost_per_hour_usd": 0.0,
+        "notes": "GCP FedRAMP High; serverless or dedicated GPU node",
+    },
+    "OCI GenAI": {
+        "name": "OCI GenAI Service Endpoint",
+        "type": "deploy-oci-genai",
+        "api_compatible": "OCI GenAI REST API (Cohere-compatible)",
+        "latency_p50_ms": 600,
+        "cost_per_hour_usd": 0.0,
+        "notes": "OCI GovCloud for IL4; FedRAMP Moderate/High",
+    },
+    "IBM watsonx.ai": {
+        "name": "IBM watsonx.ai Deployment Space",
+        "type": "deploy-watsonx-ai",
+        "api_compatible": "watsonx.ai REST API (IBM Cloud SDK)",
+        "latency_p50_ms": 700,
+        "cost_per_hour_usd": 0.0,
+        "notes": "IBM GovCloud FedRAMP High; integrated governance and audit",
+    },
+    "AWS Bedrock": {
+        "name": "AWS Bedrock On-Demand Inference",
+        "type": "deploy-bedrock",
+        "api_compatible": "Bedrock InvokeModel API (Converse API recommended)",
+        "latency_p50_ms": 350,
+        "cost_per_hour_usd": 0.0,
+        "notes": "GovCloud FedRAMP High; no provisioning; per-token billing",
+    },
+}
+
+
 def _select_server(model: dict, il_level: str, air_gap: bool, rps: int, vram_gb: float) -> dict:
     if air_gap or il_level in ("IL5", "IL6"):
         return {
@@ -104,6 +148,17 @@ def _select_server(model: dict, il_level: str, air_gap: bool, rps: int, vram_gb:
                 "OLLAMA_MAX_LOADED_MODELS": 2,
             },
         }
+
+    # CSP managed inference — prefer cloud endpoint when model is cloud-native
+    provider = model.get("provider", "")
+    for csp_key, server_info in _CSP_SERVER_MAP.items():
+        if csp_key in provider:
+            return {
+                **server_info,
+                "reason": f"Model is hosted on {csp_key} managed infrastructure — use native endpoint",
+            }
+
+    # High-throughput self-hosted
     if rps >= 20:
         return {
             "name": "vLLM",

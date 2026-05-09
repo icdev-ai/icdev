@@ -410,9 +410,26 @@ def assess_design(design_id: str, graph_json: str | dict,
     # Phase 4 execution check (bonus — not penalised if no agents)
     p4_exec_findings = _check_execution_nodes(nodes, edges)
 
+    # AIMC bridge: IL compatibility check for linked model refs
+    il_compat_findings: list[dict] = []
+    try:
+        from tools.agentic_ai_canvas.canvas_bridge import check_il_compatibility
+        violations = check_il_compatibility(design_id)
+        for v in violations:
+            il_compat_findings.append({
+                "id": f"il-compat-{v.get('aadc_node_id', 'unknown')[:8]}",
+                "framework": "AIMC IL Suitability",
+                "severity": v.get("severity", "CAT1"),
+                "title": f"IL_MISMATCH: {v.get('aimc_model_id', '?')} on AADC node",
+                "detail": "; ".join(v.get("issues", [v.get("issue", "IL incompatibility")])),
+                "recommendation": "Select a model from AIMC catalog that supports the design's IL level.",
+            })
+    except Exception:
+        pass
+
     all_findings = (rmf_findings + owasp_findings + hitl_findings
                     + obs_findings + a2a_findings + safety_ext_findings
-                    + p4_exec_findings)
+                    + p4_exec_findings + il_compat_findings)
 
     # L5 (unconstrained) agent is always a CRITICAL finding
     for a, level in zip(agent_nodes, autonomy_levels):

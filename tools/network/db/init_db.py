@@ -1785,6 +1785,42 @@ CREATE TABLE IF NOT EXISTS nc_subnet_calc_history (
     UNIQUE(cidr, project_id)
 );
 CREATE INDEX IF NOT EXISTS idx_nc_subnet_calc_proj ON nc_subnet_calc_history(project_id);
+
+-- Migration Phase Info Box Overrides (user-editable overrides for computed values)
+CREATE TABLE IF NOT EXISTS nc_phase_infoboxes (
+    id          TEXT PRIMARY KEY,
+    topo_id     TEXT NOT NULL,
+    phase_key   TEXT NOT NULL,       -- 'current', 'phase-1', 'phase-2', 'final'
+    box_id      TEXT NOT NULL,       -- 'device-inventory', 'link-utilization', etc.
+    override_json TEXT DEFAULT '{}', -- JSON: {rows: [{label, value, status}], color, title}
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(topo_id, phase_key, box_id)
+);
+CREATE INDEX IF NOT EXISTS idx_nc_phase_infoboxes_topo ON nc_phase_infoboxes(topo_id);
+
+-- Consolidation Analysis Results (cached per topology)
+CREATE TABLE IF NOT EXISTS nc_consolidation_analysis (
+    id                   TEXT PRIMARY KEY,
+    topo_id              TEXT NOT NULL UNIQUE,
+    current_device_count INTEGER DEFAULT 0,
+    final_device_count   INTEGER DEFAULT 0,
+    devices_removed      INTEGER DEFAULT 0,
+    rack_units_freed     INTEGER DEFAULT 0,
+    power_saved_watts    INTEGER DEFAULT 0,
+    capex_delta          REAL DEFAULT 0,
+    opex_annual_delta    REAL DEFAULT 0,
+    tco_3yr_delta        REAL DEFAULT 0,
+    bw_increase_pct      REAL DEFAULT 0,
+    spof_count_before    INTEGER DEFAULT 0,
+    spof_count_after     INTEGER DEFAULT 0,
+    stig_compliance_before REAL DEFAULT 0,
+    stig_compliance_after  REAL DEFAULT 0,
+    analysis_json        TEXT DEFAULT '{}',  -- full analysis dict
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_consolidation_topo ON nc_consolidation_analysis(topo_id);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

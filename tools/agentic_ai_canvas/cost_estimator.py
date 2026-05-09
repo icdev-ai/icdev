@@ -37,14 +37,26 @@ def _resolve_model(node: dict) -> str | None:
 
 
 def _cost_for_model(model_id: str) -> dict:
-    """Return cost entry for a model, falling back to a safe default."""
+    """Return cost entry for a model.
+
+    Priority: (1) AADC local table, (2) AIMC FOUNDATION_MODELS catalog,
+    (3) fuzzy prefix match, (4) gpt-4o-mini default.
+    """
     if model_id in AADC_MODEL_COSTS:
         return AADC_MODEL_COSTS[model_id]
-    # Fuzzy match prefix
+    # Try AIMC catalog — uses cost_per_1k_tokens (split 50/50 in/out heuristic)
+    try:
+        from tools.aiml_canvas.constants import FOUNDATION_MODELS as _AIMC_MODELS
+        aimc_model = next((m for m in _AIMC_MODELS if m["id"] == model_id), None)
+        if aimc_model and aimc_model.get("cost_per_1k_tokens", 0) >= 0:
+            cost = aimc_model["cost_per_1k_tokens"]
+            return {"input_per_1k": cost, "output_per_1k": cost * 2}
+    except Exception:
+        pass
+    # Fuzzy match prefix against AADC table
     for key in AADC_MODEL_COSTS:
         if model_id.startswith(key) or key.startswith(model_id):
             return AADC_MODEL_COSTS[key]
-    # Unknown model — use gpt-4o-mini as conservative default
     return AADC_MODEL_COSTS["gpt-4o-mini"]
 
 

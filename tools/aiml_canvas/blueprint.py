@@ -399,4 +399,16 @@ def create_aiml_blueprint() -> Blueprint | None:
     def api_stats():
         return jsonify(eng.get_stats())
 
+    # ── API: AADC Bridge — backref lookup ─────────────────────────────────────
+
+    @bp.route("/api/models/<model_id>/aadc-refs", methods=["GET"])
+    def api_model_aadc_refs(model_id: str):
+        """Return AADC designs that have linked this AIMC model."""
+        try:
+            from tools.agentic_ai_canvas.canvas_bridge import get_aadc_refs_for_model
+            refs = get_aadc_refs_for_model(model_id)
+            return jsonify({"model_id": model_id, "aadc_refs": refs, "count": len(refs)})
+        except Exception:
+            return jsonify({"model_id": model_id, "aadc_refs": [], "count": 0})
+
     return bp

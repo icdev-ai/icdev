@@ -2686,3 +2686,63 @@ def aadc_api_impact_graph():
         })
     finally:
         conn.close()
+
+
+# ── AIMC Bridge Routes ────────────────────────────────────────────────────────
+
+@aadc_bp.route('/api/aimc-catalog', methods=['GET'])
+def api_aimc_catalog():
+    """Return full AIMC FOUNDATION_MODELS list for AADC model linking."""
+    from tools.agentic_ai_canvas.canvas_bridge import get_aimc_catalog
+    il_filter = request.args.get('il_level')
+    models = get_aimc_catalog()
+    if il_filter and il_filter.startswith('IL'):
+        il_int = int(il_filter.replace('IL', ''))
+        models = [m for m in models if il_int in m.get('il_suitability', [])]
+    return jsonify(models)
+
+
+@aadc_bp.route('/api/designs/<design_id>/link-model', methods=['POST'])
+def api_link_model(design_id: str):
+    """Link an AADC node to an AIMC FOUNDATION_MODELS entry."""
+    from tools.agentic_ai_canvas.canvas_bridge import link_model_node, check_il_compatibility
+    _ensure_init()
+    data = request.get_json(silent=True) or {}
+    aadc_node_id = data.get('aadc_node_id')
+    aimc_model_id = data.get('aimc_model_id')
+    if not aadc_node_id or not aimc_model_id:
+        return jsonify({'error': 'aadc_node_id and aimc_model_id required'}), 400
+    ref = link_model_node(
+        aadc_design_id=design_id,
+        aadc_node_id=aadc_node_id,
+        aimc_model_id=aimc_model_id,
+        aimc_design_id=data.get('aimc_design_id'),
+        notes=data.get('notes', ''),
+    )
+    # Attach IL compatibility status
+    violations = check_il_compatibility(design_id)
+    node_violations = [v for v in violations if v.get('aadc_node_id') == aadc_node_id]
+    ref['il_status'] = 'FAIL' if node_violations else 'PASS'
+    ref['il_violations'] = node_violations
+    return jsonify(ref), 201
+
+
+@aadc_bp.route('/api/designs/<design_id>/model-refs', methods=['GET'])
+def api_get_model_refs(design_id: str):
+    """Get all AIMC model refs for an AADC design."""
+    from tools.agentic_ai_canvas.canvas_bridge import get_model_refs, check_il_compatibility
+    _ensure_init()
+    refs = get_model_refs(design_id)
+    violations = check_il_compatibility(design_id)
+    violation_node_ids = {v.get('aadc_node_id') for v in violations}
+    for ref in refs:
+        ref['il_status'] = 'FAIL' if ref['aadc_node_id'] in violation_node_ids else 'PASS'
+    return jsonify({'refs': refs, 'il_violations': violations})
+
+
+@aadc_bp.route('/api/designs/<design_id>/model-refs/<ref_id>', methods=['DELETE'])
+def api_delete_model_ref(design_id: str, ref_id: str):
+    """Remove an AADC↔AIMC model reference."""
+    from tools.agentic_ai_canvas.canvas_bridge import unlink_model_node
+    deleted = unlink_model_node(ref_id)
+    return jsonify({'deleted': deleted}), 200 if deleted else 404

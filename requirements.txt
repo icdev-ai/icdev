@@ -69,6 +69,7 @@ faker>=33.0              # Realistic surrogate generation for reversible anonymi
 # Anthropic/Google providers are gated by check_availability() and the LLaVA
 # vision provider needs Ollama running with llava pulled.
 pypdf>=4.0               # Pure-Python PDF text extraction — air-gap baseline
+fpdf2>=2.7               # Pure-Python PDF generation — network migration phase reports (air-gap safe, no C)
 
 # === Security: pinned to patch CVEs (see pip-audit) ===
 black>=26.3.1            # CVE-2026-32274: path traversal

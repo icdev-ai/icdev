@@ -736,3 +736,9 @@
 | Freshness Guardian | tools\data_canvas\freshness_guardian.py | Auto-registered: data_canvas/freshness_guardian.py | --json | JSON |
 | Pii Scanner | tools\data_canvas\pii_scanner.py | Auto-registered: data_canvas/pii_scanner.py | --json | JSON |
 | Inventory Scanner | tools\migration_canvas\inventory_scanner.py | Auto-registered: migration_canvas/inventory_scanner.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Bridge | tools\agentic_ai_canvas\canvas_bridge.py | Auto-registered: agentic_ai_canvas/canvas_bridge.py | --json | JSON |

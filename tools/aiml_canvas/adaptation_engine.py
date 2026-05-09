@@ -9,6 +9,24 @@ from __future__ import annotations
 
 from tools.aiml_canvas.constants import ADAPTATION_MATRIX, FOUNDATION_MODELS, IL_REQUIREMENTS
 
+# Maps CSP provider name → cloud fine-tuning node type for recommend()
+CLOUD_FT_OPTIONS: dict[str, str] = {
+    "AWS Bedrock":         "adapt-bedrock-ft",
+    "Azure OpenAI":        "adapt-azure-openai-ft",
+    "GCP Vertex AI":       "adapt-vertex-ft",
+}
+
+# Provider tier for ranking: higher = more preferred at a given IL
+_PROVIDER_TIER: dict[str, int] = {
+    "Ollama": 5,              # air-gap, zero cost
+    "AWS Bedrock": 4,         # FedRAMP High GovCloud
+    "Azure OpenAI": 4,        # Azure Government FedRAMP High
+    "OCI GenAI": 3,           # OCI GovCloud
+    "IBM watsonx.ai": 3,      # IBM GovCloud
+    "GCP Vertex AI": 2,       # FedRAMP High (commercial)
+    "HuggingFace Endpoints": 1,  # IL2 only
+}
+
 
 def recommend(
     *,
@@ -81,6 +99,16 @@ def recommend(
     best = max(scores, key=lambda k: scores[k])
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
+    # Suggest cloud FT node when appropriate
+    cloud_ft_hint = None
+    if has_training_data and training_examples >= 200 and not has_gpu:
+        il_req = IL_REQUIREMENTS.get(il_level, {})
+        allowed = il_req.get("allowed_providers", [])
+        for provider, node_type in CLOUD_FT_OPTIONS.items():
+            if any(p in provider for p in allowed):
+                cloud_ft_hint = {"provider": provider, "node_type": node_type}
+                break
+
     return {
         "recommended": best,
         "recommended_label": ADAPTATION_MATRIX[best]["label"],
@@ -99,6 +127,7 @@ def recommend(
                                        training_examples, has_gpu, vram_gb,
                                        il_level, latency_budget_ms),
         "caveats": _build_caveats(best, training_examples, has_gpu, vram_gb),
+        "cloud_ft_hint": cloud_ft_hint,
     }
 
 
@@ -145,7 +174,14 @@ def _build_caveats(strategy: str, training_examples: int, has_gpu: bool, vram_gb
 
 
 def rank_models_for_il(il_level: str) -> list[dict]:
-    """Return foundation models sorted by suitability for a given IL level."""
+    """Return foundation models sorted by suitability for a given IL level.
+
+    Scoring:
+      +40 air_gap_ready (mandatory for IL5/IL6)
+      +20 provider in IL allowed_providers list
+      +15 zero cost (local models)
+      +10 provider tier bonus (Ollama=5 > Bedrock/Azure Gov=4 > OCI/IBM=3 > GCP=2 > HF=1) * 2
+    """
     il_int = int(il_level.replace("IL", "")) if il_level.startswith("IL") else 4
     il_req = IL_REQUIREMENTS.get(il_level, {})
     allowed_providers = il_req.get("allowed_providers", [m["provider"] for m in FOUNDATION_MODELS])
@@ -154,13 +190,16 @@ def rank_models_for_il(il_level: str) -> list[dict]:
     for m in FOUNDATION_MODELS:
         if il_int not in m.get("il_suitability", []):
             continue
+        provider = m.get("provider", "")
         score = 0
         if m.get("air_gap_ready"):
-            score += 30
-        if m.get("provider") in allowed_providers:
+            score += 40
+        if any(p in provider for p in allowed_providers):
             score += 20
-        if m.get("cost_per_1k_tokens", 1) == 0:
-            score += 10
+        if m.get("cost_per_1k_tokens", 1.0) == 0.0:
+            score += 15
+        tier = _PROVIDER_TIER.get(provider, 0)
+        score += tier * 2
         ranked.append({**m, "_score": score})
 
     ranked.sort(key=lambda x: x["_score"], reverse=True)

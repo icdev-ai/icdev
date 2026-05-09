@@ -4,6 +4,50 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: nmpe
+  name: Network Migration Phases Engine — Three-Phase Diagram View with Info Boxes & Exports
+  description: >
+    Dedicated /network/migration-phases/<topo_id> page for network engineers performing migrations.
+    Three-panel view: Current State | Phase N (stepper) | Final/To-Be.
+    Each panel has 8-16 critical info boxes (device inventory, link utilization, IP/VLAN,
+    redundancy, routing protocols, security posture, WAN circuits, hardware health;
+    plus phase scope, risk, port mapping, validation for migration phases;
+    plus consolidation results, TCO delta, performance gains, compliance improvement for final).
+    Exports per panel: PDF (fpdf2 server-side), Visio VSDX, Draw.io XML with full styling.
+    Consolidation analysis engine computes devices removed, rack units freed, power savings, 3-yr TCO.
+  task_prefix: nmpe-
+  default_open: true
+  briefs:
+  - 'db: nc_phase_infoboxes + nc_consolidation_analysis tables in init_db.py'
+  - 'backend: migration_phases.py — compute_infoboxes(), generate_phase_graphs(), run_consolidation_analysis()'
+  - 'pdf: pdf_export.py — export_phase_pdf() using fpdf2, multi-page with SVG diagram + tables'
+  - 'routes: blueprint.py — /migration-phases/<id>, /api/migration-phases/<id>/data, /api/.../export/<phase>/<fmt>'
+  - 'template: migration_phases.html — three-panel layout, 8+ info boxes per panel, export toolbar'
+  - 'nav: add MP action button to index.html topology table row'
+  - 'wiring: requirements.txt fpdf2, manifest shard update, companion sync, coherence check'
+  epics:
+  - key: db
+    title: DB — phase infobox + consolidation tables
+    priority: critical
+  - key: backend
+    title: Backend — migration_phases.py engine
+    priority: critical
+  - key: pdf
+    title: PDF Export — fpdf2 multi-page report
+    priority: critical
+  - key: routes
+    title: Routes — 3 new routes in blueprint.py
+    priority: critical
+  - key: template
+    title: Template — three-panel migration phases UI
+    priority: critical
+  - key: nav
+    title: Nav — index.html topology row link
+    priority: high
+  - key: wiring
+    title: Wiring — requirements, manifest, sync, V&V
+    priority: high
+
 - key: aimc
   name: AI/ML Model Canvas (AIMC) — Foundation Model Lifecycle Designer
   description: >
@@ -424,6 +468,35 @@ projects:
   - key: fix
     title: FIX
     priority: medium
+- key: canvas-csp-integration
+  name: "Canvas CSP Integration & Academy Uplift"
+  description: >
+    Multi-cloud AIMC expansion (Azure/GCP/OCI/IBM/HuggingFace AI/ML models + services),
+    bidirectional AADC↔AIMC bridge with shared model catalog and unified IL compliance gate,
+    8 new FORGE Academy modules (5 AIMC + 3 AADC fundamentals), and 1 AI GameDay inject
+    (Model Governance scenario). Closes the gap between AIMC (AWS+local only, siloed from AADC)
+    and a fully cloud-agnostic, IL-aware, cross-canvas platform.
+  task_prefix: cci-
+  default_open: true
+  briefs:
+  - 'csp: constants.py ~40 models + 13 node types + IL_REQUIREMENTS multi-cloud; adaptation_engine + deployment_planner + governance_assessor CSP branches; init_db.py 5 CSP templates'
+  - 'bridge: aadc_aimc_model_refs table + canvas_bridge.py + 4 AADC routes + 1 AIMC route + AADC canvas Link Models panel + AIMC AADC refs badge + agentic_engine IL check + cost_estimator AIMC pricing'
+  - 'academy: 5 AIMC JSON modules + 3 AADC fundamentals JSON modules + blueprint.py registration'
+  - 'gameday: inject-06-model-governance.yaml + Model Architect ribbon + 4 AIMC scoring tools in ttx engine'
+  epics:
+  - key: csp
+    title: CSP Model Expansion — AIMC multi-cloud catalog + nodes + IL + templates
+    priority: critical
+  - key: bridge
+    title: AADC↔AIMC Bridge — shared catalog, link API, IL check, cost pricing
+    priority: critical
+  - key: academy
+    title: Academy Modules — 5 AIMC + 3 AADC fundamentals
+    priority: high
+  - key: gameday
+    title: GameDay — Model Governance inject + ribbon + scoring tools
+    priority: high
+
 - key: oracle
   name: Oracle Project
   description: Auto-registered project for tasks with prefix 'oracle-'. Update name
