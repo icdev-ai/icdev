@@ -25,7 +25,9 @@ Architecture Decision D301:
 """
 
 import importlib
+import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Callable, Dict
@@ -152,5 +154,27 @@ def create_server() -> UnifiedMCPServer:
 # Entry point
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Unified MCP Gateway Server")
+    parser.add_argument("--db-path", dest="db_path", metavar="<path>",
+                        help="Override DB path (sets ICDEV_DB_PATH env var)")
+    parser.add_argument("--status", action="store_true",
+                        help="Show server status and exit")
+    parser.add_argument("--json", action="store_true",
+                        help="Emit JSON output")
+    args = parser.parse_args()
+
+    if args.db_path:
+        os.environ["ICDEV_DB_PATH"] = args.db_path
+
+    if args.status:
+        status = {"server": "icdev-unified", "version": "1.0.0", "status": "ready"}
+        if args.json:
+            print(json.dumps(status))
+        else:
+            print("[OK] icdev-unified v1.0.0 — ready")
+        sys.exit(0)
+
     server = create_server()
     server.run()

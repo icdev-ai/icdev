@@ -476,7 +476,8 @@ def _build_mermaid(
 
 def main():
     parser = argparse.ArgumentParser(description="Cascade-to-Simulation Bridge")
-    parser.add_argument("--project", required=True, help="Project ID")
+    parser.add_argument("--project-id", dest="project_id", help="Project ID")
+    parser.add_argument("--project", dest="project_id", help=argparse.SUPPRESS)  # backward compat — use --project-id
     parser.add_argument("--trigger", help="Natural language trigger text")
     parser.add_argument("--node", help="Specific node ID to start from")
     parser.add_argument("--depth", type=int, default=7, help="Max cascade depth")
@@ -485,9 +486,11 @@ def main():
     parser.add_argument("--gate", action="store_true", help="Gate mode — exit 1 if HIGH severity")
     args = parser.parse_args()
 
+    if not args.project_id:
+        parser.error("--project-id is required")
     start_ids = [args.node] if args.node else None
     result = run_cascade(
-        project_id=args.project,
+        project_id=args.project_id,
         start_node_ids=start_ids,
         trigger_text=args.trigger,
         max_depth=args.depth,
