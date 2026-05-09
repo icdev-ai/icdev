@@ -127,10 +127,9 @@ a:hover {
     flex-wrap: nowrap;
     min-height: 42px;
     gap: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
+    position: relative;
+    z-index: 100;
 }
-.navbar::-webkit-scrollbar { display: none; }
 .navbar-brand {
     font-weight: 700;
     font-size: 1.15rem;
@@ -182,17 +181,27 @@ a:hover {
     border: 1px solid var(--border-color, #334155);
     border-radius: 6px;
     padding: 4px 0;
-    min-width: 200px;
+    min-width: 210px;
     max-height: 80vh;
     overflow-y: auto;
-    z-index: 1000;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 9999;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
     list-style: none;
     margin: 0;
 }
 .nav-dropdown:hover .nav-dropdown-menu,
-.nav-dropdown-menu:hover {
+.nav-dropdown-menu:hover,
+.nav-dropdown.open .nav-dropdown-menu {
     display: block;
+}
+.nav-dropdown-trigger {
+    cursor: pointer;
+    user-select: none;
+}
+.nav-dropdown-trigger .nav-caret {
+    font-size: 0.6rem;
+    opacity: 0.6;
+    margin-left: 2px;
 }
 .nav-dropdown-menu li a {
     padding: 6px 14px !important;

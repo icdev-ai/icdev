@@ -229,3 +229,101 @@ def detect_anomalies(
         "classification": classification,
         "analyzed_at": analyzed_at,
     }
+
+
+# ── Persistence helpers ───────────────────────────────────────────────────────
+
+def _get_conn():
+    try:
+        from tools.db.storage import get_connection
+        return get_connection()
+    except Exception:
+        import sqlite3
+        from pathlib import Path
+        db = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
+        return sqlite3.connect(str(db))
+
+
+def save_anomaly_run(
+    result: dict,
+    profile_id: str | None = None,
+    classification: str = "CUI",
+) -> str:
+    """Persist a detect_anomalies result to dd_anomaly_runs.
+
+    Returns the inserted run_id (UUID hex string).
+    Also stamps anomaly_json on the parent dd_explore_profiles row if profile_id given.
+    """
+    import uuid
+    run_id = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    payload = json.dumps(result)
+
+    conn = _get_conn()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO dd_anomaly_runs "
+                "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
+            )
+        except Exception:
+            conn.execute(
+                "INSERT INTO dd_anomaly_runs "
+                "(run_id, profile_id, overall_risk, findings_json, classification, run_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (run_id, profile_id, result.get("overall_risk", "none"), payload, classification, now),
+            )
+
+        if profile_id:
+            try:
+                conn.execute(
+                    "UPDATE dd_explore_profiles SET anomaly_json = %s WHERE profile_id = %s",
+                    (payload, profile_id),
+                )
+            except Exception:
+                conn.execute(
+                    "UPDATE dd_explore_profiles SET anomaly_json = ? WHERE profile_id = ?",
+                    (payload, profile_id),
+                )
+
+        conn.commit()
+    finally:
+        conn.close()
+
+    return run_id
+
+
+def get_latest_run(profile_id: str) -> dict | None:
+    """Return the most recent anomaly run dict for a given profile_id, or None."""
+    conn = _get_conn()
+    try:
+        try:
+            row = conn.execute(
+                "SELECT findings_json, overall_risk, classification, run_at FROM dd_anomaly_runs "
+                "WHERE profile_id = %s ORDER BY run_at DESC LIMIT 1",
+                (profile_id,),
+            ).fetchone()
+        except Exception:
+            row = conn.execute(
+                "SELECT findings_json, overall_risk, classification, run_at FROM dd_anomaly_runs "
+                "WHERE profile_id = ? ORDER BY run_at DESC LIMIT 1",
+                (profile_id,),
+            ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return None
+    try:
+        findings_data = json.loads(row[0] or "{}")
+        findings = findings_data.get("findings", []) if isinstance(findings_data, dict) else []
+    except (json.JSONDecodeError, TypeError):
+        findings = []
+    return {
+        "findings": findings,
+        "overall_risk": row[1],
+        "classification": row[2],
+        "analyzed_at": row[3],
+    }
