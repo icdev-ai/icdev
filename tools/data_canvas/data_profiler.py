@@ -12,6 +12,7 @@ Gracefully degrades to whichever driver is available.
 
 import re
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -139,97 +140,93 @@ def _get_column_info(conn, db_kind: str, table: str) -> list[dict]:
 # ── Column profiler ───────────────────────────────────────────────────────────
 
 
-def _profile_column(conn, db_kind: str, table: str, col: dict, row_count: int, classification: str) -> dict:
+@dataclass
+class _ProfileCtx:
+    conn: Any
+    db_kind: str
+    table: str
+    classification: str
+
+
+def _fetch_null_stats(ctx: _ProfileCtx, safe_col: str, safe_table: str, row_count: int) -> tuple[int, float]:
+    if ctx.db_kind == "postgresql":
+        cur = ctx.conn.cursor()
+        cur.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")
+        null_count = cur.fetchone()[0] or 0
+    else:
+        cur = ctx.conn.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")
+        null_count = _scalar(cur, ctx.db_kind) or 0
+    null_pct = round(null_count / row_count * 100, 2) if row_count else 0.0
+    return null_count, null_pct
+
+
+def _fetch_distinct_count(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> int:
+    if ctx.db_kind == "postgresql":
+        cur = ctx.conn.cursor()
+        cur.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")
+        return cur.fetchone()[0] or 0
+    cur = ctx.conn.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")
+    return _scalar(cur, ctx.db_kind) or 0
+
+
+def _infer_col_type(type_str: str) -> str:
+    if _NUMERIC_RE.search(type_str):
+        return "numeric"
+    if _DATE_RE.search(type_str):
+        return "datetime"
+    return "string"
+
+
+def _fetch_min_max(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> tuple[Any, Any]:
+    if ctx.db_kind == "postgresql":
+        cur = ctx.conn.cursor()
+        cur.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")
+        row = cur.fetchone()
+    else:
+        cur = ctx.conn.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")
+        row = cur.fetchone()
+    if row:
+        return (str(row[0]) if row[0] is not None else None, str(row[1]) if row[1] is not None else None)
+    return None, None
+
+
+def _fetch_top_values(ctx: _ProfileCtx, safe_col: str, safe_table: str) -> list[dict]:
+    limit = 10
+    if ctx.db_kind == "postgresql":
+        cur = ctx.conn.cursor()
+        cur.execute(
+            f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "
+            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s", (limit,),
+        )
+    else:
+        cur = ctx.conn.execute(
+            f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} WHERE {safe_col} IS NOT NULL "
+            f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT ?", (limit,),
+        )
+    return [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
+
+
+def _profile_column(ctx: _ProfileCtx, col: dict, row_count: int) -> dict:
     """Profile a single column. Returns dict with stats."""
-    name = col["name"]
-    type_str = col["type_str"]
-    safe_col = f'"{name}"'
-    safe_table = f'"{table}"'
-
+    name, type_str = col["name"], col["type_str"]
+    safe_col, safe_table = f'"{name}"', f'"{ctx.table}"'
     result: dict[str, Any] = {
-        "name": name,
-        "type_str": type_str,
-        "classification": classification,
-        "null_count": 0,
-        "null_pct": 0.0,
-        "distinct_count": 0,
-        "min": None,
-        "max": None,
-        "top_values": [],
-        "inferred_type": "string",
+        "name": name, "type_str": type_str, "classification": ctx.classification,
+        "null_count": 0, "null_pct": 0.0, "distinct_count": 0,
+        "min": None, "max": None, "top_values": [], "inferred_type": "string",
     }
-
     if row_count == 0:
         return result
-
     try:
-        # Null count
-        if db_kind == "postgresql":
-            cur = conn.cursor()
-            cur.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")
-            null_count = cur.fetchone()[0] or 0
-        else:
-            cur = conn.execute(f"SELECT COUNT(*) FROM {safe_table} WHERE {safe_col} IS NULL")
-            null_count = _scalar(cur, db_kind) or 0
-        result["null_count"] = null_count
-        result["null_pct"] = round(null_count / row_count * 100, 2) if row_count else 0.0
-
-        # Distinct count
-        if db_kind == "postgresql":
-            cur = conn.cursor()
-            cur.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")
-            distinct_count = cur.fetchone()[0] or 0
-        else:
-            cur = conn.execute(f"SELECT COUNT(DISTINCT {safe_col}) FROM {safe_table}")
-            distinct_count = _scalar(cur, db_kind) or 0
-        result["distinct_count"] = distinct_count
-
-        # Infer type
-        if _NUMERIC_RE.search(type_str):
-            result["inferred_type"] = "numeric"
-        elif _DATE_RE.search(type_str):
-            result["inferred_type"] = "datetime"
-        else:
-            result["inferred_type"] = "string"
-
-        # Min / Max (numeric + date)
+        result["null_count"], result["null_pct"] = _fetch_null_stats(ctx, safe_col, safe_table, row_count)
+        result["distinct_count"] = _fetch_distinct_count(ctx, safe_col, safe_table)
+        result["inferred_type"] = _infer_col_type(type_str)
         if result["inferred_type"] in ("numeric", "datetime"):
-            if db_kind == "postgresql":
-                cur = conn.cursor()
-                cur.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")
-                row = cur.fetchone()
-            else:
-                cur = conn.execute(f"SELECT MIN({safe_col}), MAX({safe_col}) FROM {safe_table}")
-                row = cur.fetchone()
-            if row:
-                result["min"] = str(row[0]) if row[0] is not None else None
-                result["max"] = str(row[1]) if row[1] is not None else None
-
-        # Top values (low cardinality or string)
-        if distinct_count <= 100 or result["inferred_type"] == "string":
-            limit = 10
-            if db_kind == "postgresql":
-                cur = conn.cursor()
-                cur.execute(
-                    f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} "
-                    f"WHERE {safe_col} IS NOT NULL "
-                    f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT %s",
-                    (limit,),
-                )
-                top = [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
-            else:
-                cur = conn.execute(
-                    f"SELECT {safe_col}, COUNT(*) AS cnt FROM {safe_table} "
-                    f"WHERE {safe_col} IS NOT NULL "
-                    f"GROUP BY {safe_col} ORDER BY cnt DESC LIMIT ?",
-                    (limit,),
-                )
-                top = [{"value": str(r[0]), "count": r[1]} for r in cur.fetchall()]
-            result["top_values"] = top
-
+            result["min"], result["max"] = _fetch_min_max(ctx, safe_col, safe_table)
+        if result["distinct_count"] <= 100 or result["inferred_type"] == "string":
+            result["top_values"] = _fetch_top_values(ctx, safe_col, safe_table)
     except Exception as exc:
         result["error"] = str(exc)
-
     return result
 
 
@@ -261,10 +258,8 @@ def profile_table(conn_params: dict, table: str, classification: str = "CUI // S
             row_count_label = f"{row_count:,}"
 
         cols = _get_column_info(conn, db_kind, table)
-        column_profiles = [
-            _profile_column(conn, db_kind, table, col, row_count, classification)
-            for col in cols
-        ]
+        ctx = _ProfileCtx(conn=conn, db_kind=db_kind, table=table, classification=classification)
+        column_profiles = [_profile_column(ctx, col, row_count) for col in cols]
         conn.close()
         return {
             "name": table,
