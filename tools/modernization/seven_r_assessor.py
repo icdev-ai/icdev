@@ -1,5 +1,6 @@
 # [TEMPLATE: CUI // SP-CTI]
 #!/usr/bin/env python3
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """7R Migration Strategy Recommendation Engine for ICDEV™ DoD Modernization.
 
 Evaluates legacy applications against the 7 Rs of cloud migration:

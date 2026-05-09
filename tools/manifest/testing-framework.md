@@ -8,7 +8,7 @@
 | Test Data Types | tools/testing/data_types.py | Pydantic models: TestResult, E2ETestResult, GateResult, etc. | — | — |
 | Test Utilities | tools/testing/utils.py | JSON parsing, dual logging, safe subprocess env, run ID gen | — | — |
 | Health Check | tools/testing/health_check.py | System validation (env, DB, deps, tools, MCP, git, Claude, Playwright) | --json, --project-id | Health report |
-| Test Orchestrator | tools/testing/test_orchestrator.py | Full test pipeline: unit + BDD + E2E + gates with retry | --project-dir, --skip-e2e | Summary + state |
+| Test Orchestrator [DEPRECATED] | tools/testing/test_orchestrator.py | Full test pipeline: unit + BDD + E2E + gates with retry | --project-dir, --skip-e2e | Summary + state |
 | E2E Runner | tools/testing/e2e_runner.py | E2E tests via native Playwright CLI or MCP fallback | --test-file, --discover, --run-all, --mode, --validate-screenshots | E2E results |
 | Full Dashboard E2E | tools/testing/e2e_full_dashboard.py | Selenium headless Chrome lifecycle test: every dashboard page, all canvases, nav links, API endpoints, chart rendering, kanban board, CUI banners, and JS error detection — sign-off gate after merges | python tools/testing/e2e_full_dashboard.py | Pass/fail counts + screenshots to playwright/screenshots/e2e-full/ |
 | Screenshot Validator | tools/testing/screenshot_validator.py | Vision-based screenshot validation using LLM (Ollama LLaVA / Claude / GPT-4o) | --image, --assert, --batch-dir, --check | Pass/fail + explanation |
