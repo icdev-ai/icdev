@@ -1082,6 +1082,48 @@ def api_iw_derive():
         return jsonify({"error": str(exc)}), 500
 
 
+@_api.route("/iw/scored", methods=["POST"])
+def api_iw_scored():
+    """POST /api/strategos/iw/scored — Score all PMESII-PT domains via iw_scorers and compute WRI."""
+    body = request.get_json(silent=True) or {}
+    theater_id = body.get("theater_id", request.args.get("theater_id", "ukraine"))
+    window_days = int(body.get("window_days", request.args.get("window_days", 30)))
+    try:
+        from tools.strategos.iw_scorers import score_all_domains  # noqa: PLC0415
+        from tools.strategos.iw_engine import PMESIIPTCompositor  # noqa: PLC0415
+        domain_scores = score_all_domains(theater_id, window_days)
+        comp = PMESIIPTCompositor()
+        dims = domain_scores["domains"]
+        wri_result = comp.compute_and_save({
+            "political": dims.get("political", 0.0),
+            "military": dims.get("military", 0.0),
+            "economic": dims.get("economic", 0.0),
+            "social": 0.0,
+            "information": dims.get("information", 0.0),
+            "infrastructure": dims.get("infrastructure", 0.0),
+            "physical_environment": 0.0,
+            "time": 0.0,
+        }, source="iw_scorers")
+        return jsonify({
+            "theater_id": theater_id,
+            "window_days": window_days,
+            "domain_scores": domain_scores,
+            "wri": wri_result,
+            "radar_data": {
+                "labels": ["Military", "Economic", "Political", "Information", "Infrastructure"],
+                "values": [
+                    dims.get("military", 0.0),
+                    dims.get("economic", 0.0),
+                    dims.get("political", 0.0),
+                    dims.get("information", 0.0),
+                    dims.get("infrastructure", 0.0),
+                ],
+            },
+        }), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @_api.route("/iw/signal-matrix", methods=["GET"])
 def api_iw_signal_matrix():
     """GET /api/strategos/iw/signal-matrix — 14-day x signal-category heatmap counts."""
@@ -4084,6 +4126,77 @@ def api_sources_report_add(source_id: str):
         resp = make_response(jsonify(result), 201)
         resp.headers["X-Classification"] = "CUI"
         return resp
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/iw/bayesian-update", methods=["POST"])
+def api_iw_bayesian_update():
+    """POST /api/strategos/iw/bayesian-update — Apply Bayesian evidence update to P(war)."""
+    body = request.get_json(silent=True) or {}
+    theater_id = body.get("theater_id", "ukraine")
+    signals = body.get("signals", {})
+    try:
+        from tools.strategos.iw_bayesian import BayesianIWUpdater  # noqa: PLC0415
+        upd = BayesianIWUpdater()
+        if signals:
+            result = upd.update_batch(theater_id, signals)
+        else:
+            evidence_type = body.get("evidence_type", "military_buildup")
+            strength = float(body.get("strength", 0.5))
+            result = upd.update(theater_id, evidence_type, strength)
+        return jsonify(result), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/iw/classify", methods=["POST"])
+def api_iw_classify():
+    """POST /api/strategos/iw/classify — Exercise vs Pre-War GBM classification."""
+    body = request.get_json(silent=True) or {}
+    theater_id = body.get("theater_id", "ukraine")
+    signals = body.get("signals")
+    try:
+        from tools.strategos.iw_bayesian import ExerciseVsPreWarClassifier  # noqa: PLC0415
+        clf = ExerciseVsPreWarClassifier()
+        clf.fit()
+        if signals:
+            result = clf.predict(signals)
+            result["theater_id"] = theater_id
+        else:
+            result = clf.predict_from_theater(theater_id)
+        return jsonify(result), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/iw/pattern-match", methods=["GET"])
+def api_iw_pattern_match():
+    """GET /api/strategos/iw/pattern-match — DTW historical case matching."""
+    theater_id = request.args.get("theater_id", "ukraine")
+    top_n = int(request.args.get("top_n", 5))
+    try:
+        from tools.strategos.iw_pattern_matcher import DTWPatternMatcher  # noqa: PLC0415
+        matcher = DTWPatternMatcher()
+        result = matcher.analyze_theater(theater_id, top_n=top_n)
+        return jsonify(result), 200
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@_api.route("/iw/weibull-tte", methods=["GET"])
+def api_iw_weibull_tte():
+    """GET /api/strategos/iw/weibull-tte — Weibull time-to-event onset estimate."""
+    try:
+        from tools.strategos.iw_bayesian import BayesianIWUpdater  # noqa: PLC0415
+        from tools.strategos.iw_pattern_matcher import WeibullTTEEstimator  # noqa: PLC0415
+        theater_id = request.args.get("theater_id", "ukraine")
+        posterior = BayesianIWUpdater().get_latest_posterior(theater_id)
+        tte = WeibullTTEEstimator()
+        tte.fit()
+        result = tte.estimate_days_to_onset(current_posterior=posterior)
+        result["theater_id"] = theater_id
+        return jsonify(result), 200
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 

@@ -35,6 +35,42 @@ projects:
     title: Infrastructure + V&V Gate
     priority: high
 
+- key: ddx
+  name: DDC Data Science Extensions — Anomaly Detection, PII Guard, CLI, Freshness, MCP Gate
+  description: >
+    Five intelligence-driven extensions to the DDC data science tabs built from Research/Innovation/Creative
+    engine outputs (2026-05-09). Ep1: LLM-assisted anomaly detection on profiler output.
+    Ep2: Column-level PII/CUI auto-detection in SQL Sandbox.
+    Ep3: Data Profiler CLI entry point (--json, headless). Ep4: Streaming freshness guardian
+    (genesis reflex, hourly). Ep5: MCP scan gate in coherence_checker.
+  task_prefix: ddx-
+  default_open: true
+  briefs:
+  - 'an: anomaly_detector.py + /explore/analyze route + explore.html analysis panel'
+  - 'pii: pii_scanner.py + query_sandbox PII warnings + query.html warning banner'
+  - 'cli: data_profiler CLI __main__ block + __main__.py + manifest update'
+  - 'fr: freshness_guardian reflex + genesis_config + dd_freshness_alerts table + quality.html monitor'
+  - 'mcp: mcp_scanner.py + coherence_checker gate + security_gates.yaml + manifest'
+  epics:
+  - key: an
+    title: LLM Anomaly Detection — /data/explore
+    priority: high
+  - key: pii
+    title: SQL PII/CUI Auto-Detection — /data/query
+    priority: high
+  - key: cli
+    title: Data Profiler CLI — python -m tools.data_canvas.data_profiler
+    priority: medium
+  - key: fr
+    title: Streaming Freshness Guardian — genesis reflex
+    priority: medium
+  - key: mcp
+    title: MCP Scan Gate — coherence_checker
+    priority: high
+  - key: vv
+    title: Final V&V + Companion Sync
+    priority: critical
+
 - key: aadc-enh
   name: AADC Enhancements — Canvas JS, Cost Estimation, IaC, Impact Graph
   description: 'Four enhancements to the Agentic AI Design Canvas: (1) dedicated
@@ -2851,3 +2887,41 @@ projects:
     - key: vv
       title: V&V Gate
       priority: high
+
+- key: mce
+  name: Migration Canvas Enhancements — Compliance Gate, Wave Planner, Discovery, Dossier Guidance
+  description: >
+    Six targeted enhancements to the Migration Canvas driven by Innovation/Creative/Research
+    engine outputs: (1) creative domain config for migration vertical, (2) FedRAMP/DISA/IL
+    compliance gate at Migration Type step, (3) inventory automated discovery/CSV-JSON import,
+    (4) wave planner with server dependency mapping, (5) dossier contextual guidance inline in
+    wizard steps, (6) innovation follow-through — top-10 code quality fixes + CLI harmonization.
+    Phase gates: CodeLens + Coherence + E2E Playwright after each epic.
+  task_prefix: mce-
+  default_open: true
+  briefs:
+    - "fnd: context/creative/domains/migration.json + competitor_discoverer wiring + icdev-maintain scan + CLI gaps doc"
+    - "cg: mc_compliance_checks table + compliance_gate.py + constants + blueprint route + wizard step-1 UI + tests"
+    - "inv: mc_inventory_imports table + inventory_scanner.py + blueprint route + inventory_import.html + tests"
+    - "wp: mc_migration_waves + mc_server_dependencies tables + wave_planner.py + constants + routes + wave_planner.html + tests"
+    - "dg: dossier_advisor.py + blueprint guidance route + server_wizard.html callouts + tests"
+    - "inn: top-10 code quality fixes + 5 CLI harmonizations + 17 unused tool deprecations"
+  epics:
+    - key: fnd
+      title: Foundation — Creative Domain Config + Innovation Maintenance
+      priority: critical
+    - key: cg
+      title: Compliance Gate — FedRAMP/DISA/IL at Migration Type
+      priority: critical
+    - key: inv
+      title: Inventory Discovery — CSV/JSON Import + SSH Probe
+      priority: high
+    - key: wp
+      title: Wave Planner — Dependency Graph + Wave Assignment
+      priority: high
+    - key: dg
+      title: Dossier Guidance — Research Callouts in Wizard
+      priority: medium
+    - key: inn
+      title: Innovation Follow-Through — Code Quality + CLI Harmonization
+      priority: medium
