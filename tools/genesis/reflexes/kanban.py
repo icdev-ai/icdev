@@ -1641,6 +1641,45 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
     return True, None
 
 
+def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") -> None:
+    """When a task moves to 'done', cancel any open diag-/RCA children that
+    the self_debug reflex created for it. These tasks become moot once the
+    parent is resolved and must not linger in 'suggested'/'backlog' forever.
+
+    Matches tasks whose id starts with ``diag-<parent_task_id>`` or whose
+    title contains the parent task id and task_type is 'chore'/'research'
+    (the two types self_debug uses for RCA cards).
+    """
+    try:
+        conn = get_connection()
+        now = _utcnow_iso()
+        prefix = f"diag-{parent_task_id}"
+        open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
+        placeholders = ",".join("?" * len(open_statuses))
+        rows = conn.execute(
+            f"SELECT id FROM kanban_tasks "  # nosec B608
+            f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
+            f"  AND status IN ({placeholders})",
+            (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
+        ).fetchall()
+        orphan_ids = [dict(r)["id"] for r in rows]
+        if orphan_ids:
+            ph = ",".join("?" * len(orphan_ids))
+            conn.execute(
+                f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
+                f"last_failure_reason=? WHERE id IN ({ph})",
+                (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
+            )
+            conn.commit()
+            logger.info(
+                "_close_orphaned_rca_children: closed %d orphan(s) of %s: %s",
+                len(orphan_ids), parent_task_id, orphan_ids,
+            )
+        conn.close()
+    except Exception as exc:
+        logger.warning("_close_orphaned_rca_children failed for %s: %s", parent_task_id, exc)
+
+
 def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") -> Optional[str]:
     """If the just-completed child had a decomposed parent whose remaining
     children are now all done, close the parent as well.
@@ -1913,6 +1952,14 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
             _auto_close_decomposed_parent(task_id, actor=actor)
         except Exception as exc:
             logger.warning("auto-close check failed for %s: %s", task_id, exc)
+        # Orphan sweep: close any diag-/RCA tasks created by self_debug for
+        # this task that are still open. When a task is done its diagnostics
+        # are moot — leaving them in 'suggested' or 'backlog' pollutes the
+        # board indefinitely with no actionable work.
+        try:
+            _close_orphaned_rca_children(task_id, actor=actor)
+        except Exception as exc:
+            logger.warning("rca-orphan sweep failed for %s: %s", task_id, exc)
 
     # Broadcast SSE event for real-time dashboard updates
     try:
@@ -4294,6 +4341,7 @@ _dispatch_times: Dict[str, datetime] = {}
 _current_exec_tier: Optional[str] = None
 
 _SILENT_DISPATCH_THRESHOLD = 5 * 60  # 5 min — no log file content yet = never dispatched
+_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
 
 
 def _task_log_is_empty(tid: str) -> bool:
@@ -4303,6 +4351,55 @@ def _task_log_is_empty(tid: str) -> bool:
         return not log_path.exists() or log_path.stat().st_size == 0
     except Exception:
         return False
+
+
+_SUGGESTED_DECAY_HOURS = 48  # tasks soft-stuck in 'suggested' are re-queued after this
+
+
+def _promote_stale_suggested() -> None:
+    """Decay sweep: re-queue 'suggested' tasks that have been stuck >48 h
+    and are NOT hard-quarantined (failure_count < 5 and last_failure_reason
+    does not contain 'hard-quarantine' or 'hitl').
+
+    Prevents tasks from rotting in 'suggested' forever when the underlying
+    issue resolves on its own (transient resource exhaustion, flaky E2E,
+    resolved dependency). Hard-quarantined tasks (fc >= 5 or explicit
+    hard-quarantine reason) still require human review.
+    """
+    try:
+        conn = get_connection()
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
+        ).isoformat()
+        rows = conn.execute(
+            "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
+            "WHERE status = 'suggested' AND updated_at < ?",
+            (cutoff,),
+        ).fetchall()
+        promoted = []
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for r in rows:
+            d = dict(r)
+            fc = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").lower()
+            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                continue  # genuinely quarantined — leave for human review
+            conn.execute(
+                "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
+                "updated_at=?, failure_count=0, "
+                "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
+                "WHERE id=?",
+                (now_iso, now_iso, d["id"]),
+            )
+            promoted.append(d["id"])
+        if promoted:
+            conn.commit()
+            logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
+            for tid in promoted:
+                print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+        conn.close()
+    except Exception as exc:
+        logger.warning("suggested-decay sweep failed: %s", exc)
 
 
 def _reap_stale_in_progress() -> None:
@@ -4336,8 +4433,6 @@ def _reap_stale_in_progress() -> None:
         for r in rows:
             d = dict(r)
             tid = d["id"]
-            if tid in _running:
-                continue  # live subprocess — skip
 
             # Fetch updated_at separately to get the real timestamp
             ts_row = conn.execute(
@@ -4363,11 +4458,28 @@ def _reap_stale_in_progress() -> None:
 
             age_seconds = (now - updated_at).total_seconds()
 
+            # Hard ceiling: any task in_progress for >24 h is force-reaped even
+            # if it appears to have a live subprocess. A genuine 24 h run does
+            # not exist; this catches hung processes whose PID is still in
+            # _running but whose work long since stalled (scheduler-crash + restart
+            # race, grandchild processes that survived a kill, etc.).
+            if age_seconds >= _ABSOLUTE_MAX_IN_PROGRESS_SECONDS:
+                threshold = _ABSOLUTE_MAX_IN_PROGRESS_SECONDS
+                reap_label = "absolute-max-age (>24 h)"
+                if tid in _running:
+                    try:
+                        _running[tid].kill()
+                    except Exception:
+                        pass
+                    _running.pop(tid, None)
+            elif tid in _running:
+                continue  # live subprocess within normal budget — skip
+
             # Fast-reap silent dispatch: task is not in _running AND log file
             # is still empty — subprocess never wrote a single byte, so it
             # never actually started. Use a short 5-min window instead of the
             # normal 2× budget to catch these within the next cycle or two.
-            if _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
+            elif _task_log_is_empty(tid) and age_seconds >= _SILENT_DISPATCH_THRESHOLD:
                 threshold = _SILENT_DISPATCH_THRESHOLD
                 reap_label = "silent-dispatch (no log output)"
             else:
@@ -4578,9 +4690,24 @@ def _check_completed():
                     )
                 else:
                     _move_task(task_id, "backlog")
+                    # Backoff delay: 5 min × retry count before next dispatch.
+                    # Prevents a structurally-slow task from immediately burning
+                    # another 900 s slot on the very next scheduler cycle.
+                    _backoff_seconds = _tout_count * 5 * 60
+                    _backoff_at = (datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds)).isoformat()
+                    try:
+                        _bo_conn = get_connection()
+                        _bo_conn.execute(
+                            "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
+                            (_backoff_at, task_id),
+                        )
+                        _bo_conn.commit()
+                        _bo_conn.close()
+                    except Exception as _bo_exc:
+                        logger.warning("backoff scheduled_at update failed for %s: %s", task_id, _bo_exc)
                     print(
                         f"  Kanban: {task_id} timeout {_tout_count}/"
-                        f"{MAX_TIMEOUT_RETRIES} — returned to backlog"
+                        f"{MAX_TIMEOUT_RETRIES} — backoff {_backoff_seconds // 60} min"
                     )
                 # Build task dict for notification
                 task_dict = {"id": task_id, "title": task_id}
@@ -5443,6 +5570,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             _reap_stale_in_progress()
     except Exception as _rip_exc:
         logger.warning("stale-in_progress reaper failed: %s", _rip_exc)
+    # Suggested-decay: re-queue soft-stuck tasks once every ~4 h (1/240 cycles).
+    try:
+        if _rr.random() < 0.004:  # noqa: S311
+            _promote_stale_suggested()
+    except Exception as _pss_exc:
+        logger.warning("suggested-decay sweep failed: %s", _pss_exc)
 
     # 1. Check for completed claude subprocesses
     completed = _check_completed()

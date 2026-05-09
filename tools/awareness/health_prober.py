@@ -307,6 +307,23 @@ def _probe_http_head(
     return {"ok": ok, "fail": fail, "skipped": skipped}
 
 
+def _prev_module_import_status(conn: Any, node_id: str) -> str:
+    """Return the status of the most recent module_import snapshot for this node
+    from a PREVIOUS run (i.e. not the current run_id). Returns 'pass' if no
+    prior snapshot exists (benefit of the doubt).
+    """
+    try:
+        row = conn.execute(
+            "SELECT status FROM awareness_component_health "
+            "WHERE node_id = ? AND probe_type = 'module_import' "
+            "ORDER BY probed_at DESC LIMIT 1",
+            (node_id,),
+        ).fetchone()
+        return dict(row)["status"] if row else "pass"
+    except Exception:
+        return "pass"
+
+
 def _probe_module_import(
     conn: Any,
     run_id: str,
@@ -319,6 +336,11 @@ def _probe_module_import(
     per file, which would take forever on 842 tools. AST parse
     catches syntax errors and missing structure; full import-time
     errors are caught by the coherence_status probe.
+
+    2-probe confirmation: a single failing probe writes 'warn' rather
+    than 'fail'. Only a second consecutive failure (prev snapshot also
+    non-pass) promotes to 'fail'. This eliminates false-positive kanban
+    tasks from transient file-system or encoding edge-cases.
     """
     ok = 0
     fail = 0
@@ -345,9 +367,14 @@ def _probe_module_import(
             continue
         abs_path = BASE_DIR / file_path
         if not abs_path.exists():
-            detail = {"file_path": file_path, "error": "file not found"}
-            _write_snapshot(conn, node["id"], "module_import", "fail", detail, run_id)
-            fail += 1
+            prev = _prev_module_import_status(conn, node["id"])
+            # First-time failure: write 'warn' and wait for confirmation.
+            # Consecutive failure: escalate to 'fail' to trigger a kanban card.
+            status = "fail" if prev != "pass" else "warn"
+            detail = {"file_path": file_path, "error": "file not found", "confirmation": prev != "pass"}
+            _write_snapshot(conn, node["id"], "module_import", status, detail, run_id)
+            if status == "fail":
+                fail += 1
             continue
         detail = {"file_path": file_path}
         try:
@@ -362,10 +389,17 @@ def _probe_module_import(
             status = "fail"
             detail["error"] = str(e)[:200]
 
+        # Apply 2-probe confirmation for syntax failures too.
+        if status == "fail":
+            prev = _prev_module_import_status(conn, node["id"])
+            if prev == "pass":
+                status = "warn"
+                detail["confirmation"] = False
+
         if _write_snapshot(conn, node["id"], "module_import", status, detail, run_id):
             if status == "pass":
                 ok += 1
-            else:
+            elif status == "fail":
                 fail += 1
 
     return {"ok": ok, "fail": fail, "skipped": skipped}
