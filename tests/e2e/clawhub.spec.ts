@@ -12,7 +12,7 @@ test.describe('ClawHub Skill Browser', () => {
   test('clawhub page loads with heading and CUI banner', async ({ page }) => {
     // Steps 1-5: Navigate, wait, screenshot, verify heading and CUI
     await page.goto(`${CLAWHUB_URL}/clawhub`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.screenshot({
@@ -38,7 +38,7 @@ test.describe('ClawHub Skill Browser', () => {
   test('search form exists and accepts input', async ({ page }) => {
     // Steps 6-11: Verify search form and submit a query
     await page.goto(`${CLAWHUB_URL}/clawhub`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 6: Assert search form with input and button
     const searchInput = page.locator(
@@ -54,7 +54,7 @@ test.describe('ClawHub Skill Browser', () => {
       if (await searchBtn.count() > 0) {
         await searchBtn.first().click();
         // Step 9: Wait for results (up to 30s — live API call)
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(2000);
       }
     }
@@ -71,7 +71,7 @@ test.describe('ClawHub Skill Browser', () => {
   test('import queue section is visible with action buttons', async ({ page }) => {
     // Steps 12-15: Verify import queue
     await page.goto(`${CLAWHUB_URL}/clawhub`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Soft check for import queue section
     const importQueue = page.locator(
@@ -113,7 +113,7 @@ test.describe('ClawHub Skill Browser', () => {
     });
 
     await page.goto(`${CLAWHUB_URL}/clawhub`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Report errors but don't hard-fail — ClawHub may have live API calls that vary
     if (jsErrors.length > 0) {

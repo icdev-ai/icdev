@@ -53,7 +53,7 @@ test.describe('Dashboard Health Check', () => {
     const projectsLink = page.getByRole('link', { name: /Projects/i });
     if (await projectsLink.count() > 0) {
       await projectsLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       await page.screenshot({
         path: '.tmp/test_runs/screenshots/dashboard_health_02_projects.png',
@@ -73,7 +73,7 @@ test.describe('Dashboard Health Check', () => {
 
     if (await agentsLink.count() > 0) {
       await agentsLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       await page.screenshot({
         path: '.tmp/test_runs/screenshots/dashboard_health_03_agents.png',

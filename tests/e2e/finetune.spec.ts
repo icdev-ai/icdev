@@ -10,7 +10,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('finetune overview page loads with heading and stat grid', async ({ page }) => {
     // Steps 8-17: Navigate and verify overview
     await page.goto('/finetune');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 9-10: Heading
     const bodyText = await page.textContent('body');
@@ -43,7 +43,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('recent training jobs section is visible', async ({ page }) => {
     // Steps 16-17: Recent jobs section
     await page.goto('/finetune');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     const jobTerms = ['Recent Training Jobs', 'Training Jobs', 'Jobs'];
@@ -67,7 +67,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('datasets sub-page loads with create button', async ({ page }) => {
     // Steps 19-22: Datasets page
     await page.goto('/finetune/datasets');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     if (bodyText?.includes('Datasets') || bodyText?.includes('Dataset')) {
@@ -93,7 +93,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('jobs sub-page loads with table or empty state', async ({ page }) => {
     // Steps 23-25: Jobs page
     await page.goto('/finetune/jobs');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     if (bodyText?.includes('Training Jobs') || bodyText?.includes('Jobs')) {
@@ -116,7 +116,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('models sub-page loads with table or empty state', async ({ page }) => {
     // Steps 26-28: Models page
     await page.goto('/finetune/models');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     if (bodyText?.includes('Model Versions') || bodyText?.includes('Models')) {
@@ -134,7 +134,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('label sub-page loads with dataset selector and batch actions', async ({ page }) => {
     // Steps 29-32: Label page
     await page.goto('/finetune/label');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     if (bodyText?.includes('Labeling') || bodyText?.includes('Label')) {
@@ -168,7 +168,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('evaluate sub-page loads with table or empty state', async ({ page }) => {
     // Steps 33-35: Evaluate page
     await page.goto('/finetune/evaluate');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     if (bodyText?.includes('Evaluations') || bodyText?.includes('Evaluate')) {
@@ -186,7 +186,7 @@ test.describe('Fine-Tuning Dashboard', () => {
   test('finetune responsive layout at multiple viewports', async ({ page }) => {
     // Steps 36-41: Multi-viewport screenshots
     await page.goto('/finetune');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Desktop
     await page.setViewportSize({ width: 1920, height: 1080 });

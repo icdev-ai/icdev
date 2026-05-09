@@ -12,7 +12,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test.beforeEach(async ({ page }) => {
     // Steps 1-4: Login to Genesis dashboard
     await page.goto(`${GENESIS_BASE}/login`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const apiKeyInput = page.locator(
       'input[type="password"], input[name="api_key"], input[id="api_key"], input[placeholder*="key" i]'
@@ -23,7 +23,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
         .or(page.locator('button[type="submit"]'));
       if (await submitBtn.count() > 0) {
         await submitBtn.first().click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
       }
     }
   });
@@ -31,7 +31,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('genesis page loads with heading and intro panel', async ({ page }) => {
     // Steps 3-7: Navigate and verify heading
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -64,7 +64,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('daemon status stat cards are present', async ({ page }) => {
     // Steps 8-10: Verify stat cards
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -87,7 +87,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('14 reflexes table has correct headers and rows', async ({ page }) => {
     // Steps 11-17: Verify reflex table
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -127,7 +127,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('refresh status button triggers API update', async ({ page }) => {
     // Steps 18-21: Refresh button interaction
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const refreshBtn = page.getByRole('button', { name: /Refresh Status/i })
       .or(page.locator('[data-action="refresh-status"]'));
@@ -148,7 +148,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('GKP promoter stats load on button click', async ({ page }) => {
     // Steps 22-26: GKP section
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Scroll to GKP section
     const gkpSection = page.locator(
@@ -179,7 +179,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('feedback-driven priorities load on button click', async ({ page }) => {
     // Steps 27-32: Feedback priorities section
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const prioritiesSection = page.locator(
       'section:has-text("Feedback"), section:has-text("Priorities"), [data-section="priorities"]'
@@ -216,7 +216,7 @@ test.describe('Genesis v2.0 Autonomous Research Lab', () => {
   test('genesis responsive layout at multiple viewports', async ({ page }) => {
     // Steps 37-39: Multi-viewport screenshots
     await page.goto(`${GENESIS_BASE}/genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Desktop
     await page.setViewportSize({ width: 1920, height: 1080 });

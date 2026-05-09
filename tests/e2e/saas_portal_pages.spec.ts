@@ -10,7 +10,7 @@ test.describe('SaaS Portal Pages', () => {
   test('projects page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to projects page
     await page.goto('/portal/projects');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -32,7 +32,7 @@ test.describe('SaaS Portal Pages', () => {
   test('compliance page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to compliance page
     await page.goto('/portal/compliance');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -60,7 +60,7 @@ test.describe('SaaS Portal Pages', () => {
   test('team page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to team page
     await page.goto('/portal/team');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -88,7 +88,7 @@ test.describe('SaaS Portal Pages', () => {
   test('settings page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to settings page
     await page.goto('/portal/settings');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -116,7 +116,7 @@ test.describe('SaaS Portal Pages', () => {
   test('API keys page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to API keys page
     await page.goto('/portal/keys');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -144,7 +144,7 @@ test.describe('SaaS Portal Pages', () => {
   test('usage page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to usage page
     await page.goto('/portal/usage');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -172,7 +172,7 @@ test.describe('SaaS Portal Pages', () => {
   test('audit page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to audit page
     await page.goto('/portal/audit');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot
     await page.screenshot({
@@ -200,7 +200,7 @@ test.describe('SaaS Portal Pages', () => {
   test('sidebar navigation links are present on portal pages', async ({ page }) => {
     // Step 1: Navigate to portal login (always accessible)
     await page.goto('/portal/login');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Screenshot
     await page.screenshot({

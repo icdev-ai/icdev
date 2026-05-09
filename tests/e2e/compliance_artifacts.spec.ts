@@ -10,7 +10,7 @@ test.describe('Compliance Artifacts', () => {
   test('compliance overview page loads with control matrix', async ({ page }) => {
     // Step 1-3: Navigate to compliance page
     await page.goto('/compliance');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await page.screenshot({
       path: '.tmp/test_runs/screenshots/compliance_01_overview.png',
@@ -56,13 +56,13 @@ test.describe('Compliance Artifacts', () => {
   test('project compliance tab shows artifact statuses', async ({ page }) => {
     // Step 7-9: Navigate to project detail
     await page.goto('/projects');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Click on the first project link/row
     const projectLink = page.locator('a[href*="/projects/"], table tbody tr a, .project-item a').first();
     if (await projectLink.count() > 0) {
       await projectLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       // Step 10: Click on Compliance tab
       const complianceTab = page.getByRole('tab', { name: /Compliance/i })
@@ -71,7 +71,7 @@ test.describe('Compliance Artifacts', () => {
 
       if (await complianceTab.count() > 0) {
         await complianceTab.first().click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
       }
 
       // Step 11: Screenshot
