@@ -2089,9 +2089,28 @@
 }
 
 
+/* ── Canvas editor pages: fill viewport, no page-level scroll ── */
+/* Strips main-content padding/max-width and replaces fixed calc() height  */
+/* with flex growth so canvas fills whatever space the navbar leaves.       */
+/* Applies to: migration, boundary, data, infra, observability, aiml, qdc  */
+body:has(.dc-wrap) {
+    overflow: hidden;
+}
+.main-content:has(.dc-wrap) {
+    padding: 0 !important;
+    max-width: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+}
+.dc-wrap {
+    height: auto !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
 /* ── Canvas editor layout: toolbar wraps, canvas area fills remaining height */
 /* Converts absolute-positioned toolbar+canvas to flex column.              */
-/* Applies to migration, boundary, data, and infra canvas editors.          */
 .dc-main {
     display: flex !important;
     flex-direction: column !important;
