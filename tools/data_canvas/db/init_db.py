@@ -337,6 +337,20 @@ CREATE TABLE IF NOT EXISTS dd_quality_runs (
 
 CREATE INDEX IF NOT EXISTS idx_dd_quality_rules_design ON dd_quality_rules(design_id);
 CREATE INDEX IF NOT EXISTS idx_dd_quality_runs_rule ON dd_quality_runs(rule_id);
+
+CREATE TABLE IF NOT EXISTS dd_freshness_alerts (
+    id              TEXT PRIMARY KEY,
+    rule_id         TEXT NOT NULL REFERENCES dd_quality_rules(id),
+    design_id       TEXT,
+    db_conn_json    TEXT,
+    last_checked    TEXT,
+    passed          INTEGER,
+    actual_max_value TEXT,
+    cutoff_value    TEXT,
+    detail          TEXT,
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT
+);
 """
 
 
@@ -1507,6 +1521,17 @@ def init_db():
             conn.execute("ALTER TABLE dd_explore_profiles ADD COLUMN anomaly_json TEXT")
             conn.commit()
             print("[init_db] Migration applied: dd_explore_profiles.anomaly_json added.")
+        except Exception as e:
+            if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                pass  # column already present — idempotent
+            else:
+                raise
+
+        # Migration: add reflex_run to dd_quality_runs if missing
+        try:
+            conn.execute("ALTER TABLE dd_quality_runs ADD COLUMN reflex_run TEXT")
+            conn.commit()
+            print("[init_db] Migration applied: dd_quality_runs.reflex_run added.")
         except Exception as e:
             if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
                 pass  # column already present — idempotent
