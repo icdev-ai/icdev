@@ -21,6 +21,67 @@ def _classify_env(target_env: str) -> tuple[bool, bool, bool]:
     return is_govcloud, is_commercial, is_dod
 
 
+def _unknown_il_finding(il_level: str, is_dod: bool) -> dict:
+    if is_dod:
+        msg = (
+            f"Unknown IL level '{il_level}' targeting DoD/GovCloud environment — "
+            "verify authorization before proceeding."
+        )
+    else:
+        msg = f"Unknown IL level '{il_level}' — compliance posture cannot be determined."
+    return {"rule": "CGT-004", "message": msg, "severity": "warn"}
+
+
+def _resolve_il_findings(
+    il_upper: str,
+    il_reqs: dict | None,
+    is_commercial: bool,
+    is_govcloud: bool,
+    is_dod: bool,
+) -> tuple[list[dict], list[str]]:
+    """Return (findings, extra_frameworks_to_apply)."""
+    extra: list[str] = []
+    if il_reqs is None:
+        return [_unknown_il_finding(il_upper, is_dod)], extra
+
+    findings: list[dict] = []
+    if is_commercial and not il_reqs.get("commercial_ok", True):
+        findings.append({
+            "rule": "CGT-001",
+            "message": (
+                f"{il_upper} workloads cannot be hosted in commercial cloud. "
+                "GovCloud or on-prem deployment is required."
+            ),
+            "severity": "block",
+        })
+    if is_govcloud:
+        extra.append("fedramp")
+        if il_upper in ("IL5", "IL6"):
+            extra.append("disa_stig")
+    return findings, extra
+
+
+def _framework_finding(frameworks: list[str] | None, is_govcloud: bool) -> dict | None:
+    if frameworks is not None and is_govcloud and "fedramp" not in frameworks:
+        return {
+            "rule": "CGT-002",
+            "message": (
+                "GovCloud target requires FedRAMP authorization. "
+                "Add 'fedramp' to the declared frameworks list."
+            ),
+            "severity": "warn",
+        }
+    return None
+
+
+def _resolve_status(findings: list[dict]) -> tuple[str, bool]:
+    if any(f["severity"] == "block" for f in findings):
+        return "block", False
+    if findings:
+        return "warn", True
+    return "pass", True
+
+
 def check_migration_compliance(
     il_level: str,
     target_env: str,
@@ -45,61 +106,20 @@ def check_migration_compliance(
             "frameworks_applied": [...], # nist_800_53 always present
         }
     """
-    findings: list[dict] = []
     # NIST 800-53 is the baseline framework for all IL levels (IL2 through IL6)
     frameworks_applied: list[str] = ["nist_800_53"]
-
     is_govcloud, is_commercial, is_dod = _classify_env(target_env)
     il_upper = (il_level or "").upper().strip()
     il_reqs = IL_LEVEL_REQUIREMENTS.get(il_upper)
 
-    if il_reqs is None:
-        severity = "warn"
-        if is_dod or is_govcloud:
-            msg = (
-                f"Unknown IL level '{il_level}' targeting DoD/GovCloud environment — "
-                "verify authorization before proceeding."
-            )
-        else:
-            msg = f"Unknown IL level '{il_level}' — compliance posture cannot be determined."
-        findings.append({"rule": "CGT-004", "message": msg, "severity": severity})
-    else:
-        if is_commercial and not il_reqs.get("commercial_ok", True):
-            findings.append({
-                "rule": "CGT-001",
-                "message": (
-                    f"{il_upper} workloads cannot be hosted in commercial cloud. "
-                    "GovCloud or on-prem deployment is required."
-                ),
-                "severity": "block",
-            })
+    findings, extra = _resolve_il_findings(il_upper, il_reqs, is_commercial, is_govcloud, is_dod)
+    frameworks_applied.extend(extra)
 
-        if is_govcloud:
-            frameworks_applied.append("fedramp")
-            if il_upper in ("IL5", "IL6"):
-                frameworks_applied.append("disa_stig")
+    fw_finding = _framework_finding(frameworks, is_govcloud)
+    if fw_finding:
+        findings.append(fw_finding)
 
-    # Framework-completeness: only when caller explicitly declares a frameworks list
-    if frameworks is not None and is_govcloud and "fedramp" not in frameworks:
-        findings.append({
-            "rule": "CGT-002",
-            "message": (
-                "GovCloud target requires FedRAMP authorization. "
-                "Add 'fedramp' to the declared frameworks list."
-            ),
-            "severity": "warn",
-        })
-
-    if any(f["severity"] == "block" for f in findings):
-        status = "block"
-        proceed = False
-    elif findings:
-        status = "warn"
-        proceed = True
-    else:
-        status = "pass"
-        proceed = True
-
+    status, proceed = _resolve_status(findings)
     return {
         "proceed": proceed,
         "status": status,
