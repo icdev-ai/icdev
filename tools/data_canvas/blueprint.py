@@ -2309,6 +2309,19 @@ def create_data_canvas_blueprint():
                 "ORDER BY r.created_at DESC LIMIT 100"
             ).fetchall()
         ]
+        try:
+            freshness_alerts = [
+                row_to_dict(r)
+                for r in conn.execute(
+                    "SELECT fa.id, fa.rule_id, fa.design_id, fa.last_checked, fa.passed, "
+                    "fa.actual_max_value, fa.cutoff_value, fa.detail, fa.created_at, "
+                    "q.name AS rule_name "
+                    "FROM dd_freshness_alerts fa LEFT JOIN dd_quality_rules q ON q.id=fa.rule_id "
+                    "ORDER BY fa.created_at DESC LIMIT 50"
+                ).fetchall()
+            ]
+        except Exception:
+            freshness_alerts = []
         conn.close()
         from tools.data_canvas.quality_engine import quality_score
         score = quality_score([{"result": {"passed": r["passed"]}} for r in runs]) if runs else None
@@ -2318,6 +2331,7 @@ def create_data_canvas_blueprint():
             rules=rules,
             runs=runs,
             quality_score=score,
+            freshness_alerts=freshness_alerts,
         )
 
     @bp.route("/api/quality/rules", methods=["GET"])

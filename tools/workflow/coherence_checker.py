@@ -2527,6 +2527,80 @@ def check_hitl_workflow() -> CoherenceCheck:
     )
 
 
+def check_mcp_security() -> CoherenceCheck:
+    """Verify MCP security scanner coherence (ddx-mcp).
+
+    Checks:
+    1. tools/mcp/mcp_scanner.py exists and defines scan_mcp_servers
+    2. scan_mcp_servers() returns dict with 'servers_scanned' and 'findings' keys
+    3. tools/mcp/tool_registry.py exists
+    4. tools/mcp/gap_handlers.py exists
+    """
+    issues: list[str] = []
+    actual: list[str] = []
+
+    # Check 1: mcp_scanner.py exists with scan_mcp_servers
+    scanner_path = PROJECT_ROOT / "tools" / "mcp" / "mcp_scanner.py"
+    if scanner_path.exists():
+        content = scanner_path.read_text(encoding="utf-8")
+        if "scan_mcp_servers" in content:
+            actual.append("mcp_scanner.py=exists+scan_mcp_servers")
+        else:
+            issues.append("tools/mcp/mcp_scanner.py missing scan_mcp_servers function")
+    else:
+        issues.append("tools/mcp/mcp_scanner.py missing")
+
+    # Check 2: scanner returns required keys
+    if not issues:
+        try:
+            import importlib.util, sys as _sys
+            spec = importlib.util.spec_from_file_location("mcp_scanner_check", scanner_path)
+            mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+            spec.loader.exec_module(mod)  # type: ignore[union-attr]
+            result = mod.scan_mcp_servers()
+            missing_keys = [k for k in ("servers_scanned", "findings") if k not in result]
+            if missing_keys:
+                issues.append(f"scan_mcp_servers() missing keys: {missing_keys}")
+            else:
+                actual.append("scan_mcp_servers() keys=ok")
+        except Exception as exc:
+            issues.append(f"scan_mcp_servers() execution failed: {exc}")
+
+    # Check 3: tool_registry.py exists
+    registry_path = PROJECT_ROOT / "tools" / "mcp" / "tool_registry.py"
+    if registry_path.exists():
+        actual.append("tool_registry.py=exists")
+    else:
+        issues.append("tools/mcp/tool_registry.py missing")
+
+    # Check 4: gap_handlers.py exists
+    gap_path = PROJECT_ROOT / "tools" / "mcp" / "gap_handlers.py"
+    if gap_path.exists():
+        actual.append("gap_handlers.py=exists")
+    else:
+        issues.append("tools/mcp/gap_handlers.py missing")
+
+    status = "fail" if issues else "pass"
+    return CoherenceCheck(
+        check_id="mcp_security",
+        check_name="MCP Security Scanner Coherence",
+        status=status,
+        expected=[
+            "mcp_scanner.py exists with scan_mcp_servers",
+            "scan_mcp_servers() returns servers_scanned + findings keys",
+            "tool_registry.py exists",
+            "gap_handlers.py exists",
+        ],
+        actual=actual,
+        missing=issues,
+        extra=[],
+        message=(
+            "Add tools/mcp/mcp_scanner.py with scan_mcp_servers() returning "
+            "'servers_scanned' and 'findings' keys"
+        ) if issues else "MCP security scanner coherence OK",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
@@ -2550,6 +2624,7 @@ CHECK_REGISTRY = {
     "karpathy_sync": check_karpathy_sync,
     "openapi_parity": check_openapi_parity,
     "hitl_workflow": check_hitl_workflow,
+    "mcp_security": check_mcp_security,
 }
 
 
@@ -2576,6 +2651,8 @@ _FIX_REGISTRY: Dict[str, str] = {
     "direct_anthropic_import": "skip",  # violations require code routing fix
     "karpathy_sync": "skip",  # add section to CLAUDE.md + companion sync, then re-run
     "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
+    "hitl_workflow": "skip",  # module fixes require human judgment
+    "mcp_security": "skip",  # scanner module creation requires human judgment
 }
 
 
