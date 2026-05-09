@@ -142,3 +142,20 @@ class NDCAdapter(IQEAdapter):
                     row["config"] = {}
 
         return rows
+
+
+# Register all NDC collections on the module-level executor so the IQE dispatch
+# route can use this adapter without instantiating NDCAdapter explicitly.
+from tools.iqe.executor import register_collection  # noqa: E402
+
+_ndc_inst = NDCAdapter()
+
+
+def _make_ndc_fn(coll: str):
+    def _fn(conn):  # conn unused — NDCAdapter manages its own connection
+        return _ndc_inst.get_collection(coll)
+    return _fn
+
+
+for _c in _COLLECTIONS:
+    register_collection(_c, _make_ndc_fn(_c))

@@ -2263,7 +2263,7 @@ def create_app() -> Flask:
         from tools.iqe.parser import Parser
         from tools.iqe.executor import execute_query
 
-        data = request.get_json(silent=True) or {}
+        data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
         if not question:
             return jsonify({"error": "question is required"}), 400
@@ -2295,7 +2295,7 @@ def create_app() -> Flask:
         from tools.iqe.executor import execute_query
 
         _CANVAS_MAP = {
-            "ndc":        ("tools.iqe.adapters.ndc",         ["ndc.nodes", "ndc.edges", "ndc.devices", "ndc.interfaces"]),
+            "ndc":        ("tools.iqe.adapters.ndc",         ["network.topologies", "network.devices", "network.objects", "network.circuits", "network.sites"]),
             "sdc":        ("tools.iqe.adapters.security",    ["attack.nodes", "attack.edges", "attack.paths"]),
             "pdc":        ("tools.iqe.adapters.pipeline",    ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges"]),
             "ddc":        ("tools.iqe.adapters.data",        ["data.lineage.edges", "data.classifications"]),
@@ -2311,7 +2311,7 @@ def create_app() -> Flask:
             "projects":   ("tools.iqe.adapters.core_agents", ["projects.list"]),
         }
 
-        data = request.get_json(silent=True) or {}
+        data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
         canvas = (data.get("canvas") or "").strip().lower()
         if not question:
