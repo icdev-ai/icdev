@@ -274,8 +274,18 @@ CREATE TABLE IF NOT EXISTS dd_explore_profiles (
     db_conn_json    TEXT DEFAULT '{}',
     profile_json    TEXT DEFAULT '{}',
     table_count     INTEGER DEFAULT 0,
+    anomaly_json    TEXT,
     classification  TEXT DEFAULT 'CUI // SP-CTI',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS dd_anomaly_runs (
+    id              TEXT PRIMARY KEY,
+    profile_id      TEXT,
+    findings_json   TEXT,
+    overall_risk    TEXT,
+    classification  TEXT,
+    created_at      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_dd_explore_profiles_design ON dd_explore_profiles(design_id);
@@ -1492,6 +1502,17 @@ def init_db():
             conn.commit()
             print(f"[init_db] Data Canvas schema created at {DB_PATH}")
 
+        # Migration: add anomaly_json to dd_explore_profiles if missing
+        try:
+            conn.execute("ALTER TABLE dd_explore_profiles ADD COLUMN anomaly_json TEXT")
+            conn.commit()
+            print("[init_db] Migration applied: dd_explore_profiles.anomaly_json added.")
+        except Exception as e:
+            if "duplicate column" in str(e).lower() or "already exists" in str(e).lower():
+                pass  # column already present — idempotent
+            else:
+                raise
+
         # Seed templates (upsert)
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM dd_templates")
@@ -1605,4 +1626,7 @@ def init_db():
 
 
 if __name__ == "__main__":
+    import sys
+    if "--reinit" in sys.argv:
+        print("[init_db] --reinit: applying schema migrations...")
     init_db()
