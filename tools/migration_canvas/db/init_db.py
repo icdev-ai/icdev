@@ -765,7 +765,9 @@ CREATE TABLE IF NOT EXISTS mc_migration_waves (
     server_ids_json  TEXT DEFAULT '[]',
     notes            TEXT,
     created_at       TEXT NOT NULL,
-    classification   TEXT DEFAULT 'CUI'
+    classification   TEXT DEFAULT 'CUI',
+    app_count        INTEGER DEFAULT 0,
+    app_names        TEXT DEFAULT '[]'
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_mc_waves_num ON mc_migration_waves(session_id, wave_number);
 
