@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
 logger = logging.getLogger("icdev.data_canvas.anomaly_detector")
@@ -190,18 +191,29 @@ def detect_anomalies(
         provider, model_id, _cfg = router.get_provider_for_function("code_generation")
         if provider and model_id:
             prompt = _build_prompt(profile_dict)
-            request = LLMRequest(
+            llm_request = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
                 system_prompt=_SYSTEM_PROMPT,
                 max_tokens=1024,
                 classification=classification,
                 skip_injection_scan=True,
             )
-            response = router.invoke("code_generation", request)
-            parsed = _parse_llm_response(response.content or "")
-            if parsed:
-                findings = parsed
-                llm_used = True
+
+            def _invoke():
+                return router.invoke("code_generation", llm_request)
+
+            ex = ThreadPoolExecutor(max_workers=1)
+            future = ex.submit(_invoke)
+            try:
+                response = future.result(timeout=30)
+                parsed = _parse_llm_response(response.content or "")
+                if parsed:
+                    findings = parsed
+                    llm_used = True
+            except FuturesTimeoutError:
+                logger.info("LLM timeout (30s) for anomaly detection — using rule-based fallback")
+            finally:
+                ex.shutdown(wait=False)
     except Exception as exc:
         logger.info("LLM unavailable for anomaly detection (%s) — using rule-based fallback", exc)
 
