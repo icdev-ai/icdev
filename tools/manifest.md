@@ -422,3 +422,16 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Academy Reflex | tools\genesis\reflexes\academy_reflex.py | Auto-registered: reflexes/academy_reflex.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Migration Executor | tools\govlift\migration_executor.py | Auto-registered: govlift/migration_executor.py | --json | JSON |
+| Workload Scanner | tools\govlift\workload_scanner.py | Auto-registered: govlift/workload_scanner.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Audit Engine | tools\govlift\audit_engine.py | Auto-registered: govlift/audit_engine.py | --json | JSON |
