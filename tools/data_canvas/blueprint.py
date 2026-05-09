@@ -2144,6 +2144,31 @@ def create_data_canvas_blueprint():
         _audit(design_id, session.get("user_id", ""), "explore_profile", f"tables={result.get('table_count',0)}", classification)
         return jsonify({"profile_id": pid, **result}), 200
 
+    @bp.route("/api/explore/analyze", methods=["POST"])
+    @dc_login_required
+    def dc_api_explore_analyze():
+        from tools.data_canvas.anomaly_detector import detect_anomalies
+        data = request.get_json(silent=True) or {}
+        profile_tables = data.get("tables", [])
+        classification = data.get("classification", "CUI // SP-CTI")
+        # Flatten all columns across all tables into column_name -> stats
+        profile_dict: dict = {}
+        for tbl in profile_tables:
+            for col in tbl.get("columns", []):
+                key = f"{tbl.get('name','')}.{col.get('name','')}"
+                top_raw = col.get("top_values") or []
+                top_vals = [tv.get("value") for tv in top_raw if isinstance(tv, dict)] if top_raw else []
+                profile_dict[key] = {
+                    "null_pct": col.get("null_pct", 0),
+                    "distinct_count": col.get("distinct_count"),
+                    "min": col.get("min"),
+                    "max": col.get("max"),
+                    "top_values": top_vals,
+                    "inferred_type": col.get("inferred_type") or col.get("type_str"),
+                }
+        result = detect_anomalies(profile_dict, classification=classification)
+        return jsonify(result), 200
+
     @bp.route("/api/explore/profiles", methods=["GET"])
     @dc_login_required
     def dc_api_explore_list():

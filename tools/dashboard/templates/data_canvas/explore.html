@@ -176,10 +176,21 @@
       Configure a connection and click Run Profile to analyse your database.
     </div>
     <div id="profileResults" style="display:none;"></div>
+
+    <!-- Anomaly Analysis -->
+    <div id="analyzeSection" style="display:none;margin-top:18px;">
+      <button class="btn-primary" id="analyzeBtn" onclick="runAnalyze()" style="background:#7b5ea7;">Analyze</button>
+    </div>
+    <div id="findingsPanel" style="display:none;margin-top:18px;">
+      <h3 style="margin-bottom:10px;">Anomaly Findings</h3>
+      <div id="findingsList"></div>
+    </div>
   </div>
 </div>
 
 <script>
+let _lastProfileData = null;
+
 function toggleDbFields() {
   const t = document.getElementById('dbType').value;
   document.getElementById('sqliteFields').style.display = t === 'sqlite' ? '' : 'none';
@@ -228,7 +239,10 @@ async function runProfile() {
     if (!resp.ok) {
       results.innerHTML = `<div class="err-banner">Error: ${data.error || 'Unknown error'}</div>`;
     } else {
+      _lastProfileData = data;
       renderProfile(data, results);
+      document.getElementById('analyzeSection').style.display = '';
+      document.getElementById('findingsPanel').style.display = 'none';
     }
   } catch(e) {
     results.innerHTML = `<div class="err-banner">Network error: ${e.message}</div>`;
@@ -304,6 +318,79 @@ function toggleTable(header) {
   const body = header.nextElementSibling;
   body.classList.toggle('open');
   header.querySelector('span').innerHTML = body.classList.contains('open') ? '&#9650;' : '&#9660;';
+}
+
+async function runAnalyze() {
+  if (!_lastProfileData) return;
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.textContent = 'Analyzing…';
+  const panel = document.getElementById('findingsPanel');
+  const list = document.getElementById('findingsList');
+  panel.style.display = '';
+  list.innerHTML = '<div class="loading-overlay"><span class="spinner"></span>Running anomaly detection…</div>';
+
+  const payload = {
+    tables: _lastProfileData.tables || [],
+    classification: _lastProfileData.classification || 'CUI // SP-CTI',
+  };
+  try {
+    const resp = await fetch('/data/api/explore/analyze', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      list.innerHTML = `<div class="err-banner">Error: ${data.error || 'Unknown'}</div>`;
+    } else {
+      renderFindings(data, list);
+    }
+  } catch(e) {
+    list.innerHTML = `<div class="err-banner">Network error: ${e.message}</div>`;
+  }
+  btn.disabled = false;
+  btn.textContent = 'Analyze';
+}
+
+function renderFindings(data, container) {
+  const sevColor = { high: '#e74c3c', medium: '#ff9800', low: '#3498db', none: '#5a6e8c' };
+  const clsBadge = cls => {
+    if (!cls) return '';
+    const lc = cls.toLowerCase();
+    let klass = 'cls-cui';
+    if (lc.includes('pii')) klass = 'cls-pii';
+    else if (lc.includes('phi')) klass = 'cls-phi';
+    else if (lc.includes('secret')) klass = 'cls-secret';
+    return `<span class="cls-badge ${klass}">${cls}</span>`;
+  };
+
+  const findings = data.findings || [];
+  if (findings.length === 0) {
+    container.innerHTML = `<div style="color:#5a6e8c;padding:12px;">No anomalies detected. ${clsBadge(data.classification)}</div>`;
+    return;
+  }
+
+  const riskColor = sevColor[data.overall_risk] || '#5a6e8c';
+  let html = `<div style="margin-bottom:12px;font-size:12px;color:#7a8cb0;">
+    Overall risk: <b style="color:${riskColor}">${(data.overall_risk||'none').toUpperCase()}</b>
+    &mdash; ${findings.length} finding${findings.length !== 1 ? 's' : ''}
+    &mdash; ${clsBadge(data.classification)}
+  </div>`;
+
+  findings.forEach(f => {
+    const color = sevColor[f.severity] || '#5a6e8c';
+    html += `<div class="finding-card" style="background:#1a2035;border:1px solid #2a3550;border-radius:6px;padding:12px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="background:${color};color:#fff;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;">${(f.severity||'').toUpperCase()}</span>
+        <span style="color:#eaeaea;font-weight:600;">${f.column || ''}</span>
+        <span style="color:#7a8cb0;font-size:11px;">${f.finding_type || ''}</span>
+        ${clsBadge(data.classification)}
+      </div>
+      <div style="color:#b0bec5;font-size:12px;">${f.description || ''}</div>
+    </div>`;
+  });
+
+  container.innerHTML = html;
 }
 
 async function loadProfile(pid) {

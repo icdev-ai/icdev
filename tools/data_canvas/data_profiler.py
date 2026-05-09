@@ -312,3 +312,56 @@ def profile_database(conn_params: dict, classification: str = "CUI // SP-CTI", t
         "profiled_at": datetime.now(timezone.utc).isoformat(),
         "exec_ms": exec_ms,
     }
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    import argparse
+    import json as _json
+    import sys
+
+    ap = argparse.ArgumentParser(description="DDC Data Profiler — profile a database from the CLI")
+    ap.add_argument("--db", required=True, help="Path to SQLite DB file (or DSN for postgres)")
+    ap.add_argument("--type", dest="db_type", default="sqlite",
+                    choices=["sqlite", "postgresql", "duckdb"],
+                    help="Database backend (default: sqlite)")
+    ap.add_argument("--table", metavar="TABLE", action="append", dest="tables",
+                    help="Profile only these tables (repeatable). Omit for all.")
+    ap.add_argument("--classification", default="CUI // SP-CTI", help="ATO classification label")
+    ap.add_argument("--output-json", action="store_true", help="Emit JSON to stdout")
+    ap.add_argument("--list-tables", action="store_true", help="List tables and exit")
+    args = ap.parse_args()
+
+    conn_params: dict[str, Any] = {"db_type": args.db_type}
+    if args.db_type == "sqlite":
+        conn_params["path"] = args.db
+    else:
+        conn_params["database"] = args.db
+
+    if args.list_tables:
+        result = list_tables(conn_params)
+        if "error" in result:
+            print(f"ERROR: {result['error']}", file=sys.stderr)
+            sys.exit(1)
+        for tbl in result.get("tables", []):
+            print(tbl)
+        return
+
+    result = profile_database(conn_params, classification=args.classification, tables=args.tables)
+    if "error" in result:
+        print(f"ERROR: {result['error']}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.output_json:
+        print(_json.dumps(result, indent=2))
+    else:
+        print(f"[data_profiler] {result['table_count']} tables profiled in {result['exec_ms']}ms")
+        for tbl in result.get("tables", []):
+            row_count = tbl.get("row_count", 0)
+            col_count = len(tbl.get("columns", []))
+            print(f"  {tbl.get('table_name','?'):40s}  rows={row_count:>8,}  cols={col_count}")
+
+
+if __name__ == "__main__":
+    main()
