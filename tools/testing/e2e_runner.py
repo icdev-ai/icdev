@@ -48,7 +48,7 @@ from tools.testing.utils import (  # noqa: E402
 )
 
 
-_NATIVE_TIMEOUT_SECONDS: int = 300
+_NATIVE_TIMEOUT_SECONDS: int = 420  # 60s server start + 360s test run headroom
 _MCP_TIMEOUT_SECONDS: int = 120
 _PLAYWRIGHT_PROBE_TIMEOUT: int = 15
 _CLAUDE_PROBE_TIMEOUT: int = 5
@@ -206,12 +206,27 @@ def _success_result_for(test_file: Optional[str]) -> E2ETestResult:
     )
 
 
+def _server_is_up(url: str = "http://localhost:5050", timeout: int = 3) -> bool:
+    """Return True if the dashboard server is already listening."""
+    import socket
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status < 500
+    except Exception:
+        return False
+
+
 def run_playwright_native(
     run_id: str,
     logger: logging.Logger,
     test_file: Optional[str] = None,
     project: str = "chromium",
 ) -> List[E2ETestResult]:
+    if _server_is_up():
+        logger.info("e2e_runner: server already running at localhost:5050 — Playwright will reuse it")
+    else:
+        logger.info("e2e_runner: server not running — Playwright webServer will start it (up to 60s)")
     logger.info("e2e_runner: running tests via native Playwright")
     results_dir = ensure_run_dir(run_id)
     (results_dir / "screenshots").mkdir(parents=True, exist_ok=True)

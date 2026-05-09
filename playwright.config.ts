@@ -55,13 +55,14 @@ export default defineConfig({
   ],
 
   // Dashboard server configuration
-  webServer: process.env.ICDEV_START_SERVER
-    ? {
-        command: 'python tools/dashboard/app.py',
-        url: 'http://localhost:5050',
-        reuseExistingServer: true,
-        timeout: 30000,
-      }
-    : undefined,
+  // Always configure webServer so Playwright starts the app when needed.
+  // reuseExistingServer:true means: if localhost:5050 is already up, skip start.
+  // Set ICDEV_NO_SERVER=1 to disable (e.g. when an external server manages lifecycle).
+  webServer: process.env.ICDEV_NO_SERVER ? undefined : {
+    command: 'python tools/dashboard/app.py',
+    url: 'http://localhost:5050',
+    reuseExistingServer: true,
+    timeout: 60000,
+  },
 });
 // CUI // SP-CTI
