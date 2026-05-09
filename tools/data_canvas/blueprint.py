@@ -2154,6 +2154,8 @@ def create_data_canvas_blueprint():
         # Flatten all columns across all tables into column_name -> stats
         profile_dict: dict = {}
         for tbl in profile_tables:
+            if not isinstance(tbl, dict):
+                continue
             for col in tbl.get("columns", []):
                 key = f"{tbl.get('name','')}.{col.get('name','')}"
                 top_raw = col.get("top_values") or []
