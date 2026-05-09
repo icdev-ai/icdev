@@ -1573,9 +1573,517 @@ _TROUBLESHOOTING = [
 
 # ── Master SOP List ───────────────────────────────────────────────────────────
 
+# ── Category: DISA JWICS / C2S / C2E ─────────────────────────────────────────
+
+_DISA_JWICS = [
+    {
+        "title": "JWICS Circuit Provisioning (New Agency Connection)",
+        "category": "physical_connectivity",
+        "csp": "disa_jwics",
+        "description": (
+            "Provision a new JWICS circuit for a DoD agency. Covers DITCO service request, "
+            "coordination with the JWICS ISP (Regional Hub), physical installation of NSA Type 1 "
+            "encryptor (KG-250A or TACLANE) in a SCIF, key fill, and OSPF adjacency verification. "
+            "Classification: SECRET // CUI. DISA STIG: Network STIG V3R9."
+        ),
+        "prerequisites": [
+            "ATO from DAA/AO for connecting system",
+            "SCIF accreditation (SCIFacility approval from SSO/SCA)",
+            "DITCO account and procurement authority",
+            "NSA-approved Type 1 encryptor (KG-250A or TACLANE Flex) procured via NSA CSS",
+            "Key fill device (KYK-13 or AN/PYQ-10 Simple Key Loader) with loaded key material",
+        ],
+        "steps": [
+            {
+                "number": 1, "title": "Submit DITCO Service Request",
+                "platform": "web-portal",
+                "prerequisites": ["DITCO account (ditco.disa.mil)", "ATO reference number"],
+                "actions": [{"type": "console", "label": "Submit DISN service request", "command": "DITCO Portal → New Service Request → JWICS Circuit → Select bandwidth (T1/T3/DS3/OC-3) → Submit with ATO reference number and site survey coordinates", "cli_type": "console"}],
+                "verification": [{"command": "DITCO ticket status = 'In Progress'", "expected_output": "Ticket number issued; estimated lead time 60-120 days for new circuit"}],
+                "expected_result": "DITCO service order number issued; circuit design kick-off scheduled",
+                "rollback_commands": [],
+                "notes": ["Lead time 60-120 days — start DITCO order 4 months before need date", "Include backup/diverse path requirement in the order for high-availability"],
+                "time_est": "30m (submit) / 60-120 days (provision)", "dod_ref": "DISA JWICS Subscriber Handbook §3.1",
+            },
+            {
+                "number": 2, "title": "SCIF Site Survey and Type 1 Encryptor Installation",
+                "platform": "physical",
+                "prerequisites": ["SCIF accreditation in place", "Type 1 encryptor received via NSA CSS supply chain"],
+                "actions": [{"type": "physical", "label": "Install Type 1 in SCIF", "command": "Mount KG-250A/TACLANE in equipment rack within SCIF. Cable: RJ-45 to SCIF LAN switch (encrypted side), dedicated circuit cable to demarc (plain-text side). Verify physical cable path never co-locates plain-text with SECRET LAN.", "cli_type": "physical"}],
+                "verification": [{"command": "Type 1 BIT (Built-In-Test) — press BIT button on front panel", "expected_output": "BIT PASS on display. All LEDs green. No ALARM."}],
+                "expected_result": "Encryptor powered, BIT passes, ready for key fill",
+                "rollback_commands": [],
+                "notes": ["Two-person integrity (TPI) required for key fill and initialization", "Register encryptor serial number with NSA CSS within 30 days"],
+                "time_est": "4h (physical install + BIT)", "dod_ref": "NSA IA CIS-103",
+            },
+            {
+                "number": 3, "title": "Load NSA Key Material via Fill Device",
+                "platform": "physical",
+                "prerequisites": ["KYK-13 or AN/PYQ-10 loaded with current JWICS key material from NSA CSS", "Two cleared personnel present (TPI)"],
+                "actions": [{"type": "physical", "label": "Key fill procedure", "command": "1. Connect KYK-13 fill device to Type 1 fill port. 2. Select correct key slot for JWICS segment. 3. Initiate fill sequence — device transfers TEK/KEK. 4. Verify key loaded indicator on encryptor. 5. Disconnect fill device and secure in approved container.", "cli_type": "physical"}],
+                "verification": [{"command": "Type 1 status display", "expected_output": "KEY LOADED. CRYPTO ACTIVE. No ZEROIZE alarm."}],
+                "expected_result": "Key material loaded; encryptor displays CRYPTO SYNC or equivalent operational state",
+                "rollback_commands": [{"command": "ZEROIZE: If key compromise suspected — activate ZEROIZE on front panel. Circuit goes dark until re-keyed.", "label": "Emergency zeroize"}],
+                "notes": ["Key material is classified SECRET. Handle per NSA KMI procedures.", "Document key load in Key Material Accountability Log (KMAL)."],
+                "time_est": "30m", "dod_ref": "NSA KMI Procedures / IA CIS-103 §5",
+            },
+            {
+                "number": 4, "title": "Configure JWICS Gateway Router and OSPF Adjacency",
+                "platform": "router-cli",
+                "prerequisites": ["DISA-assigned JWICS IP addresses", "OSPF area assignment from DIA/DISA NOC"],
+                "actions": [{"type": "cli", "label": "Configure OSPF adjacency", "command": "router ospf 1\n area 0 authentication message-digest\n network <jwics-subnet> 0.0.0.255 area 0\n!\ninterface GigabitEthernet0/0\n ip ospf message-digest-key 1 md5 <key>\n ip ospf network point-to-point\n!", "cli_type": "ios"}],
+                "verification": [{"command": "show ip ospf neighbor | include <dia-hub-ip>", "expected_output": "FULL  -  -  <dia-hub-ip>  GigabitEthernet0/0"}],
+                "expected_result": "OSPF neighbor FULL state with DIA hub router; routes redistributed",
+                "rollback_commands": [{"command": "no router ospf 1", "label": "Remove OSPF config (circuit will lose routing)"}],
+                "notes": ["OSPF MD5 authentication mandatory per DISA STIG (NET-IPV4-010)", "Confirm route advertisement with DIA NOC before declaring operational"],
+                "time_est": "45m", "dod_ref": "DISA Network STIG V3R9 NET-IPV4-010",
+            },
+            {
+                "number": 5, "title": "Verify End-to-End JWICS Connectivity with DISA NOC",
+                "platform": "router-cli",
+                "prerequisites": ["OSPF adjacency FULL (Step 4)", "DISA NOC test appointment scheduled"],
+                "actions": [{"type": "cli", "label": "Ping DISA NOC test IP", "command": "ping <disa-noc-test-ip> source <jwics-loopback> repeat 100 size 1500\ntraceroute <disa-noc-test-ip> source <jwics-loopback>", "cli_type": "ios"}],
+                "verification": [{"command": "Ping 100/100 success rate", "expected_output": "Success rate is 100 percent (100/100), round-trip min/avg/max = X/Y/Z ms"}],
+                "expected_result": "Bi-directional reachability verified; DISA NOC declares circuit operational",
+                "rollback_commands": [],
+                "notes": ["If ping fails: check Type 1 sync, verify OSPF routes, call DISA NOC 1-800-FOR-DISA"],
+                "time_est": "30m", "dod_ref": "",
+            },
+        ],
+        "validation": ["Type 1 BIT PASS", "OSPF neighbor FULL state", "Ping 100% to DISA NOC test IP", "Route table shows JWICS prefixes", "DISA NOC declares circuit operational"],
+        "rollback": {"steps": ["Disable OSPF on gateway", "Disconnect Type 1 from circuit", "Call DITCO to suspend circuit", "Secure key material per KMI procedures"], "rto": "4h"},
+        "escalation": [{"tier": 1, "contact": "DISA NOC 1-800-FOR-DISA", "condition": "Type 1 alarm or OSPF down > 15 min"}, {"tier": 2, "contact": "DIA NOC", "condition": "JWICS backbone outage"}, {"tier": 3, "contact": "NSA CSS Key Management", "condition": "Key compromise or ZEROIZE event"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "JWICS BGP Peering Setup and Verification",
+        "category": "logical_connectivity",
+        "csp": "disa_jwics",
+        "description": (
+            "Configure and verify OSPF/BGP routing on a JWICS gateway for an agency connecting "
+            "to the JWICS backbone. Covers OSPF adjacency, route advertisement, prefix filtering, "
+            "and verification commands. Used when setting up or troubleshooting JWICS routing."
+        ),
+        "prerequisites": ["Type 1 encryptor keyed and operational", "DISA-assigned JWICS IP range and OSPF area", "Routing platform: Cisco IOS/IOS-XE (DISA-approved)"],
+        "steps": [
+            {
+                "number": 1, "title": "Verify Interface Up and Type 1 Sync",
+                "platform": "router-cli",
+                "prerequisites": ["Type 1 encryptor shows CRYPTO ACTIVE"],
+                "actions": [{"type": "cli", "label": "Check interface status", "command": "show interface GigabitEthernet0/0\nshow crypto status", "cli_type": "ios"}],
+                "verification": [{"command": "show interface GigabitEthernet0/0", "expected_output": "GigabitEthernet0/0 is up, line protocol is up"}],
+                "expected_result": "Interface UP/UP; crypto shows SYNCED",
+                "rollback_commands": [],
+                "notes": ["If interface down: check Type 1 alarm, cable, SFP"], "time_est": "5m", "dod_ref": "",
+            },
+            {
+                "number": 2, "title": "Validate OSPF Adjacency",
+                "platform": "router-cli",
+                "prerequisites": ["Interface UP/UP"],
+                "actions": [{"type": "cli", "label": "Check OSPF neighbor state", "command": "show ip ospf neighbor detail | include State|Neighbor|Dead\ndebug ip ospf events (if FULL not reached)", "cli_type": "ios"}],
+                "verification": [{"command": "show ip ospf neighbor | include FULL", "expected_output": "FULL/  -  <dia-hub-ip>"}],
+                "expected_result": "OSPF state FULL on DIA hub router",
+                "rollback_commands": [{"command": "clear ip ospf process — reload OSPF (use with caution; briefly drops routing)", "label": "Reset OSPF"}],
+                "notes": ["Common issues: MTU mismatch, auth key mismatch, area mismatch, network type mismatch"], "time_est": "10m", "dod_ref": "",
+            },
+            {
+                "number": 3, "title": "Verify Route Table and Prefix Advertisement",
+                "platform": "router-cli",
+                "prerequisites": ["OSPF adjacency FULL"],
+                "actions": [{"type": "cli", "label": "Check routes", "command": "show ip route ospf | head 50\nshow ip ospf database summary | include Network\nshow ip prefix-list", "cli_type": "ios"}],
+                "verification": [{"command": "show ip route ospf", "expected_output": "O  10.x.x.x/24 [110/2] via <dia-hub-ip>"}],
+                "expected_result": "JWICS prefixes appear in route table with O (OSPF) tag",
+                "rollback_commands": [],
+                "notes": ["If agency prefix not advertised: check network statement in OSPF config; confirm DIA NOC added route to backbone"], "time_est": "10m", "dod_ref": "DISA Network STIG V3R9",
+            },
+        ],
+        "validation": ["OSPF adjacency FULL", "Agency prefix appears in DIA route table (confirm with DIA NOC)", "Traceroute to JWICS resources resolves correctly"],
+        "rollback": {"steps": ["Remove OSPF network statement", "Call DIA NOC to withdraw prefix from backbone"], "rto": "30m"},
+        "escalation": [{"tier": 1, "contact": "DISA NOC 1-800-FOR-DISA", "condition": "OSPF adjacency flapping > 3 times in 1 hour"}, {"tier": 2, "contact": "DIA NOC", "condition": "Backbone route missing after local OSPF correct"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "Type 1 Encryptor Key Resync (KG-250A / TACLANE)",
+        "category": "security_config",
+        "csp": "disa_jwics",
+        "description": (
+            "Emergency and scheduled key resync procedure for NSA Type 1 encryptors (KG-250A, "
+            "TACLANE Flex) on JWICS circuits. Covers alarm interpretation, key reload via fill device, "
+            "and escalation path. Two-person integrity (TPI) required."
+        ),
+        "prerequisites": ["Key fill device (KYK-13 / AN/PYQ-10) with current key material loaded from NSA CSS", "Two cleared personnel present (TPI)", "DISA NOC informed of planned maintenance window (if scheduled)"],
+        "steps": [
+            {
+                "number": 1, "title": "Identify Alarm Condition",
+                "platform": "physical",
+                "prerequisites": [],
+                "actions": [{"type": "physical", "label": "Read alarm display", "command": "Read Type 1 front panel: RED LED = key expiry or key loss. AMBER = sync loss only (transient). Check logs in Type 1 admin interface if available.", "cli_type": "physical"}],
+                "verification": [{"command": "Alarm panel reading", "expected_output": "Alarm code documented. Determine: key expiry (need reload) vs sync loss (may self-recover) vs hardware fault (need NSA CSS)."}],
+                "expected_result": "Root cause identified; TPI personnel assembled if key reload needed",
+                "rollback_commands": [],
+                "notes": ["Never zeroize without authorization — zeroize takes circuit dark immediately"], "time_est": "10m", "dod_ref": "NSA IA CIS-103",
+            },
+            {
+                "number": 2, "title": "Reload Key Material (if KEY EXPIRY alarm)",
+                "platform": "physical",
+                "prerequisites": ["Fill device loaded with current key", "TPI — two cleared personnel present"],
+                "actions": [{"type": "physical", "label": "Perform key fill", "command": "1. Insert fill device into Type 1 fill port. 2. Select key slot on fill device. 3. Initiate fill — device transfers new TEK. 4. Verify KEY LOADED on encryptor display. 5. Disconnect fill device. 6. Document in KMAL.", "cli_type": "physical"}],
+                "verification": [{"command": "Type 1 display after fill", "expected_output": "KEY LOADED. CRYPTO ACTIVE. No alarms."}],
+                "expected_result": "New key loaded; circuit restores CRYPTO SYNC; BIT passes",
+                "rollback_commands": [{"command": "If fill fails: ZEROIZE + call NSA CSS for emergency re-key", "label": "Emergency zeroize"}],
+                "notes": ["Document key serial number and load date in KMAL", "Old key material: destroy per NSA DS-101 destruction procedures"],
+                "time_est": "30m", "dod_ref": "NSA KMI Procedures",
+            },
+            {
+                "number": 3, "title": "Verify Circuit Restoration",
+                "platform": "router-cli",
+                "prerequisites": ["Key loaded, BIT passes"],
+                "actions": [{"type": "cli", "label": "Verify OSPF recovers", "command": "show ip ospf neighbor | include FULL\nping <dia-hub-ip> source <loopback> repeat 20", "cli_type": "ios"}],
+                "verification": [{"command": "show ip ospf neighbor | include FULL", "expected_output": "FULL — adjacency re-established after key reload"}],
+                "expected_result": "OSPF adjacency FULL; circuit traffic restored",
+                "rollback_commands": [],
+                "notes": ["Inform DISA NOC of key reload completion if in maintenance window"],
+                "time_est": "15m", "dod_ref": "",
+            },
+        ],
+        "validation": ["Type 1 alarm cleared", "CRYPTO ACTIVE on display", "OSPF adjacency FULL", "Ping to DISA NOC test IP 100%"],
+        "rollback": {"steps": ["ZEROIZE encryptor (last resort)", "Call DISA NOC to suspend circuit", "Request emergency re-key from NSA CSS"], "rto": "2h (scheduled) / 4h (emergency)"},
+        "escalation": [{"tier": 1, "contact": "DISA NOC 1-800-FOR-DISA", "condition": "Key fill fails or BIT fails after reload"}, {"tier": 2, "contact": "NSA CSS Key Management", "condition": "Key compromise suspected or ZEROIZE activated"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "C2S ClassifiedConnect Provisioning",
+        "category": "physical_connectivity",
+        "csp": "c2s",
+        "description": (
+            "Provision an AWS C2S ClassifiedConnect circuit (the classified equivalent of Direct Connect) "
+            "from the DISA Secret Cloud Access Point (CAP) to the AWS Secret Region (us-gov-secret-1). "
+            "Covers LOA-CFA process, cross-connect at DISA-approved facility, VIF creation, "
+            "and BGP establishment. Requires AWS Secret Region account and DISA CAP access."
+        ),
+        "prerequisites": ["AWS Secret Region account (requires DoD Secret sponsorship)", "DISA Secret CAP access (approved via ATO and DISA CAP connection agreement)", "ASN assigned", "BGP MD5 key established with DISA CAP team"],
+        "steps": [
+            {
+                "number": 1, "title": "Submit ClassifiedConnect Connection Request to AWS Secret Team",
+                "platform": "aws-console",
+                "prerequisites": ["AWS Secret account with C2S Direct Connect access", "DISA CAP connection agreement signed"],
+                "actions": [{"type": "console", "label": "Request ClassifiedConnect", "command": "AWS Secret Console → Direct Connect → Create Connection → Select bandwidth (1G or 10G) → Location: DISA Secret CAP facility → Submit. Note: AWS Secret Console is air-gapped; access via JWICS-connected jump host only.", "cli_type": "console"}],
+                "verification": [{"command": "AWS C2S Console → Direct Connect → Connection state", "expected_output": "Connection in 'requested' state; connection ID (dxcon-xxxxxxxx) returned"}],
+                "expected_result": "Connection ID issued; LOA-CFA available for download within 72h",
+                "rollback_commands": [{"command": "AWS C2S Console → Delete connection (if LOA not yet submitted to DISA)", "label": "Cancel pending connection"}],
+                "notes": ["C2S console is accessible only from JWICS-connected workstations", "LOA-CFA must be submitted to DISA CAP within 30 days"],
+                "time_est": "30m (request) / 72h (LOA availability)", "dod_ref": "DISA C2S Connection Guide §2.1",
+            },
+            {
+                "number": 2, "title": "Submit LOA-CFA to DISA CAP for Cross-Connect",
+                "platform": "physical",
+                "prerequisites": ["LOA-CFA downloaded from C2S console"],
+                "actions": [{"type": "console", "label": "Submit to DISA CAP", "command": "Email LOA-CFA to DISA Secret CAP NOC with: connection ID, requested bandwidth, facility location, customer contact. DISA provisions cross-connect at classified colocation within 5-10 business days.", "cli_type": "physical"}],
+                "verification": [{"command": "C2S Console → Connection state", "expected_output": "Connection transitions from 'requested' to 'available' after DISA cross-connect provisioned"}],
+                "expected_result": "Physical layer up; connection 'available' state",
+                "rollback_commands": [],
+                "notes": ["DISA CAP provisioning is typically 5-10 business days"], "time_est": "varies", "dod_ref": "",
+            },
+            {
+                "number": 3, "title": "Create Private Virtual Interface (VIF) to C2S TGW",
+                "platform": "aws-cli",
+                "prerequisites": ["Connection in 'available' state", "C2S Transit Gateway ID"],
+                "actions": [{"type": "cli", "label": "Create transit VIF", "command": "aws directconnect create-transit-virtual-interface --connection-id dxcon-xxxxxxxx --new-transit-virtual-interface virtualInterfaceName=vif-c2s-prod,vlan=100,asn=65001,authKey=<bgp-md5>,mtu=8500 --region us-gov-secret-1", "cli_type": "aws-cli"}],
+                "verification": [{"command": "aws directconnect describe-virtual-interfaces --region us-gov-secret-1 --query 'virtualInterfaces[?virtualInterfaceName==`vif-c2s-prod`].virtualInterfaceState'", "expected_output": "[\"available\"]"}],
+                "expected_result": "Transit VIF available; BGP session establishing",
+                "rollback_commands": [{"command": "aws directconnect delete-virtual-interface --virtual-interface-id <vif-id> --region us-gov-secret-1", "label": "Delete VIF"}],
+                "notes": ["BGP MD5 auth mandatory for DoD (NIST SC-8)", "Transit VIF requires DXGW attachment to TGW"],
+                "time_est": "20m", "dod_ref": "NIST 800-53 SC-8",
+            },
+            {
+                "number": 4, "title": "Attach DXGW to C2S TGW and Verify BGP",
+                "platform": "aws-cli",
+                "prerequisites": ["Transit VIF 'available'", "C2S DXGW and TGW created"],
+                "actions": [{"type": "cli", "label": "Attach DXGW to TGW", "command": "aws ec2 create-transit-gateway-connect --transport-transit-gateway-attachment-id <tgw-attach-id> --region us-gov-secret-1\naws directconnect create-direct-connect-gateway-association --direct-connect-gateway-id <dxgw-id> --gateway-id <tgw-id> --region us-gov-secret-1", "cli_type": "aws-cli"}],
+                "verification": [{"command": "aws directconnect describe-direct-connect-gateway-associations --direct-connect-gateway-id <dxgw-id> --region us-gov-secret-1 --query 'directConnectGatewayAssociations[0].associationState'", "expected_output": "\"associated\""}],
+                "expected_result": "DXGW-TGW associated; on-prem JWICS routes propagate to TGW route tables",
+                "rollback_commands": [{"command": "aws directconnect delete-direct-connect-gateway-association --association-id <assoc-id>", "label": "Remove association"}],
+                "notes": ["TGW route tables: enable BGP route propagation for all attachments"],
+                "time_est": "15m", "dod_ref": "NIST 800-53 SC-7",
+            },
+        ],
+        "validation": ["ClassifiedConnect state: available", "VIF state: available", "BGP session: Established (check C2S TGW BGP status)", "TGW route table shows JWICS on-prem prefixes"],
+        "rollback": {"steps": ["Delete DXGW-TGW association", "Delete transit VIF", "Coordinate with DISA CAP to remove cross-connect", "Delete ClassifiedConnect connection"], "rto": "8h"},
+        "escalation": [{"tier": 1, "contact": "DISA Secret CAP NOC", "condition": "Cross-connect provisioning delay > 10 business days"}, {"tier": 2, "contact": "AWS Secret Region Support", "condition": "VIF stuck in 'confirming' > 30 min"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "C2S VPC and TGW Attachment for New Workload",
+        "category": "logical_connectivity",
+        "csp": "c2s",
+        "description": (
+            "Onboard a new mission workload into C2S (AWS Secret Region) by creating a VPC, "
+            "attaching it to the C2S Transit Gateway, configuring Route 53 Private Hosted Zone, "
+            "enabling GuardDuty and CloudTrail, and validating end-to-end connectivity from JWICS."
+        ),
+        "prerequisites": ["C2S ClassifiedConnect and TGW operational (see C2S ClassifiedConnect SOP)", "CIDR range allocated from DISA IPAM for C2S", "ATO covering C2S workload"],
+        "steps": [
+            {
+                "number": 1, "title": "Create Mission VPC",
+                "platform": "aws-cli",
+                "prerequisites": ["CIDR allocated (e.g., 10.200.x.0/24)"],
+                "actions": [{"type": "cli", "label": "Create VPC", "command": "aws ec2 create-vpc --cidr-block 10.200.10.0/24 --region us-gov-secret-1 --tag-specifications 'ResourceType=vpc,Tags=[{Key=Name,Value=vpc-mission-app},{Key=Classification,Value=SECRET}]'\naws ec2 modify-vpc-attribute --vpc-id <vpc-id> --enable-dns-hostnames\naws ec2 modify-vpc-attribute --vpc-id <vpc-id> --enable-dns-support", "cli_type": "aws-cli"}],
+                "verification": [{"command": "aws ec2 describe-vpcs --vpc-ids <vpc-id> --query 'Vpcs[0].State'", "expected_output": "\"available\""}],
+                "expected_result": "VPC created with DNS enabled",
+                "rollback_commands": [{"command": "aws ec2 delete-vpc --vpc-id <vpc-id>", "label": "Delete VPC"}],
+                "notes": ["Enable DNS hostnames and support — required for Route 53 PHZ and PrivateLink"], "time_est": "5m", "dod_ref": "",
+            },
+            {
+                "number": 2, "title": "Attach VPC to C2S Transit Gateway",
+                "platform": "aws-cli",
+                "prerequisites": ["VPC created", "TGW ID known"],
+                "actions": [{"type": "cli", "label": "Create TGW attachment", "command": "aws ec2 create-transit-gateway-vpc-attachment --transit-gateway-id <tgw-id> --vpc-id <vpc-id> --subnet-ids <subnet-id> --region us-gov-secret-1 --tag-specifications 'ResourceType=transit-gateway-attachment,Tags=[{Key=Name,Value=tgw-att-mission-app}]'", "cli_type": "aws-cli"}],
+                "verification": [{"command": "aws ec2 describe-transit-gateway-vpc-attachments --filters Name=vpc-id,Values=<vpc-id> --query 'TransitGatewayVpcAttachments[0].State'", "expected_output": "\"available\""}],
+                "expected_result": "TGW attachment in available state; JWICS routes visible in VPC route table after propagation",
+                "rollback_commands": [{"command": "aws ec2 delete-transit-gateway-vpc-attachment --transit-gateway-attachment-id <att-id>", "label": "Delete attachment"}],
+                "notes": ["Enable BGP propagation on TGW route table for this attachment"], "time_est": "10m", "dod_ref": "NIST 800-53 SC-7",
+            },
+            {
+                "number": 3, "title": "Enable GuardDuty and CloudTrail",
+                "platform": "aws-cli",
+                "prerequisites": ["VPC attached to TGW"],
+                "actions": [{"type": "cli", "label": "Enable GuardDuty", "command": "aws guardduty create-detector --enable --finding-publishing-frequency FIFTEEN_MINUTES --region us-gov-secret-1\naws cloudtrail create-trail --name trail-secret-prod --s3-bucket-name <classified-log-bucket> --is-multi-region-trail --region us-gov-secret-1\naws cloudtrail start-logging --name trail-secret-prod --region us-gov-secret-1", "cli_type": "aws-cli"}],
+                "verification": [{"command": "aws guardduty get-detector --detector-id <id> --query 'Status'", "expected_output": "\"ENABLED\""}],
+                "expected_result": "GuardDuty enabled; CloudTrail logging to classified S3 bucket",
+                "rollback_commands": [],
+                "notes": ["GuardDuty and CloudTrail are mandatory IL6 controls (NIST AU-2, SI-4)", "Forward CloudTrail to DISA SIEM via ClassifiedConnect"],
+                "time_est": "15m", "dod_ref": "NIST 800-53 AU-2, SI-4",
+            },
+        ],
+        "validation": ["VPC visible in TGW route table", "JWICS on-prem routes in VPC route table", "GuardDuty status ENABLED", "CloudTrail logging active and SIEM receiving events"],
+        "rollback": {"steps": ["Disable CloudTrail", "Delete TGW attachment", "Delete VPC"], "rto": "30m"},
+        "escalation": [{"tier": 1, "contact": "AWS Secret Region Support", "condition": "TGW attachment stuck in 'pending' > 15 min"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "C2E ExpressRoute Circuit Setup (Azure Government Secret)",
+        "category": "physical_connectivity",
+        "csp": "c2e",
+        "description": (
+            "Provision an Azure C2E ExpressRoute circuit from the DISA Secret Cloud Access Point "
+            "to Azure Government Secret, configure private peering, link to Virtual Network Gateway, "
+            "and verify BGP. NSA Type 1 applied on the physical circuit by DISA."
+        ),
+        "prerequisites": ["Azure Government Secret subscription", "DISA Secret CAP C2E connection agreement signed", "ASN assigned (/30 peering subnets allocated)", "BGP MD5 key established with DISA CAP"],
+        "steps": [
+            {
+                "number": 1, "title": "Create ExpressRoute Circuit in Azure Government Secret",
+                "platform": "az-cli",
+                "prerequisites": ["az login --environment AzureUSGovernmentSecret", "Resource group exists"],
+                "actions": [{"type": "cli", "label": "Create C2E ER circuit", "command": "az network express-route create --resource-group rg-network-secret --name er-c2e-prod --location usgovsecret --sku-family MeteredData --sku-tier Standard --bandwidth 10000 --peering-location 'DISA-CAP-Secret' --provider 'DISA' --environment AzureUSGovernmentSecret", "cli_type": "az-cli"}],
+                "verification": [{"command": "az network express-route show -g rg-network-secret -n er-c2e-prod --query 'circuitProvisioningState' --environment AzureUSGovernmentSecret", "expected_output": "\"Enabled\""}],
+                "expected_result": "Circuit created; service key generated; send service key to DISA CAP team",
+                "rollback_commands": [{"command": "az network express-route delete -g rg-network-secret -n er-c2e-prod", "label": "Delete circuit"}],
+                "notes": ["Use --environment AzureUSGovernmentSecret for all az commands in C2E", "Service key must be provided to DISA CAP — they provision physical cross-connect"],
+                "time_est": "15m", "dod_ref": "NIST 800-53 SC-8",
+            },
+            {
+                "number": 2, "title": "Configure Private Peering",
+                "platform": "az-cli",
+                "prerequisites": ["DISA has provisioned circuit (circuitProvisioningState: Provisioned)"],
+                "actions": [{"type": "cli", "label": "Create private peering", "command": "az network express-route peering create --circuit-name er-c2e-prod -g rg-network-secret --peering-type AzurePrivatePeering --peer-asn 65001 --primary-peer-subnet 192.168.200.0/30 --secondary-peer-subnet 192.168.200.4/30 --vlan-id 200 --shared-key <bgp-md5-key> --environment AzureUSGovernmentSecret", "cli_type": "az-cli"}],
+                "verification": [{"command": "az network express-route peering show --circuit-name er-c2e-prod -g rg-network-secret --name AzurePrivatePeering --query 'peeringType'", "expected_output": "\"AzurePrivatePeering\""}],
+                "expected_result": "Private peering configured; BGP sessions coming up",
+                "rollback_commands": [{"command": "az network express-route peering delete --circuit-name er-c2e-prod -g rg-network-secret --name AzurePrivatePeering", "label": "Remove peering"}],
+                "notes": ["BGP MD5 auth mandatory (NIST SC-8)", "Primary + secondary for active/active redundancy"], "time_est": "15m", "dod_ref": "NIST 800-53 SC-8",
+            },
+            {
+                "number": 3, "title": "Link ER Circuit to Hub VNet Gateway (ErGw3AZ)",
+                "platform": "az-cli",
+                "prerequisites": ["ErGw3AZ deployed in Hub VNet"],
+                "actions": [{"type": "cli", "label": "Create VNet connection to ER", "command": "az network vpn-connection create -g rg-network-secret -n conn-er-hub-secret --vnet-gateway1 ergw-hub-secret --express-route-circuit2 er-c2e-prod --routing-weight 10 --environment AzureUSGovernmentSecret", "cli_type": "az-cli"}],
+                "verification": [{"command": "az network vpn-connection show -g rg-network-secret -n conn-er-hub-secret --query 'connectionStatus'", "expected_output": "\"Connected\""}],
+                "expected_result": "ER gateway connected; JWICS on-prem routes appear in Hub VNet",
+                "rollback_commands": [{"command": "az network vpn-connection delete -g rg-network-secret -n conn-er-hub-secret", "label": "Remove connection"}],
+                "notes": ["FastPath requires ErGw3AZ (Ultra Performance) SKU — mandatory for C2E IL6"], "time_est": "15m", "dod_ref": "",
+            },
+        ],
+        "validation": ["Circuit state: Enabled + Provisioned", "Private peering BGP: Connected", "Hub VNet route table shows JWICS on-prem prefixes", "Ping from C2E VM to JWICS workstation succeeds"],
+        "rollback": {"steps": ["Delete VNet connection", "Delete private peering", "Contact DISA CAP to remove cross-connect"], "rto": "4h"},
+        "escalation": [{"tier": 1, "contact": "DISA Secret CAP NOC", "condition": "BGP not establishing after 30 min"}, {"tier": 2, "contact": "Azure Government Secret Support", "condition": "Circuit state stuck in 'Enabling'"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "JWICS DNS Configuration — New Zone and Records",
+        "category": "application_onboarding",
+        "csp": "disa_jwics",
+        "description": (
+            "Add a new DNS zone and records for an agency application on JWICS. "
+            "Covers submitting zone request to DIA DNS team, DNSSEC signing, "
+            "configuring agency resolver forwarder, and validating resolution. "
+            "Required for every new application or service added to JWICS."
+        ),
+        "prerequisites": ["ATO in place (system registered in eMASS/xACTA)", "IP address assigned from DISA IPAM for JWICS", "Application hostname determined (e.g., app.agency.jwics.gov)"],
+        "steps": [
+            {
+                "number": 1, "title": "Submit DNS Zone Request to DIA DNS Team",
+                "platform": "email",
+                "prerequisites": ["ATO reference number", "IP address and hostname confirmed"],
+                "actions": [{"type": "console", "label": "Email DIA DNS team", "command": "Email: dia-dns@dia.smil.mil (via JWICS email)\nSubject: New Zone Request — agency.jwics.gov\nBody: Zone: agency.jwics.gov\n SOA: ns1.dia.smil.mil, admin.dia.smil.mil\n Records: app.agency.jwics.gov A 10.x.x.x (TTL 300)\n Reverse zone: x.x.10.in-addr.arpa PTR app.agency.jwics.gov\n ATO reference: [eMASS system ID]\n POC: [ISSO name, phone, JWICS email]", "cli_type": "email"}],
+                "verification": [{"command": "Wait for DIA DNS confirmation email (1-3 business days)", "expected_output": "Email confirmation: zone created, NS delegation in place"}],
+                "expected_result": "DIA adds zone delegation; authoritative NS records point to agency DNS server",
+                "rollback_commands": [],
+                "notes": ["Use JWICS email (smil.mil) — do not send DNS requests over NIPRNet email for classified applications"], "time_est": "30m (submit) / 1-3 days (provision)", "dod_ref": "DISA JWICS Subscriber Handbook §4.2",
+            },
+            {
+                "number": 2, "title": "Configure Agency JWICS DNS Server (BIND 9)",
+                "platform": "linux-cli",
+                "prerequisites": ["DISA-hardened BIND 9 installed", "DIA zone delegation confirmed"],
+                "actions": [{"type": "cli", "label": "Configure zone in named.conf", "command": "# Add to /etc/named.conf:\nzone \"agency.jwics.gov\" IN {\n    type master;\n    file \"/var/named/agency.jwics.gov.zone\";\n    allow-transfer { 10.x.x.x; };  # DIA secondary NS\n    key-directory \"/etc/bind/keys\";\n    dnssec-policy \"default\";\n};\n\n# Create zone file /var/named/agency.jwics.gov.zone:\n$TTL 300\n@ IN SOA ns1.agency.jwics.gov. admin.agency.jwics.gov. (\n    2026050901 ; serial\n    3600       ; refresh\n    900        ; retry\n    604800     ; expire\n    300 )      ; minimum\n@ IN NS ns1.agency.jwics.gov.\n@ IN NS ns1.dia.smil.mil.\nns1 IN A 10.x.x.1\napp IN A 10.x.x.10", "cli_type": "bash"}],
+                "verification": [{"command": "named-checkconf && named-checkzone agency.jwics.gov /var/named/agency.jwics.gov.zone", "expected_output": "zone agency.jwics.gov/IN: loaded serial 2026050901\nOK"}],
+                "expected_result": "Zone loaded with no errors; DNSSEC keys generated",
+                "rollback_commands": [{"command": "Remove zone block from named.conf; delete zone file; systemctl reload named", "label": "Remove zone"}],
+                "notes": ["DNSSEC mandatory per DISA DNS STIG V2R5", "Enable query logging to SIEM for AU-2 compliance"],
+                "time_est": "1h", "dod_ref": "DISA DNS STIG V2R5",
+            },
+            {
+                "number": 3, "title": "Validate Resolution from JWICS Workstation",
+                "platform": "linux-cli",
+                "prerequisites": ["Zone loaded and DNSSEC signed"],
+                "actions": [{"type": "cli", "label": "Test DNS resolution", "command": "# From SCIF workstation (JWICS side):\ndig @<jwics-resolver-ip> app.agency.jwics.gov A\ndig @<jwics-resolver-ip> app.agency.jwics.gov A +dnssec +multiline\ndig @<jwics-resolver-ip> -x 10.x.x.10  # Reverse PTR", "cli_type": "bash"}],
+                "verification": [{"command": "dig @<resolver> app.agency.jwics.gov", "expected_output": "app.agency.jwics.gov. 300 IN A 10.x.x.10\n;; flags: qr aa rd ra ad; -- 'ad' flag = DNSSEC validated"}],
+                "expected_result": "A record resolves; DNSSEC 'ad' flag set; PTR resolves correctly",
+                "rollback_commands": [],
+                "notes": ["If 'ad' flag missing: check DNSSEC policy on zone; verify DS record submitted to DIA"], "time_est": "15m", "dod_ref": "",
+            },
+        ],
+        "validation": ["dig resolves app.agency.jwics.gov with DNSSEC ad flag", "Reverse PTR resolves", "DIA secondary NS synced (check with: dig @ns1.dia.smil.mil agency.jwics.gov SOA)"],
+        "rollback": {"steps": ["Remove zone from agency DNS server", "Email DIA DNS to remove delegation"], "rto": "30m"},
+        "escalation": [{"tier": 1, "contact": "DIA DNS Team (dia-dns@dia.smil.mil via JWICS)", "condition": "Zone not resolving after 24h of creation"}, {"tier": 2, "contact": "DISA NOC", "condition": "Resolver connectivity issue"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "JWICS Email Relay Setup — New Agency Domain",
+        "category": "application_onboarding",
+        "csp": "disa_jwics",
+        "description": (
+            "Configure a new agency domain on the JWICS email system. Covers S/MIME requirement, "
+            "NSS PKI certificate procurement, MX record addition to JWICS DNS, SMTP relay "
+            "configuration with CAC auth, and HBSS DLPe email scan policy."
+        ),
+        "prerequisites": ["JWICS DNS zone in place (see JWICS DNS Configuration SOP)", "NSS PKI server certificate for mail server (DoD EMAIL CA)", "HBSS ePO deployed on mail relay host"],
+        "steps": [
+            {
+                "number": 1, "title": "Request NSS PKI S/MIME Server Certificate",
+                "platform": "web",
+                "prerequisites": ["CAC + PIV", "ISSO approval"],
+                "actions": [{"type": "console", "label": "Submit cert request to NSS PKI", "command": "JWICS web: https://pki.dia.smil.mil → Server Certificate → Upload CSR → Select 'DoD EMAIL CA-59' template → Submit. CSR must include emailAddress SAN matching agency domain.", "cli_type": "console"}],
+                "verification": [{"command": "Download signed cert from NSS PKI portal", "expected_output": "Certificate signed by DoD EMAIL CA-59. Validity: 3 years."}],
+                "expected_result": "Signed TLS + S/MIME server certificate available",
+                "rollback_commands": [],
+                "notes": ["S/MIME cert must include Key Encipherment and Digital Signature key usage", "Email EKU (1.3.6.1.5.5.7.3.4) required"], "time_est": "1-3 days", "dod_ref": "NSS PKI Certificate Policy §3.2",
+            },
+            {
+                "number": 2, "title": "Add MX Record to JWICS DNS",
+                "platform": "linux-cli",
+                "prerequisites": ["JWICS DNS zone for agency.jwics.gov exists"],
+                "actions": [{"type": "cli", "label": "Add MX record to zone file", "command": "# Edit /var/named/agency.jwics.gov.zone:\n@ IN MX 10 mail.agency.jwics.gov.\nmail IN A 10.x.x.20\n# Increment serial; reload:\nrndc reload agency.jwics.gov", "cli_type": "bash"}],
+                "verification": [{"command": "dig @<resolver> agency.jwics.gov MX", "expected_output": "agency.jwics.gov. 300 IN MX 10 mail.agency.jwics.gov."}],
+                "expected_result": "MX record resolves from JWICS resolver",
+                "rollback_commands": [{"command": "Remove MX line from zone file; rndc reload", "label": "Remove MX"}],
+                "notes": [], "time_est": "15m", "dod_ref": "",
+            },
+            {
+                "number": 3, "title": "Configure SMTP Relay with CAC Auth and HBSS Scan",
+                "platform": "linux-cli",
+                "prerequisites": ["Postfix / Sendmail installed (DISA-hardened)", "HBSS DLPe agent installed", "NSS PKI cert installed"],
+                "actions": [{"type": "cli", "label": "Configure Postfix with CAC auth", "command": "# /etc/postfix/main.cf key settings:\nsmtpd_tls_cert_file = /etc/ssl/mail-server.crt\nsmtpd_tls_key_file = /etc/ssl/mail-server.key\nsmtpd_tls_CAfile = /etc/ssl/dod-ca-chain.pem\nsmtpd_tls_security_level = encrypt\nsmtpd_tls_auth_only = yes\nsmtp_tls_security_level = encrypt\nsmtpd_sasl_auth_enable = yes\n# CAC authentication via SASL → LDAP to JWICS LDAP server\nsmtpd_relay_restrictions = permit_sasl_authenticated, reject\n# Forward to DIA JWICS relay:\nrelayhost = [mail.dia.smil.mil]:587", "cli_type": "bash"}],
+                "verification": [{"command": "postfix check && systemctl restart postfix\nopenssl s_client -connect mail.agency.jwics.gov:587 -starttls smtp", "expected_output": "250-STARTTLS\n220 mail.agency.jwics.gov ESMTP ready"}],
+                "expected_result": "SMTP relay accepting connections with STARTTLS; relaying to DIA hub",
+                "rollback_commands": [{"command": "systemctl stop postfix", "label": "Stop relay"}],
+                "notes": ["HBSS DLPe content scan policy: reject attachments > 25MB, block classified keyword triggers", "Enable SMTPD access logging to SIEM"],
+                "time_est": "2h", "dod_ref": "DISA Email STIG V2R2",
+            },
+        ],
+        "validation": ["MX record resolves via JWICS DNS", "SMTP STARTTLS functional on port 587", "Test email delivered to another JWICS mailbox", "HBSS DLPe scan triggered on test attachment", "Syslog events appearing in SIEM for SMTP activity"],
+        "rollback": {"steps": ["Remove MX from DNS", "Disable SMTP relay (systemctl stop postfix)"], "rto": "30m"},
+        "escalation": [{"tier": 1, "contact": "DIA Email Team (email-admin@dia.smil.mil via JWICS)", "condition": "DIA relay rejecting mail from agency domain"}, {"tier": 2, "contact": "NSS PKI Office", "condition": "Certificate chain validation failure"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "New Application Onboarding on JWICS (Full Checklist)",
+        "category": "application_onboarding",
+        "csp": "disa_jwics",
+        "description": (
+            "Complete 12-step checklist for onboarding a new application onto JWICS. "
+            "Covers ATO registration, IP/DNS provisioning, firewall ACL, NSS PKI cert, "
+            "S/MIME (if email), HBSS/ACAS deployment, STIG remediation, syslog/SIEM, "
+            "and smoke test. Includes NIST 800-53 control references at each step."
+        ),
+        "prerequisites": ["System concept approved by ISSO and AO", "Classified SCIF or JWICS-connected hosting environment", "JWICS connectivity operational (OSPF adjacency FULL)"],
+        "steps": [
+            {"number": 1, "title": "Submit System Registration to eMASS/xACTA", "platform": "web", "prerequisites": ["ISSO assigned"], "actions": [{"type": "console", "label": "Register system", "command": "eMASS / xACTA → New System → Enter system name, boundary, classification (SECRET), IL (IL6), data types, mission owner. Submit for AO review.", "cli_type": "console"}], "verification": [{"command": "eMASS system ID assigned", "expected_output": "System ID issued; AO review scheduled"}], "expected_result": "System registered; AO review in progress", "rollback_commands": [], "notes": ["Do not connect to JWICS before ATO granted"], "time_est": "4-12 weeks", "dod_ref": "NIST CA-1, CA-7"},
+            {"number": 2, "title": "Obtain ATO from DAA/AO", "platform": "web", "prerequisites": ["System registration complete (Step 1)"], "actions": [{"type": "console", "label": "ATO approval in eMASS", "command": "Submit System Security Plan (SSP), Privacy Impact Assessment (PIA), STIG checklist to AO via eMASS. Schedule authorization boundary review.", "cli_type": "console"}], "verification": [{"command": "eMASS → System → Authorization Status", "expected_output": "Status: Authorized (ATO letter with 3-year expiry)"}], "expected_result": "ATO granted; ATO letter stored in eMASS", "rollback_commands": [], "notes": ["ATO is prerequisite for all subsequent steps"], "time_est": "4-12 weeks", "dod_ref": "NIST CA-2, CA-9"},
+            {"number": 3, "title": "Request JWICS IP Subnet from DISA IPAM", "platform": "email", "prerequisites": ["ATO reference number"], "actions": [{"type": "console", "label": "Email DISA IPAM team", "command": "Email DISA IPAM (ipam@disa.smil.mil via JWICS email): Request /24 subnet for new system. Provide: ATO reference, hosting site, anticipated host count, ISSO POC.", "cli_type": "email"}], "verification": [{"command": "DISA IPAM email confirmation", "expected_output": "Subnet 10.x.x.0/24 allocated for agency/system"}], "expected_result": "IP range allocated; update DISA IPAM asset register", "rollback_commands": [], "notes": ["DISA IPAM response 1-5 business days"], "time_est": "30m submit / 1-5 days provision", "dod_ref": "NIST CM-8"},
+            {"number": 4, "title": "Request DNS A-Record from DIA DNS Team", "platform": "email", "prerequisites": ["IP allocated (Step 3)"], "actions": [{"type": "console", "label": "Email DIA DNS for A-record", "command": "Follow JWICS DNS Configuration SOP (separate SOP). Email dia-dns@dia.smil.mil with hostname and IP.", "cli_type": "email"}], "verification": [{"command": "dig @<jwics-resolver> <hostname>", "expected_output": "Resolves to allocated IP with DNSSEC ad flag"}], "expected_result": "A-record and PTR created; DNSSEC validated", "rollback_commands": [], "notes": [], "time_est": "1-3 days", "dod_ref": "NIST CM-7"},
+            {"number": 5, "title": "Submit JWICS Firewall ACL Request to DISA", "platform": "ticketing", "prerequisites": ["ATO reference", "Hostname + IP + ports defined"], "actions": [{"type": "console", "label": "Submit ITCS firewall ticket", "command": "DISA ITCS (itcs.disa.mil) → New Ticket → Firewall Change → Provide: src IP, dst IP, port, protocol, justification, ATO reference. Attach ISSO approval email.", "cli_type": "console"}], "verification": [{"command": "ITCS ticket status = Resolved", "expected_output": "ACL rule added; change ticket closed"}], "expected_result": "JWICS firewall ACL in place; application reachable on specified ports", "rollback_commands": [{"command": "Submit DISA ITCS ticket to remove ACL", "label": "Remove firewall rule"}], "notes": ["1-5 business days for ACL implementation"], "time_est": "1-5 days", "dod_ref": "NIST SC-7, CM-5"},
+            {"number": 6, "title": "Install NSS PKI TLS Certificate", "platform": "linux-cli", "prerequisites": ["NSS PKI account", "JWICS connectivity to NSS PKI portal"], "actions": [{"type": "cli", "label": "Generate CSR and request cert", "command": "openssl req -newkey rsa:2048 -keyout server.key -out server.csr -subj '/CN=app.agency.jwics.gov/O=Agency/C=US'\n# Submit CSR to https://pki.dia.smil.mil → Server Certificate → DoD CA-59\nopenssl verify -CAfile /etc/ssl/dod-ca-chain.pem server.crt", "cli_type": "bash"}], "verification": [{"command": "openssl s_client -connect app.agency.jwics.gov:443 2>&1 | grep 'Verify return code'", "expected_output": "Verify return code: 0 (ok)"}], "expected_result": "TLS cert installed; certificate chain validates against NSS PKI", "rollback_commands": [], "notes": ["Use TLS 1.2+ with FIPS-approved cipher suites only (DISA TLS STIG V2R3)"], "time_est": "2h", "dod_ref": "NIST IA-5(2), SC-8"},
+            {"number": 7, "title": "Deploy HBSS Agent on Application Hosts", "platform": "linux-cli", "prerequisites": ["HBSS ePO server accessible from host", "Host registered in DISA asset inventory"], "actions": [{"type": "cli", "label": "Install HBSS agent", "command": "# Pull HBSS ePO agent installer from DISA HBSS portal (hbss.disa.smil.mil)\ncurl -k https://<epo-server>:8443/AgentPackages/EPOAGENT3700/linux/mcafeeagent-<ver>.x86_64.tar.gz -o hbss-agent.tar.gz\ntar -xzf hbss-agent.tar.gz && sudo ./install.sh", "cli_type": "bash"}], "verification": [{"command": "sudo /opt/McAfee/agent/bin/cmdagent -i", "expected_output": "Agent is running. Status: Managed. Enforcement: On."}], "expected_result": "HBSS agent enrolled in ePO; HIPS and DLPe policies applied within 30 min", "rollback_commands": [{"command": "sudo /opt/McAfee/agent/bin/uninstall.sh", "label": "Remove HBSS agent"}], "notes": ["HBSS mandatory for all IL6 hosts (DISA HBSS STIG V2R2)"], "time_est": "1h", "dod_ref": "NIST SI-3, SI-4"},
+            {"number": 8, "title": "Register with ACAS (Nessus SC) for Vulnerability Scanning", "platform": "web", "prerequisites": ["HBSS agent installed (Step 7)", "ACAS scanner can reach host"], "actions": [{"type": "console", "label": "Register in ACAS console", "command": "DISA ACAS portal (acas.disa.smil.mil) → Assets → Add Asset → Enter hostname, IP, OS. Assign to agency scan group. Schedule authenticated scan (use DISA 'DoD-STIG' policy).", "cli_type": "console"}], "verification": [{"command": "ACAS console → Scan Results → Latest scan for host", "expected_output": "Scan completed. CAT1 findings = 0 before go-live."}], "expected_result": "Host scanned; all CAT1/CAT2 findings remediated before go-live", "rollback_commands": [], "notes": ["Go-live blocked on CAT1 STIG findings (policy: zero CAT1 tolerance)"], "time_est": "1-3 days (scan + remediation)", "dod_ref": "NIST RA-5"},
+            {"number": 9, "title": "Configure Syslog Forwarding to DISA SIEM", "platform": "linux-cli", "prerequisites": ["DISA SIEM IP and TLS cert available"], "actions": [{"type": "cli", "label": "Configure rsyslog TLS forward", "command": "# /etc/rsyslog.conf:\nglobal(DefaultNetstreamDriver=\"gtls\" DefaultNetstreamDriverCAFile=\"/etc/ssl/disa-siem-ca.pem\")\naction(type=\"omfwd\" target=\"<disa-siem-ip>\" port=\"6514\" protocol=\"tcp\" streamDriver=\"gtls\" streamDriverMode=\"1\" streamDriverAuthMode=\"anon\")\nsystemctl restart rsyslog", "cli_type": "bash"}], "verification": [{"command": "logger -p local7.info 'JWICS-test-log-entry'; check DISA SIEM for receipt", "expected_output": "Log event visible in DISA SIEM within 5 minutes"}], "expected_result": "Syslog forwarding to DISA SIEM active; log events visible", "rollback_commands": [], "notes": ["SIEM receipt mandatory before go-live (NIST AU-2)", "Retention: 1 year minimum (AU-11)"], "time_est": "1h", "dod_ref": "NIST AU-2, AU-9, AU-11"},
+            {"number": 10, "title": "Run STIG Checklist and Remediate CAT1/CAT2", "platform": "linux-cli", "prerequisites": ["ACAS scan complete (Step 8)"], "actions": [{"type": "cli", "label": "Run OpenSCAP STIG audit", "command": "oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_stig --report /tmp/stig-report.html /usr/share/xml/scap/ssg/content/ssg-rhel9-ds.xml 2>/dev/null\n# Review /tmp/stig-report.html for CAT1/CAT2 findings", "cli_type": "bash"}], "verification": [{"command": "grep -c 'fail.*high' /tmp/stig-report.html", "expected_output": "0 (zero CAT1 failures)"}], "expected_result": "Zero CAT1 open findings; CAT2 findings documented with POA&M", "rollback_commands": [], "notes": ["CAT1 = block go-live. CAT2 = document in POAM (plan to remediate within 30 days)"], "time_est": "1-3 days", "dod_ref": "NIST CM-6"},
+            {"number": 11, "title": "Smoke Test: DNS, Application Reachability, Audit Log", "platform": "linux-cli", "prerequisites": ["All Steps 1-10 complete"], "actions": [{"type": "cli", "label": "Full smoke test", "command": "# 1. DNS\ndig @<jwics-resolver> app.agency.jwics.gov\n# 2. HTTPS reachability\ncurl -v --cacert /etc/ssl/dod-ca-chain.pem https://app.agency.jwics.gov/healthz\n# 3. Audit log\nlogger -p local7.info 'SMOKE-TEST-$(date +%s)'; grep SMOKE-TEST <disa-siem-query>\n# 4. HBSS status\nsudo /opt/McAfee/agent/bin/cmdagent -i | grep 'Enforcement: On'", "cli_type": "bash"}], "verification": [{"command": "curl exit code 0; DNS resolves; SIEM receives log within 5 min", "expected_output": "All checks pass"}], "expected_result": "Application reachable, DNS resolves, HBSS active, SIEM receiving logs", "rollback_commands": [], "notes": ["Document smoke test results in eMASS as go-live evidence"], "time_est": "2h", "dod_ref": "NIST CA-7"},
+        ],
+        "validation": ["ATO issued", "DNS resolves with DNSSEC", "HTTPS/443 reachable from JWICS workstation", "HBSS agent managed and enforcing", "ACAS scan shows 0 CAT1", "SIEM receiving syslog events", "STIG report shows 0 CAT1 open"],
+        "rollback": {"steps": ["Disable application service", "Submit DISA ITCS ticket to remove ACL", "Remove DNS record (email DIA DNS)", "Revoke NSS PKI cert (emergency only)"], "rto": "4h"},
+        "escalation": [{"tier": 1, "contact": "Agency ISSO", "condition": "Any step fails validation"}, {"tier": 2, "contact": "DISA NOC 1-800-FOR-DISA", "condition": "Firewall ACL or SIEM connectivity issue"}, {"tier": 3, "contact": "AO (Authorizing Official)", "condition": "CAT1 STIG finding cannot be remediated before go-live deadline"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "JWICS Connectivity Troubleshooting (BGP / DNS / Crypto)",
+        "category": "troubleshooting",
+        "csp": "disa_jwics",
+        "description": (
+            "Layered troubleshooting guide for JWICS connectivity issues. Covers four zones: "
+            "Zone 1 (Type 1 crypto), Zone 2 (BGP/routing), Zone 3 (DNS), Zone 4 (email). "
+            "Includes escalation matrix to DISA NOC, DIA NOC, and NSA CSS."
+        ),
+        "prerequisites": ["Access to JWICS gateway router CLI", "SCIF workstation with dig, curl, openssl, traceroute", "DISA NOC contact: 1-800-FOR-DISA"],
+        "steps": [
+            {"number": 1, "title": "Zone 1: Type 1 Physical / Crypto Check", "platform": "physical", "prerequisites": [], "actions": [{"type": "physical", "label": "Check Type 1 alarms", "command": "1. Check Type 1 front panel: RED LED = key expired/lost. AMBER = sync loss (transient — wait 2 min).\n2. On gateway router: show interface <WAN> | include up|down|errors\n3. If interface down: check physical cable, SFP, demarc loopback test.", "cli_type": "physical"}], "verification": [{"command": "show interface GigabitEthernet0/0", "expected_output": "GigabitEthernet0/0 is up, line protocol is up"}], "expected_result": "Interface up; Type 1 shows CRYPTO ACTIVE with no alarm", "rollback_commands": [], "notes": ["If RED alarm: reload key (see Type 1 Key Resync SOP)"], "time_est": "15m", "dod_ref": ""},
+            {"number": 2, "title": "Zone 2: OSPF/Routing Check", "platform": "router-cli", "prerequisites": ["Interface up (Zone 1 clear)"], "actions": [{"type": "cli", "label": "Check OSPF adjacency and routes", "command": "show ip ospf neighbor\nshow ip route ospf | head 20\ntraceroute <dia-hub-ip> source <loopback>\nping <dia-hub-ip> source <loopback> repeat 20", "cli_type": "ios"}], "verification": [{"command": "show ip ospf neighbor | grep FULL", "expected_output": "FULL state neighbor entry present"}], "expected_result": "OSPF adjacency FULL; traceroute reaches DIA hub in ≤2 hops", "rollback_commands": [{"command": "clear ip ospf process — forces OSPF restart (brief outage)", "label": "Reset OSPF"}], "notes": ["If OSPF down: check authentication key, area ID, MTU, network type match with DIA hub; call DISA NOC if backbone issue"], "time_est": "15m", "dod_ref": ""},
+            {"number": 3, "title": "Zone 3: DNS Resolution Check", "platform": "linux-cli", "prerequisites": ["OSPF routing working (Zone 2 clear)"], "actions": [{"type": "cli", "label": "Test JWICS DNS", "command": "dig @<jwics-resolver-ip> app.agency.jwics.gov\ndig @<jwics-resolver-ip> app.agency.jwics.gov +dnssec +multiline\ndig @<jwics-resolver-ip> +recurse _dnskey.jwics.gov  # DNSSEC trust anchor\ntcpdump -i eth0 port 53 -n  # Verify DNS traffic reaching resolver", "cli_type": "bash"}], "verification": [{"command": "dig @<resolver> app.agency.jwics.gov", "expected_output": "A record returned with 'ad' flag (DNSSEC validated)"}], "expected_result": "DNS resolves; DNSSEC 'ad' flag set", "rollback_commands": [], "notes": ["If no 'ad' flag: DNSSEC validation failing — check zone signing; contact DIA DNS", "If SERVFAIL: check if zone is authoritative; check resolver logs (/var/log/named/)"], "time_est": "15m", "dod_ref": ""},
+            {"number": 4, "title": "Zone 4: Email Relay Check", "platform": "linux-cli", "prerequisites": ["DNS working (Zone 3 clear)"], "actions": [{"type": "cli", "label": "Test SMTP relay", "command": "# Check relay is listening:\nss -tlnp | grep :587\n# Test SMTP handshake:\nopenssl s_client -connect mail.agency.jwics.gov:587 -starttls smtp\n# Check HBSS DLPe status:\n/opt/McAfee/agent/bin/cmdagent -p | grep DLPe\n# Check Postfix queue:\npostqueue -p | head -20\n# Check relay auth:\npostconf -n smtpd_sasl_auth_enable smtpd_relay_restrictions", "cli_type": "bash"}], "verification": [{"command": "openssl s_client exit code", "expected_output": "Verify return code: 0 (ok). '250 STARTTLS' offered."}], "expected_result": "SMTP relay accepts STARTTLS; cert validates; HBSS DLPe active", "rollback_commands": [], "notes": ["If cert expired: emergency cert renewal via NSS PKI + email DIA DNS team"], "time_est": "20m", "dod_ref": ""},
+            {"number": 5, "title": "Escalation Matrix", "platform": "phone", "prerequisites": [], "actions": [{"type": "console", "label": "Escalate per tier", "command": "Tier 1: Agency NOC → internal team + DISA NOC 1-800-FOR-DISA (24/7)\nTier 2: DISA NOC tickets open → DIA NOC (for backbone/DNS issues)\nTier 3: NSA CSS (key compromise, ZEROIZE events, hardware fault)\nFor C2S issues: AWS Secret Region Support via JWICS-connected portal\nFor C2E issues: Azure Government Secret Support via JWICS-connected portal", "cli_type": "phone"}], "verification": [{"command": "Ticket number obtained from DISA NOC", "expected_output": "DISA incident ticket number issued"}], "expected_result": "Incident tracked; repair timeline established", "rollback_commands": [], "notes": ["Always get a ticket number — required for SLA tracking and after-action report"], "time_est": "varies", "dod_ref": ""},
+        ],
+        "validation": ["Zone 1: Type 1 CRYPTO ACTIVE, no alarm", "Zone 2: OSPF adjacency FULL", "Zone 3: DNS resolves with DNSSEC", "Zone 4: SMTP relay functional"],
+        "rollback": {"steps": ["If unresolvable in 30 min: escalate to DISA NOC", "Document all commands run and outputs for after-action review"], "rto": "4h"},
+        "escalation": [{"tier": 1, "contact": "DISA NOC 1-800-FOR-DISA", "condition": "Any zone unresolvable after 30 min"}, {"tier": 2, "contact": "DIA NOC", "condition": "JWICS backbone outage"}, {"tier": 3, "contact": "NSA CSS", "condition": "Key compromise, zeroize event, or Type 1 hardware fault"}],
+        "classification": "CUI",
+    },
+    {
+        "title": "DISA Full Network Connectivity Verification (NIPR + JWICS + C2S + C2E)",
+        "category": "validation",
+        "csp": "disa_all",
+        "description": (
+            "End-to-end verification checklist confirming connectivity across all four DISA network tiers: "
+            "NIPRNet, JWICS, C2S (AWS Secret), and C2E (Azure Government Secret). "
+            "Use after major infrastructure changes, failover tests, or periodic verification exercises. "
+            "Each tier has an independent verification step; failures in one tier do not block others."
+        ),
+        "prerequisites": ["Access to NIPR workstation, SCIF/JWICS workstation, and C2S/C2E management consoles", "DISA NOC test IPs for all tiers", "Credentials for C2S and C2E consoles (via JWICS jump host)"],
+        "steps": [
+            {"number": 1, "title": "Verify NIPRNet / BCAP Connectivity (NIPR Tier)", "platform": "windows-cli", "prerequisites": ["NIPR workstation connected to NIPRNet"], "actions": [{"type": "cli", "label": "Ping DISA BCAP test IP", "command": "# From NIPR workstation:\nping -n 20 <disa-bcap-test-ip>\ntracert <disa-bcap-test-ip>\ncurl -v https://<nipr-test-url>/healthz --cacert dod-ca-bundle.pem", "cli_type": "windows"}], "verification": [{"command": "ping -n 20", "expected_output": "Packets: Sent = 20, Received = 20, Lost = 0 (0% loss)"}], "expected_result": "NIPRNet path to DISA BCAP verified; HTTPS works with DoD cert chain", "rollback_commands": [], "notes": [], "time_est": "10m", "dod_ref": ""},
+            {"number": 2, "title": "Verify JWICS Connectivity (SECRET Tier)", "platform": "router-cli", "prerequisites": ["SCIF workstation with JWICS access"], "actions": [{"type": "cli", "label": "JWICS routing and reachability", "command": "# From SCIF workstation:\nping -c 20 <disa-jwics-test-ip>\ntraceroute <disa-jwics-test-ip>\ndig @<jwics-resolver> test.dia.smil.mil\ncurl -v https://<jwics-test-url>/healthz", "cli_type": "bash"}], "verification": [{"command": "ping -c 20 success rate", "expected_output": "20 packets transmitted, 20 received, 0% packet loss"}], "expected_result": "JWICS routing verified; DNS resolves; HTTPS functional", "rollback_commands": [], "notes": ["If OSPF down: see JWICS BGP Peering SOP"], "time_est": "10m", "dod_ref": ""},
+            {"number": 3, "title": "Verify C2S (AWS Secret Region) Connectivity", "platform": "aws-cli", "prerequisites": ["C2S account access via JWICS jump host"], "actions": [{"type": "cli", "label": "C2S TGW and EC2 reachability", "command": "# From JWICS-connected jump host:\naws directconnect describe-virtual-interfaces --region us-gov-secret-1 --query 'virtualInterfaces[0].virtualInterfaceState'\naws ec2 describe-transit-gateways --region us-gov-secret-1 --query 'TransitGateways[0].State'\nping -c 10 <c2s-ec2-test-ip>", "cli_type": "aws-cli"}], "verification": [{"command": "VIF state", "expected_output": "\"available\" / BGP: established"}], "expected_result": "ClassifiedConnect VIF available; TGW available; EC2 reachable from JWICS", "rollback_commands": [], "notes": ["If BGP down: see C2S ClassifiedConnect SOP → BGP troubleshooting"], "time_est": "15m", "dod_ref": ""},
+            {"number": 4, "title": "Verify C2E (Azure Government Secret) Connectivity", "platform": "az-cli", "prerequisites": ["C2E subscription access via JWICS jump host"], "actions": [{"type": "cli", "label": "C2E ER and VNet reachability", "command": "# From JWICS-connected jump host:\naz network express-route show -g rg-network-secret -n er-c2e-prod --query 'circuitProvisioningState' --environment AzureUSGovernmentSecret\naz network vpn-connection show -g rg-network-secret -n conn-er-hub-secret --query 'connectionStatus' --environment AzureUSGovernmentSecret\nping -c 10 <c2e-vm-test-ip>", "cli_type": "az-cli"}], "verification": [{"command": "connectionStatus", "expected_output": "\"Connected\""}], "expected_result": "ExpressRoute Provisioned + Connected; C2E VM reachable from JWICS", "rollback_commands": [], "notes": ["If ER down: see C2E ExpressRoute SOP → private peering reset"], "time_est": "15m", "dod_ref": ""},
+            {"number": 5, "title": "Verify SIEM Logging Across All Tiers", "platform": "linux-cli", "prerequisites": ["DISA SIEM access"], "actions": [{"type": "cli", "label": "Check SIEM log receipt", "command": "# Generate test log on each tier's syslog source:\nlogger -p local7.info 'VERIFY-NIPR-$(date +%s)'\nlogger -p local7.info 'VERIFY-JWICS-$(date +%s)'\n# In C2S: publish CloudTrail test event\naws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=DescribeInstances --region us-gov-secret-1 | head\n# Check DISA SIEM console for receipt within 5 min", "cli_type": "bash"}], "verification": [{"command": "DISA SIEM query for VERIFY- test strings", "expected_output": "All 3 log sources received within 5 minutes"}], "expected_result": "SIEM receiving events from all tiers: NIPR syslog, JWICS syslog, C2S CloudTrail", "rollback_commands": [], "notes": [], "time_est": "20m", "dod_ref": "NIST AU-2"},
+        ],
+        "validation": ["NIPRNet → BCAP: ping 0% loss, HTTPS functional", "JWICS: OSPF FULL, DNS resolves, HTTPS functional", "C2S: VIF available, TGW available, EC2 reachable", "C2E: ER Connected, VNet route table correct, VM reachable", "SIEM receiving all tiers within 5 min"],
+        "rollback": {"steps": ["Document any failed tiers", "Open DISA NOC ticket for each failed tier", "Restore from last known-good config if change-related"], "rto": "4h per tier"},
+        "escalation": [{"tier": 1, "contact": "DISA NOC 1-800-FOR-DISA", "condition": "Any tier fails verification"}, {"tier": 2, "contact": "DIA NOC (JWICS), AWS Secret Support (C2S), Azure Gov Secret Support (C2E)", "condition": "DISA NOC cannot resolve within 2h"}],
+        "classification": "CUI",
+    },
+]
+
 ALL_SOPS = (
     _PHYSICAL + _VPN + _HUB_TRANSIT + _CROSS_CLOUD + _DOD_SCCA +
-    _IPSEC_REF + _ROUTING + _TROUBLESHOOTING
+    _IPSEC_REF + _ROUTING + _TROUBLESHOOTING + _DISA_JWICS
 )
 
 
