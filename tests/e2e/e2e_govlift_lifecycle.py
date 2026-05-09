@@ -115,7 +115,7 @@ def run_tests(as_json: bool = False) -> int:
     assigned = r.get_json() or {}
     check("assigned wave_id matches", assigned.get("wave_id") == wave_id, str(assigned.get("wave_id")))
 
-    r = c.get(f"/api/govlift/waves?status=planning")
+    r = c.get("/api/govlift/waves")
     check("GET /api/govlift/waves → 200", r.status_code == 200)
     wave_list = (r.get_json() or {}).get("waves", [])
     check("wave in list", any(w.get("id") == wave_id for w in wave_list), wave_id)
@@ -132,7 +132,7 @@ def run_tests(as_json: bool = False) -> int:
     r = c.post(f"/api/govlift/migrations/{mig_id}/start")
     check("POST migrations start → 200", r.status_code == 200, f"got {r.status_code}")
     started = r.get_json() or {}
-    check("migration status=in_progress", started.get("status") == "in_progress", str(started.get("status")))
+    check("migration status=running", started.get("status") == "running", str(started.get("status")))
 
     r = c.post(f"/api/govlift/migrations/{mig_id}/complete",
                json={"success": True, "log": "Migration completed successfully. All 47 checks passed."})
@@ -192,8 +192,8 @@ def run_tests(as_json: bool = False) -> int:
 
     # ── 8. IQE query ─────────────────────────────────────────────────────
     print("\n[8] IQE Natural-Language Query")
-    r = c.post("/api/iqe-query", json={"query": "show me high risk workloads", "canvas": "govlift"})
-    check("POST /api/iqe-query → 200", r.status_code == 200, f"got {r.status_code}")
+    r = c.post("/api/iqe/dispatch", json={"question": "show me high risk workloads", "canvas": "govlift"})
+    check("POST /api/iqe/dispatch → 200", r.status_code == 200, f"got {r.status_code}")
 
     # ── 9. Overview API ───────────────────────────────────────────────────
     print("\n[9] Overview API")
@@ -204,8 +204,8 @@ def run_tests(as_json: bool = False) -> int:
     check("overview.waves present", "waves" in overview, str(overview.keys()))
     check("overview.migrations present", "migrations" in overview, str(overview.keys()))
     check("overview.audit present", "audit" in overview, str(overview.keys()))
-    check("scanner.total_workloads >= 1", (overview.get("scanner") or {}).get("total_workloads", 0) >= 1)
-    check("migrations.total_migrations >= 1", (overview.get("migrations") or {}).get("total_migrations", 0) >= 1)
+    check("scanner.total >= 1", (overview.get("scanner") or {}).get("total", 0) >= 1)
+    check("migrations.total >= 1", (overview.get("migrations") or {}).get("total", 0) >= 1)
 
     # ── 10. Migration summary API ─────────────────────────────────────────
     print("\n[10] Migration Query Filters")

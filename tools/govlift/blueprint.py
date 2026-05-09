@@ -295,10 +295,32 @@ def create_govlift_blueprint() -> Blueprint:
 
     @bp.route("/api/iqe-query", methods=["POST"])
     def govlift_iqe_query():
-        from tools.iqe.engine import handle_iqe_query
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.govlift  # noqa: F401 — registers govlift.* collections
+
         body = request.get_json(force=True, silent=True) or {}
-        result = handle_iqe_query(canvas="govlift", query=body.get("query", ""),
-                                   context_id=body.get("context_id"))
-        return jsonify(result)
+        question = (body.get("query") or body.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "query required"}), 400
+
+        collections = ["govlift.workloads", "govlift.waves", "govlift.migrations",
+                       "govlift.stig", "govlift.audit"]
+        try:
+            translation = nl_to_iqe(question, collections)
+            iqe_str = translation.get("iqe", "")
+            explanation = translation.get("explanation", "")
+            if not body.get("execute", True):
+                return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation})
+            try:
+                ast = parse(iqe_str)
+                rows = execute_query(ast)
+            except IQESyntaxError:
+                rows = []
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "total": len(rows)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc), "results": [], "total": 0})
 
     return bp

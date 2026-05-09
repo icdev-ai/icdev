@@ -136,7 +136,7 @@
   .status-completed { background:#d4edda; color:#155724; }
   .status-rolled_back { background:#f8d7da; color:#721c24; }
   .mp-plan-dur { font-size:0.75rem; color:#718096; flex-shrink:0; }
-  .mp-plan-chevron { color:#a0aec0; transition:transform .2s; }
+  .mp-plan-chevron { color:#4a5568; transition:transform .2s; }
   .mp-plan-card.open .mp-plan-chevron { transform:rotate(180deg); }
   .mp-plan-body { display:none; padding:14px 16px; border-top:1px solid var(--border,#e2e8f0); }
   .mp-plan-card.open .mp-plan-body { display:block; }
@@ -162,7 +162,7 @@
   .sop-step-n { color:#3182ce; font-weight:700; flex-shrink:0; width:18px; }
   .sop-step-action { flex:1; color:#2d3748; }
   .sop-step-verify { font-size:0.72rem; color:#48bb78; margin-top:2px; }
-  .sop-step-time { font-size:0.7rem; color:#a0aec0; flex-shrink:0; }
+  .sop-step-time { font-size:0.7rem; color:#718096; flex-shrink:0; }
   .sop-prereq { font-size:0.78rem; color:#4a5568; margin-bottom:8px; }
   .sop-prereq span { background:#fef3c7; color:#92400e; padding:2px 7px; border-radius:10px; margin:2px; display:inline-block; font-size:0.72rem; }
   </style>
@@ -210,7 +210,7 @@
           <div class="mp-sop-entry-hdr">
             <span class="mp-sop-badge">{{ (doc.doc_type or doc.doc_source or 'SOP')|upper }}</span>
             <span class="mp-sop-name">{{ doc.doc_title }}</span>
-            {% if doc.steps %}<span style="font-size:0.7rem;color:#a0aec0;">{{ doc.steps|length }} steps ▾</span>{% endif %}
+            {% if doc.steps %}<span style="font-size:0.7rem;color:#718096;">{{ doc.steps|length }} steps ▾</span>{% endif %}
             {% if doc.relevance_note %}<span style="font-size:0.7rem;color:#718096;font-style:italic;">{{ doc.relevance_note }}</span>{% endif %}
           </div>
           {% if doc.steps %}
@@ -258,7 +258,7 @@
   </script>
 
   {% else %}
-  <div style="padding:20px 16px;color:#a0aec0;font-size:0.85rem;">
+  <div style="padding:20px 16px;color:#718096;font-size:0.85rem;">
     No migration phases defined for this project.
     <a href="/network/migration-hub" style="color:#3182ce;">Create one in the Migration Hub →</a>
   </div>
