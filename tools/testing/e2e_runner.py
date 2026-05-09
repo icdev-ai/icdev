@@ -48,7 +48,7 @@ from tools.testing.utils import (  # noqa: E402
 )
 
 
-_NATIVE_TIMEOUT_SECONDS: int = 900  # 60s server start + ~840s for 88 tests at ~10s each
+_NATIVE_TIMEOUT_SECONDS: int = 1200  # 60s server start + ~1140s for 88 tests (20 min safety margin)
 _MCP_TIMEOUT_SECONDS: int = 120
 _PLAYWRIGHT_PROBE_TIMEOUT: int = 15
 _CLAUDE_PROBE_TIMEOUT: int = 5

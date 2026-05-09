@@ -3035,3 +3035,53 @@ projects:
     - key: inn
       title: Innovation Follow-Through — Code Quality + CLI Harmonization
       priority: medium
+
+- key: dm
+  name: Data Mesh Integration — Domains, Products, Contracts, Governance, CSP Bridges
+  description: >
+    Six new pages integrated into the Data Design Canvas (DDC) at /data/ to implement
+    all four Data Mesh pillars using open source tools and CSP native services.
+    Ep1 (found): 9 DB tables + DM_ constants + data_mesh/ package.
+    Ep2 (domain): Data Domain management at /data/domains — ownership, maturity, team mapping.
+    Ep3 (prod): Data Product Registry at /data/products — discoverable, SLA-backed products with subscriptions.
+    Ep4 (contract): Data Contracts at /data/contracts — ODCS/bitol-io YAML editor, lint, test runner (wraps datacontract-cli if installed).
+    Ep5 (gov): Federated Governance at /data/governance — OPA REST client + local Rego eval fallback, policy editor, access check tester.
+    Ep6 (csp): CSP Bridges at /data/csp — AWS DataZone, Azure Purview, GCP Dataplex sync adapters.
+    Ep7 (portal): Data Mesh Hub at /data/mesh — 4-pillar score cards, domain map, activity feed.
+    Ep8 (wire): OpenLineage emitter, requirements.txt optional deps, manifest shard, companion sync, coherence gate.
+  task_prefix: dm-
+  default_open: true
+  briefs:
+  - 'found: 9 dm_* tables in init_db.py + DM_ constants in constants.py + tools/data_canvas/data_mesh/__init__.py'
+  - 'domain: domain_manager.py + /domains route + 4 API endpoints + domains.html + icdev/ mirror + nav'
+  - 'prod: product_registry.py + /products route + 5 API endpoints + products.html + icdev/ mirror + nav'
+  - 'contract: contract_engine.py (ODCS lint/test) + /contracts route + 5 API endpoints + contracts.html + icdev/ mirror'
+  - 'gov: governance_engine.py (OPA client + fallback) + /governance route + 5 API endpoints + governance.html + icdev/ mirror'
+  - 'csp: csp/ package (aws_datazone + azure_purview + gcp_dataplex) + /csp route + 3 API endpoints + csp.html'
+  - 'portal: mesh.html hub + /mesh route + /api/dm/summary + index.html Data Mesh nav link'
+  - 'wire: lineage_emitter.py + requirements.txt optional deps + data_mesh_config.yaml + manifest shard + companion sync + coherence + feature doc'
+  epics:
+  - key: found
+    title: Foundation — 9 DB tables + constants + data_mesh/ package
+    priority: critical
+  - key: domain
+    title: Data Domains — /data/domains ownership & maturity
+    priority: critical
+  - key: prod
+    title: Data Products — /data/products registry & subscriptions
+    priority: critical
+  - key: contract
+    title: Data Contracts — /data/contracts ODCS lint & test
+    priority: critical
+  - key: gov
+    title: Federated Governance — /data/governance OPA policies
+    priority: critical
+  - key: csp
+    title: CSP Bridges — /data/csp DataZone/Purview/Dataplex
+    priority: high
+  - key: portal
+    title: Data Mesh Hub — /data/mesh 4-pillar landing page
+    priority: high
+  - key: wire
+    title: Wiring — OpenLineage, requirements, manifest, V&V
+    priority: high
