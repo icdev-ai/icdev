@@ -6,8 +6,9 @@ Publishes:
   aadc.agent.flagged  — when a design contains L5 (unconstrained) agents
 
 Subscribes to:
-  sdc.topology.saved  — pulls security context for AI nodes in linked SDC design
-  odc.source.added    — syncs monitoring baseline for linked observability design
+  sdc.topology.saved       — pulls security context for AI nodes in linked SDC design
+  odc.source.added         — syncs monitoring baseline for linked observability design
+  aimc.model.deprecated    — flags orphaned model refs when an AIMC model is deprecated
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ def register() -> None:
         from tools.canvas.event_bus import subscribe
         subscribe("aadc", "sdc.topology.saved", _on_sdc_topology_saved)
         subscribe("aadc", "odc.source.added", _on_odc_source_added)
+        subscribe("aadc", "aimc.model.deprecated", _on_aimc_model_deprecated)
         logger.info("aadc.bus: subscriptions registered")
     except Exception as exc:
         logger.warning("aadc.bus: could not register subscriptions: %s", exc)
@@ -226,3 +228,74 @@ def _on_odc_source_added(event_id: str, canvas_id: str, event_type: str, payload
             conn.close()
     except Exception as exc:
         logger.warning("aadc.bus: odc env store failed: %s", exc)
+
+
+def _on_aimc_model_deprecated(event_id: str, canvas_id: str, event_type: str, payload: dict) -> None:
+    """When AIMC deprecates a model, audit every AADC design that references it.
+
+    Queries aadc_aimc_model_refs for the deprecated model_id and writes:
+      - aadc_audit row (action=AIMC_MODEL_DEPRECATED) per affected design
+      - aadc_artifacts row (artifact_type=aimc_deprecated_model_ref) per ref so
+        the AADC UI can surface a deprecation warning on each affected node.
+    """
+    model_id = payload.get("model_id", "")
+    if not model_id:
+        logger.warning("aadc.bus: aimc.model.deprecated missing model_id")
+        return
+    deprecation_date = payload.get("deprecation_date", _now())
+    logger.info("aadc.bus: aimc.model.deprecated model_id=%s", model_id)
+
+    try:
+        from tools.agentic_ai_canvas.db.init_db import get_connection as aadc_conn
+        conn = aadc_conn()
+        try:
+            refs = conn.execute(
+                "SELECT id, aadc_design_id, aadc_node_id, aimc_design_id "
+                "FROM aadc_aimc_model_refs WHERE aimc_model_id=?",
+                (model_id,),
+            ).fetchall()
+
+            for ref_row in refs:
+                if isinstance(ref_row, dict):
+                    ref_id = ref_row["id"]
+                    aadc_design_id = ref_row["aadc_design_id"]
+                    aadc_node_id = ref_row["aadc_node_id"]
+                else:
+                    ref_id, aadc_design_id, aadc_node_id = ref_row[0], ref_row[1], ref_row[2]
+
+                detail = (
+                    f"ref_id={ref_id} aadc_design_id={aadc_design_id} "
+                    f"aimc_model_id={model_id} deprecation_date={deprecation_date}"
+                )
+                conn.execute(
+                    "INSERT INTO aadc_audit (id, design_id, action, detail, classification, created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), aadc_design_id, "AIMC_MODEL_DEPRECATED",
+                     detail, "CUI", _now()),
+                )
+
+                artifact_content = json.dumps({
+                    "event_id": event_id,
+                    "ref_id": ref_id,
+                    "aadc_design_id": aadc_design_id,
+                    "aadc_node_id": aadc_node_id,
+                    "aimc_model_id": model_id,
+                    "deprecation_date": deprecation_date,
+                    "flagged_at": _now(),
+                })
+                conn.execute(
+                    "INSERT INTO aadc_artifacts (id, design_id, artifact_type, title, content_json, created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), aadc_design_id, "aimc_deprecated_model_ref",
+                     f"Deprecated AIMC Model ({model_id[:8]})", artifact_content, _now()),
+                )
+
+            conn.commit()
+            logger.info(
+                "aadc.bus: flagged %d orphaned ref(s) for deprecated aimc_model=%s",
+                len(refs), model_id,
+            )
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("aadc.bus: aimc model deprecated handler failed: %s", exc)
