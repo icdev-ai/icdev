@@ -6447,13 +6447,19 @@ def create_app() -> Flask:
         }
         jobs = []
         log_entries = []
-        conn = _get_db()
+        # Open with a short timeout so lock contention fails fast rather than
+        # blocking for 30+ seconds (sync_log has millions of rows and the DB
+        # is often under write load from the Kanban scheduler).
+        import sqlite3 as _sq
         try:
-            # Ensure indexes exist for sync_log queries (table can have millions of rows)
-            try:
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_log_action ON sync_log(action)")
-            except Exception:
-                pass
+            conn = _sq.connect(str(DB_PATH), timeout=3)
+            conn.row_factory = _sq.Row
+            conn.execute("PRAGMA busy_timeout=3000")
+        except Exception:
+            conn = None
+        if conn is None:
+            return render_template("filesync.html", stats=stats, jobs=jobs, log_entries=log_entries)
+        try:
             try:
                 row = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs").fetchone()
                 stats["total_jobs"] = row["cnt"]

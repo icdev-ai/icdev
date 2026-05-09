@@ -419,6 +419,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "mc_net_ai_sessions",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
         "sg_war_readiness_events",
+        # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
+        "nc_topology_snapshots",
     ]
 
     if tool_name == "Bash":

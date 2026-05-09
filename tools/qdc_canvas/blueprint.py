@@ -1261,6 +1261,17 @@ def api_execute_gate(gate_id):
         data = request.get_json(force=True, silent=True) or {}
         project_dir = data.get("project_dir")
         result = execute_gate(gate_id, project_dir)
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("qdc", "qdc.gate.executed", {
+                "gate_id": gate_id,
+                "design_id": data.get("design_id", ""),
+                "status": result.get("status", "unknown"),
+                "passed": result.get("status") == "pass",
+                "score": result.get("score", 0),
+            }, target_canvas="pdc")
+        except Exception:
+            pass
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc), "gate_id": gate_id}), 500

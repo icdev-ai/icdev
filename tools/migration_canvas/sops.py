@@ -176,7 +176,19 @@ def approve_sop(sop_id, approved_by=""):
             (approved_by, now, now, sop_id),
         )
         conn.commit()
-    return get_sop_by_id(sop_id)
+    sop = get_sop_by_id(sop_id)
+    try:
+        from tools.canvas.event_bus import publish as _eb_publish
+        _eb_publish("mdc", "mdc.sop.approved", {
+            "sop_id": sop_id,
+            "approved_by": approved_by,
+            "design_id": (sop or {}).get("design_id", ""),
+            "sop_type": (sop or {}).get("sop_type", ""),
+            "classification": (sop or {}).get("classification", "CUI"),
+        }, target_canvas="idc")
+    except Exception:
+        pass
+    return sop
 
 
 def reject_sop(sop_id, reason=""):

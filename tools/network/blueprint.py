@@ -5962,6 +5962,18 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         _audit("CREATE", "ipam_block", bid, data.get("network", ""))
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("ndc", "ndc.ipam.added", {
+                "block_id": bid,
+                "network": data.get("network", ""),
+                "topology_id": data.get("topology_id"),
+                "vrf": data.get("vrf", "global"),
+                "vlan_id": data.get("vlan_id"),
+                "classification": "CUI",
+            }, target_canvas="idc")
+        except Exception:
+            pass
         return jsonify({"id": bid}), 201
 
     @bp.route("/api/ipam/<bid>", methods=["PUT"])
@@ -11306,6 +11318,9 @@ Respond with ONLY this JSON (no other text):
             engine = TrafficFlowEngine()
             if request.method == "GET":
                 flows = engine.list_flows(topo_id, conn)
+                phase_filter = request.args.get("phase_id")
+                if phase_filter:
+                    flows = [f for f in flows if f.get("phase_id") == phase_filter]
                 return jsonify({"flows": flows}), 200
             # POST — create
             data = request.get_json(silent=True) or {}
@@ -11401,6 +11416,38 @@ Respond with ONLY this JSON (no other text):
                 conn.close()
             except Exception:
                 pass
+
+    @bp.route("/api/twin/<topo_id>/traffic-flows/<flow_id>/assign-phase", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_tfw_assign_phase(topo_id, flow_id):
+        """Assign (or unassign) a traffic flow to a migration phase.
+
+        Body: {"phase_id": "<id>"}  — pass null to unassign.
+        """
+        from tools.network.db.init_db import get_connection as _gc
+        data = request.get_json(silent=True) or {}
+        phase_id = data.get("phase_id")
+
+        conn = _gc()
+        try:
+            row = conn.execute(
+                "SELECT id FROM nc_traffic_flows WHERE id=? AND topology_id=?",
+                (flow_id, topo_id),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "flow not found"}), 404
+
+            conn.execute(
+                "UPDATE nc_traffic_flows SET phase_id=? WHERE id=?",
+                (phase_id, flow_id),
+            )
+            conn.commit()
+            return jsonify({"status": "ok", "flow_id": flow_id, "phase_id": phase_id}), 200
+        except Exception as exc:
+            logger.warning("assign-phase error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
 
     # ══════════════════════════════════════════════════════════════════════
     # API: IP Address Planning Assistant
@@ -11996,6 +12043,99 @@ Planning rules:
             )
 
         return jsonify({"error": f"Unknown format: {fmt}"}), 400
+
+    # ── Phase Status Update + Snapshot ────────────────────────────────────
+    @bp.route("/api/migration-phases/<topo_id>/<phase_id>/status", methods=["PUT"])
+    @nc_login_required
+    def nc_api_migration_phase_status(topo_id, phase_id):
+        """Update phase status; if completed, snapshot the topology.
+
+        Body (JSON):
+          status         : "completed" | "in_progress" | "rolled_back"
+          classification : optional override ("PUBLIC"|"CUI"|"SECRET"|"TS")
+          impact_level   : optional override ("IL2"|"IL4"|"IL5"|"IL6")
+        """
+        import json as _json
+        import uuid as _uuid
+        from tools.network.migration_phases import (
+            generate_phase_graph,
+            run_consolidation_analysis,
+            save_consolidation,
+        )
+
+        data = request.get_json(silent=True) or {}
+        new_status = data.get("status", "").strip()
+        valid_statuses = {"planned", "in_progress", "completed", "rolled_back"}
+        if new_status not in valid_statuses:
+            return jsonify({"error": f"status must be one of {sorted(valid_statuses)}"}), 400
+
+        conn = get_connection()
+        try:
+            phase_row = conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE id=?", (phase_id,)
+            ).fetchone()
+            if not phase_row:
+                return jsonify({"error": "phase not found"}), 404
+            phase = dict(phase_row)
+
+            update_fields = ["status=?"]
+            update_vals: list = [new_status]
+            classification = data.get("classification")
+            impact_level = data.get("impact_level")
+            if classification:
+                update_fields.append("classification=?")
+                update_vals.append(classification)
+            if impact_level:
+                update_fields.append("impact_level=?")
+                update_vals.append(impact_level)
+            update_vals.extend([phase_id])
+
+            conn.execute(
+                f"UPDATE nc_migration_phases SET {', '.join(update_fields)} WHERE id=?",
+                update_vals,
+            )
+
+            snapshot_id = None
+            if new_status == "completed":
+                topo_row = conn.execute(
+                    "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+                ).fetchone()
+                if topo_row:
+                    current_graph = _json.loads(topo_row[0] or "{}") or {"nodes": [], "edges": []}
+                    phase_meta = dict(phase)
+                    phase_meta["status"] = new_status
+                    post_graph = generate_phase_graph(current_graph, phase_meta)
+                    snapshot_id = str(_uuid.uuid4())
+                    conn.execute(
+                        """INSERT INTO nc_topology_snapshots (id, topo_id, phase_id, label, graph_json)
+                           VALUES (?,?,?,?,?)""",
+                        (
+                            snapshot_id,
+                            topo_id,
+                            phase_id,
+                            f"Phase {phase.get('phase_num', '?')} Complete",
+                            _json.dumps(post_graph),
+                        ),
+                    )
+                    try:
+                        analysis = run_consolidation_analysis(current_graph, post_graph)
+                        save_consolidation(topo_id, analysis)
+                    except Exception:
+                        pass
+
+                _audit(conn, "phase_completed", {
+                    "phase_id": phase_id,
+                    "topo_id": topo_id,
+                    "classification": classification or phase.get("classification", "CUI"),
+                })
+
+            conn.commit()
+            return jsonify({"status": "ok", "snapshot_id": snapshot_id}), 200
+        except Exception as exc:
+            logger.warning("phase status update error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
 
     # ── Migration Hub ──────────────────────────────────────────────────────
     @bp.route("/migration-hub")

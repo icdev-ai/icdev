@@ -278,6 +278,12 @@ def create_pipeline_blueprint():
     except Exception as exc:
         logger.warning("Pipeline DB init failed: %s", exc)
 
+    try:
+        from tools.pipeline import bus_subscriber as _pdc_bus
+        _pdc_bus.register()
+    except Exception as exc:
+        logger.warning("PDC bus subscriber registration failed: %s", exc)
+
     bp = Blueprint(
         "pipeline_canvas",
         __name__,
