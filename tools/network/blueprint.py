@@ -11730,6 +11730,227 @@ Planning rules:
         _audit("DELETE", "subnet_calc", entry_id)
         return jsonify({"deleted": entry_id})
 
+    # ── Migration Phases View ───────────────────────────────────────────────
+
+    @bp.route("/migration-phases/<topo_id>")
+    @nc_login_required
+    def nc_migration_phases(topo_id):
+        """Three-panel migration phases view: Current → Phase N → Final/To-Be."""
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return "Topology not found", 404
+
+        # Fetch migration phases linked to any project that uses this topology
+        phases = conn.execute(
+            """
+            SELECT mp.id, mp.phase_num, mp.title, mp.description,
+                   mp.duration_days, mp.parallel_run, mp.rollback_criteria,
+                   mp.maintenance_window, mp.dependencies, mp.status
+            FROM nc_migration_phases mp
+            JOIN nc_projects proj ON proj.id = mp.project_id
+            WHERE proj.topology_id = ? OR mp.project_id IN (
+                SELECT id FROM nc_projects WHERE topology_id = ?
+            )
+            ORDER BY mp.phase_num
+            """,
+            (topo_id, topo_id),
+        ).fetchall()
+        conn.close()
+
+        topo_name = topo["name"] if hasattr(topo, "__getitem__") else topo[1]
+        phases_list = [dict(p) if hasattr(p, "keys") else {
+            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+            "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
+            "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
+        } for p in phases]
+
+        return render_template(
+            "network/migration_phases.html",
+            topo_id=topo_id,
+            topo_name=topo_name,
+            phases=phases_list,
+            phase_count=len(phases_list),
+        )
+
+    @bp.route("/api/migration-phases/<topo_id>/data", methods=["GET"])
+    @nc_login_required
+    def nc_api_migration_phases_data(topo_id):
+        """Return all phase graphs + info boxes + consolidation as JSON."""
+        import json as _json
+        from tools.network.migration_phases import (
+            compute_infoboxes, compute_final_infoboxes,
+            generate_phase_graph, generate_final_graph,
+            run_consolidation_analysis, load_consolidation,
+        )
+
+        conn = get_connection()
+        topo_row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo_row:
+            conn.close()
+            return jsonify({"error": "topology not found"}), 404
+
+        graph_json, topo_name = topo_row[0], topo_row[1]
+        current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
+
+        phases = conn.execute(
+            """
+            SELECT mp.id, mp.phase_num, mp.title, mp.description,
+                   mp.duration_days, mp.parallel_run, mp.rollback_criteria,
+                   mp.maintenance_window, mp.dependencies, mp.status
+            FROM nc_migration_phases mp
+            JOIN nc_projects proj ON proj.id = mp.project_id
+            WHERE proj.topology_id = ? OR mp.project_id IN (
+                SELECT id FROM nc_projects WHERE topology_id = ?
+            )
+            ORDER BY mp.phase_num
+            """,
+            (topo_id, topo_id),
+        ).fetchall()
+        conn.close()
+
+        phases_list = [dict(p) if hasattr(p, "keys") else {
+            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+            "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
+            "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
+            "total_phases": len(phases),
+        } for p in phases]
+
+        # Build per-phase graphs and info boxes
+        phase_data = []
+        for pm in phases_list:
+            pm["total_phases"] = len(phases_list)
+            ph_graph = generate_phase_graph(current_graph, pm)
+            ph_boxes = compute_infoboxes(ph_graph, phase_key=f"phase-{pm['phase_num']}", phase_meta=pm)
+            phase_data.append({
+                "phase_num": pm["phase_num"],
+                "title": pm["title"],
+                "status": pm["status"],
+                "graph": ph_graph,
+                "infoboxes": ph_boxes,
+            })
+
+        # Final/To-Be graph + consolidation
+        final_graph = generate_final_graph(current_graph, phases_list)
+        consolidation = load_consolidation(topo_id)
+        if not consolidation:
+            consolidation = run_consolidation_analysis(current_graph, final_graph)
+            consolidation["current_device_count"] = len(current_graph.get("nodes", []))
+            consolidation["final_device_count"] = len(final_graph.get("nodes", []))
+        final_boxes = compute_final_infoboxes(current_graph, final_graph, consolidation)
+
+        return jsonify({
+            "topo_id": topo_id,
+            "topo_name": topo_name,
+            "current": {
+                "graph": current_graph,
+                "infoboxes": compute_infoboxes(current_graph, phase_key="current"),
+            },
+            "phases": phase_data,
+            "final": {
+                "graph": final_graph,
+                "infoboxes": final_boxes,
+                "consolidation": consolidation,
+            },
+        })
+
+    @bp.route("/api/migration-phases/<topo_id>/export/<phase_key>/<fmt>", methods=["POST"])
+    @nc_login_required
+    def nc_api_migration_phases_export(topo_id, phase_key, fmt):
+        """Export a single phase panel as PDF, Visio, or Draw.io.
+
+        phase_key: 'current', 'phase-N', or 'final'
+        fmt: 'pdf', 'visio', 'drawio'
+        """
+        import json as _json
+        from tools.network.migration_phases import (
+            compute_infoboxes, compute_final_infoboxes,
+            generate_phase_graph, generate_final_graph,
+            run_consolidation_analysis, load_consolidation,
+        )
+
+        conn = get_connection()
+        topo_row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo_row:
+            conn.close()
+            return jsonify({"error": "topology not found"}), 404
+        graph_json, topo_name = topo_row[0], topo_row[1]
+        current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
+        conn.close()
+
+        # Resolve which graph + label to export
+        if phase_key == "current":
+            graph = current_graph
+            phase_label = "Current State"
+            infoboxes = compute_infoboxes(graph, phase_key="current")
+            consolidation = None
+            phase_meta = None
+        elif phase_key == "final":
+            phases_raw = []  # fetch from DB if needed — simplified: use empty for now
+            graph = generate_final_graph(current_graph, phases_raw)
+            phase_label = "Final / To-Be State"
+            consolidation = load_consolidation(topo_id) or run_consolidation_analysis(current_graph, graph)
+            infoboxes = compute_final_infoboxes(current_graph, graph, consolidation)
+            phase_meta = None
+        else:
+            # phase-N
+            try:
+                pnum = int(phase_key.split("-")[1])
+            except Exception:
+                pnum = 1
+            phase_meta = {"phase_num": pnum, "total_phases": pnum, "title": f"Phase {pnum}"}
+            graph = generate_phase_graph(current_graph, phase_meta)
+            phase_label = f"Phase {pnum}"
+            infoboxes = compute_infoboxes(graph, phase_key=phase_key, phase_meta=phase_meta)
+            consolidation = None
+
+        safe_name = topo_name.replace(" ", "_").replace("/", "-")[:40]
+
+        if fmt == "pdf":
+            from tools.network.pdf_export import export_phase_pdf
+            pdf_bytes = export_phase_pdf(
+                topo_name, phase_label, graph, infoboxes, consolidation, phase_meta
+            )
+            is_html = pdf_bytes[:15].startswith(b"<!DOCTYPE")
+            if is_html:
+                return current_app.response_class(
+                    pdf_bytes,
+                    mimetype="text/html",
+                    headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}_report.html"'},
+                )
+            return current_app.response_class(
+                pdf_bytes,
+                mimetype="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}.pdf"'},
+            )
+
+        if fmt == "visio":
+            from tools.network.visio_export import export_vsdx
+            vsdx_bytes = export_vsdx(f"{topo_name} — {phase_label}", graph)
+            return current_app.response_class(
+                vsdx_bytes,
+                mimetype="application/vnd.visio",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}.vsdx"'},
+            )
+
+        if fmt == "drawio":
+            from tools.network.export_import import to_drawio
+            xml = to_drawio(graph, f"{topo_name} — {phase_label}")
+            return current_app.response_class(
+                xml.encode("utf-8"),
+                mimetype="application/octet-stream",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}.drawio"'},
+            )
+
+        return jsonify({"error": f"Unknown format: {fmt}"}), 400
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

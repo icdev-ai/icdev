@@ -940,6 +940,18 @@ CREATE TABLE IF NOT EXISTS aadc_cost_estimates (
     generated_at    TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_aadc_cost_design ON aadc_cost_estimates(design_id);
+
+CREATE TABLE IF NOT EXISTS aadc_aimc_model_refs (
+    id              TEXT PRIMARY KEY,
+    aadc_design_id  TEXT NOT NULL REFERENCES aadc_designs(id) ON DELETE CASCADE,
+    aadc_node_id    TEXT NOT NULL,
+    aimc_model_id   TEXT NOT NULL,
+    aimc_design_id  TEXT,
+    notes           TEXT DEFAULT '',
+    created_at      TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_aadc_aimc_refs_design ON aadc_aimc_model_refs(aadc_design_id);
+CREATE INDEX IF NOT EXISTS idx_aadc_aimc_refs_model  ON aadc_aimc_model_refs(aimc_model_id);
 """
 
 

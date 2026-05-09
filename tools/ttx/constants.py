@@ -20,7 +20,8 @@ RIBBON_DEFS = {
     "ai_innovator":    {"icon": "🤖", "label": "AI Innovator",    "desc": "Most AI receipts + highest quality"},
     "doctrine_scholar":{"icon": "📚", "label": "Doctrine Scholar","desc": "Highest LLM judge score"},
     "strategist":      {"icon": "🎯", "label": "Strategist",      "desc": "Highest COA inject score"},
-    "safety_architect": {"icon": "🛡️", "label": "Safety Architect", "desc": "Highest AADC compliance score across design challenges"},
+    "safety_architect":{"icon": "🛡️", "label": "Safety Architect","desc": "Highest AADC compliance score across design challenges"},
+    "model_architect": {"icon": "🏛️", "label": "Model Architect", "desc": "Highest AIMC governance score in the Model Governance inject"},
 }
 
 # ICDEV tool slugs that produce scoreable receipts
@@ -38,4 +39,29 @@ SCOREABLE_TOOLS = (
     "aadc.assess",
     "aadc.threat_model",
     "aadc.recommend",
+    "aimc.assess",         # POST /ai-ml/api/designs/<id>/assess
+    "aimc.gov_assess",     # POST /ai-ml/api/designs/<id>/assess-gov
+    "aimc.adapt_recommend",# POST /ai-ml/api/adapt/recommend
+    "aimc.deploy_plan",    # POST /ai-ml/api/deploy/plan
 )
+
+# Maps tool slug → ICDEV API endpoint (relative to http://localhost:5050)
+TOOL_ENDPOINTS: dict[str, str] = {
+    "strategos.oracle":         "/strategos/api/oracle",
+    "strategos.signals":        "/strategos/api/signals",
+    "strategos.wargame.coa":    "/strategos/api/wargame/coa",
+    "strategos.wargame.lanchester": "/strategos/api/wargame/lanchester",
+    "strategos.wargame.ooda":   "/strategos/api/wargame/ooda",
+    "strategos.iw.composite":   "/strategos/api/iw/composite",
+    "strategos.simulate":       "/strategos/api/simulate",
+    "finetune.deploy":          "/finetune/api/deploy",
+    "knowledge.search":         "/knowledge/api/search",
+    "genesis.run":              "/genesis/api/run",
+    "aadc.assess":              "/agentic-ai/api/designs/{design_id}/assess",
+    "aadc.threat_model":        "/agentic-ai/api/designs/{design_id}/threat-model",
+    "aadc.recommend":           "/agentic-ai/api/adapt/recommend",
+    "aimc.assess":              "/ai-ml/api/designs/{design_id}/assess",
+    "aimc.gov_assess":          "/ai-ml/api/designs/{design_id}/assess-gov",
+    "aimc.adapt_recommend":     "/ai-ml/api/adapt/recommend",
+    "aimc.deploy_plan":         "/ai-ml/api/deploy/plan",
+}

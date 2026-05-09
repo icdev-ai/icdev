@@ -4,6 +4,35 @@
 
 ---
 
+## NDC — Migration Phases Engine
+
+| Tool | Path | Purpose |
+|------|------|---------|
+| `compute_infoboxes()` | `tools/network/migration_phases.py` | Compute 8–16 critical info boxes (device inventory, link util, IP/VLAN, redundancy, routing, security, WAN, hardware health, plus phase-specific and final-specific boxes) from a topology graph dict. |
+| `compute_final_infoboxes()` | `tools/network/migration_phases.py` | Final/To-Be panel boxes: all 8 standard + consolidation results, 3yr TCO delta, performance gains, compliance improvement. |
+| `generate_phase_graph()` | `tools/network/migration_phases.py` | Overlay phase changes on current graph — colors nodes: existing=blue, new=green, changing=orange, retiring=red. |
+| `generate_final_graph()` | `tools/network/migration_phases.py` | Apply all phases sequentially → derive Final/To-Be topology. |
+| `run_consolidation_analysis()` | `tools/network/migration_phases.py` | Compute devices removed, rack units freed, power savings, capex/opex/TCO delta, SPOF reduction from current vs final graph. |
+| `save_consolidation()` / `load_consolidation()` | `tools/network/migration_phases.py` | Persist/load consolidation analysis to `nc_consolidation_analysis` DB table. |
+| `export_phase_pdf()` | `tools/network/pdf_export.py` | Multi-page PDF (fpdf2): cover + topology SVG diagram + info boxes + device inventory + port mapping + consolidation. Falls back to print-ready HTML if fpdf2 unavailable. |
+
+**Routes:**
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/migration-phases/<topo_id>` | GET | Three-panel view: Current State / Phase N stepper / Final To-Be. Each with SVG diagram + 8+ info boxes + PDF/Visio/Draw.io export. |
+| `/network/api/migration-phases/<topo_id>/data` | GET | Return all phase graphs + info boxes + consolidation JSON. |
+| `/network/api/migration-phases/<topo_id>/export/<phase_key>/<fmt>` | POST | Export one panel as PDF, Visio VSDX, or Draw.io XML. |
+
+**DB Tables:** `nc_phase_infoboxes` (user overrides per box), `nc_consolidation_analysis` (cached analysis per topology).
+
+```bash
+# Access from any topology's action row in /network/
+# Click "MP" button → /network/migration-phases/<topo_id>
+```
+
+---
+
 ## NDC — Network Path Analysis
 
 | Tool | Path | Purpose |
