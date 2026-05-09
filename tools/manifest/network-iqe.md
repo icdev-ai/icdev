@@ -33,6 +33,28 @@
 
 ---
 
+## NDC — Migration Hub
+
+Hub page aggregating all migration projects, phases, and linked documentation.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/migration-hub` | GET | Hub page: all projects, phase timelines, linked docs, runbook/SOP library sidebar. Filterable by status/doc type. |
+| `/network/api/migration-hub/data` | GET | JSON: all projects + phases (with linked docs) + standalone docs + runbooks + SOPs + topologies. |
+| `/network/api/migration-hub/phase-docs` | POST | Link a document/runbook/SOP to a migration phase. Body: `{phase_id, project_id, doc_source, doc_id, doc_title, doc_type?, relevance_note?}` |
+| `/network/api/migration-hub/phase-docs/<id>` | DELETE | Remove a document link from a migration phase. |
+
+**DB Table:** `nc_phase_documents` — join table: `phase_id → doc_id` with `doc_source` ('document'/'runbook'/'sop'/'external'), `relevance_note`, `display_order`.
+
+**Template:** `tools/dashboard/templates/network/migration_hub.html`
+
+```bash
+# Access from /network/ → "Migration Hub" button in header
+# Direct: http://localhost:5050/network/migration-hub
+```
+
+---
+
 ## NDC — Network Path Analysis
 
 | Tool | Path | Purpose |

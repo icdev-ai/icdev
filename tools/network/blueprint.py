@@ -11951,6 +11951,145 @@ Planning rules:
 
         return jsonify({"error": f"Unknown format: {fmt}"}), 400
 
+    # ── Migration Hub ──────────────────────────────────────────────────────
+    @bp.route("/migration-hub")
+    def migration_hub():
+        """Hub page: all migration projects, phases, and linked documentation."""
+        return render_template("network/migration_hub.html")
+
+    @bp.route("/api/migration-hub/data", methods=["GET"])
+    def migration_hub_data():
+        """Return all projects + phases + linked docs as JSON for the hub."""
+        conn = get_db_connection()
+        try:
+            # Projects
+            projects = [dict(r) for r in conn.execute(
+                "SELECT id, name, description, status, owner, created_at FROM nc_projects ORDER BY created_at DESC"
+            ).fetchall()]
+
+            # Phases per project
+            phases_raw = conn.execute(
+                """SELECT id, project_id, phase_num, title, description,
+                          duration_days, status, maintenance_window, rollback_criteria,
+                          dependencies, created_at
+                   FROM nc_migration_phases
+                   ORDER BY project_id, phase_num"""
+            ).fetchall()
+            phases_by_project: dict = {}
+            for row in phases_raw:
+                r = dict(row)
+                pid = r["project_id"]
+                phases_by_project.setdefault(pid, []).append(r)
+
+            # Phase documents
+            phase_docs_raw = conn.execute(
+                """SELECT id, phase_id, project_id, doc_source, doc_id,
+                          doc_title, doc_type, relevance_note, display_order
+                   FROM nc_phase_documents
+                   ORDER BY project_id, display_order"""
+            ).fetchall()
+            docs_by_phase: dict = {}
+            for row in phase_docs_raw:
+                r = dict(row)
+                docs_by_phase.setdefault(r["phase_id"], []).append(r)
+
+            # Standalone uploaded docs (not yet linked to a phase but in project)
+            docs_raw = conn.execute(
+                """SELECT id, file_name, doc_type, project_id,
+                          topology_id, classification, status, ingested_at
+                   FROM nc_documents
+                   WHERE status = 'ingested'
+                   ORDER BY project_id, ingested_at DESC"""
+            ).fetchall()
+            docs_by_project: dict = {}
+            for row in docs_raw:
+                r = dict(row)
+                pid = r["project_id"] or "default"
+                docs_by_project.setdefault(pid, []).append(r)
+
+            # Runbooks
+            runbooks_raw = conn.execute(
+                """SELECT id, title, trigger_event, severity, owner, topology_id, classification
+                   FROM ndc_runbooks ORDER BY title"""
+            ).fetchall()
+            runbooks = [dict(r) for r in runbooks_raw]
+
+            # SOPs
+            sops_raw = conn.execute(
+                """SELECT sop_id AS id, title, category, version, status,
+                          description, classification, author
+                   FROM ndc_sops ORDER BY category, title"""
+            ).fetchall()
+            sops = [dict(r) for r in sops_raw]
+
+            # Topologies (for MP links)
+            topos_raw = conn.execute(
+                "SELECT id, name FROM topologies ORDER BY name"
+            ).fetchall()
+            topos = [dict(r) for r in topos_raw]
+
+            # Attach phases and docs to projects
+            for proj in projects:
+                pid = proj["id"]
+                proj_phases = phases_by_project.get(pid, [])
+                for phase in proj_phases:
+                    phase["documents"] = docs_by_phase.get(phase["id"], [])
+                proj["phases"] = proj_phases
+                proj["documents"] = docs_by_project.get(pid, [])
+
+            return jsonify({
+                "projects": projects,
+                "runbooks": runbooks,
+                "sops": sops,
+                "topologies": topos,
+            })
+        finally:
+            conn.close()
+
+    @bp.route("/api/migration-hub/phase-docs", methods=["POST"])
+    def migration_hub_link_doc():
+        """Link a document/runbook/SOP to a migration phase."""
+        data = request.get_json(force=True) or {}
+        required = {"phase_id", "project_id", "doc_source", "doc_id", "doc_title"}
+        if missing := required - data.keys():
+            return jsonify({"error": f"Missing fields: {missing}"}), 400
+
+        conn = get_db_connection()
+        try:
+            doc_id = str(_uuid.uuid4())
+            conn.execute(
+                """INSERT INTO nc_phase_documents
+                   (id, phase_id, project_id, doc_source, doc_id,
+                    doc_title, doc_type, relevance_note, display_order)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    doc_id,
+                    data["phase_id"],
+                    data["project_id"],
+                    data["doc_source"],
+                    data["doc_id"],
+                    data["doc_title"],
+                    data.get("doc_type", ""),
+                    data.get("relevance_note", ""),
+                    data.get("display_order", 0),
+                ),
+            )
+            conn.commit()
+            return jsonify({"id": doc_id, "status": "linked"})
+        finally:
+            conn.close()
+
+    @bp.route("/api/migration-hub/phase-docs/<doc_link_id>", methods=["DELETE"])
+    def migration_hub_unlink_doc(doc_link_id: str):
+        """Remove a document link from a migration phase."""
+        conn = get_db_connection()
+        try:
+            conn.execute("DELETE FROM nc_phase_documents WHERE id = ?", (doc_link_id,))
+            conn.commit()
+            return jsonify({"status": "deleted"})
+        finally:
+            conn.close()
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
