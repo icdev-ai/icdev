@@ -607,7 +607,7 @@ tbody tr:hover {
     border: 1px solid var(--status-red);
 }
 
-/* --- Hamburger toggle button (hidden on desktop) --- */
+/* --- Hamburger toggle button (hidden on wide desktop) --- */
 #nav-hamburger {
     display: none;
     background: transparent;
@@ -625,7 +625,92 @@ tbody tr:hover {
     color: var(--text-primary);
 }
 
-/* --- Responsive --- */
+/* ── Nav collapse: kicks in at 1200px where items start to overlap ── */
+@media (max-width: 1200px) {
+    /* Show hamburger, hide the horizontal nav */
+    #nav-hamburger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .navbar {
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 6px 10px;
+        gap: 0;
+    }
+    .navbar-brand {
+        flex: 1;
+        min-width: 0;
+    }
+    /* User controls stay on row 1 — inline display:flex wins over CSS */
+    .navbar-right {
+        order: 2;
+        flex-shrink: 0;
+        gap: 5px !important;
+        flex-wrap: wrap;
+    }
+    /* Nav drawer: hidden by default, full-width row below brand+controls */
+    .navbar-nav {
+        order: 10;
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        border-top: 1px solid var(--border-color);
+        padding: 4px 0 8px;
+        margin-top: 4px;
+        gap: 0;
+    }
+    .navbar-nav.mobile-open {
+        display: flex !important;
+    }
+    /* Dropdowns: accordion instead of floating */
+    .nav-dropdown {
+        width: 100%;
+    }
+    .nav-dropdown:hover .nav-dropdown-menu {
+        display: none; /* hover disabled — click/tap only */
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: block !important;
+    }
+    .nav-dropdown-trigger {
+        display: block;
+        width: 100%;
+        padding: 8px 14px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+    .nav-dropdown-trigger:hover {
+        color: var(--text-primary);
+        background: rgba(255,255,255,0.04);
+    }
+    .nav-dropdown-menu {
+        position: static !important;
+        display: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding-left: 16px;
+        background: transparent;
+        max-height: none;
+        overflow: visible;
+    }
+    .nav-dropdown.open .nav-dropdown-menu {
+        display: block !important;
+    }
+    .navbar-nav > li > a {
+        padding: 8px 14px;
+        font-size: 0.85rem;
+    }
+    .navbar-nav li a {
+        padding: 5px 14px;
+        font-size: 0.82rem;
+    }
+}
+
+/* --- Small screen layout adjustments --- */
 @media (max-width: 768px) {
     .main-content {
         padding: 16px;
@@ -639,80 +724,12 @@ tbody tr:hover {
     .info-grid {
         grid-template-columns: 1fr;
     }
-    /* ── Mobile navbar layout ───────────────────────────────── */
-    /* Row 1: [brand] [☰] [user controls]                       */
-    /* Row 2: [nav drawer — full width, shown on open]          */
-    #nav-hamburger {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .navbar {
-        flex-wrap: wrap;
-        align-items: center;
-        padding: 6px 8px;
-        gap: 0;
-    }
-    .navbar-brand {
-        flex: 1;
-        min-width: 0;
-    }
-    /* Keep user controls on the same row — their inline display:flex wins */
+    /* Compact user controls row on very small screens */
     .navbar-right {
-        order: 2;
-        flex-shrink: 0;
-        gap: 5px !important;
-        flex-wrap: wrap;
+        font-size: 0.75rem;
     }
-    /* Nav collapses into full-width drawer below row 1 */
-    .navbar-nav {
-        order: 10;
+    .user-badge-role {
         display: none;
-        flex-direction: column;
-        width: 100%;
-        border-top: 1px solid var(--border-color);
-        padding: 4px 0 6px;
-        margin-top: 4px;
-        gap: 0;
-    }
-    .navbar-nav.mobile-open {
-        display: flex !important;
-    }
-    /* Dropdowns: static position, accordion-style */
-    .nav-dropdown {
-        width: 100%;
-    }
-    .nav-dropdown:hover .nav-dropdown-menu {
-        display: none; /* disable hover on mobile — use click only */
-    }
-    .nav-dropdown.open .nav-dropdown-menu {
-        display: block !important;
-    }
-    .nav-dropdown-trigger {
-        display: block;
-        width: 100%;
-        padding: 7px 12px;
-        font-size: 0.82rem;
-        font-weight: 600;
-        color: var(--text-secondary);
-    }
-    .nav-dropdown-menu {
-        position: static !important;
-        border: none;
-        border-radius: 0;
-        box-shadow: none;
-        padding-left: 12px;
-        background: transparent;
-        max-height: none;
-        overflow: visible;
-    }
-    .navbar-nav > li > a {
-        padding: 7px 12px;
-        font-size: 0.82rem;
-    }
-    .navbar-nav li a {
-        padding: 5px 12px;
-        font-size: 0.8rem;
     }
 }
 
