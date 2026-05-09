@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from tools.agentic_ai_canvas.constants import (
     AGENT_NODES,
     ATLAS_THREAT_MAP,
+    AUTONOMY_LEVELS,
     NIST_AI_RMF_CHECKS,
     OWASP_LLM_CHECKS,
     OUTPUT_NODES,
@@ -432,6 +433,8 @@ def assess_design(design_id: str, graph_json: str | dict,
                     + p4_exec_findings + il_compat_findings)
 
     # L5 (unconstrained) agent is always a CRITICAL finding
+    # L3+ (Human-Initiated) without a HITL gate is a CAT1 finding
+    hitl_node_ids = {n["id"] for n in nodes if n.get("type") in ("hitl-gate", "caio-override", "approval-workflow")}
     for a, level in zip(agent_nodes, autonomy_levels):
         if level == 5:
             all_findings.append({
@@ -442,6 +445,19 @@ def assess_design(design_id: str, graph_json: str | dict,
                 "detail": f"Agent '{a.get('label', a['id'])}' has no circuit breaker, HITL gate, or confidence threshold.",
                 "recommendation": "Add circuit-breaker, confidence-threshold, and audit-logger nodes downstream.",
             })
+        elif level >= 3:
+            # Check if any downstream edge connects to a HITL gate
+            agent_downstream = {e["target"] for e in edges if e.get("source") == a["id"]}
+            has_hitl_downstream = bool(agent_downstream & hitl_node_ids)
+            if not has_hitl_downstream:
+                all_findings.append({
+                    "id": f"autonomy-l3plus-{a['id'][:6]}",
+                    "framework": "NIST AI RMF",
+                    "severity": "CAT1",
+                    "title": f"Autonomy L{level} agent without mandatory HITL gate",
+                    "detail": f"Agent '{a.get('label', a['id'])}' at L{level} ({AUTONOMY_LEVELS.get(level)}) has no HITL gate or approval-workflow downstream. DoD policy requires human oversight for L3+ autonomous systems.",
+                    "recommendation": "Add a hitl-gate or approval-workflow node on the agent's output path.",
+                })
 
     # OMB M-25-21 compliance flag
     omb_compliant = int((safety_impacting or rights_impacting) and not hitl_findings)

@@ -458,6 +458,10 @@
             <div id="score-sub" style="font-size:.7rem;color:#64748b;"></div>
           </div>
         </div>
+        <div id="aadc-refs-badge" style="display:none;padding:5px 12px 2px;">
+          <div style="font-size:.7rem;color:#818cf8;font-weight:600;margin-bottom:3px;">&#128279; Used in AADC Designs</div>
+          <div id="aadc-refs-list" style="font-size:.68rem;color:#64748b;line-height:1.6;"></div>
+        </div>
         <div id="findings-list"></div>
         <div style="padding:8px 12px 12px;">
           <button class="tb-btn" onclick="runAssess()" style="width:100%;margin-bottom:5px;">⚡ Run Assessment</button>
@@ -748,6 +752,35 @@ function selectNode(id) {
   document.getElementById('prop-quantization').value=p.quantization||'Q4_K_M';
   document.getElementById('prop-notes').value=p.notes||'';
   document.getElementById('prop-quantization-row').style.display = node.type&&node.type.startsWith('model-') ? 'block' : 'none';
+  // Load AADC refs when a model node with a model_id is selected
+  if (node.type&&node.type.startsWith('model-')&&p.model_id) {
+    loadAadcRefs(p.model_id);
+  } else {
+    document.getElementById('aadc-refs-badge').style.display='none';
+  }
+}
+
+function loadAadcRefs(modelId) {
+  var badge=document.getElementById('aadc-refs-badge');
+  var list=document.getElementById('aadc-refs-list');
+  badge.style.display='none';
+  if (!modelId) return;
+  fetch('/ai-ml/api/models/'+encodeURIComponent(modelId)+'/aadc-refs')
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var refs=data.aadc_refs||[];
+      if (!refs.length) return;
+      badge.style.display='block';
+      var html='';
+      refs.forEach(function(r){
+        html+='<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html+='<span>'+esc(r.design_name||r.aadc_design_id)+'</span>';
+        html+='<a href="/agentic-ai/canvas/'+esc(r.aadc_design_id)+'" style="color:#6366f1;font-size:.65rem;" target="_blank">&#8599;</a>';
+        html+='</div>';
+      });
+      list.innerHTML=html||'<span>No designs linked</span>';
+    })
+    .catch(function(){});
 }
 
 function deselectAll() {

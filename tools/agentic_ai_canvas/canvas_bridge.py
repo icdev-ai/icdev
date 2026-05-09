@@ -108,7 +108,7 @@ def get_aadc_refs_for_model(aimc_model_id: str) -> list[dict]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            """SELECT r.*, d.name as design_name, d.il_level
+            """SELECT r.*, d.name as design_name, d.classification as il_level
                FROM aadc_aimc_model_refs r
                LEFT JOIN aadc_designs d ON d.id = r.aadc_design_id
                WHERE r.aimc_model_id=?

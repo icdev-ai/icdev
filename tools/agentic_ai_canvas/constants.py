@@ -17,13 +17,17 @@ MEMORY_NODES = {"vector-db", "doc-store", "short-term-mem", "long-term-mem",
 
 AGENT_NODES = {"autonomous-agent", "semi-auto-agent", "orchestrator",
                "sub-agent", "researcher-agent", "writer-agent",
-               "analyst-agent", "reviewer-agent"}
+               "analyst-agent", "reviewer-agent",
+               # Phase 5 — Swarm/parallel patterns (LangGraph fan-out)
+               "swarm-agent", "fan-out-coordinator", "fan-in-aggregator"}
 
 TOOL_MCP_NODES = {"mcp-server", "mcp-gateway", "tool-chain",
                   "function-caller", "output-validator", "external-api",
                   "code-executor", "web-search",
                   # Phase 4 — A2A bridge + sandboxed execution
-                  "a2a-bridge", "sandbox-exec"}
+                  "a2a-bridge", "sandbox-exec",
+                  # Phase 5 — Agent isolation / trust zones
+                  "agent-isolation-boundary"}
 
 DATA_NODES = {"training-data", "inference-input", "feedback-collector",
               "rlhf-pipeline", "data-lake", "chunker", "data-validator"}
