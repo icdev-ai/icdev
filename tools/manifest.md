@@ -688,3 +688,12 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Cost Estimator | tools\agentic_ai_canvas\cost_estimator.py | Auto-registered: agentic_ai_canvas/cost_estimator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Data Profiler | tools\data_canvas\data_profiler.py | Auto-registered: data_canvas/data_profiler.py | --json | JSON |
+| Quality Engine | tools\data_canvas\quality_engine.py | Auto-registered: data_canvas/quality_engine.py | --json | JSON |
+
+- [DDC Data Science — Explore, Query Sandbox, Quality Rules](manifest/ddc-data-science.md)

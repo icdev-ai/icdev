@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-from tools.data_canvas.constants import DS_DB_TYPES, DS_PROFILER_MAX_ROWS
+from tools.data_canvas.constants import DS_PROFILER_MAX_ROWS
 
 # ── Connection helpers ────────────────────────────────────────────────────────
 
