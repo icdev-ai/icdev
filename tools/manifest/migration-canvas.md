@@ -76,6 +76,30 @@
 - `POST /api/srv/<session_id>/hypervisor-pull` — pull live inventory from hypervisor, upsert to mc_srv_inventory
 - `GET /api/srv/<session_id>/hypervisor-sessions` — list prior hypervisor pull records
 
+## Cloud Application Migration (CAM) — K8s → AWS + AI Modernization
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| CAM Constants | tools/migration_canvas/cam_constants.py | Config-driven constants: SERVICE_MAPPINGS from service_mappings.yaml, CANVAS_SOP_TABLES/ID/STEPS column maps, AI_SERVICE_LABELS, status enums | (library) | SERVICE_MAPPINGS, CANVAS_SOP_TABLES, AI_SERVICE_LABELS, etc. |
+| CAM Engine | tools/migration_canvas/cam_engine.py | Project loader: get_projects(), get_project_detail(), _find_sop(), _load_sop_steps(), get_canvas_links(); cross-canvas SOP resolution via mc→idc→ddc→ndc | project_id, conn | project dict with phases, linked_sops (normalized), components, ai_opportunities, canvas_links |
+| CAM SOP Seeder | tools/migration_canvas/cam_seed_sops.py | Discovers context/migration/sop_catalog/*.json; routes each to mc_sops/ddc_sops/idc_sops/ndc_sops per sop_target_canvas; INSERT OR IGNORE; CLI: --reset, --json | (standalone) | {total, by_canvas} |
+| CAM Demo Seeder | tools/migration_canvas/cam_seed_demo.py | Seeds Analytics Platform K8s→AWS demo project: mc_projects, phases, SOP links, app_inventory, data_migration, wave_plans, ai_opportunities; also seeds DDC/IDC/NDC designs | --project, --reset, --json | {project_id, phases, sop_links, ai_opportunities, app_components, ddc/idc/ndc IDs} |
+
+**New DB Tables (4):** `mc_projects`, `mc_project_phases`, `mc_project_phase_sops`, `mc_ai_opportunities`.
+
+**Canvas Extensions:** `dd_migration_jobs` added to DDC, `idc_migration_baselines` added to IDC.
+
+**New Routes (in blueprint.py):**
+- `GET /migration-canvas/projects` → cam_projects.html
+- `GET /migration-canvas/projects/<project_id>` → cam_project_detail.html
+- `GET /migration-canvas/api/projects` → JSON list
+- `GET /migration-canvas/api/projects/<project_id>` → JSON detail
+
+**Config files:**
+- `context/migration/service_mappings.yaml` — 10 source-tech → AWS/Azure/GCP service mappings
+- `context/migration/sop_catalog/*.json` — 17 SOP definitions (auto-discovered by seed)
+- `context/migration/projects/analytics-k8s-aws.yaml` — demo project definition
+
 ## EOL Sync (Gap Fill — 2026-05-09)
 
 | Tool | File | Description | Input | Output |

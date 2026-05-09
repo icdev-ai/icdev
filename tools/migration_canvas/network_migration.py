@@ -2043,7 +2043,7 @@ def recommend_hardware(
         record_id=session_id,
         decision_type="readiness_assessment",
         decision=f"HW replacement top pick: {_top.get('rationale', 'N/A')[:200]}",
-        rationale=f"LLM-assisted" if model_used else "Rule-based fallback",
+        rationale="LLM-assisted" if model_used else "Rule-based fallback",
         model_used=model_used or None,
         confidence=(_top.get("score", 0) / 100.0) if _top.get("score") else None,
     )

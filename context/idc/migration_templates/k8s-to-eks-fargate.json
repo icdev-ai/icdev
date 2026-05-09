@@ -1,0 +1,74 @@
+{
+  "template_id": "idc-tpl-k8s-eks-fargate",
+  "name": "Kubernetes → EKS Fargate Migration",
+  "description": "Infrastructure migration template: on-premises K8s workloads to EKS Fargate with IRSA, ALB, EFS, and Secrets Manager",
+  "source_platform": "kubernetes",
+  "target_platform": "aws-eks-fargate",
+  "nodes": [
+    {
+      "resource_id": "src-k8s-cluster",
+      "label": "K8s Cluster (on-prem)",
+      "resource_type": "kubernetes_cluster",
+      "platform": "on-premises",
+      "properties": {"k8s_version": "1.28", "nodes": 6, "namespaces": 4}
+    },
+    {
+      "resource_id": "src-k8s-deployments",
+      "label": "K8s Deployments / Pods",
+      "resource_type": "kubernetes_workload",
+      "platform": "on-premises",
+      "properties": {"deployments": 12, "services": 8, "pvcs": 4}
+    },
+    {
+      "resource_id": "src-k8s-rbac",
+      "label": "K8s RBAC",
+      "resource_type": "kubernetes_rbac",
+      "platform": "on-premises",
+      "properties": {"service_accounts": 6, "cluster_roles": 4}
+    },
+    {
+      "resource_id": "tgt-eks-cluster",
+      "label": "EKS Cluster",
+      "resource_type": "eks_cluster",
+      "platform": "aws",
+      "properties": {"k8s_version": "1.29", "fargate_profiles": ["default", "app"], "region": "us-east-1"}
+    },
+    {
+      "resource_id": "tgt-fargate-pods",
+      "label": "Fargate Pod Tasks",
+      "resource_type": "fargate_workload",
+      "platform": "aws",
+      "properties": {"cpu_limit": "2 vCPU", "memory_limit": "4 GB", "spot_eligible": true}
+    },
+    {
+      "resource_id": "tgt-irsa",
+      "label": "IAM Roles for Service Accounts (IRSA)",
+      "resource_type": "iam_role",
+      "platform": "aws",
+      "properties": {"oidc_provider": "eks-oidc", "roles": 6}
+    },
+    {
+      "resource_id": "tgt-alb",
+      "label": "Application Load Balancer",
+      "resource_type": "alb",
+      "platform": "aws",
+      "properties": {"scheme": "internet-facing", "target_type": "ip", "ssl_policy": "ELBSecurityPolicy-TLS13"}
+    },
+    {
+      "resource_id": "tgt-secrets-manager",
+      "label": "AWS Secrets Manager",
+      "resource_type": "secrets_manager",
+      "platform": "aws",
+      "properties": {"secrets_count": 12, "csi_driver": "secrets-store-csi-driver", "rotation_enabled": true}
+    }
+  ],
+  "migration_steps": [
+    "Export K8s Secrets to AWS Secrets Manager via CSI driver",
+    "Map K8s RBAC service accounts to IAM IRSA roles",
+    "Create EKS cluster with Fargate profiles",
+    "Convert K8s manifests to Fargate-compatible pod specs (no DaemonSets, no hostPath)",
+    "Deploy ALB ingress controller",
+    "Validate workloads and cutover DNS"
+  ],
+  "sop_hints": ["eks fargate", "kubernetes namespace", "k8s secrets"]
+}

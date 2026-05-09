@@ -1,0 +1,1 @@
+foreach ph in cam.phases select ph.project_name, ph.wave_num, ph.phase_num, ph.title, ph.duration_days, ph.status

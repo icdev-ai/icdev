@@ -1,0 +1,1 @@
+foreach ai in cam.ai_opportunities select ai.project_name, ai.component_name, ai.opportunity_title, ai.aws_ai_service, ai.effort_days, ai.status
