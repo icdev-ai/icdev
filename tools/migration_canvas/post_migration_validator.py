@@ -21,6 +21,7 @@ import socket
 import ssl
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 import urllib.error
 import uuid
@@ -122,12 +123,13 @@ def check_ssl_cert(hostname: str, port: int = 443, timeout: int = _TIMEOUT) -> d
 def check_service_health(url: str, expected_status: int = 200, timeout: int = _TIMEOUT) -> dict:
     """HTTP GET to url; pass if response code matches expected_status."""
     start = time.monotonic()
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return _result("service_health", url, "error", f"Unsupported URL scheme: {parsed.scheme!r}", 0)
     try:
-        ctx = ssl.create_default_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
+        ctx = ssl.create_default_context() if parsed.scheme == "https" else None
         req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-PostMigValidation/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:  # nosec B310
             code = resp.getcode()
         elapsed = int((time.monotonic() - start) * 1000)
         if code == expected_status:
