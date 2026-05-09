@@ -742,3 +742,40 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Canvas Bridge | tools\agentic_ai_canvas\canvas_bridge.py | Auto-registered: agentic_ai_canvas/canvas_bridge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Ddc Datasci | tools\kanban\seed_ddc_datasci.py | Auto-registered: kanban/seed_ddc_datasci.py | --json | JSON |
+| Seed M03 M05 | tools\kanban\seed_m03_m05.py | Auto-registered: kanban/seed_m03_m05.py | --json | JSON |
+| Seed Mce Kanban | tools\kanban\seed_mce_kanban.py | Auto-registered: kanban/seed_mce_kanban.py | --json | JSON |
+| Seed Nmce Kanban | tools\kanban\seed_nmce_kanban.py | Auto-registered: kanban/seed_nmce_kanban.py | --json | JSON |
+| Seed Remaining Tasks | tools\kanban\seed_remaining_tasks.py | Auto-registered: kanban/seed_remaining_tasks.py | --json | JSON |
+| Validate Secops03 | tools\testing\validate_secops03.py | Auto-registered: testing/validate_secops03.py | --json | JSON |
+| Sim Cipher Forge | tools\ttx\scenarios\sim_cipher_forge.py | Auto-registered: scenarios/sim_cipher_forge.py | --json | JSON |
+| Sim Forge Ascent | tools\ttx\scenarios\sim_forge_ascent.py | Auto-registered: scenarios/sim_forge_ascent.py | --json | JSON |
+| Sim Hunt The Fleet | tools\ttx\scenarios\sim_hunt_the_fleet.py | Auto-registered: scenarios/sim_hunt_the_fleet.py | --json | JSON |
+| Sim Lifecycle E2E | tools\ttx\scenarios\sim_lifecycle_e2e.py | Auto-registered: scenarios/sim_lifecycle_e2e.py | --json | JSON |
+| Sim Meridian | tools\ttx\scenarios\sim_meridian.py | Auto-registered: scenarios/sim_meridian.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Solarwinds Connector | tools\databridge\connectors\solarwinds_connector.py | Auto-registered: connectors/solarwinds_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Librenms Connector | tools\databridge\connectors\librenms_connector.py | Auto-registered: connectors/librenms_connector.py | --json | JSON |
+| Riverbed Netim Connector | tools\databridge\connectors\riverbed_netim_connector.py | Auto-registered: connectors/riverbed_netim_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Riverbed Netim Adapter | tools\network\adapters\riverbed_netim_adapter.py | Auto-registered: adapters/riverbed_netim_adapter.py | --json | JSON |
+| Splunk Adapter | tools\network\adapters\splunk_adapter.py | Auto-registered: adapters/splunk_adapter.py | --json | JSON |
+| Splunk Connector | tools\databridge\connectors\splunk_connector.py | Auto-registered: connectors/splunk_connector.py | --json | JSON |

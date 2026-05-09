@@ -10,7 +10,7 @@ Covers:
   - Canvas Architecture Gaps (canvas-gap)
   - STRATEGOS Full Platform (sg) foundation epics
 
-Run: python _seed_remaining_tasks.py
+Run: python tools/kanban/seed_remaining_tasks.py
 """
 
 

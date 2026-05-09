@@ -5,7 +5,7 @@
 Epic: nmce — Network Infrastructure Migration Canvas Enhancement
 Plan: we-have-http-localhost-5050-migration-ca-encapsulated-hippo.md
 
-Run: python _seed_nmce_kanban.py
+Run: python tools/kanban/seed_nmce_kanban.py
 """
 
 

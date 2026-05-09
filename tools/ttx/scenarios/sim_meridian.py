@@ -1,7 +1,13 @@
 """MERIDIAN simulation — 4 teams, non-technical leadership roles, 5 injects."""
+import sys
 import io
 import json
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+from pathlib import Path as _Path
+_BASE = _Path(__file__).resolve().parents[3]
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
 
 from tools.ttx.engine import TTXEngine
 from tools.db.storage import get_connection
@@ -406,13 +412,6 @@ Consider adopting industry best practices for responsible AI.""",
 def build_receipts(team, idx, session_id, team_id):
     """Pre-log receipts server-side so validate_receipts() counts them."""
     count = team['receipts'][idx]
-import sys
-from pathlib import Path as _Path
-
-_BASE = _Path(__file__).resolve().parents[3]
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
-
     if count == 0:
         return []
     tools = INJECT_TOOLS[idx][:count]

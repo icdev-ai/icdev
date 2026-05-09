@@ -12,14 +12,13 @@ Phase 6  Session ends — final leaderboard + AAR summary
 """
 
 import sys
-from pathlib import Path as _Path
+import io
+import json
 
+from pathlib import Path as _Path
 _BASE = _Path(__file__).resolve().parents[3]
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
-
-import io
-import json
 import uuid
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

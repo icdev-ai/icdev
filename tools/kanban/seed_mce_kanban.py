@@ -5,7 +5,7 @@
 6 epics, 32 tasks total. Phase gates: CodeLens + Coherence + E2E Playwright
 after each epic (fnd, cg, inv, wp, dg, inn).
 
-Run: python _seed_mce_kanban.py
+Run: python tools/kanban/seed_mce_kanban.py
 """
 
 

@@ -3,15 +3,14 @@ Operation Neptune: Hunt the Fleet — Full Simulation
 Demonstrates: receipt gate, consequence system, body variant, finetune gate, Academy bonuses.
 """
 import sys
-from pathlib import Path as _Path
-
-_BASE = _Path(__file__).resolve().parents[3]
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
-
 import io
 import uuid
 import json
+
+from pathlib import Path as _Path
+_BASE = _Path(__file__).resolve().parents[3]
+if str(_BASE) not in sys.path:
+    sys.path.insert(0, str(_BASE))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 # Bootstrap app context so get_connection() points to the right DB
