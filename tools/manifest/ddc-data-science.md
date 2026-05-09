@@ -94,13 +94,34 @@
 ## pii_scanner.py
 
 **Path:** `tools/data_canvas/pii_scanner.py`
-**Purpose:** PII detection in data profiles using name heuristics, regex sampling, and high-cardinality free-text detection.
+**Purpose:** PII detection in data profiles using name heuristics, regex sampling, and high-cardinality free-text detection. Advisory only — never blocks queries.
 **Key functions:**
 - `check_column(col_name, stats, table_classification)` → finding dict or None
-- `scan_profile(profile, classification)` → `{findings, total_columns_scanned, pii_columns, classification, scan_time}`
+- `scan_profile(profile, classification)` → `{findings, overall_risk, columns_scanned, pii_candidates, scanned_at}`
+- `scan_result(col_names, rows, classification)` → `{warnings, has_warnings}` — scans live query result columns (samples up to 20 rows); called by the query sandbox after every execution; **advisory only, never blocks**
 - `save_pii_scan(result, design_id)` → persists to `dd_pii_scans`
 
-**Strategies:** (1) name heuristics (`_PII_HIGH`/`_PII_MEDIUM` sets), (2) regex on `top_values` (email/SSN/CC), (3) high-cardinality free-text heuristic.
+**PII_COLUMN_PATTERNS (`_PII_HIGH` / `_PII_MEDIUM` sets):**
+
+| Severity | Column name tokens matched |
+|----------|---------------------------|
+| HIGH | `ssn`, `social_security`, `social_security_number`, `sin`, `tax_id`, `taxpayer_id`, `nin`, `nino`, `passport`, `passport_number`, `drivers_license`, `license_number`, `date_of_birth`, `dob`, `birth_date`, `birthdate`, `biometric`, `fingerprint`, `retina`, `iris` |
+| MEDIUM | `email`, `email_address`, `e_mail`, `phone`, `phone_number`, `mobile`, `cell`, `fax`, `telephone`, `address`, `street_address`, `mailing_address`, `zip`, `zipcode`, `postal_code`, `postcode`, `first_name`, `last_name`, `full_name`, `name`, `username`, `user_name`, `login`, `userid`, `user_id`, `ip_address`, `ip_addr`, `ipv4`, `ipv6`, `credit_card`, `card_number`, `cvv`, `pan`, `bank_account`, `account_number`, `routing_number`, `iban`, `gender`, `race`, `ethnicity`, `religion`, `salary`, `income`, `wage`, `location`, `gps`, `latitude`, `longitude`, `device_id`, `mac_address`, `imei`, `cookie` |
+
+**Regex patterns (applied to sampled `top_values`):**
+
+| Pattern name | Regex |
+|--------------|-------|
+| `_EMAIL_RE` | `[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}` |
+| `_PHONE_RE` | `(\+?1?\s?)?(\(\d{3}\)|\d{3})[\s.\-]?\d{3}[\s.\-]?\d{4}` |
+| `_SSN_RE` | `\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b` |
+| `_CC_RE` | Luhn-prefix pattern for Visa/MC/Amex/Discover card numbers |
+
+**Severity escalation:** HIGH name token + low classification (public/unclassified) → `high`; HIGH name token + CUI → `medium`; MEDIUM name token or regex match → `medium`; high-cardinality free-text (>1 000 distinct, >80% unique) → `low`.
+
+**Security note:** Advisory-only — `scan_result` warns via the UI PII banner but does **not** block query execution, reject results, or raise exceptions. The banner is dismissible by the user. No actual data rows are stored; only column-level metadata is persisted to `dd_pii_scans`.
+
+**Strategies:** (1) name heuristics (`_PII_HIGH`/`_PII_MEDIUM` sets), (2) regex on `top_values` (email/SSN/CC/phone), (3) high-cardinality free-text heuristic.
 **CLI:** `--profile-json` or `--db`, `--classification`, `--output-json`
 
 ---
