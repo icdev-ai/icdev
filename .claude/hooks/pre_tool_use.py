@@ -424,6 +424,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)
         "ohc_adapter_health_log",
         "ohc_data_drift_events",
+        # GovLift DoD IL4 Cloud Migration (NIST AU — audit log append-only)
+        "govlift_audit_log",
     ]
 
     if tool_name == "Bash":
