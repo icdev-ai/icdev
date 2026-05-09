@@ -270,8 +270,6 @@ def create_kanban_tasks(kanban_tasks: list[dict]) -> list[int]:
     ids: list[int] = []
     now = datetime.now(timezone.utc).isoformat()
     for task in kanban_tasks:
-        tags_json = json.dumps(task.get("tags", []))
-        meta_json = json.dumps(task.get("metadata", {}))
         try:
             cur = conn.execute(
                 """INSERT INTO kanban_tasks
