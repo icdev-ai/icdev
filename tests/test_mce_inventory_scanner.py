@@ -1,106 +1,71 @@
 # CUI // SP-CTI
-import sys
+"""Tests for tools.migration_canvas.inventory_scanner."""
+import io
+import json
+import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pytest
 
-"""Tests for tools.migration_canvas.server_migration — parse_server_inventory."""
-
-from tools.migration_canvas.server_migration import parse_server_inventory, _infer_os_family
-
-
-# ── helpers ──────────────────────────────────────────────────────────────────
-
-def _inv(fmt, raw):
-    return parse_server_inventory(raw, fmt)
-
-
-# ── test cases ───────────────────────────────────────────────────────────────
-
-def test_parse_csv_basic():
-    raw = "vcpus,ram_gb,disk_gb,disk_type,nic_count,nic_speed_gbps,os\n4,16,200,SSD,2,10,Windows Server 2019"
-    result = _inv("csv", raw)
-    assert result["ok"] is True
-    assert result["errors"] == []
-    inv = result["inventory"]
-    assert inv["vcpus"] == 4
-    assert inv["ram_gb"] == 16.0
-    assert inv["total_disk_gb"] == 200.0
-    assert inv["os_family"] == "windows"
+from tools.migration_canvas.inventory_scanner import (
+    _parse_csv_row,
+    parse_csv,
+    parse_json,
+    parse_nmap_xml,
+    write_inventory,
+    _norm,
+)
 
 
-def test_parse_json_valid():
-    import json
-    data = {
-        "vcpus": 8, "ram_gb": 32, "total_disk_gb": 500,
-        "disk_type": "NVMe", "nic_count": 2, "primary_nic_gbps": 25,
-        "os_name": "Ubuntu 22.04", "os_arch": "x86_64",
-        "nics": [{"name": "eth0"}], "disks": [{"path": "/dev/sda"}],
-        "services": ["nginx", "postgres"],
-    }
-    result = _inv("json", json.dumps(data))
-    assert result["ok"] is True
-    inv = result["inventory"]
-    assert inv["vcpus"] == 8
-    assert inv["ram_gb"] == 32
-    assert inv["os_family"] == "linux"
-    assert result["nics"] == [{"name": "eth0"}]
-    assert result["services"] == ["nginx", "postgres"]
+def test_norm_lowercases_keys():
+    result = _norm({"Hostname": "srv01", "IP Address": "10.0.0.1"})
+    assert "hostname" in result
+    assert "ip_address" in result
 
 
-def test_parse_vmware_ovf_minimal():
-    # Item elements must be in the RASD namespace — that's what _parse_vmware_ovf iterates.
-    ovf = (
-        '<?xml version="1.0"?>'
-        '<Envelope xmlns="http://schemas.dmtf.org/ovf/envelope/1"'
-        ' xmlns:rasd="http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_ResourceAllocationSettingData">'
-        '<VirtualSystem>'
-        '<OperatingSystemSection>'
-        '<Description>Red Hat Enterprise Linux 8</Description>'
-        '</OperatingSystemSection>'
-        '<VirtualHardwareSection>'
-        '<rasd:Item>'
-        '<rasd:ResourceType>3</rasd:ResourceType>'
-        '<rasd:VirtualQuantity>4</rasd:VirtualQuantity>'
-        '</rasd:Item>'
-        '<rasd:Item>'
-        '<rasd:ResourceType>4</rasd:ResourceType>'
-        '<rasd:VirtualQuantity>8192</rasd:VirtualQuantity>'
-        '</rasd:Item>'
-        '</VirtualHardwareSection>'
-        '</VirtualSystem>'
-        '</Envelope>'
-    )
-    result = _inv("vmware_export", ovf)
-    assert result["ok"] is True
-    inv = result["inventory"]
-    assert inv["vcpus"] == 4
-    assert inv["ram_gb"] == 8.0
-    assert inv["os_family"] == "linux"
+def test_parse_csv_row_basic():
+    row = {"hostname": "srv01", "ip_address": "10.0.0.1", "os": "RHEL 8", "cpu_cores": "4", "ram_gb": "16"}
+    r = _parse_csv_row(row)
+    assert r is not None
+    assert r["hostname"] == "srv01"
+    assert r["ip_address"] == "10.0.0.1"
+    assert r["cpu_cores"] == 4
+    assert r["ram_gb"] == 16
 
 
-def test_parse_json_invalid_returns_error():
-    result = _inv("json", "not valid json {{")
-    assert result["ok"] is False
-    assert len(result["errors"]) > 0
-    assert any("json" in e.lower() or "invalid" in e.lower() for e in result["errors"])
+def test_parse_csv_row_missing_hostname():
+    r = _parse_csv_row({"ip": "10.0.0.1"})
+    assert r is None
 
 
-def test_parse_csv_empty_returns_error():
-    result = _inv("csv", "vcpus,ram_gb\n")
-    assert result["ok"] is False
-    assert len(result["errors"]) > 0
+def test_parse_csv_file(tmp_path):
+    csv_file = tmp_path / "servers.csv"
+    csv_file.write_text("hostname,ip_address,os,cpu_cores,ram_gb,disk_gb\nsrv01,10.0.0.1,RHEL,4,16,100\nsrv02,10.0.0.2,Windows,8,32,200\n", encoding="utf-8")
+    rows = parse_csv(csv_file)
+    assert len(rows) == 2
+    assert rows[0]["hostname"] == "srv01"
+    assert rows[1]["cpu_cores"] == 8
 
 
-def test_infer_os_family_all_families():
-    cases = [
-        ("Windows Server 2022", "windows"),
-        ("RHEL 8", "linux"),
-        ("Ubuntu 20.04 LTS", "linux"),
-        ("Solaris 11", "unix"),
-        ("AIX 7.2", "unix"),
-        ("Custom Appliance OS", "other"),
-    ]
-    for os_name, expected in cases:
-        got = _infer_os_family(os_name)
-        assert got == expected, f"_infer_os_family({os_name!r}) = {got!r}, want {expected!r}"
+def test_parse_json_file(tmp_path):
+    json_file = tmp_path / "servers.json"
+    data = [{"hostname": "srv01", "ip": "10.0.0.1", "os": "Linux", "cpu_cores": 4, "ram_gb": 8, "disk_gb": 50}]
+    json_file.write_text(json.dumps(data), encoding="utf-8")
+    rows = parse_json(json_file)
+    assert len(rows) == 1
+    assert rows[0]["hostname"] == "srv01"
+
+
+def test_write_inventory_dry_run():
+    servers = [{"id": "1", "hostname": "srv01", "ip_address": "10.0.0.1",
+                "os": "RHEL", "cpu_cores": 4, "ram_gb": 8, "disk_gb": 100,
+                "environment": "prod", "status": "active", "tags": "[]", "created_at": "2026-01-01"}]
+    result = write_inventory(servers, session_id="test-sid", dry_run=True)
+    assert result["dry_run"] is True
+    assert result["inserted"] == 1
+    assert result["skipped"] == 0
+
+
+def test_write_inventory_empty_dry_run():
+    result = write_inventory([], session_id="test-sid", dry_run=True)
+    assert result["inserted"] == 0

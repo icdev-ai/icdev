@@ -9,9 +9,12 @@ Target session: rsess-1e2fb0fe6c96
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from tools.db.storage import get_connection
+
+logger = logging.getLogger("icdev.migration_canvas.dossier_advisor")
 
 TARGET_DOSSIER_ID = "rdoss-903cbd6858e5"
 TARGET_SESSION_ID = "rsess-1e2fb0fe6c96"
@@ -111,5 +114,39 @@ def get_guidance_for_step(
             }
             for r in rows
         ]
-    except Exception:
+    except Exception as exc:
+        logger.debug("Dossier DB unavailable for step %d: %s", wizard_step, exc)
         return []
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    import argparse
+    import json
+
+    ap = argparse.ArgumentParser(description="MCE Dossier Advisor — surface migration guidance per wizard step")
+    ap.add_argument("--step", type=int, required=True,
+                    help="Wizard step (1=MigrationType, 2=Inventory, 3=Performance, 4=Target, 5=Compat, 6=NIC/Storage, 7=Cutover)")
+    ap.add_argument("--migration-type", default=None, help="Migration type hint (P2V, V2V, P2C, ...)")
+    ap.add_argument("--top-k", type=int, default=3, help="Max guidance items to return (default: 3)")
+    ap.add_argument("--output-json", action="store_true", help="Emit JSON to stdout")
+    args = ap.parse_args()
+
+    result = get_guidance_for_step(args.step, args.migration_type, args.top_k)
+
+    if args.output_json:
+        print(json.dumps(result, indent=2))
+    else:
+        if not result:
+            print(f"[dossier_advisor] No guidance available for step {args.step}")
+        else:
+            print(f"[dossier_advisor] Step {args.step} — {len(result)} item(s)")
+            for item in result:
+                print(f"  [{item.get('severity','?').upper():8s}] {item.get('title','?')}")
+                if item.get("description"):
+                    print(f"    {item['description'][:100]}")
+
+
+if __name__ == "__main__":
+    main()
