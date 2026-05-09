@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+{% block title %}Org AI Readiness — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-gold:#FFB800; --fa-green:#00FF88; --fa-blue:#4A90E2;
+  --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
+}
+.or-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--fa-border); padding:2rem 2rem 1.5rem;
+}
+.or-hero h1 { font-size:1.6rem;font-weight:700;color:var(--fa-gold);margin:0 0 .25rem; }
+.or-hero p  { color:#8899aa;margin:0;font-size:.9rem; }
+.or-body    { max-width:1100px;margin:0 auto;padding:1.5rem 2rem 4rem; }
+
+/* Score hero */
+.or-score-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:14px;padding:2rem;margin-bottom:1.5rem;text-align:center;
+}
+.or-score-num { font-size:5rem;font-weight:800;line-height:1; }
+.or-score-denom { font-size:2rem;color:#556;font-weight:400; }
+.or-tier-badge {
+  display:inline-block;padding:.3rem 1rem;border-radius:20px;
+  font-size:.85rem;font-weight:700;margin:.5rem 0;
+}
+.or-guidance { color:#8899aa;font-size:.95rem;margin-top:.5rem; }
+
+/* Component bars */
+.or-components {
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1rem;
+  margin-bottom:1.5rem;
+}
+.or-comp-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.25rem;
+}
+.or-comp-label {
+  display:flex;justify-content:space-between;font-size:.85rem;
+  color:#ccd;margin-bottom:.5rem;font-weight:600;
+}
+.or-bar-bg { background:rgba(255,255,255,.07);border-radius:4px;height:10px; }
+.or-bar-fill { height:10px;border-radius:4px;transition:width .6s; }
+.or-comp-note { font-size:.78rem;color:#8899aa;margin-top:.5rem; }
+
+/* Cohort levels */
+.or-cohort-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;
+}
+.or-cohort-title { font-size:1rem;font-weight:700;color:var(--fa-gold);margin:0 0 1rem; }
+.or-level-row {
+  display:flex;align-items:center;gap:.75rem;margin-bottom:.65rem;
+}
+.or-level-label { width:120px;font-size:.82rem;color:#ccd;flex-shrink:0; }
+.or-level-bar-wrap { flex:1;background:rgba(255,255,255,.05);border-radius:4px;height:18px;position:relative; }
+.or-level-bar { position:absolute;left:0;top:0;height:100%;border-radius:4px;transition:width .5s; }
+.or-level-count {
+  position:absolute;right:-36px;top:50%;transform:translateY(-50%);
+  font-size:.75rem;color:#ccd;white-space:nowrap;
+}
+.or-cohort-chips {
+  display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;
+}
+.or-chip {
+  background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);
+  border-radius:8px;padding:.4rem .85rem;font-size:.8rem;color:#ccd;text-align:center;
+}
+.or-chip strong { display:block;font-size:1.3rem;font-weight:700; }
+
+/* Skill gaps */
+.or-gaps-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;
+}
+.or-gaps-title { font-size:1rem;font-weight:700;color:var(--fa-gold);margin:0 0 1rem; }
+.or-gaps-table { width:100%;border-collapse:collapse; }
+.or-gaps-table th {
+  text-align:left;font-size:.78rem;color:#8899aa;text-transform:uppercase;
+  letter-spacing:.05em;padding:.4rem .6rem;border-bottom:1px solid var(--fa-border);
+}
+.or-gaps-table td { padding:.4rem .6rem;font-size:.85rem;color:#ccd;border-bottom:1px solid rgba(255,255,255,.04); }
+.or-gaps-table tr:last-child td { border-bottom:none; }
+.or-gap-pct { color:var(--fa-red);font-weight:700; }
+
+/* Phase guidance */
+.or-phase-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.5rem;margin-bottom:1.5rem;
+}
+.or-phase-title { font-size:1rem;font-weight:700;color:var(--fa-gold);margin:0 0 .75rem; }
+.or-phase-text  { color:#ccd;font-size:.9rem;line-height:1.6; }
+
+/* CUI footer */
+.or-footer { text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="or-hero">
+  <div style="font-size:.78rem;color:#FFB800;letter-spacing:.1em;text-transform:uppercase;margin-bottom:.25rem;">
+    FORGE ACADEMY
+  </div>
+  <h1>Org AI Readiness Dashboard</h1>
+  <p>Composite readiness score, competency distribution, skill gaps, and phase guidance for leadership.</p>
+</div>
+
+<div class="or-body">
+
+  <!-- Score hero -->
+  <div class="or-score-card">
+    <div class="or-score-num" style="color:{{ readiness.tier_color }};">
+      {{ readiness.score }}<span class="or-score-denom">/100</span>
+    </div>
+    <div>
+      <span class="or-tier-badge"
+            style="background:{{ readiness.tier_color }}22;color:{{ readiness.tier_color }};border:1px solid {{ readiness.tier_color }}44;">
+        {{ readiness.tier | upper }} READINESS
+      </span>
+    </div>
+    <div class="or-guidance">{{ readiness.guidance }}</div>
+    {% if readiness.phase_guidance %}
+    <div style="margin-top:.75rem;font-size:.85rem;color:#8899aa;">{{ readiness.phase_guidance }}</div>
+    {% endif %}
+  </div>
+
+  <!-- Component breakdown -->
+  {% if readiness.components %}
+  <div style="font-size:.9rem;font-weight:700;color:#ccd;margin-bottom:.75rem;">Readiness Components</div>
+  <div class="or-components">
+    {% for key, comp in readiness.components.items() %}
+    <div class="or-comp-card">
+      <div class="or-comp-label">
+        <span>{{ comp.label }}</span>
+        <span style="color:{% if comp.value >= 80 %}var(--fa-green){% elif comp.value >= 50 %}var(--fa-gold){% else %}var(--fa-red){% endif %};">
+          {{ comp.value }}%
+        </span>
+      </div>
+      <div class="or-bar-bg">
+        <div class="or-bar-fill"
+             style="width:{{ comp.value | round(0) | int }}%;background:{% if comp.value >= 80 %}var(--fa-green){% elif comp.value >= 50 %}var(--fa-gold){% else %}var(--fa-red){% endif %};">
+        </div>
+      </div>
+      {% if comp.note %}
+      <div class="or-comp-note">{{ comp.note }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Cohort level distribution -->
+  {% if readiness.cohort and readiness.cohort.get('total_users', 0) %}
+  {% set cohort = readiness.cohort %}
+  <div class="or-cohort-card">
+    <div class="or-cohort-title">Team Competency Distribution</div>
+
+    {% set levels = [
+      ('l1', 'L1 — AI Aware',      '#888888', cohort.l1 | default(0)),
+      ('l2', 'L2 — AI Capable',    '#4A90E2', cohort.l2 | default(0)),
+      ('l3', 'L3 — AI Proficient', '#00D4FF', cohort.l3 | default(0)),
+      ('l4', 'L4 — AI Expert',     '#FF6B35', cohort.l4 | default(0)),
+      ('l5', 'L5 — AI Architect',  '#FFB800', cohort.l5 | default(0)),
+    ] %}
+    {% set total = cohort.total_users %}
+    {% for key, label, color, count in levels %}
+    <div class="or-level-row">
+      <div class="or-level-label" style="color:{{ color }};">{{ label }}</div>
+      <div class="or-level-bar-wrap">
+        <div class="or-level-bar"
+             style="width:{{ ((count / [total,1]|max) * 100) | round(0) | int }}%;background:{{ color }}55;border:1px solid {{ color }}88;">
+        </div>
+        <span class="or-level-count">{{ count }}</span>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="or-cohort-chips">
+      <div class="or-chip">
+        <strong>{{ cohort.total_users }}</strong>Total Learners
+      </div>
+      <div class="or-chip">
+        <strong style="color:#4A90E2;">{{ cohort.l2 | default(0) }}</strong>L2+ Capable
+      </div>
+      <div class="or-chip">
+        <strong style="color:#00D4FF;">{{ cohort.l3 | default(0) }}</strong>L3+ Proficient
+      </div>
+      <div class="or-chip">
+        <strong style="color:#FF6B35;">{{ (cohort.l4 | default(0)) + (cohort.l5 | default(0)) }}</strong>L4-L5 Expert/Architect
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Skill gaps -->
+  {% if readiness.skill_gaps %}
+  <div class="or-gaps-card">
+    <div class="or-gaps-title">Skills with &lt;30% Team Unlock (Priority Gaps)</div>
+    <table class="or-gaps-table">
+      <thead>
+        <tr>
+          <th>Skill</th>
+          <th>% Unlocked</th>
+          <th>Impact</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for gap in readiness.skill_gaps %}
+        <tr>
+          <td>{{ gap.skill }}</td>
+          <td class="or-gap-pct">{{ gap.unlock_pct }}%</td>
+          <td style="color:#8899aa;font-size:.82rem;">{{ gap.impact | default('Blocks AI pilot feasibility') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- Phase guidance -->
+  {% if readiness.score < 40 %}
+  <div class="or-phase-card">
+    <div class="or-phase-title">🔴 Recommended Focus: Foundation Work (Phase 0)</div>
+    <div class="or-phase-text">
+      Your team's readiness score indicates foundational gaps that will block most AI pilot attempts.
+      Prioritize completing Tier 1 Academy missions for all team members, and ensure at least
+      30% of technical staff reach L2 (AI Capable) before pursuing active pilots. Focus FORGE IGNITE
+      submissions on Phase 1 Quick Wins that don't require extensive data preparation.
+    </div>
+  </div>
+  {% elif readiness.score < 65 %}
+  <div class="or-phase-card">
+    <div class="or-phase-title">🟡 Recommended Focus: Targeted Upskilling (Phase 1–2)</div>
+    <div class="or-phase-text">
+      Your team can execute Phase 1 Quick Win pilots. To unlock Phase 2 Augmentation ideas,
+      close the gaps highlighted above. Prioritize Tier 2 role-specific tracks for your
+      development and data engineering staff. Consider FORGE IGNITE ideas in the scored pipeline
+      — ideas with Phase 1 tags are ready to pilot now.
+    </div>
+  </div>
+  {% else %}
+  <div class="or-phase-card">
+    <div class="or-phase-title">🟢 Recommended Focus: Scale and Transform (Phase 2–3)</div>
+    <div class="or-phase-text">
+      Strong readiness foundation. Your team is equipped for augmentation and early transformation
+      initiatives. Focus FORGE IGNITE on Phase 2 Augmentation ideas. Consider investing in
+      L4-L5 development for team members leading AI initiatives, and track pilot ROI to build
+      the business case for Phase 3 transformation investments.
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Action links -->
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:1.5rem;">
+    <a href="/academy" style="background:var(--fa-gold);color:#000;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      Go to FORGE Academy →
+    </a>
+    <a href="/innovation/dashboard" style="background:rgba(255,255,255,.08);color:#e0e0e0;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      Innovation Dashboard →
+    </a>
+    <a href="/innovation/new" style="background:rgba(74,144,226,.15);color:#4A90E2;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      Submit Innovation Idea →
+    </a>
+  </div>
+
+  <div class="or-footer">
+    CUI // SP-CTI — FORGE Academy Org AI Readiness — {{ readiness.score }}/100
+  </div>
+
+</div>
+{% endblock %}
