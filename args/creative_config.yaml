@@ -208,6 +208,49 @@ devops_canvas:
     - canary deployment
     - progressive delivery
 
+# Migration Canvas domain — server, network, and application migration planning wizard
+migration_canvas:
+  name: "server migration"
+  g2_category_url: "https://www.g2.com/categories/server-migration"
+  capterra_category_url: "https://www.capterra.com/server-migration-software/"
+  trustradius_category_url: "https://www.trustradius.com/server-migration"
+  producthunt_topic: "migration"
+  aliases:
+    - "server migration"
+    - "application migration"
+    - "cloud migration"
+    - "network migration"
+    - "data center migration"
+  keywords:
+    - server migration
+    - application migration
+    - cloud migration
+    - data center migration
+    - lift and shift
+    - replatform
+    - rehost
+    - migration wizard
+    - migration assessment
+    - migration plan
+    - runbook generator
+    - cutover plan
+    - rollback plan
+    - migration risk
+    - dependency mapping
+    - server discovery
+    - network migration
+    - workload migration
+    - CloudEndure
+    - AWS MGN
+    - Azure Migrate
+    - Google Migrate for Compute
+    - Carbonite Migrate
+    - Zerto
+    - Veeam
+    - migration SOP
+    - pre-migration checklist
+    - post-migration validation
+
 # Knowledge graph tools domain
 knowledge_graph:
   name: "knowledge graph"
