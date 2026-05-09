@@ -61,3 +61,74 @@
 | Config | args/migration_intelligence_config.yaml | Air-gap gates, scoring weights, scan intervals, EOL thresholds, strategy templates, roadmap wave config | (config file) | read by migration_manager |
 | Genesis Reflex | tools/genesis/reflexes/migration_intel.py | Autonomous 24h Genesis reflex — runs full MI pipeline; air-gap safe | config, trust | run(config, trust) |
 
+## Hypervisor Adapters (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Adapter Dispatcher | tools/migration_canvas/adapters/__init__.py | Unified `pull_inventory()` dispatcher across vmware/hyperv/nutanix; returns canonical `{ok, adapter, host, vms, vm_count, error}` | adapter_type, host, user, password, kwargs | dict |
+| VMware vSphere Adapter | tools/migration_canvas/adapters/vmware_adapter.py | Pull live VM inventory from vSphere REST API (`/rest/vcenter/vm`); session-based auth via stdlib urllib; graceful offline fallback (socket pre-check); maps to canonical inventory schema | host, user, password, datacenter? | list[dict] |
+| Hyper-V Adapter | tools/migration_canvas/adapters/hyperv_adapter.py | Pull live VM inventory via PowerShell subprocess (`Get-VM`); local and remote (WinRM) modes; no pywin32 dep; air-gap safe | host, user, password | list[dict] |
+| Nutanix Prism Adapter | tools/migration_canvas/adapters/nutanix_adapter.py | Pull live VM inventory from Nutanix Prism REST API v2 (`/api/nutanix/v2.0/vms/`); paginated; Basic auth; port 9440 pre-check | host, user, password, cluster? | list[dict] |
+
+**New DB Table:** `mc_srv_hypervisor_sessions` — records each pull attempt (adapter, host, vm_count, status, error).
+
+**New Routes (in blueprint.py):**
+- `POST /api/srv/<session_id>/hypervisor-pull` — pull live inventory from hypervisor, upsert to mc_srv_inventory
+- `GET /api/srv/<session_id>/hypervisor-sessions` — list prior hypervisor pull records
+
+## EOL Sync (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| EOL Sync | tools/migration_canvas/eol_sync.py | Vendor EOL/EOS date lookup and auto-sync; 101-entry static YAML seed (`args/eol_data.yaml`) + best-effort Cisco API live sync; 5-match-strategy lookup (exact/prefix/substring/regex/fuzzy); `flag_eol_devices()` annotates inventory | vendors?, force? | sync results dict |
+| EOL Data Seed | args/eol_data.yaml | 101 static EOL entries for Cisco, Juniper, Arista, Palo Alto, Fortinet, Check Point, Extreme/Brocade, F5, Nokia — offline fallback for eol_sync | (config file) | loaded by eol_sync |
+
+**New DB Table:** `mc_net_eol_data` — vendor, model_pattern, eol_date, eos_date, eosm_date, source, synced_at.
+
+**New Routes:**
+- `POST /api/net/eol-sync` — trigger EOL database sync
+- `GET /api/net/eol/<session_id>/flags` — flagged devices in a session
+
+## Vendor Migration Paths (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Vendor Migration Paths | tools/migration_canvas/vendor_migration_paths.py | YAML-driven catalog of 15 source→target migration playbooks (e.g. Cisco ASA→Fortinet, Nexus→Arista); `get_migration_path()`, `list_compatible_targets()`, `get_migration_checklist()`; lazy-loaded `_CACHE` | source_vendor, source_family, target_vendor | dict\|list |
+| Migration Paths Config | args/vendor_migration_paths.yaml | 15 migration paths with phases, protocol_notes, gotchas, complexity, estimated_hours; YAML-driven — add new paths without code changes | (config file) | loaded by vendor_migration_paths |
+
+**New Routes:**
+- `GET /api/net/migration-paths` — list all paths (summary only)
+- `GET /api/net/migration-paths/<source_vendor>/<source_family>` — get target options or specific path
+
+## Post-Migration Validation (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Post-Migration Validator (Server) | tools/migration_canvas/post_migration_validator.py | 6 validation checks: TCP connectivity, SSL cert expiry, HTTP service health, DNS resolution, disk space (via SSH), process running (via SSH); `run_validation_suite()` dispatches all checks and writes results | session_id, targets: list[{type, ...}] | {suite_id, session_id, summary, results, pass_count, fail_count} |
+| Network Config Validator | tools/migration_canvas/network_config_validator.py | Section-based config diff (interfaces, routing, BGP, OSPF, ACL, VLAN, MPLS, NTP, logging); weighted completeness score (interfaces=30%, routing+BGP=30%, etc.); `validate_migration_completeness()` writes to mc_net_config_validation | session_id \| source/target config strings + vendor | diff dict with {added, removed, changed, unchanged, completeness_score} |
+
+**New DB Tables:**
+- `mc_srv_post_migration_tests` — per-check results (check_type, target, status, detail, elapsed_ms)
+- `mc_net_config_validation` — per-session config diff summary (diff_summary, completeness_score, status)
+
+**New Routes:**
+- `POST /api/srv/<session_id>/validate` — run post-migration checks
+- `GET /api/srv/<session_id>/validation-runs` — list prior validation runs
+- `POST /api/net/<session_id>/validate-config` — run config diff vs source
+- `GET /api/net/<session_id>/validation` — fetch latest config validation result
+
+## Advanced Cloud Pricing + Protocol Plans (Gap Fill — 2026-05-09)
+
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| `get_cloud_instances_advanced` | tools/migration_canvas/server_migration.py | Extended catalog query supporting spot/reserved_1yr/reserved_3yr/savings_plan pricing models; ranks by price for selected model; new columns on mc_cloud_instances | provider, filters, pricing_model, vcpu_min, ram_min | list[dict] |
+| `import_from_hypervisor` | tools/migration_canvas/server_migration.py | Pull live VM inventory from hypervisor (via adapters), record session to mc_srv_hypervisor_sessions, upsert VMs to mc_srv_inventory | session_id, adapter_type, host, user, password, datacenter?, cluster? | {ok, session_id, vm_count, adapter, status} |
+| Advanced Protocol Plans | tools/migration_canvas/network_migration.py | `plan_protocol_migration()` extended with variant overrides; BGP variants: multipath/route_reflector/graceful_restart; OSPF variants: multi_area/stub_nssa/virtual_link; MPLS variants: vrf_lite/segment_routing/evpn_vxlan; new SD-WAN 8-step plan | session_id, variant_overrides? | protocols dict with variant + advanced_config per plan |
+
+**New Columns on Existing Tables:**
+- `mc_cloud_instances`: pricing_model, spot_price, reserved_1yr_price, reserved_3yr_price, savings_plan_price, interruption_rate
+- `mc_net_protocol_plans`: variant, advanced_config
+
+**New Route:**
+- `GET /api/srv/cloud-catalog/advanced` — filtered advanced cloud catalog with pricing model selection
+

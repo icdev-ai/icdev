@@ -721,6 +721,95 @@ def _migrate_wave_dep_tables(conn):
     conn.executescript(WAVE_DEP_SCHEMA)
 
 
+# ── Gap-Fill Schema (migration 084) ─────────────────────────────────────────
+
+GAP_FILL_SCHEMA = """
+-- Hypervisor pull sessions (VMware/Hyper-V/Nutanix live import)
+CREATE TABLE IF NOT EXISTS mc_srv_hypervisor_sessions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    adapter_type    TEXT NOT NULL CHECK(adapter_type IN ('vmware','hyperv','nutanix')),
+    host            TEXT NOT NULL,
+    datacenter      TEXT DEFAULT '',
+    cluster         TEXT DEFAULT '',
+    pulled_at       TEXT NOT NULL,
+    vm_count        INTEGER DEFAULT 0,
+    status          TEXT DEFAULT 'ok',
+    error_msg       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_hvsess_session ON mc_srv_hypervisor_sessions(session_id);
+
+-- Post-migration server validation results
+CREATE TABLE IF NOT EXISTS mc_srv_post_migration_tests (
+    id          TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    run_at      TEXT NOT NULL,
+    check_type  TEXT NOT NULL,
+    target      TEXT NOT NULL,
+    status      TEXT NOT NULL CHECK(status IN ('pass','fail','skip','error')),
+    detail      TEXT,
+    elapsed_ms  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_pmtest_session ON mc_srv_post_migration_tests(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_srv_pmtest_status ON mc_srv_post_migration_tests(status);
+
+-- Vendor EOL database cache (network migration)
+CREATE TABLE IF NOT EXISTS mc_net_eol_data (
+    id            TEXT PRIMARY KEY,
+    vendor        TEXT NOT NULL,
+    model_pattern TEXT NOT NULL,
+    eol_date      TEXT,
+    eos_date      TEXT,
+    eosm_date     TEXT,
+    source        TEXT DEFAULT 'static_seed',
+    synced_at     TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_mc_net_eol ON mc_net_eol_data(vendor, model_pattern);
+CREATE INDEX IF NOT EXISTS idx_mc_net_eol_vendor ON mc_net_eol_data(vendor);
+
+-- Post-migration network config validation results
+CREATE TABLE IF NOT EXISTS mc_net_config_validation (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL,
+    device_id           TEXT,
+    run_at              TEXT NOT NULL,
+    diff_summary        TEXT DEFAULT '{}',
+    completeness_score  REAL DEFAULT 0,
+    status              TEXT DEFAULT 'pending'
+        CHECK(status IN ('pass','partial','fail','pending'))
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgval_session ON mc_net_config_validation(session_id);
+"""
+
+_GAP_FILL_ALTER = [
+    # Advanced cloud pricing columns
+    ("mc_cloud_instances", "pricing_model",     "TEXT DEFAULT 'on_demand'"),
+    ("mc_cloud_instances", "spot_price",        "REAL"),
+    ("mc_cloud_instances", "reserved_1yr_price","REAL"),
+    ("mc_cloud_instances", "reserved_3yr_price","REAL"),
+    ("mc_cloud_instances", "savings_plan_price","REAL"),
+    ("mc_cloud_instances", "interruption_rate", "TEXT DEFAULT ''"),
+    # Advanced protocol planning variants
+    ("mc_net_protocol_plans", "variant",        "TEXT DEFAULT 'standard'"),
+    ("mc_net_protocol_plans", "advanced_config","TEXT DEFAULT '{}'"),
+]
+
+
+def _migrate_gap_fill_tables(conn):
+    """Idempotently add gap-fill tables and columns (migration 084)."""
+    conn.executescript(GAP_FILL_SCHEMA)
+    existing_cols: dict[str, list[str]] = {}
+    for tbl, col, typedef in _GAP_FILL_ALTER:
+        if tbl not in existing_cols:
+            existing_cols[tbl] = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+        if col not in existing_cols[tbl]:
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typedef}")
+                existing_cols[tbl].append(col)
+            except Exception:
+                pass
+
+
 # ── Cloud Instance Seed Data ─────────────────────────────────────────────────
 
 _CLOUD_INSTANCE_SEED = [
@@ -1420,6 +1509,7 @@ def init_db():
         _migrate_network_tables(conn)
         _migrate_server_tables(conn)
         _migrate_wave_dep_tables(conn)
+        _migrate_gap_fill_tables(conn)
         _seed_cloud_instances(conn)
 
         # Seed templates

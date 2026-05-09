@@ -112,6 +112,25 @@ CLOUD_OBJECTS = {
         {"type": "dod-vdms",          "label": "VDMS Stack",     "icon": "VDM", "desc": "Virtual DC Managed Services — ACAS/HBSS/patch/logging/directory (SCCA FRD §2.1.3)"},
         {"type": "dod-tccm",          "label": "TCCM",           "icon": "TCM", "desc": "Trusted Cloud Credential Manager — IAM/RBAC/CAC-PIV/CCMP (SCCA FRD §2.1.4)"},
         {"type": "dod-niprnet-onramp","label": "NIPRNet On-ramp","icon": "NPR", "desc": "DISA NIPRNet Cloud On-ramp — DISN-managed cloud entry point for DoD organizations"},
+        # JWICS (Joint Worldwide Intelligence Communications System)
+        {"type": "dod-jwics-backbone",    "label": "JWICS Backbone",       "icon": "JWX", "desc": "DIA-managed JWICS backbone circuit — SECRET/TS classification, NSA Type 1 encrypted, physically separated from NIPRNet"},
+        {"type": "dod-jwics-gateway",     "label": "JWICS Gateway",        "icon": "JWG", "desc": "Agency JWICS gateway router — ingress/egress from SCIF LAN to JWICS backbone; DISA-approved platform"},
+        {"type": "dod-jwics-dns",         "label": "JWICS DNS",            "icon": "JDN", "desc": "JWICS recursive DNS resolver (DIA-managed) — isolated from Internet/NIPRNet DNS, authoritative for .jwics.gov and .dia.smil.mil zones"},
+        {"type": "dod-jwics-mail-relay",  "label": "JWICS Mail Relay",     "icon": "JMR", "desc": "JWICS SMTP relay — mandatory S/MIME with NSS PKI cert, HBSS content scan at each hop, no Internet relay path"},
+        {"type": "dod-type1-encryptor",   "label": "Type 1 Encryptor",     "icon": "T1E", "desc": "NSA Type 1 encryption device (KG-250A, KIV-7M, TACLANE Flex) — required on all JWICS/SIPR circuits; key fill via KYK-13 or Simple Key Loader"},
+        {"type": "dod-scif-lan",          "label": "SCIF LAN",             "icon": "SCF", "desc": "Sensitive Compartmented Information Facility LAN — physically isolated, NSS PKI-only, CAC+PIN required, no removable media"},
+        # C2S — AWS Secret Region (Commercial Cloud Services, classified)
+        {"type": "dod-c2s-direct-connect","label": "C2S ClassifiedConnect","icon": "C2D", "desc": "AWS C2S ClassifiedConnect — 1G/10G dedicated circuit from DISA Secret CAP to AWS Secret Region (us-gov-secret-1); no Internet path"},
+        {"type": "dod-c2s-tgw",          "label": "C2S Transit Gateway",  "icon": "C2T", "desc": "AWS C2S Transit Gateway — central routing hub for VPC attachments in AWS Secret Region; BGP route propagation"},
+        {"type": "dod-c2s-vpc",          "label": "C2S VPC",              "icon": "C2V", "desc": "AWS C2S Virtual Private Cloud — IL5/IL6 workload isolation in AWS Secret Region; VPC Flow Logs and GuardDuty mandatory"},
+        {"type": "dod-c2s-dns-phz",      "label": "C2S Route 53 PHZ",     "icon": "C2Z", "desc": "C2S Route 53 Private Hosted Zone — classified DNS for .c2s.ic.gov; conditional forwarder to DISA DNS via ClassifiedConnect for .smil.mil"},
+        # C2E — Azure Government Secret (Commercial Cloud Enterprise, classified)
+        {"type": "dod-c2e-expressroute",  "label": "C2E ExpressRoute",     "icon": "C2X", "desc": "Azure C2E ExpressRoute — dedicated circuit from DISA Secret CAP to Azure Government Secret; NSA Type 1 on physical layer"},
+        {"type": "dod-c2e-vnet",         "label": "C2E VNet",             "icon": "C2N", "desc": "Azure C2E Virtual Network — IL5/IL6 workload isolation in Azure Government Secret; Azure Firewall Premium + Defender for Cloud mandatory"},
+        {"type": "dod-c2e-dns-private",  "label": "C2E Private DNS Zone", "icon": "C2P", "desc": "C2E Azure Private DNS Zone — classified name resolution; Azure Private Resolver with conditional forwarder to DISA DNS via ExpressRoute"},
+        # Shared DISA secret-side components
+        {"type": "dod-secret-bcap",      "label": "Secret BCAP/CAP",      "icon": "SBC", "desc": "DISA Classified Cloud Access Point (Secret) — SECRET-side boundary between JWICS and C2S/C2E; applies full SCCA inspection chain at SECRET classification level"},
+        {"type": "dod-cds",              "label": "Cross-Domain Solution", "icon": "CDS", "desc": "Cross-Domain Solution (CDS) — hardware-enforced data guard between NIPR↔SIPR or SIPR↔JWICS; NSA-evaluated (Forcepoint Trusted Gateway, Owl Cyber Defense, Everfox High Speed Guard); filter policy is allowlist-only"},
     ],
     "colocation": [
         {
