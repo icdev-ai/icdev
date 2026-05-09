@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """eMASS sync orchestrator -- coordinates data flow between ICDEV™ and eMASS.
 
 Supports three modes:

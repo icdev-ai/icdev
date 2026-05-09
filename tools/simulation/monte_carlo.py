@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
+# DEPRECATED: unused as of 2026-05-09. Remove after 2026-08-01.
 """RICOAS Digital Program Twin — Monte Carlo simulation using PERT distribution.
 
 Uses Python stdlib `random` with Beta-distribution approximation to PERT.
