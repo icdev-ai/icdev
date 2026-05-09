@@ -272,6 +272,47 @@ FLOW_NARRATIVES: dict[tuple[str, str], list[str]] = {
         "DISA Gateway delivers to JWICS relay for .smil.mil recipients; SMTP TLS + S/MIME required end-to-end.",
         "BLOCKED: Exchange Online Government Secret cannot relay to public O365 or commercial SMTP servers — air-gapped by design.",
     ],
+    # DNS flow variant: agency Infoblox NIOS → JWICS AWS Route 53 Resolver (C2S)
+    ("jwics", "dns_infoblox_r53"): [
+        "SCIF workstation OS stub resolver queries the Infoblox Grid Member VIP "
+        "(DISA-IPAM-assigned address, pushed via DHCP option 6). "
+        "Infoblox is configured with a dedicated JWICS DNS View — a logically separated namespace "
+        "that holds only classified zone data and forwarder rules. The NIPR view is a separate view "
+        "on the same Infoblox Grid; SCIF clients must not be able to query the NIPR view.",
+        "Infoblox Grid Member evaluates the query against its JWICS view. "
+        "A cache hit returns immediately (configurable TTL, default 300 s). "
+        "On cache miss, Infoblox matches the query name against its Conditional Forwarder Zone list: "
+        "(a) *.c2s.ic.gov → AWS R53 Resolver Inbound Endpoint IPs in the C2S VPC; "
+        "(b) *.smil.mil, *.jwics.gov → DIA JWICS recursive resolver; "
+        "(c) *.agency.jwics.gov → local Infoblox authoritative zone (served directly). "
+        "No default forwarder pointing to Internet DNS is configured — any unmatched query returns NXDOMAIN.",
+        "For queries matching *.c2s.ic.gov: Infoblox forwards to the AWS Route 53 Resolver "
+        "Inbound Endpoint ENI IPs (e.g. 10.200.0.53, 10.200.1.53) via the ClassifiedConnect circuit. "
+        "These ENIs are in dedicated resolver subnets within the C2S VPC. "
+        "Infoblox must use 'Forward Only' mode for this forwarder zone to prevent fallback iteration.",
+        "AWS Route 53 Resolver receives the query on the Inbound Endpoint. "
+        "R53 Resolver evaluates Private Hosted Zone (PHZ) rules for the .c2s.ic.gov zone. "
+        "A PHZ match returns the record directly. "
+        "On PHZ miss, a Resolver Rule (FORWARD type) for *.smil.mil routes the query to DISA DNS "
+        "via the ClassifiedConnect circuit (not the Internet). "
+        "A second Resolver Rule (FORWARD type) for *.agency.jwics.gov routes back to the Infoblox "
+        "Outbound Endpoint target IP — enabling C2S workloads to resolve on-prem JWICS names.",
+        "DNSSEC validation: Infoblox NIOS validates DNSSEC responses using the JWICS trust anchor "
+        "(configured under Grid > DNS > DNSSEC > Trust Anchors — add DIA DNSKEY, not IANA root key). "
+        "R53 Resolver DNSSEC validation is configured on the Resolver outbound rules "
+        "(DNSSEC validation mode: Enabled). Both layers must pass for the 'ad' flag to propagate.",
+        "For the reverse path (C2S EC2 instance resolving an on-prem JWICS name): "
+        "EC2 queries the VPC+2 resolver (169.254.169.253) → R53 Resolver evaluates rules → "
+        "Resolver Rule (FORWARD, *.agency.jwics.gov) sends the query to the R53 Outbound Endpoint "
+        "→ ClassifiedConnect → Infoblox Grid Member JWICS view → authoritative zone or "
+        "forward to DIA JWICS recursive resolver. Response flows back the same path.",
+        "All queries logged for AU-2 compliance: "
+        "Infoblox query logs forwarded via syslog to DISA SIEM (rsyslog, TCP 514). "
+        "R53 Resolver query logs sent to CloudWatch Logs or S3 in C2S. "
+        "BLOCKED: Public Internet DNS (8.8.8.8) unreachable from both Infoblox (no Internet path from SCIF) "
+        "and R53 Resolver (no Internet gateway in C2S VPC). "
+        "Cross-domain queries (JWICS namespace → NIPR namespace) require an NSA-evaluated CDS DNS guard.",
+    ],
     # BGP flows on JWICS/C2S/C2E
     ("jwics", "bgp"): [
         "Agency JWICS gateway establishes OSPF adjacency with DIA hub router over JWICS backbone (Area 0).",

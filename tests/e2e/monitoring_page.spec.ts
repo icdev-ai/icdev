@@ -10,7 +10,7 @@ test.describe('Monitoring Page', () => {
   test('monitoring page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to monitoring page
     await page.goto('/monitoring');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot the monitoring page
     await page.screenshot({
@@ -35,7 +35,7 @@ test.describe('Monitoring Page', () => {
   test('status icons and health indicators are displayed', async ({ page }) => {
     // Step 1: Navigate to monitoring page
     await page.goto('/monitoring');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for monitoring-related content
     const bodyText = await page.textContent('body');
@@ -80,7 +80,7 @@ test.describe('Monitoring Page', () => {
   test('monitoring page has metric display areas', async ({ page }) => {
     // Step 1: Navigate to monitoring page
     await page.goto('/monitoring');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for metric/chart containers
     const bodyText = await page.textContent('body');
@@ -122,13 +122,13 @@ test.describe('Monitoring Page', () => {
   test('monitoring page navigation from dashboard', async ({ page }) => {
     // Step 1: Start at dashboard
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Find and click monitoring navigation link
     const monitorLink = page.getByRole('link', { name: /Monitor/i });
     if (await monitorLink.count() > 0) {
       await monitorLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       // Step 3: Verify navigation worked
       const url = page.url();
@@ -146,7 +146,7 @@ test.describe('Monitoring Page', () => {
     } else {
       // Direct navigation fallback
       await page.goto('/monitoring');
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       const bodyText = await page.textContent('body');
       expect(bodyText).toContain(CUI_BANNER);

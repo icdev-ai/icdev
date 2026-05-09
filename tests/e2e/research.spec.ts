@@ -10,7 +10,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('research page loads with heading and CUI banners', async ({ page }) => {
     // Steps 4-10: Navigate and verify heading
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -37,7 +37,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('stat grid shows total sessions, active sessions, verticals, and dossiers', async ({ page }) => {
     // Step 13-14: Stat grid
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -60,7 +60,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('session creation form has all required fields', async ({ page }) => {
     // Steps 15-19: Session creation form
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -110,7 +110,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('form validation prevents submission without vertical selection', async ({ page }) => {
     // Steps 20-22: Form validation
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const startBtn = page.getByRole('button', { name: /Start Research/i });
     if (await startBtn.count() > 0) {
@@ -144,7 +144,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('session creation succeeds and appears in sessions table', async ({ page }) => {
     // Steps 23-34: Create a session
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const sessionNameInput = page.locator(
       'input[name="session_name"], input[name="name"], input[placeholder*="session" i], input[placeholder*="name" i]'
@@ -169,7 +169,7 @@ test.describe('Industry Research Engine Dashboard', () => {
 
       // Step 26: Submit
       await startBtn.first().click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(1500);
 
       await page.screenshot({
@@ -201,7 +201,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('sessions table has search and export controls', async ({ page }) => {
     // Steps 32-34: Table controls
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Search box in sessions table
     const searchBox = page.locator(
@@ -234,7 +234,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('research responsive layout at tablet and mobile viewports', async ({ page }) => {
     // Steps 38-46: Multi-viewport
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Tablet
     await page.setViewportSize({ width: 768, height: 1024 });
@@ -263,7 +263,7 @@ test.describe('Industry Research Engine Dashboard', () => {
   test('dossier viewer appears for dossier-ready sessions', async ({ page }) => {
     // Steps 47-53: Dossier viewer (conditional — requires completed session)
     await page.goto('/research');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Look for any "View Dossier" button
     const viewDossierBtn = page.getByRole('button', { name: /View Dossier/i })
@@ -271,7 +271,7 @@ test.describe('Industry Research Engine Dashboard', () => {
 
     if (await viewDossierBtn.count() > 0) {
       await viewDossierBtn.first().click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(500);
 
       const bodyText = await page.textContent('body');

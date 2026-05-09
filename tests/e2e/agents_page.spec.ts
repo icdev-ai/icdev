@@ -10,7 +10,7 @@ test.describe('Agents Page', () => {
   test('agents page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to agents page
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot the agents page
     await page.screenshot({
@@ -41,7 +41,7 @@ test.describe('Agents Page', () => {
   test('agent grid displays all core agents', async ({ page }) => {
     // Step 1: Navigate to agents page
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Verify core agent names are present
     const bodyText = await page.textContent('body');
@@ -73,7 +73,7 @@ test.describe('Agents Page', () => {
   test('agent status indicators are displayed', async ({ page }) => {
     // Step 1: Navigate to agents page
     await page.goto('/agents');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for status-related UI elements
     const bodyText = await page.textContent('body');
@@ -110,13 +110,13 @@ test.describe('Agents Page', () => {
   test('agents page navigation from dashboard', async ({ page }) => {
     // Step 1: Start at dashboard
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Find and click agents navigation link
     const agentsLink = page.getByRole('link', { name: /Agents/i });
     if (await agentsLink.count() > 0) {
       await agentsLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       // Step 3: Verify navigation worked
       const url = page.url();

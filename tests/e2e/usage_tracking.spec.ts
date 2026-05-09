@@ -10,7 +10,7 @@ test.describe('Usage Tracking', () => {
   test('usage page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to usage page
     await page.goto('/usage');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot the usage page
     await page.screenshot({
@@ -35,7 +35,7 @@ test.describe('Usage Tracking', () => {
   test('cost breakdown is displayed', async ({ page }) => {
     // Step 1: Navigate to usage page
     await page.goto('/usage');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for cost/usage-related content
     const bodyText = await page.textContent('body');
@@ -80,7 +80,7 @@ test.describe('Usage Tracking', () => {
   test('period selector is functional', async ({ page }) => {
     // Step 1: Navigate to usage page
     await page.goto('/usage');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for period/date selector elements
     const bodyText = await page.textContent('body');
@@ -114,7 +114,7 @@ test.describe('Usage Tracking', () => {
           const secondOptionValue = await options.nth(1).getAttribute('value');
           if (secondOptionValue) {
             await selectElement.selectOption(secondOptionValue);
-            await page.waitForLoadState('networkidle');
+            await page.waitForLoadState('domcontentloaded');
           }
         }
       }
@@ -141,13 +141,13 @@ test.describe('Usage Tracking', () => {
   test('usage page navigation from dashboard', async ({ page }) => {
     // Step 1: Start at dashboard
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Find and click usage navigation link
     const usageLink = page.getByRole('link', { name: /Usage/i });
     if (await usageLink.count() > 0) {
       await usageLink.click();
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       // Step 3: Verify navigation worked
       const url = page.url();
@@ -165,7 +165,7 @@ test.describe('Usage Tracking', () => {
     } else {
       // Direct navigation fallback
       await page.goto('/usage');
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
 
       const bodyText = await page.textContent('body');
       expect(bodyText).toContain(CUI_BANNER);

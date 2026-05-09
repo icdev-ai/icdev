@@ -10,7 +10,7 @@ test.describe('Activity Feed', () => {
   test('activity page loads with CUI banner', async ({ page }) => {
     // Step 1-2: Navigate to activity page
     await page.goto('/activity');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot the activity page
     await page.screenshot({
@@ -35,7 +35,7 @@ test.describe('Activity Feed', () => {
   test('SSE connection indicator is present', async ({ page }) => {
     // Step 1: Navigate to activity page
     await page.goto('/activity');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for SSE/connection status indicators
     const bodyText = await page.textContent('body');
@@ -73,7 +73,7 @@ test.describe('Activity Feed', () => {
   test('activity entries display with event details', async ({ page }) => {
     // Step 1: Navigate to activity page
     await page.goto('/activity');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Check for activity entry elements
     const bodyText = await page.textContent('body');

@@ -10,7 +10,7 @@ test.describe('SaaS Portal Authentication', () => {
   test('login page loads with CUI banner and form', async ({ page }) => {
     // Step 1-2: Navigate to portal login
     await page.goto('/portal/login');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Screenshot the login page
     await page.screenshot({
@@ -57,7 +57,7 @@ test.describe('SaaS Portal Authentication', () => {
   test('login with valid API key redirects to dashboard', async ({ page }) => {
     // Step 1: Navigate to portal login
     await page.goto('/portal/login');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Fill in API key form
     const apiKeyInput = page.locator('#api_key, input[name="api_key"]');
@@ -68,7 +68,7 @@ test.describe('SaaS Portal Authentication', () => {
       const submitButton = page.getByRole('button', { name: /Sign In/i });
       if (await submitButton.count() > 0) {
         await submitButton.click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
       }
 
       // Step 4: Screenshot post-login result
@@ -97,7 +97,7 @@ test.describe('SaaS Portal Authentication', () => {
   test('logout clears session and redirects to login', async ({ page }) => {
     // Step 1: Navigate directly to logout endpoint
     await page.goto('/portal/logout');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Screenshot the post-logout page
     await page.screenshot({
@@ -127,7 +127,7 @@ test.describe('SaaS Portal Authentication', () => {
   test('unauthenticated access redirects to login', async ({ page }) => {
     // Step 1: Attempt to access protected portal dashboard without auth
     await page.goto('/portal/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 2: Screenshot the redirect result
     await page.screenshot({
@@ -147,7 +147,7 @@ test.describe('SaaS Portal Authentication', () => {
     const protectedPages = ['/portal/projects', '/portal/compliance', '/portal/team'];
     for (const pagePath of protectedPages) {
       await page.goto(pagePath);
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       const redirectedUrl = page.url();
       expect(redirectedUrl).toContain('/login');
     }

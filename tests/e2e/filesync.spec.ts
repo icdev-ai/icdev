@@ -10,7 +10,7 @@ test.describe('File Sync Dashboard', () => {
   test('filesync page loads with heading and stat grid', async ({ page }) => {
     // Steps 1-5: Navigate and verify stat grid
     await page.goto('/filesync');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 3: Verify heading
     const bodyText = await page.textContent('body');
@@ -37,7 +37,7 @@ test.describe('File Sync Dashboard', () => {
   test('action buttons are visible', async ({ page }) => {
     // Steps 6-8: Assert action buttons
     await page.goto('/filesync');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const newSyncBtn = page.getByRole('button', { name: /New Sync Job/i })
       .or(page.getByRole('link', { name: /New Sync Job/i }));
@@ -62,7 +62,7 @@ test.describe('File Sync Dashboard', () => {
   test('sync jobs table has correct headers and empty state', async ({ page }) => {
     // Steps 9-12: Verify jobs table structure
     await page.goto('/filesync');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -86,7 +86,7 @@ test.describe('File Sync Dashboard', () => {
   test('recent sync activity table is present', async ({ page }) => {
     // Steps 13-16: Verify activity table
     await page.goto('/filesync');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -110,7 +110,7 @@ test.describe('File Sync Dashboard', () => {
   test('create sync job modal opens and closes', async ({ page }) => {
     // Steps 17-25: Test modal open/close
     await page.goto('/filesync');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const newSyncBtn = page.getByRole('button', { name: /New Sync Job/i })
       .or(page.getByRole('link', { name: /New Sync Job/i }));
@@ -171,7 +171,7 @@ test.describe('File Sync Dashboard', () => {
   test('responsive layout renders at multiple viewports', async ({ page }) => {
     // Steps 26-31: Multi-viewport screenshots
     await page.goto('/filesync');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Desktop
     await page.setViewportSize({ width: 1920, height: 1080 });

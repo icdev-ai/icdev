@@ -10,7 +10,7 @@ test.describe('Chat Multi-Pane Interface', () => {
   test('chat page loads with heading and CUI banners', async ({ page }) => {
     // Step 1-4: Navigate and screenshot
     await page.goto('/chat');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await page.screenshot({
       path: '.tmp/test_runs/screenshots/chat_01_page_load.png',
@@ -35,7 +35,7 @@ test.describe('Chat Multi-Pane Interface', () => {
   test('context sidebar and new chat button are visible', async ({ page }) => {
     // Step 7-8: Verify context sidebar
     await page.goto('/chat');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Soft check for sidebar / context panel
     const sidebar = page.locator(
@@ -59,7 +59,7 @@ test.describe('Chat Multi-Pane Interface', () => {
   test('message input is visible and accepts text', async ({ page }) => {
     // Steps 14-16: Verify message input area
     await page.goto('/chat');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const messageInput = page.locator(
       'textarea[name="message"], input[name="message"], [data-testid="message-input"], .message-input textarea, .chat-input textarea, .chat-input input[type="text"]'
@@ -85,18 +85,18 @@ test.describe('Chat Multi-Pane Interface', () => {
   test('navigation to and from chat preserves state', async ({ page }) => {
     // Steps 21-24: Navigate away and back
     await page.goto('/chat');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Navigate to home
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     expect(bodyText).toContain(CUI_BANNER);
 
     // Navigate back to chat
     await page.goto('/chat');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await page.screenshot({
       path: '.tmp/test_runs/screenshots/chat_03_after_nav.png',

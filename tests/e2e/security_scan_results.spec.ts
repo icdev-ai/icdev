@@ -10,7 +10,7 @@ test.describe('Security Scan Results', () => {
   test('dashboard shows active alerts section', async ({ page }) => {
     // Step 1-3: Navigate to dashboard and check alerts
     await page.goto('/');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
     // Check for alert-related content
@@ -34,7 +34,7 @@ test.describe('Security Scan Results', () => {
     } else {
       await page.goto('/monitoring');
     }
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await page.screenshot({
       path: '.tmp/test_runs/screenshots/security_01_monitoring.png',
@@ -66,7 +66,7 @@ test.describe('Security Scan Results', () => {
     } else {
       await page.goto('/audit');
     }
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     await page.screenshot({
       path: '.tmp/test_runs/screenshots/security_02_audit_trail.png',

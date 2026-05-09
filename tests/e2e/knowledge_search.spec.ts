@@ -10,7 +10,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('knowledge search page loads with heading and stat grid', async ({ page }) => {
     // Steps 8-17: Navigate and verify
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -44,7 +44,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('search controls are visible with input, filter, and top-K', async ({ page }) => {
     // Steps 18-21: Search controls
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Step 18: Search input
     const searchInput = page.locator(
@@ -83,7 +83,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('search with FedRAMP query returns results or no-results message', async ({ page }) => {
     // Steps 24-27: Search functionality
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const searchInput = page.locator(
       'input[type="search"], input[name="query"], input[name="q"], input[placeholder*="search" i]'
@@ -94,7 +94,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
       const searchBtn = page.getByRole('button', { name: /Search/i });
       if (await searchBtn.count() > 0) {
         await searchBtn.first().click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(1500);
       }
 
@@ -122,7 +122,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('enter key triggers search', async ({ page }) => {
     // Step 41-44: Enter key search
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const searchInput = page.locator(
       'input[type="search"], input[name="query"], input[name="q"], input[placeholder*="search" i]'
@@ -130,7 +130,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
     if (await searchInput.count() > 0) {
       await searchInput.first().fill('supply chain');
       await searchInput.first().press('Enter');
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(1000);
 
       const bodyText = await page.textContent('body');
@@ -152,7 +152,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('recent searches table is visible', async ({ page }) => {
     // Steps 49-52: Recent searches table
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -174,7 +174,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('breadcrumb navigation works', async ({ page }) => {
     // Steps 57-58: Breadcrumb
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const breadcrumb = page.locator('nav[aria-label="breadcrumb"], .breadcrumb, [data-testid="breadcrumb"]');
     if (await breadcrumb.count() > 0) {
@@ -183,7 +183,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
       const homeLink = breadcrumb.getByRole('link', { name: /Home/i });
       if (await homeLink.count() > 0) {
         await homeLink.first().click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         // Should redirect to home
         expect(page.url()).toMatch(/localhost:\d+\/?$/);
       }
@@ -193,7 +193,7 @@ test.describe('Knowledge Search (RAG) Dashboard', () => {
   test('knowledge search responsive layout at multiple viewports', async ({ page }) => {
     // Steps 54-56: Multi-viewport screenshots
     await page.goto('/knowledge-search');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Desktop
     await page.setViewportSize({ width: 1440, height: 900 });

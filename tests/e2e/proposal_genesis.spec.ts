@@ -12,7 +12,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test.beforeEach(async ({ page }) => {
     // Steps 1-2: Login to dashboard
     await page.goto(`${PG_BASE}/login`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const apiKeyInput = page.locator(
       'input[type="password"], input[name="api_key"], input[id="api_key"], input[placeholder*="key" i]'
@@ -23,7 +23,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
         .or(page.locator('button[type="submit"]'));
       if (await submitBtn.count() > 0) {
         await submitBtn.first().click();
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
       }
     }
   });
@@ -31,7 +31,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('proposal genesis page loads with heading and intro panel', async ({ page }) => {
     // Steps 3-7: Navigate and verify heading
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -64,7 +64,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('summary stat cards are present', async ({ page }) => {
     // Steps 8-9: Stat cards
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -91,7 +91,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('Phase A reflexes table has headers and run buttons', async ({ page }) => {
     // Steps 10-14: Phase A reflexes table
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const bodyText = await page.textContent('body');
 
@@ -130,7 +130,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('refresh status button triggers API update', async ({ page }) => {
     // Steps 15-18: Refresh status
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const refreshBtn = page.getByRole('button', { name: /Refresh Status/i })
       .or(page.locator('[data-action="refresh-status"]'));
@@ -151,7 +151,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('run full pipeline button is present but not clicked', async ({ page }) => {
     // Step 19-20: Verify run full pipeline button (do NOT click)
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const runPipelineBtn = page.getByRole('button', { name: /Run Full Pipeline/i })
       .or(page.locator('[data-action="run-pipeline"]'));
@@ -169,7 +169,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('quality scores section refreshes on button click', async ({ page }) => {
     // Steps 21-25: Quality scores table
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Scroll to quality scores section
     const qualitySection = page.locator(
@@ -207,7 +207,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('audit trail section refreshes on button click', async ({ page }) => {
     // Steps 26-30: Audit trail table
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     const auditSection = page.locator(
       'section:has-text("Audit Trail"), [data-section="audit"], #audit-trail'
@@ -239,7 +239,7 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test('proposal genesis responsive layout at multiple viewports', async ({ page }) => {
     // Steps 35-37: Multi-viewport screenshots
     await page.goto(`${PG_BASE}/proposal-genesis`);
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Desktop
     await page.setViewportSize({ width: 1920, height: 1080 });
