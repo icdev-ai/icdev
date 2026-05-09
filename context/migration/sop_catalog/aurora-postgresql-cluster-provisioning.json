@@ -1,0 +1,17 @@
+{
+  "id": "mc-sop-aurora-pg-provision-001",
+  "title": "Aurora PostgreSQL Cluster Provisioning",
+  "category": "database-migration",
+  "sop_target_canvas": "mc",
+  "platform": "aws",
+  "source_tech": null,
+  "target_tech": "aurora-postgresql",
+  "description": "Provision an Amazon Aurora PostgreSQL cluster as migration target.",
+  "steps": [
+    {"number": 1, "action": "Create DB Subnet Group: select private subnets across 2+ AZs", "verify": "Subnet group status = Complete; subnets in correct VPC", "rollback": "Delete subnet group", "time_est": "10m"},
+    {"number": 2, "action": "Create Aurora PostgreSQL cluster: engine 16.x, instance class r6g.large (or per sizing), Multi-AZ enabled, encrypted with KMS key", "verify": "Cluster status = Available; writer endpoint resolves via nslookup", "rollback": "Delete cluster", "time_est": "15m"},
+    {"number": 3, "action": "Create database and migration user: CREATE USER dms_user WITH PASSWORD '...'; GRANT CONNECT, CREATE ON DATABASE analytics TO dms_user", "verify": "psql -h <endpoint> -U dms_user -d analytics -c '\\l' succeeds", "rollback": "DROP USER dms_user", "time_est": "10m"},
+    {"number": 4, "action": "Enable enhanced monitoring and Performance Insights: CloudWatch granularity 1s, 7-day retention", "verify": "Performance Insights dashboard shows activity in RDS console", "rollback": "Disable monitoring (no data loss)", "time_est": "5m"},
+    {"number": 5, "action": "Enable pgvector extension: CREATE EXTENSION vector; verify version", "verify": "SELECT extversion FROM pg_extension WHERE extname='vector' returns >= 0.7.0", "rollback": "DROP EXTENSION vector CASCADE (only if no vector columns)", "time_est": "5m"}
+  ]
+}

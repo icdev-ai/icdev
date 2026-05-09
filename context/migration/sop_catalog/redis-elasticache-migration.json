@@ -1,0 +1,17 @@
+{
+  "id": "mc-sop-redis-elasticache-001",
+  "title": "Redis → ElastiCache: DUMP/RESTORE Migration",
+  "category": "cache-migration",
+  "sop_target_canvas": "mc",
+  "platform": "aws",
+  "source_tech": "redis",
+  "target_tech": "elasticache-redis",
+  "description": "Migrate Redis data from K8s StatefulSet to Amazon ElastiCache using DUMP/RESTORE with minimal downtime.",
+  "steps": [
+    {"number": 1, "action": "Create ElastiCache Redis cluster (Valkey 8.x or Redis 7.x) in same VPC, cluster mode disabled (or enabled if source uses clustering), encrypted at rest (KMS) and in-transit (TLS)", "verify": "Cluster status = Available; primary endpoint resolves", "rollback": "Delete cluster", "time_est": "15m"},
+    {"number": 2, "action": "Export Redis keys from source: redis-cli --rdb /tmp/dump.rdb (or BGSAVE + copy RDB file from K8s pod)", "verify": "RDB file size matches expected; redis-check-rdb /tmp/dump.rdb passes", "rollback": "N/A — read-only", "time_est": "30m"},
+    {"number": 3, "action": "Upload RDB file to S3: aws s3 cp /tmp/dump.rdb s3://<migration-bucket>/redis/dump.rdb", "verify": "aws s3 ls s3://<migration-bucket>/redis/ shows file with correct size", "rollback": "N/A", "time_est": "10m"},
+    {"number": 4, "action": "Restore into ElastiCache using AWS Backup or redis-cli RESTORE (for cluster use redis-cluster-migrate tool or RIOT)", "verify": "redis-cli -h <elasticache-endpoint> DBSIZE returns same key count as source", "rollback": "FLUSHALL on ElastiCache, re-run restore", "time_est": "1h"},
+    {"number": 5, "action": "Update application connection strings to point to ElastiCache endpoint, redeploy pods with new env vars", "verify": "Application logs show successful cache hits from ElastiCache; latency p99 < 2ms", "rollback": "Revert env vars to K8s Redis endpoint", "time_est": "30m"}
+  ]
+}

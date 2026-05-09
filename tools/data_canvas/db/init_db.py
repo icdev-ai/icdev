@@ -1516,6 +1516,36 @@ def init_db():
             conn.commit()
             print(f"[init_db] Data Canvas schema created at {DB_PATH}")
 
+        # CAM extension: dd_migration_jobs — tracks live data migration job status
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS dd_migration_jobs (
+    id                  TEXT PRIMARY KEY,
+    design_id           TEXT REFERENCES data_designs(id) ON DELETE CASCADE,
+    source_type         TEXT NOT NULL
+        CHECK(source_type IN ('oracle','mysql','mssql','mongodb','elasticsearch',
+                              'redis','postgres','s3','cassandra','dynamodb','other')),
+    target_type         TEXT NOT NULL,
+    migration_tool      TEXT DEFAULT 'dms'
+        CHECK(migration_tool IN ('dms','sct','pgloader','mongodump','snapshot_restore',
+                                 'aws_glue','manual','other')),
+    status              TEXT DEFAULT 'pending'
+        CHECK(status IN ('pending','running','validating','complete','failed','paused')),
+    row_count_source    INTEGER DEFAULT 0,
+    row_count_target    INTEGER DEFAULT 0,
+    validation_query    TEXT DEFAULT '',
+    validation_status   TEXT DEFAULT 'pending'
+        CHECK(validation_status IN ('pending','pass','fail','skipped')),
+    config_json         TEXT DEFAULT '{}',
+    notes               TEXT DEFAULT '',
+    started_at          TEXT,
+    completed_at        TEXT,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_design ON dd_migration_jobs(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_migration_jobs_status ON dd_migration_jobs(status);
+""")
+        conn.commit()
+
         # Migration: add anomaly_json to dd_explore_profiles if missing
         try:
             conn.execute("ALTER TABLE dd_explore_profiles ADD COLUMN anomaly_json TEXT")

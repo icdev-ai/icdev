@@ -1464,6 +1464,24 @@ def init_db():
         rb_added = seed_runbooks()
         if rb_added:
             print(f"IDC: seeded {rb_added} runbooks")
+
+        # CAM extension: idc_migration_baselines — before/after snapshot for any container migration
+        conn.executescript("""
+CREATE TABLE IF NOT EXISTS idc_migration_baselines (
+    id              TEXT PRIMARY KEY,
+    design_id       TEXT REFERENCES infra_designs(id) ON DELETE CASCADE,
+    baseline_type   TEXT NOT NULL DEFAULT 'source'
+        CHECK(baseline_type IN ('source','target','cutover','rollback')),
+    platform        TEXT NOT NULL DEFAULT 'k8s',
+    label           TEXT DEFAULT '',
+    snapshot_json   TEXT DEFAULT '{}',
+    diff_json       TEXT DEFAULT '{}',
+    captured_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_idc_migration_baselines_design ON idc_migration_baselines(design_id);
+CREATE INDEX IF NOT EXISTS idx_idc_migration_baselines_type   ON idc_migration_baselines(baseline_type);
+""")
+        conn.commit()
     finally:
         conn.close()
 

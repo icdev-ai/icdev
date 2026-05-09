@@ -1,0 +1,17 @@
+{
+  "id": "mc-sop-pgvector-001",
+  "title": "Aurora pgvector: Semantic Search Layer",
+  "category": "ai-modernization",
+  "sop_target_canvas": "mc",
+  "platform": "aws",
+  "source_tech": "oracle",
+  "target_tech": "aurora-postgresql",
+  "description": "Add semantic vector search capability to Aurora PostgreSQL using pgvector extension.",
+  "steps": [
+    {"number": 1, "action": "Enable pgvector: CREATE EXTENSION IF NOT EXISTS vector; verify with SELECT extversion FROM pg_extension WHERE extname='vector'", "verify": "Extension version >= 0.7.0 returned", "rollback": "DROP EXTENSION vector CASCADE", "time_est": "5m"},
+    {"number": 2, "action": "Add embedding columns to target tables: ALTER TABLE analytics_docs ADD COLUMN embedding vector(1024)", "verify": "\\d analytics_docs shows embedding column of type vector(1024)", "rollback": "ALTER TABLE analytics_docs DROP COLUMN embedding", "time_est": "15m"},
+    {"number": 3, "action": "Generate embeddings via Bedrock Titan Embeddings V2 for existing rows: Lambda function batch-processes rows in chunks of 100", "verify": "SELECT COUNT(*) FROM analytics_docs WHERE embedding IS NULL returns 0", "rollback": "UPDATE analytics_docs SET embedding = NULL", "time_est": "4h"},
+    {"number": 4, "action": "Create HNSW index for approximate nearest neighbor search: CREATE INDEX ON analytics_docs USING hnsw (embedding vector_cosine_ops) WITH (m=16, ef_construction=64)", "verify": "\\d analytics_docs shows hnsw index on embedding column; EXPLAIN ANALYZE shows index scan", "rollback": "DROP INDEX idx_analytics_docs_embedding", "time_est": "30m"},
+    {"number": 5, "action": "Test semantic search: SELECT title, 1 - (embedding <=> $1) AS similarity FROM analytics_docs ORDER BY embedding <=> $1 LIMIT 10", "verify": "Query returns relevant documents; top result similarity > 0.85 for known test query", "rollback": "N/A", "time_est": "30m"}
+  ]
+}
