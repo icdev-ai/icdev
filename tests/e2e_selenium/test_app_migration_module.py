@@ -25,6 +25,7 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -35,9 +36,19 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 BASE_URL = os.environ.get("ICDEV_DASHBOARD_URL", "http://localhost:5000").rstrip("/")
+_BASE_SCHEME = urllib.parse.urlparse(BASE_URL).scheme
+if _BASE_SCHEME not in ("http", "https"):
+    raise ValueError(f"ICDEV_DASHBOARD_URL must use http or https; got {_BASE_SCHEME!r}")
 MC_BASE = f"{BASE_URL}/migration-canvas"
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
+
+
+def _require_http_url(url: str) -> None:
+    """Raise ValueError if the URL scheme is not http or https."""
+    scheme = urllib.parse.urlparse(url).scheme
+    if scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https schemes are permitted; got {scheme!r}")
 
 
 def _get(path: str, params: dict | None = None, timeout: int = 15):
@@ -45,9 +56,10 @@ def _get(path: str, params: dict | None = None, timeout: int = 15):
     if params:
         qs = "&".join(f"{k}={v}" for k, v in params.items())
         url = f"{url}?{qs}"
+    _require_http_url(url)
     req = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # nosec B310
             return r.status, json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -59,6 +71,7 @@ def _get(path: str, params: dict | None = None, timeout: int = 15):
 
 def _post(path: str, body: dict | str, content_type: str = "application/json", timeout: int = 30):
     url = MC_BASE + path
+    _require_http_url(url)
     if isinstance(body, dict):
         data = json.dumps(body).encode("utf-8")
     else:
@@ -69,7 +82,7 @@ def _post(path: str, body: dict | str, content_type: str = "application/json", t
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # nosec B310
             return r.status, json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -81,6 +94,7 @@ def _post(path: str, body: dict | str, content_type: str = "application/json", t
 
 def _put(path: str, body: dict, timeout: int = 15):
     url = MC_BASE + path
+    _require_http_url(url)
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(
         url, data=data,
@@ -88,7 +102,7 @@ def _put(path: str, body: dict, timeout: int = 15):
         method="PUT",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # nosec B310
             return r.status, json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -100,9 +114,10 @@ def _put(path: str, body: dict, timeout: int = 15):
 
 def _delete(path: str, timeout: int = 15):
     url = MC_BASE + path
+    _require_http_url(url)
     req = urllib.request.Request(url, method="DELETE")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # nosec B310
             return r.status, json.loads(r.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         try:
@@ -454,9 +469,10 @@ class TestT08PageRoutes:
 
     def _route_ok(self, path: str) -> bool:
         url = MC_BASE + path
+        _require_http_url(url)
         req = urllib.request.Request(url, method="GET")
         try:
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=10) as r:  # nosec B310
                 return r.status == 200
         except urllib.error.HTTPError as e:
             return e.code in (200, 302, 401)
@@ -468,9 +484,10 @@ class TestT08PageRoutes:
 
     def test_dashboard_reachable(self):
         url = BASE_URL + "/"
+        _require_http_url(url)
         req = urllib.request.Request(url, method="GET")
         try:
-            with urllib.request.urlopen(req, timeout=5) as r:
+            with urllib.request.urlopen(req, timeout=5) as r:  # nosec B310
                 assert r.status in (200, 302)
         except urllib.error.HTTPError as e:
             assert e.code in (200, 302, 401)
