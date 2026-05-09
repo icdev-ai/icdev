@@ -86,6 +86,7 @@ from tools.network.config_generator import (  # noqa: E402
     list_configurable_nodes,
 )
 from tools.network.stig_import import import_stig_file  # noqa: E402
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_network_blueprint():
@@ -2134,6 +2135,16 @@ def create_network_blueprint():
             graph = {"nodes": [], "edges": []}
 
         result = _add_narrative(_run_simulation(graph, sim_type, data))
+        _narrative = result.get("narrative") if isinstance(result, dict) else None
+        if _narrative:
+            record_canvas_decision(
+                canvas_type="ndc",
+                record_id=topo_id,
+                decision_type="narrative",
+                decision=str(_narrative)[:500],
+                rationale=f"Simulation type: {sim_type}",
+                model_used=None,
+            )
         sim_id = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
@@ -6639,6 +6650,16 @@ def create_network_blueprint():
             return jsonify({"error": "Bad graph"}), 500
 
         result = run_compliance_audit(topo_id, graph, regimes, classification)
+        record_canvas_decision(
+            canvas_type="ndc",
+            record_id=topo_id,
+            decision_type="compliance_finding",
+            decision=f"{len(result.get('findings', []))} finding(s) across regimes: {', '.join(regimes)}",
+            rationale=f"Scores: {result.get('scores', {})}",
+            model_used=None,
+            confidence=None,
+            project_id=None,
+        )
 
         audit_id = str(_uuid.uuid4())
         now = _now()
@@ -12581,6 +12602,32 @@ Planning rules:
             )
         finally:
             conn.close()
+
+    # ── AI Trace API ────────────────────────────────────────────────────────
+    @bp.route("/api/ai-trace")
+    @nc_login_required
+    def nc_api_ai_trace():
+        """Return recent AI decisions made by NDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "ndc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

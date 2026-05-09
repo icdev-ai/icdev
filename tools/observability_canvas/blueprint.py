@@ -66,6 +66,7 @@ from tools.observability_canvas.observability_engine import (  # noqa: E402
     compute_mitre_detection_coverage,
     detect_observability_gaps,
 )
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_observability_blueprint():

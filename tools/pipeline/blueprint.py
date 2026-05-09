@@ -64,6 +64,8 @@ from tools.pipeline.sops import (  # noqa: E402
     seed_sops as _pdc_seed_sops,
 )
 
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
+
 # ── Optional imports from existing ICDEV modules ─────────────────────────────
 try:
     from tools.compliance.slsa_attestation_generator import SLSA_LEVEL_REQUIREMENTS
@@ -732,6 +734,15 @@ def create_pipeline_blueprint():
             return jsonify({"error": f"Unknown analysis type: {analysis_type}"}), 400
 
         _audit("ANALYZE", "pipeline", pipe_id, analysis_type)
+        _summary = str(result.get("score", result.get("total", result.get("coverage", ""))))
+        record_canvas_decision(
+            canvas_type="pdc",
+            record_id=pipe_id,
+            decision_type="compliance_finding",
+            decision=f"{analysis_type}: {_summary}",
+            rationale=f"Nodes analyzed: {len(nodes)}",
+            model_used=None,
+        )
         return jsonify({"analysis_type": analysis_type, "result": result})
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1664,5 +1675,30 @@ def create_pipeline_blueprint():
         except Exception as exc:
             logger.warning("PDC IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/api/ai-trace")
+    @pc_login_required
+    def pc_api_ai_trace():
+        """Return recent AI decisions made by PDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "pdc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp

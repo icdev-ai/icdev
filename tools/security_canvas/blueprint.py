@@ -91,6 +91,7 @@ from tools.security_canvas.sops import (  # noqa: E402
     reject_sop,
     seed_sops,
 )
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_security_blueprint():
@@ -513,6 +514,15 @@ def create_security_blueprint():
                 ),
             )
         _audit("ASSESS", "design", design_id, f"score={result.get('risk_score', 0)}")
+        record_canvas_decision(
+            canvas_type="sdc",
+            record_id=design_id,
+            decision_type="threat_assessment",
+            decision=f"Grade {result.get('posture_grade','?')} — {result.get('total_threats',0)} threats, risk={result.get('risk_score',0)}",
+            rationale=f"Controls mapped: {result.get('total_controls',0)}",
+            model_used=None,
+            confidence=None,
+        )
 
         # Generate remediation plan from assessment
         plan = generate_remediation_plan(result, graph)
@@ -1837,6 +1847,18 @@ def create_security_blueprint():
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
         result = llm_identify_threats(graph)
+        if isinstance(result, dict) and result.get("threats"):
+            _threats = result["threats"]
+            _summary = f"{len(_threats)} LLM-identified threat(s)" if isinstance(_threats, list) else str(_threats)[:300]
+            record_canvas_decision(
+                canvas_type="sdc",
+                record_id=design_id,
+                decision_type="threat_assessment",
+                decision=_summary,
+                rationale=result.get("reasoning") or result.get("rationale", ""),
+                model_used=result.get("model"),
+                confidence=result.get("confidence"),
+            )
         return jsonify(result)
 
     # ====================================================================
@@ -2032,5 +2054,30 @@ def create_security_blueprint():
         except Exception as exc:
             logger.warning("SDC IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @bp.route("/api/ai-trace")
+    @sc_login_required
+    def sc_api_ai_trace():
+        """Return recent AI decisions made by SDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='sdc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "sdc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
 
     return bp
