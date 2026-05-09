@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block title %}AI Modernization Decision Tree — AIMC{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --aimc-purple:#6366f1; --aimc-indigo:#4f46e5; --aimc-slate:#1e293b;
+  --aimc-border:#334155; --aimc-gold:#FFB800; --aimc-green:#00FF88;
+  --aimc-red:#FF4444; --aimc-blue:#4A90E2;
+}
+.mod-header {
+  background:linear-gradient(135deg,#1e1b4b 0%,#312e81 40%,#1a1a14 100%);
+  padding:2rem 2rem 1.5rem;border-bottom:1px solid var(--aimc-border);
+}
+.mod-header h1 { font-size:1.6rem;font-weight:700;color:#e0e7ff;margin:0 0 .25rem; }
+.mod-header p  { color:#a5b4fc;margin:0;font-size:.9rem; }
+.mod-breadcrumb { font-size:.78rem;color:#64748b;margin-bottom:.5rem; }
+.mod-breadcrumb a { color:var(--aimc-blue);text-decoration:none; }
+
+.mod-body { max-width:1100px;margin:0 auto;padding:1.75rem 2rem 4rem; }
+
+/* Form card */
+.mod-form-card {
+  background:var(--aimc-slate);border:1px solid var(--aimc-border);
+  border-radius:14px;padding:1.75rem;margin-bottom:1.5rem;
+}
+.mod-form-title {
+  font-size:.85rem;font-weight:700;color:var(--aimc-gold);
+  text-transform:uppercase;letter-spacing:.06em;margin:0 0 1.25rem;
+}
+.mod-grid {
+  display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;
+}
+@media(max-width:700px){.mod-grid{grid-template-columns:1fr;}}
+.mod-field { display:flex;flex-direction:column;gap:.4rem; }
+.mod-field label { font-size:.8rem;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em; }
+.mod-field select {
+  background:#0f172a;border:1px solid var(--aimc-border);color:#e2e8f0;
+  border-radius:8px;padding:.55rem .8rem;font-size:.88rem;
+  appearance:none;cursor:pointer;
+}
+.mod-field select:focus { outline:none;border-color:var(--aimc-purple); }
+.mod-field.full { grid-column:1/-1; }
+.mod-submit {
+  margin-top:1.5rem;display:flex;gap:1rem;align-items:center;flex-wrap:wrap;
+}
+.mod-btn-primary {
+  background:var(--aimc-purple);color:#fff;padding:.6rem 1.5rem;
+  border-radius:8px;font-size:.9rem;font-weight:600;border:none;cursor:pointer;
+  transition:background .15s;
+}
+.mod-btn-primary:hover { background:var(--aimc-indigo); }
+.mod-btn-primary:disabled { opacity:.5;cursor:default; }
+.mod-hint { font-size:.8rem;color:#475569; }
+
+/* Result panel */
+#mod-result { display:none; }
+.mod-result-card {
+  background:var(--aimc-slate);border:1px solid var(--aimc-border);
+  border-radius:14px;overflow:hidden;
+}
+.mod-result-header {
+  padding:1.25rem 1.5rem;display:flex;align-items:center;gap:1rem;
+  border-bottom:1px solid var(--aimc-border);
+}
+.mod-pattern-icon { font-size:2.2rem; }
+.mod-pattern-name { font-size:1.15rem;font-weight:700;color:#e0e7ff; }
+.mod-pattern-phase { font-size:.75rem;font-weight:600;padding:.2rem .6rem;border-radius:10px;margin-top:.2rem;display:inline-block; }
+.phase1-chip { background:rgba(0,255,136,.12);color:#00FF88;border:1px solid rgba(0,255,136,.25); }
+.phase2-chip { background:rgba(255,184,0,.12);color:#FFB800;border:1px solid rgba(255,184,0,.25); }
+.phase3-chip { background:rgba(255,68,68,.12);color:#FF4444;border:1px solid rgba(255,68,68,.25); }
+
+.mod-result-body { padding:1.5rem; }
+.mod-section-label {
+  font-size:.78rem;font-weight:700;color:var(--aimc-gold);
+  text-transform:uppercase;letter-spacing:.06em;margin:0 0 .6rem;
+}
+.mod-rationale {
+  font-size:.9rem;color:#cbd5e1;line-height:1.65;margin-bottom:1.25rem;
+  background:rgba(99,102,241,.06);border-left:3px solid var(--aimc-purple);
+  padding:.75rem 1rem;border-radius:0 8px 8px 0;
+}
+.mod-path-chips { display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:1.25rem; }
+.mod-mission-chip {
+  background:rgba(74,144,226,.1);border:1px solid rgba(74,144,226,.2);
+  border-radius:6px;padding:.25rem .65rem;font-size:.78rem;color:var(--aimc-blue);
+  text-decoration:none;
+}
+.mod-mission-chip:hover { background:rgba(74,144,226,.2); }
+.mod-sdk-chip {
+  background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);
+  border-radius:6px;padding:.25rem .65rem;font-size:.78rem;color:var(--aimc-green);
+  text-decoration:none;font-family:monospace;
+}
+.mod-prereq-list { list-style:none;padding:0;margin:0 0 1.25rem; }
+.mod-prereq-list li {
+  padding:.4rem 0;font-size:.85rem;color:#94a3b8;
+  display:flex;align-items:flex-start;gap:.5rem;border-bottom:1px solid rgba(255,255,255,.04);
+}
+.mod-prereq-list li:last-child { border-bottom:none; }
+.mod-prereq-list li::before { content:"⚠";color:var(--aimc-gold);flex-shrink:0;margin-top:.05rem; }
+.mod-actions {
+  display:flex;gap:.75rem;flex-wrap:wrap;padding-top:1.25rem;
+  border-top:1px solid var(--aimc-border);
+}
+.mod-action-btn {
+  padding:.5rem 1.1rem;border-radius:8px;font-size:.85rem;font-weight:600;
+  text-decoration:none;border:none;cursor:pointer;
+}
+.mod-action-primary { background:var(--aimc-gold);color:#000; }
+.mod-action-secondary { background:rgba(255,255,255,.07);color:#e2e8f0; }
+.mod-action-blue { background:rgba(74,144,226,.15);color:var(--aimc-blue); }
+
+/* Loading */
+#mod-loading { display:none;padding:2rem;text-align:center;color:#64748b;font-size:.9rem; }
+.mod-spinner {
+  width:28px;height:28px;border:3px solid #334155;border-top-color:var(--aimc-purple);
+  border-radius:50%;animation:spin .7s linear infinite;display:inline-block;margin-bottom:.75rem;
+}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* How-to callout */
+.mod-callout {
+  background:rgba(99,102,241,.07);border:1px solid rgba(99,102,241,.2);
+  border-radius:12px;padding:1rem 1.25rem;margin-bottom:1.5rem;font-size:.88rem;color:#cbd5e1;
+}
+.mod-callout strong { color:#e0e7ff; }
+
+/* Pattern quick-ref */
+.mod-patterns-ref {
+  background:rgba(15,23,42,.6);border:1px solid var(--aimc-border);
+  border-radius:12px;padding:1.25rem;margin-top:2rem;
+}
+.mod-patterns-ref-title {
+  font-size:.78rem;font-weight:700;color:#64748b;text-transform:uppercase;
+  letter-spacing:.06em;margin:0 0 1rem;
+}
+.mod-patterns-grid {
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:.6rem;
+}
+.mod-pattern-ref-chip {
+  background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);
+  border-radius:8px;padding:.6rem .85rem;text-decoration:none;
+  display:flex;align-items:center;gap:.6rem;transition:border-color .15s;
+}
+.mod-pattern-ref-chip:hover { border-color:var(--aimc-purple); }
+.mod-pattern-ref-chip .ic  { font-size:1.1rem;flex-shrink:0; }
+.mod-pattern-ref-chip .nm  { font-size:.82rem;font-weight:600;color:#cbd5e1; }
+.mod-pattern-ref-chip .uc  { font-size:.72rem;color:#64748b;margin-top:.1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mod-header">
+  <div class="mod-breadcrumb">
+    <a href="/ai-ml">AIMC</a> → AI Modernization Decision Tree
+  </div>
+  <h1>🗺️ AI Modernization Decision Tree</h1>
+  <p>Describe your stack and goal — get the right AI injection pattern, AADC canvas template, and Academy learning path in seconds.</p>
+</div>
+
+<div class="mod-body">
+
+  <div class="mod-callout">
+    <strong>How it works:</strong> Answer 5 questions about your current system. The engine selects the best pattern from the
+    <a href="/academy/patterns" style="color:var(--aimc-blue);">AI Injection Pattern Library</a>,
+    explains why, and gives you the exact Academy missions and AADC canvas template to get started.
+    No jargon — just a clear next step.
+  </div>
+
+  <!-- Form -->
+  <div class="mod-form-card">
+    <div class="mod-form-title">Tell Us About Your System</div>
+    <form id="mod-form" onsubmit="runRecommend(event)">
+      <div class="mod-grid">
+
+        <div class="mod-field">
+          <label>Primary Language</label>
+          <select name="language" required>
+            <option value="">— Select —</option>
+            {% for l in languages %}
+            <option value="{{ l }}">{{ l }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mod-field">
+          <label>Application Architecture</label>
+          <select name="architecture" required>
+            <option value="">— Select —</option>
+            {% for a in architectures %}
+            <option value="{{ a }}">{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mod-field">
+          <label>Data You Have Available</label>
+          <select name="data_state" required>
+            <option value="">— Select —</option>
+            {% for d in data_states %}
+            <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mod-field">
+          <label>Team AI Readiness</label>
+          <select name="team_readiness" required>
+            <option value="">— Select —</option>
+            {% for r in team_readiness_options %}
+            <option value="{{ r }}">{{ r }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="mod-field full">
+          <label>Primary Goal — What Are You Trying to Achieve?</label>
+          <select name="goal" required>
+            <option value="">— Select —</option>
+            {% for g in user_goals %}
+            <option value="{{ g }}">{{ g }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+      </div>
+
+      <div class="mod-submit">
+        <button type="submit" class="mod-btn-primary" id="mod-submit-btn">
+          Get My Recommendation →
+        </button>
+        <span class="mod-hint">Takes less than a second — runs locally, no data sent externally.</span>
+      </div>
+    </form>
+  </div>
+
+  <!-- Loading -->
+  <div id="mod-loading">
+    <div class="mod-spinner"></div><br>Analyzing your stack…
+  </div>
+
+  <!-- Result -->
+  <div id="mod-result">
+    <div class="mod-result-card">
+      <div class="mod-result-header">
+        <span class="mod-pattern-icon" id="res-icon"></span>
+        <div>
+          <div class="mod-pattern-name" id="res-title"></div>
+          <span class="mod-pattern-phase" id="res-phase"></span>
+        </div>
+      </div>
+      <div class="mod-result-body">
+
+        <div class="mod-section-label">Why This Pattern</div>
+        <div class="mod-rationale" id="res-rationale"></div>
+
+        <div class="mod-section-label">Recommended Learning Path</div>
+        <div class="mod-path-chips" id="res-path"></div>
+
+        <div id="res-prereq-section" style="display:none;">
+          <div class="mod-section-label">Prerequisite Work</div>
+          <ul class="mod-prereq-list" id="res-prereqs"></ul>
+        </div>
+
+        <div class="mod-actions">
+          <a id="res-aadc-btn" href="#" class="mod-action-btn mod-action-primary" style="display:none;">
+            Open AADC Canvas Template →
+          </a>
+          <a id="res-pattern-btn" href="#" class="mod-action-btn mod-action-blue">
+            View Full Pattern Detail →
+          </a>
+          <a href="/academy/patterns" class="mod-action-btn mod-action-secondary">
+            Browse All 8 Patterns
+          </a>
+          <a href="/innovation/new" class="mod-action-btn mod-action-secondary">
+            Submit Innovation Idea →
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pattern Quick Reference -->
+  <div class="mod-patterns-ref">
+    <div class="mod-patterns-ref-title">All Available Patterns — Quick Reference</div>
+    <div class="mod-patterns-grid">
+      {% for p in patterns %}
+      <a href="/academy/patterns/{{ p.id }}" class="mod-pattern-ref-chip">
+        <span class="ic">{{ p.icon }}</span>
+        <div>
+          <div class="nm">{{ p.title }}</div>
+          <div class="uc">{{ p.use_case[:55] }}{% if p.use_case|length > 55 %}…{% endif %}</div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:2rem;font-size:.75rem;color:#334155;margin-top:2rem;">
+    CUI // SP-CTI — FORGE AIMC Modernization Decision Tree
+  </div>
+
+</div>
+
+<script>
+async function runRecommend(e) {
+  e.preventDefault();
+  const form = document.getElementById('mod-form');
+  const data = Object.fromEntries(new FormData(form));
+
+  document.getElementById('mod-result').style.display  = 'none';
+  document.getElementById('mod-loading').style.display = 'block';
+  document.getElementById('mod-submit-btn').disabled   = true;
+
+  try {
+    const res = await fetch('/ai-ml/api/modernize/recommend', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        language:       data.language,
+        architecture:   data.architecture,
+        data_state:     data.data_state,
+        goal:           data.goal,
+        team_readiness: data.team_readiness,
+      }),
+    });
+    if (!res.ok) throw new Error('Server error ' + res.status);
+    const rec = await res.json();
+    renderResult(rec);
+  } catch(err) {
+    document.getElementById('mod-loading').style.display = 'none';
+    alert('Recommendation failed: ' + err.message);
+  } finally {
+    document.getElementById('mod-submit-btn').disabled = false;
+  }
+}
+
+function renderResult(rec) {
+  document.getElementById('mod-loading').style.display = 'none';
+
+  // Header
+  const pattern = rec.pattern || {};
+  document.getElementById('res-icon').textContent  = pattern.icon  || '🤖';
+  document.getElementById('res-title').textContent = rec.pattern_title || rec.pattern_id;
+
+  const phaseEl = document.getElementById('res-phase');
+  phaseEl.textContent = rec.phase || '';
+  phaseEl.className = 'mod-pattern-phase';
+  const tagMap = {phase1:'phase1-chip', phase2:'phase2-chip', phase3:'phase3-chip'};
+  if (tagMap[rec.phase_tag]) phaseEl.classList.add(tagMap[rec.phase_tag]);
+
+  // Rationale
+  document.getElementById('res-rationale').textContent = rec.rationale || '';
+
+  // Learning path chips
+  const pathEl = document.getElementById('res-path');
+  pathEl.innerHTML = '';
+  (rec.learning_path || []).forEach(slug => {
+    const a = document.createElement('a');
+    a.href = '/academy/mission/' + slug;
+    a.className = slug === rec.sdk_mission ? 'mod-sdk-chip' : 'mod-mission-chip';
+    a.textContent = slug;
+    pathEl.appendChild(a);
+  });
+
+  // Prerequisites
+  const prereqs = rec.prerequisite_work || [];
+  const prereqSection = document.getElementById('res-prereq-section');
+  const prereqList    = document.getElementById('res-prereqs');
+  if (prereqs.length > 0) {
+    prereqList.innerHTML = prereqs.map(p => `<li>${escHtml(p)}</li>`).join('');
+    prereqSection.style.display = 'block';
+  } else {
+    prereqSection.style.display = 'none';
+  }
+
+  // AADC button
+  const aadcBtn = document.getElementById('res-aadc-btn');
+  if (rec.aadc_template) {
+    aadcBtn.href = '/aadc?template=' + encodeURIComponent(rec.aadc_template);
+    aadcBtn.style.display = 'inline-block';
+  } else {
+    aadcBtn.style.display = 'none';
+  }
+
+  // Pattern detail button
+  document.getElementById('res-pattern-btn').href = '/academy/patterns/' + rec.pattern_id;
+
+  document.getElementById('mod-result').style.display = 'block';
+  document.getElementById('mod-result').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

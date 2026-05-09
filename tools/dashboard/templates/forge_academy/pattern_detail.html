@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}{{ pattern.title }} — AI Injection Pattern — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-gold:#FFB800; --fa-green:#00FF88; --fa-blue:#4A90E2;
+  --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
+}
+.pd-hero {
+  background:linear-gradient(135deg,#0a0a14 0%,#12192b 60%,#1a1a14 100%);
+  border-bottom:1px solid var(--fa-border);padding:2rem 2rem 1.5rem;
+}
+.pd-breadcrumb { font-size:.8rem;color:#8899aa;margin-bottom:.5rem; }
+.pd-breadcrumb a { color:#4A90E2;text-decoration:none; }
+.pd-hero-title { display:flex;align-items:center;gap:.75rem;margin-bottom:.35rem; }
+.pd-icon { font-size:2.5rem; }
+.pd-title { font-size:1.6rem;font-weight:700;color:var(--fa-gold); }
+.pd-use-case { color:#8899aa;font-size:.95rem; }
+.pd-body { max-width:900px;margin:0 auto;padding:1.5rem 2rem 4rem; }
+.pd-meta-row { display:flex;gap:.75rem;flex-wrap:wrap;margin:1rem 0 1.5rem; }
+.pd-badge {
+  font-size:.8rem;font-weight:600;padding:.25rem .7rem;border-radius:6px;
+  border:1px solid rgba(255,255,255,.1);
+}
+.pd-section { margin-bottom:1.75rem; }
+.pd-section-title { font-size:.9rem;font-weight:700;color:var(--fa-gold);text-transform:uppercase;letter-spacing:.06em;margin:0 0 .75rem; }
+.pd-card {
+  background:var(--fa-card);border:1px solid var(--fa-border);
+  border-radius:12px;padding:1.25rem;
+}
+.pd-arch {
+  font-family:monospace;font-size:.85rem;color:#00D4FF;
+  background:rgba(0,212,255,.05);border:1px solid rgba(0,212,255,.15);
+  border-radius:8px;padding:1rem;margin-bottom:1rem;line-height:1.6;
+  word-break:break-word;
+}
+.pd-list { list-style:none;padding:0;margin:0; }
+.pd-list li {
+  padding:.45rem 0;border-bottom:1px solid rgba(255,255,255,.05);
+  font-size:.88rem;color:#ccd;display:flex;align-items:flex-start;gap:.5rem;
+}
+.pd-list li:last-child { border-bottom:none; }
+.pd-list li::before { content:"→";color:var(--fa-gold);flex-shrink:0;margin-top:.05rem; }
+.pd-warn-list li::before { content:"⚠";color:var(--fa-red); }
+.pd-steps-list { counter-reset:step; list-style:none;padding:0;margin:0; }
+.pd-steps-list li {
+  counter-increment:step;padding:.5rem 0 .5rem 2.5rem;position:relative;
+  border-bottom:1px solid rgba(255,255,255,.05);font-size:.88rem;color:#ccd;
+}
+.pd-steps-list li:last-child { border-bottom:none; }
+.pd-steps-list li::before {
+  content:counter(step);position:absolute;left:0;top:.45rem;
+  background:var(--fa-gold);color:#000;border-radius:50%;width:1.4rem;height:1.4rem;
+  display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:800;
+}
+.pd-mission-chip {
+  display:inline-block;background:rgba(74,144,226,.1);border:1px solid rgba(74,144,226,.2);
+  border-radius:6px;padding:.25rem .65rem;font-size:.78rem;color:#4A90E2;margin:.2rem;
+  text-decoration:none;
+}
+.pd-mission-chip:hover { background:rgba(74,144,226,.2); }
+.pd-ops-chip {
+  display:inline-block;background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.15);
+  border-radius:6px;padding:.25rem .65rem;font-size:.75rem;color:#00FF88;margin:.2rem;
+  font-family:monospace;
+}
+.pd-phase-banner {
+  border-radius:10px;padding:.75rem 1.1rem;font-size:.88rem;font-weight:600;margin-bottom:1.25rem;
+}
+.phase1 { background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);color:#00FF88; }
+.phase2 { background:rgba(255,184,0,.08);border:1px solid rgba(255,184,0,.2);color:#FFB800; }
+.phase3 { background:rgba(255,68,68,.08);border:1px solid rgba(255,68,68,.2);color:#FF4444; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="pd-hero">
+  <div class="pd-breadcrumb">
+    <a href="/academy/patterns">Pattern Library</a> → {{ pattern.title }}
+  </div>
+  <div class="pd-hero-title">
+    <span class="pd-icon">{{ pattern.icon }}</span>
+    <h1 class="pd-title">{{ pattern.title }}</h1>
+  </div>
+  <div class="pd-use-case">{{ pattern.use_case }}</div>
+</div>
+
+<div class="pd-body">
+
+  <!-- Meta badges -->
+  <div class="pd-meta-row">
+    {% set phase_cls = {'phase1':'phase1','phase2':'phase2','phase3':'phase3'} %}
+    <span class="pd-badge {{ phase_cls.get(pattern.phase_tag,'') }}" style="{% if not phase_cls.get(pattern.phase_tag) %}background:rgba(255,255,255,.06);color:#ccd;{% endif %}">
+      {{ pattern.phase }}
+    </span>
+    <span class="pd-badge" style="background:rgba(74,144,226,.1);color:#4A90E2;">{{ pattern.approach }}</span>
+    {% set cplx_colors = {'Low':'#00FF88','Medium':'#FFB800','High':'#FF4444'} %}
+    <span class="pd-badge" style="background:{{ cplx_colors.get(pattern.complexity,'#888') }}18;color:{{ cplx_colors.get(pattern.complexity,'#888') }};">
+      {{ pattern.complexity }} complexity
+    </span>
+  </div>
+
+  <!-- Phase banner -->
+  <div class="pd-phase-banner {{ phase_cls.get(pattern.phase_tag,'') }}">
+    {{ pattern.phase }} — {% if pattern.phase_tag=='phase1' %}Safe to pilot now with minimal risk and rework.{% elif pattern.phase_tag=='phase2' %}Requires solid Phase 1 foundation and team readiness.{% else %}High-impact transformation — ensure Phases 0-1 are complete first.{% endif %}
+  </div>
+
+  <!-- When to use -->
+  <div class="pd-section">
+    <div class="pd-section-title">When to Use This Pattern</div>
+    <div class="pd-card">
+      <ul class="pd-list">
+        {% for item in pattern.when_to_use %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- Architecture -->
+  <div class="pd-section">
+    <div class="pd-section-title">Architecture Flow</div>
+    <div class="pd-arch">{{ pattern.architecture }}</div>
+  </div>
+
+  <!-- Example -->
+  <div class="pd-section">
+    <div class="pd-section-title">Real-World Example</div>
+    <div class="pd-card" style="color:#ccd;font-size:.9rem;line-height:1.6;">
+      {{ pattern.example }}
+    </div>
+  </div>
+
+  <!-- Implementation steps -->
+  <div class="pd-section">
+    <div class="pd-section-title">Implementation Steps</div>
+    <div class="pd-card">
+      <ol class="pd-steps-list">
+        {% for step in pattern.steps %}
+        <li>{{ step }}</li>
+        {% endfor %}
+      </ol>
+    </div>
+  </div>
+
+  <!-- Pitfalls -->
+  <div class="pd-section">
+    <div class="pd-section-title">Common Pitfalls</div>
+    <div class="pd-card">
+      <ul class="pd-list pd-warn-list">
+        {% for item in pattern.pitfalls %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+
+  <!-- Academy missions -->
+  {% if pattern.missions %}
+  <div class="pd-section">
+    <div class="pd-section-title">Academy Missions That Teach This Pattern</div>
+    <div class="pd-card">
+      {% for slug in pattern.missions %}
+      <a href="/academy/mission/{{ slug }}" class="pd-mission-chip">{{ slug }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Ops tools -->
+  {% if pattern.ops_tools %}
+  <div class="pd-section">
+    <div class="pd-section-title">Operational Tools to Wire Up After Injection</div>
+    <div class="pd-card">
+      {% for tool in pattern.ops_tools %}
+      <span class="pd-ops-chip">{{ tool }}</span>
+      {% endfor %}
+      <div style="font-size:.78rem;color:#556;margin-top:.75rem;">
+        Use the <a href="/aadc" style="color:#4A90E2;">AADC Ops Config Generator</a> to auto-generate wiring config for these tools from your design canvas.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Actions -->
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:1.5rem;">
+    {% if pattern.aadc_template %}
+    <a href="/aadc?template={{ pattern.aadc_template }}" style="background:var(--fa-gold);color:#000;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      Open AADC Canvas Template →
+    </a>
+    {% endif %}
+    <a href="/academy/patterns" style="background:rgba(255,255,255,.08);color:#e0e0e0;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      ← Back to Pattern Library
+    </a>
+    <a href="/innovation/new" style="background:rgba(74,144,226,.15);color:#4A90E2;padding:.55rem 1.25rem;border-radius:8px;font-weight:600;text-decoration:none;font-size:.9rem;">
+      Submit Innovation Idea Using This Pattern →
+    </a>
+  </div>
+
+  <div style="text-align:center;padding:2rem;font-size:.75rem;color:#555;margin-top:2rem;">
+    CUI // SP-CTI — FORGE Academy AI Injection Pattern Library
+  </div>
+</div>
+{% endblock %}
