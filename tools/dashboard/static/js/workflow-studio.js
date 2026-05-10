@@ -1402,7 +1402,76 @@ const StudioWF = (() => {
   // Stubs for future features
   function undo() { toast('Undo not yet implemented', 'info'); }
   function redo() { toast('Redo not yet implemented', 'info'); }
-  function loadWorkflow(id) { toast('Loading workflow...', 'info'); }
+
+  async function loadWorkflow(id) {
+    if (!id) return;
+    try {
+      toast('Loading workflow...', 'info');
+      // Fetch metadata (name) and parsed steps (composer format) in parallel
+      const [metaResp, stepsResp] = await Promise.all([
+        fetch('/api/studio/workflows/' + encodeURIComponent(id)),
+        fetch('/api/studio/workflows/' + encodeURIComponent(id) + '/composer'),
+      ]);
+      if (!metaResp.ok) { toast('Workflow not found', 'error'); return; }
+      const wf   = await metaResp.json();
+      const data = stepsResp.ok ? await stepsResp.json() : {};
+      const steps = data.steps || [];
+
+      // Clear canvas
+      nodes = []; edges = []; selectedNode = null; nextNodeY = 60;
+      nodesEl().innerHTML = '';
+      edgesSvg().innerHTML = '';
+      $('wf-name').value = wf.name || 'Untitled Workflow';
+      updateCounts();
+      showEmptyState();
+
+      if (!steps.length) {
+        toast(`Workflow "${wf.name}" loaded (no steps)`, 'warning');
+        return;
+      }
+
+      const positions = computeDagLayout(steps);
+      const idMap = {};
+      for (const s of steps) {
+        const pos = positions[s.id] || { x: 60, y: 60 };
+        const node = addNode({
+          toolId: s.id,
+          toolName: s.name || s.id,
+          toolPath: s.tool || '',
+          toolDesc: s.description || '',
+          toolColor: guessColor(s.tool || ''),
+          node_type: s.node_type || 'tool',
+          role: s.role || null,
+          human_required: s.human_required || false,
+          approval_policy: s.approval_policy || null,
+          doc_template: s.doc_template || null,
+          sub_steps: s.sub_steps || [],
+        }, pos.x, pos.y);
+        idMap[s.id] = node.id;
+      }
+
+      for (const s of steps) {
+        if (!s.depends_on) continue;
+        const depList = Array.isArray(s.depends_on) ? s.depends_on : [s.depends_on];
+        for (const dep of depList) {
+          const fromId = idMap[dep];
+          const toId   = idMap[s.id];
+          if (fromId && toId) {
+            edges.push({ from: fromId, to: toId });
+            const target = nodes.find(n => n.id === toId);
+            if (target && !target.dependsOn.includes(fromId)) target.dependsOn.push(fromId);
+          }
+        }
+      }
+
+      const editorTab = document.querySelector('[data-tab="editor"]');
+      if (editorTab) switchTab(editorTab);
+      requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+      toast(`Workflow "${wf.name}" loaded — ${steps.length} steps`, 'success');
+    } catch (e) {
+      toast('Failed to load workflow: ' + e.message, 'error');
+    }
+  }
 
   async function useTemplate(id) {
     try {
@@ -1496,6 +1565,9 @@ const StudioWF = (() => {
       if (e.key === 'Delete' && selectedNode) deleteNode(selectedNode);
       if (e.key === 'Escape') { closeModal(); connectState = null; }
     });
+    // Auto-load workflow if ?load= is in the URL (e.g. from canvas bridge redirect)
+    const loadId = new URLSearchParams(window.location.search).get('load');
+    if (loadId) loadWorkflow(loadId);
   }
 
   document.addEventListener('DOMContentLoaded', init);
