@@ -60,6 +60,12 @@
       <button class="tb-btn" onclick="zoomOut()">- Zoom</button>
       <button class="tb-btn" onclick="zoomFit()">&#x229e; Fit</button>
     </div>
+    <div class="tb-group">
+      {% set wf_canvas_id = "sdc" %}
+      {% set wf_context_label = design.name if design else '' %}
+      {% set wf_design_id = design_id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
+    </div>
     <div class="tb-center">
       <span class="topology-name-display" id="design-name-display" contenteditable="true" oninput="isDirty=true;scheduleSave();">{{ design.name if design else 'Untitled Security Design' }}</span>
     </div>

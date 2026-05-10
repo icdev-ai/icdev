@@ -122,6 +122,12 @@
       <button class="tb-btn" id="tb-ai-review-btn" onclick="openAiReviewPanel()" title="AI Topology Reviewer — LLM analysis of SPOF, redundancy gaps, STIG violations, and suggestions" style="color:#00d4ff;">&#x1f50d; AI Review</button>
       <button class="tb-btn" id="tb-cr-btn" onclick="toggleCrMarkupMode()" title="Change Request Markup Mode — mark proposed adds (green), removes (red), and modifies (yellow) for CAB review" style="color:#8e44ad;">&#x270f; CR Markup</button>
     </div>
+    <div class="tb-group">
+      {% set wf_canvas_id = "ndc" %}
+      {% set wf_context_label = topology_name %}
+      {% set wf_design_id = topology_id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
+    </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
     </div>

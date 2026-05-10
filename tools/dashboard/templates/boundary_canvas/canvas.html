@@ -103,6 +103,11 @@
       <button class="secondary analysis" onclick="canvasFips()" title="FIPS Encryption Overlay">FIPS</button>
       <button class="secondary analysis" onclick="canvasCrosswalk()" title="Compliance Crosswalk">Crosswalk</button>
       <button class="secondary analysis" onclick="canvasLegend()" title="Toggle Legend">Legend</button>
+      <!-- Workflow -->
+      {% set wf_canvas_id = "bdc" %}
+      {% set wf_context_label = design.name %}
+      {% set wf_design_id = design_id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
       <!-- Navigation -->
       <button class="secondary" onclick="location.href='/boundary/'" title="Back to Dashboard">Back</button>
     </div>
