@@ -33,7 +33,8 @@ def _get_validate_script(run_id: str, project_id: str) -> Path | None:
             if row and row["stdout"]:
                 artifacts = json.loads(row["stdout"]).get("artifacts", [])
                 for a in artifacts:
-                    if a.get("type") == "py" or "validation" in a.get("name", "").lower():
+                    # Only accept Python scripts — avoid matching .md validation reports
+                    if a.get("type") == "py" or str(a.get("path", "")).endswith(".py"):
                         p = _ROOT / a["path"]
                         if p.exists():
                             return p

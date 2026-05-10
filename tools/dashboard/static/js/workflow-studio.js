@@ -1572,6 +1572,26 @@ const StudioWF = (() => {
 
   document.addEventListener('DOMContentLoaded', init);
 
+  // ── More menu (toolbar overflow) ──
+  function toggleMoreMenu(e) {
+    if (e) e.stopPropagation();
+    const menu = $('wf-more-menu');
+    if (!menu) return;
+    if (menu.hidden) {
+      menu.hidden = false;
+      setTimeout(() => document.addEventListener('click', function _close() {
+        menu.hidden = true;
+        document.removeEventListener('click', _close);
+      }), 0);
+    } else {
+      menu.hidden = true;
+    }
+  }
+  function closeMoreMenu() {
+    const menu = $('wf-more-menu');
+    if (menu) menu.hidden = true;
+  }
+
   // ── Public API ──
   return {
     handleToolDragStart, handleDrop, filterTools,
@@ -1581,6 +1601,7 @@ const StudioWF = (() => {
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode, onNodeTypeChange,
     zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
     drillInto, drillBack, drillBackTo, hideContextMenu,
+    toggleMoreMenu, closeMoreMenu,
     _exportToYAMLInternal: exportToYAML,
   };
 })();

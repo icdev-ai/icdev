@@ -51,7 +51,7 @@
         <div class="wf-studio__toolbar-row">
           <input type="text" class="studio-input" id="wf-name"
                  placeholder="Workflow name..." value="Untitled Workflow"
-                 style="max-width:260px; font-weight:600;">
+                 style="max-width:180px; min-width:80px; font-weight:600; flex-shrink:1;">
           <div class="studio-toolbar__separator"></div>
           <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
                   data-tooltip="Undo" onclick="StudioWF.undo()">&#8630;</button>
@@ -67,29 +67,27 @@
           <span id="wf-zoom-label" style="font-size:0.7rem;color:var(--studio-text-muted,#94a3b8);min-width:36px;text-align:center;">100%</span>
           <div class="studio-toolbar__spacer"></div>
           <span class="studio-badge studio-badge--neutral" id="wf-node-count">0 steps</span>
-          <button class="studio-btn studio-btn--secondary" onclick="StudioWF.validate()">
-            &#10003; Validate
-          </button>
-          <button class="studio-btn studio-btn--secondary" onclick="StudioWF.exportYAML()">
-            &#128190; Export YAML
-          </button>
-          <button class="studio-btn studio-btn--secondary" id="wf-gen-code-btn"
-                  onclick="StudioWF.generateCode()" title="Download standalone Python script"
-                  style="display:none;">
-            &#128196; Script
-          </button>
-          <button class="studio-btn studio-btn--secondary" onclick="window.print()" title="Print workflow diagram">
-            &#128438; Print
-          </button>
-          <button class="studio-btn studio-btn--secondary" id="wf-chat-toggle-btn"
+          <!-- Secondary actions collapsed into ⋯ More dropdown -->
+          <div class="wf-more-wrap">
+            <button class="studio-btn studio-btn--secondary studio-btn--sm wf-more-trigger"
+                    onclick="StudioWF.toggleMoreMenu(event)" title="More actions">&#8943; More</button>
+            <div id="wf-more-menu" class="wf-more-menu" hidden>
+              <button onclick="StudioWF.validate(); StudioWF.closeMoreMenu()">&#10003; Validate</button>
+              <button onclick="StudioWF.exportYAML(); StudioWF.closeMoreMenu()">&#128190; Export YAML</button>
+              <button id="wf-gen-code-btn" onclick="StudioWF.generateCode(); StudioWF.closeMoreMenu()"
+                      title="Download standalone Python script" style="display:none;">&#128196; Script</button>
+              <button onclick="window.print(); StudioWF.closeMoreMenu()">&#128438; Print</button>
+            </div>
+          </div>
+          <button class="studio-btn studio-btn--secondary studio-btn--sm" id="wf-chat-toggle-btn"
                   onclick="StudioWF.toggleChat()" title="AI Workflow Builder Chat"
                   style="border-color:var(--studio-accent,#6366f1);color:var(--studio-accent,#6366f1);">
-            &#129504; AI Chat
+            &#129504; AI
           </button>
-          <button class="studio-btn studio-btn--primary" onclick="StudioWF.save()">
-            Save Workflow
+          <button class="studio-btn studio-btn--primary studio-btn--sm" onclick="StudioWF.save()">
+            &#128190; Save
           </button>
-          <button class="studio-btn studio-btn--success" id="wf-run-btn"
+          <button class="studio-btn studio-btn--success studio-btn--sm" id="wf-run-btn"
                   onclick="StudioWF.run()" title="Run workflow"
                   style="display:none; background:#22c55e; border-color:#22c55e; color:#fff; font-weight:700;">
             &#9654; Run
