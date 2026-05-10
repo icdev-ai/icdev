@@ -154,8 +154,8 @@ def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
         )
         result["duration_ms"] = int((time.monotonic() - start) * 1000)
         result["exit_code"] = proc.returncode
-        result["stdout"] = proc.stdout.strip()[:4000] if proc.stdout else None
-        result["stderr"] = proc.stderr.strip()[:2000] if proc.stderr else None
+        result["stdout"] = proc.stdout.strip()[:32000] if proc.stdout else None
+        result["stderr"] = proc.stderr.strip()[:4000] if proc.stderr else None
         result["status"] = "success" if proc.returncode == 0 else "failed"
     except subprocess.TimeoutExpired:
         result["status"] = "timeout"

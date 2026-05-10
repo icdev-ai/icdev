@@ -52,7 +52,7 @@ _DASHBOARD_URL = "http://localhost:5050"
 # ── HITL helpers ──────────────────────────────────────────────────
 
 def _get_pending_hitl_steps() -> list:
-    """Return list of (run_id, step_run_id, step_name) for awaiting_approval steps."""
+    """Return list of pending HITL steps with status='awaiting_approval'."""
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
@@ -71,22 +71,56 @@ def _get_pending_hitl_steps() -> list:
         return []
 
 
-def _call_hitl_api(run_id: str, step_run_id: str, action: str, reason: str = "") -> dict:
-    """Call the dashboard approve/reject API endpoint."""
+def _write_hitl_decision_to_db(step_run_id: str, action: str, reason: str = "") -> bool:
+    """Write approval/rejection directly to DB — works from any process.
+
+    The workflow_runner polls DB every 10s and picks this up automatically.
+    Also attempts the HTTP API for fast in-process signaling (best-effort).
+    """
+    try:
+        from tools.db.storage import get_connection
+        actor_msg = f"{'Approved' if action == 'approve' else 'Rejected'} via Telegram"
+        if reason:
+            actor_msg += f": {reason}"
+        new_status = "approved" if action == "approve" else "rejected"
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE studio_workflow_run_steps SET status=?, stderr=?, completed_at=? "
+                "WHERE step_run_id=? AND status='awaiting_approval'",
+                (new_status, actor_msg, datetime.now(timezone.utc).isoformat(), step_run_id),
+            )
+            conn.commit()
+            updated = conn.execute(
+                "SELECT status FROM studio_workflow_run_steps WHERE step_run_id=?",
+                (step_run_id,),
+            ).fetchone()
+            return updated and updated["status"] == new_status
+        finally:
+            conn.close()
+    except Exception:
+        return False
+
+
+def _try_hitl_api(run_id: str, step_run_id: str, action: str, reason: str = "") -> None:
+    """Best-effort HTTP call to signal the in-process threading.Event for instant response."""
     try:
         payload = json.dumps({"actor": "telegram", "reason": reason}).encode()
         url = f"{_DASHBOARD_URL}/api/studio/workflows/runs/{run_id}/steps/{step_run_id}/{action}"
         req = urllib.request.Request(
             url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — localhost only
-            return json.loads(resp.read())
-    except Exception as e:
-        return {"error": str(e)}
+        urllib.request.urlopen(req, timeout=5)  # nosec B310 — localhost only
+    except Exception:
+        pass  # DB write already handled it; this is just for speed
 
 
 def _handle_hitl_action(action: str, step_run_id: str = "", reason: str = "") -> str:
-    """Approve or reject a pending HITL gate. Returns reply text."""
+    """Approve or reject a pending HITL gate. Returns reply text.
+
+    Works from any process — writes to DB directly; the workflow_runner
+    polls DB every 10s and also receives an optional fast HTTP signal.
+    """
     pending = _get_pending_hitl_steps()
 
     if not pending:
@@ -110,10 +144,13 @@ def _handle_hitl_action(action: str, step_run_id: str = "", reason: str = "") ->
         lines.append(f"\nUse: /{action} &lt;step_run_id&gt;")
         return "\n".join(lines)
 
-    result = _call_hitl_api(target["run_id"], target["step_run_id"], action, reason)
+    # Primary: write decision to DB (process-independent)
+    ok = _write_hitl_decision_to_db(target["step_run_id"], action, reason)
+    if not ok:
+        return f"❌ Failed to write {action} decision to DB — step may no longer be pending."
 
-    if "error" in result:
-        return f"❌ Failed to {action}: {result['error']}"
+    # Secondary: also signal in-process Event for instant response (best-effort)
+    _try_hitl_api(target["run_id"], target["step_run_id"], action, reason)
 
     icon = "✅" if action == "approve" else "❌"
     verb = "Approved" if action == "approve" else "Rejected"
@@ -122,7 +159,7 @@ def _handle_hitl_action(action: str, step_run_id: str = "", reason: str = "") ->
     msg += f"Workflow: {target.get('workflow_name', target['run_id'])}\n"
     if reason:
         msg += f"Reason: {reason}\n"
-    msg += f"\nRun <code>{target['run_id']}</code> will now continue."
+    msg += f"\nRun <code>{target['run_id']}</code> will continue within ~10s."
     return msg
 
 
