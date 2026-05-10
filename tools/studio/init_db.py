@@ -132,7 +132,7 @@ STUDIO_TABLES: dict[str, str] = {
             workflow_id    TEXT NOT NULL,
             workflow_name  TEXT,
             status         TEXT DEFAULT 'pending'
-                           CHECK(status IN ('pending','running','success','failed','cancelled')),
+                           CHECK(status IN ('pending','running','success','failed','cancelled','awaiting_approval')),
             started_at     TEXT DEFAULT (datetime('now')),
             completed_at   TEXT,
             triggered_by   TEXT,
@@ -148,7 +148,7 @@ STUDIO_TABLES: dict[str, str] = {
             step_name    TEXT,
             tool         TEXT,
             status       TEXT DEFAULT 'pending'
-                         CHECK(status IN ('pending','running','success','failed','skipped','timeout')),
+                         CHECK(status IN ('pending','running','success','failed','skipped','timeout','awaiting_approval','approved','rejected')),
             exit_code    INTEGER,
             stdout       TEXT,
             stderr       TEXT,

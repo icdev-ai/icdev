@@ -280,7 +280,7 @@ function initCanvas() {
     model: graph,
     width: 5000, height: 5000,
     gridSize: 10,
-    drawGrid: { name: 'dot', args: { color: 'rgba(255,255,255,0.06)' } },
+    drawGrid: { name: 'dot', args: { color: 'rgba(0,0,0,0.12)' } },
     background: { color: 'transparent' },
     defaultLink: () => new joint.shapes.standard.Link({
       attrs: { line: { stroke: '#e94560', strokeWidth: 2, targetMarker: { type: 'classic', fill: '#e94560', size: 6 } } }
@@ -617,7 +617,17 @@ function _zoomAroundCenter(newScale) {
 
 function zoomIn()   { _zoomAroundCenter(Math.min(4,   paper.scale().sx * 1.2)); }
 function zoomOut()  { _zoomAroundCenter(Math.max(0.08, paper.scale().sx / 1.2)); }
-function zoomFit()  { paper.scaleContentToFit({ padding: 40, maxScale: 2 }); _updateZoomLabel(); }
+function zoomFit() {
+  const area = document.querySelector('.pc-canvas-area');
+  const w = area ? area.clientWidth  : 1200;
+  const h = area ? area.clientHeight : 800;
+  paper.scaleContentToFit({
+    fittingBBox: { x: 0, y: 0, width: w, height: h },
+    padding: 60,
+    maxScale: 1,   // never zoom in past 100% — only zoom out to fit
+  });
+  _updateZoomLabel();
+}
 function zoomReset(){ paper.scale(1, 1); paper.translate(0, 0); _updateZoomLabel(1); }
 
 // ── Right Panel (Properties / Analysis) ─────────────────────────────────────
