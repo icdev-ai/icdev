@@ -3,6 +3,10 @@
 // Native browser test runner for E2E testing
 
 import { defineConfig, devices } from '@playwright/test';
+import path from 'path';
+
+// Root is always the directory that contains this config file — immune to cwd changes.
+const ROOT = __dirname;
 
 /**
  * ICDEV™ Playwright Test Configuration
@@ -15,7 +19,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Report: npx playwright show-report
  */
 export default defineConfig({
-  testDir: './tests/e2e',
+  testDir: path.resolve(ROOT, 'tests/e2e'),
   timeout: 60000, // cold-start server + beforeEach login flows need >30s
   fullyParallel: false, // Sequential for Gov/DoD audit traceability
   forbidOnly: !!process.env.CI,
@@ -23,10 +27,10 @@ export default defineConfig({
   workers: 1, // Single worker for deterministic execution order
   reporter: [
     ['list'],
-    ['json', { outputFile: '.tmp/test_runs/playwright-results.json' }],
-    ['html', { outputFolder: '.tmp/test_runs/playwright-report', open: 'never' }],
+    ['json', { outputFile: path.resolve(ROOT, '.tmp/test_runs/playwright-results.json') }],
+    ['html', { outputFolder: path.resolve(ROOT, '.tmp/test_runs/playwright-report'), open: 'never' }],
   ],
-  outputDir: '.tmp/test_runs/playwright-artifacts',
+  outputDir: path.resolve(ROOT, '.tmp/test_runs/playwright-artifacts'),
 
   use: {
     baseURL: process.env.ICDEV_DASHBOARD_URL || 'http://localhost:5050',
@@ -60,10 +64,11 @@ export default defineConfig({
   // reuseExistingServer:true means: if localhost:5050 is already up, skip start.
   // Set ICDEV_NO_SERVER=1 to disable (e.g. when an external server manages lifecycle).
   webServer: process.env.ICDEV_NO_SERVER ? undefined : {
-    command: 'python tools/dashboard/app.py',
+    command: `python ${path.resolve(ROOT, 'tools/dashboard/app.py')}`,
     url: 'http://localhost:5050',
     reuseExistingServer: true,
     timeout: 60000,
+    cwd: ROOT,
   },
 });
 // CUI // SP-CTI
