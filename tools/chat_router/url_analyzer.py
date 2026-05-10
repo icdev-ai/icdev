@@ -259,10 +259,17 @@ def analyze(url: str, canvas_type: str = "intake") -> dict:
 
     try:
         from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
 
         router = LLMRouter()
-        provider, model_id, _ = router.get_provider_for_function("code_analysis")
-        reply = (provider.complete(model_id=model_id, prompt=prompt, max_tokens=1400) or "").strip()
+        req = LLMRequest(
+            messages=[
+                {"role": "system", "content": "You are a senior technical architect performing a code and architecture review. Be specific and cite actual file names, class names, and patterns from the provided content."},
+                {"role": "user", "content": prompt},
+            ],
+        )
+        resp = router.invoke("chat_response", req)
+        reply = (resp.content or "").strip() if resp else ""
         if not reply:
             raise ValueError("empty LLM response")
     except Exception as exc:
