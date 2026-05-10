@@ -8,7 +8,6 @@ EP11 — Manifest + Companion chore + Playwright V&V
 """
 # CUI // SP-CTI
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
