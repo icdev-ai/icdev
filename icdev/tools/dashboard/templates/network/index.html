@@ -12,6 +12,9 @@
     <a href="/network/canvas/new" class="btn btn-secondary">+ Blank Canvas</a>
     <a href="/network/templates" class="btn btn-secondary">Templates</a>
     <a href="/simulate/chat?canvas_type=ndc" class="btn btn-secondary" title="Digital Program Twin — AI-assisted simulation chat">Simulate Chat</a>
+    {% set wf_canvas_id = 'ndc' %}
+    {% set wf_context_label = item.name|default('') %}
+    {% include 'includes/workflow_trigger_btn.html' %}
   </div>
 </div>
 
