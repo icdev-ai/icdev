@@ -787,6 +787,113 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
+  // ── Data Governance Framework Check ───────────────────────────────────
+  window.canvasGovernance = function() {
+    if (cfg.designId === 'new') {
+      openRightPanel('Governance', '<p style="color:#f39c12;">Save the design first, then run Governance check.</p>');
+      return;
+    }
+    openRightPanel('Governance', '<p style="color:#7a8cb0;font-size:11px;">Running governance framework check…</p>');
+    fetch(cfg.apiBase + '/designs/' + cfg.designId + '/governance', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { openRightPanel('Governance', `<p style="color:#e74c3c;">${d.error}</p>`); return; }
+
+        const score    = d.score || 0;
+        const grade    = d.grade || '?';
+        const maturity = d.maturity || {};
+        const cats     = d.categories || {};
+        const checks   = d.checks || [];
+        const recs     = d.recommendations || [];
+
+        const scoreColor = score >= 80 ? '#27ae60' : score >= 60 ? '#f39c12' : '#e74c3c';
+        const matColors  = ['#e74c3c','#e74c3c','#f39c12','#f39c12','#27ae60'];
+        const matColor   = matColors[Math.min((maturity.level || 1) - 1, 4)];
+
+        let html = '';
+
+        // Header score card
+        html += `<div style="background:#0f1e36;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center;">`;
+        html += `<div style="font-size:38px;font-weight:700;color:${scoreColor};">${score}</div>`;
+        html += `<div style="font-size:11px;color:#7a8cb0;">Governance Score / 100 &nbsp;·&nbsp; Grade <strong style="color:${scoreColor};">${grade}</strong></div>`;
+        html += `</div>`;
+        html += _bar(score, scoreColor);
+
+        // Maturity badge
+        const matIcons = ['','🔴','🟠','🟡','🟢','🟢'];
+        html += `<div style="background:#16213e;border:1px solid #9b59b644;border-radius:6px;padding:8px 12px;margin-bottom:12px;display:flex;align-items:center;gap:10px;">`;
+        html += `<div style="font-size:22px;">${matIcons[maturity.level||1]}</div>`;
+        html += `<div><div style="font-size:12px;font-weight:700;color:${matColor};">Level ${maturity.level||1} — ${maturity.label||''}</div>`;
+        html += `<div style="font-size:10px;color:#5a6e8c;">${maturity.description||''}</div></div>`;
+        html += `</div>`;
+
+        // Per-pillar breakdown
+        html += _section(`Pillar Breakdown (${d.passed_checks}/${d.total_checks} checks passed)`);
+        const PILLAR_ICONS = {
+          'Stewardship': '👤', 'Catalog & Metadata': '📚', 'Lineage & Provenance': '🔗',
+          'Quality & Observability': '📊', 'Privacy & Consent': '🔒',
+          'Compliance & Policy': '📋', 'Data Mesh Governance': '🕸',
+        };
+        Object.entries(cats).forEach(([pillar, ps]) => {
+          const pct = ps.pct || 0;
+          const pColor = pct >= 80 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+          const icon = PILLAR_ICONS[pillar] || '•';
+          html += `<div style="margin-bottom:8px;">`;
+          html += `<div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;">`;
+          html += `<span style="color:#eaeaea;">${icon} ${pillar}</span>`;
+          html += `<span style="color:${pColor};font-weight:600;">${pct}% &nbsp;(${ps.passed}/${ps.total})</span>`;
+          html += `</div>`;
+          html += _bar(pct, pColor);
+          html += `</div>`;
+        });
+
+        // All checks detail
+        html += _section('Framework Checks');
+        const byPillar = {};
+        checks.forEach(c => { (byPillar[c.pillar] = byPillar[c.pillar] || []).push(c); });
+        Object.entries(byPillar).forEach(([pillar, cs]) => {
+          html += `<div style="margin-bottom:2px;padding:4px 0;border-bottom:1px solid #1e3a6e;font-size:10px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;">${PILLAR_ICONS[pillar]||''} ${pillar}</div>`;
+          cs.forEach(c => {
+            const stColor = c.status === 'PASS' ? '#27ae60' : c.status === 'WARN' ? '#f39c12' : '#e74c3c';
+            const stIcon  = c.status === 'PASS' ? '✓' : c.status === 'WARN' ? '⚠' : '✗';
+            html += `<div style="padding:6px 8px;margin:2px 0;background:#16213e;border-radius:4px;border-left:3px solid ${stColor};">`;
+            html += `<div style="display:flex;justify-content:space-between;font-size:11px;">`;
+            html += `<span style="color:#eaeaea;font-weight:600;">${stIcon} ${c.title}</span>`;
+            html += `<span style="font-size:9px;color:${stColor};font-weight:700;">${c.status}</span>`;
+            html += `</div>`;
+            html += `<div style="font-size:10px;color:#5a6e8c;margin-top:2px;">${c.framework}</div>`;
+            if (!c.passed && c.detail) {
+              html += `<div style="font-size:10px;color:#7a8cb0;margin-top:3px;">${c.detail}</div>`;
+            }
+            html += `</div>`;
+          });
+        });
+
+        // Recommendations
+        if (recs.length > 0) {
+          html += _section(`Recommendations (${recs.length})`);
+          const sevOrder = { 'HIGH': 0, 'MEDIUM': 1, 'LOW': 2 };
+          recs.sort((a, b) => (sevOrder[a.severity]||9) - (sevOrder[b.severity]||9));
+          recs.forEach(r => {
+            const rColor = r.severity === 'HIGH' ? '#e74c3c' : r.severity === 'MEDIUM' ? '#f39c12' : '#3498db';
+            html += `<div style="padding:8px;background:#16213e;border-left:3px solid ${rColor};border-radius:0 4px 4px 0;margin-bottom:6px;">`;
+            html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;">`;
+            html += `${_pill(r.severity, rColor)}`;
+            html += `<span style="font-size:11px;font-weight:600;color:#eaeaea;">${r.title}</span>`;
+            html += `</div>`;
+            html += `<div style="font-size:10px;color:#7a8cb0;">${r.recommendation}</div>`;
+            html += `<div style="font-size:9px;color:#5a6e8c;margin-top:2px;">${r.pillar} · ${r.id}</div>`;
+            html += `</div>`;
+          });
+        } else {
+          html += `<div style="text-align:center;padding:12px;"><div style="font-size:20px;">🏆</div><div style="color:#27ae60;font-weight:600;font-size:12px;">All governance checks passed</div></div>`;
+        }
+
+        openRightPanel('Data Governance', html);
+      })
+      .catch(e => openRightPanel('Governance Error', `<p style="color:#e74c3c;">${e}</p>`));
+  };
+
   // ── Scorecard ──────────────────────────────────────────────────────────
   window.canvasScorecard = function() {
     if (cfg.designId === 'new') { openRightPanel('Scorecard', '<p style="color:#f39c12;">Save first.</p>'); return; }

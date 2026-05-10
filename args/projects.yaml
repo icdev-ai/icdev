@@ -3401,3 +3401,37 @@ projects:
   - key: ep4
     title: AI Observatory Dashboard — Unified Cross-Canvas AI Visibility
     priority: high
+
+- key: chat-ux
+  name: Chat UX — Non-Developer Accessibility & Bug Fixes
+  description: >
+    18-task initiative to fix a blocking P0 bug (impact_level DB constraint crash that
+    disables the entire chat on every cold load) and then progressively improve the
+    /chat interface for non-developer users: plain-English labels, onboarding welcome
+    state, simplified New Chat modal, readable right-sidebar sections, icon attach button,
+    role-filtered stats bar, and IQE bar suppression. All changes are in existing files
+    (intake.py, chat.html, chat.js, chat.css, base.html) — no new routes or DB tables.
+  task_prefix: cu-
+  default_open: true
+  briefs:
+  - 'fix: intake.py impact_level empty-string → IL4; chat.js error humanization'
+  - 'css: welcome banner + prompt chip styles; stats bar role-filter class'
+  - 'html: page header/subtitle, sidebar label, button renames, modal advanced section, welcome banner, readiness guard, input attach icon, stats role class, IQE suppress'
+  - 'js: empty-title + msg-count string updates, welcome handler + prompt clicks'
+  - 'vv: Playwright E2E clean-load verify; companion sync + coherence'
+  epics:
+  - key: fix
+    title: P0 Bug Fixes — impact_level constraint + error humanization
+    priority: critical
+  - key: css
+    title: CSS — welcome banner styles + role-filter class
+    priority: high
+  - key: html
+    title: HTML — all label, modal, sidebar, input, stats changes
+    priority: high
+  - key: js
+    title: JS — string updates + welcome state handler
+    priority: high
+  - key: vv
+    title: V&V — Playwright E2E + companion sync
+    priority: high
