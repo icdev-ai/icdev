@@ -266,6 +266,8 @@ class ChatContext:
             "title": self.title,
             "project_id": self.project_id,
             "agent_model": self.agent_model,
+            "system_prompt": self.system_prompt,
+            "intake_session_id": getattr(self, "_intake_session_id", ""),
             "status": self.status,
             "message_count": self.turn_number,
             "dirty_version": self.dirty_version,
@@ -920,6 +922,7 @@ class ChatManager:
             ctx.status = row.get("status", "active")
             ctx.message_count = row.get("message_count", 0)
             ctx.turn_number = row.get("message_count", 0)
+            ctx._intake_session_id = row.get("intake_session_id", "") or ""
             with self._lock:
                 self._contexts[context_id] = ctx
             # Restart agent loop if still active

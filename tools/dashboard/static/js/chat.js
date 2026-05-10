@@ -278,6 +278,18 @@
                 switchToCanvasContext(ctxId, ctx.canvas_type);
                 return;
             }
+            // Restore intake session from DB field or legacy system_prompt pattern
+            var recoveredSession = ctx.intake_session_id || '';
+            if (!recoveredSession && ctx.system_prompt && ctx.system_prompt.indexOf('RICOAS intake session: ') === 0) {
+                recoveredSession = ctx.system_prompt.replace('RICOAS intake session: ', '').trim();
+            }
+            if (recoveredSession && !_intakeMap[ctxId]) {
+                _intakeMap[ctxId] = recoveredSession;
+                saveIntakeMappings();
+                _activeIntakeSessionId = recoveredSession;
+                switchToIntakeContext(ctxId, recoveredSession);
+                return;
+            }
             setText('chat-title', ctx.title || ctxId);
             var statusEl = document.getElementById('chat-status');
             statusEl.textContent = ctx.status;
@@ -1875,9 +1887,12 @@
                     appendMessage({ role: 'system', content: 'Error creating chat context: ' + ctx.error });
                     return;
                 }
-                // Step 3: Store mapping
+                // Step 3: Store mapping locally
                 _intakeMap[ctx.context_id] = intakeSessionId;
                 saveIntakeMappings();
+
+                // Step 4: Persist to DB so /chat/<session_id> can restore this context
+                chatApi('PATCH', '/' + ctx.context_id + '/link-intake', { intake_session_id: intakeSessionId });
 
                 refreshContextList();
                 switchContext(ctx.context_id);
@@ -1897,30 +1912,49 @@
         });
     }
 
-    // Load an existing intake session into a context
-    function loadIntakeSession(sessionId) {
-        // Check if we already have a context for this intake session
+    // Load an existing intake session into a context — checks localStorage, then DB, then creates
+    function loadIntakeSession(sessionId, preferredContextId) {
+        // 1. Preferred context from server-side lookup (autoContextId)
+        if (preferredContextId) {
+            _intakeMap[preferredContextId] = sessionId;
+            saveIntakeMappings();
+            refreshContextList().then(function () { switchContext(preferredContextId); });
+            return;
+        }
+        // 2. Check localStorage mapping
         for (var ctxId in _intakeMap) {
             if (_intakeMap[ctxId] === sessionId) {
-                refreshContextList();
-                switchContext(ctxId);
+                refreshContextList().then(function () { switchContext(ctxId); });
                 return;
             }
         }
-        // Create a new context for this existing intake session
-        chatApi('POST', '/contexts', {
-            user_id: _userId,
-            tenant_id: '',
-            title: 'Intake: ' + sessionId.substring(0, 8),
-            project_id: '',
-            agent_model: 'sonnet',
-            system_prompt: 'RICOAS intake session: ' + sessionId
-        }).then(function (ctx) {
-            if (ctx.error) return;
-            _intakeMap[ctx.context_id] = sessionId;
-            saveIntakeMappings();
-            refreshContextList();
-            switchContext(ctx.context_id);
+        // 3. Search DB-loaded contexts for one whose intake_session_id matches
+        refreshContextList().then(function (contexts) {
+            for (var i = 0; i < (contexts || []).length; i++) {
+                var c = contexts[i];
+                if (c.intake_session_id === sessionId) {
+                    _intakeMap[c.context_id] = sessionId;
+                    saveIntakeMappings();
+                    switchContext(c.context_id);
+                    return;
+                }
+            }
+            // 4. Nothing found — create a new context linked to the existing session
+            chatApi('POST', '/contexts', {
+                user_id: _userId,
+                tenant_id: '',
+                title: 'Intake: ' + sessionId.substring(0, 8),
+                project_id: '',
+                agent_model: 'sonnet',
+                system_prompt: 'RICOAS intake session: ' + sessionId
+            }).then(function (ctx) {
+                if (ctx.error) return;
+                _intakeMap[ctx.context_id] = sessionId;
+                saveIntakeMappings();
+                chatApi('PATCH', '/' + ctx.context_id + '/link-intake', { intake_session_id: sessionId });
+                refreshContextList();
+                switchContext(ctx.context_id);
+            });
         });
     }
 
@@ -2227,8 +2261,7 @@
         var cfg = window._CHAT_CONFIG || {};
         var hasUrlParams = window.location.search && window.location.search.length > 1;
         if (cfg.sessionId) {
-            refreshContextList();
-            loadIntakeSession(cfg.sessionId);
+            loadIntakeSession(cfg.sessionId, cfg.autoContextId || null);
         } else if (cfg.wizardCanvas && hasUrlParams) {
             // Deep link: /chat?canvas=cam — auto-create a canvas-mode context
             var canvasMode = cfg.wizardCanvas;
