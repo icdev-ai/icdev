@@ -258,7 +258,6 @@ def _llm_classify(text: str) -> dict[str, Any]:
         router = LLMRouter()
         provider, model_id, _ = router.get_provider_for_function("classification")
 
-        canvas_list = ", ".join(sorted(CANVAS_MODES))
         prompt = (
             f"Classify the following user message into one of these chat modes:\n"
             f"- intake: user wants to build a new app / capture requirements / describe a project\n"
