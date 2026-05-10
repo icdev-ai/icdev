@@ -765,7 +765,7 @@ services:
       - "3080:3080"   # HTTP API / WebSocket notifications
       - "3081:3081"   # console proxy
     volumes:
-      - ./data/gns3-vendor-images:/gns3/images
+      - ./data/gns3-vendor-images:/root/GNS3/images/QEMU
       - gns3-projects:/gns3/projects
       - gns3-appliances:/gns3/appliances
     environment:
