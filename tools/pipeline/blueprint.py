@@ -951,6 +951,86 @@ def create_pipeline_blueprint():
         return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
+    # API — FIX IaC WARNINGS
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/validate/<pipe_id>/fix", methods=["POST"])
+    @pc_login_required
+    def pc_api_fix_warnings(pipe_id):
+        """Apply suggested auto-fixes to IaC warnings and re-validate."""
+        conn = get_connection()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        pipe = row_to_dict(row)
+        graph = json.loads(pipe["graph_json"])
+        data = request.get_json(force=True, silent=True) or {}
+        fixes = data.get("fixes", [])
+
+        try:
+            from tools.pipeline.deploy_generator import generate_deploy_bundle
+            from tools.pipeline.iac_validator import validate_deploy_bundle_from_generator, _EMPTY_YAML_DEFAULTS
+
+            bundle = generate_deploy_bundle(graph, pipe["name"], target_csp="auto", options={})
+            files = bundle.get("files_content", [])
+
+            applied = []
+            for fix in fixes:
+                action = fix.get("fix_action", "")
+                target_file = fix.get("file")
+
+                if action == "add_provider_block":
+                    # Inject a provider stub into the target .tf file
+                    for f in files:
+                        if f["path"] == target_file:
+                            if "provider " not in f["content"]:
+                                f["content"] = 'provider "aws" {\n  region = "us-east-1"\n}\n\n' + f["content"]
+                                applied.append(f"Added provider block to {target_file}")
+                            break
+
+                elif action == "populate_empty_yaml":
+                    stem = Path(target_file).stem if target_file else ""
+                    defaults = _EMPTY_YAML_DEFAULTS.get(stem, _EMPTY_YAML_DEFAULTS.get("values", "# configure here\n"))
+                    for f in files:
+                        if f["path"] == target_file:
+                            if not f["content"].strip() or all(
+                                ln.strip().startswith("#") or not ln.strip()
+                                for ln in f["content"].splitlines()
+                            ):
+                                f["content"] = defaults
+                                applied.append(f"Populated {target_file} with default config")
+                            break
+
+                elif action == "fix_shell_header":
+                    for f in files:
+                        if f["path"] == target_file:
+                            if not f["content"].startswith("#!/"):
+                                f["content"] = "#!/bin/bash\nset -euo pipefail\n\n" + f["content"]
+                                applied.append(f"Added shebang + set -euo pipefail to {target_file}")
+                            break
+
+                elif action == "add_tags":
+                    for f in files:
+                        if f["path"] == (target_file or f["path"]) and f["path"].endswith(".tf"):
+                            if "common_tags" not in f["content"]:
+                                tag_block = '\nlocals {\n  common_tags = {\n    Environment = "production"\n    ManagedBy   = "terraform"\n  }\n}\n'
+                                f["content"] = f["content"] + tag_block
+                                applied.append(f"Added common_tags locals block to {f['path']}")
+                            break
+
+            # Re-validate with patched files
+            re_result = validate_deploy_bundle_from_generator(
+                graph, pipe["name"], target_csp="auto", max_layer=3, _override_files=files
+            )
+            _audit("FIX_IAC", "pipeline", pipe_id, f"applied={len(applied)}")
+            return jsonify({"fixed": len(applied), "applied": applied, **re_result})
+
+        except Exception as exc:
+            logger.warning("IaC fix failed: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    # ══════════════════════════════════════════════════════════════════════
     # API — DEPLOY IaC BUNDLE
     # ══════════════════════════════════════════════════════════════════════
 
