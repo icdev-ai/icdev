@@ -64,6 +64,7 @@ from tools.data_canvas.data_engine import (  # noqa: E402
     compute_classification_coverage,
     detect_data_gaps,
     compute_nist_coverage,
+    compute_data_governance,
     build_column_lineage_dag,
 )
 from tools.data_canvas.lineage import generate_contract_assertions  # noqa: E402
@@ -508,6 +509,47 @@ def create_data_canvas_blueprint():
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
+
+    @bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+    @dc_login_required
+    def dc_api_governance(design_id):
+        """Run data governance framework check on a data design."""
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT graph_json FROM data_designs WHERE id=?", (design_id,)
+        ).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        graph_raw = row["graph_json"]
+        try:
+            graph_data = json.loads(graph_raw) if isinstance(graph_raw, str) else graph_raw
+        except (json.JSONDecodeError, TypeError):
+            conn.close()
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        result = compute_data_governance(graph_data)
+
+        # Persist as a governance-type assessment record
+        assess_id = str(_uuid.uuid4())
+        conn.execute(
+            "INSERT INTO dd_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
+            "VALUES (?,?,?,?,?,?)",
+            (
+                assess_id, design_id, "governance",
+                json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                            for c in result["checks"]]),
+                result["score"],
+                now_isoformat(),
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        _audit(design_id, session.get("user_id", "system"), "GOVERNANCE",
+               f"score={result['score']} grade={result['grade']} maturity={result['maturity']['label']}")
+
+        return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
     # API — CONSTANTS (for frontend)
