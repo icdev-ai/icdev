@@ -29,11 +29,15 @@ IMAGES = {
         "closest_to": "Juniper vMX (CLI parity)",
         "license": "Free / GPLv2",
         "gns3_appliance": "vyos-rolling.gns3a",
-        "format": "qcow2",
+        "format": "iso",
         "download_type": "github_release",
-        "github_repo": "vyos/vyos-rolling-release",
-        "asset_pattern": ".qcow2",
-        "notes": "GNS3 appliance: Appliances → Add → search 'VyOS'",
+        "github_repo": "vyos/vyos-nightly-build",
+        "asset_pattern": ".iso",
+        "notes": (
+            "ISO downloaded. In GNS3: New Template → Qemu VMs → "
+            "RAM 512MB, 2 CPUs → attach ISO as CD-ROM → boot and run 'install image' → "
+            "export disk as qcow2 for reuse. Or use 'vyos' appliance template."
+        ),
     },
     "mikrotik-chr": {
         "name": "MikroTik CHR",
@@ -43,7 +47,7 @@ IMAGES = {
         "gns3_appliance": "mikrotik-chr.gns3a",
         "format": "img",
         "download_type": "mikrotik",
-        "version_url": "https://download.mikrotik.com/routeros/LATEST.6",
+        "version_url": "https://download.mikrotik.com/routeros/LATEST.7",
         "download_template": "https://download.mikrotik.com/routeros/{version}/chr-{version}.img.zip",
         "notes": "GNS3 appliance: Appliances → Add → search 'MikroTik'",
     },
@@ -117,7 +121,9 @@ def _github_latest_asset(repo: str, pattern: str) -> tuple[str, str]:
 
 def _mikrotik_latest() -> tuple[str, str]:
     with urllib.request.urlopen(IMAGES["mikrotik-chr"]["version_url"], timeout=10) as r:
-        version = r.read().decode().strip()
+        raw = r.read().decode().strip()
+    # Response format: "7.x.y <unix-timestamp>" — take only the version token
+    version = raw.split()[0]
     url = IMAGES["mikrotik-chr"]["download_template"].format(version=version)
     return url, f"chr-{version}.img.zip"
 
