@@ -226,8 +226,6 @@ def register_analysis_routes(bp, get_conn=None, helpers=None):
             n for n in nodes
             if n.get("type", n.get("nodeType", "")) not in ("label", "group", "container", "cloud", "internet")
         ]
-        node_ids = {n["id"] for n in nodes if n.get("id")}
-
         # degree map
         degree: dict[str, int] = {}
         for e in edges:
