@@ -387,12 +387,12 @@
       tbody.innerHTML = runs.map(run => {
         const summary = _parseSummary(run.summary_json);
         const duration = _runDuration(run.started_at, run.completed_at);
-        const statusBadge = _statusBadge(run.status);
+        const statusBadge = _runStatusBadge(run.status);
         return `<tr>
           <td style="font-weight:500;">${_esc(run.workflow_name || run.workflow_id)}</td>
           <td>${statusBadge}</td>
           <td style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);">
-            ${summary.success || 0}✓ ${summary.failed || 0}✗ ${summary.skipped || 0}—
+            ${(summary.success||0)+(summary.failed||0)+(summary.skipped||0)} / ${summary.total||0}
           </td>
           <td style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);">${duration}</td>
           <td style="font-size:0.75rem;color:var(--studio-text-muted,#94a3b8);">
@@ -425,7 +425,7 @@
         <div style="margin-bottom:12px; padding:12px; background:var(--studio-bg,#161829);
              border-radius:6px; font-size:0.82rem;">
           <div><strong>Workflow:</strong> ${_esc(run.workflow_name || run.workflow_id)}</div>
-          <div><strong>Status:</strong> ${_statusBadge(run.status)}</div>
+          <div><strong>Status:</strong> ${_runStatusBadge(run.status)}</div>
           <div><strong>Started:</strong> ${run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
           <div><strong>Completed:</strong> ${run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</div>
         </div>
@@ -434,11 +434,11 @@
           <tbody>
           ${steps.map(s => `<tr>
             <td>${_esc(s.step_name || s.step_id)}</td>
-            <td>${_statusBadge(s.status)}</td>
+            <td>${_runStatusBadge(s.status)}</td>
             <td>${s.duration_ms ? s.duration_ms + 'ms' : '—'}</td>
             <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
                 color:var(--studio-text-muted,#94a3b8); font-family:var(--studio-font-mono);">
-              ${_esc((s.stdout || s.stderr || '—').slice(0, 120))}
+              ${_esc((s.stdout || s.stderr || '—').slice(0, 200))}
             </td>
           </tr>`).join('')}
           </tbody>
@@ -460,7 +460,7 @@
     return Math.floor(ms / 60000) + 'm ' + Math.floor((ms % 60000) / 1000) + 's';
   }
 
-  function _statusBadge(status) {
+  function _runStatusBadge(status) {
     const map = {
       success:   ['#22c55e', '✓ Success'],
       failed:    ['#ef4444', '✗ Failed'],
