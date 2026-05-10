@@ -263,26 +263,57 @@ def _notify_approval_gate(run_id: str, step_run_id: str, step_name: str, role: s
 
 def approve_step(step_run_id: str, actor: str = "approver") -> bool:
     """Signal approval for a paused HITL step. Returns False if no pending gate."""
+    # First try in-memory Event (same process — immediate)
     with _approval_lock:
         ev = _approval_events.get(step_run_id)
-        if not ev:
-            return False
-        _approval_results[step_run_id] = "approved"
-        _approval_reasons[step_run_id] = f"Approved by {actor}"
-    ev.set()
-    return True
+        if ev:
+            _approval_results[step_run_id] = "approved"
+            _approval_reasons[step_run_id] = f"Approved by {actor}"
+            ev.set()
+            return True
+
+    # Fallback: write directly to DB so the DB-poll loop in _worker picks it up
+    # (used when approval comes from a different process, e.g. Telegram listener)
+    try:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE studio_workflow_run_steps SET status='approved', stderr=?, completed_at=? "
+                "WHERE step_run_id=? AND status='awaiting_approval'",
+                (f"Approved by {actor}", datetime.now(timezone.utc).isoformat(), step_run_id),
+            )
+            conn.commit()
+            return conn.rowcount > 0  # type: ignore[attr-defined]
+        finally:
+            conn.close()
+    except Exception:
+        return False
 
 
 def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> bool:
     """Signal rejection for a paused HITL step. Returns False if no pending gate."""
     with _approval_lock:
         ev = _approval_events.get(step_run_id)
-        if not ev:
-            return False
-        _approval_results[step_run_id] = "rejected"
-        _approval_reasons[step_run_id] = reason or f"Rejected by {actor}"
-    ev.set()
-    return True
+        if ev:
+            _approval_results[step_run_id] = "rejected"
+            _approval_reasons[step_run_id] = reason or f"Rejected by {actor}"
+            ev.set()
+            return True
+
+    try:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE studio_workflow_run_steps SET status='rejected', stderr=?, completed_at=? "
+                "WHERE step_run_id=? AND status='awaiting_approval'",
+                (reason or f"Rejected by {actor}", datetime.now(timezone.utc).isoformat(), step_run_id),
+            )
+            conn.commit()
+            return conn.rowcount > 0  # type: ignore[attr-defined]
+        finally:
+            conn.close()
+    except Exception:
+        return False
 
 
 def get_pending_approvals() -> list[str]:
@@ -362,13 +393,40 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                 with _approval_lock:
                     _approval_events[step_run_id] = ev
 
-                signaled = ev.wait(timeout=86400)  # wait up to 24 hours
+                # Wait for in-memory signal (same process) OR DB change (any process)
+                deadline = time.time() + 86400
+                decision = None
+                reason = ""
+                while time.time() < deadline:
+                    # 1. Check if in-memory Event was signaled (fast path)
+                    if ev.wait(timeout=10):
+                        with _approval_lock:
+                            decision = _approval_results.pop(step_run_id, None)
+                            reason = _approval_reasons.pop(step_run_id, "")
+                        break
+                    # 2. Poll DB for cross-process approvals (e.g. from Telegram listener)
+                    try:
+                        _conn = get_connection()
+                        try:
+                            _row = _conn.execute(
+                                "SELECT status, stderr FROM studio_workflow_run_steps "
+                                "WHERE step_run_id=?", (step_run_id,)
+                            ).fetchone()
+                            if _row and _row["status"] in ("approved", "rejected"):
+                                decision = _row["status"]
+                                reason = _row.get("stderr") or ""
+                                break
+                        finally:
+                            _conn.close()
+                    except Exception:
+                        pass
 
                 with _approval_lock:
-                    decision = _approval_results.pop(step_run_id, None)
-                    reason = _approval_reasons.pop(step_run_id, "")
+                    _approval_results.pop(step_run_id, None)
+                    _approval_reasons.pop(step_run_id, None)
                     _approval_events.pop(step_run_id, None)
 
+                signaled = decision is not None
                 if signaled and decision == "approved":
                     result["status"] = "approved"
                     result["stderr"] = reason or "Approved"

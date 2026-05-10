@@ -555,8 +555,38 @@ var _allTemplates = [], _allSnippets = [];
 try { var _d = {{ design_json | safe }}; graph = _d.graph || graph; } catch(e) {}
 {% endif %}
 
+function resolveGraphOverlaps(nodes, defaultW, defaultH, padding) {
+  defaultW = defaultW || 130; defaultH = defaultH || 55; padding = padding == null ? 20 : padding;
+  if (!nodes || nodes.length < 2) return;
+  for (var iter = 0; iter < 80; iter++) {
+    var moved = false;
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var a = nodes[i], b = nodes[j];
+        var aw = a.w || defaultW, ah = a.h || defaultH;
+        var bw = b.w || defaultW, bh = b.h || defaultH;
+        var p2 = padding / 2;
+        var ax1=a.x-p2, ay1=a.y-p2, ax2=a.x+aw+p2, ay2=a.y+ah+p2;
+        var bx1=b.x-p2, by1=b.y-p2, bx2=b.x+bw+p2, by2=b.y+bh+p2;
+        if (ax2<=bx1||bx2<=ax1||ay2<=by1||by2<=ay1) continue;
+        var dx=(bx1+bx2)/2-(ax1+ax2)/2, dy=(by1+by2)/2-(ay1+ay2)/2;
+        if (dx===0&&dy===0){dx=1;dy=0;}
+        var ovX=(ax2-ax1)/2+(bx2-bx1)/2-Math.abs(dx);
+        var ovY=(ay2-ay1)/2+(by2-by1)/2-Math.abs(dy);
+        if (ovX<=0||ovY<=0) continue;
+        var px=0, py=0;
+        if (ovX<=ovY){px=(ovX/2+0.5)*(dx>=0?1:-1);}
+        else         {py=(ovY/2+0.5)*(dy>=0?1:-1);}
+        a.x-=px; a.y-=py; b.x+=px; b.y+=py; moved=true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', function() {
+  resolveGraphOverlaps(graph.nodes, 130, 55, 20);
   renderGraph();
   updateDropHint();
   pushHistory();
