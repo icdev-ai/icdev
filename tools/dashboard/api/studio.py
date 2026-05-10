@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from flask import Blueprint, Response, jsonify, request, stream_with_context
+from flask import Blueprint, Response, jsonify, request, send_file, stream_with_context
 
 _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
@@ -766,6 +766,23 @@ def api_stream_run(run_id: str):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@studio_api.route("/artifacts/<path:filepath>", methods=["GET"])
+def api_download_artifact(filepath: str):
+    """Download a generated workflow artifact file."""
+    import mimetypes
+    safe_path = (_ROOT / filepath).resolve()
+    # Security: must stay inside _ROOT/data/studio_artifacts
+    artifacts_root = (_ROOT / "data" / "studio_artifacts").resolve()
+    if not str(safe_path).startswith(str(artifacts_root)):
+        return jsonify({"error": "Access denied"}), 403
+    if not safe_path.exists():
+        return jsonify({"error": "Artifact not found"}), 404
+    mime, _ = mimetypes.guess_type(str(safe_path))
+    as_attachment = request.args.get("download", "0") == "1"
+    return send_file(safe_path, mimetype=mime or "text/plain", as_attachment=as_attachment,
+                     download_name=safe_path.name)
 
 
 @studio_api.route("/workflows/runs", methods=["GET"])

@@ -220,10 +220,12 @@
         if (bar) setTimeout(() => { if (bar) bar.style.display = 'none'; }, 2000);
         const s = event.summary || {};
         const overall = event.status;
+        const arts = event.artifacts || s.artifacts || [];
         let toastType, barColor, msg;
         if (overall === 'success') {
           toastType = 'success'; barColor = '#22c55e';
           msg = `Run complete: ${s.success || 0} passed, ${s.failed || 0} failed, ${s.skipped || 0} skipped`;
+          if (arts.length) msg += ` — ${arts.length} artifact(s) generated`;
         } else if (overall === 'warning') {
           toastType = 'warning'; barColor = '#f59e0b';
           msg = `All ${s.skipped || 0} steps skipped — tool scripts not found. Click a node to see details, or configure tool paths.`;
@@ -233,6 +235,8 @@
         }
         StudioWF._toast(msg, toastType);
         if (progress) progress.style.background = barColor;
+        // Show artifact panel immediately on success
+        if (arts.length) _showArtifactPanel(arts);
       }
 
       if (type === 'error') {
@@ -464,6 +468,42 @@
 
   function _parseSummary(json) {
     try { return JSON.parse(json || '{}'); } catch { return {}; }
+  }
+
+  const _EXT_ICONS = { md: '📄', yaml: '📋', yml: '📋', py: '🐍', sh: '🖥', tfvars: '🏗', ini: '⚙', json: '{}', txt: '📝' };
+
+  function _artifactHtml(arts) {
+    if (!arts || !arts.length) return '';
+    const items = arts.map(a => {
+      const ext = (a.path || a.name || '').split('.').pop().toLowerCase();
+      const icon = _EXT_ICONS[ext] || '📎';
+      const name = a.name || a.path || 'Artifact';
+      const viewUrl  = `/api/studio/artifacts/${encodeURIComponent(a.path || '')}`;
+      const dlUrl    = `${viewUrl}?download=1`;
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e3a6e;">
+        <span style="font-size:16px;">${icon}</span>
+        <span style="flex:1;font-size:11px;color:#eaeaea;">${_esc(name)}</span>
+        <a href="${viewUrl}" target="_blank" style="font-size:10px;color:#60a5fa;text-decoration:none;padding:2px 6px;border:1px solid #60a5fa44;border-radius:3px;">View</a>
+        <a href="${dlUrl}" style="font-size:10px;color:#34d399;text-decoration:none;padding:2px 6px;border:1px solid #34d39944;border-radius:3px;">↓ Download</a>
+      </div>`;
+    }).join('');
+    return `<div style="margin-top:12px;padding:10px;background:#0d1b2a;border-radius:6px;border:1px solid #22c55e44;">
+      <div style="font-size:11px;font-weight:700;color:#22c55e;margin-bottom:6px;">Generated Artifacts (${arts.length})</div>
+      ${items}
+    </div>`;
+  }
+
+  function _showArtifactPanel(arts) {
+    const panel = document.getElementById('dc-panel-body') || document.getElementById('wf-artifact-panel');
+    if (!panel) return;
+    const existing = panel.querySelector('.wf-artifact-section');
+    if (existing) existing.remove();
+    const div = document.createElement('div');
+    div.className = 'wf-artifact-section';
+    div.innerHTML = _artifactHtml(arts);
+    panel.prepend(div);
+    const rightPanel = document.getElementById('dc-right-panel') || panel.closest('.dc-right-panel');
+    if (rightPanel) rightPanel.style.display = '';
   }
 
   function _runDuration(start, end) {
