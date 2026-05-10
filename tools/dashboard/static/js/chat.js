@@ -179,7 +179,7 @@
                 stopPolling();
                 stopRicoasTimers();
                 hideRicoasSidebar();
-                setText('chat-title', 'Select or create a context');
+                setText('chat-title', 'Start a new conversation');
                 var inp = document.getElementById('message-input');
                 var btn = document.getElementById('btn-send');
                 var closeBtn = document.getElementById('btn-close-context');
@@ -390,7 +390,7 @@
     function closeContext(ctxId) {
         chatApi('POST', '/' + ctxId + '/close').then(function () {
             refreshContextList();
-            setText('chat-title', 'Select or create a context');
+            setText('chat-title', 'Start a new conversation');
             document.getElementById('message-input').disabled = true;
             document.getElementById('btn-send').disabled = true;
             document.getElementById('btn-close-context').style.display = 'none';

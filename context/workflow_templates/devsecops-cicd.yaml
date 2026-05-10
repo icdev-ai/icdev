@@ -1,0 +1,47 @@
+name: DevSecOps CI/CD Pipeline
+description: Automated DevSecOps pipeline with SAST, dependency scanning, container hardening, and deployment gate for DoD IL4 systems.
+category: devsecops
+tags: [cicd, sast, sca, containers, il4]
+author: builtin
+steps:
+  - id: sast_scan
+    name: SAST Security Scan
+    tool: tools/security/sast_scanner.py
+    node_type: tool
+    required: true
+    timeout: 600
+  - id: dep_audit
+    name: Dependency Vulnerability Audit
+    tool: tools/maintain/dependency_auditor.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [sast_scan]
+  - id: secret_detect
+    name: Secret Detection
+    tool: tools/security/secret_detector.py
+    node_type: tool
+    required: true
+    timeout: 120
+    depends_on: [sast_scan]
+  - id: container_scan
+    name: Container Image Scan
+    tool: tools/security/container_scanner.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [dep_audit, secret_detect]
+  - id: sec_review
+    name: Security Officer Review
+    tool: ""
+    node_type: human
+    role: isso
+    required: true
+    depends_on: [container_scan]
+  - id: deploy_gate
+    name: Deployment Approval
+    tool: ""
+    node_type: approval
+    role: program_manager
+    approval_policy: all
+    depends_on: [sec_review]

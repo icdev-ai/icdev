@@ -733,6 +733,10 @@
 
     <script>
     (function() {
+        if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
+            var _mb = document.getElementById('iqe-minibar');
+            if (_mb) _mb.style.display = 'none';
+        }
         var bar = document.getElementById('iqe-minibar');
         var input = document.getElementById('iqe-mb-input');
         var badge = document.getElementById('iqe-mb-canvas-badge');
