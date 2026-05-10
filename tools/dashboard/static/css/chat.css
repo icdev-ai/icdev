@@ -13,8 +13,8 @@
     grid-template-rows: 1fr auto;
     gap: 0;
     margin-top: 12px;
-    height: calc(100vh - 400px);
-    min-height: 300px;
+    flex: 1;
+    min-height: 0;
     border: 1px solid var(--border-color);
     border-radius: 10px;
     overflow: hidden;
