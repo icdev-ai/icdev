@@ -17,6 +17,7 @@ body { overflow: hidden; height: 100vh; }
   background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px;
   min-width: 190px; z-index: 999; padding: 4px;
   box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  max-height: calc(100vh - 200px); overflow-y: auto;
 }
 .aadc-menu-dd a,
 .aadc-menu-dd button {
@@ -152,7 +153,7 @@ body { overflow: hidden; height: 100vh; }
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;">CUI // SP-CTI</div>
 
 <!-- ── Toolbar ── -->
-<div id="aadc-toolbar" style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;border-bottom:1px solid #1e3a6e;position:relative;flex-wrap:wrap;">
+<div id="aadc-toolbar" style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;border-bottom:1px solid #1e3a6e;position:relative;flex-wrap:wrap;z-index:100;flex-shrink:0;">
 
   <!-- Menu button -->
   <div class="aadc-menu-wrap">
@@ -1344,8 +1345,10 @@ function toggleMenu(e) {
   const m = document.getElementById('aadc-menu');
   m.style.display = m.style.display === 'block' ? 'none' : 'block';
 }
-document.addEventListener('click', () => {
-  document.getElementById('aadc-menu').style.display = 'none';
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.aadc-menu-wrap')) {
+    document.getElementById('aadc-menu').style.display = 'none';
+  }
 });
 
 // ────────────────────────────────────────────────
