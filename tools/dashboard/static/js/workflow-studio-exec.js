@@ -439,6 +439,8 @@
       const resp = await fetch('/api/studio/workflows/runs/' + runId);
       const run = await resp.json();
       const steps = run.steps || [];
+      const summary = _parseSummary(run.summary_json);
+      const runArts = summary.artifacts || [];
       body.innerHTML = `
         <div style="margin-bottom:12px; padding:12px; background:var(--studio-bg,#161829);
              border-radius:6px; font-size:0.82rem;">
@@ -447,18 +449,26 @@
           <div><strong>Started:</strong> ${run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
           <div><strong>Completed:</strong> ${run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</div>
         </div>
-        <table class="studio-table" style="font-size:0.8rem;">
-          <thead><tr><th>Step</th><th>Status</th><th>Duration</th><th>Output</th></tr></thead>
+        ${_artifactHtml(runArts)}
+        <table class="studio-table" style="font-size:0.8rem;margin-top:12px;">
+          <thead><tr><th>Step</th><th>Status</th><th>Duration</th><th>Output / Artifacts</th></tr></thead>
           <tbody>
-          ${steps.map(s => `<tr>
-            <td>${_esc(s.step_name || s.step_id)}</td>
-            <td>${_runStatusBadge(s.status)}</td>
-            <td>${s.duration_ms ? s.duration_ms + 'ms' : '—'}</td>
-            <td style="max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-                color:var(--studio-text-muted,#94a3b8); font-family:var(--studio-font-mono);">
-              ${_esc((s.stdout || s.stderr || '—').slice(0, 200))}
-            </td>
-          </tr>`).join('')}
+          ${steps.map(s => {
+            let stepArts = [];
+            try { stepArts = JSON.parse(s.stdout || '{}').artifacts || []; } catch {}
+            const artLinks = stepArts.map(a => {
+              const viewUrl = `/api/studio/artifacts/${encodeURIComponent(a.path || '')}`;
+              return `<a href="${viewUrl}" target="_blank" style="color:#60a5fa;font-size:10px;margin-right:4px;">${_esc(a.name)}</a>`;
+            }).join('');
+            return `<tr>
+              <td>${_esc(s.step_name || s.step_id)}</td>
+              <td>${_runStatusBadge(s.status)}</td>
+              <td>${s.duration_ms ? s.duration_ms + 'ms' : '—'}</td>
+              <td style="max-width:320px;color:var(--studio-text-muted,#94a3b8);font-family:var(--studio-font-mono);font-size:10px;">
+                ${artLinks || _esc((s.stdout || s.stderr || '—').slice(0, 150))}
+              </td>
+            </tr>`;
+          }).join('')}
           </tbody>
         </table>`;
     } catch (e) {
