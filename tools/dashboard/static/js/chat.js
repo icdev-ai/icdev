@@ -1941,47 +1941,216 @@
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
         });
-        // Hide intake-only fields when canvas mode is non-intake
+        // ---------------------------------------------------------------
+        // Canvas preset definitions (persona chips + system prompts)
+        // ---------------------------------------------------------------
+        var _CANVAS_PRESETS = {
+            intake: [
+                { label: 'Requirements Analyst', prompt: 'You are an experienced requirements analyst helping capture detailed software requirements using proven elicitation techniques. Ask focused questions one topic at a time.' },
+                { label: 'Product Owner', prompt: 'You are a product owner focused on user value, business outcomes, and backlog prioritization. Help translate business needs into actionable requirements.' },
+                { label: 'Business Analyst', prompt: 'You are a business analyst bridging stakeholder needs and technical teams, specializing in process analysis and functional decomposition.' },
+                { label: 'Enterprise Architect', prompt: 'You are an enterprise architect capturing requirements with an eye toward system-of-systems integration, scalability, and long-term architectural fit.' },
+            ],
+            cam: [
+                { label: 'Migration Architect', prompt: 'You are a cloud migration architect specializing in assessing legacy systems and designing phased migration strategies using the 7Rs framework (Rehost, Replatform, Repurchase, Refactor, Re-architect, Retire, Retain).' },
+                { label: 'Modernization Lead', prompt: 'You are an application modernization lead focused on refactoring monoliths, strangler fig patterns, and incremental cloud-native transformation.' },
+                { label: 'Legacy Assessment', prompt: 'You are a legacy system assessor identifying technical debt, EOL dependencies, and migration risk across enterprise portfolios. Prioritize by business impact and migration complexity.' },
+                { label: 'Cloud Journey Advisor', prompt: 'You are a cloud journey advisor helping organizations understand migration paths, cost models, and organizational change management for cloud adoption.' },
+            ],
+            ndc: [
+                { label: 'Network Architect', prompt: 'You are a network architect designing secure, resilient enterprise network topologies including segmentation, redundancy, and traffic flow.' },
+                { label: 'Zero Trust Designer', prompt: 'You are a zero trust network architect implementing NIST SP 800-207 principles: verify explicitly, use least privilege access, assume breach.' },
+                { label: 'SD-WAN Engineer', prompt: 'You are an SD-WAN and WAN optimization engineer designing hybrid connectivity solutions for distributed enterprise environments.' },
+                { label: 'Campus Network', prompt: 'You are a campus network architect designing LAN/WLAN topologies with 802.1X, NAC, VLANs, and QoS for enterprise campuses.' },
+            ],
+            sdc: [
+                { label: 'Security Architect', prompt: 'You are a security architect designing defense-in-depth architectures, threat models, and layered security control frameworks.' },
+                { label: 'Threat Modeler', prompt: 'You are a threat modeling specialist using STRIDE, PASTA, and MITRE ATT&CK to systematically identify, prioritize, and mitigate security risks.' },
+                { label: 'IAM Designer', prompt: 'You are an identity and access management architect specializing in OAuth 2.0, OIDC, SAML, RBAC/ABAC, and zero-trust identity architectures.' },
+                { label: 'ISSO Advisor', prompt: 'You are an Information System Security Officer guiding teams through system authorization, continuous monitoring, POA&M management, and compliance activities.' },
+            ],
+            eda: [
+                { label: 'Data Architect', prompt: 'You are an enterprise data architect designing scalable, governed data ecosystems including data lakes, warehouses, pipelines, and integration patterns.' },
+                { label: 'Event Streaming Eng.', prompt: 'You are an event streaming architect specializing in Kafka-based architectures, event sourcing, CQRS, and real-time stream processing.' },
+                { label: 'ETL/ELT Designer', prompt: 'You are a data integration specialist designing ETL/ELT pipelines, data quality frameworks, and transformation logic for enterprise data platforms.' },
+                { label: 'Lakehouse Architect', prompt: 'You are a data lakehouse architect designing Delta Lake/Iceberg/Hudi table formats, medallion architectures, and unified batch/streaming platforms.' },
+            ],
+            ddc: [
+                { label: 'Database Architect', prompt: 'You are a database architect designing schemas, indexing strategies, and data models for relational (PostgreSQL, SQL Server) and NoSQL (MongoDB, DynamoDB) systems.' },
+                { label: 'Schema Designer', prompt: 'You are a data modeler specializing in entity-relationship design, normalization (1NF–5NF), and schema evolution strategies.' },
+                { label: 'Performance Tuner', prompt: 'You are a database performance engineer focused on query optimization, indexing, partitioning, sharding, and read replica patterns.' },
+                { label: 'Data Governance', prompt: 'You are a data governance architect defining master data management, data lineage, classification, and stewardship frameworks.' },
+            ],
+            pdc: [
+                { label: 'Process Architect', prompt: 'You are a business process architect designing workflows, orchestration patterns, and BPMN 2.0 models for complex enterprise operations.' },
+                { label: 'Workflow Designer', prompt: 'You are a workflow designer mapping process flows, swim-lane diagrams, and state machines to support automation and hand-off analysis.' },
+                { label: 'Automation Engineer', prompt: 'You are a process automation engineer specializing in workflow orchestration, RPA, saga patterns, and integration choreography.' },
+                { label: 'BPM Analyst', prompt: 'You are a BPM analyst identifying process inefficiencies, re-engineering opportunities, and KPI frameworks for business process improvement.' },
+            ],
+            bdc: [
+                { label: 'Business Architect', prompt: 'You are a business architect designing capability maps, value streams, and organizational structures aligned to strategic business goals.' },
+                { label: 'Value Stream Mapper', prompt: 'You are a lean practitioner mapping value streams to identify waste, bottlenecks, and optimization opportunities across end-to-end business flows.' },
+                { label: 'Capability Planner', prompt: 'You are a business capability planner building capability heat maps, investment prioritization models, and strategic roadmaps.' },
+                { label: 'Org Designer', prompt: 'You are an organizational design consultant structuring teams, reporting lines, and operating models to maximize delivery effectiveness.' },
+            ],
+            odc: [
+                { label: 'Observability Eng.', prompt: 'You are an observability engineer designing three-pillar telemetry architectures (metrics, logs, traces) with OpenTelemetry, Prometheus, and distributed tracing.' },
+                { label: 'SRE', prompt: 'You are a site reliability engineer defining SLIs, SLOs, error budgets, runbooks, and incident response frameworks to balance reliability and velocity.' },
+                { label: 'SIEM Architect', prompt: 'You are a SIEM architect designing security monitoring pipelines, detection rules, correlation logic, and threat hunting workflows.' },
+                { label: 'AIOps Designer', prompt: 'You are an AIOps architect designing ML-driven anomaly detection, intelligent alerting, and automated remediation pipelines for large-scale operations.' },
+            ],
+            idc: [
+                { label: 'Infrastructure Architect', prompt: 'You are an infrastructure architect designing cloud-native, containerized environments using IaC, Kubernetes, and GitOps delivery patterns.' },
+                { label: 'Platform Engineer', prompt: 'You are a platform engineer building internal developer platforms with automated provisioning, golden paths, CI/CD, and self-service infrastructure.' },
+                { label: 'DevOps Engineer', prompt: 'You are a DevOps engineer designing CI/CD pipelines, deployment automation, blue/green strategies, and infrastructure-as-code with Terraform and Ansible.' },
+                { label: 'FinOps Architect', prompt: 'You are a FinOps architect designing cloud cost management frameworks, tagging strategies, rightsizing policies, and showback/chargeback models.' },
+            ],
+        };
+
+        var _REGIME_DESCRIPTIONS = {
+            'il2':        'IL2 — Public / FedRAMP Low equivalent, suitable for non-CUI federal workloads.',
+            'il4':        'IL4 — CUI (Controlled Unclassified Information) on DoD GovCloud.',
+            'il5':        'IL5 — CUI requiring additional protection on dedicated DoD infrastructure.',
+            'il6':        'IL6 — SECRET/SIPR, NSA Type 1 encryption, air-gapped CI/CD.',
+            'fedramp-low':  'FedRAMP Low baseline (NIST SP 800-53 Low impact controls).',
+            'fedramp-mod':  'FedRAMP Moderate baseline (NIST SP 800-53 Moderate, 325 controls).',
+            'fedramp-high': 'FedRAMP High baseline (NIST SP 800-53 High impact, 421 controls).',
+            'cmmc1':      'CMMC Level 1 — basic cyber hygiene (17 practices, FAR 52.204-21).',
+            'cmmc2':      'CMMC Level 2 — advanced cyber hygiene (110 practices, NIST SP 800-171).',
+            'cmmc3':      'CMMC Level 3 — expert (110+ practices, NIST SP 800-172 subset).',
+            'nist-800-53': 'NIST SP 800-53 Rev 5 security and privacy controls.',
+            'stig':       'DoD STIG/SRG technical security requirements and benchmarks.',
+            'rmf':        'DoD Risk Management Framework (A&A process, DIACAP successor).',
+            'stateramp':  'StateRAMP — FedRAMP-aligned framework for state and local government.',
+            'itar':       'ITAR — International Traffic in Arms Regulations for defense articles.',
+        };
+
+        function _buildComplianceBlurb(il, regimes) {
+            var parts = [];
+            if (il && _REGIME_DESCRIPTIONS[il]) parts.push(_REGIME_DESCRIPTIONS[il]);
+            for (var ri = 0; ri < regimes.length; ri++) {
+                if (_REGIME_DESCRIPTIONS[regimes[ri]]) parts.push(_REGIME_DESCRIPTIONS[regimes[ri]]);
+            }
+            if (!parts.length) return '';
+            return '\n\n--- Compliance Requirements ---\n' + parts.join('\n');
+        }
+
         var canvasSelect = document.getElementById('new-ctx-canvas');
         var intakeRow = document.getElementById('intake-checkbox-row');
-        var classificationRow = document.getElementById('intake-classification-row');
+
+        function _updateModalForCanvas(canvas) {
+            var container = document.getElementById('ctx-preset-chips');
+            if (!container) return;
+            var presets = _CANVAS_PRESETS[canvas] || [];
+            container.innerHTML = '';
+            for (var pi = 0; pi < presets.length; pi++) {
+                (function (preset) {
+                    var chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'ctx-preset-chip';
+                    chip.textContent = preset.label;
+                    chip.addEventListener('click', function () {
+                        var chips = container.querySelectorAll('.ctx-preset-chip');
+                        for (var ci = 0; ci < chips.length; ci++) chips[ci].classList.remove('ctx-preset-chip--active');
+                        this.classList.add('ctx-preset-chip--active');
+                        var ta = document.getElementById('new-ctx-prompt');
+                        if (ta) ta.value = preset.prompt;
+                    });
+                    container.appendChild(chip);
+                }(presets[pi]));
+            }
+            // Show/hide intake checkbox
+            if (intakeRow) intakeRow.style.display = canvas === 'intake' ? '' : 'none';
+        }
+
+        // Wire compliance env radio toggle
+        var envRadios = document.querySelectorAll('input[name="ctx-env"]');
+        var govRows = document.getElementById('ctx-gov-rows');
+        for (var ei = 0; ei < envRadios.length; ei++) {
+            envRadios[ei].addEventListener('change', function () {
+                if (govRows) govRows.style.display = this.value === 'gov' ? '' : 'none';
+            });
+        }
+
+        // Wire IL chip active class via :has() fallback for older browsers
+        var ilRadios = document.querySelectorAll('input[name="ctx-il"]');
+        for (var ii = 0; ii < ilRadios.length; ii++) {
+            ilRadios[ii].addEventListener('change', function () {
+                var chips = document.querySelectorAll('.ctx-il-chip');
+                for (var ci = 0; ci < chips.length; ci++) chips[ci].classList.remove('ctx-il-chip--selected');
+                if (this.parentElement) this.parentElement.classList.add('ctx-il-chip--selected');
+            });
+        }
+
+        // Wire canvas change → update presets
         if (canvasSelect) {
             canvasSelect.addEventListener('change', function () {
-                var isIntakeMode = this.value === 'intake';
-                if (intakeRow) intakeRow.style.display = isIntakeMode ? '' : 'none';
-                if (classificationRow) classificationRow.style.display = isIntakeMode ? '' : 'none';
+                _updateModalForCanvas(this.value);
             });
+        }
+
+        // Init presets for default canvas (intake)
+        _updateModalForCanvas('intake');
+
+        function _readCompliance() {
+            var envEl = document.querySelector('input[name="ctx-env"]:checked');
+            var isGov = envEl && envEl.value === 'gov';
+            var ilEl = document.querySelector('input[name="ctx-il"]:checked');
+            var il = isGov ? (ilEl ? ilEl.value : 'il4') : '';
+            var regimes = [];
+            if (isGov) {
+                var checked = document.querySelectorAll('.ctx-regime-chip input:checked');
+                for (var ri = 0; ri < checked.length; ri++) regimes.push(checked[ri].value);
+            }
+            return { il: il, regimes: regimes, isGov: isGov };
+        }
+
+        function _resetModal() {
+            var titleEl = document.getElementById('new-ctx-title');
+            var promptEl = document.getElementById('new-ctx-prompt');
+            var intakeEl = document.getElementById('new-ctx-intake');
+            var commercialEl = document.getElementById('ctx-env-commercial');
+            var il4El = document.querySelector('input[name="ctx-il"][value="il4"]');
+            if (titleEl) titleEl.value = '';
+            if (promptEl) promptEl.value = '';
+            if (intakeEl) intakeEl.checked = true;
+            if (canvasSelect) canvasSelect.value = 'intake';
+            if (commercialEl) { commercialEl.checked = true; }
+            if (govRows) govRows.style.display = 'none';
+            if (il4El) {
+                il4El.checked = true;
+                var ilChips = document.querySelectorAll('.ctx-il-chip');
+                for (var ci = 0; ci < ilChips.length; ci++) ilChips[ci].classList.remove('ctx-il-chip--selected');
+                if (il4El.parentElement) il4El.parentElement.classList.add('ctx-il-chip--selected');
+            }
+            var regimeChecks = document.querySelectorAll('.ctx-regime-chip input');
+            for (var ri = 0; ri < regimeChecks.length; ri++) regimeChecks[ri].checked = false;
+            _updateModalForCanvas('intake');
         }
 
         if (btnCreate) btnCreate.addEventListener('click', function () {
             var title = document.getElementById('new-ctx-title').value.trim();
             var model = document.getElementById('new-ctx-model').value;
             var prompt = document.getElementById('new-ctx-prompt').value.trim();
-            var canvasMode = (document.getElementById('new-ctx-canvas') || {}).value || 'intake';
-            var classification = (document.getElementById('new-ctx-classification') || {}).value || '';
+            var canvasMode = canvasSelect ? canvasSelect.value : 'intake';
+            var comp = _readCompliance();
             var isIntake = canvasMode === 'intake' && document.getElementById('new-ctx-intake').checked;
 
             if (canvasMode !== 'intake') {
-                // Create a regular context then set its canvas type
-                createContext({ title: title || (canvasMode.toUpperCase() + ' Chat'), agent_model: model, system_prompt: prompt }).then(function (ctx) {
-                    if (ctx && ctx.context_id) {
-                        setContextCanvasType(ctx.context_id, canvasMode);
-                    }
+                // Design canvas — append compliance blurb to system prompt
+                var compBlurb = _buildComplianceBlurb(comp.il, comp.regimes);
+                var sysPrompt = (prompt + compBlurb).trim();
+                createContext({ title: title || (canvasMode.toUpperCase() + ' Chat'), agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
+                    if (ctx && ctx.context_id) setContextCanvasType(ctx.context_id, canvasMode);
                 });
             } else if (isIntake) {
-                createIntakeContext({ title: title, agent_model: model, classification: classification });
+                createIntakeContext({ title: title, agent_model: model, classification: comp.il });
             } else {
-                createContext({ title: title, agent_model: model, system_prompt: prompt });
+                var compBlurbR = _buildComplianceBlurb(comp.il, comp.regimes);
+                createContext({ title: title, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
             }
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
-            document.getElementById('new-ctx-title').value = '';
-            document.getElementById('new-ctx-prompt').value = '';
-            document.getElementById('new-ctx-intake').checked = true;
-            if (canvasSelect) canvasSelect.value = 'intake';
-            if (intakeRow) intakeRow.style.display = '';
-            if (classificationRow) classificationRow.style.display = '';
-            var clsEl = document.getElementById('new-ctx-classification');
-            if (clsEl) clsEl.value = '';
+            _resetModal();
         });
 
         // Send message
