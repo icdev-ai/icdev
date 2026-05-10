@@ -28,7 +28,7 @@ trust_mode: full
 # Interval/continuous reflexes (research, ingest, heal) are also gated.
 active_hours:
   enabled: true
-  start_hour: 9    # 9 AM local
+  start_hour: 0    # 12 AM — overnight run enabled (restore to 9 AM tomorrow)
   end_hour: 23     # 11 PM local
   timezone: "America/New_York"
 
