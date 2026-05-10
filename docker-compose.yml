@@ -766,6 +766,7 @@ services:
       - "3081:3081"   # console proxy
     volumes:
       - ./data/gns3-vendor-images:/root/GNS3/images/QEMU
+      - ./data/gns3-config/gns3_server.conf:/root/.config/GNS3/2.2/gns3_server.conf:ro
       - gns3-projects:/gns3/projects
       - gns3-appliances:/gns3/appliances
     environment:
