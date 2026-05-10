@@ -3,6 +3,9 @@
 {% block extra_css %}
 <link rel="stylesheet" href="/static/css/agentic-canvas.css">
 <style>
+/* ── Canvas viewport fix: no body scroll, main-content fills remaining height */
+body { overflow: hidden; }
+.main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
 /* ── AIMC Canvas ─────────────────────────────────────────────────────────── */
 /* Toolbar */
 #aimc-toolbar {
@@ -29,7 +32,7 @@
 
 /* Main three-pane layout */
 #aimc-wrap {
-  display:flex; height:calc(100vh - 130px); overflow:hidden; background:#0f172a;
+  display:flex; flex:1; overflow:hidden; background:#0f172a;
 }
 
 /* Expand strips */

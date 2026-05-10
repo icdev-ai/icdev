@@ -4,7 +4,9 @@
 {% block content %}
 <link rel="stylesheet" href="/static/js/vendor/joint.css">
 <style>
-  .dc-wrap { display: flex; height: calc(100vh - 60px); }
+  body { overflow: hidden; }
+  .main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
+  .dc-wrap { display: flex; flex: 1; overflow: hidden; }
   .dc-sidebar { width: 220px; background: #0a1628; border-right: 1px solid #1e3a6e; display: flex; flex-direction: column; flex-shrink: 0; }
   .dc-tabs { display: flex; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
   .dc-tab { flex: 1; padding: 8px; text-align: center; font-size: 11px; font-weight: 600; color: #5a6e8c; cursor: pointer; border-bottom: 2px solid transparent; }
