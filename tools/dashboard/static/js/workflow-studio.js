@@ -1249,7 +1249,31 @@ const StudioWF = (() => {
     const r = canvas().getBoundingClientRect();
     zoomAtPoint(r.left + r.width / 2, r.top + r.height / 2, zoom - 0.1);
   }
-  function fitView() { zoom = 1; panX = 0; panY = 0; applyZoom(); }
+  function fitView() {
+    if (!nodes.length) { zoom = 1; panX = 0; panY = 0; applyZoom(); return; }
+    const c = canvas();
+    if (!c) return;
+    const vw = c.clientWidth  || 800;
+    const vh = c.clientHeight || 600;
+    const PAD = 60;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodes.forEach(n => {
+      const el = document.getElementById(n.id);
+      const w = (el && el.offsetWidth)  || 220;
+      const h = (el && el.offsetHeight) || 120;
+      minX = Math.min(minX, n.x);
+      minY = Math.min(minY, n.y);
+      maxX = Math.max(maxX, n.x + w);
+      maxY = Math.max(maxY, n.y + h);
+    });
+    const cw = maxX - minX || 1;
+    const ch = maxY - minY || 1;
+    zoom = Math.min((vw - PAD * 2) / cw, (vh - PAD * 2) / ch, 1);
+    zoom = Math.max(zoom, 0.1);
+    panX = (vw - cw * zoom) / 2 - minX * zoom;
+    panY = (vh - ch * zoom) / 2 - minY * zoom;
+    applyZoom();
+  }
 
   // Mouse-wheel zoom (zoom toward cursor)
   document.addEventListener('DOMContentLoaded', () => {
@@ -1466,7 +1490,10 @@ const StudioWF = (() => {
 
       const editorTab = document.querySelector('[data-tab="editor"]');
       if (editorTab) switchTab(editorTab);
-      requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        renderEdges();
+        requestAnimationFrame(() => setTimeout(fitView, 80));
+      }));
       toast(`Workflow "${wf.name}" loaded — ${steps.length} steps`, 'success');
     } catch (e) {
       toast('Failed to load workflow: ' + e.message, 'error');
@@ -1531,7 +1558,10 @@ const StudioWF = (() => {
       // Switch to editor first so nodes are visible, then render edges after paint
       const editorTab = document.querySelector('[data-tab="editor"]');
       if (editorTab) switchTab(editorTab);
-      requestAnimationFrame(() => requestAnimationFrame(() => renderEdges()));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        renderEdges();
+        requestAnimationFrame(() => setTimeout(fitView, 80));
+      }));
 
       toast(`Template "${data.name}" loaded — ${steps.length} steps`, 'success');
     } catch (e) {
