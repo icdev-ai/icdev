@@ -95,7 +95,7 @@
   }
 
   // ── Patch loadWorkflow to set _currentWorkflowId ────────
-  StudioWF.loadWorkflow = async function(workflowId) {
+  StudioWF.loadWorkflow = async function(workflowId, runAfter = false) {
     try {
       StudioWF._toast('Loading workflow...', 'info');
       const resp = await fetch('/api/studio/workflows/' + encodeURIComponent(workflowId));
@@ -115,6 +115,7 @@
       const editorTab = document.querySelector('[data-tab="editor"]');
       if (editorTab) StudioWF.switchTab(editorTab);
       StudioWF._toast(`Loaded: ${wf.name}`, 'success');
+      if (runAfter) setTimeout(() => StudioWF.run(), 400);
     } catch (e) {
       StudioWF._toast('Failed to load workflow: ' + e.message, 'error');
     }
@@ -474,6 +475,101 @@
     return `<span style="color:${color};font-weight:600;font-size:0.78rem;">${label}</span>`;
   }
 
+  // ── Saved Workflows tab ─────────────────────────────────
+
+  function _countSteps(yaml) {
+    if (!yaml) return 0;
+    const stepsMatch = yaml.match(/^steps:\s*\n([\s\S]*)/m);
+    if (!stepsMatch) return 0;
+    return (stepsMatch[1].match(/^\s{2}-\s/gm) || []).length;
+  }
+
+  function _categoryBadgeClass(category) {
+    const map = {
+      compliance: 'studio-badge--success',
+      security:   'studio-badge--error',
+      devops:     'studio-badge--info',
+      research:   'studio-badge--accent',
+    };
+    return map[category] || 'studio-badge--neutral';
+  }
+
+  StudioWF.loadSavedWorkflows = async function() {
+    const grid = $('wf-saved-grid');
+    const countEl = $('wf-saved-count');
+    if (!grid) return;
+    grid.innerHTML = '<div class="studio-spinner studio-spinner--lg" style="margin:48px auto;grid-column:1/-1;"></div>';
+    try {
+      const resp = await fetch('/api/studio/workflows');
+      const data = await resp.json();
+      const wfs = data.workflows || [];
+      if (countEl) countEl.textContent = wfs.length;
+      if (!wfs.length) {
+        grid.innerHTML = `<div class="studio-empty" style="grid-column:1/-1;">
+          <div class="studio-empty__icon">&#128451;</div>
+          <div class="studio-empty__title">No saved workflows</div>
+          <div class="studio-empty__description">Create your first workflow in the editor tab.</div>
+        </div>`;
+        return;
+      }
+      grid.innerHTML = wfs.map(wf => {
+        const steps = _countSteps(wf.template_yaml);
+        const badgeCls = _categoryBadgeClass(wf.category);
+        return `<div class="studio-card studio-card--interactive">
+          <div class="studio-card__header">
+            <span class="studio-badge ${badgeCls}">${_esc(wf.category || 'custom')}</span>
+            <span style="font-size:0.75rem;color:var(--studio-text-muted,#94a3b8);">${steps} step${steps !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="studio-card__body" style="padding:12px 16px;">
+            <div style="font-weight:600;font-size:0.95rem;margin-bottom:4px;">${_esc(wf.name)}</div>
+            <div style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);min-height:32px;">${_esc(wf.description || '')}</div>
+          </div>
+          <div class="studio-card__footer" style="padding:8px 16px;gap:6px;">
+            <button class="studio-btn studio-btn--secondary studio-btn--sm"
+                    data-wf-id="${wf.workflow_id}"
+                    onclick="StudioWF.loadWorkflow(this.dataset.wfId)">&#9998; Edit</button>
+            <button class="studio-btn studio-btn--sm"
+                    data-wf-id="${wf.workflow_id}"
+                    onclick="StudioWF.loadWorkflow(this.dataset.wfId, true)"
+                    style="background:#22c55e;border-color:#22c55e;color:#fff;font-weight:700;">&#9654; Run</button>
+            <button class="studio-btn studio-btn--ghost studio-btn--sm"
+                    data-wf-id="${wf.workflow_id}"
+                    data-wf-name="${_esc(wf.name)}"
+                    onclick="StudioWF.deleteWorkflow(this.dataset.wfId, this.dataset.wfName)"
+                    style="color:#ef4444;margin-left:auto;">&#128465;</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      grid.innerHTML = '<div class="studio-empty" style="grid-column:1/-1;color:#ef4444;">Failed to load workflows</div>';
+    }
+  };
+
+  StudioWF.deleteWorkflow = async function(workflowId, name) {
+    if (!confirm(`Delete workflow "${name}"? This cannot be undone.`)) return;
+    try {
+      const resp = await fetch('/api/studio/workflows/' + encodeURIComponent(workflowId), {
+        method: 'DELETE',
+      });
+      const data = await resp.json();
+      if (data.status === 'ok') {
+        StudioWF._toast(`Deleted "${name}"`, 'success');
+        if (_currentWorkflowId === workflowId) {
+          _currentWorkflowId = null;
+          const runBtn = $('wf-run-btn');
+          const codeBtn = $('wf-gen-code-btn');
+          if (runBtn) runBtn.style.display = 'none';
+          if (codeBtn) codeBtn.style.display = 'none';
+        }
+        StudioWF.loadSavedWorkflows();
+      } else {
+        StudioWF._toast(data.error || 'Delete failed', 'error');
+      }
+    } catch (e) {
+      StudioWF._toast('Network error: ' + e.message, 'error');
+    }
+  };
+
   // ── Chat Panel ───────────────────────────────────────────
 
   StudioWF.toggleChat = function() {
@@ -596,12 +692,13 @@
     if (modal) modal.style.display = '';
   };
 
-  // ── Hook into switchTab for run history auto-load ────────
+  // ── Hook into switchTab for auto-load per tab ────────────
   const _origSwitchTab = StudioWF.switchTab;
   StudioWF.switchTab = function(el) {
     _origSwitchTab && _origSwitchTab.call(this, el);
-    if (el && el.dataset && el.dataset.tab === 'runs') {
-      StudioWF.loadRunHistory();
+    if (el && el.dataset) {
+      if (el.dataset.tab === 'runs')  StudioWF.loadRunHistory();
+      if (el.dataset.tab === 'saved') StudioWF.loadSavedWorkflows();
     }
   };
 
