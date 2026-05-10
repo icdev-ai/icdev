@@ -337,6 +337,10 @@ body { overflow: hidden; height: 100vh; }
   <button class="tb-btn" onclick="genModelCard()" title="Generate Model Card">📄 Model Card</button>
   <button class="tb-btn" onclick="genDeployManifest()" title="Generate Deploy Manifest">🚀 Manifest</button>
   {% endif %}
+  <!-- Workflow -->
+  {% set wf_canvas_id = "aimc" %}
+  {% set wf_context_label = design.name if design else '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <button class="tb-btn primary" onclick="saveDesign()" title="Save (Ctrl+S)">💾 Save</button>
 </div>
 

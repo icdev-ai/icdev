@@ -299,6 +299,10 @@ body { overflow: hidden; height: 100vh; }
   <button id="btn-model-linker" onclick="toggleModelLinker(event)"
     style="background:#1e293b;color:#818cf8;padding:5px 10px;border:1px solid #4338ca;border-radius:4px;cursor:pointer;font-size:12px;" title="Link AIMC Models to AADC nodes">&#128279; Link Models</button>
 
+  <!-- Workflow -->
+  {% set wf_canvas_id = "aadc" %}
+  {% set wf_context_label = design.name %}
+  {% include 'includes/workflow_trigger_btn.html' %}
   <button onclick="saveDesign()" id="save-btn"
     style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
   <button onclick="assessDesign()"
