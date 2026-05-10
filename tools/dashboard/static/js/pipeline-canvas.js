@@ -419,7 +419,7 @@ function createLink(srcId, tgtId, label, linkId) {
     source: { id: srcId },
     target: { id: tgtId },
     attrs: { line: { stroke: '#e94560', strokeWidth: 2, targetMarker: { type: 'classic', fill: '#e94560', size: 6 } } },
-    labels: label ? [{ attrs: { text: { text: label, fill: '#7a8cb0', fontSize: 9 } }, position: 0.5 }] : [],
+    labels: label ? [{ attrs: { text: { text: label, fill: '#374151', fontSize: 9 } }, position: 0.5 }] : [],
   });
   graph.addCell(link);
   return link;
