@@ -18,23 +18,32 @@ CONTROL_WEIGHTS = {"IA-2":1.0,"AC-2":0.9,"AU-2":0.8}
 
 def collect_scan_evidence(system, control):
     r = SCAN_RESULTS.get((system, control))
-    if r: return {"type":"scan","source":r["scanner"],"status":r["status"],"date":r["date"],"finding":r.get("finding")}
-    return {"type":"scan","source":"none","status":"not_scanned","date":None,"finding":None}
+    if r:
+        return {"type": "scan", "source": r["scanner"], "status": r["status"], "date": r["date"], "finding": r.get("finding")}
+    return {"type": "scan", "source": "none", "status": "not_scanned", "date": None, "finding": None}
 
 def collect_policy_evidence(control):
     p = POLICY_DOCS.get(control)
-    if p: return {"type":"policy","document":p["doc"],"status":p["status"],"last_review":p["last_review"]}
-    return {"type":"policy","document":None,"status":"missing","last_review":None}
+    if p:
+        return {"type": "policy", "document": p["doc"], "status": p["status"], "last_review": p["last_review"]}
+    return {"type": "policy", "document": None, "status": "missing", "last_review": None}
 
 def score_evidence(scan, policy, control):
     w = CONTROL_WEIGHTS.get(control, 1.0)
-    ss = scan["status"]; ps = policy["status"]
-    if ss == "pass" and ps == "current": base = 1.0
-    elif ss == "pass" and ps == "outdated": base = 0.7
-    elif ss == "pass" and ps == "missing": base = 0.5
-    elif ss == "fail": base = 0.2
-    elif ss == "not_scanned" and ps == "current": base = 0.4
-    else: base = 0.0
+    ss = scan["status"]
+    ps = policy["status"]
+    if ss == "pass" and ps == "current":
+        base = 1.0
+    elif ss == "pass" and ps == "outdated":
+        base = 0.7
+    elif ss == "pass" and ps == "missing":
+        base = 0.5
+    elif ss == "fail":
+        base = 0.2
+    elif ss == "not_scanned" and ps == "current":
+        base = 0.4
+    else:
+        base = 0.0
     return base * w
 
 class EvidencePipeline:

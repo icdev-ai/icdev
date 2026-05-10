@@ -3,7 +3,8 @@ from __future__ import annotations
 CUI // SP-CTI
 Run: python _seed_ddx_extensions.py
 """
-import sqlite3, pathlib, sys
+import pathlib
+import sqlite3
 from datetime import datetime, timezone
 
 DB = pathlib.Path("data/icdev.db")
@@ -535,4 +536,4 @@ conn.commit()
 conn.close()
 print(f"\n{'='*60}")
 print(f"Seeded {inserted} tasks, skipped {skipped} duplicates.")
-print(f"Project: ddx | Epics: an, pii, cli, fr, mcp, vv | Tasks: 26")
+print("Project: ddx | Epics: an, pii, cli, fr, mcp, vv | Tasks: 26")
