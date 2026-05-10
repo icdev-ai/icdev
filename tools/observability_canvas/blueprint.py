@@ -1763,12 +1763,15 @@ def create_observability_blueprint():
         check_results, total_w, passed_w = [], 0, 0
         cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
         for title, pillar, sev, passed in CHECKS:
-            w = WEIGHTS[sev]; total_w += w
+            w = WEIGHTS[sev]
+            total_w += w
             status = "pass" if passed else "fail"
-            if passed: passed_w += w
+            if passed:
+                passed_w += w
             cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
             cats[pillar]["total"] += 1
-            if passed: cats[pillar]["passed"] += 1
+            if passed:
+                cats[pillar]["passed"] += 1
             check_results.append({"title": title, "pillar": pillar, "severity": sev,
                                    "status": status, "weight": w, "detail": ""})
         for c in cats.values():
