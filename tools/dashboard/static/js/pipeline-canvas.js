@@ -310,17 +310,54 @@ function initCanvas() {
 
   let isPanning = false, panStart = {}, scrollStart = {};
   const canvasArea = document.querySelector('.pc-canvas-area');
+
+  // Drag-to-pan with cursor feedback
   paper.on('blank:pointerdown', (evt) => {
     isPanning = true;
     panStart = { x: evt.clientX, y: evt.clientY };
     scrollStart = { x: canvasArea.scrollLeft, y: canvasArea.scrollTop };
+    canvasArea.classList.add('is-panning');
   });
   document.addEventListener('mousemove', (evt) => {
     if (!isPanning) return;
     canvasArea.scrollLeft = scrollStart.x - (evt.clientX - panStart.x);
-    canvasArea.scrollTop = scrollStart.y - (evt.clientY - panStart.y);
+    canvasArea.scrollTop  = scrollStart.y - (evt.clientY - panStart.y);
   });
-  document.addEventListener('mouseup', () => { isPanning = false; });
+  document.addEventListener('mouseup', () => {
+    if (!isPanning) return;
+    isPanning = false;
+    canvasArea.classList.remove('is-panning');
+  });
+
+  // Mouse-wheel zoom centered on cursor position
+  canvasArea.addEventListener('wheel', (evt) => {
+    evt.preventDefault();
+    const s0 = paper.scale().sx;
+    const factor = evt.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const s1 = Math.max(0.08, Math.min(4, s0 * factor));
+    if (Math.abs(s1 - s0) < 0.001) return;
+    // Mouse position relative to canvas area top-left
+    const areaRect = canvasArea.getBoundingClientRect();
+    const mx = evt.clientX - areaRect.left;
+    const my = evt.clientY - areaRect.top;
+    // Keep the paper point under the cursor fixed after scale change
+    const newScrollX = (canvasArea.scrollLeft + mx) * s1 / s0 - mx;
+    const newScrollY = (canvasArea.scrollTop  + my) * s1 / s0 - my;
+    paper.scale(s1, s1);
+    canvasArea.scrollLeft = newScrollX;
+    canvasArea.scrollTop  = newScrollY;
+    _updateZoomLabel(s1);
+  }, { passive: false });
+
+  // Keyboard shortcuts: +/= zoom in, - zoom out, 0 reset, f fit
+  document.addEventListener('keydown', (evt) => {
+    const tag = (evt.target || {}).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (evt.key === '+' || evt.key === '=') { zoomIn(); evt.preventDefault(); }
+    else if (evt.key === '-') { zoomOut(); evt.preventDefault(); }
+    else if (evt.key === '0') { zoomReset(); evt.preventDefault(); }
+    else if (evt.key === 'f' || evt.key === 'F') { zoomFit(); evt.preventDefault(); }
+  });
 
   graph.on('change add remove', () => markDirty());
 }
@@ -559,10 +596,28 @@ function loadGraph(graphJson) {
 
 // ── Zoom ────────────────────────────────────────────────────────────────────
 
-function zoomIn()  { const s = paper.scale(); paper.scale(s.sx * 1.2, s.sy * 1.2); }
-function zoomOut() { const s = paper.scale(); paper.scale(s.sx / 1.2, s.sy / 1.2); }
-function zoomFit() { paper.scaleContentToFit({ padding: 40, maxScale: 2 }); }
-function zoomReset(){ paper.scale(1, 1); paper.translate(0, 0); }
+function _updateZoomLabel(s) {
+  const el = document.getElementById('pc-zoom-label');
+  if (el) el.textContent = Math.round((s !== undefined ? s : paper.scale().sx) * 100) + '%';
+}
+
+function _zoomAroundCenter(newScale) {
+  const canvasArea = document.querySelector('.pc-canvas-area');
+  const s0 = paper.scale().sx;
+  const cx = canvasArea.clientWidth  / 2;
+  const cy = canvasArea.clientHeight / 2;
+  const newScrollX = (canvasArea.scrollLeft + cx) * newScale / s0 - cx;
+  const newScrollY = (canvasArea.scrollTop  + cy) * newScale / s0 - cy;
+  paper.scale(newScale, newScale);
+  canvasArea.scrollLeft = newScrollX;
+  canvasArea.scrollTop  = newScrollY;
+  _updateZoomLabel(newScale);
+}
+
+function zoomIn()   { _zoomAroundCenter(Math.min(4,   paper.scale().sx * 1.2)); }
+function zoomOut()  { _zoomAroundCenter(Math.max(0.08, paper.scale().sx / 1.2)); }
+function zoomFit()  { paper.scaleContentToFit({ padding: 40, maxScale: 2 }); _updateZoomLabel(); }
+function zoomReset(){ paper.scale(1, 1); paper.translate(0, 0); _updateZoomLabel(1); }
 
 // ── Right Panel (Properties / Analysis) ─────────────────────────────────────
 
