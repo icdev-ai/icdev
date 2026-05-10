@@ -1509,5 +1509,6 @@ const StudioWF = (() => {
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode, onNodeTypeChange,
     zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
     drillInto, drillBack, drillBackTo, hideContextMenu,
+    _exportToYAMLInternal: exportToYAML,
   };
 })();

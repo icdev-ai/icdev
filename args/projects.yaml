@@ -6,23 +6,25 @@
 projects:
 - key: cam
   name: Cloud App Migration — Analytics Platform K8s→AWS + AI Modernization (Cross-Canvas)
-  description: >
-    Cross-canvas project hub in Migration Canvas (/migration-canvas/projects): phase/SOP
-    tracking with 4 new tables (mc_projects, mc_project_phases, mc_project_phase_sops,
-    mc_ai_opportunities). Reuses mc_app_inventory, mc_data_migration, mc_wave_plans, mc_sops.
-    Cross-links to DDC (Oracle→Aurora schema lineage), IDC (K8s→EKS infra), NDC (AWS VPC).
-    AI opportunities: pgvector, Bedrock KB, semantic cache, Bedrock Data Automation, Bedrock Agents.
-    Fully config-driven: project YAMLs in context/migration/projects/, SOP JSONs in
-    context/migration/sop_catalog/, service mappings in context/migration/service_mappings.yaml.
-    Canvas extensibility: dd_migration_jobs (DDC), idc_migration_baselines (IDC), landing zone
-    templates (NDC), migration snippet templates for all canvases.
+  description: 'Cross-canvas project hub in Migration Canvas (/migration-canvas/projects):
+    phase/SOP tracking with 4 new tables (mc_projects, mc_project_phases, mc_project_phase_sops,
+    mc_ai_opportunities). Reuses mc_app_inventory, mc_data_migration, mc_wave_plans,
+    mc_sops. Cross-links to DDC (Oracle→Aurora schema lineage), IDC (K8s→EKS infra),
+    NDC (AWS VPC). AI opportunities: pgvector, Bedrock KB, semantic cache, Bedrock
+    Data Automation, Bedrock Agents. Fully config-driven: project YAMLs in context/migration/projects/,
+    SOP JSONs in context/migration/sop_catalog/, service mappings in context/migration/service_mappings.yaml.
+    Canvas extensibility: dd_migration_jobs (DDC), idc_migration_baselines (IDC),
+    landing zone templates (NDC), migration snippet templates for all canvases.
+
+    '
   task_prefix: cam-
   default_open: true
   briefs:
   - 'db: 4 new mc_project* + mc_ai_opportunities tables + auto-seed in migration_canvas/db/init_db.py'
   - 'engine: cam_engine.py + cam_constants.py + cam_seed_sops.py + cam_seed_demo.py'
   - 'config: context/migration/projects/ + sop_catalog/ + service_mappings.yaml'
-  - 'canvas-ext: dd_migration_jobs (DDC) + idc_migration_baselines (IDC) + template dirs'
+  - 'canvas-ext: dd_migration_jobs (DDC) + idc_migration_baselines (IDC) + template
+    dirs'
   - 'routes: 4 new routes in migration_canvas/blueprint.py + MC nav link'
   - 'templates: cam_projects.html + cam_project_detail.html + icdev/ mirrors'
   - 'iqe: adapters/cam.py + _CANVAS_MAP entry + PATH_CANVAS entry + 6 seed queries'
@@ -52,28 +54,35 @@ projects:
   - key: wiring
     title: Wiring — manifest shard + companion sync + coherence
     priority: medium
-
 - key: nmpe
-  name: Network Migration Phases Engine — Three-Phase Diagram View with Info Boxes & Exports
-  description: >
-    Dedicated /network/migration-phases/<topo_id> page for network engineers performing migrations.
-    Three-panel view: Current State | Phase N (stepper) | Final/To-Be.
+  name: Network Migration Phases Engine — Three-Phase Diagram View with Info Boxes
+    & Exports
+  description: 'Dedicated /network/migration-phases/<topo_id> page for network engineers
+    performing migrations. Three-panel view: Current State | Phase N (stepper) | Final/To-Be.
     Each panel has 8-16 critical info boxes (device inventory, link utilization, IP/VLAN,
     redundancy, routing protocols, security posture, WAN circuits, hardware health;
-    plus phase scope, risk, port mapping, validation for migration phases;
-    plus consolidation results, TCO delta, performance gains, compliance improvement for final).
-    Exports per panel: PDF (fpdf2 server-side), Visio VSDX, Draw.io XML with full styling.
-    Consolidation analysis engine computes devices removed, rack units freed, power savings, 3-yr TCO.
+    plus phase scope, risk, port mapping, validation for migration phases; plus consolidation
+    results, TCO delta, performance gains, compliance improvement for final). Exports
+    per panel: PDF (fpdf2 server-side), Visio VSDX, Draw.io XML with full styling.
+    Consolidation analysis engine computes devices removed, rack units freed, power
+    savings, 3-yr TCO.
+
+    '
   task_prefix: nmpe-
   default_open: true
   briefs:
   - 'db: nc_phase_infoboxes + nc_consolidation_analysis tables in init_db.py'
-  - 'backend: migration_phases.py — compute_infoboxes(), generate_phase_graphs(), run_consolidation_analysis()'
-  - 'pdf: pdf_export.py — export_phase_pdf() using fpdf2, multi-page with SVG diagram + tables'
-  - 'routes: blueprint.py — /migration-phases/<id>, /api/migration-phases/<id>/data, /api/.../export/<phase>/<fmt>'
-  - 'template: migration_phases.html — three-panel layout, 8+ info boxes per panel, export toolbar'
+  - 'backend: migration_phases.py — compute_infoboxes(), generate_phase_graphs(),
+    run_consolidation_analysis()'
+  - 'pdf: pdf_export.py — export_phase_pdf() using fpdf2, multi-page with SVG diagram
+    + tables'
+  - 'routes: blueprint.py — /migration-phases/<id>, /api/migration-phases/<id>/data,
+    /api/.../export/<phase>/<fmt>'
+  - 'template: migration_phases.html — three-panel layout, 8+ info boxes per panel,
+    export toolbar'
   - 'nav: add MP action button to index.html topology table row'
-  - 'wiring: requirements.txt fpdf2, manifest shard update, companion sync, coherence check'
+  - 'wiring: requirements.txt fpdf2, manifest shard update, companion sync, coherence
+    check'
   epics:
   - key: db
     title: DB — phase infobox + consolidation tables
@@ -96,22 +105,23 @@ projects:
   - key: wiring
     title: Wiring — requirements, manifest, sync, V&V
     priority: high
-
 - key: aimc
   name: AI/ML Model Canvas (AIMC) — Foundation Model Lifecycle Designer
-  description: >
-    9th ICDEV canvas: visual design surface for the foundation model lifecycle.
+  description: '9th ICDEV canvas: visual design surface for the foundation model lifecycle.
     Covers model selection (catalog), adaptation strategy (prompt/RAG/fine-tune/hybrid),
     prompt chain design, eval suite, safety layers, deployment planning (Ollama/vLLM/Bedrock),
     and governance (NIST AI RMF, MITRE ATLAS, OWASP LLM Top 10, DoD RAI, OMB M-25-21).
     Distinct from AADC (agent topology) — AIMC focuses on the model layer.
+
+    '
   task_prefix: aimc-
   default_open: true
   briefs:
   - 'foundation: constants.py + db/ + __init__.py'
   - 'engines: aiml_engine.py + adaptation_engine.py + deployment_planner.py + governance_assessor.py'
   - 'blueprint: blueprint.py — all Flask routes'
-  - 'templates: index + canvas + templates + snippets + assessments + model_catalog HTML'
+  - 'templates: index + canvas + templates + snippets + assessments + model_catalog
+    HTML'
   - 'wiring: app.py + base.html nav + projects.yaml + manifest shard + icdev/ mirror'
   - 'vv: companion sync + coherence check + E2E smoke'
   epics:
@@ -133,24 +143,26 @@ projects:
   - key: vv
     title: V&V — companion sync + coherence + E2E smoke
     priority: high
-
 - key: dds
   name: DDC Data Science — Explore, Query Sandbox, Quality Rules
-  description: >
-    Three data-science tabs integrated into the Data Design Canvas (DDC) at /data/.
-    Epic 1: classification-aware data profiler (/data/explore) — auto-profile connected DBs
-    with null%, cardinality, distributions, classification inheritance.
+  description: 'Three data-science tabs integrated into the Data Design Canvas (DDC)
+    at /data/. Epic 1: classification-aware data profiler (/data/explore) — auto-profile
+    connected DBs with null%, cardinality, distributions, classification inheritance.
     Epic 2: SQL Sandbox (/data/query) — read-only SQL editor with results grid, history,
-    classification stamping.
-    Epic 3: Data Quality Rules (/data/quality) — define completeness/uniqueness/range/pattern
+    classification stamping. Epic 3: Data Quality Rules (/data/quality) — define completeness/uniqueness/range/pattern
     expectations, run checks, feed pass/fail into the existing Assessment engine.
+
+    '
   task_prefix: dds-
   default_open: true
   briefs:
-  - 'ex: data_profiler.py + DB tables (dd_explore_profiles, dd_explore_sessions) + /explore route + explore.html'
+  - 'ex: data_profiler.py + DB tables (dd_explore_profiles, dd_explore_sessions) +
+    /explore route + explore.html'
   - 'qr: query_sandbox.py + DB table (dd_query_history) + /query route + query.html'
-  - 'ql: quality_engine.py + DB tables (dd_quality_rules, dd_quality_runs) + /quality route + quality.html + assessment bridge'
-  - 'inf: constants, args config, manifest shard, icdev mirrors, index.html nav, companion sync, V&V'
+  - 'ql: quality_engine.py + DB tables (dd_quality_rules, dd_quality_runs) + /quality
+    route + quality.html + assessment bridge'
+  - 'inf: constants, args config, manifest shard, icdev mirrors, index.html nav, companion
+    sync, V&V'
   epics:
   - key: ex
     title: Data Profiler — /data/explore
@@ -164,22 +176,24 @@ projects:
   - key: inf
     title: Infrastructure + V&V Gate
     priority: high
-
 - key: ddx
-  name: DDC Data Science Extensions — Anomaly Detection, PII Guard, CLI, Freshness, MCP Gate
-  description: >
-    Five intelligence-driven extensions to the DDC data science tabs built from Research/Innovation/Creative
-    engine outputs (2026-05-09). Ep1: LLM-assisted anomaly detection on profiler output.
-    Ep2: Column-level PII/CUI auto-detection in SQL Sandbox.
-    Ep3: Data Profiler CLI entry point (--json, headless). Ep4: Streaming freshness guardian
-    (genesis reflex, hourly). Ep5: MCP scan gate in coherence_checker.
+  name: DDC Data Science Extensions — Anomaly Detection, PII Guard, CLI, Freshness,
+    MCP Gate
+  description: 'Five intelligence-driven extensions to the DDC data science tabs built
+    from Research/Innovation/Creative engine outputs (2026-05-09). Ep1: LLM-assisted
+    anomaly detection on profiler output. Ep2: Column-level PII/CUI auto-detection
+    in SQL Sandbox. Ep3: Data Profiler CLI entry point (--json, headless). Ep4: Streaming
+    freshness guardian (genesis reflex, hourly). Ep5: MCP scan gate in coherence_checker.
+
+    '
   task_prefix: ddx-
   default_open: true
   briefs:
   - 'an: anomaly_detector.py + /explore/analyze route + explore.html analysis panel'
   - 'pii: pii_scanner.py + query_sandbox PII warnings + query.html warning banner'
   - 'cli: data_profiler CLI __main__ block + __main__.py + manifest update'
-  - 'fr: freshness_guardian reflex + genesis_config + dd_freshness_alerts table + quality.html monitor'
+  - 'fr: freshness_guardian reflex + genesis_config + dd_freshness_alerts table +
+    quality.html monitor'
   - 'mcp: mcp_scanner.py + coherence_checker gate + security_gates.yaml + manifest'
   epics:
   - key: an
@@ -200,19 +214,19 @@ projects:
   - key: vv
     title: Final V&V + Companion Sync
     priority: critical
-
 - key: aadc-enh
   name: AADC Enhancements — Canvas JS, Cost Estimation, IaC, Impact Graph
-  description: 'Four enhancements to the Agentic AI Design Canvas: (1) dedicated
-    agentic-canvas.js with autonomy badges, HITL path highlighting, per-node compliance
-    overlays, threat popovers, and pinned risk sidebar; (2) live cost estimation with
-    model-specific token pricing and optimization hints; (3) IaC generation — one-click
-    Terraform + Helm chart export; (4) cross-design impact graph with blast-radius
-    analysis and supply chain risk roll-up.'
+  description: 'Four enhancements to the Agentic AI Design Canvas: (1) dedicated agentic-canvas.js
+    with autonomy badges, HITL path highlighting, per-node compliance overlays, threat
+    popovers, and pinned risk sidebar; (2) live cost estimation with model-specific
+    token pricing and optimization hints; (3) IaC generation — one-click Terraform
+    + Helm chart export; (4) cross-design impact graph with blast-radius analysis
+    and supply chain risk roll-up.'
   task_prefix: aadc-enh-
   default_open: true
   briefs:
-  - 'js: agentic-canvas.js — autonomy badges, HITL highlighter, compliance overlays, threat popovers, risk sidebar'
+  - 'js: agentic-canvas.js — autonomy badges, HITL highlighter, compliance overlays,
+    threat popovers, risk sidebar'
   - 'cost: cost_estimator.py + blueprint routes + canvas sidebar panel'
   - 'iac: iac_generator.py + blueprint route + canvas toolbar button'
   - 'impact: aadc_design_links table + impact-graph page + Sigma.js force graph'
@@ -235,7 +249,6 @@ projects:
   - key: vv
     title: V&V Gate
     priority: critical
-
 - key: aadc-sp
   name: AADC Solution Packs — Industry-Ready Agentic AI Templates
   description: '7 pre-wired agentic AI solution packs for the Agentic AI Design Canvas.
@@ -518,20 +531,27 @@ projects:
     title: FIX
     priority: medium
 - key: canvas-csp-integration
-  name: "Canvas CSP Integration & Academy Uplift"
-  description: >
-    Multi-cloud AIMC expansion (Azure/GCP/OCI/IBM/HuggingFace AI/ML models + services),
-    bidirectional AADC↔AIMC bridge with shared model catalog and unified IL compliance gate,
-    8 new FORGE Academy modules (5 AIMC + 3 AADC fundamentals), and 1 AI GameDay inject
-    (Model Governance scenario). Closes the gap between AIMC (AWS+local only, siloed from AADC)
-    and a fully cloud-agnostic, IL-aware, cross-canvas platform.
+  name: Canvas CSP Integration & Academy Uplift
+  description: 'Multi-cloud AIMC expansion (Azure/GCP/OCI/IBM/HuggingFace AI/ML models
+    + services), bidirectional AADC↔AIMC bridge with shared model catalog and unified
+    IL compliance gate, 8 new FORGE Academy modules (5 AIMC + 3 AADC fundamentals),
+    and 1 AI GameDay inject (Model Governance scenario). Closes the gap between AIMC
+    (AWS+local only, siloed from AADC) and a fully cloud-agnostic, IL-aware, cross-canvas
+    platform.
+
+    '
   task_prefix: cci-
   default_open: true
   briefs:
-  - 'csp: constants.py ~40 models + 13 node types + IL_REQUIREMENTS multi-cloud; adaptation_engine + deployment_planner + governance_assessor CSP branches; init_db.py 5 CSP templates'
-  - 'bridge: aadc_aimc_model_refs table + canvas_bridge.py + 4 AADC routes + 1 AIMC route + AADC canvas Link Models panel + AIMC AADC refs badge + agentic_engine IL check + cost_estimator AIMC pricing'
-  - 'academy: 5 AIMC JSON modules + 3 AADC fundamentals JSON modules + blueprint.py registration'
-  - 'gameday: inject-06-model-governance.yaml + Model Architect ribbon + 4 AIMC scoring tools in ttx engine'
+  - 'csp: constants.py ~40 models + 13 node types + IL_REQUIREMENTS multi-cloud; adaptation_engine
+    + deployment_planner + governance_assessor CSP branches; init_db.py 5 CSP templates'
+  - 'bridge: aadc_aimc_model_refs table + canvas_bridge.py + 4 AADC routes + 1 AIMC
+    route + AADC canvas Link Models panel + AIMC AADC refs badge + agentic_engine
+    IL check + cost_estimator AIMC pricing'
+  - 'academy: 5 AIMC JSON modules + 3 AADC fundamentals JSON modules + blueprint.py
+    registration'
+  - 'gameday: inject-06-model-governance.yaml + Model Architect ribbon + 4 AIMC scoring
+    tools in ttx engine'
   epics:
   - key: csp
     title: CSP Model Expansion — AIMC multi-cloud catalog + nodes + IL + templates
@@ -545,7 +565,6 @@ projects:
   - key: gameday
     title: GameDay — Model Governance inject + ribbon + scoring tools
     priority: high
-
 - key: oracle
   name: Oracle Project
   description: Auto-registered project for tasks with prefix 'oracle-'. Update name
@@ -3012,103 +3031,121 @@ projects:
     priority: medium
 - key: smig
   name: Server Migration Canvas
-  description: >
-    8-step server wizard at /migration-canvas/server-migration/ supporting P2P,
-    P2V, and V2V migrations. Pre-seeded cloud instance catalog (~150 rows) with
-    live API sync when online and air-gap fallback when offline. 13 DB tables,
-    rightsizing engine, CAT1/CAT2 compat checks, drag-reorderable cutover
-    planner, and ERB package export.
+  description: '8-step server wizard at /migration-canvas/server-migration/ supporting
+    P2P, P2V, and V2V migrations. Pre-seeded cloud instance catalog (~150 rows) with
+    live API sync when online and air-gap fallback when offline. 13 DB tables, rightsizing
+    engine, CAT1/CAT2 compat checks, drag-reorderable cutover planner, and ERB package
+    export.
+
+    '
   task_prefix: smig-
   default_open: true
   briefs:
-    - "db: mc_cloud_instances + 12 session tables + seed data in init_db.py"
-    - "eng: server_migration.py engine (parse, recommend, compat, rightsizing, sync)"
-    - "bp: 26 blueprint routes in blueprint.py"
-    - "ui: server_wizard.html 8-step wizard"
-    - "infra: constants + nav link + icdev mirror + manifest"
-    - "vv: V&V gate"
+  - 'db: mc_cloud_instances + 12 session tables + seed data in init_db.py'
+  - 'eng: server_migration.py engine (parse, recommend, compat, rightsizing, sync)'
+  - 'bp: 26 blueprint routes in blueprint.py'
+  - 'ui: server_wizard.html 8-step wizard'
+  - 'infra: constants + nav link + icdev mirror + manifest'
+  - 'vv: V&V gate'
   epics:
-    - key: db
-      title: DB Schema + Seed Data
-      priority: critical
-    - key: eng
-      title: Engine Module (server_migration.py)
-      priority: critical
-    - key: bp
-      title: Blueprint Routes (blueprint.py)
-      priority: critical
-    - key: ui
-      title: Wizard Template (server_wizard.html)
-      priority: high
-    - key: infra
-      title: Infrastructure (constants, mirror, nav, manifest)
-      priority: high
-    - key: vv
-      title: V&V Gate
-      priority: high
-
+  - key: db
+    title: DB Schema + Seed Data
+    priority: critical
+  - key: eng
+    title: Engine Module (server_migration.py)
+    priority: critical
+  - key: bp
+    title: Blueprint Routes (blueprint.py)
+    priority: critical
+  - key: ui
+    title: Wizard Template (server_wizard.html)
+    priority: high
+  - key: infra
+    title: Infrastructure (constants, mirror, nav, manifest)
+    priority: high
+  - key: vv
+    title: V&V Gate
+    priority: high
 - key: mce
-  name: Migration Canvas Enhancements — Compliance Gate, Wave Planner, Discovery, Dossier Guidance
-  description: >
-    Six targeted enhancements to the Migration Canvas driven by Innovation/Creative/Research
+  name: Migration Canvas Enhancements — Compliance Gate, Wave Planner, Discovery,
+    Dossier Guidance
+  description: 'Six targeted enhancements to the Migration Canvas driven by Innovation/Creative/Research
     engine outputs: (1) creative domain config for migration vertical, (2) FedRAMP/DISA/IL
-    compliance gate at Migration Type step, (3) inventory automated discovery/CSV-JSON import,
-    (4) wave planner with server dependency mapping, (5) dossier contextual guidance inline in
-    wizard steps, (6) innovation follow-through — top-10 code quality fixes + CLI harmonization.
-    Phase gates: CodeLens + Coherence + E2E Playwright after each epic.
+    compliance gate at Migration Type step, (3) inventory automated discovery/CSV-JSON
+    import, (4) wave planner with server dependency mapping, (5) dossier contextual
+    guidance inline in wizard steps, (6) innovation follow-through — top-10 code quality
+    fixes + CLI harmonization. Phase gates: CodeLens + Coherence + E2E Playwright
+    after each epic.
+
+    '
   task_prefix: mce-
   default_open: true
   briefs:
-    - "fnd: context/creative/domains/migration.json + competitor_discoverer wiring + icdev-maintain scan + CLI gaps doc"
-    - "cg: mc_compliance_checks table + compliance_gate.py + constants + blueprint route + wizard step-1 UI + tests"
-    - "inv: mc_inventory_imports table + inventory_scanner.py + blueprint route + inventory_import.html + tests"
-    - "wp: mc_migration_waves + mc_server_dependencies tables + wave_planner.py + constants + routes + wave_planner.html + tests"
-    - "dg: dossier_advisor.py + blueprint guidance route + server_wizard.html callouts + tests"
-    - "inn: top-10 code quality fixes + 5 CLI harmonizations + 17 unused tool deprecations"
+  - 'fnd: context/creative/domains/migration.json + competitor_discoverer wiring +
+    icdev-maintain scan + CLI gaps doc'
+  - 'cg: mc_compliance_checks table + compliance_gate.py + constants + blueprint route
+    + wizard step-1 UI + tests'
+  - 'inv: mc_inventory_imports table + inventory_scanner.py + blueprint route + inventory_import.html
+    + tests'
+  - 'wp: mc_migration_waves + mc_server_dependencies tables + wave_planner.py + constants
+    + routes + wave_planner.html + tests'
+  - 'dg: dossier_advisor.py + blueprint guidance route + server_wizard.html callouts
+    + tests'
+  - 'inn: top-10 code quality fixes + 5 CLI harmonizations + 17 unused tool deprecations'
   epics:
-    - key: fnd
-      title: Foundation — Creative Domain Config + Innovation Maintenance
-      priority: critical
-    - key: cg
-      title: Compliance Gate — FedRAMP/DISA/IL at Migration Type
-      priority: critical
-    - key: inv
-      title: Inventory Discovery — CSV/JSON Import + SSH Probe
-      priority: high
-    - key: wp
-      title: Wave Planner — Dependency Graph + Wave Assignment
-      priority: high
-    - key: dg
-      title: Dossier Guidance — Research Callouts in Wizard
-      priority: medium
-    - key: inn
-      title: Innovation Follow-Through — Code Quality + CLI Harmonization
-      priority: medium
-
+  - key: fnd
+    title: Foundation — Creative Domain Config + Innovation Maintenance
+    priority: critical
+  - key: cg
+    title: Compliance Gate — FedRAMP/DISA/IL at Migration Type
+    priority: critical
+  - key: inv
+    title: Inventory Discovery — CSV/JSON Import + SSH Probe
+    priority: high
+  - key: wp
+    title: Wave Planner — Dependency Graph + Wave Assignment
+    priority: high
+  - key: dg
+    title: Dossier Guidance — Research Callouts in Wizard
+    priority: medium
+  - key: inn
+    title: Innovation Follow-Through — Code Quality + CLI Harmonization
+    priority: medium
 - key: dm
   name: Data Mesh Integration — Domains, Products, Contracts, Governance, CSP Bridges
-  description: >
-    Six new pages integrated into the Data Design Canvas (DDC) at /data/ to implement
-    all four Data Mesh pillars using open source tools and CSP native services.
-    Ep1 (found): 9 DB tables + DM_ constants + data_mesh/ package.
-    Ep2 (domain): Data Domain management at /data/domains — ownership, maturity, team mapping.
-    Ep3 (prod): Data Product Registry at /data/products — discoverable, SLA-backed products with subscriptions.
-    Ep4 (contract): Data Contracts at /data/contracts — ODCS/bitol-io YAML editor, lint, test runner (wraps datacontract-cli if installed).
-    Ep5 (gov): Federated Governance at /data/governance — OPA REST client + local Rego eval fallback, policy editor, access check tester.
-    Ep6 (csp): CSP Bridges at /data/csp — AWS DataZone, Azure Purview, GCP Dataplex sync adapters.
-    Ep7 (portal): Data Mesh Hub at /data/mesh — 4-pillar score cards, domain map, activity feed.
-    Ep8 (wire): OpenLineage emitter, requirements.txt optional deps, manifest shard, companion sync, coherence gate.
+  description: 'Six new pages integrated into the Data Design Canvas (DDC) at /data/
+    to implement all four Data Mesh pillars using open source tools and CSP native
+    services. Ep1 (found): 9 DB tables + DM_ constants + data_mesh/ package. Ep2 (domain):
+    Data Domain management at /data/domains — ownership, maturity, team mapping. Ep3
+    (prod): Data Product Registry at /data/products — discoverable, SLA-backed products
+    with subscriptions. Ep4 (contract): Data Contracts at /data/contracts — ODCS/bitol-io
+    YAML editor, lint, test runner (wraps datacontract-cli if installed). Ep5 (gov):
+    Federated Governance at /data/governance — OPA REST client + local Rego eval fallback,
+    policy editor, access check tester. Ep6 (csp): CSP Bridges at /data/csp — AWS
+    DataZone, Azure Purview, GCP Dataplex sync adapters. Ep7 (portal): Data Mesh Hub
+    at /data/mesh — 4-pillar score cards, domain map, activity feed. Ep8 (wire): OpenLineage
+    emitter, requirements.txt optional deps, manifest shard, companion sync, coherence
+    gate.
+
+    '
   task_prefix: dm-
   default_open: true
   briefs:
   - 'found: 9 dm_* tables in init_db.py + DM_ constants in constants.py + tools/data_canvas/data_mesh/__init__.py'
-  - 'domain: domain_manager.py + /domains route + 4 API endpoints + domains.html + icdev/ mirror + nav'
-  - 'prod: product_registry.py + /products route + 5 API endpoints + products.html + icdev/ mirror + nav'
-  - 'contract: contract_engine.py (ODCS lint/test) + /contracts route + 5 API endpoints + contracts.html + icdev/ mirror'
-  - 'gov: governance_engine.py (OPA client + fallback) + /governance route + 5 API endpoints + governance.html + icdev/ mirror'
-  - 'csp: csp/ package (aws_datazone + azure_purview + gcp_dataplex) + /csp route + 3 API endpoints + csp.html'
-  - 'portal: mesh.html hub + /mesh route + /api/dm/summary + index.html Data Mesh nav link'
-  - 'wire: lineage_emitter.py + requirements.txt optional deps + data_mesh_config.yaml + manifest shard + companion sync + coherence + feature doc'
+  - 'domain: domain_manager.py + /domains route + 4 API endpoints + domains.html +
+    icdev/ mirror + nav'
+  - 'prod: product_registry.py + /products route + 5 API endpoints + products.html
+    + icdev/ mirror + nav'
+  - 'contract: contract_engine.py (ODCS lint/test) + /contracts route + 5 API endpoints
+    + contracts.html + icdev/ mirror'
+  - 'gov: governance_engine.py (OPA client + fallback) + /governance route + 5 API
+    endpoints + governance.html + icdev/ mirror'
+  - 'csp: csp/ package (aws_datazone + azure_purview + gcp_dataplex) + /csp route
+    + 3 API endpoints + csp.html'
+  - 'portal: mesh.html hub + /mesh route + /api/dm/summary + index.html Data Mesh
+    nav link'
+  - 'wire: lineage_emitter.py + requirements.txt optional deps + data_mesh_config.yaml
+    + manifest shard + companion sync + coherence + feature doc'
   epics:
   - key: found
     title: Foundation — 9 DB tables + constants + data_mesh/ package
@@ -3134,27 +3171,27 @@ projects:
   - key: wire
     title: Wiring — OpenLineage, requirements, manifest, V&V
     priority: high
-
 - key: ohc
   name: Ops Hub Canvas (OHC) — Unified LLMOps · MLOps · AIOps
-  description: >
-    Unified operations canvas at /ops covering all three ops disciplines: LLMOps
-    (gateway, cost, drift, prompts, evals), MLOps (experiments, model registry,
-    data drift), and AIOps (SLOs, incidents, runbooks, topology, self-healing).
-    Canvas views on top of Phase 70 backend tools. Dual-mode adapter layer for
-    open source (MLflow, Evidently, Langfuse, Prometheus, ONNX, DVC) and CSP
-    native tools (SageMaker, Azure ML, Vertex AI, Bedrock Guardrails, CloudWatch).
+  description: 'Unified operations canvas at /ops covering all three ops disciplines:
+    LLMOps (gateway, cost, drift, prompts, evals), MLOps (experiments, model registry,
+    data drift), and AIOps (SLOs, incidents, runbooks, topology, self-healing). Canvas
+    views on top of Phase 70 backend tools. Dual-mode adapter layer for open source
+    (MLflow, Evidently, Langfuse, Prometheus, ONNX, DVC) and CSP native tools (SageMaker,
+    Azure ML, Vertex AI, Bedrock Guardrails, CloudWatch).
+
+    '
   task_prefix: ohc-
   default_open: true
   briefs:
-    - 'foundation: constants + adapter_base + adapter_registry + DB + migration 120'
-    - 'engine: llmops_engine + mlops_engine + aiops_engine + ops_aggregator + cli'
-    - 'blueprint: all Flask routes across 8 sub-pages + JSON API endpoints'
-    - 'templates: index + llm + models + slos + incidents + runbooks + topology + self_healing'
-    - 'oss: 6 open source adapters (mlflow/evidently/langfuse/prometheus/onnx/dvc)'
-    - 'csp: 5 CSP adapters (sagemaker/azureml/vertexai/bedrock-guardrails/cloudwatch)'
-    - 'wiring: app.py + base.html + IQE + nav + manifest + MCP tools + Genesis reflexes'
-    - 'vv: companion sync + coherence + E2E smoke + feature docs'
+  - 'foundation: constants + adapter_base + adapter_registry + DB + migration 120'
+  - 'engine: llmops_engine + mlops_engine + aiops_engine + ops_aggregator + cli'
+  - 'blueprint: all Flask routes across 8 sub-pages + JSON API endpoints'
+  - 'templates: index + llm + models + slos + incidents + runbooks + topology + self_healing'
+  - 'oss: 6 open source adapters (mlflow/evidently/langfuse/prometheus/onnx/dvc)'
+  - 'csp: 5 CSP adapters (sagemaker/azureml/vertexai/bedrock-guardrails/cloudwatch)'
+  - 'wiring: app.py + base.html + IQE + nav + manifest + MCP tools + Genesis reflexes'
+  - 'vv: companion sync + coherence + E2E smoke + feature docs'
   epics:
   - key: foundation
     title: Foundation — DB, constants, adapter base
@@ -3180,22 +3217,24 @@ projects:
   - key: vv
     title: V&V — coherence + E2E + companion + docs
     priority: high
-
 - key: cs
   name: Chat-Stream Integration — Claude CLI to Multi-Stream Chat API Bridge
-  description: >
-    Connects Claude CLI workflows (requirements intake, decomposition, implementation)
-    to the ICDEV multi-stream chat API (Phase 44-51). Three deliverables:
-    (1) tools/chat/cli_bridge.py — HTTP client for chat context lifecycle;
-    (2) tools/requirements/intake_api_client.py — replaces deprecated intake_engine.py;
-    (3) tools/requirements/intake_kanban_promoter.py — auto-promotes SAFe items to Kanban.
-    After this build, /icdev-intake runs through the chat UI at /chat and auto-queues tasks.
+  description: 'Connects Claude CLI workflows (requirements intake, decomposition,
+    implementation) to the ICDEV multi-stream chat API (Phase 44-51). Three deliverables:
+    (1) tools/chat/cli_bridge.py — HTTP client for chat context lifecycle; (2) tools/requirements/intake_api_client.py
+    — replaces deprecated intake_engine.py; (3) tools/requirements/intake_kanban_promoter.py
+    — auto-promotes SAFe items to Kanban. After this build, /icdev-intake runs through
+    the chat UI at /chat and auto-queues tasks.
+
+    '
   task_prefix: cs-
   default_open: true
   briefs:
   - 'ep1: tools/chat/__init__.py + tools/chat/cli_bridge.py — create/send/poll/link-intake/close'
-  - 'ep2: tools/requirements/intake_api_client.py + updated /icdev-intake skill + link-intake API endpoint'
-  - 'ep3: tools/requirements/intake_kanban_promoter.py + args/intake_promoter.yaml + manifest update'
+  - 'ep2: tools/requirements/intake_api_client.py + updated /icdev-intake skill +
+    link-intake API endpoint'
+  - 'ep3: tools/requirements/intake_kanban_promoter.py + args/intake_promoter.yaml
+    + manifest update'
   epics:
   - key: ep1
     title: CLI → Chat Context Bridge
@@ -3208,22 +3247,27 @@ projects:
     priority: critical
 - key: gv
   name: GovLift — DoD IL4 Cloud Migration Tool
-  description: >
-    Full-stack cloud migration platform for DoD IL4 (CUI) workloads on AWS GovCloud.
-    Capabilities: Workload Discovery Scanner, Migration Wave Planner, Migration Executor,
-    Rollback Engine, STIG Compliance Checker, Executive Dashboard, ServiceNow/Splunk/eMASS
-    integrations. Auth via CAC/PIV SAML2, mTLS APIs, FIPS encryption, RBAC, 7-year audit
-    retention. MOSA-compliant (10 USC 4401). Intake session: sess-c1191aba5b76.
-    Chat context: ctx-a8c55ca0be8b.
+  description: 'Full-stack cloud migration platform for DoD IL4 (CUI) workloads on
+    AWS GovCloud. Capabilities: Workload Discovery Scanner, Migration Wave Planner,
+    Migration Executor, Rollback Engine, STIG Compliance Checker, Executive Dashboard,
+    ServiceNow/Splunk/eMASS integrations. Auth via CAC/PIV SAML2, mTLS APIs, FIPS
+    encryption, RBAC, 7-year audit retention. MOSA-compliant (10 USC 4401). Intake
+    session: sess-c1191aba5b76. Chat context: ctx-a8c55ca0be8b.
+
+    '
   task_prefix: gv-
   default_open: true
   briefs:
-  - 'ep1: Security foundation — CAC/PIV auth, RBAC, mTLS, FIPS, audit logging, STIG scanner'
+  - 'ep1: Security foundation — CAC/PIV auth, RBAC, mTLS, FIPS, audit logging, STIG
+    scanner'
   - 'ep2: Core functional — WorkloadScanner, WavePlanner, MigrationExecutor, RollbackEngine'
   - 'ep3: Integrations — ServiceNow, Splunk, AWS Control Tower, Tenable.io, eMASS'
-  - 'ep4: Performance — 2h/1000-server scan, 5min STIG check, 8h migration SLA, 99.9% uptime'
-  - 'ep5: Data governance — CUI classification, encryption at rest/transit, 7yr audit retention'
-  - 'ep6: Compliance — DISA RMF ATO extension, NIST 800-53 R5, FedRAMP Mod, CMMC L2, OMB M-25-21'
+  - 'ep4: Performance — 2h/1000-server scan, 5min STIG check, 8h migration SLA, 99.9%
+    uptime'
+  - 'ep5: Data governance — CUI classification, encryption at rest/transit, 7yr audit
+    retention'
+  - 'ep6: Compliance — DISA RMF ATO extension, NIST 800-53 R5, FedRAMP Mod, CMMC L2,
+    OMB M-25-21'
   epics:
   - key: ep1
     title: Security Controls & Auth Foundation
@@ -3243,22 +3287,23 @@ projects:
   - key: ep6
     title: Compliance Artifacts & ATO Package
     priority: medium
-
 - key: ck
   name: Chat-Kanban Integration — Build Visibility in Multi-Stream Chat
-  description: >
-    Links multi-stream chat contexts to kanban_tasks for build progress visibility.
-    Tasks tab in chat right panel shows build tasks with status badges and auto-polls
-    every 8s. V&V chain button queues CodeLens + Coherence + E2E tasks. Extension 081
-    auto-detects build completion signals and creates V&V chains automatically.
+  description: 'Links multi-stream chat contexts to kanban_tasks for build progress
+    visibility. Tasks tab in chat right panel shows build tasks with status badges
+    and auto-polls every 8s. V&V chain button queues CodeLens + Coherence + E2E tasks.
+    Extension 081 auto-detects build completion signals and creates V&V chains automatically.
     Fixes the gap where builds triggered via chat had zero Kanban visibility.
+
+    '
   task_prefix: ck-
   default_open: false
   briefs:
   - 'ep1: tools/chat/kanban_bridge.py — list/create/vv-chain CLI + library'
   - 'ep2: chat API — GET/POST /api/chat/<ctx>/tasks + /vv-chain routes'
   - 'ep3: chat.html Tasks tab + chat.js loadContextTasks + CSS'
-  - 'ep4: tools/extensions/builtins/081_build_kanban_sync.py — auto-chain on build signals'
+  - 'ep4: tools/extensions/builtins/081_build_kanban_sync.py — auto-chain on build
+    signals'
   - 'ep5: E2E + govlift lifecycle test + coherence gate + IQE dispatch fix'
   epics:
   - key: ep1
@@ -3276,23 +3321,29 @@ projects:
   - key: ep5
     title: V&V — GovLift E2E lifecycle test + IQE dispatch fix
     priority: high
-
 - key: uci
   name: Unified Chat Interface — /chat as Central Hub with AI Intent Routing
-  description: >
-    Consolidates all chat surfaces (RICOAS intake, migration CAM, NDC/SDC/EDA/DDC/PDC canvas simulation)
-    under a single /chat entry point. AI intent classifier detects what the user wants and routes to the
-    right backend automatically — no more separate /simulate/chat URLs. Each chat context tracks its
-    canvas mode. /simulate/chat redirects to /chat. Five epics: intent API, context mode storage,
-    message dispatch, UI enhancements (COA cards + Mermaid + slash commands), navigation + V&V.
+  description: 'Consolidates all chat surfaces (RICOAS intake, migration CAM, NDC/SDC/EDA/DDC/PDC
+    canvas simulation) under a single /chat entry point. AI intent classifier detects
+    what the user wants and routes to the right backend automatically — no more separate
+    /simulate/chat URLs. Each chat context tracks its canvas mode. /simulate/chat
+    redirects to /chat. Five epics: intent API, context mode storage, message dispatch,
+    UI enhancements (COA cards + Mermaid + slash commands), navigation + V&V.
+
+    '
   task_prefix: uci-
   default_open: true
   briefs:
-  - 'ep1: tools/chat_router/intent_classifier.py (keyword + LLM), POST /api/chat/route-intent in app.py'
-  - 'ep2: PATCH /api/chat/contexts/<id>/mode endpoint, include canvas_type in GET contexts response'
-  - 'ep3: chat.js reads canvas_type per context, calls route-intent on first msg, routes to /api/simulate/message for canvas modes, renders COA cards + Mermaid'
-  - 'ep4: mode indicator chip in header, COA card renderer, Mermaid in message stream, slash autocomplete, remove migration banner'
-  - 'ep5: /simulate/chat redirect to /chat, ?canvas= deep link, Playwright E2E, companion sync'
+  - 'ep1: tools/chat_router/intent_classifier.py (keyword + LLM), POST /api/chat/route-intent
+    in app.py'
+  - 'ep2: PATCH /api/chat/contexts/<id>/mode endpoint, include canvas_type in GET
+    contexts response'
+  - 'ep3: chat.js reads canvas_type per context, calls route-intent on first msg,
+    routes to /api/simulate/message for canvas modes, renders COA cards + Mermaid'
+  - 'ep4: mode indicator chip in header, COA card renderer, Mermaid in message stream,
+    slash autocomplete, remove migration banner'
+  - 'ep5: /simulate/chat redirect to /chat, ?canvas= deep link, Playwright E2E, companion
+    sync'
   epics:
   - key: ep1
     title: Intent Router API — Classifier + Route Endpoint
@@ -3309,28 +3360,36 @@ projects:
   - key: ep5
     title: Navigation, Redirect, V&V
     priority: high
-
 - key: wex
   name: Workflow Execution — Run Engine, Code Gen, Canvas Integration, Chat-to-Workflow
-  description: >
-    Closes the Studio Workflows execution gap. Phase 1: per-run SSE execution engine
-    (workflow_runner.py wraps workflow_composer.execute_workflow step-by-step, emits events
-    to a per-run queue, live node coloring in UI). Phase 2: standalone Python script
-    code generation. Phase 3: canvas integration (12 canvases). Phase 4: chat-to-workflow
-    (Ollama/Qwen3 generates YAML from natural language, embedded chat panel in Studio).
+  description: 'Closes the Studio Workflows execution gap. Phase 1: per-run SSE execution
+    engine (workflow_runner.py wraps workflow_composer.execute_workflow step-by-step,
+    emits events to a per-run queue, live node coloring in UI). Phase 2: standalone
+    Python script code generation. Phase 3: canvas integration (12 canvases). Phase
+    4: chat-to-workflow (Ollama/Qwen3 generates YAML from natural language, embedded
+    chat panel in Studio).
+
+    '
   task_prefix: wex-
   default_open: true
   briefs:
-  - 'ep1: studio_workflow_runs + studio_workflow_run_steps tables in studio/init_db.py [DONE]'
-  - 'ep2: tools/studio/workflow_runner.py — per-run queue, SSE stream, DB persistence [DONE]'
-  - 'ep3: API routes — POST /run, GET /runs/{id}/stream, GET /runs, GET /runs/{id}/steps, POST /generate-code [DONE]'
-  - 'ep4: tools/studio/workflow_chat.py — LLMRouter + tool catalog system prompt → YAML generation [DONE]'
+  - 'ep1: studio_workflow_runs + studio_workflow_run_steps tables in studio/init_db.py
+    [DONE]'
+  - 'ep2: tools/studio/workflow_runner.py — per-run queue, SSE stream, DB persistence
+    [DONE]'
+  - 'ep3: API routes — POST /run, GET /runs/{id}/stream, GET /runs, GET /runs/{id}/steps,
+    POST /generate-code [DONE]'
+  - 'ep4: tools/studio/workflow_chat.py — LLMRouter + tool catalog system prompt →
+    YAML generation [DONE]'
   - 'ep5: API route — POST /api/studio/chat/generate-workflow [DONE]'
-  - 'ep6: UI — Run btn, Export as Script, chat panel, progress bar, node status colors, output drawer, run history [DONE]'
-  - 'ep7: Canvas Bridge — canvas_bridge.py + POST /from-canvas + workflow_trigger_btn.html partial'
+  - 'ep6: UI — Run btn, Export as Script, chat panel, progress bar, node status colors,
+    output drawer, run history [DONE]'
+  - 'ep7: Canvas Bridge — canvas_bridge.py + POST /from-canvas + workflow_trigger_btn.html
+    partial'
   - 'ep8: Canvas Wiring — add trigger button to all 12 canvases (4 parallel groups)'
   - 'ep9: Template Library — seed 18 YAMLs + GET /templates route + UI card grid'
-  - 'ep10: Saved Workflows + Run History tab — full JS rendering with Edit/Run/Delete + step detail modal'
+  - 'ep10: Saved Workflows + Run History tab — full JS rendering with Edit/Run/Delete
+    + step detail modal'
   - 'ep11: Manifest + companion sync + Playwright E2E V&V'
   epics:
   - key: ep1
@@ -3372,22 +3431,27 @@ projects:
   - key: ep11
     title: Manifest + companion sync + Playwright E2E V&V
     priority: critical
-
 - key: ai-trace
   name: AI Traceability, Observability & Visibility — Canvas-Wide Gap Remediation
-  description: >
-    Closes the AI traceability gap across all 10 design canvases (NDC/SDC/PDC/BDC/DDC/ODC/IDC/AADC/AIMC/MC).
-    Infrastructure already exists (LLM router spans, W3C PROV, XAI assessor, /traces /provenance /xai pages)
-    but zero canvases wire into it. Remediates NIST AI RMF MEASURE 2.5/2.7/2.8, DoD RAI "Traceable"
-    principle, FedRAMP SI-4, and OMB M-25-21. Four epics: shared DB table + one-import mixin,
-    IQE AI Evidence collections, Kanban/Genesis trace linkage, unified AI Observatory dashboard.
+  description: 'Closes the AI traceability gap across all 10 design canvases (NDC/SDC/PDC/BDC/DDC/ODC/IDC/AADC/AIMC/MC).
+    Infrastructure already exists (LLM router spans, W3C PROV, XAI assessor, /traces
+    /provenance /xai pages) but zero canvases wire into it. Remediates NIST AI RMF
+    MEASURE 2.5/2.7/2.8, DoD RAI "Traceable" principle, FedRAMP SI-4, and OMB M-25-21.
+    Four epics: shared DB table + one-import mixin, IQE AI Evidence collections, Kanban/Genesis
+    trace linkage, unified AI Observatory dashboard.
+
+    '
   task_prefix: at-
   default_open: true
   briefs:
-  - 'ep1: Migration 121 (canvas_ai_decisions), Migration 122 (kanban+reflex trace_id), ai_trace_mixin.py, wire into 10 canvas blueprints'
-  - 'ep2: Extend 10 IQE adapters with <canvas>.ai_decisions collection, update iqe_dispatch in app.py'
-  - 'ep3: kanban_tasks trace_id, reflex_observer trace_id, confabulation detector production integration'
-  - 'ep4: AI Observatory /ai-observatory — all 8 components (template, route, analytics, constants, IQE, nav)'
+  - 'ep1: Migration 121 (canvas_ai_decisions), Migration 122 (kanban+reflex trace_id),
+    ai_trace_mixin.py, wire into 10 canvas blueprints'
+  - 'ep2: Extend 10 IQE adapters with <canvas>.ai_decisions collection, update iqe_dispatch
+    in app.py'
+  - 'ep3: kanban_tasks trace_id, reflex_observer trace_id, confabulation detector
+    production integration'
+  - 'ep4: AI Observatory /ai-observatory — all 8 components (template, route, analytics,
+    constants, IQE, nav)'
   epics:
   - key: ep1
     title: Canvas AI Trace Foundation — DB + Mixin + 10 Canvas Blueprints
@@ -3401,22 +3465,24 @@ projects:
   - key: ep4
     title: AI Observatory Dashboard — Unified Cross-Canvas AI Visibility
     priority: high
-
 - key: chat-ux
   name: Chat UX — Non-Developer Accessibility & Bug Fixes
-  description: >
-    18-task initiative to fix a blocking P0 bug (impact_level DB constraint crash that
-    disables the entire chat on every cold load) and then progressively improve the
-    /chat interface for non-developer users: plain-English labels, onboarding welcome
-    state, simplified New Chat modal, readable right-sidebar sections, icon attach button,
-    role-filtered stats bar, and IQE bar suppression. All changes are in existing files
-    (intake.py, chat.html, chat.js, chat.css, base.html) — no new routes or DB tables.
+  description: '18-task initiative to fix a blocking P0 bug (impact_level DB constraint
+    crash that disables the entire chat on every cold load) and then progressively
+    improve the /chat interface for non-developer users: plain-English labels, onboarding
+    welcome state, simplified New Chat modal, readable right-sidebar sections, icon
+    attach button, role-filtered stats bar, and IQE bar suppression. All changes are
+    in existing files (intake.py, chat.html, chat.js, chat.css, base.html) — no new
+    routes or DB tables.
+
+    '
   task_prefix: cu-
   default_open: true
   briefs:
   - 'fix: intake.py impact_level empty-string → IL4; chat.js error humanization'
   - 'css: welcome banner + prompt chip styles; stats bar role-filter class'
-  - 'html: page header/subtitle, sidebar label, button renames, modal advanced section, welcome banner, readiness guard, input attach icon, stats role class, IQE suppress'
+  - 'html: page header/subtitle, sidebar label, button renames, modal advanced section,
+    welcome banner, readiness guard, input attach icon, stats role class, IQE suppress'
   - 'js: empty-title + msg-count string updates, welcome handler + prompt clicks'
   - 'vv: Playwright E2E clean-load verify; companion sync + coherence'
   epics:
@@ -3435,3 +3501,21 @@ projects:
   - key: vv
     title: V&V — Playwright E2E + companion sync
     priority: high
+  - key: es
+    title: ES
+    priority: medium
+  - key: input
+    title: INPUT
+    priority: medium
+  - key: labels
+    title: LABELS
+    priority: medium
+  - key: modal
+    title: MODAL
+    priority: medium
+  - key: sidebar
+    title: SIDEBAR
+    priority: medium
+  - key: stats
+    title: STATS
+    priority: medium

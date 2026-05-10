@@ -818,6 +818,12 @@
         }
       });
     }
+
+    // Auto-load workflow when ?load=<workflow_id> is present in URL
+    const loadId = new URLSearchParams(window.location.search).get('load');
+    if (loadId) {
+      StudioWF.loadWorkflow(loadId);
+    }
   });
 
 })();

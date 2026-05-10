@@ -12,6 +12,7 @@ multi-user and multi-tab runs isolated.
 from __future__ import annotations
 
 import json
+import os
 import queue
 import subprocess
 import sys
@@ -99,6 +100,8 @@ def _exec_step(step: dict, project_id: str) -> dict:
     timeout = step.get("timeout", 300)
     start = time.monotonic()
     try:
+        _env = os.environ.copy()
+        _env["PYTHONPATH"] = str(_ROOT) + os.pathsep + _env.get("PYTHONPATH", "")
         proc = subprocess.run(
             cmd,
             capture_output=True,
@@ -106,6 +109,7 @@ def _exec_step(step: dict, project_id: str) -> dict:
             timeout=timeout,
             stdin=subprocess.DEVNULL,
             cwd=str(_ROOT),
+            env=_env,
         )
         result["duration_ms"] = int((time.monotonic() - start) * 1000)
         result["exit_code"] = proc.returncode
