@@ -16,6 +16,11 @@ Commands:
     /status                  — Show board summary
     /list                    — List pending/scheduled tasks
     /help                    — Show available commands
+    /approve [step_run_id]   — Approve a pending HITL workflow gate
+    /reject [step_run_id] [reason] — Reject a pending HITL workflow gate
+
+    Plain text "approve" / "approved" — approve the single pending gate
+    Plain text "reject <reason>"      — reject the single pending gate
 
 Usage:
     python tools/notifications/adapters/telegram_listener.py --poll
@@ -39,6 +44,86 @@ if str(BASE_DIR) not in sys.path:
 
 # Track last processed update to avoid duplicates
 OFFSET_FILE = BASE_DIR / ".tmp" / "telegram_offset.txt"
+
+# Dashboard base URL for HITL API calls
+_DASHBOARD_URL = "http://localhost:5050"
+
+
+# ── HITL helpers ──────────────────────────────────────────────────
+
+def _get_pending_hitl_steps() -> list:
+    """Return list of (run_id, step_run_id, step_name) for awaiting_approval steps."""
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT r.run_id, s.step_run_id, s.step_name, r.workflow_name "
+                "FROM studio_workflow_run_steps s "
+                "JOIN studio_workflow_runs r ON s.run_id = r.run_id "
+                "WHERE s.status = 'awaiting_approval' "
+                "ORDER BY s.started_at DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def _call_hitl_api(run_id: str, step_run_id: str, action: str, reason: str = "") -> dict:
+    """Call the dashboard approve/reject API endpoint."""
+    try:
+        payload = json.dumps({"actor": "telegram", "reason": reason}).encode()
+        url = f"{_DASHBOARD_URL}/api/studio/workflows/runs/{run_id}/steps/{step_run_id}/{action}"
+        req = urllib.request.Request(
+            url, data=payload, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — localhost only
+            return json.loads(resp.read())
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _handle_hitl_action(action: str, step_run_id: str = "", reason: str = "") -> str:
+    """Approve or reject a pending HITL gate. Returns reply text."""
+    pending = _get_pending_hitl_steps()
+
+    if not pending:
+        return "⚠️ No workflow gates are currently awaiting approval."
+
+    # Resolve target step
+    if step_run_id:
+        targets = [p for p in pending if p["step_run_id"] == step_run_id]
+        if not targets:
+            return f"⚠️ Step <code>{step_run_id}</code> not found or not pending."
+        target = targets[0]
+    elif len(pending) == 1:
+        target = pending[0]
+    else:
+        lines = ["⚠️ Multiple gates pending — specify step ID:\n"]
+        for p in pending:
+            lines.append(
+                f"• <b>{p['step_name']}</b> in <code>{p['run_id']}</code>\n"
+                f"  ID: <code>{p['step_run_id']}</code>"
+            )
+        lines.append(f"\nUse: /{action} &lt;step_run_id&gt;")
+        return "\n".join(lines)
+
+    result = _call_hitl_api(target["run_id"], target["step_run_id"], action, reason)
+
+    if "error" in result:
+        return f"❌ Failed to {action}: {result['error']}"
+
+    icon = "✅" if action == "approve" else "❌"
+    verb = "Approved" if action == "approve" else "Rejected"
+    msg = f"{icon} <b>{verb}</b>\n\n"
+    msg += f"Step: <b>{target['step_name']}</b>\n"
+    msg += f"Workflow: {target.get('workflow_name', target['run_id'])}\n"
+    if reason:
+        msg += f"Reason: {reason}\n"
+    msg += f"\nRun <code>{target['run_id']}</code> will now continue."
+    return msg
 
 
 def _utcnow_iso() -> str:
@@ -145,7 +230,11 @@ HELP_TEXT = (
     "/task &lt;description&gt; \u2014 Generic task\n"
     "/status \u2014 Board summary\n"
     "/list \u2014 Pending/scheduled tasks\n"
+    "/approve [step_id] \u2014 Approve a workflow gate\n"
+    "/reject [step_id] [reason] \u2014 Reject a workflow gate\n"
     "/help \u2014 This message\n\n"
+    "<b>Workflow approvals:</b> Reply <code>approve</code> or "
+    "<code>reject &lt;reason&gt;</code> to action a pending gate.\n\n"
     "Add <code>!critical</code> or <code>!low</code> to "
     "override priority.\n"
     "Add <code>@5pm</code> or <code>@tomorrow 9am</code> "
@@ -300,6 +389,14 @@ def process_message(
     if allowed_chat and str(chat_id) != str(allowed_chat):
         return None
 
+    # \u2500\u2500 HITL plain-text shortcuts (checked before slash commands) \u2500\u2500
+    text_lower = text.lower().strip()
+    if text_lower in ("approve", "approved", "yes", "lgtm"):
+        return _handle_hitl_action("approve")
+    if text_lower.startswith("reject") or text_lower.startswith("denied") or text_lower.startswith("no "):
+        reason = text[len(text_lower.split()[0]):].strip()
+        return _handle_hitl_action("reject", reason=reason)
+
     if text.startswith("/"):
         parts = text.split(None, 1)
         cmd = parts[0].lower().split("@")[0]
@@ -316,6 +413,19 @@ def process_message(
         # List
         if cmd == "/list":
             return _get_task_list()
+
+        # HITL approve
+        if cmd == "/approve":
+            args = body.strip().split(None, 1)
+            step_run_id = args[0] if args else ""
+            return _handle_hitl_action("approve", step_run_id=step_run_id)
+
+        # HITL reject
+        if cmd == "/reject":
+            args = body.strip().split(None, 1)
+            step_run_id = args[0] if args else ""
+            reason = args[1] if len(args) > 1 else ""
+            return _handle_hitl_action("reject", step_run_id=step_run_id, reason=reason)
 
         # Task creation commands
         if cmd in COMMAND_MAP:
@@ -344,7 +454,7 @@ def process_message(
 
         return f"\u2753 Unknown command: {cmd}\nSend /help for options."
 
-    # Free-text instruction (not a slash command)
+    # Free-text instruction (not a slash command and not an approval keyword)
     # Create as a task with the full text as title/description
     result = _create_task(
         title=text[:80],
