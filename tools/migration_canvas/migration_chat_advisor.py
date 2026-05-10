@@ -487,42 +487,51 @@ def handle_free_text(content: str, session_id: str = "") -> dict:
     is_coa_q = bool(_COA_INTENT_RE.search(content))
     mentioned_techs = list({m.lower() for m in _COMPILED_TECH_RE.findall(content)})
 
-    # Deprecated / EOL question about a specific tech
-    if is_eol_q and mentioned_techs:
-        return handle_deprecated(mentioned_techs[0])
+    # Deprecated / EOL question — run it for each mentioned tech, or ask LLM if none
+    if is_eol_q:
+        if mentioned_techs:
+            return handle_deprecated(mentioned_techs[0])
+        llm_response = _call_llm_with_migration_context(content, session_id)
+        if llm_response:
+            return {"reply": llm_response, "mode": "cam"}
 
-    # Refactor question
-    if is_refactor_q and mentioned_techs:
-        return handle_refactor(mentioned_techs[0], session_id=session_id)
+    # Refactor / modernize intent — run for specific tech, or status+components for general
+    if is_refactor_q:
+        if mentioned_techs:
+            return handle_refactor(mentioned_techs[0], session_id=session_id)
+        # General modernization ask — surface inventory + status automatically
+        return _auto_modernize(content, session_id)
 
     # Status / readiness check
     if is_status_q:
         return handle_status(session_id=session_id)
 
     # COA / optimization for a tech
-    if (is_coa_q or is_migration_q) and mentioned_techs:
+    if is_coa_q:
+        if mentioned_techs:
+            return handle_coa(mentioned_techs[0], session_id=session_id)
+        llm_response = _call_llm_with_migration_context(content, session_id)
+        if llm_response:
+            return {"reply": llm_response, "mode": "cam"}
+
+    # General migration question with tech mention → COA
+    if is_migration_q and mentioned_techs:
         return handle_coa(mentioned_techs[0], session_id=session_id)
 
-    # General migration question → LLM with context
+    # General migration question with no tech → surface overview + LLM guidance
+    if is_migration_q:
+        return _auto_modernize(content, session_id)
+
+    # Anything else → LLM with migration context
     llm_response = _call_llm_with_migration_context(content, session_id)
     if llm_response:
         return {"reply": llm_response, "mode": "cam"}
 
-    # Fallback: command guide
-    hints = []
+    # Final fallback
     if mentioned_techs:
-        tech_list = ", ".join(f"`{t}`" for t in mentioned_techs[:4])
-        hints.append(f"I noticed: {tech_list}. Try `/coa {mentioned_techs[0]}` for migration options or `/deprecated {mentioned_techs[0]}` for EOL status.")
-    hints.append(
-        "**Available commands** (or just describe what you need — I'll run the right one):\n"
-        "  `/analyze <url or code>` — fetch + analyze a repo URL or paste code\n"
-        "  `/coa <tech>` — Cloud migration courses of action\n"
-        "  `/deprecated <tech>` — EOL / deprecation status\n"
-        "  `/refactor <component>` — Python conversion snippets\n"
-        "  `/components` — App inventory with migration status\n"
-        "  `/status` — Migration project readiness overview"
-    )
-    return {"reply": "\n\n".join(hints), "mode": "cam"}
+        tech = mentioned_techs[0]
+        return handle_coa(tech, session_id=session_id)
+    return {"reply": "What would you like to migrate or modernize? Paste a GitHub URL, describe your stack, or name a technology.", "mode": "cam"}
 
 
 # ---------------------------------------------------------------------------
@@ -621,6 +630,54 @@ def get_migration_advisory(context: dict) -> dict | None:
 # ---------------------------------------------------------------------------
 
 
+def _auto_modernize(original_content: str, session_id: str = "") -> dict:
+    """Auto-run status + components + LLM guidance for a general modernization ask.
+
+    Called when the user expresses intent to migrate/refactor but hasn't named a
+    specific technology or component — avoids asking them to type more commands.
+    """
+    parts: list[str] = []
+
+    # 1. Run /status to show current migration state
+    try:
+        status_result = handle_status(session_id=session_id)
+        status_reply = status_result.get("reply", "")
+        if status_reply and "No active" not in status_reply and "Error" not in status_reply:
+            parts.append(status_reply)
+    except Exception:
+        pass
+
+    # 2. Run /components to list what needs migrating
+    try:
+        comp_result = handle_components(session_id=session_id)
+        comp_reply = comp_result.get("reply", "")
+        if comp_reply and "No app components" not in comp_reply and "Error" not in comp_reply:
+            parts.append(comp_reply)
+    except Exception:
+        pass
+
+    # 3. LLM guidance on the user's specific question
+    llm_reply = _call_llm_with_migration_context(original_content, session_id)
+    if llm_reply:
+        parts.append(llm_reply)
+
+    if not parts:
+        # No inventory yet — fall back to LLM or onboarding prompt
+        if llm_reply:
+            return {"reply": llm_reply, "mode": "cam"}
+        return {
+            "reply": (
+                "No migration inventory found yet. To get started:\n\n"
+                "- Paste a GitHub URL or architecture doc and I'll analyze it automatically\n"
+                "- Describe your current stack (e.g. 'Java Spring Boot on-prem with Oracle DB') for a migration roadmap\n"
+                "- Share a `pom.xml`, `requirements.txt`, or config file for dependency analysis"
+            ),
+            "mode": "cam",
+        }
+
+    return {"reply": "\n\n---\n\n".join(parts), "mode": "cam"}
+
+
 def _get_active_project_id(session_id: str = "") -> str | None:
     """Find the most recent active CAM project ID."""
     try:
@@ -644,14 +701,13 @@ def _call_llm_with_migration_context(content: str, session_id: str = "") -> str 
         from tools.llm.provider import LLMRequest
 
         system_prompt = (
-            "You are a senior cloud migration architect with expertise in AWS, Azure, and GCP. "
-            "You help teams migrate applications from on-premises Kubernetes, Oracle, Redis, "
-            "Elasticsearch, Apache NiFi, and legacy Java/Python codebases to cloud-native services. "
-            "You know the AWS 7R framework, DMS, Schema Conversion Tool, EKS Fargate, OpenSearch, "
-            "ElastiCache, Bedrock, pgvector, and modern application modernization patterns. "
-            "When users ask about migration, always mention: available slash commands (/coa, /deprecated, "
-            "/refactor, /components, /status, /analyze), pros/cons of migration options, and AI opportunities. "
-            "Be concise and actionable. Use markdown formatting."
+            "You are a senior cloud migration architect. Answer the user's question directly "
+            "with specific, actionable guidance — concrete steps, tradeoffs, AWS/Azure/GCP "
+            "service recommendations, effort estimates, and risks. "
+            "Do NOT ask the user to run commands or tell them what commands are available. "
+            "Do NOT present 'Next Steps' that require the user to do something — execute the "
+            "analysis yourself and present the findings. "
+            "Use markdown formatting. Be direct and specific."
         )
 
         router = LLMRouter()
@@ -660,7 +716,6 @@ def _call_llm_with_migration_context(content: str, session_id: str = "") -> str 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content},
             ],
-            model="haiku",  # Use fast model for chat
         )
         resp = router.invoke("chat_response", req)
         return resp.content if resp and resp.content else None
