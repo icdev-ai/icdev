@@ -192,6 +192,9 @@ provider "aws" {{
   skip_credentials_validation = true
   skip_metadata_api_check     = true
   skip_requesting_account_id  = true
+  # Force path-style S3 URLs so Docker containers can reach LocalStack
+  # (virtual-hosted style — bucket.host — breaks inside Docker networking)
+  s3_use_path_style           = true
   endpoints {{
     s3          = "{ep}"
     ec2         = "{ep}"
