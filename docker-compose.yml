@@ -725,6 +725,110 @@ services:
           memory: 256M
     command: ["python", "tools/dashboard/app.py", "--port", "5000"]
 
+  # ====================================================================
+  # IaC Tools — Terraform (latest) + Ansible (latest)
+  # Run on-demand: docker compose run --rm iac-tools terraform plan
+  #                docker compose run --rm iac-tools ansible-playbook site.yml
+  # ====================================================================
+  iac-tools:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.iac
+    image: icdev/iac-tools:latest
+    container_name: icdev-iac-tools
+    volumes:
+      - .:/workspace
+      - icdev-data:/app/data
+    networks:
+      - icdev-net
+    working_dir: /workspace
+    restart: "no"
+
+  # ====================================================================
+  # GNS3 — Network Simulation
+  # ====================================================================
+
+  # GNS3 Server — REST API + simulation engine (http://localhost:3080)
+  #
+  # Vendor images (proprietary — must be obtained separately):
+  #   Cisco ASR 1000v (CSR1000v): software.cisco.com → IOS XE → CSR1000v .qcow2
+  #     Requires Cisco SmartNet / CCO account.
+  #   Juniper vMX:       support.juniper.net → Junos → vMX .qcow2 pair (vmx + vPFE)
+  #     Requires Juniper account + vMX license.
+  #
+  # Drop image files into ./data/gns3-vendor-images/ — they are auto-mounted
+  # into /gns3/images where GNS3 server resolves them during appliance import.
+  gns3-server:
+    image: gns3/gns3-server:latest
+    container_name: gns3-server
+    ports:
+      - "3080:3080"   # HTTP API / WebSocket notifications
+      - "3081:3081"   # console proxy
+    volumes:
+      - gns3-images:/gns3/images
+      - gns3-projects:/gns3/projects
+      - gns3-appliances:/gns3/appliances
+      - ./data/gns3-vendor-images:/gns3/images/vendor:ro
+    environment:
+      GNS3_CONTROLLER_ADDRESSES: "0.0.0.0"
+    networks:
+      - icdev-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3080/v3/version"]
+      <<: *healthcheck-defaults
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # GNS3 Web UI — Browser-based frontend (http://localhost:14080)
+  gns3-web-ui:
+    image: gns3/gns3-web-ui:latest
+    container_name: gns3-web-ui
+    ports:
+      - "14080:80"
+    depends_on:
+      - gns3-server
+    environment:
+      GNS3_SERVER_HOST: gns3-server
+      GNS3_SERVER_PORT: "3080"
+    networks:
+      - icdev-net
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:80"]
+      <<: *healthcheck-defaults
+    logging: *default-logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # GNS3 Registry Sync — pulls latest appliance definitions at startup then exits
+  gns3-registry:
+    image: alpine/git:latest
+    container_name: gns3-registry
+    volumes:
+      - gns3-appliances:/appliances
+    entrypoint: >
+      sh -c "
+        if [ -d /appliances/.git ]; then
+          git -C /appliances pull --ff-only;
+        else
+          git clone --depth 1 https://github.com/GNS3/gns3-registry.git /appliances;
+        fi
+      "
+    networks:
+      - icdev-net
+    restart: "no"
+
   # SaaS API Gateway — REST + MCP Streamable HTTP entry point
   # Note: Host port 9443 maps to container port 8443 (Dockerfile default)
   icdev-api-gateway:
@@ -777,3 +881,9 @@ volumes:
   icdev-data:
     driver: local
   # icdev-pgdata uses bind mount ./data/pgdata (not a Docker volume)
+  gns3-images:
+    driver: local
+  gns3-projects:
+    driver: local
+  gns3-appliances:
+    driver: local
