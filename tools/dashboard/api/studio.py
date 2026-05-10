@@ -807,6 +807,25 @@ def api_get_run(run_id: str):
     return jsonify(run)
 
 
+@studio_api.route("/workflows/runs/<run_id>", methods=["DELETE"])
+def api_delete_run(run_id: str):
+    from tools.studio.workflow_runner import delete_run
+
+    deleted = delete_run(run_id)
+    if not deleted:
+        return jsonify({"error": "Run not found"}), 404
+    return jsonify({"status": "deleted", "run_id": run_id})
+
+
+@studio_api.route("/workflows/runs", methods=["DELETE"])
+def api_delete_all_runs():
+    from tools.studio.workflow_runner import delete_all_runs
+
+    workflow_id = request.args.get("workflow_id")
+    count = delete_all_runs(workflow_id=workflow_id or None)
+    return jsonify({"status": "deleted", "count": count})
+
+
 @studio_api.route("/workflows/<workflow_id>/generate-code", methods=["POST"])
 def api_generate_code(workflow_id: str):
     """Generate a standalone Python script for this workflow."""
