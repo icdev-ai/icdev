@@ -7846,6 +7846,30 @@ def create_app() -> Flask:
             return jsonify({"experiments": []})
 
     # ================================================================
+    # Chat: /analyze command — URL fetch + LLM analysis
+    # ================================================================
+
+    @app.route("/api/chat/analyze", methods=["POST"])
+    def api_chat_analyze():
+        """Fetch a URL and return a structured LLM analysis.
+
+        Body: {url: str, canvas_type?: str}
+        Returns: {reply, url, source_type, error}
+        """
+        data = flask_request.get_json(silent=True) or {}
+        url = (data.get("url") or "").strip()
+        if not url:
+            return jsonify({"error": "url required"}), 400
+        canvas_type = (data.get("canvas_type") or "intake").strip().lower()
+        try:
+            from tools.chat_router.url_analyzer import analyze
+            result = analyze(url, canvas_type)
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("url_analyzer error: %s", exc)
+            return jsonify({"reply": f"[Analyze error: {exc}]", "error": str(exc)}), 500
+
+    # ================================================================
     # Phase 69: Chat Personas API (D-CU-3)
     # ================================================================
 
