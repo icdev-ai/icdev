@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ design.name or 'New Design' }} - Quality Design Canvas{% endblock %}
+{% block extra_css %}<style>
+  body { overflow: hidden; }
+  .main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
+</style>{% endblock %}
 {% block content %}
-<div class="dc-wrap" style="display:flex;height:calc(100vh - 60px);background:#0d1b2a;">
+<div class="dc-wrap" style="display:flex;flex:1;overflow:hidden;background:#0d1b2a;">
   <!-- Left Sidebar (220px) -->
   <div class="dc-sidebar" style="width:220px;min-width:220px;background:#0a1628;border-right:1px solid #1e3a6e;overflow-y:auto;">
     <div class="dc-tabs" style="display:flex;border-bottom:1px solid #1e3a6e;">

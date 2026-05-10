@@ -1,8 +1,11 @@
 {% extends "base.html" %}
 {% block title %}AADC Canvas — {{ design.name }}{% endblock %}
-{% block extra_head %}
+{% block extra_css %}
 <link rel="stylesheet" href="/static/css/agentic-canvas.css">
 <style>
+/* ── Canvas viewport fix: no body scroll, main-content fills remaining height */
+body { overflow: hidden; }
+.main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
 /* ── Sidebar collapse transitions ── */
 #palette-sidebar { transition: width 0.2s, min-width 0.2s; }
 #props-sidebar   { transition: width 0.2s, min-width 0.2s; }
@@ -144,7 +147,7 @@
 .ml-badge.fail { background:#450a0a; color:#fca5a5; border:1px solid #7f1d1d; }
 .ml-unlink { flex:0 0 22px; background:none; border:none; color:#f87171; cursor:pointer; font-size:13px; padding:0; }
 </style>
-{% endblock %}
+{% endblock extra_css %}
 {% block content %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;">CUI // SP-CTI</div>
 
@@ -302,7 +305,7 @@
 </div>
 
 <!-- ── Main three-pane layout ── -->
-<div style="display:flex;height:calc(100vh - 130px);">
+<div style="display:flex;flex:1;overflow:hidden;">
 
   <!-- Left sidebar expand strip (visible when collapsed) -->
   <div id="palette-expand-strip" class="expand-strip" style="display:none;" onclick="togglePaletteSidebar()" title="Expand palette">
