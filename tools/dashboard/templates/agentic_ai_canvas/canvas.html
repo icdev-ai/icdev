@@ -5,7 +5,9 @@
 <style>
 /* ── Canvas viewport fix: no body scroll, main-content fills remaining height */
 body { overflow: hidden; height: 100vh; }
-.main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
+/* position+z-index:0 makes main-content an explicit stacking context so the
+   navbar (z-index:100) composites ABOVE it even when canvas elements get GPU-promoted */
+.main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; position: relative; z-index: 0; }
 /* ── Sidebar collapse transitions ── */
 #palette-sidebar { transition: width 0.2s, min-width 0.2s; }
 #props-sidebar   { transition: width 0.2s, min-width 0.2s; }
@@ -308,7 +310,7 @@ body { overflow: hidden; height: 100vh; }
 </div>
 
 <!-- ── Main three-pane layout ── -->
-<div style="display:flex;flex:1;overflow:hidden;">
+<div style="display:flex;flex:1;overflow:hidden;position:relative;z-index:0;">
 
   <!-- Left sidebar expand strip (visible when collapsed) -->
   <div id="palette-expand-strip" class="expand-strip" style="display:none;" onclick="togglePaletteSidebar()" title="Expand palette">
