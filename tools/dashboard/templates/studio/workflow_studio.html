@@ -63,7 +63,8 @@
           <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
                   data-tooltip="Zoom Out" onclick="StudioWF.zoomOut()">&#8722;</button>
           <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
-                  data-tooltip="Fit View" onclick="StudioWF.fitView()">&#9634;</button>
+                  data-tooltip="Fit View (reset pan & zoom)" onclick="StudioWF.fitView()">&#9634;</button>
+          <span id="wf-zoom-label" style="font-size:0.7rem;color:var(--studio-text-muted,#94a3b8);min-width:36px;text-align:center;">100%</span>
           <div class="studio-toolbar__spacer"></div>
           <span class="studio-badge studio-badge--neutral" id="wf-node-count">0 steps</span>
           <button class="studio-btn studio-btn--secondary" onclick="StudioWF.validate()">
@@ -132,8 +133,10 @@
       <div class="wf-canvas" id="wf-canvas"
            ondragover="event.preventDefault()"
            ondrop="StudioWF.handleDrop(event)">
-        <svg class="wf-canvas__svg" id="wf-edges"></svg>
-        <div id="wf-nodes"></div>
+        <div id="wf-world">
+          <svg class="wf-canvas__svg" id="wf-edges"></svg>
+          <div id="wf-nodes"></div>
+        </div>
         <div class="studio-empty" id="wf-empty-state">
           <div class="studio-empty__icon">&#128640;</div>
           <div class="studio-empty__title">Start Building</div>

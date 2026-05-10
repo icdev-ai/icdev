@@ -11,6 +11,8 @@ const StudioWF = (() => {
   let dragState = null; // {nodeId, offsetX, offsetY} or {type:'tool', data}
   let connectState = null; // {fromId, fromPort}
   let zoom = 1;
+  let panX = 0, panY = 0;
+  let isPanning = false, panStart = null;
   let nextNodeY = 60;
   let _nodeSeq = 0;
   const GRID = 24;
@@ -22,6 +24,7 @@ const StudioWF = (() => {
   // ── DOM refs ──
   const $ = id => document.getElementById(id);
   const canvas = () => $('wf-canvas');
+  const world  = () => $('wf-world');
   const nodesEl = () => $('wf-nodes');
   const edgesSvg = () => $('wf-edges');
   const emptyState = () => $('wf-empty-state');
@@ -151,8 +154,8 @@ const StudioWF = (() => {
     try {
       const data = JSON.parse(e.dataTransfer.getData('application/json'));
       const canvasRect = canvas().getBoundingClientRect();
-      const x = snap((e.clientX - canvasRect.left) / zoom);
-      const y = snap((e.clientY - canvasRect.top) / zoom);
+      const x = snap((e.clientX - canvasRect.left - panX) / zoom);
+      const y = snap((e.clientY - canvasRect.top  - panY) / zoom);
       addNode(data, x, y);
     } catch (err) {
       console.warn('Drop parse error:', err);
@@ -403,13 +406,20 @@ const StudioWF = (() => {
     crumbEl.innerHTML = html;
   }
 
-  // ── Node dragging ──
+  // ── Node dragging / panning ──
   document.addEventListener('mousemove', (e) => {
+    // Canvas pan
+    if (isPanning) {
+      panX = e.clientX - panStart.x;
+      panY = e.clientY - panStart.y;
+      applyZoom();
+      return;
+    }
     // Node drag
     if (dragState && dragState.nodeId) {
       const canvasRect = canvas().getBoundingClientRect();
-      const x = snap((e.clientX - canvasRect.left - dragState.offsetX) / zoom);
-      const y = snap((e.clientY - canvasRect.top - dragState.offsetY) / zoom);
+      const x = snap((e.clientX - canvasRect.left - panX - dragState.offsetX) / zoom);
+      const y = snap((e.clientY - canvasRect.top  - panY - dragState.offsetY) / zoom);
       const node = nodes.find(n => n.id === dragState.nodeId);
       if (node) {
         node.x = Math.max(0, x);
@@ -434,8 +444,8 @@ const StudioWF = (() => {
       const fromH = fromEl.offsetHeight || 72;
       const x1 = fromNode.x + fromW - 8;
       const y1 = fromNode.y + fromH / 2;
-      const x2 = (e.clientX - canvasRect.left + canvasEl.scrollLeft) / zoom;
-      const y2 = (e.clientY - canvasRect.top  + canvasEl.scrollTop)  / zoom;
+      const x2 = (e.clientX - canvasRect.left - panX) / zoom;
+      const y2 = (e.clientY - canvasRect.top  - panY) / zoom;
       const dx = Math.max(Math.abs(x2 - x1) * 0.5, 60);
       const svg = edgesSvg();
       // Ensure SVG covers cursor position
@@ -459,6 +469,11 @@ const StudioWF = (() => {
     if (old) old.remove();
     dragState = null;
     connectState = null;
+    if (isPanning) {
+      isPanning = false;
+      panStart = null;
+      canvas().classList.remove('is-panning');
+    }
   });
 
   // ── Selection ──
@@ -1208,15 +1223,56 @@ const StudioWF = (() => {
     return m[cat] || m.general;
   }
 
-  // ── Zoom ──
-  function zoomIn() { zoom = Math.min(2, zoom + 0.1); applyZoom(); }
-  function zoomOut() { zoom = Math.max(0.3, zoom - 0.1); applyZoom(); }
-  function fitView() { zoom = 1; applyZoom(); }
-
+  // ── Zoom & Pan ──
   function applyZoom() {
-    const c = nodesEl();
-    if (c) c.style.transform = `scale(${zoom})`;
+    const w = world();
+    if (w) w.style.transform = `translate(${panX}px,${panY}px) scale(${zoom})`;
+    const lbl = $('wf-zoom-label');
+    if (lbl) lbl.textContent = Math.round(zoom * 100) + '%';
   }
+
+  function zoomAtPoint(screenX, screenY, newZoom) {
+    const r = canvas().getBoundingClientRect();
+    const wx = (screenX - r.left - panX) / zoom;
+    const wy = (screenY - r.top  - panY) / zoom;
+    zoom = Math.min(2, Math.max(0.25, newZoom));
+    panX = screenX - r.left - wx * zoom;
+    panY = screenY - r.top  - wy * zoom;
+    applyZoom();
+  }
+
+  function zoomIn() {
+    const r = canvas().getBoundingClientRect();
+    zoomAtPoint(r.left + r.width / 2, r.top + r.height / 2, zoom + 0.1);
+  }
+  function zoomOut() {
+    const r = canvas().getBoundingClientRect();
+    zoomAtPoint(r.left + r.width / 2, r.top + r.height / 2, zoom - 0.1);
+  }
+  function fitView() { zoom = 1; panX = 0; panY = 0; applyZoom(); }
+
+  // Mouse-wheel zoom (zoom toward cursor)
+  document.addEventListener('DOMContentLoaded', () => {
+    const c = canvas();
+    if (!c) return;
+
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.1 : -0.1;
+      zoomAtPoint(e.clientX, e.clientY, zoom + delta);
+    }, { passive: false });
+
+    // Click-drag on empty canvas → pan
+    c.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.wf-node')) return;
+      if (e.target.closest('#wf-empty-state')) return;
+      e.preventDefault();
+      isPanning = true;
+      panStart = { x: e.clientX - panX, y: e.clientY - panY };
+      c.classList.add('is-panning');
+    });
+  });
 
   // ── Validate ──
   function validate() {
