@@ -560,6 +560,9 @@ window.addEventListener('DOMContentLoaded', function() {
   renderGraph();
   updateDropHint();
   pushHistory();
+  if (graph.nodes && graph.nodes.length > 0) {
+    requestAnimationFrame(() => setTimeout(fitView, 100));
+  }
 
   document.querySelectorAll('.palette-node').forEach(function(el) {
     el.addEventListener('dragstart', function(e) {

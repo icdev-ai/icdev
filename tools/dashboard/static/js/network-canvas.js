@@ -2605,7 +2605,12 @@ async function loadTopology(id) {
     const r = await fetch(NC_BASE + `/api/topologies/${id}`);
     if (!r.ok) throw new Error('Not found');
     const data = await r.json();
-    if (data.graph_json) loadGraphJSON(data.graph_json);
+    if (data.graph_json) {
+      loadGraphJSON(data.graph_json);
+      if ((data.graph_json.nodes || []).length > 0) {
+        requestAnimationFrame(() => setTimeout(() => { if (typeof zoomFit === 'function') zoomFit(); }, 100));
+      }
+    }
     document.getElementById('topo-name-display').textContent = data.name || 'Untitled';
     setStatus('Loaded — ' + data.name);
     isDirty = false;

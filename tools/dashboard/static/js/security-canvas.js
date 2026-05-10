@@ -277,6 +277,9 @@ function loadDesign(id) {
     if (data.graph_json) {
       const g = typeof data.graph_json === 'string' ? JSON.parse(data.graph_json) : data.graph_json;
       renderGraph(g);
+      if ((g.nodes || []).length > 0) {
+        requestAnimationFrame(() => setTimeout(zoomFit, 100));
+      }
     }
     const nameEl = document.getElementById('design-name-display');
     if (nameEl) nameEl.textContent = data.name || 'Untitled';
@@ -551,7 +554,10 @@ function updateConfig(key, val) {
 function zoomIn() { paper.scale(paper.scale().sx * 1.2, paper.scale().sy * 1.2); }
 function zoomOut() { paper.scale(paper.scale().sx / 1.2, paper.scale().sy / 1.2); }
 function zoomFit() {
-  paper.scaleContentToFit({padding: 40, maxScale: 2});
+  const area = document.getElementById('canvas-container');
+  const w = area ? area.clientWidth : 1200;
+  const h = area ? area.clientHeight : 800;
+  paper.scaleContentToFit({ fittingBBox: { x: 0, y: 0, width: w, height: h }, padding: 40, maxScale: 1 });
 }
 
 /* ── Undo / Redo (snapshot-based, same pattern as NDC) ──────────────────────── */

@@ -293,11 +293,19 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // (undo pause lifted in toolbar section after initial _pushUndo)
 
-  // Zoom to fit if there are nodes
+  // Zoom to fit if there are nodes — defer so JointJS finishes rendering and
+  // flex layout is resolved before measuring container dimensions.
   if (graphData.nodes && graphData.nodes.length > 0) {
-    try {
-      paper.scaleContentToFit({ padding: 40, maxScale: 1.5, minScale: 0.3 });
-    } catch (e) { /* ignore if not supported */ }
+    requestAnimationFrame(() => setTimeout(() => {
+      try {
+        paper.scaleContentToFit({
+          fittingBBox: { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight },
+          padding: 40, maxScale: 1, minScale: 0.1,
+        });
+        currentScale = paper.scale().sx;
+        updateZoomLabel();
+      } catch (e) { /* ignore */ }
+    }, 100));
   }
 
   console.log(`Canvas loaded: ${graphData.nodes?.length || 0} nodes, ${graphData.edges?.length || 0} edges`);
@@ -732,7 +740,10 @@ document.addEventListener('DOMContentLoaded', () => {
   };
   window.canvasZoomFit = function() {
     try {
-      paper.scaleContentToFit({ padding: 40, maxScale: 2, minScale: 0.2 });
+      paper.scaleContentToFit({
+        fittingBBox: { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight },
+        padding: 40, maxScale: 1, minScale: 0.1,
+      });
       currentScale = paper.scale().sx;
       updateZoomLabel();
     } catch (e) { /* ignore */ }
