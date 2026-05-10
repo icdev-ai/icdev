@@ -4,7 +4,10 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
-<style>html, body { overflow: hidden; }</style>
+<style>
+  html, body { height: 100vh; overflow: hidden; }
+  .main-content { display: flex; flex-direction: column; overflow: hidden; min-height: 0; padding-bottom: 0; }
+</style>
 {% endblock %}
 
 {% block content %}
