@@ -702,13 +702,14 @@
             widget.classList.add('qa-widget--sent');
             widget.innerHTML = '<div class="qa-widget__sent-label">Answers submitted</div>';
 
-            // Put composed text in input and fire send
+            // Put composed text in input and fire send directly
             var msgInput = document.getElementById('message-input');
             if (msgInput) {
+                msgInput.disabled = false;
                 msgInput.value = parts.join('\n\n');
                 var sendBtn = document.getElementById('btn-send');
-                if (sendBtn) sendBtn.click();
-                else { sendMessage(msgInput.value); msgInput.value = ''; }
+                if (sendBtn) sendBtn.disabled = false;
+                sendMessage();
             }
         });
     }
