@@ -135,49 +135,15 @@ Build a new exercise: define a YAML pack with injects and rubrics, drop it in `s
 
 Most GovTech teams spend 12-18 months and millions of dollars getting from "we need an app" to a signed ATO. ICDEV™ compresses this into a single, auditable pipeline:
 
-```
-"We need a mission planning tool for IL5"
-        │
-        ▼
-┌─ INTAKE ──────────────────────────────────────────────┐
-│  AI-driven conversational requirements gathering       │
-│  → Extracts requirements, detects gaps, flags ATO risk │
-│  → Scores readiness across 5 dimensions                │
-│  → Auto-detects applicable compliance frameworks       │
-└───────────────────────────┬───────────────────────────┘
-                            ▼
-┌─ SIMULATE ────────────────────────────────────────────┐
-│  Digital Program Twin — what-if before you build       │
-│  → 6-dimension simulation (schedule, cost, risk,       │
-│    compliance, technical, staffing)                     │
-│  → Monte Carlo estimation (10,000 iterations)          │
-│  → 3 Courses of Action: Speed / Balanced / Full        │
-└───────────────────────────┬───────────────────────────┘
-                            ▼
-┌─ GENERATE ────────────────────────────────────────────┐
-│  Full application in 12 deterministic steps            │
-│  → 300+ files: agents, tools, goals, tests, CI/CD     │
-│  → 588-table database with append-only audit trail     │
-│  → FORGE framework + ANVIL workflow baked in          │
-│  → Connected to 100+ cloud MCP servers (AWS/Azure/GCP/OCI/IBM) │
-└───────────────────────────┬───────────────────────────┘
-                            ▼
-┌─ BUILD ───────────────────────────────────────────────┐
-│  TDD workflow: RED → GREEN → REFACTOR                  │
-│  → 6 languages: Python, Java, Go, Rust, C#, TypeScript │
-│  → 9-step test pipeline (unit → BDD → E2E → gates)    │
-│  → SAST, dependency audit, secret detection, SBOM      │
-└───────────────────────────┬───────────────────────────┘
-                            ▼
-┌─ COMPLY ──────────────────────────────────────────────┐
-│  ATO package generated automatically                   │
-│  → SSP covering 17 FIPS 200 control families           │
-│  → POAM, STIG checklist, SBOM, OSCAL artifacts         │
-│  → Crosswalk maps controls across all 42 frameworks    │
-│  → cATO monitoring with evidence freshness tracking     │
-└───────────────────────────┬───────────────────────────┘
-                            ▼
-                    ATO-ready application
+```mermaid
+flowchart TD
+    S["💬 'We need a mission planning tool for IL5'"]
+    S --> I["INTAKE\nConversational requirements gathering\nExtracts reqs · detects gaps · flags ATO risk\nScores readiness · auto-detects frameworks"]
+    I --> SIM["SIMULATE\nDigital Program Twin\n6-dimension simulation · Monte Carlo · 10k iterations\n3 COAs: Speed / Balanced / Comprehensive"]
+    SIM --> G["GENERATE\n12 deterministic steps · 300+ files\n588-table database · append-only audit\nFORGE + ANVIL baked in · 100+ cloud MCP servers"]
+    G --> B["BUILD\nTDD: RED → GREEN → REFACTOR\n6 languages · 9-step test pipeline\nSAST · dependency audit · secret detection · SBOM"]
+    B --> C["COMPLY\nAutomatic ATO package\nSSP · POAM · STIG · SBOM · OSCAL\n42-framework crosswalk · cATO monitoring"]
+    C --> ATO(["✓ ATO-ready application"])
 ```
 
 **Every step is auditable. Every artifact is traceable. Every control is mapped.**
@@ -271,8 +237,10 @@ Score ≥ 6.0 → full agent architecture. 4.0–5.9 → hybrid. < 4.0 → tradi
 
 Every feature is built using the ANVIL workflow with true TDD:
 
-```
-[Model] → Architect → Trace → Link → Assemble → [Critique] → Stress-test
+```mermaid
+flowchart LR
+    M["Model"] --> A["Architect"] --> T["Trace"] --> L["Link"] --> AS["Assemble"] --> CR["[Critique]"] --> S["Stress-test"]
+    style CR stroke-dasharray: 5 5
 ```
 
 The optional **ANVIL Critique** phase runs multi-agent adversarial review between Assemble and Stress-test. Security, Compliance, and Knowledge agents independently critique the plan in parallel, producing GO/NOGO/CONDITIONAL consensus before stress-testing begins.
@@ -304,23 +272,19 @@ ICDEV™ generates every artifact you need for ATO:
 
 The **dual-hub crosswalk engine** eliminates duplicate assessments:
 
-```
-                    ┌─────────────────┐
-                    │  NIST 800-53    │  ← US Hub
-                    │    Rev 5        │
-                    └────────┬────────┘
-            ┌────────────────┼────────────────┐
-            │                │                │
-       ┌────┴────┐     ┌────┴────┐     ┌────┴────┐
-       │FedRAMP  │     │  CMMC   │     │800-171  │
-       │Mod/High │     │  L2/L3  │     │  Rev 2  │
-       └─────────┘     └─────────┘     └─────────┘
-            │                │
-       ┌────┴────┐     ┌────┴────┐
-       │  CJIS   │     │ HIPAA   │     ...and 15+ more
-       │ HITRUST │     │ PCI DSS │
-       │  SOC 2  │     │ISO27001 │  ← Bridge to Int'l Hub
-       └─────────┘     └─────────┘
+```mermaid
+graph TD
+    NIST["NIST 800-53 Rev 5\n— US Hub —"]
+    NIST --> FedRAMP["FedRAMP\nMod / High"]
+    NIST --> CMMC["CMMC\nL2 / L3"]
+    NIST --> N171["NIST 800-171\nRev 2"]
+    FedRAMP --> CJIS["CJIS"]
+    FedRAMP --> HITRUST["HITRUST"]
+    FedRAMP --> SOC2["SOC 2"]
+    CMMC --> HIPAA["HIPAA"]
+    CMMC --> PCI["PCI DSS"]
+    CMMC --> ISO["ISO 27001\n— Int'l Hub —"]
+    ISO --> MORE["+ 15 more frameworks"]
 ```
 
 ---
@@ -344,13 +308,15 @@ Every one of ICDEV™'s ten design canvases answers natural-language questions o
 
 **How it works:**
 
-```
-user query ─▶ graph_rag.retrieve(graph_id, profile) ─▶ top-K nodes + edges
-                                                          │
-                                          (optional) LLMRouter narrative_generation
-                                                          │
-                                                          ▼
-                                               chat UI with cited nodes
+```mermaid
+flowchart LR
+    Q["User Query"] --> R["graph_rag.retrieve\ngraph_id · profile"]
+    R --> K["Top-K nodes\n+ edges"]
+    K --> N{narrate?}
+    N -->|yes| L["LLMRouter\nnarrative_generation"]
+    N -->|no| RG["Raw graph hits\nair-gap safe"]
+    L --> UI["Chat UI\ncited nodes"]
+    RG --> UI
 ```
 
 - **Per-canvas scoring profile** — network_infrastructure, security, provenance, compliance — weights edge structure, centrality, and recency differently based on what you're asking about.
@@ -572,15 +538,15 @@ All 6 providers have full **Infrastructure-as-Code generators** — Terraform mo
 
 ICDEV™'s core architecture separates deterministic tools from probabilistic AI:
 
-```
-┌──────────────────────────────────────────────────────┐
-│  Goals         →  What to achieve (56+ workflows)     │
-│  Orchestration →  AI decides tool order (LLM layer)   │
-│  Tools         →  Deterministic scripts (500+ tools)  │
-│  Context       →  Static reference (42 catalogs)      │
-│  Hard Prompts  →  Reusable LLM templates              │
-│  Args          →  YAML/JSON config (40+ files)        │
-└──────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    G["Goals\nWhat to achieve — 56+ workflows"]
+    O["Orchestration\nAI decides tool order — LLM layer"]
+    T["Tools\nDeterministic scripts — 500+ tools"]
+    C["Context\nStatic reference — 42 catalogs"]
+    HP["Hard Prompts\nReusable LLM templates"]
+    A["Args\nYAML / JSON config — 40+ files"]
+    G --> O --> T --> C --> HP --> A
 ```
 
 **Why?** LLMs are probabilistic. Business logic must be deterministic. 90% accuracy per step = ~59% over 5 steps. FORGE fixes this by keeping AI in the orchestration layer and critical logic in deterministic Python scripts.
@@ -591,29 +557,26 @@ Generated child applications inherit the full FORGE framework — they aren't wr
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                  Claude Code / AI IDE                      │
-│            (39 slash commands, 250+ MCP tools)             │
-├──────────────────────────────────────────────────────────┤
-│                 Unified MCP Gateway                        │
-│          (single server, all 250+ tools, lazy-loaded)       │
-├──────────┬──────────┬───────────┬───────────┬────────────┤
-│   Core   │  Domain  │  Domain   │  Domain   │  Support   │
-│          │          │           │           │            │
-│ Orchestr │ Builder  │ MBSE      │ DevSecOps │ Knowledge  │
-│ Architect│ Complnce │ Modernize │ Gateway   │ Monitor    │
-│          │ Security │ Req.Anlst │           │            │
-│          │ Infra    │ SupplyChn │           │            │
-│          │          │ Simulatn  │           │            │
-├──────────┴──────────┴───────────┴───────────┴────────────┤
-│                   FORGE Framework                         │
-│       Goals │ Tools │ Args │ Context │ Hard Prompts        │
-├──────────────────────────────────────────────────────────┤
-│  SQLite (dev) / PostgreSQL (prod)  │   Multi-Cloud CSP    │
-│  588 tables, append-only audit     │  AWS │Azure│GCP│OCI  │
-│  Per-tenant DB isolation           │  IBM │Local/Air-Gap   │
-└──────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    IDE["Claude Code / AI IDE\n39 slash commands · 250+ MCP tools"]
+    GW["Unified MCP Gateway\n250+ tools · lazy-loaded"]
+
+    subgraph Agents["15 Agents"]
+        CORE["Core\nOrchestrator · Architect"]
+        DOM1["Domain\nBuilder · Compliance · Security · Infrastructure"]
+        DOM2["Domain\nMBSE · Modernize · Req. Analyst · Supply Chain · Simulation · DevSecOps/ZTA · Gateway"]
+        SUP["Support\nKnowledge · Monitor"]
+    end
+
+    FF["FORGE Framework\nGoals · Tools · Args · Context · Hard Prompts"]
+
+    subgraph Data["Data Layer"]
+        DB["SQLite dev / PostgreSQL prod\n588 tables · append-only audit · per-tenant isolation"]
+        CSP["Multi-Cloud CSP\nAWS GovCloud · Azure Gov · GCP · OCI · IBM · Local/Air-Gap"]
+    end
+
+    IDE --> GW --> Agents --> FF --> Data
 ```
 
 ---
