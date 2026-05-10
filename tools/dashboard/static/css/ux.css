@@ -2090,25 +2090,40 @@
 
 
 /* ── Canvas editor pages: fill viewport, no page-level scroll ── */
-/* Strips main-content padding/max-width and replaces fixed calc() height  */
-/* with flex growth so canvas fills whatever space the navbar leaves.       */
-/* Applies to: migration, boundary, data, infra, observability, aiml, qdc  */
-body:has(.dc-wrap) {
+/* Covers: .dc-wrap (migration/boundary/data/infra/obs/qdc) + #aimc-wrap (aiml) */
+
+/* 1. Lock page scroll */
+body:has(.dc-wrap),
+body:has(#aimc-wrap) {
     overflow: hidden;
 }
-.main-content:has(.dc-wrap) {
+
+/* 2. Strip main-content padding — it fights the canvas height */
+.main-content:has(.dc-wrap),
+.main-content:has(#aimc-wrap) {
     padding: 0 !important;
     max-width: none !important;
     display: flex !important;
     flex-direction: column !important;
     min-height: 0 !important;
 }
+
+/* 3. .dc-wrap: flex growth replaces fixed calc(100vh - 60px) */
 .dc-wrap {
     height: auto !important;
     flex: 1 !important;
     min-height: 0 !important;
     overflow: hidden !important;
 }
+
+/* 4. #aimc-wrap: same flex growth replaces fixed calc(100vh - 130px) */
+#aimc-wrap {
+    height: auto !important;
+    flex: 1 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
 /* ── Canvas editor layout: toolbar wraps, canvas area fills remaining height */
 /* Converts absolute-positioned toolbar+canvas to flex column.              */
 .dc-main {
@@ -2125,13 +2140,23 @@ body:has(.dc-wrap) {
     padding: 4px 12px !important;
     gap: 6px !important;
     row-gap: 4px !important;
+    z-index: 10;
 }
+/* Canvas area: flex growth + position:relative so absolute children fill it */
 .dc-canvas-area {
     position: relative !important;
     top: auto !important;
     bottom: auto !important;
-    height: 0 !important;       /* explicit value so child height:100% resolves in flex context */
-    flex: 1 1 0 !important;
+    left: auto !important;
+    right: auto !important;
+    flex: 1 !important;
     min-height: 0 !important;
-    overflow: auto !important;
+    overflow: hidden !important;
+}
+/* Canvas container: absolute-fill parent — bypasses height:100% % resolution issues */
+.dc-canvas-area > div:first-child {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
 }
