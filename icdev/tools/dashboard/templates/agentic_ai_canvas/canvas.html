@@ -19,6 +19,8 @@ body { overflow: hidden; height: 100vh; }
   box-shadow: 0 6px 24px rgba(0,0,0,0.6);
   max-height: calc(100vh - 200px); overflow-y: auto;
 }
+/* Keep menu open while mouse is anywhere inside the wrap (button OR items) */
+.aadc-menu-wrap:hover .aadc-menu-dd { display: block !important; }
 .aadc-menu-dd a,
 .aadc-menu-dd button {
   display: flex; align-items: center; gap: 8px;
