@@ -5,14 +5,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pipeline Design Canvas — ICDEV™</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/pipeline-canvas.css') }}?v=4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pipeline-canvas.css') }}?v=5">
   <script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/lodash.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/dagre.min.js') }}"></script>
 </head>
-<body style="margin:0; background:#ffffff;">
+<body style="margin:0;">
 {% if classification_banner %}
 <div class="pc-cui-banner">{{ classification_banner }}</div>
 {% endif %}
@@ -27,7 +27,7 @@
     <button class="tb-btn" onclick="redoAction()">↪ Redo</button>
     <button class="tb-btn" onclick="exportCanvasPDF()">📄 Export PDF</button>
     <input id="pc-pipeline-name" type="text" value="{{ pipeline_name }}"
-           style="background:#ffffff; border:1px solid #c9d3e0; color:#1a1a2e; padding:2px 6px; border-radius:3px; width:180px; font-size:12px;"
+           style="padding:2px 6px; border-radius:3px; width:180px; font-size:12px;"
            onchange="markDirty()">
   </div>
   <div class="tb-group">
@@ -55,8 +55,8 @@
     <button class="tb-btn" onclick="exportAs('runbook_manifest')" title="Runbook + chaos manifest">📋 Runbooks</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" style="background:#d5f0e0;color:#1e7e34;font-weight:700;border-color:#1e7e34;" onclick="validateIaC()" title="Validate generated IaC (syntax, schema, policy)">✓ Validate IaC</button>
-    <button class="tb-btn" style="background:#d6eaf8;color:#1a5276;font-weight:700;border-color:#1a5276;" onclick="deployBundle()" title="Generate IaC deployment bundle (Terraform + Helm + Ansible)">🚀 Deploy IaC</button>
+    <button class="tb-btn" style="background:#14532d;color:#4ade80;font-weight:700;border-color:#16a34a;" onclick="validateIaC()" title="Validate generated IaC (syntax, schema, policy)">✓ Validate IaC</button>
+    <button class="tb-btn" style="background:#1e3a5f;color:#60a5fa;font-weight:700;border-color:#2563eb;" onclick="deployBundle()" title="Generate IaC deployment bundle (Terraform + Helm + Ansible)">🚀 Deploy IaC</button>
   </div>
   <div class="tb-group">
     <button class="tb-btn" onclick="autoGroupByStage()" title="Auto-detect stages and draw boundary boxes">⬡ Auto Boundaries</button>
@@ -64,14 +64,14 @@
     <button class="tb-btn" onclick="toggleLegend()" title="Show/hide color legend">◧ Legend</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="runAnalysis('governance')" style="color:#6c3483;">🏛 Governance</button>
+    <button class="tb-btn" onclick="runAnalysis('governance')" style="color:#c084fc;">🏛 Governance</button>
     <button class="tb-btn" onclick="runScorecard()">📊 Scorecard</button>
     <button class="tb-btn" onclick="runAnalysis('security_coverage')">🛡 OWASP</button>
     <button class="tb-btn" onclick="runAnalysis('slsa')">🔗 SLSA</button>
     <button class="tb-btn" onclick="runAnalysis('compliance')">✓ Compliance</button>
     <button class="tb-btn" onclick="runAnalysis('cost')">💰 Cost</button>
     <button class="tb-btn" onclick="runAnalysis('antipatterns')">⚠ Anti-Patterns</button>
-    <a href="/sre" target="_blank" class="tb-btn" style="text-decoration:none;color:#117a8b;" title="Open SRE Operations Dashboard">📈 SRE Dashboard</a>
+    <a href="/sre" target="_blank" class="tb-btn" style="text-decoration:none;color:#38bdf8;" title="Open SRE Operations Dashboard">📈 SRE Dashboard</a>
   </div>
   <div class="tb-status" id="pc-status">Ready</div>
 </div>

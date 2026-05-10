@@ -810,6 +810,29 @@ def api_get_run(run_id: str):
     return jsonify(run)
 
 
+@studio_api.route("/workflows/runs/<run_id>/steps/<step_run_id>/approve", methods=["POST"])
+def api_approve_step(run_id: str, step_run_id: str):
+    from tools.studio.workflow_runner import approve_step
+    data = request.get_json(silent=True) or {}
+    actor = data.get("actor", "approver")
+    ok = approve_step(step_run_id, actor=actor)
+    if not ok:
+        return jsonify({"error": "No pending approval for this step — it may have already been resolved or timed out"}), 404
+    return jsonify({"status": "approved", "step_run_id": step_run_id})
+
+
+@studio_api.route("/workflows/runs/<run_id>/steps/<step_run_id>/reject", methods=["POST"])
+def api_reject_step(run_id: str, step_run_id: str):
+    from tools.studio.workflow_runner import reject_step
+    data = request.get_json(silent=True) or {}
+    reason = data.get("reason", "")
+    actor = data.get("actor", "approver")
+    ok = reject_step(step_run_id, reason=reason, actor=actor)
+    if not ok:
+        return jsonify({"error": "No pending approval for this step — it may have already been resolved or timed out"}), 404
+    return jsonify({"status": "rejected", "step_run_id": step_run_id})
+
+
 @studio_api.route("/workflows/runs/<run_id>", methods=["DELETE"])
 def api_delete_run(run_id: str):
     from tools.studio.workflow_runner import delete_run

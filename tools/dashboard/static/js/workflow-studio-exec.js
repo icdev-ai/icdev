@@ -538,6 +538,9 @@
     }
   };
 
+  // Track active approval-poll interval per modal
+  let _approvalPollTimer = null;
+
   StudioWF.showRunDetail = async function(runId) {
     const modal = $('wf-run-detail-modal');
     const body  = $('wf-run-detail-body');
@@ -546,6 +549,11 @@
     if (title) title.textContent = 'Run: ' + runId;
     body.innerHTML = '<div class="studio-spinner" style="margin:24px auto;"></div>';
     modal.style.display = '';
+    if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+    await _renderRunDetail(runId, body);
+  };
+
+  async function _renderRunDetail(runId, body) {
     try {
       const resp = await fetch('/api/studio/workflows/runs/' + runId);
       const run = await resp.json();
@@ -553,6 +561,7 @@
       const summary = _parseSummary(run.summary_json);
       const runArts = summary.artifacts || [];
       const detailStatus = (run.status === 'success' && summary.all_skipped) ? 'warning' : run.status;
+
       body.innerHTML = `
         <div style="margin-bottom:12px; padding:12px; background:var(--studio-bg,#161829);
              border-radius:6px; font-size:0.82rem;">
@@ -572,20 +581,75 @@
               const viewUrl = `/api/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
               return `<a href="${viewUrl}" target="_blank" style="color:#60a5fa;font-size:10px;margin-right:4px;">${_esc(a.name)}</a>`;
             }).join('');
+            const approvalBtns = s.status === 'awaiting_approval' ? `
+              <div style="margin-top:6px;display:flex;gap:6px;align-items:center;">
+                <span style="font-size:10px;color:#f59e0b;margin-right:4px;">⏳ Awaiting approval</span>
+                <button onclick="StudioWF.approveStep('${runId}','${s.step_run_id}')"
+                  style="font-size:10px;padding:3px 10px;background:#22c55e;color:#000;border:none;border-radius:4px;cursor:pointer;font-weight:700;">
+                  ✓ Approve
+                </button>
+                <button onclick="StudioWF.rejectStep('${runId}','${s.step_run_id}')"
+                  style="font-size:10px;padding:3px 10px;background:#ef4444;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700;">
+                  ✗ Reject
+                </button>
+              </div>` : '';
             return `<tr>
               <td>${_esc(s.step_name || s.step_id)}</td>
               <td>${_runStatusBadge(s.status)}</td>
               <td>${s.duration_ms ? s.duration_ms + 'ms' : '—'}</td>
               <td style="max-width:320px;color:var(--studio-text-muted,#94a3b8);font-family:var(--studio-font-mono);font-size:10px;">
                 ${artLinks || _esc((s.stdout || s.stderr || '—').slice(0, 150))}
+                ${approvalBtns}
               </td>
             </tr>`;
           }).join('')}
           </tbody>
         </table>`;
+
+      // Auto-poll every 4s while run is awaiting approval
+      if (run.status === 'awaiting_approval') {
+        if (!_approvalPollTimer) {
+          _approvalPollTimer = setInterval(async () => {
+            const modal = $('wf-run-detail-modal');
+            if (!modal || modal.style.display === 'none') {
+              clearInterval(_approvalPollTimer); _approvalPollTimer = null; return;
+            }
+            await _renderRunDetail(runId, body);
+          }, 4000);
+        }
+      } else {
+        if (_approvalPollTimer) { clearInterval(_approvalPollTimer); _approvalPollTimer = null; }
+      }
     } catch (e) {
       body.innerHTML = '<div style="color:#ef4444; padding:16px;">Failed to load run detail</div>';
     }
+  }
+
+  StudioWF.approveStep = async function(runId, stepRunId) {
+    if (!confirm('Approve this step and continue the workflow?')) return;
+    const resp = await fetch(`/api/studio/workflows/runs/${runId}/steps/${stepRunId}/approve`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({actor: 'DBA'})
+    });
+    const data = await resp.json();
+    if (!resp.ok) { alert('Approval failed: ' + (data.error || resp.status)); return; }
+    const body = $('wf-run-detail-body');
+    if (body) { body.innerHTML = '<div class="studio-spinner" style="margin:24px auto;"></div>'; }
+    setTimeout(() => _renderRunDetail(runId, body), 800);
+  };
+
+  StudioWF.rejectStep = async function(runId, stepRunId) {
+    const reason = prompt('Reason for rejection (optional):') ?? '';
+    if (reason === null) return; // cancelled
+    const resp = await fetch(`/api/studio/workflows/runs/${runId}/steps/${stepRunId}/reject`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({actor: 'DBA', reason})
+    });
+    const data = await resp.json();
+    if (!resp.ok) { alert('Rejection failed: ' + (data.error || resp.status)); return; }
+    const body = $('wf-run-detail-body');
+    if (body) { body.innerHTML = '<div class="studio-spinner" style="margin:24px auto;"></div>'; }
+    setTimeout(() => _renderRunDetail(runId, body), 800);
   };
 
   function _parseSummary(json) {
