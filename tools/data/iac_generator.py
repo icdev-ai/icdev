@@ -710,6 +710,270 @@ def _build_ansible_inventory(design_id: str, nodes: list, ts: str) -> str:
     return "\n".join(s for s in sections if s is not None)
 
 
+def _build_discovery_report(design_id: str, nodes: list, edges: list, ts: str) -> str:
+    """Executive discovery report — DDC equivalent of MDC Discovery Report."""
+    ts_fmt = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    by_type: dict = {}
+    for n in nodes:
+        t = n.get("type") or "unknown"
+        by_type.setdefault(t, []).append(n.get("label") or n.get("id", ""))
+
+    classifications = [n.get("classification") for n in nodes if n.get("classification")]
+    classification_summary = ", ".join(sorted(set(classifications))) if classifications else "Not tagged"
+    has_sensitive = any(t in by_type for t in ("ent-pii", "ent-phi", "ent-cui", "ent-classified", "ent-vector", "ent-file"))
+    has_encryption = any(t in by_type for t in ("ctrl-encrypt", "ctrl-kms", "ctrl-cmk", "ctrl-fips", "ctrl-encryption"))
+
+    inventory_rows = "\n".join(
+        f"| `{ntype}` | {len(labels)} | {', '.join(labels[:4])}{'…' if len(labels) > 4 else ''} |"
+        for ntype, labels in sorted(by_type.items())
+    )
+
+    findings = []
+    if has_sensitive and not has_encryption:
+        findings.append("⚠ **NIST SC-28 Gap** — Sensitive data nodes present with no encryption control")
+    if not edges:
+        findings.append("⚠ No data flow edges defined — lineage relationships are incomplete")
+    orphans = [n for n in nodes if not any(e.get("source") == n["id"] or e.get("target") == n["id"] for e in edges)]
+    if orphans:
+        findings.append(f"⚠ {len(orphans)} orphaned node(s) with no lineage connections")
+    if not findings:
+        findings.append("✓ No critical findings — design is ready for IaC generation")
+
+    findings_block = "\n".join(f"- {f}" for f in findings)
+
+    return f"""# Data Infrastructure Discovery Report
+**Design:** `{design_id}`
+**Generated:** {ts_fmt}
+**Classification:** CUI
+
+---
+
+## Executive Summary
+
+This report documents the data infrastructure discovered from DDC canvas design
+`{design_id}`. It provides an inventory of all data assets, controls, and flows
+identified, along with a compliance assessment and readiness for IaC generation.
+
+| Metric | Value |
+|--------|-------|
+| Total Nodes | {len(nodes)} |
+| Total Edges (data flows) | {len(edges)} |
+| Data Stores | {sum(len(v) for k, v in by_type.items() if k.startswith("ent-"))} |
+| Control Nodes | {sum(len(v) for k, v in by_type.items() if k.startswith("ctrl-"))} |
+| Flow/API Nodes | {sum(len(v) for k, v in by_type.items() if k.startswith("flow"))} |
+| Classification Tags | {classification_summary} |
+| Encryption Coverage | {"✓ Present" if has_encryption else "✗ Not found"} |
+
+---
+
+## Node Inventory
+
+| Type | Count | Labels |
+|------|-------|--------|
+{inventory_rows}
+
+---
+
+## Data Flow Summary
+
+{"**" + str(len(edges)) + " data flow edge(s) defined** connecting data stores, APIs, and controls." if edges else "**No data flow edges defined.** Add edges in the DDC canvas to capture lineage."}
+
+---
+
+## Key Findings
+
+{findings_block}
+
+---
+
+## Compliance Posture
+
+- **NIST 800-53 SC-28 (Protection of Information at Rest):** {"✓ Encryption control node present" if has_encryption else "✗ No encryption control — add ctrl-kms or ctrl-encryption node"}
+- **Backup/Recovery:** {"✓ Backup control present" if any(t in by_type for t in ("ctrl-backup", "ctrl-snapshot", "ctrl-dr", "ctrl-backup-policy")) else "⚠ No backup control node detected"}
+- **Audit Logging:** {"✓ Audit log control present" if "ctrl-audit-log" in by_type else "⚠ No ctrl-audit-log node — CloudTrail not provisioned"}
+
+---
+
+## Recommendation
+
+Proceed with IaC generation. Review all findings above before applying Terraform.
+Obtain DBA approval (Step 4 — DBA Approval gate) before routing production traffic.
+"""
+
+
+def _build_migration_runbook(design_id: str, nodes: list, ts: str) -> str:
+    """Step-by-step deployment runbook — DDC equivalent of MDC Migration Runbook."""
+    ts_fmt = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    db_nodes = [n for n in nodes if any(k in (n.get("type") or "") for k in ("ent-rds", "ent-db", "ent-vector", "ent-graph", "ent-warehouse", "ent-cache", "ent-redis", "ent-file", "ent-kafka"))]
+    ctrl_nodes = [n for n in nodes if (n.get("type") or "").startswith("ctrl-")]
+
+    resource_list = "\n".join(f"  - `{n.get('label', n.get('id',''))}` ({n.get('type','')})" for n in nodes)
+
+    rollback_steps = []
+    for n in db_nodes:
+        label = n.get("label") or n.get("id", "")
+        rollback_steps.append(f"  - `terraform destroy -target <resource>.{label}` if provisioning failed")
+
+    rollback_block = "\n".join(rollback_steps) if rollback_steps else "  - `terraform destroy` for full teardown"
+
+    return f"""# Data Infrastructure Migration Runbook
+**Design:** `{design_id}`
+**Generated:** {ts_fmt}
+**Classification:** CUI
+
+---
+
+## Overview
+
+This runbook documents the step-by-step procedure to deploy the data infrastructure
+defined in DDC design `{design_id}`. Execute phases in order. Do not proceed to the
+next phase until the current phase is verified complete.
+
+**Resources in scope:** {len(nodes)} nodes ({len(db_nodes)} data stores, {len(ctrl_nodes)} controls)
+
+{resource_list}
+
+---
+
+## Phase 1 — Pre-Deployment Preparation
+
+**Estimated time:** 15 minutes
+
+1. Confirm AWS credentials are active for target account:
+   ```bash
+   aws sts get-caller-identity
+   ```
+2. Verify VPC and subnet IDs exist in target region:
+   ```bash
+   aws ec2 describe-vpcs --region us-gov-west-1
+   ```
+3. Copy and populate tfvars:
+   ```bash
+   cp terraform.tfvars.example terraform.tfvars
+   vi terraform.tfvars  # fill in vpc_id, subnet_ids, passwords
+   ```
+4. Initialize Terraform backend:
+   ```bash
+   terraform init -backend-config=backend.hcl
+   ```
+5. Run plan and review — zero unexpected destroys:
+   ```bash
+   terraform plan -var-file=terraform.tfvars -out=tfplan.bin
+   ```
+6. **Gate:** DBA reviews `tfplan.bin` output. Sign off before proceeding.
+
+---
+
+## Phase 2 — Security Controls Deployment
+
+**Estimated time:** 10 minutes
+
+Deploy KMS keys, backup vaults, and IAM roles first (other resources depend on them).
+
+```bash
+terraform apply -var-file=terraform.tfvars -target=aws_kms_key \\
+  -target=aws_kms_alias -target=aws_backup_vault \\
+  -target=aws_backup_plan -target=aws_iam_role
+```
+
+**Verify:**
+- KMS keys status: `Enabled`
+- Key rotation: `true`
+- Backup vault created
+
+---
+
+## Phase 3 — Network Boundary Deployment
+
+**Estimated time:** 5 minutes
+
+```bash
+terraform apply -var-file=terraform.tfvars -target=aws_security_group
+```
+
+**Verify:**
+- Security groups created with correct VPC association
+- Egress rules match policy
+
+---
+
+## Phase 4 — Data Store Provisioning
+
+**Estimated time:** 20–40 minutes (RDS/Neptune take time to initialize)
+
+```bash
+terraform apply -var-file=terraform.tfvars
+```
+
+Monitor provisioning:
+```bash
+aws rds describe-db-instances --query 'DBInstances[*].[DBInstanceIdentifier,DBInstanceStatus]'
+aws neptune describe-db-clusters --query 'DBClusters[*].[DBClusterIdentifier,Status]'
+```
+
+**Wait until all data stores report:** `available`
+
+---
+
+## Phase 5 — Post-Provisioning Configuration (Ansible)
+
+**Estimated time:** 10 minutes
+
+Export Terraform outputs for Ansible:
+```bash
+terraform output -json > terraform_outputs.json
+python3 -c "
+import json, yaml
+out = json.load(open('terraform_outputs.json'))
+yaml.dump({{k: v['value'] for k, v in out.items()}}, open('terraform_outputs.yml','w'))
+"
+```
+
+Run Ansible playbook:
+```bash
+ansible-playbook -i ansible_inventory_*.ini ansible_playbook_*.yml
+```
+
+---
+
+## Phase 6 — Validation
+
+**Estimated time:** 10 minutes
+
+Run automated validation:
+```bash
+python validate_*.py --region us-gov-west-1
+```
+
+Complete manual validation checklist (`validation_checklist_*.md`).
+
+**Gate:** All automated checks PASS + DBA signs off checklist before traffic is routed.
+
+---
+
+## Rollback Procedure
+
+If any phase fails, execute targeted destroy in reverse order:
+
+{rollback_block}
+
+Full rollback:
+```bash
+terraform destroy -var-file=terraform.tfvars
+```
+
+---
+
+## Sign-off
+
+| Role | Name | Signature | Date |
+|------|------|-----------|------|
+| DBA Lead | | | |
+| Security Officer | | | |
+| Program Manager | | | |
+"""
+
+
 def _build_validation_checklist(design_id: str, nodes: list, ts: str) -> str:
     """DBA validation checklist — MDC-equivalent Validation Checklist."""
     ts_fmt = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -800,6 +1064,7 @@ def generate_iac(project_id: str) -> dict:
 
     for did, d in designs.items():
         nodes = d["nodes"]
+        edges = d["edges"]
         classification = next((n.get("classification") for n in nodes if n.get("classification")), "CUI")
 
         blocks = [_TF_HEADER.format(design_id=did, ts=ts, classification=classification)]
@@ -830,7 +1095,9 @@ def generate_iac(project_id: str) -> dict:
         wave_plan_yaml = _ARTIFACTS_DIR / f"data_plan_{uid}.yaml"
         ansible_pb = _ARTIFACTS_DIR / f"ansible_playbook_{uid}.yml"
         ansible_inv = _ARTIFACTS_DIR / f"ansible_inventory_{uid}.ini"
+        runbook_md = _ARTIFACTS_DIR / f"migration_runbook_{uid}.md"
         checklist_md = _ARTIFACTS_DIR / f"validation_checklist_{uid}.md"
+        discovery_md = _ARTIFACTS_DIR / f"discovery_report_{uid}.md"
 
         main_tf.write_text("".join(blocks), encoding="utf-8")
         vars_tf.write_text(_TF_VARIABLES, encoding="utf-8")
@@ -839,7 +1106,9 @@ def generate_iac(project_id: str) -> dict:
         wave_plan_yaml.write_text(_build_wave_plan(did, nodes, ts), encoding="utf-8")
         ansible_pb.write_text(_build_ansible_playbook(did, nodes, ts), encoding="utf-8")
         ansible_inv.write_text(_build_ansible_inventory(did, nodes, ts), encoding="utf-8")
+        runbook_md.write_text(_build_migration_runbook(did, nodes, ts), encoding="utf-8")
         checklist_md.write_text(_build_validation_checklist(did, nodes, ts), encoding="utf-8")
+        discovery_md.write_text(_build_discovery_report(did, nodes, edges, ts), encoding="utf-8")
 
         all_results.append({
             "design_id": did,
@@ -852,7 +1121,9 @@ def generate_iac(project_id: str) -> dict:
             "wave_plan_yaml": wave_plan_yaml.relative_to(_ROOT).as_posix(),
             "ansible_pb": ansible_pb.relative_to(_ROOT).as_posix(),
             "ansible_inv": ansible_inv.relative_to(_ROOT).as_posix(),
+            "runbook_md": runbook_md.relative_to(_ROOT).as_posix(),
             "checklist_md": checklist_md.relative_to(_ROOT).as_posix(),
+            "discovery_md": discovery_md.relative_to(_ROOT).as_posix(),
         })
 
     return {"designs": all_results, "project_id": project_id}
@@ -925,11 +1196,13 @@ def main():
                 {"name": "Terraform Main", "path": d["main_tf"], "type": "tf"},
                 {"name": "Terraform Variables", "path": d["vars_tf"], "type": "tf"},
                 {"name": "Terraform tfvars", "path": d["tfvars"], "type": "tf"},
-                {"name": "Data Validation Script", "path": d["validate_py"], "type": "py"},
+                {"name": "Discovery Report", "path": d["discovery_md"], "type": "md"},
                 {"name": "Wave Plan (YAML)", "path": d["wave_plan_yaml"], "type": "yaml"},
                 {"name": "Ansible Playbook", "path": d["ansible_pb"], "type": "yml"},
                 {"name": "Ansible Inventory", "path": d["ansible_inv"], "type": "ini"},
+                {"name": "Migration Runbook", "path": d["runbook_md"], "type": "md"},
                 {"name": "Validation Checklist", "path": d["checklist_md"], "type": "md"},
+                {"name": "Data Validation Script", "path": d["validate_py"], "type": "py"},
             ]
         artifacts.append({"name": "IaC Generation Report", "path": report_path.relative_to(_ROOT).as_posix(), "type": "md"})
 
