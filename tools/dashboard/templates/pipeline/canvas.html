@@ -72,6 +72,10 @@
     <button class="tb-btn" onclick="runAnalysis('cost')">💰 Cost</button>
     <button class="tb-btn" onclick="runAnalysis('antipatterns')">⚠ Anti-Patterns</button>
     <a href="/sre" target="_blank" class="tb-btn" style="text-decoration:none;color:#38bdf8;" title="Open SRE Operations Dashboard">📈 SRE Dashboard</a>
+    {% set wf_canvas_id = "pdc" %}
+    {% set wf_context_label = pipeline_name %}
+    {% set wf_design_id = pipeline_id %}
+    {% include 'includes/workflow_trigger_btn.html' %}
   </div>
   <div class="tb-status" id="pc-status">Ready</div>
 </div>

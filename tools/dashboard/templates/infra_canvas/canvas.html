@@ -151,6 +151,11 @@
       <button class="secondary analysis" onclick="canvasValidateIaC()" title="Validate IaC" style="color:#27ae60;">Validate IaC</button>
       <button class="secondary analysis" onclick="canvasDeployIaC()" title="Deploy IaC Bundle" style="color:#27ae60;">Deploy IaC</button>
       <button class="secondary analysis" onclick="openIaCPanel()" title="Generate IaC — Terraform &amp; Ansible" style="color:#00bcd4;border-color:#00bcd4;">Generate IaC</button>
+      <!-- Workflow -->
+      {% set wf_canvas_id = "idc" %}
+      {% set wf_context_label = design.name %}
+      {% set wf_design_id = design.id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
       <!-- Navigation -->
       <button class="secondary" onclick="location.href='/infra/'" title="Back to Dashboard">Back</button>
     </div>
