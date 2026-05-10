@@ -136,6 +136,7 @@ def build_schema_json(result: dict) -> dict:
 def main():
     parser = argparse.ArgumentParser(description="Schema Checker")
     parser.add_argument("--project-id", default="default")
+    parser.add_argument("--run-id", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 

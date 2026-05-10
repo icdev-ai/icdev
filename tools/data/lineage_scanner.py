@@ -92,6 +92,7 @@ def build_report(designs: dict, project_id: str) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Data Lineage Scanner")
     parser.add_argument("--project-id", default="default")
+    parser.add_argument("--run-id", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
