@@ -1,178 +1,80 @@
-"""Terraform Destroy — DDC Teardown Workflow Step 2.
+"""Terraform Destroy — Shared Workflow Executor (canvas-agnostic).
 
-Destroys all infrastructure created by terraform_apply.py.
-Finds the Terraform state file from a prior apply (by run_id or most-recent)
-and runs `terraform destroy -auto-approve` in Docker.
+Destroys infrastructure created by terraform_apply.py.
+Finds the Terraform state file from a prior apply run (via DB or most-recent)
+and runs `terraform destroy -auto-approve` inside Docker (hashicorp/terraform:1.9).
 
-SAFETY: Requires explicit confirmation — this is irreversible.
-        In the DDC workflow, gate via a HITL approval step before this runs.
+Modes (auto-detected from .env):
+  aws        — destroys real AWS resources (irreversible — gate with HITL first)
+  localstack — destroys LocalStack resources
+  sam        — destroys SAM local resources
+  dry_run    — no credentials → shows plan of what WOULD be destroyed (safe)
 
-State file location: data/studio_artifacts/ddc/tfstate/state_<uid>.tfstate
+Canvas auto-detected from run artifacts; override with --canvas.
+State file location: data/studio_artifacts/<canvas>/tfstate/state_<uid>.tfstate
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-_ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "ddc"
-_TFSTATE_DIR = _ARTIFACTS_DIR / "tfstate"
+from tools.studio.executors._base import (  # noqa: E402
+    artifacts_dir, resolve_canvas, get_iac_artifacts, filter_artifacts,
+    aws_env, detect_mode, docker_aws_flags, docker_available, pull_image,
+    docker_run, localstack_docker_endpoint,
+    LOCALSTACK_PROVIDER_OVERRIDE, TFVARS_DEFAULTS,
+)
+
 _TF_IMAGE = "hashicorp/terraform:1.9"
 
-_LOCALSTACK_OVERRIDE_TPL = """\
-provider "aws" {{
-  access_key                  = "test"
-  secret_key                  = "test"
-  region                      = "{region}"
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  skip_requesting_account_id  = true
-  endpoints {{
-    s3          = "{ep}"
-    ec2         = "{ep}"
-    rds         = "{ep}"
-    neptune     = "{ep}"
-    elasticache = "{ep}"
-    iam         = "{ep}"
-    ssm         = "{ep}"
-    sts         = "{ep}"
-    kms         = "{ep}"
-  }}
-}}
-"""
 
-
-def _load_dotenv() -> dict:
-    try:
-        from dotenv import dotenv_values
-        return dotenv_values(_ROOT / ".env")
-    except Exception:
-        return {}
-
-
-def _aws_env() -> dict[str, str]:
-    import os as _os
-    merged = {**_os.environ, **_load_dotenv()}
-    keys = ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION",
-            "AWS_SESSION_TOKEN", "AWS_REGION", "LOCALSTACK_ENDPOINT", "AWS_SAM_LOCAL"]
-    return {k: merged[k] for k in keys if merged.get(k)}
-
-
-def _detect_mode(env: dict) -> str:
-    if env.get("LOCALSTACK_ENDPOINT"):
-        return "localstack"
-    if env.get("AWS_SAM_LOCAL", "").lower() in ("true", "1"):
-        return "sam"
-    if env.get("AWS_ACCESS_KEY_ID"):
-        return "aws"
-    return "dry_run"
-
-
-def _localstack_endpoint_for_docker(ep: str) -> str:
-    return ep.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
-
-
-def _get_iac_artifacts(run_id: str) -> list[dict]:
-    try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
+def _find_state_for_run(run_id: str, tfstate_dir: Path) -> Path | None:
+    """Locate the state file written by the Terraform Apply step for this run."""
+    if run_id:
         try:
-            row = conn.execute(
-                "SELECT stdout FROM studio_workflow_run_steps "
-                "WHERE run_id = ? AND step_name = 'Generate IaC'",
-                (run_id,),
-            ).fetchone()
-            if row and row["stdout"]:
-                return json.loads(row["stdout"]).get("artifacts", [])
-        finally:
-            conn.close()
-    except Exception:
-        pass
-    return []
+            from tools.db.storage import get_connection
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT stdout FROM studio_workflow_run_steps "
+                    "WHERE run_id = ? AND step_name = 'Terraform Apply'",
+                    (run_id,),
+                ).fetchone()
+                if row and row["stdout"]:
+                    arts = json.loads(row["stdout"]).get("artifacts", [])
+                    for a in arts:
+                        if a.get("type") == "tfstate":
+                            p = _ROOT / a["path"]
+                            if p.exists():
+                                return p
+            finally:
+                conn.close()
+        except Exception:
+            pass
 
-
-def _find_state_for_run(run_id: str) -> Path | None:
-    """Find state file produced by the apply step for this run."""
-    try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
-        try:
-            row = conn.execute(
-                "SELECT stdout FROM studio_workflow_run_steps "
-                "WHERE run_id = ? AND step_name = 'Terraform Apply'",
-                (run_id,),
-            ).fetchone()
-            if row and row["stdout"]:
-                arts = json.loads(row["stdout"]).get("artifacts", [])
-                for a in arts:
-                    if a.get("type") == "tfstate":
-                        p = _ROOT / a["path"]
-                        if p.exists():
-                            return p
-        finally:
-            conn.close()
-    except Exception:
-        pass
-    # Fallback: most recent state file
-    if _TFSTATE_DIR.exists():
-        states = sorted(_TFSTATE_DIR.glob("state_*.tfstate"),
+    # Fallback: most recent state file in this canvas's tfstate directory
+    if tfstate_dir.exists():
+        states = sorted(tfstate_dir.glob("state_*.tfstate"),
                         key=lambda p: p.stat().st_mtime, reverse=True)
         return states[0] if states else None
     return None
 
 
-def _docker_available() -> bool:
-    try:
-        subprocess.run(["docker", "info"], capture_output=True, timeout=5, check=True)
-        return True
-    except Exception:
-        return False
-
-
-def _pull_image() -> bool:
-    try:
-        r = subprocess.run(["docker", "image", "inspect", _TF_IMAGE], capture_output=True, timeout=10)
-        if r.returncode == 0:
-            return True
-        subprocess.run(["docker", "pull", _TF_IMAGE], capture_output=True, timeout=120, check=True)
-        return True
-    except Exception:
-        return False
-
-
-def _docker_run(workspace: str, env_vars: list[str], *args: str, timeout: int = 600) -> tuple[int, str, str]:
-    ws_posix = Path(workspace).as_posix()
-    cmd = [
-        "docker", "run", "--rm",
-        "-v", f"{ws_posix}:/workspace",
-        "-w", "/workspace",
-        *env_vars,
-        "--entrypoint", "terraform",
-        _TF_IMAGE,
-        *args,
-    ]
-    try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        return r.returncode, r.stdout, r.stderr
-    except subprocess.TimeoutExpired:
-        return 1, "", f"Timed out after {timeout}s"
-    except Exception as e:
-        return 1, "", str(e)
-
-
-def run_destroy(run_id: str, project_id: str) -> dict:
-    env = _aws_env()
-    mode = _detect_mode(env)
+def run_destroy(run_id: str, project_id: str, canvas: str = "") -> dict:
+    canvas = resolve_canvas(run_id, canvas)
+    out_dir = artifacts_dir(canvas)
+    tfstate_dir = out_dir / "tfstate"
+    env = aws_env()
+    mode = detect_mode(env)
     dry_run = (mode == "dry_run")
 
     findings: list[dict] = []
@@ -182,17 +84,17 @@ def run_destroy(run_id: str, project_id: str) -> dict:
     resources_destroyed: list[str] = []
 
     findings.append({"severity": "info", "check": "mode",
-                      "message": f"Mode: {mode.upper()}"
-                                 + (" — plan only (no credentials)" if dry_run else "")})
+                      "message": f"Mode: {mode.upper()} — "
+                                 + ("plan only (no credentials — showing what WOULD be destroyed)"
+                                    if dry_run else
+                                    f"destroying real {'LocalStack' if mode == 'localstack' else 'AWS'} resources")})
 
-    # Find state file
-    state_file = _find_state_for_run(run_id)
+    state_file = _find_state_for_run(run_id, tfstate_dir)
     if not state_file:
         return {
-            "gate": "WARN",
-            "mode": mode,
+            "gate": "WARN", "mode": mode, "canvas": canvas,
             "findings": [{"severity": "warn", "check": "no_state",
-                           "message": "No Terraform state file found. Nothing to destroy. "
+                           "message": f"No Terraform state file found for canvas '{canvas}'. "
                                       "Run Terraform Apply first, or supply --run-id of an applied run."}],
             "resources_destroyed": 0,
         }
@@ -200,15 +102,14 @@ def run_destroy(run_id: str, project_id: str) -> dict:
     findings.append({"severity": "info", "check": "state_file",
                       "message": f"Using state: {state_file.name}"})
 
-    # Find TF files matching the state
-    artifacts = _get_iac_artifacts(run_id)
-    tf_artifacts = [a for a in artifacts if a.get("type") == "tf"]
-    tf_paths = [_ROOT / a["path"] for a in tf_artifacts if (_ROOT / a["path"]).exists()]
+    # Locate the matching TF files
+    iac_arts = get_iac_artifacts(run_id)
+    tf_paths = filter_artifacts(iac_arts, ["tf"])
 
     if not tf_paths:
-        # Try to find TF files from the state file's uid
+        # Derive state uid and look for corresponding TF files
         state_uid = state_file.stem.replace("state_", "")
-        tf_dir = _ARTIFACTS_DIR / "terraform"
+        tf_dir = out_dir / "terraform"
         main_tf = tf_dir / f"main_{state_uid}.tf"
         if main_tf.exists():
             tf_paths = [main_tf]
@@ -216,100 +117,86 @@ def run_destroy(run_id: str, project_id: str) -> dict:
             if vars_tf.exists():
                 tf_paths.append(vars_tf)
 
-    if not tf_paths and not dry_run:
+    if not tf_paths:
         findings.append({"severity": "warn", "check": "no_tf",
-                          "message": "No matching TF files found — destroy may be incomplete"})
+                          "message": "No matching TF files found — destroy may be incomplete without provider config"})
 
-    if not _docker_available() or not _pull_image():
+    if not docker_available() or not pull_image(_TF_IMAGE):
         findings.append({"severity": "fail", "check": "docker",
                           "message": "Docker unavailable — cannot run terraform destroy"})
         gate = "FAIL"
     else:
-        docker_env: list[str] = []
-        if mode == "aws":
-            for k in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION",
-                      "AWS_SESSION_TOKEN", "AWS_REGION"]:
-                if env.get(k):
-                    docker_env += ["-e", f"{k}={env[k]}"]
-        elif mode in ("localstack", "sam"):
-            docker_env += ["-e", "AWS_ACCESS_KEY_ID=test",
-                           "-e", "AWS_SECRET_ACCESS_KEY=test",
-                           "-e", f"AWS_DEFAULT_REGION={env.get('AWS_DEFAULT_REGION', 'us-east-1')}"]
-
+        docker_env = docker_aws_flags(env, mode)
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
 
-            # Copy TF files
             for p in tf_paths:
                 shutil.copy2(p, tmp_path / p.name)
 
-            # Copy state file — REQUIRED for destroy
+            # State file is REQUIRED for destroy
             shutil.copy2(state_file, tmp_path / "terraform.tfstate")
+            findings.append({"severity": "info", "check": "state_loaded",
+                              "message": f"State loaded from {state_file.name}"})
 
-            # Inject LocalStack override
             if mode in ("localstack", "sam"):
                 raw_ep = env.get("LOCALSTACK_ENDPOINT", "http://localhost:4566")
-                docker_ep = _localstack_endpoint_for_docker(raw_ep)
+                docker_ep = localstack_docker_endpoint(raw_ep)
                 region = env.get("AWS_DEFAULT_REGION", "us-east-1")
                 (tmp_path / "localstack_override.tf").write_text(
-                    _LOCALSTACK_OVERRIDE_TPL.format(ep=docker_ep, region=region),
+                    LOCALSTACK_PROVIDER_OVERRIDE.format(ep=docker_ep, region=region),
                     encoding="utf-8",
                 )
+                findings.append({"severity": "info", "check": "localstack_override",
+                                  "message": f"Provider overridden → {docker_ep}"})
 
-            # Inject tfvars
-            (tmp_path / "auto.tfvars").write_text(
-                'vpc_id              = "vpc-00000000"\n'
-                'private_subnet_ids  = ["subnet-00000000"]\n'
-                'db_password         = "changeme-rotate-immediately"\n'
-                'dw_password         = "changeme-rotate-immediately"\n'
-                'artifacts_bucket    = "icdev-artifacts"\n',
-                encoding="utf-8",
-            )
+            (tmp_path / "auto.tfvars").write_text(TFVARS_DEFAULTS, encoding="utf-8")
 
-            # Init
-            rc, out, err = _docker_run(tmp, docker_env,
-                                        "init", "-backend=false", "-input=false", "-no-color",
-                                        timeout=180)
+            rc, out, err = docker_run(_TF_IMAGE, tmp, docker_env, "terraform",
+                                       "init", "-backend=false", "-input=false", "-no-color",
+                                       timeout=180)
             if rc != 0:
                 findings.append({"severity": "fail", "check": "terraform_init",
                                   "message": f"Init failed: {err[:400]}"})
                 gate = "FAIL"
             else:
+                findings.append({"severity": "pass", "check": "terraform_init",
+                                  "message": "Init OK"})
+
                 if dry_run:
-                    # Show what would be destroyed
-                    rc, out, err = _docker_run(tmp, docker_env,
-                                                "plan", "-destroy", "-input=false", "-no-color",
-                                                timeout=300)
-                    for line in (out or err or "").splitlines():
+                    rc, out, err = docker_run(_TF_IMAGE, tmp, docker_env, "terraform",
+                                               "plan", "-destroy", "-input=false", "-no-color",
+                                               timeout=300)
+                    for line in (out or "").splitlines():
                         if "will be destroyed" in line or "destroy" in line.lower():
                             resources_destroyed.append(line.strip())
-                    findings.append({"severity": "pass", "check": "destroy_plan",
-                                      "message": f"[dry-run] Plan shows {len(resources_destroyed)} resource(s) would be destroyed"})
+                    sev = "pass" if rc == 0 else "warn"
+                    findings.append({"severity": sev, "check": "destroy_plan",
+                                      "message": f"[dry-run] {len(resources_destroyed)} resource(s) would be destroyed"})
                 else:
-                    rc, out, err = _docker_run(tmp, docker_env,
-                                                "destroy", "-auto-approve", "-input=false", "-no-color",
-                                                timeout=600)
+                    rc, out, err = docker_run(_TF_IMAGE, tmp, docker_env, "terraform",
+                                               "destroy", "-auto-approve", "-input=false", "-no-color",
+                                               timeout=600)
                     if rc == 0:
-                        for line in out.splitlines():
+                        for line in (out or "").splitlines():
                             if "destroyed" in line.lower() or "Destroy complete" in line:
                                 resources_destroyed.append(line.strip())
 
-                        # Remove the state file — environment is gone
+                        # Remove state file — environment is gone
                         state_file.unlink(missing_ok=True)
                         findings.append({"severity": "pass", "check": "terraform_destroy",
-                                          "message": f"Destroy complete — {len(resources_destroyed)} resource(s) removed. State file deleted."})
+                                          "message": f"Destroy complete — {len(resources_destroyed)} resource(s) removed. State deleted."})
                     else:
-                        combined = (out + err).strip()
                         findings.append({"severity": "fail", "check": "terraform_destroy",
-                                          "message": combined[:600]})
+                                          "message": (out + err).strip()[:600]})
                         gate = "FAIL"
 
-    fails = [f for f in findings if f["severity"] == "fail"]
-    gate = "FAIL" if fails else gate
+    if any(f["severity"] == "fail" for f in findings):
+        gate = "FAIL"
 
     lines = [
-        "# Terraform Destroy Report",
+        f"# Terraform Destroy Report — {canvas.upper()}",
         f"**Generated:** {ts}  ",
+        f"**Canvas:** {canvas}  ",
         f"**Project:** {project_id}  ",
         f"**Mode:** {mode.upper()}  ",
         f"**Gate:** {'✓ PASS' if gate == 'PASS' else '⚠ WARN' if gate == 'WARN' else '✗ FAIL'}  ",
@@ -328,19 +215,17 @@ def run_destroy(run_id: str, project_id: str) -> dict:
             lines.append("")
 
     if resources_destroyed:
-        action = "Would destroy" if dry_run else "Destroyed"
+        action = "Would Destroy (dry-run)" if dry_run else "Destroyed Resources"
         lines += [f"## {action}", ""]
         for r in resources_destroyed[:30]:
             lines.append(f"- `{r}`")
         lines.append("")
 
-    _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    report_path = _ARTIFACTS_DIR / f"destroy_report_{uid}.md"
+    report_path = out_dir / f"destroy_report_{uid}.md"
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
     return {
-        "gate": gate,
-        "mode": mode,
+        "gate": gate, "mode": mode, "canvas": canvas,
         "findings": findings,
         "resources_destroyed": len(resources_destroyed),
         "report_path": report_path.relative_to(_ROOT).as_posix(),
@@ -348,26 +233,23 @@ def run_destroy(run_id: str, project_id: str) -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Terraform Destroy")
+    parser = argparse.ArgumentParser(description="Terraform Destroy (shared executor)")
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--canvas", default="", help="Canvas slug (auto-detected if omitted)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-
     try:
-        result = run_destroy(args.run_id, args.project_id)
+        result = run_destroy(args.run_id, args.project_id, args.canvas)
         gate = result["gate"]
         output = {
             "status": "success" if gate in ("PASS", "WARN") else "failed",
-            "gate": gate,
-            "mode": result["mode"],
+            "gate": gate, "canvas": result["canvas"], "mode": result["mode"],
             "resources_destroyed": result["resources_destroyed"],
             "findings": len(result["findings"]),
             "failures": sum(1 for f in result["findings"] if f["severity"] == "fail"),
-            "artifacts": [
-                {"name": "Terraform Destroy Report",
-                 "path": result["report_path"], "type": "md"},
-            ],
+            "artifacts": [{"name": "Terraform Destroy Report",
+                           "path": result["report_path"], "type": "md"}],
         }
         print(json.dumps(output))
         sys.exit(0 if gate in ("PASS", "WARN") else 1)

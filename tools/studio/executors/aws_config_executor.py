@@ -1,108 +1,51 @@
-"""AWS Config Executor — DDC Workflow Step 11.
+"""AWS Config Executor — Shared Workflow Executor (canvas-agnostic).
 
-AWS-native post-provisioning (replaces Ansible for managed services).
-Uses boto3 to:
-  1. Wait for RDS instances to become available
-  2. Wait for ElastiCache replication groups to become available
-  3. Verify Neptune cluster health
-  4. Store connection strings in SSM Parameter Store
-  5. Verify S3 bucket accessibility
+AWS-native post-provisioning step (replaces Ansible for managed services).
+Uses boto3 to verify and configure resources after Terraform Apply:
+  1. Wait/check RDS instances → available
+  2. Wait/check Neptune clusters → available
+  3. Wait/check ElastiCache replication groups → available
+  4. Verify S3 bucket accessibility
+  5. Store resource IDs in SSM Parameter Store for downstream use
 
-Supports:
-  Real AWS   — AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION in .env
-  LocalStack — LOCALSTACK_ENDPOINT=http://localhost:4566 in .env
-  SAM local  — AWS_SAM_LOCAL=true in .env
-  Dry-run    — no credentials → reports what WOULD be verified/configured
+Modes (auto-detected from .env):
+  aws        — real AWS (AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_DEFAULT_REGION)
+  localstack — LocalStack (LOCALSTACK_ENDPOINT=http://localhost:4566)
+  sam        — SAM local (AWS_SAM_LOCAL=true)
+  dry_run    — no credentials → reports what WOULD be verified/configured (safe)
+
+Canvas auto-detected from run artifacts; override with --canvas.
+SSM params stored under: /icdev/<canvas>/<service>/<key>
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[2]
+_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
-_ARTIFACTS_DIR = _ROOT / "data" / "studio_artifacts" / "ddc"
+from tools.studio.executors._base import (  # noqa: E402
+    artifacts_dir, resolve_canvas, get_iac_artifacts, filter_artifacts,
+    aws_env, detect_mode, boto3_client,
+)
 
 
-def _load_dotenv() -> dict:
-    try:
-        from dotenv import dotenv_values
-        return dotenv_values(_ROOT / ".env")
-    except Exception:
-        return {}
-
-
-def _aws_config(service: str):
-    """Build boto3 client config, applying LocalStack/SAM endpoint override."""
-    import os
-    merged = {**os.environ, **_load_dotenv()}
-
-    kwargs: dict = {
-        "region_name": merged.get("AWS_DEFAULT_REGION") or merged.get("AWS_REGION") or "us-east-1",
-    }
-    endpoint = merged.get("LOCALSTACK_ENDPOINT")
-    if not endpoint and merged.get("AWS_SAM_LOCAL", "").lower() in ("true", "1"):
-        endpoint = "http://localhost:4566"
-    if endpoint:
-        kwargs["endpoint_url"] = endpoint
-        kwargs["aws_access_key_id"] = "test"
-        kwargs["aws_secret_access_key"] = "test"
-    elif merged.get("AWS_ACCESS_KEY_ID"):
-        kwargs["aws_access_key_id"] = merged["AWS_ACCESS_KEY_ID"]
-        kwargs["aws_secret_access_key"] = merged.get("AWS_SECRET_ACCESS_KEY", "")
-        if merged.get("AWS_SESSION_TOKEN"):
-            kwargs["aws_session_token"] = merged["AWS_SESSION_TOKEN"]
-
-    import boto3
-    return boto3.client(service, **kwargs)
-
-
-def _detect_mode() -> str:
-    import os
-    merged = {**os.environ, **_load_dotenv()}
-    if merged.get("LOCALSTACK_ENDPOINT"):
-        return "localstack"
-    if merged.get("AWS_SAM_LOCAL", "").lower() in ("true", "1"):
-        return "sam"
-    if merged.get("AWS_ACCESS_KEY_ID"):
-        return "aws"
-    return "dry_run"
-
-
-def _get_iac_artifacts(run_id: str) -> list[dict]:
-    try:
-        from tools.db.storage import get_connection
-        conn = get_connection()
-        try:
-            row = conn.execute(
-                "SELECT stdout FROM studio_workflow_run_steps "
-                "WHERE run_id = ? AND step_name = 'Generate IaC'",
-                (run_id,),
-            ).fetchone()
-            if row and row["stdout"]:
-                return json.loads(row["stdout"]).get("artifacts", [])
-        finally:
-            conn.close()
-    except Exception:
-        pass
-    return []
-
-
-def _extract_resources_from_tf(tf_paths: list[Path]) -> dict[str, list[str]]:
-    """Parse TF files to extract resource identifiers by type."""
-    import re
+def _extract_resources(tf_paths: list[Path]) -> dict[str, list[str]]:
+    """Parse TF files to extract resource identifiers by service type."""
     resources: dict[str, list[str]] = {
         "rds": [], "neptune": [], "elasticache": [], "s3": [],
     }
     for p in tf_paths:
         text = p.read_text(encoding="utf-8")
         for m in re.finditer(r'identifier\s*=\s*"([^"]+)"', text):
-            if "rds" in p.name or "db_instance" in text[:text.find(m.group(0))]:
+            pos = text.find(m.group(0))
+            if "db_instance" in text[:pos] or "rds" in p.name:
                 resources["rds"].append(m.group(1))
         for m in re.finditer(r'cluster_identifier\s*=\s*"([^"]+)"', text):
             if "neptune" in text[:text.find(m.group(0))]:
@@ -111,45 +54,37 @@ def _extract_resources_from_tf(tf_paths: list[Path]) -> dict[str, list[str]]:
             resources["elasticache"].append(m.group(1))
         for m in re.finditer(r'bucket\s*=\s*"([^"]+)"', text):
             val = m.group(1)
-            if not val.startswith("aws_"):  # skip references like aws_s3_bucket.x.id
+            if not val.startswith("aws_"):
                 resources["s3"].append(val)
-    # Deduplicate
+
     return {k: list(dict.fromkeys(v)) for k, v in resources.items()}
 
 
-def _check_rds(client, identifiers: list[str], findings: list[dict], dry_run: bool) -> bool:
-    all_ok = True
-    for iid in identifiers[:5]:  # limit to 5 to avoid long waits
+def _check_rds(client, identifiers: list[str], findings: list[dict], dry_run: bool) -> None:
+    for iid in identifiers[:5]:
         if dry_run:
-            findings.append({"severity": "info", "check": "rds_wait",
-                              "message": f"[dry-run] Would wait for RDS '{iid}' → available"})
+            findings.append({"severity": "info", "check": "rds_health",
+                              "message": f"[dry-run] Would verify RDS '{iid}' → available"})
             continue
         try:
             resp = client.describe_db_instances(DBInstanceIdentifier=iid)
             status = resp["DBInstances"][0]["DBInstanceStatus"]
-            if status == "available":
-                endpoint = resp["DBInstances"][0].get("Endpoint", {}).get("Address", "unknown")
-                findings.append({"severity": "pass", "check": "rds_health",
-                                  "message": f"RDS '{iid}': available at {endpoint}"})
-            else:
-                findings.append({"severity": "warn", "check": "rds_health",
-                                  "message": f"RDS '{iid}': status={status} (may still be provisioning)"})
-        except client.exceptions.DBInstanceNotFoundFault:
-            findings.append({"severity": "warn", "check": "rds_health",
-                              "message": f"RDS '{iid}': not found (may not be applied yet)"})
+            endpoint = resp["DBInstances"][0].get("Endpoint", {}).get("Address", "unknown")
+            sev = "pass" if status == "available" else "warn"
+            findings.append({"severity": sev, "check": "rds_health",
+                              "message": f"RDS '{iid}': {status}" + (f" at {endpoint}" if status == "available" else "")})
         except Exception as e:
-            findings.append({"severity": "warn", "check": "rds_health",
-                              "message": f"RDS '{iid}': {e}"})
-            all_ok = False
-    return all_ok
+            msg = str(e)
+            sev = "warn" if "NotFound" in msg or "not found" in msg.lower() else "warn"
+            findings.append({"severity": sev, "check": "rds_health",
+                              "message": f"RDS '{iid}': {msg[:200]}"})
 
 
-def _check_neptune(client, identifiers: list[str], findings: list[dict], dry_run: bool) -> bool:
-    all_ok = True
+def _check_neptune(client, identifiers: list[str], findings: list[dict], dry_run: bool) -> None:
     for iid in identifiers[:3]:
         if dry_run:
-            findings.append({"severity": "info", "check": "neptune_wait",
-                              "message": f"[dry-run] Would check Neptune '{iid}' → available"})
+            findings.append({"severity": "info", "check": "neptune_health",
+                              "message": f"[dry-run] Would verify Neptune '{iid}' → available"})
             continue
         try:
             resp = client.describe_db_clusters(DBClusterIdentifier=iid)
@@ -157,18 +92,17 @@ def _check_neptune(client, identifiers: list[str], findings: list[dict], dry_run
             endpoint = resp["DBClusters"][0].get("Endpoint", "unknown")
             sev = "pass" if status == "available" else "warn"
             findings.append({"severity": sev, "check": "neptune_health",
-                              "message": f"Neptune '{iid}': {status} at {endpoint}"})
+                              "message": f"Neptune '{iid}': {status}" + (f" at {endpoint}" if status == "available" else "")})
         except Exception as e:
             findings.append({"severity": "warn", "check": "neptune_health",
-                              "message": f"Neptune '{iid}': {e}"})
-    return all_ok
+                              "message": f"Neptune '{iid}': {str(e)[:200]}"})
 
 
-def _check_elasticache(client, identifiers: list[str], findings: list[dict], dry_run: bool) -> bool:
+def _check_elasticache(client, identifiers: list[str], findings: list[dict], dry_run: bool) -> None:
     for iid in identifiers[:3]:
         if dry_run:
-            findings.append({"severity": "info", "check": "elasticache_wait",
-                              "message": f"[dry-run] Would check ElastiCache '{iid}' → available"})
+            findings.append({"severity": "info", "check": "elasticache_health",
+                              "message": f"[dry-run] Would verify ElastiCache '{iid}' → available"})
             continue
         try:
             resp = client.describe_replication_groups(ReplicationGroupId=iid)
@@ -178,11 +112,10 @@ def _check_elasticache(client, identifiers: list[str], findings: list[dict], dry
                               "message": f"ElastiCache '{iid}': {status}"})
         except Exception as e:
             findings.append({"severity": "warn", "check": "elasticache_health",
-                              "message": f"ElastiCache '{iid}': {e}"})
-    return True
+                              "message": f"ElastiCache '{iid}': {str(e)[:200]}"})
 
 
-def _check_s3(client, buckets: list[str], findings: list[dict], dry_run: bool) -> bool:
+def _check_s3(client, buckets: list[str], findings: list[dict], dry_run: bool) -> None:
     for bucket in buckets[:5]:
         if dry_run:
             findings.append({"severity": "info", "check": "s3_verify",
@@ -191,52 +124,48 @@ def _check_s3(client, buckets: list[str], findings: list[dict], dry_run: bool) -
         try:
             client.head_bucket(Bucket=bucket)
             findings.append({"severity": "pass", "check": "s3_verify",
-                              "message": f"S3 bucket '{bucket}': accessible"})
+                              "message": f"S3 '{bucket}': accessible"})
         except Exception as e:
             msg = str(e)
-            if "404" in msg or "NoSuchBucket" in msg:
-                findings.append({"severity": "warn", "check": "s3_verify",
-                                  "message": f"S3 '{bucket}': not found (may not be applied yet)"})
-            else:
-                findings.append({"severity": "warn", "check": "s3_verify",
-                                  "message": f"S3 '{bucket}': {msg[:200]}"})
-    return True
+            sev = "warn"
+            findings.append({"severity": sev, "check": "s3_verify",
+                              "message": f"S3 '{bucket}': {msg[:200]}"})
 
 
-def _store_ssm_params(ssm_client, resources: dict[str, list[str]],
+def _store_ssm_params(ssm, canvas: str, resources: dict[str, list[str]],
                       findings: list[dict], dry_run: bool) -> None:
-    """Store resource identifiers in SSM Parameter Store for downstream use."""
     params = {}
     if resources["rds"]:
-        params["/icdev/ddc/rds/primary_id"] = resources["rds"][0]
+        params[f"/icdev/{canvas}/rds/primary_id"] = resources["rds"][0]
     if resources["neptune"]:
-        params["/icdev/ddc/neptune/cluster_id"] = resources["neptune"][0]
+        params[f"/icdev/{canvas}/neptune/cluster_id"] = resources["neptune"][0]
     if resources["elasticache"]:
-        params["/icdev/ddc/elasticache/replication_group_id"] = resources["elasticache"][0]
+        params[f"/icdev/{canvas}/elasticache/replication_group_id"] = resources["elasticache"][0]
 
     for name, value in params.items():
         if dry_run:
             findings.append({"severity": "info", "check": "ssm_param",
-                              "message": f"[dry-run] Would store SSM param {name} = {value}"})
+                              "message": f"[dry-run] Would store SSM {name} = {value}"})
             continue
         try:
-            ssm_client.put_parameter(
-                Name=name, Value=value, Type="String", Overwrite=True,
-                Description="ICDEV DDC auto-provisioned resource ID",
-            )
+            ssm.put_parameter(Name=name, Value=value, Type="String", Overwrite=True,
+                              Description=f"ICDEV {canvas.upper()} auto-provisioned resource ID")
             findings.append({"severity": "pass", "check": "ssm_param",
                               "message": f"SSM stored: {name}"})
         except Exception as e:
             findings.append({"severity": "warn", "check": "ssm_param",
-                              "message": f"SSM write failed for {name}: {e}"})
+                              "message": f"SSM '{name}': {str(e)[:200]}"})
 
 
-def run_aws_config(run_id: str, project_id: str) -> dict:
-    mode = _detect_mode()
+def run_aws_config(run_id: str, project_id: str, canvas: str = "") -> dict:
+    canvas = resolve_canvas(run_id, canvas)
+    out_dir = artifacts_dir(canvas)
+    env = aws_env()
+    mode = detect_mode(env)
     dry_run = (mode == "dry_run")
-    artifacts = _get_iac_artifacts(run_id)
-    tf_artifacts = [a for a in artifacts if a.get("type") == "tf"]
-    tf_paths = [_ROOT / a["path"] for a in tf_artifacts if (_ROOT / a["path"]).exists()]
+
+    iac_arts = get_iac_artifacts(run_id)
+    tf_paths = filter_artifacts(iac_arts, ["tf"])
 
     findings: list[dict] = []
     gate = "PASS"
@@ -245,62 +174,58 @@ def run_aws_config(run_id: str, project_id: str) -> dict:
 
     findings.append({"severity": "info", "check": "mode",
                       "message": f"Mode: {mode.upper()} — "
-                                 + ("no credentials, reporting what would run" if dry_run
-                                    else f"executing against {'LocalStack' if 'local' in mode else 'AWS'}")})
+                                 + ("reporting what would run (no credentials)" if dry_run
+                                    else f"executing against {'LocalStack' if mode == 'localstack' else 'AWS'}")})
 
     if not tf_paths:
         findings.append({"severity": "warn", "check": "no_tf",
-                          "message": "No TF files found — using generic resource IDs"})
-        resources = {"rds": [], "neptune": [], "elasticache": [], "s3": []}
+                          "message": f"No TF files found for canvas '{canvas}' — skipping resource scan"})
+        resources: dict[str, list[str]] = {"rds": [], "neptune": [], "elasticache": [], "s3": []}
     else:
-        resources = _extract_resources_from_tf(tf_paths)
+        resources = _extract_resources(tf_paths)
         total = sum(len(v) for v in resources.values())
         findings.append({"severity": "info", "check": "resource_scan",
-                          "message": f"Found {total} resource identifiers: "
-                                     f"RDS={len(resources['rds'])}, "
-                                     f"Neptune={len(resources['neptune'])}, "
-                                     f"ElastiCache={len(resources['elasticache'])}, "
-                                     f"S3={len(resources['s3'])}"})
+                          "message": f"Scanned {len(tf_paths)} TF file(s) — found {total} resource identifier(s): "
+                                     f"RDS={len(resources['rds'])}, Neptune={len(resources['neptune'])}, "
+                                     f"ElastiCache={len(resources['elasticache'])}, S3={len(resources['s3'])}"})
 
     try:
         import boto3  # noqa: F401
-        boto3_available = True
+        boto3_ok = True
     except ImportError:
-        boto3_available = False
+        boto3_ok = False
         findings.append({"severity": "warn", "check": "boto3",
-                          "message": "boto3 not installed — run: pip install boto3"})
+                          "message": "boto3 not installed (pip install boto3) — running in simulation mode"})
         dry_run = True
 
-    if boto3_available:
+    if boto3_ok:
         try:
-            rds_client = _aws_config("rds")
-            neptune_client = _aws_config("neptune")
-            ec_client = _aws_config("elasticache")
-            s3_client = _aws_config("s3")
-            ssm_client = _aws_config("ssm")
-
             if resources["rds"]:
-                _check_rds(rds_client, resources["rds"], findings, dry_run)
+                _check_rds(boto3_client("rds"), resources["rds"], findings, dry_run)
             if resources["neptune"]:
-                _check_neptune(neptune_client, resources["neptune"], findings, dry_run)
+                _check_neptune(boto3_client("neptune"), resources["neptune"], findings, dry_run)
             if resources["elasticache"]:
-                _check_elasticache(ec_client, resources["elasticache"], findings, dry_run)
+                _check_elasticache(boto3_client("elasticache"), resources["elasticache"], findings, dry_run)
             if resources["s3"]:
-                _check_s3(s3_client, resources["s3"], findings, dry_run)
+                _check_s3(boto3_client("s3"), resources["s3"], findings, dry_run)
 
-            _store_ssm_params(ssm_client, resources, findings, dry_run)
+            _store_ssm_params(boto3_client("ssm"), canvas, resources, findings, dry_run)
 
         except Exception as e:
             findings.append({"severity": "warn", "check": "boto3_init",
-                              "message": f"Client init error: {e}"})
+                              "message": f"AWS client init error: {e}"})
 
-    fails = [f for f in findings if f["severity"] == "fail"]
-    gate = "FAIL" if fails else "PASS"
+    if not any(r for r in resources.values()):
+        findings.append({"severity": "info", "check": "no_resources",
+                          "message": "No AWS resources identified — nothing to verify"})
 
-    # Build report
+    if any(f["severity"] == "fail" for f in findings):
+        gate = "FAIL"
+
     lines = [
-        "# AWS Config Execution Report",
+        f"# AWS Config Execution Report — {canvas.upper()}",
         f"**Generated:** {ts}  ",
+        f"**Canvas:** {canvas}  ",
         f"**Project:** {project_id}  ",
         f"**Mode:** {mode.upper()}  ",
         f"**Gate:** {'✓ PASS' if gate == 'PASS' else '✗ FAIL'}  ",
@@ -318,37 +243,33 @@ def run_aws_config(run_id: str, project_id: str) -> dict:
                 lines.append(f"- **[{f['check']}]** {f['message'][:300]}")
             lines.append("")
 
-    _ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    report_path = _ARTIFACTS_DIR / f"aws_config_report_{uid}.md"
+    report_path = out_dir / f"aws_config_report_{uid}.md"
     report_path.write_text("\n".join(lines), encoding="utf-8")
 
     return {
-        "gate": gate,
-        "mode": mode,
+        "gate": gate, "mode": mode, "canvas": canvas,
         "findings": findings,
         "report_path": report_path.relative_to(_ROOT).as_posix(),
     }
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AWS Config Executor")
+    parser = argparse.ArgumentParser(description="AWS Config Executor (shared)")
     parser.add_argument("--project-id", default="default")
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--canvas", default="", help="Canvas slug (auto-detected if omitted)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
-
     try:
-        result = run_aws_config(args.run_id, args.project_id)
+        result = run_aws_config(args.run_id, args.project_id, args.canvas)
         gate = result["gate"]
         output = {
             "status": "success" if gate == "PASS" else "failed",
-            "gate": gate,
-            "mode": result["mode"],
+            "gate": gate, "canvas": result["canvas"], "mode": result["mode"],
             "findings": len(result["findings"]),
             "failures": sum(1 for f in result["findings"] if f["severity"] == "fail"),
-            "artifacts": [
-                {"name": "AWS Config Report", "path": result["report_path"], "type": "md"},
-            ],
+            "artifacts": [{"name": "AWS Config Report",
+                           "path": result["report_path"], "type": "md"}],
         }
         print(json.dumps(output))
         sys.exit(0 if gate == "PASS" else 1)
