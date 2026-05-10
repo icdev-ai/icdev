@@ -2501,6 +2501,17 @@ def create_app() -> Flask:
                 "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
                 (session_id,),
             ).fetchall()
+            # Look up the linked chat context so JS can auto-select it
+            auto_context_id = None
+            try:
+                ctx_row = conn.execute(
+                    "SELECT id FROM chat_contexts WHERE intake_session_id = ? LIMIT 1",
+                    (session_id,),
+                ).fetchone()
+                if ctx_row:
+                    auto_context_id = ctx_row["id"]
+            except Exception:
+                pass
             # Extract context for sidebar display
             import json as _json
 
@@ -2513,6 +2524,7 @@ def create_app() -> Flask:
             return render_template(
                 "chat.html",
                 session_id=session_id,
+                auto_context_id=auto_context_id,
                 session=session_dict,
                 messages=[dict(m) for m in messages],
                 wizard_goal=None,

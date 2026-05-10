@@ -451,6 +451,7 @@
 <script>
     window._CHAT_CONFIG = {
         sessionId: {{ session_id|tojson if session_id is defined else 'null' }},
+        autoContextId: {{ auto_context_id|tojson if auto_context_id is defined and auto_context_id else 'null' }},
         wizardGoal: {{ (wizard_goal or '')|tojson if wizard_goal is defined else '""' }},
         wizardRole: {{ (wizard_role or '')|tojson if wizard_role is defined else '""' }},
         wizardClassification: {{ (wizard_classification or '')|tojson if wizard_classification is defined else '""' }},
