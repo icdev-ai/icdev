@@ -1425,6 +1425,22 @@ def create_app() -> Flask:
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
 
+    # ---- Studio Artifact Download (bypass blueprint double-registration quirk) ----
+    @app.route("/api/studio/artifacts/<path:filepath>", methods=["GET"])
+    def studio_artifact_download(filepath: str):
+        import mimetypes
+        from flask import send_file as _sf, jsonify as _jf, request as _req
+        _artifacts_root = BASE_DIR / "data" / "studio_artifacts"
+        safe = (BASE_DIR / Path(filepath.replace("\\", "/"))).resolve()
+        if not str(safe).startswith(str(_artifacts_root.resolve())):
+            return _jf({"error": "Access denied"}), 403
+        if not safe.exists():
+            return _jf({"error": "Artifact not found", "path": str(safe)}), 404
+        mime, _ = mimetypes.guess_type(str(safe))
+        as_attachment = _req.args.get("download", "0") == "1"
+        return _sf(safe, mimetype=mime or "text/plain", as_attachment=as_attachment,
+                   download_name=safe.name)
+
     # ---- SRE Dashboard Page ----
     @app.route("/sre")
     def sre_dashboard_page():
