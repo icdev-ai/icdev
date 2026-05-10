@@ -13,12 +13,13 @@ body { overflow: hidden; height: 100vh; }
 /* ── AADC menu dropdown ── */
 .aadc-menu-wrap { position: relative; }
 .aadc-menu-dd {
-  /* fixed breaks out of every stacking context — toolbar wrap/row2 buttons can't overlap it */
+  /* fixed + max z-index + GPU layer: beats GPU-composited overflow:hidden sidebars */
   position: fixed; top: 0; left: 0;
   background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px;
-  min-width: 190px; z-index: 9999; padding: 4px;
+  min-width: 190px; z-index: 2147483647; padding: 4px;
   box-shadow: 0 6px 24px rgba(0,0,0,0.6);
   max-height: calc(100vh - 200px); overflow-y: auto;
+  transform: translateZ(0);
 }
 .aadc-menu-dd a,
 .aadc-menu-dd button {
