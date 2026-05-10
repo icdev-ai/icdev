@@ -238,6 +238,7 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
 
         results: list[dict] = []
         overall_ok = True
+        all_artifacts: list[dict] = []
 
         for i, step in enumerate(ordered_steps):
             _push(run_queue, {
@@ -259,6 +260,16 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
             if result["status"] in ("failed", "timeout") and step.get("required", True):
                 overall_ok = False
 
+            # Extract artifacts list from stdout JSON if present
+            artifacts = []
+            try:
+                if result.get("stdout"):
+                    parsed_out = json.loads(result["stdout"])
+                    artifacts = parsed_out.get("artifacts", [])
+                    all_artifacts.extend(artifacts)
+            except (json.JSONDecodeError, AttributeError):
+                pass
+
             _push(run_queue, {
                 "type": "step_done",
                 "run_id": run_id,
@@ -268,6 +279,7 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                 "duration_ms": result.get("duration_ms", 0),
                 "output_preview": (result.get("stdout") or "")[:500],
                 "error": result.get("stderr"),
+                "artifacts": artifacts,
                 "index": i,
                 "total": len(ordered_steps),
             })
@@ -284,12 +296,14 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
             overall = "warning"
         else:
             overall = "success"
+        summary["artifacts"] = all_artifacts
         _update_run_status(run_id, overall, json.dumps(summary))
         _push(run_queue, {
             "type": "run_complete",
             "run_id": run_id,
             "status": overall,
             "summary": summary,
+            "artifacts": all_artifacts,
         })
 
     except Exception as exc:
