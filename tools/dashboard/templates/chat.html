@@ -165,7 +165,8 @@
 
             <!-- Readiness Score -->
             <h4 class="chat-sidebar-heading">Readiness Score</h4>
-            <div class="readiness-gauge-container" id="readiness-gauge" style="text-align: center;">
+            <div id="readiness-placeholder" style="font-size:0.82rem;color:var(--text-muted);padding:0.5rem 0 0.75rem;">Start chatting to track your requirements readiness.</div>
+            <div class="readiness-gauge-container" id="readiness-gauge" style="display:none;text-align:center;">
                 <svg viewBox="0 0 120 120" class="readiness-gauge-svg" style="width: 100px; height: 100px;">
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent-blue)" stroke-width="10"
@@ -176,7 +177,7 @@
                 </svg>
             </div>
 
-            <div class="readiness-dimensions" id="readiness-dimensions">
+            <div class="readiness-dimensions" id="readiness-dimensions" style="display:none;">
                 <div class="readiness-dim"><span class="readiness-dim-label">Completeness</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-completeness" style="width:0%"></div></div><span class="readiness-dim-value" id="val-completeness">0%</span></div>
                 <div class="readiness-dim"><span class="readiness-dim-label">Clarity</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-clarity" style="width:0%"></div></div><span class="readiness-dim-value" id="val-clarity">0%</span></div>
                 <div class="readiness-dim"><span class="readiness-dim-label">Feasibility</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-feasibility" style="width:0%"></div></div><span class="readiness-dim-value" id="val-feasibility">0%</span></div>
