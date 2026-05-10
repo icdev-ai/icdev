@@ -413,6 +413,21 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_citations",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
+        # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
+        "genesis_reflex_log",
+        # NMCE — AI conversation audit trail (migration canvas, NIST AU)
+        "mc_net_ai_sessions",
+        # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
+        "sg_war_readiness_events",
+        # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
+        "nc_topology_snapshots",
+        # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)
+        "ohc_adapter_health_log",
+        "ohc_data_drift_events",
+        # GovLift DoD IL4 Cloud Migration (NIST AU — audit log append-only)
+        "govlift_audit_log",
+        # AI Traceability (migration 121 — cross-canvas AI decision audit log, NIST AU-2/AU-3)
+        "canvas_ai_decisions",
     ]
 
     if tool_name == "Bash":
