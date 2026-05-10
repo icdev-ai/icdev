@@ -1715,7 +1715,8 @@
             var dotClass = c.status === 'active' ? 'ctx-dot--active' : 'ctx-dot--closed';
             var isIntake = isIntakeContext(c.context_id);
             var titleText = escHtml(c.title || c.context_id) + (isIntake ? ' <span style="font-size:0.68rem;opacity:0.7;">[RICOAS]</span>' : '');
-            var meta = c.message_count + ' msg' + (c.message_count !== 1 ? 's' : '')
+            var meta = c.message_count === 0 ? 'No messages yet' :
+                (c.message_count + ' message' + (c.message_count !== 1 ? 's' : ''))
                 + (c.is_processing ? ' · processing' : '')
                 + (c.queue_depth > 0 ? ' · ' + c.queue_depth + ' queued' : '');
             html += '<div class="ctx-item' + (isActive ? ' active' : '') + '" data-ctx-id="' + escAttr(c.context_id) + '">'
