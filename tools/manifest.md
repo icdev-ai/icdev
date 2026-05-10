@@ -470,3 +470,9 @@
 | Seed Wne Plan | tools\db\seeds\seed_wne_plan.py | Auto-registered: seeds/seed_wne_plan.py | --json | JSON |
 | Seed Wne Writeguard | tools\db\seeds\seed_wne_writeguard.py | Auto-registered: seeds/seed_wne_writeguard.py | --json | JSON |
 | Safety Monitor | tools\dashboard\api\safety_monitor.py | Auto-registered: api/safety_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Intent Classifier | tools\chat_router\intent_classifier.py | Auto-registered: chat_router/intent_classifier.py | --json | JSON |

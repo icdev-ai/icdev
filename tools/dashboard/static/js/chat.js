@@ -1955,6 +1955,16 @@
         if (cfg.sessionId) {
             refreshContextList();
             loadIntakeSession(cfg.sessionId);
+        } else if (cfg.wizardCanvas && hasUrlParams) {
+            // Deep link: /chat?canvas=cam — auto-create a canvas-mode context
+            var canvasMode = cfg.wizardCanvas;
+            var canvasLabels2 = { cam:'Migration Analysis', ndc:'Network Design', sdc:'Security Design', eda:'Data Architecture', ddc:'Database Design', pdc:'Process Design', odc:'Observability', idc:'Infrastructure' };
+            refreshContextList();
+            createContext({ title: canvasLabels2[canvasMode] || canvasMode.toUpperCase() + ' Chat' }).then(function (ctx) {
+                if (ctx && ctx.context_id) {
+                    setContextCanvasType(ctx.context_id, canvasMode);
+                }
+            });
         } else if (cfg.wizardGoal && hasUrlParams) {
             refreshContextList();
             createIntakeContext({});
