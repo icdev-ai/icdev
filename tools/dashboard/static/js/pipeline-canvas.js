@@ -308,20 +308,22 @@ function initCanvas() {
     });
   }
 
-  let isPanning = false, panStart = {}, scrollStart = {};
+  let isPanning = false, panStart = {}, translateStart = {};
   const canvasArea = document.querySelector('.pc-canvas-area');
 
-  // Drag-to-pan with cursor feedback
+  // Drag-to-pan using paper.translate() — works at any scroll position
   paper.on('blank:pointerdown', (evt) => {
     isPanning = true;
     panStart = { x: evt.clientX, y: evt.clientY };
-    scrollStart = { x: canvasArea.scrollLeft, y: canvasArea.scrollTop };
+    translateStart = paper.translate();
     canvasArea.classList.add('is-panning');
   });
   document.addEventListener('mousemove', (evt) => {
     if (!isPanning) return;
-    canvasArea.scrollLeft = scrollStart.x - (evt.clientX - panStart.x);
-    canvasArea.scrollTop  = scrollStart.y - (evt.clientY - panStart.y);
+    paper.translate(
+      translateStart.tx + (evt.clientX - panStart.x),
+      translateStart.ty + (evt.clientY - panStart.y)
+    );
   });
   document.addEventListener('mouseup', () => {
     if (!isPanning) return;
@@ -329,23 +331,22 @@ function initCanvas() {
     canvasArea.classList.remove('is-panning');
   });
 
-  // Mouse-wheel zoom centered on cursor position
+  // Mouse-wheel zoom centered on cursor — uses translate to keep point under cursor fixed
   canvasArea.addEventListener('wheel', (evt) => {
     evt.preventDefault();
     const s0 = paper.scale().sx;
     const factor = evt.deltaY < 0 ? 1.12 : 1 / 1.12;
     const s1 = Math.max(0.08, Math.min(4, s0 * factor));
     if (Math.abs(s1 - s0) < 0.001) return;
-    // Mouse position relative to canvas area top-left
+    const t0 = paper.translate();
     const areaRect = canvasArea.getBoundingClientRect();
     const mx = evt.clientX - areaRect.left;
     const my = evt.clientY - areaRect.top;
-    // Keep the paper point under the cursor fixed after scale change
-    const newScrollX = (canvasArea.scrollLeft + mx) * s1 / s0 - mx;
-    const newScrollY = (canvasArea.scrollTop  + my) * s1 / s0 - my;
+    // Keep the paper-space point under the cursor fixed: mx = px*s + tx → tx = mx - px*s
+    const newTx = mx - (mx - t0.tx) * s1 / s0;
+    const newTy = my - (my - t0.ty) * s1 / s0;
     paper.scale(s1, s1);
-    canvasArea.scrollLeft = newScrollX;
-    canvasArea.scrollTop  = newScrollY;
+    paper.translate(newTx, newTy);
     _updateZoomLabel(s1);
   }, { passive: false });
 
