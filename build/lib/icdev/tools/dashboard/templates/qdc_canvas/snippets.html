@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}QDC Snippets — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <h2 style="margin:0;color:#eaeaea;">Quality Snippets</h2>
+  <a href="/quality/" class="btn btn-sm" style="background:#2196f3;color:#fff;padding:6px 14px;border-radius:4px;text-decoration:none;">← Back to QDC</a>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
+  {% for s in snippets %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+      <h3 style="margin:0;color:#eaeaea;font-size:14px;">{{ s.name }}</h3>
+      <span style="background:#0f3460;color:#7a8cb0;padding:2px 6px;border-radius:3px;font-size:10px;">{{ s.node_count }} nodes</span>
+    </div>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 8px;">{{ s.description }}</p>
+    <span style="color:#5a6e8c;font-size:10px;text-transform:uppercase;">{{ s.category }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

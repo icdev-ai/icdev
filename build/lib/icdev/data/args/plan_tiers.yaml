@@ -1,0 +1,84 @@
+# CUI // SP-CTI
+# FathomDesk plan tier definitions — Phase 5A/5B.
+#
+# Hot-reloaded via file-mtime cache (tools/trading/billing/tiers.py).
+# Operators change tier assignments via admin CLI or /billing page.
+# Stripe wiring (Phase 5B) reads `stripe_price_id` to map paid upgrades.
+# Resolution order for Checkout: tiers.<slug>.stripe_price_id (here) →
+#   env STRIPE_PRICE_ID_<SLUG>. Leave YAML as null to let ops swap keys
+#   without editing this file. Free tier has no price (direct set).
+#
+# Quota semantics:
+#   - `null` means "unlimited"
+#   - counts are per-tenant unless suffixed `_per_user`
+#   - `_per_month` keys reset on the 1st of each calendar month (UTC)
+
+_schema_version: 1
+_default_tier: free
+
+tiers:
+  free:
+    display_name: "Free"
+    description: "Single user, basic features, tenant-scoped tooling."
+    stripe_price_id: null
+    monthly_price_usd: 0
+    features:
+      white_label: false
+      pdf_branding: false
+      api_tokens: true
+      share_links: true
+      advisor_clients: false
+      sso_saml: false
+      priority_support: false
+    quotas:
+      members: 1
+      alert_rules: 10
+      api_tokens_per_user: 5
+      share_links_per_month: 10
+      invitations_per_month: 3
+      watchlist_tickers: 25
+      target_allocations: 10
+
+  pro:
+    display_name: "Pro"
+    description: "Small teams + advisor features + white-label branding."
+    stripe_price_id: null  # filled in Phase 5B
+    monthly_price_usd: 49
+    features:
+      white_label: true
+      pdf_branding: true
+      api_tokens: true
+      share_links: true
+      advisor_clients: true
+      sso_saml: false
+      priority_support: true
+    quotas:
+      members: 10
+      alert_rules: 100
+      api_tokens_per_user: 25
+      share_links_per_month: 100
+      invitations_per_month: 50
+      watchlist_tickers: 250
+      target_allocations: 100
+
+  enterprise:
+    display_name: "Enterprise"
+    description: "Unlimited usage, SSO/SAML, custom SLA."
+    stripe_price_id: null
+    monthly_price_usd: null  # contact sales
+    features:
+      white_label: true
+      pdf_branding: true
+      api_tokens: true
+      share_links: true
+      advisor_clients: true
+      sso_saml: true
+      priority_support: true
+    quotas:
+      members: null
+      alert_rules: null
+      api_tokens_per_user: null
+      share_links_per_month: null
+      invitations_per_month: null
+      watchlist_tickers: null
+      target_allocations: null

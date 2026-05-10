@@ -1,0 +1,69 @@
+# CUI // SP-CTI
+name: "Network Security Gate Rubric"
+inject_type: network_gate
+description: "Evaluates Terraform IaC correctness, Kubernetes NetworkPolicy zero-trust implementation, and threat modeling quality."
+max_score: 100
+
+dimensions:
+  terraform_correctness:
+    weight: 0.30
+    prompt: >
+      Would this Terraform module plan cleanly and implement least-privilege IRSA?
+      Award 30/30 for a main.tf that: (1) creates a kubernetes_namespace resource,
+      (2) creates an aws_iam_role with a trust policy using the correct IRSA condition
+      (StringEquals on sts.amazonaws.com:sub = "system:serviceaccount:sentinel-ml:sentinel-ml-sa"),
+      (3) attaches a minimum-privilege inline policy with only s3:GetObject on the
+      model path prefix and kms:Decrypt on the KMS key, (4) creates a
+      kubernetes_service_account annotated with the IAM role ARN, and (5) uses
+      variables for kms_key_arn and oidc_provider_arn without hardcoded values.
+      Award 22/30 for 4 of 5 requirements (common failure: wildcard IRSA subject).
+      Award 14/30 for 3 of 5 requirements (functional but over-permissioned).
+      Award 5/30 for structural Terraform with wrong resource types.
+      Award 0/30 for no Terraform or hardcoded credentials.
+      Academy bonus: DevOps engineers who completed 'iac-terraform' and network
+      engineers who completed 'zero-trust' missions know the exact IRSA trust
+      condition format. Award up to +12 pts where this is correct AND accompanied
+      by an explanation of why the StringEquals condition is required.
+
+  network_policy_completeness:
+    weight: 0.35
+    prompt: >
+      Does the NetworkPolicy correctly implement all 5 zero-trust rules?
+      Rule 1 (default deny): podSelector: {} with empty policyTypes for both Ingress
+      and Egress. Rule 2 (ingress from api-gateway): namespaceSelector matching
+      "ingress" namespace + podSelector matching app=api-gateway, port 8080.
+      Rule 3 (egress DNS): namespaceSelector kube-system + podSelector k8s-app=kube-dns,
+      ports 53/UDP AND 53/TCP. Rule 4 (egress prometheus): namespaceSelector monitoring
+      + podSelector app=prometheus, port 9090. Rule 5 (no internet egress): absence
+      of any to: [] or ipBlock 0.0.0.0/0 entry.
+      Award 35/35 for all 5 rules correctly implemented in valid YAML syntax.
+      Award 25/35 for 4/5 rules correct (common miss: DNS egress UDP+TCP, not just UDP).
+      Award 15/35 for 3/5 rules correct (ingress + default deny + one egress).
+      Award 5/35 for default deny only with partial ingress rule.
+      Award 0/35 for no NetworkPolicy or a policy that allows all traffic.
+
+  threat_model:
+    weight: 0.25
+    prompt: >
+      Do the 4 threat model bullets demonstrate real zero-trust understanding?
+      Award 25/25 for 4 bullets that each: (1) name a specific attack vector
+      (e.g., "compromised model pod used to pivot to the Kubernetes API server"),
+      (2) describe the exploit path (e.g., "attacker calls in-cluster DNS to
+      enumerate service endpoints"), and (3) name the specific policy rule that
+      blocks it (e.g., "Egress deny-all prevents DNS enumeration of non-kube-dns
+      resolvers outside the cluster"). Award 18/25 for 3/4 bullets with this
+      quality. Award 10/25 for 4 generic bullets naming threat categories but no
+      specific policy mapping. Award 0/25 for no threat model or bullets that
+      describe threats without connecting to the policy rules.
+
+  innovation:
+    weight: 0.10
+    prompt: >
+      Did the team go beyond the minimum requirements?
+      Award 10/10 for including a Terraform data source to look up the existing
+      cluster OIDC configuration dynamically (not hardcoded), OR for splitting the
+      NetworkPolicy into a separate ingress-NetworkPolicy and egress-NetworkPolicy
+      resource with a clear explanation of why (separation of concerns for audit),
+      OR for adding a second NetworkPolicy for monitoring namespace allowing Prometheus
+      scrape access. Award 5/10 for one well-reasoned addition beyond the spec.
+      Award 0/10 for minimum execution only.

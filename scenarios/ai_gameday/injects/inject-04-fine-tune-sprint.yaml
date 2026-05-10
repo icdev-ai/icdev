@@ -1,0 +1,47 @@
+# CUI // SP-CTI
+id: inject-04-fine-tune-sprint
+title: "15-Minute AI Sprint: Build a Threat Classifier"
+
+body_md: |
+  ## AI BUILD SPRINT — YOU HAVE 15 MINUTES
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** Build & Prove
+
+  The intelligence operations center needs a **real-time threat signal classifier**
+  that can distinguish between:
+  - Category A: Military tactical emissions (high priority)
+  - Category B: Commercial interference (low priority)
+  - Category C: Unknown / ambiguous (requires analyst review)
+
+  The model must be deployable NOW using ICDEV's fine-tuning pipeline.
+  You have **access to the existing fine-tune dashboard** at `/finetune`.
+
+  ### Your Task
+  Using ICDEV's AI ecosystem, build and deploy a working threat classifier.
+
+  **Option 1 (Full Build — max points):**
+  1. Create a fine-tuning dataset using the Knowledge RAG
+  2. Launch a training job targeting the threat classification task
+  3. Deploy the model and submit the model ID + 3 test outputs as proof
+
+  **Option 2 (RAG-powered — partial points):**
+  1. Build a RAG-based classifier using existing knowledge
+  2. Submit a working Python snippet + 3 classification examples
+
+  **Option 3 (Prompt Engineering — minimum points):**
+  1. Design a zero-shot prompt that classifies the 3 categories
+  2. Submit the prompt + 3 sample outputs
+
+  **Required deliverable:**
+  - Approach chosen (1, 2, or 3)
+  - Proof of AI tool usage (fine-tune receipt OR RAG receipt)
+  - 3 test classifications with explanation
+
+  **Scoring:** This inject is not time-bonused (sprint window is already time-boxed).
+  Receipt pts + judge quality score only. Max receipt bonus: 300 pts.
+
+context_note: >
+  This inject deliberately has 3 tiers so teams at different AI maturity levels
+  can participate. The LLM judge will reward evidence of actual AI tool usage
+  and quality of the classification output.

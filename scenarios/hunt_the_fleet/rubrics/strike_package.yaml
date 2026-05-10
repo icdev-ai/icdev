@@ -1,0 +1,38 @@
+# Rubric: Strike Authorization Package (Inject 04)
+dimensions:
+  grid_accuracy:
+    weight: 0.35
+    max_pts: 35
+    prompt: |
+      Compare the team's submitted target grid against the facilitator ground truth (XC-108).
+      Award 35/35 for grid within 10nm. Award 25/35 for 10-25nm. Award 15/35 for 25-50nm.
+      Award 5/35 for >50nm. Award 0/35 for no grid submitted.
+      Note: If team correctly adjusted for supply interdiction course change (042° diversion),
+      award +5 bonus points (may bring total to 40/35 — capped at rubric max).
+
+  coa_quality:
+    weight: 0.30
+    max_pts: 30
+    prompt: |
+      Did the team recommend a specific COA with explicit asset assignment, sequencing,
+      and desired effect? Is the COA consistent with the track picture (correct grid,
+      speed, heading)? Does it address ROE compliance and positive identification chain?
+      Award 30/30 for complete SAP-quality COA with all elements. Award 15/30 for COA
+      without ROE analysis. Award 5/30 for COA without asset specifics. Award 0/30 for
+      no COA.
+
+  coa_ai_grounding:
+    weight: 0.30
+    max_pts: 30
+    prompt: |
+      Did the team use AI COA generator and OODA loop tools to compare and select their
+      recommended COA? Is there evidence of AI-generated COA alternatives being evaluated?
+      Award 30/30 for explicit multi-COA AI comparison with receipts and clear selection
+      rationale. Award 15/30 for single AI tool use. Award 0/30 for no AI tool grounding.
+
+  doctrine_escalation:
+    weight: 0.05
+    max_pts: 5
+    prompt: |
+      Did the team briefly address escalation risk and second-order diplomatic effects
+      of the strike? Award 5/5 for explicit escalation assessment. Award 0/5 if omitted.

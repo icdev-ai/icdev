@@ -1,0 +1,51 @@
+# CUI // SP-CTI
+id: inject-04-strike-window
+title: "Strike Window Opens"
+
+body_md: |
+  ## STRIKE WINDOW — CLASSIFICATION: CUI//SP-CTI
+  **DTG:** 142047Z MAY 26
+  **FROM:** CTF 77 STRIKE COORDINATION
+  **TO:** TASK GROUP 77.4 OPERATIONS
+
+  ---
+
+  ### SATELLITE CONFIRMATION
+
+  SATINT pass at 142031Z acquired **probable Golf-7 contact** at grid **XC-104** (confidence HIGH).
+  Wake signature consistent with Type-054A at 16 knots. Thermal bloom matches twin-shaft
+  propulsion. Target grid confirmed within your ML prediction ellipse — model validated.
+
+  **Strike window: 22 minutes** before Golf-7 reaches the A2/AD denial zone boundary at XC-200.
+  Beyond that boundary, engagement authority transfers to theater command and strike assets
+  are recalled.
+
+  ---
+
+  ### STRIKE PACKAGE REQUIREMENTS
+
+  CTF 77 requires a complete Strike Authorization Package (SAP) before committing assets:
+
+  - **Target grid (6-digit)** with confidence interval
+  - **Recommended strike COA** — which assets, what sequencing, what effect desired
+  - **Rules of engagement assessment** — confirm positive identification, proportionality
+  - **Second-order effects** — fleet response, escalation risk, diplomatic considerations
+  - **AI-grounded COA analysis** — OODA loop assessment, COA comparison required
+
+  ---
+
+  ### YOUR TASKING
+
+  Your team has **18 minutes** to produce the Strike Authorization Package. Use AI tools to:
+
+  1. **Generate and compare COAs** using your AI wargaming tools (COA generator + OODA)
+  2. **Submit target grid** (6-digit grid reference from your ML prediction + SATINT fix)
+  3. **Assess ROE compliance** — positive identification chain of custody
+  4. **Recommend a single COA** with explicit AI-evidenced justification
+
+  This is the culminating decision of the exercise. Grid accuracy will be scored against
+  the facilitator's ground truth. AI tool usage drives 30% of your score.
+
+  ---
+
+  *Strike window closes in 22 minutes. Submit your package.*

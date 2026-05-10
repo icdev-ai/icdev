@@ -1,0 +1,68 @@
+# CUI // SP-CTI
+name: "Governance Framework Rubric"
+inject_type: governance_framework
+description: "Evaluates quality of the AI governance framework — specificity, policy grounding, and implementability."
+max_score: 100
+
+dimensions:
+  policy_quality:
+    weight: 0.35
+    prompt: >
+      Is the framework specific, actionable, and defensible to a Congressional oversight
+      committee? A top score requires all four mandatory elements addressed with specificity:
+      (1) Vendor Accountability: specific contractual requirements cited (not "vendors must
+      comply with security standards" but "vendors must provide training data provenance
+      documentation within 30 days of contract award, certified by a credentialed third-party
+      auditor, updated quarterly");
+      (2) Model Integrity Verification: a concrete human-in-the-loop threshold (e.g., "no
+      AI recommendation affecting decisions over $10M or strategy classification acted upon
+      without a second analyst review");
+      (3) AI Incident Response: timeline playbook with named role owners;
+      (4) Organizational Accountability: CISO standing authority to suspend explicitly stated.
+      Heavily penalize generic frameworks ("organizations should have responsible AI policies")
+      that would not survive an IG review. The test: could this framework have caught MERIDIAN?
+
+  ai_governance_maturity:
+    weight: 0.30
+    prompt: >
+      Does the framework demonstrate fluency with actual AI governance frameworks and policy?
+      Award full marks for explicit reference to and integration of:
+      - NIST AI Risk Management Framework (RMF) — govern, map, measure, manage functions
+      - DoD AI Ethics Principles (responsible, equitable, traceable, reliable, governable)
+      - OMB M-24-10 Advancing Governance, Innovation, and Risk Management for AI
+      - Executive Order 14110 on AI safety (where applicable)
+      - FAR/DFARS provisions on AI vendor accountability (where applicable)
+      Award partial credit for general awareness without specific application.
+      Deduct points for frameworks that could only apply to the specific MERIDIAN case
+      rather than generalizing across program offices.
+      Academy CISO bonus: members with 'm-ciso-01-ai-inventory' and 'm-ciso-02-ai-risk-posture'
+      who apply the NIST AI RMF categories explicitly receive +15 pts combined.
+      Academy Analyst bonus: members with 'm-analyst-04-predictive' who include
+      leading indicators for AI system drift detection receive +8 pts.
+
+  implementation_plan:
+    weight: 0.20
+    prompt: >
+      Is the 90-day implementation plan realistic and sequenced correctly?
+      Award full marks for: clear milestones with owners and timelines,
+      identification of quick wins (30 days) vs. structural changes (60-90 days),
+      cost estimate (even rough order of magnitude), and explicit acknowledgment
+      of program velocity impact with mitigation strategy.
+      Penalize plans that describe outcomes without describing how to achieve them,
+      or that compress genuine 12-month transformations into a 90-day timeline
+      without prioritization.
+      Academy PM bonus: members with 'm-pm-04-schedule-cost' who produce a structured
+      milestone schedule with explicit dependencies receive +8 pts.
+
+  stakeholder_impact:
+    weight: 0.15
+    prompt: >
+      Does the framework account for the perspectives of all relevant stakeholders?
+      Specifically: (1) Board — governance reporting cadence and threshold for Board-level
+      AI suspension authority; (2) Congress/IG — audit trail and transparency requirements;
+      (3) Vendors — what they are being asked to do and on what timeline;
+      (4) Program users — how continuity of operations is maintained during AI suspension.
+      A framework that only addresses internal governance without considering vendor
+      implementation burden or program user continuity earns 50% on this dimension.
+      Deduct points for frameworks that would materially impede program mission without
+      acknowledging and mitigating that impact.

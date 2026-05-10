@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}LLMOps — Ops Hub{% endblock %}
+{% block extra_css %}
+<style>
+.ohc-page-header{background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.ohc-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#e0f2fe;}
+.ohc-page-header p{margin:4px 0 0;color:#7dd3fc;font-size:.85rem;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#e0e7ff;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.section-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:16px;}
+.section-card h4{margin:0 0 14px;font-size:.95rem;color:#e2e8f0;}
+.drift-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;background:#0f172a;margin-bottom:6px;font-size:.82rem;}
+.prompt-row{display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#0f172a;border-radius:6px;margin-bottom:6px;font-size:.82rem;}
+.tag-active{background:#065f46;color:#6ee7b7;padding:2px 8px;border-radius:12px;font-size:.7rem;}
+.tag-ab{background:#1e3a5f;color:#7dd3fc;padding:2px 8px;border-radius:12px;font-size:.7rem;}
+.back-link{color:#7dd3fc;text-decoration:none;font-size:.85rem;}
+</style>
+{% endblock %}
+{% block content %}
+<a class="back-link" href="/ops">← Ops Hub</a>
+<div class="ohc-page-header mt-2">
+  <h1>🤖 LLMOps</h1>
+  <p>Gateway · Cost Intelligence · Drift · Prompt Registry · Evals — {{ classification }}</p>
+</div>
+
+<!-- Stats Row -->
+{% set gw = data.gateway %}
+{% set cost = data.cost %}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val">{{ gw.get('total_invocations_24h', '—') }}</div>
+    <div class="lbl">Invocations (24h)</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="color:{{ '#ef4444' if gw.get('injection_blocks_24h',0) > 0 else '#22c55e' }}">
+      {{ gw.get('injection_blocks_24h', 0) }}</div>
+    <div class="lbl">Injection Blocks (24h)</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val">{{ data.model_health.get('monitored_models', '—') }}</div>
+    <div class="lbl">Monitored Models</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="color:{{ '#f59e0b' if data.has_drift else '#22c55e' }}">
+      {{ '⚠' if data.has_drift else '✓' }}</div>
+    <div class="lbl">Drift Status</div>
+  </div></div>
+</div>
+
+<div class="row g-3">
+  <!-- Drift Events -->
+  <div class="col-md-6">
+    <div class="section-card">
+      <h4>📉 Drift Events</h4>
+      {% set drift_events = data.model_health.get('recent_drift', []) %}
+      {% if drift_events %}
+        {% for ev in drift_events[:5] %}
+        <div class="drift-row">
+          <span>⚠️</span>
+          <span style="color:#e2e8f0;">{{ ev.get('model_name','?') }}</span>
+          <span style="color:#64748b;">{{ ev.get('drift_type','?') }}</span>
+          <span style="color:#f59e0b;margin-left:auto;">{{ ev.get('drift_score',0)|round(3) }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted small mb-0">No drift events detected ✓</p>
+      {% endif %}
+      <a href="/api/ops/llm" class="small text-muted mt-2 d-block">View full JSON →</a>
+    </div>
+  </div>
+
+  <!-- Prompt Registry -->
+  <div class="col-md-6">
+    <div class="section-card">
+      <h4>📝 Prompt Registry</h4>
+      {% set prompts = data.model_health.get('active_prompts', []) %}
+      {% for p in data.get('model_health', {}).get('active_prompts', [])[:4] %}
+        <div class="prompt-row">
+          <span style="color:#e2e8f0;">{{ p.get('name','?') }}</span>
+          <span class="tag-active">v{{ p.get('version',1) }}</span>
+        </div>
+      {% else %}
+        <p class="text-muted small mb-0">No active prompts registered.</p>
+      {% endfor %}
+      <a href="/ops/llm" class="small text-muted mt-2 d-block">Manage prompts →</a>
+    </div>
+  </div>
+</div>
+
+<!-- Cost Summary -->
+{% if cost and not cost.get('error') %}
+<div class="section-card mt-3">
+  <h4>💰 Cost Intelligence</h4>
+  <div class="row g-2">
+    <div class="col-6 col-md-3"><div class="stat-card">
+      <div class="val" style="font-size:1.3rem;">${{ cost.get('total_cost_30d', 0)|round(2) }}</div>
+      <div class="lbl">30-day Spend</div>
+    </div></div>
+    <div class="col-6 col-md-3"><div class="stat-card">
+      <div class="val" style="font-size:1.3rem;color:{{ '#ef4444' if cost.get('anomaly_count',0) > 0 else '#22c55e' }}">
+        {{ cost.get('anomaly_count', 0) }}</div>
+      <div class="lbl">Anomalies</div>
+    </div></div>
+  </div>
+</div>
+{% endif %}
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

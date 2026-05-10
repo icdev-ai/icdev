@@ -1,0 +1,18 @@
+# CUI // SP-CTI
+label: "Intelligence Officer"
+description: "Active duty intelligence officer with operational theater experience."
+attributes:
+  - rank
+  - branch (Army/Navy/Air Force/Marine Corps/Space Force)
+  - MOS or AFSC
+  - unit and command
+  - clearance level
+  - years of service
+  - current operational assignment
+  - primary intelligence discipline (SIGINT/HUMINT/GEOINT/MASINT/All-Source)
+
+prompt_hint: >
+  Generate a realistic active duty intelligence officer persona. They should have
+  a current operational assignment relevant to signal intelligence and threat assessment.
+  Include a role_brief explaining why they are participating in this AI exercise
+  and what AI capability they are most eager to leverage.

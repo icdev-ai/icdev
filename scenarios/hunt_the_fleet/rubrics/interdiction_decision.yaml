@@ -1,0 +1,38 @@
+# Rubric: Interdiction Decision Package (Inject 02)
+dimensions:
+  target_accuracy:
+    weight: 0.35
+    max_pts: 35
+    prompt: |
+      Did the team correctly model the supply chain threat? Did they identify that Golf-7
+      gains ~96 hours additional endurance and full ordnance complement if AT-229 rendezvous
+      succeeds? Award 35/35 for accurate endurance/capability impact with specific numbers.
+      Award 20/35 for correct impact direction but imprecise. Award 0/35 for missed impact.
+
+  ai_evidence:
+    weight: 0.30
+    max_pts: 30
+    prompt: |
+      Did the team use AI simulation and OODA loop tools to model the interdiction decision?
+      Is there evidence of supply chain simulation output, OODA cycle analysis, or COA
+      comparison from AI tools? Award 30/30 for explicit AI simulation evidence with
+      output data integrated into the COA recommendation. Award 15/30 for AI mentioned
+      but no clear output integration. Award 0/30 for no AI tool use.
+
+  doctrine_compliance:
+    weight: 0.20
+    max_pts: 20
+    prompt: |
+      Is the recommended COA (interdict or shadow) supported by naval doctrine principles?
+      Does the team address proportionality, positive identification, rules of engagement?
+      Award 20/20 for explicit ROE/doctrine analysis with recommended COA justified.
+      Award 10/20 for COA without doctrine grounding. Award 0/20 for no doctrine analysis.
+
+  risk_hedge:
+    weight: 0.15
+    max_pts: 15
+    prompt: |
+      Did the team identify and account for second-order effects? (Golf-7 course change
+      if interdiction occurs, escalation risk, diplomatic implications, intelligence loss
+      from breaking cover.) Award 15/15 for comprehensive second-order analysis.
+      Award 8/15 for one or two effects noted. Award 0/15 for no hedge analysis.

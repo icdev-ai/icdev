@@ -1,0 +1,56 @@
+# CUI // SP-CTI
+id: inject-02-supply-run
+title: "Supply Run Intercepted — AT-229"
+
+body_md: |
+  ## HUMINT + AIS ALERT — CLASSIFICATION: CUI//SP-CTI
+  **DTG:** 141728Z MAY 26
+  **FROM:** NAVSOC HUMINT COLLECTION — SOURCE MANILA BRAVO
+  **TO:** TASK GROUP 77.4 OPERATIONS
+
+  ---
+
+  ### HUMINT REPORT — FISHING VESSEL "AT-229" (JUNK-CLASS, PRC FLAG)
+
+  Source Manila Bravo reports: AT-229 (PRC-flagged fishing vessel, 45m LOA) was observed
+  conducting rendezvous operations at grid **XB-612** with a vessel matching PLAN auxiliary
+  supply ship characteristics at **141640Z**. Transfer of palletized cargo (probable fuel + ordnance)
+  completed in approximately 22 minutes.
+
+  **AIS Transponder:** DARK — vessel went non-emitting 14 minutes before contact
+  **Last AIS fix (before dark):** XB-588, course 087°, speed 8 knots
+  **Estimated supply vessel destination post-transfer:** XB-441 corridor (consistent with Golf-7)
+
+  ---
+
+  ### SUPPLY DEPOT INTERDICTION DECISION
+
+  Intelligence assessment suggests the Task Group (Golf-7) **is resupplying before entering
+  the A2/AD denial zone** at grid XC-100. If supply run is successful, Golf-7 extends endurance
+  by estimated **96 hours** and gains full ordnance complement for anti-access operations.
+
+  **INTERDICTION WINDOW:** 47 minutes before AT-229 reaches the A2/AD boundary.
+
+  ---
+
+  ### YOUR TASKING
+
+  Your team has **18 minutes** to produce an Interdiction Decision Package. Use AI tools to:
+
+  1. **Model the supply chain** — AT-229 route, Golf-7 resupply impact on endurance/capability
+  2. **OODA cycle the decision** — Observe/Orient/Decide/Act: recommend interdiction or shadow?
+  3. **Assess second-order effects** — What changes about Golf-7's COA if supply is cut?
+  4. **Recommend course of action** with explicit risk/gain calculus
+
+  Submit your interdiction decision. AI simulation receipts carry significant scoring weight.
+  Teams that interdict AT-229 with ≥80 points trigger a world-state change affecting Inject 3.
+
+  ---
+
+  *Time-sensitive. Window closes in 47 minutes.*
+
+consequence:
+  key: supply_depot_hit
+  threshold_teams: 3
+  threshold_pts: 80
+  affects_inject: inject-03-comms-blackout

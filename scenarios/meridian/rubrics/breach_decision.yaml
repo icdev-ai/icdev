@@ -1,0 +1,53 @@
+# CUI // SP-CTI
+name: "Breach Decision Rubric"
+inject_type: breach_decision
+description: "Evaluates quality of the COA decision package for MERIDIAN suspension under vendor and milestone pressure."
+max_score: 100
+
+dimensions:
+  coa_quality:
+    weight: 0.30
+    prompt: >
+      Did the team produce a defensible COA recommendation with explicit reasoning?
+      A top score (90-100) requires: one COA clearly recommended (not hedged between two),
+      AI-tool-supported analysis of second and third-order consequences for each COA,
+      explicit acknowledgment of the milestone impact and why it is acceptable or not,
+      and a statement of the legal trigger (72-hour notification obligation).
+      Penalize hedged responses ("we recommend COA Alpha or Bravo depending on...") —
+      under breach conditions, a decision must be made. Heavily penalize COA Charlie
+      (delayed action / no declaration) when vendor is invoking contract clause to block audit —
+      this should be identified as a red flag, not a viable COA.
+      Academy CISO bonus: members with 'm-ciso-02-ai-risk-posture' who frame the COA
+      using a risk tolerance threshold (e.g., "residual risk exceeds our accepted threshold
+      of X") receive +15 pts.
+
+  ai_evidence:
+    weight: 0.25
+    prompt: >
+      Are the COA analysis conclusions explicitly grounded in AI tool outputs?
+      Award full marks when: COA Wargame outputs (feasibility/suitability/acceptability scores)
+      are cited with specific values, Simulate outputs are referenced with probability estimates,
+      Knowledge Search pulls specific regulatory clauses by name and citation.
+      A response that references "our COA wargame analysis showed..." without citing output
+      values earns 50% credit. A response with no tool citation earns 0% on this dimension.
+
+  regulatory_awareness:
+    weight: 0.25
+    prompt: >
+      Does the response demonstrate awareness of the legal and regulatory environment?
+      Specifically: (1) 72-hour contractual notification obligation identified,
+      (2) Vendor clause 14.3(b) IP protection limitation acknowledged and legal response proposed,
+      (3) Any applicable DoD AI incident reporting requirement cited.
+      Academy PM bonus: members with 'm-pm-04-schedule-cost' who explicitly model the milestone
+      cost of suspension vs. the reputational/legal cost of continuation receive +8 pts.
+
+  risk_communication:
+    weight: 0.20
+    prompt: >
+      Is the risk calculus communicated clearly? Does the response make the consequences of each
+      COA legible to a non-technical Board member who will read this document? Does it quantify
+      where possible (3 affected recommendations, $127M scope, 2-4 week delay)?
+      Penalize responses that stay abstract ("significant risk to the program") over
+      specific ("COA Charlie: if a subsequent compromised recommendation surfaces post-audit,
+      the program office will have operated a known-compromised system after written warning —
+      which is a Congressional negligence standard").

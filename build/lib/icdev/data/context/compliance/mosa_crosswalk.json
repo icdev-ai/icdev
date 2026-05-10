@@ -1,0 +1,327 @@
+{
+  "metadata": {
+    "title": "MOSA to NIST 800-53 Rev 5 Crosswalk",
+    "source_framework": "mosa",
+    "target_framework": "nist_800_53",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "classification": "CUI // SP-CTI",
+    "description": "Bidirectional crosswalk mapping Modular Open Systems Approach (MOSA) requirements to NIST 800-53 Rev 5 controls. MOSA mandates modular architectures with open standards, well-defined interfaces, and data rights strategies for DoD acquisition programs per 10 U.S.C. 4401. Implementing a NIST 800-53 control auto-satisfies all MOSA requirements that map to it via the crosswalk engine dual-hub model (ADR D111)."
+  },
+  "mappings": [
+    {
+      "source_id": "MOSA-ARCH-1",
+      "source_title": "Module Boundary Definition",
+      "source_family": "MOSA-ARCH",
+      "target_controls": ["SA-3", "SA-8", "SA-17"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA module boundary definition maps to system development lifecycle (SA-3) for establishing modular boundaries during design, security engineering principles (SA-8) for applying modularity as a core design principle, and security and privacy architecture and design (SA-17) for formal specification of module interfaces and isolation properties."
+    },
+    {
+      "source_id": "MOSA-ARCH-2",
+      "source_title": "Loose Coupling Enforcement",
+      "source_family": "MOSA-ARCH",
+      "target_controls": ["SA-8", "SA-17"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA loose coupling enforcement maps to security engineering principles (SA-8) for designing systems with minimal interdependencies between modules, and security and privacy architecture and design (SA-17) for ensuring architectural patterns enforce component independence and well-defined interaction boundaries."
+    },
+    {
+      "source_id": "MOSA-ARCH-3",
+      "source_title": "High Cohesion Design",
+      "source_family": "MOSA-ARCH",
+      "target_controls": ["SA-8", "SA-17"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA high cohesion design maps to security engineering principles (SA-8) for grouping related functionality into self-contained modules, and security and privacy architecture and design (SA-17) for ensuring each module has a single, well-defined responsibility that simplifies security analysis and testing."
+    },
+    {
+      "source_id": "MOSA-ARCH-4",
+      "source_title": "Dependency Management",
+      "source_family": "MOSA-ARCH",
+      "target_controls": ["SA-4", "CM-7"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA dependency management maps to acquisition process (SA-4) for specifying dependency requirements and constraints during procurement, and least functionality (CM-7) for minimizing unnecessary dependencies and ensuring each module only includes required external components."
+    },
+    {
+      "source_id": "MOSA-ARCH-5",
+      "source_title": "Module Registry & Catalog",
+      "source_family": "MOSA-ARCH",
+      "target_controls": ["CM-8", "SA-4"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA module registry and catalog maps to system component inventory (CM-8) for maintaining a comprehensive catalog of all modules, their versions, and ownership, and acquisition process (SA-4) for tracking module provenance and acquisition status. The registry enables visibility but is not a direct security control."
+    },
+    {
+      "source_id": "MOSA-STD-1",
+      "source_title": "Technical Standard Profile Maintenance",
+      "source_family": "MOSA-STD",
+      "target_controls": ["SA-4", "SA-4(1)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA technical standard profile maintenance maps to acquisition process (SA-4) for requiring adherence to approved technical standards during procurement, and functional properties of controls (SA-4(1)) for specifying that acquired components meet published open standard profiles maintained by the program."
+    },
+    {
+      "source_id": "MOSA-STD-2",
+      "source_title": "API-First Design",
+      "source_family": "MOSA-STD",
+      "target_controls": ["SA-4(1)", "SA-9"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA API-first design maps to functional properties of controls (SA-4(1)) for specifying well-documented API contracts as part of acquisition requirements, and external system services (SA-9) for governing how modules expose and consume services through standardized API interfaces."
+    },
+    {
+      "source_id": "MOSA-STD-3",
+      "source_title": "Standard Data Formats",
+      "source_family": "MOSA-STD",
+      "target_controls": ["SA-4(1)", "SC-8"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA standard data formats maps to functional properties of controls (SA-4(1)) for requiring standardized data interchange formats in acquisitions, and transmission confidentiality and integrity (SC-8) for ensuring data format standards include provisions for data integrity verification during exchange between modules."
+    },
+    {
+      "source_id": "MOSA-STD-4",
+      "source_title": "Standard Protocol Adoption",
+      "source_family": "MOSA-STD",
+      "target_controls": ["SA-4", "SA-9"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA standard protocol adoption maps to acquisition process (SA-4) for mandating use of approved communication protocols in procured components, and external system services (SA-9) for ensuring inter-module communication uses standard, well-understood protocols rather than proprietary alternatives."
+    },
+    {
+      "source_id": "MOSA-INT-1",
+      "source_title": "ICD for External Interfaces",
+      "source_family": "MOSA-INT",
+      "target_controls": ["SA-4(1)", "SA-4(2)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA Interface Control Document (ICD) requirements map to functional properties of controls (SA-4(1)) for formally documenting interface behavior and security properties, and design and implementation information (SA-4(2)) for requiring detailed interface specifications including data formats, protocols, error handling, and security constraints."
+    },
+    {
+      "source_id": "MOSA-INT-2",
+      "source_title": "Interface Versioning",
+      "source_family": "MOSA-INT",
+      "target_controls": ["SA-4(2)", "CM-3"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA interface versioning maps to design and implementation information (SA-4(2)) for documenting version-specific interface behaviors and compatibility constraints, and configuration change control (CM-3) for governing interface version transitions through formal change management processes that prevent breaking changes."
+    },
+    {
+      "source_id": "MOSA-INT-3",
+      "source_title": "Backward Compatibility",
+      "source_family": "MOSA-INT",
+      "target_controls": ["SA-4(2)", "SC-7"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA backward compatibility maps to design and implementation information (SA-4(2)) for specifying backward compatibility requirements in interface documentation, and boundary protection (SC-7) for ensuring that module updates do not inadvertently expose new attack surfaces or break existing security boundaries between components."
+    },
+    {
+      "source_id": "MOSA-INT-4",
+      "source_title": "Interface Testing",
+      "source_family": "MOSA-INT",
+      "target_controls": ["SA-11", "SA-11(1)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA interface testing maps to developer testing and evaluation (SA-11) for requiring comprehensive interface testing during development, and static code analysis (SA-11(1)) for automated verification of interface contracts, input validation, and security properties at module boundaries."
+    },
+    {
+      "source_id": "MOSA-DR-1",
+      "source_title": "Data Rights Strategy",
+      "source_family": "MOSA-DR",
+      "target_controls": ["SA-4(9)", "PM-30"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA data rights strategy maps to functions, ports, protocols, and services in use (SA-4(9)) for ensuring government retains rights to technical data and software needed for competitive sustainment, and supply chain risk management strategy (PM-30) for embedding data rights planning into the overall acquisition risk management framework."
+    },
+    {
+      "source_id": "MOSA-DR-2",
+      "source_title": "Govt Purpose Rights",
+      "source_family": "MOSA-DR",
+      "target_controls": ["SA-4(9)", "SR-1"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA government purpose rights maps to functions, ports, protocols, and services in use (SA-4(9)) for contractually securing government purpose rights to all module interfaces, APIs, and integration specifications, and supply chain risk management policy (SR-1) for establishing policies that prevent vendor lock-in through insufficient intellectual property rights."
+    },
+    {
+      "source_id": "MOSA-DR-3",
+      "source_title": "3rd Party Licensing",
+      "source_family": "MOSA-DR",
+      "target_controls": ["SA-4(9)", "PM-30"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA third-party licensing maps to functions, ports, protocols, and services in use (SA-4(9)) for tracking and managing third-party license terms that affect module replaceability, and supply chain risk management strategy (PM-30) for assessing licensing constraints as a supply chain risk factor that could limit future competition."
+    },
+    {
+      "source_id": "MOSA-DR-4",
+      "source_title": "Source Code Delivery",
+      "source_family": "MOSA-DR",
+      "target_controls": ["SA-4(9)", "SR-1"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA source code delivery maps to functions, ports, protocols, and services in use (SA-4(9)) for contractual requirements to deliver source code to government repositories, and supply chain risk management policy (SR-1) for ensuring source code escrow or delivery supports continuity of operations if the original vendor becomes unavailable."
+    },
+    {
+      "source_id": "MOSA-CS-1",
+      "source_title": "Component Replaceability",
+      "source_family": "MOSA-CS",
+      "target_controls": ["SA-4", "SR-5"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA component replaceability maps to acquisition process (SA-4) for requiring modular design that permits component substitution without system redesign, and acquisition strategies, tools, and methods (SR-5) for establishing supply chain strategies that maintain multiple qualified replacement options for each critical module."
+    },
+    {
+      "source_id": "MOSA-CS-2",
+      "source_title": "Vendor Lock-In Analysis",
+      "source_family": "MOSA-CS",
+      "target_controls": ["SA-4", "SR-1"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA vendor lock-in analysis maps to acquisition process (SA-4) for evaluating vendor dependency risks during procurement and requiring mitigation strategies, and supply chain risk management policy (SR-1) for establishing organizational policies that identify and minimize single-vendor dependencies across the system architecture."
+    },
+    {
+      "source_id": "MOSA-CS-3",
+      "source_title": "Alternative Identification",
+      "source_family": "MOSA-CS",
+      "target_controls": ["SA-4", "SR-5"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA alternative identification maps to acquisition process (SA-4) for requiring market surveys and alternative analysis for each major module during procurement planning, and acquisition strategies, tools, and methods (SR-5) for maintaining a vetted list of alternative suppliers and components that can substitute for current modules."
+    },
+    {
+      "source_id": "MOSA-CS-4",
+      "source_title": "Build vs Buy",
+      "source_family": "MOSA-CS",
+      "target_controls": ["SA-4", "PM-7"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA build-vs-buy analysis maps to acquisition process (SA-4) for conducting formal make-or-buy decisions that consider total cost of ownership, modularity impact, and data rights implications, and enterprise architecture (PM-7) for aligning component sourcing decisions with the organization's strategic technology roadmap and reuse objectives."
+    },
+    {
+      "source_id": "MOSA-CA-1",
+      "source_title": "Modularity Metrics",
+      "source_family": "MOSA-CA",
+      "target_controls": ["CA-7", "PM-4"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA modularity metrics maps to continuous monitoring (CA-7) for ongoing measurement of architectural modularity indicators such as coupling ratio, cohesion index, and interface complexity, and plan of action and milestones (PM-4) for tracking modularity improvement objectives and remediation of architectural debt."
+    },
+    {
+      "source_id": "MOSA-CA-2",
+      "source_title": "Interface Monitoring",
+      "source_family": "MOSA-CA",
+      "target_controls": ["CA-7", "SA-11"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "MOSA interface monitoring maps to continuous monitoring (CA-7) for ongoing surveillance of interface health, contract compliance, and performance degradation, and developer testing and evaluation (SA-11) for periodic re-verification of interface contracts to detect drift between specification and implementation."
+    },
+    {
+      "source_id": "MOSA-CA-3",
+      "source_title": "Conformance Validation",
+      "source_family": "MOSA-CA",
+      "target_controls": ["CA-7", "SA-11"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA conformance validation maps to continuous monitoring (CA-7) for periodic assessment of module compliance with the approved technical standard profile, and developer testing and evaluation (SA-11) for validation that implemented interfaces and data formats conform to the documented open standards."
+    },
+    {
+      "source_id": "MOSA-CA-4",
+      "source_title": "Evolution Plan",
+      "source_family": "MOSA-CA",
+      "target_controls": ["PM-4", "SA-3"],
+      "relationship": "maps_to",
+      "strength": "medium",
+      "notes": "MOSA evolution plan maps to plan of action and milestones (PM-4) for tracking planned architectural evolution steps, technology refresh schedules, and module upgrade timelines, and system development lifecycle (SA-3) for ensuring the modular architecture evolution is governed by the same lifecycle processes as the initial design."
+    }
+  ],
+  "reverse_mappings": {
+    "CA-7": ["MOSA-CA-1", "MOSA-CA-2", "MOSA-CA-3"],
+    "CM-3": ["MOSA-INT-2"],
+    "CM-7": ["MOSA-ARCH-4"],
+    "CM-8": ["MOSA-ARCH-5"],
+    "PM-4": ["MOSA-CA-1", "MOSA-CA-4"],
+    "PM-7": ["MOSA-CS-4"],
+    "PM-30": ["MOSA-DR-1", "MOSA-DR-3"],
+    "SA-3": ["MOSA-ARCH-1", "MOSA-CA-4"],
+    "SA-4": ["MOSA-ARCH-4", "MOSA-ARCH-5", "MOSA-STD-1", "MOSA-STD-4", "MOSA-CS-1", "MOSA-CS-2", "MOSA-CS-3", "MOSA-CS-4"],
+    "SA-4(1)": ["MOSA-STD-1", "MOSA-STD-2", "MOSA-STD-3", "MOSA-INT-1"],
+    "SA-4(2)": ["MOSA-INT-1", "MOSA-INT-2", "MOSA-INT-3"],
+    "SA-4(9)": ["MOSA-DR-1", "MOSA-DR-2", "MOSA-DR-3", "MOSA-DR-4"],
+    "SA-8": ["MOSA-ARCH-1", "MOSA-ARCH-2", "MOSA-ARCH-3"],
+    "SA-9": ["MOSA-STD-2", "MOSA-STD-4"],
+    "SA-11": ["MOSA-INT-4", "MOSA-CA-2", "MOSA-CA-3"],
+    "SA-11(1)": ["MOSA-INT-4"],
+    "SA-17": ["MOSA-ARCH-1", "MOSA-ARCH-2", "MOSA-ARCH-3"],
+    "SC-7": ["MOSA-INT-3"],
+    "SC-8": ["MOSA-STD-3"],
+    "SR-1": ["MOSA-DR-2", "MOSA-DR-4", "MOSA-CS-2"],
+    "SR-5": ["MOSA-CS-1", "MOSA-CS-3"]
+  },
+  "coverage_summary": {
+    "total_mosa_requirements": 25,
+    "total_nist_controls_referenced": 21,
+    "families_covered": 8,
+    "family_list": [
+      "CA",
+      "CM",
+      "PM",
+      "SA",
+      "SC",
+      "SR"
+    ],
+    "mosa_families": {
+      "MOSA-ARCH": {
+        "title": "Architecture",
+        "requirements": ["MOSA-ARCH-1", "MOSA-ARCH-2", "MOSA-ARCH-3", "MOSA-ARCH-4", "MOSA-ARCH-5"],
+        "nist_controls": ["SA-3", "SA-8", "SA-17", "SA-4", "CM-7", "CM-8"]
+      },
+      "MOSA-STD": {
+        "title": "Standards",
+        "requirements": ["MOSA-STD-1", "MOSA-STD-2", "MOSA-STD-3", "MOSA-STD-4"],
+        "nist_controls": ["SA-4", "SA-4(1)", "SA-9", "SC-8"]
+      },
+      "MOSA-INT": {
+        "title": "Interfaces",
+        "requirements": ["MOSA-INT-1", "MOSA-INT-2", "MOSA-INT-3", "MOSA-INT-4"],
+        "nist_controls": ["SA-4(1)", "SA-4(2)", "CM-3", "SC-7", "SA-11", "SA-11(1)"]
+      },
+      "MOSA-DR": {
+        "title": "Data Rights",
+        "requirements": ["MOSA-DR-1", "MOSA-DR-2", "MOSA-DR-3", "MOSA-DR-4"],
+        "nist_controls": ["SA-4(9)", "PM-30", "SR-1"]
+      },
+      "MOSA-CS": {
+        "title": "Competitive Strategy",
+        "requirements": ["MOSA-CS-1", "MOSA-CS-2", "MOSA-CS-3", "MOSA-CS-4"],
+        "nist_controls": ["SA-4", "SR-5", "SR-1", "PM-7"]
+      },
+      "MOSA-CA": {
+        "title": "Continuous Assessment",
+        "requirements": ["MOSA-CA-1", "MOSA-CA-2", "MOSA-CA-3", "MOSA-CA-4"],
+        "nist_controls": ["CA-7", "PM-4", "SA-11", "SA-3"]
+      }
+    },
+    "controls_with_multiple_mosa_mappings": {
+      "SA-4": ["MOSA-ARCH-4", "MOSA-ARCH-5", "MOSA-STD-1", "MOSA-STD-4", "MOSA-CS-1", "MOSA-CS-2", "MOSA-CS-3", "MOSA-CS-4"],
+      "SA-4(1)": ["MOSA-STD-1", "MOSA-STD-2", "MOSA-STD-3", "MOSA-INT-1"],
+      "SA-4(2)": ["MOSA-INT-1", "MOSA-INT-2", "MOSA-INT-3"],
+      "SA-4(9)": ["MOSA-DR-1", "MOSA-DR-2", "MOSA-DR-3", "MOSA-DR-4"],
+      "SA-8": ["MOSA-ARCH-1", "MOSA-ARCH-2", "MOSA-ARCH-3"],
+      "SA-17": ["MOSA-ARCH-1", "MOSA-ARCH-2", "MOSA-ARCH-3"],
+      "SA-11": ["MOSA-INT-4", "MOSA-CA-2", "MOSA-CA-3"],
+      "CA-7": ["MOSA-CA-1", "MOSA-CA-2", "MOSA-CA-3"],
+      "PM-4": ["MOSA-CA-1", "MOSA-CA-4"],
+      "PM-30": ["MOSA-DR-1", "MOSA-DR-3"],
+      "SR-1": ["MOSA-DR-2", "MOSA-DR-4", "MOSA-CS-2"],
+      "SR-5": ["MOSA-CS-1", "MOSA-CS-3"],
+      "SA-3": ["MOSA-ARCH-1", "MOSA-CA-4"]
+    },
+    "mosa_requirements_with_multiple_controls": {
+      "MOSA-ARCH-1": ["SA-3", "SA-8", "SA-17"],
+      "MOSA-DR-1": ["SA-4(9)", "PM-30"],
+      "MOSA-INT-1": ["SA-4(1)", "SA-4(2)"],
+      "MOSA-STD-1": ["SA-4", "SA-4(1)"]
+    }
+  }
+}

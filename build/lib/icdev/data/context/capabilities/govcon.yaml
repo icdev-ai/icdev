@@ -1,0 +1,44 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: GovCon Intelligence
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: govcon
+description: "SAM.gov opportunity scanning, proposal lifecycle management, and contract performance tracking"
+capabilities:
+  - slug: sam-scanner
+    name: "SAM.gov Opportunity Intelligence"
+    description: "Automated SAM.gov scanning, requirement extraction from solicitations, capability mapping against ICDEV™ features, win probability estimation"
+    cli_examples: []
+    related_controls: ["PL-2", "SA-4"]
+    article_hooks:
+      - "Automated SAM.gov scanning extracts requirements from federal solicitations and maps them to existing capabilities"
+      - "Win probability estimation helps teams focus on opportunities where they have the strongest competitive position"
+    frameworks: ["FAR", "DFARS"]
+    keywords: ["SAM.gov", "federal acquisition", "solicitation", "requirement extraction", "opportunity capture", "win probability"]
+    source_catalog_id: "cap-govcon"
+
+  - slug: proposal-lifecycle
+    name: "Proposal Lifecycle (Shipley)"
+    description: "End-to-end proposal management: volumes, sections, compliance matrix, color reviews (Pink/Red/Gold/White), response drafting with knowledge base"
+    cli_examples: []
+    related_controls: ["PL-2", "SA-4"]
+    article_hooks:
+      - "Full Shipley lifecycle from capture to submission with AI-assisted section drafting"
+      - "Color reviews (Pink/Red/Gold/White) with automated compliance matrix validation"
+    frameworks: ["Shipley"]
+    keywords: ["proposal", "Shipley", "color review", "compliance matrix", "volume", "section", "response drafting"]
+    source_catalog_id: "cap-govcon"
+
+  - slug: cpmp
+    name: "Contract Performance Management Portal"
+    description: "Post-award delivery tracking: CDRL import (DD Form 1423), SOW obligation tracking, CPARS risk scoring (4-factor weighted formula), proactive reminders"
+    cli_examples: []
+    related_controls: ["CM-3", "AU-2", "PL-2", "PM-4"]
+    article_hooks:
+      - "CPARS risk scoring uses 4-factor weighted formula: 35% overdue CDRLs + 25% rejected + 25% non-compliant + 15% late"
+      - "Automated CDRL import from Section H with frequency tracking and proactive reminders at 30/14/7/1 day intervals"
+      - "Closes the Shipley lifecycle -- connects proposal promises to actual delivery outcomes"
+    frameworks: ["FAR 42.302"]
+    keywords: ["CPMP", "CDRL", "CPARS", "contract management", "deliverable tracking", "SOW compliance", "post-award"]
+    source_catalog_id: "cap-cpmp"

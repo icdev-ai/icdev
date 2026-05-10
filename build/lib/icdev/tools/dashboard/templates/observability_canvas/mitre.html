@@ -1,0 +1,58 @@
+<!-- CUI // SP-CTI — ODC MITRE ATT&CK Matrix Page -->
+{% extends "base.html" %}
+{% block title %}MITRE ATT&CK Matrix — Observability Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .mitre-hero { padding: 20px 30px 10px; }
+  .mitre-hero h1 { font-size: 22px; margin: 0 0 4px; color: #ef5350; }
+  .mitre-hero p { color: #7a8cb0; font-size: 13px; margin: 0 0 12px; }
+  .mitre-back { display: inline-block; padding: 6px 16px; background: #0f3460; color: #7a8cb0; border-radius: 6px; text-decoration: none; font-size: 12px; margin-bottom: 16px; }
+  .mitre-back:hover { background: #1e3a6e; color: #eaeaea; }
+  .mitre-legend { display: flex; gap: 16px; padding: 0 30px 12px; align-items: center; flex-wrap: wrap; }
+  .mitre-legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #7a8cb0; }
+  .mitre-legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .mitre-grid { display: flex; gap: 12px; padding: 0 30px 30px; overflow-x: auto; }
+  .mitre-tactic-col { min-width: 160px; max-width: 180px; flex-shrink: 0; }
+  .mitre-tactic-header { background: #1e3a6e; border-radius: 6px 6px 0 0; padding: 8px 10px; font-size: 12px; font-weight: 600; color: #90caf9; text-align: center; }
+  .mitre-tech-cell { margin-top: 3px; padding: 6px 8px; border-radius: 4px; font-size: 11px; color: #eaeaea; cursor: pointer; text-decoration: none; display: block; background: #16213e; border: 1px solid #1e3a6e; transition: filter 0.15s; }
+  .mitre-tech-cell:hover { filter: brightness(1.25); color: #fff; }
+  .mitre-tech-cell.sub { margin-left: 10px; font-size: 10px; color: #b0bec5; border-left: 2px solid #1e3a6e; border-radius: 0 4px 4px 0; }
+  .mitre-tech-cell.cov-gap { background: #5c1a1a; border-color: #ef5350; }
+  .mitre-tech-cell.cov-covered { background: #1a3d1a; border-color: #4caf50; }
+  .mitre-tech-id { font-size: 10px; color: #7a8cb0; display: block; margin-bottom: 2px; }
+</style>
+
+<div class="mitre-hero">
+  <a href="/observability/" class="mitre-back">&larr; Back to Observability Canvas</a>
+  <h1>MITRE ATT&CK Enterprise Matrix</h1>
+  <p>Click any technique to view details and generate Sigma detection rules.</p>
+</div>
+
+<div class="mitre-legend">
+  <span class="mitre-legend-item">
+    <span class="mitre-legend-swatch" style="background:#16213e;border:1px solid #1e3a6e;"></span> Catalog
+  </span>
+  <span class="mitre-legend-item">
+    <span class="mitre-legend-swatch" style="background:#5c1a1a;border:1px solid #ef5350;"></span> Gap
+  </span>
+  <span class="mitre-legend-item">
+    <span class="mitre-legend-swatch" style="background:#1a3d1a;border:1px solid #4caf50;"></span> Covered
+  </span>
+</div>
+
+<div class="mitre-grid">
+  {% for tactic in tactics %}
+  <div class="mitre-tactic-col">
+    <div class="mitre-tactic-header">{{ tactic.name }}</div>
+    {% for tech in tactic.techniques %}
+    {% set cov_state = coverage.get(tech.id, "") %}
+    <a href="/observability/mitre/{{ tech.id }}"
+       class="mitre-tech-cell{% if tech.is_sub %} sub{% endif %}{% if cov_state %} cov-{{ cov_state }}{% endif %}">
+      <span class="mitre-tech-id">{{ tech.id }}</span>
+      {{ tech.name }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,155 @@
+from __future__ import annotations
+# CUI // SP-CTI
+"""FORGE Academy gamification engine — XP, level-ups, achievements."""
+
+import json
+from datetime import datetime, timezone
+
+from .constants import (
+    ACHIEVEMENTS, XP_MULT_FIRST_TRY_NO_HINTS, XP_MULT_WITH_HINTS,
+    XP_MULT_REFLECT_CORRECT, XP_HINT_PENALTY, XP_SPEED_BONUS,
+    XP_SPEED_BONUS_THRESHOLD_S, XP_DAILY_LOGIN_BASE, XP_STREAK_BONUS_PER_DAY,
+    xp_to_level, xp_to_next_level, LEVELS,
+)
+from .db import (
+    update_user_xp, grant_achievement, get_user_achievements, get_user,
+)
+
+
+def award_step_xp(user_id: int, base_xp: int, hints_used: int = 0,
+                  elapsed_seconds: int = None, step_type: str = "coding") -> dict:
+    """Compute and award XP for a completed step. Returns event dict."""
+    if step_type == "guided":
+        xp = base_xp
+    elif hints_used == 0:
+        xp = int(base_xp * XP_MULT_FIRST_TRY_NO_HINTS)
+    else:
+        xp = int(base_xp * XP_MULT_WITH_HINTS)
+        xp = max(0, xp - hints_used * XP_HINT_PENALTY)
+
+    speed_bonus = 0
+    if elapsed_seconds and elapsed_seconds <= XP_SPEED_BONUS_THRESHOLD_S and step_type == "coding":
+        speed_bonus = XP_SPEED_BONUS
+        xp += speed_bonus
+
+    before = get_user(user_id)
+    old_level = before["level"] if before else "recruit"
+    result = update_user_xp(user_id, xp)
+    leveled_up = result["level"] != old_level
+
+    achievements = []
+    if leveled_up:
+        slug = f"level_{result['level']}"
+    if speed_bonus:
+        ach = grant_achievement(user_id, "speed_demon")
+        if ach:
+            achievements.append(ach)
+
+    return {
+        "xp_earned": xp,
+        "speed_bonus": speed_bonus,
+        "hints_used": hints_used,
+        "leveled_up": leveled_up,
+        "new_level": result["level"],
+        "new_xp": result["xp"],
+        "achievements": achievements,
+    }
+
+
+def award_mission_xp(user_id: int, mission_xp: int, perfect: bool = False) -> dict:
+    """Award XP on mission completion. perfect=True means no hints, all steps first try."""
+    xp = int(mission_xp * 1.5) if perfect else mission_xp
+    result = update_user_xp(user_id, xp)
+    return {"xp_earned": xp, "perfect": perfect, "new_xp": result["xp"],
+            "new_level": result["level"]}
+
+
+def check_mission_achievements(user_id: int, mission_slug: str,
+                                hints_total: int = 0,
+                                aadc_score: int = 0) -> list[dict]:
+    """Check and grant any mission-completion achievements."""
+    unlocked = []
+    earned_slugs = {a["slug"] for a in get_user_achievements(user_id)}
+
+    for a in ACHIEVEMENTS:
+        if a["slug"] in earned_slugs:
+            continue
+        c = json.loads(a["criteria_json"])
+        ctype = c.get("type")
+
+        if ctype == "mission_complete" and c.get("mission_slug") == mission_slug:
+            granted = grant_achievement(user_id, a["slug"])
+            if granted:
+                update_user_xp(user_id, a["xp_bonus"])
+                unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
+
+        elif ctype == "aadc_owasp_clean" and aadc_score >= 100:
+            granted = grant_achievement(user_id, a["slug"])
+            if granted:
+                update_user_xp(user_id, a["xp_bonus"])
+                unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
+
+        elif ctype == "aadc_score_gte" and aadc_score >= c.get("threshold", 80):
+            granted = grant_achievement(user_id, a["slug"])
+            if granted:
+                update_user_xp(user_id, a["xp_bonus"])
+                unlocked.append({**granted, "bonus_xp": a["xp_bonus"]})
+
+    if hints_total == 0 and "no_hints_needed" not in earned_slugs:
+        granted = grant_achievement(user_id, "no_hints_needed")
+        if granted:
+            update_user_xp(user_id, 200)
+            unlocked.append({**granted, "bonus_xp": 200})
+
+    return unlocked
+
+
+def check_step_achievements(user_id: int, steps_completed: int) -> list[dict]:
+    """Check step-count achievements (first spark, etc.)."""
+    unlocked = []
+    earned_slugs = {a["slug"] for a in get_user_achievements(user_id)}
+    if steps_completed >= 1 and "first_spark" not in earned_slugs:
+        granted = grant_achievement(user_id, "first_spark")
+        if granted:
+            update_user_xp(user_id, 50)
+            unlocked.append({**granted, "bonus_xp": 50})
+    return unlocked
+
+
+def award_daily_login(user_id: int) -> dict | None:
+    """Award daily login XP + streak bonus. Returns award dict or None if already awarded."""
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    today = datetime.now(timezone.utc).date().isoformat()
+    existing = conn.execute(
+        "SELECT id FROM fa_daily_logins WHERE user_id=? AND login_date=?",
+        (user_id, today),
+    ).fetchone()
+    if existing:
+        return None
+    user = get_user(user_id)
+    streak = user.get("streak_days", 1) if user else 1
+    bonus = min(streak, 7) * XP_STREAK_BONUS_PER_DAY
+    xp = XP_DAILY_LOGIN_BASE + bonus
+    conn.execute(
+        "INSERT INTO fa_daily_logins (user_id,login_date,xp_awarded) VALUES (?,?,?)",
+        (user_id, today, xp),
+    )
+    conn.commit()
+    update_user_xp(user_id, xp)
+    return {"xp": xp, "streak": streak, "bonus": bonus}
+
+
+def get_user_stats(user_id: int) -> dict:
+    """Full stats for the hub page — XP, level progress, achievements, streak."""
+    user = get_user(user_id)
+    if not user:
+        return {}
+    progress = xp_to_next_level(user["xp"])
+    achievements = get_user_achievements(user_id)
+    return {
+        "user": user,
+        "level_progress": progress,
+        "achievements": achievements,
+        "achievement_count": len(achievements),
+    }

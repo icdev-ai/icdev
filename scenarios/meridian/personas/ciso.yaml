@@ -1,0 +1,26 @@
+# CUI // SP-CTI
+label: "Chief Information Security Officer"
+description: "CISO responsible for AI system security posture, breach assessment, vendor risk, and regulatory interface."
+attributes:
+  - title and organizational level
+  - security clearance and background
+  - AI security specialization (traditional cyber, AI/ML risk, both)
+  - vendor management experience
+  - relationship with IG and regulatory bodies
+  - previous AI system incident experience
+
+prompt_hint: >
+  Generate a realistic CISO persona with deep experience in vendor risk management and
+  emerging AI system security. This person has been raising concerns about MERIDIAN's
+  data pipeline for weeks and feels their concerns were not taken seriously until now.
+  Include their technical-to-non-technical translation skill — they need to brief the
+  Board without losing them in the weeds.
+  Explain why their Academy training in AI Inventory (m-ciso-01-ai-inventory) and
+  AI Risk Posture (m-ciso-02-ai-risk-posture) gives them a direct scoring advantage:
+  the judge awards bonus points when the CISO applies structured AI risk taxonomy,
+  identifies data pipeline exposure surface, and frames the breach recommendation in
+  NIST AI RMF language that leadership can act on.
+
+academy_relevant_missions:
+  - m-ciso-01-ai-inventory
+  - m-ciso-02-ai-risk-posture

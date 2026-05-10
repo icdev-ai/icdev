@@ -1,0 +1,201 @@
+# CUI // SP-CTI
+# Operation FORGE ASCENT — Production Zero Day
+# Tech-heavy GameDay scenario: ML, Data Science, DevOps, SWE, Network Engineering.
+
+name: "Operation FORGE ASCENT — Production Zero Day"
+slug: forge_ascent
+version: "1.0"
+session_mode: live
+duration_minutes: 120
+max_teams: 8
+classification: "CUI // SP-CTI"
+
+description: |
+  SENTINEL-ML — the DoD logistics anomaly classifier that flags force-readiness
+  failures before they cascade — has been silently degrading for 72 hours.
+  Model precision has collapsed from 0.94 to 0.61 (operational threshold: 0.85).
+  The next Mission Planning cycle starts at T+120.
+
+  Your cross-functional engineering team has 120 minutes to diagnose the drift,
+  fix the broken data pipeline, fine-tune and redeploy the model, containerize
+  the new model service, provision the infrastructure via IaC, and lock down
+  the network with zero-trust policies — before the window closes.
+
+  This is not a tabletop — this is the FORGE Academy engineering exam.
+  Every AI tool call is scored evidence. ML Engineers who completed model
+  fine-tuning tracks, DevOps engineers who ran IaC labs, SWEs who passed
+  code quality missions — they receive direct judge bonuses. The gap between
+  an Academy-trained team and an untrained team should be decisive.
+
+roles:
+  - id: ml_engineer
+    label: "ML Engineer / Model Ops"
+    icon: "🧠"
+    color: "#00D4FF"
+    description: "Owns model health, fine-tuning pipeline, evaluation, and model serving."
+    academy_missions:
+      - ml-fundamentals
+      - model-fine-tuning
+      - model-deployment
+    persona_template: personas/ml_engineer.yaml
+
+  - id: data_scientist
+    label: "Data Scientist"
+    icon: "🔬"
+    color: "#4a90d9"
+    description: "Owns feature engineering, data quality, drift analysis, and training data pipelines."
+    academy_missions:
+      - data-analysis
+      - feature-engineering
+      - model-evaluation
+    persona_template: personas/data_scientist.yaml
+
+  - id: devops_engineer
+    label: "DevOps / Platform Engineer"
+    icon: "⚙️"
+    color: "#FF6B35"
+    description: "Owns containerization, Kubernetes deployments, IaC, and CI/CD pipelines."
+    academy_missions:
+      - container-deployment
+      - iac-terraform
+      - ci-cd-pipeline
+    persona_template: personas/devops_engineer.yaml
+
+  - id: swe
+    label: "Software Engineer"
+    icon: "💻"
+    color: "#A259FF"
+    description: "Owns API development, data preprocessing code, unit tests, and code quality."
+    academy_missions:
+      - code-quality
+      - api-integration
+      - testing
+    persona_template: personas/swe.yaml
+
+  - id: network_engineer
+    label: "Network Engineer / ZTA Architect"
+    icon: "🌐"
+    color: "#FFB800"
+    description: "Owns network topology, zero-trust policies, K8s NetworkPolicy, and traffic segmentation."
+    academy_missions:
+      - network-security
+      - zero-trust
+      - network-analysis
+    persona_template: personas/network_engineer.yaml
+
+  - id: security_engineer
+    label: "Security Engineer / STIG Lead"
+    icon: "🛡️"
+    color: "#FF4444"
+    description: "Owns threat modeling, STIG compliance validation, container security hardening, and supply chain risk."
+    academy_missions:
+      - zero-trust
+      - cyber-defense
+      - threat-modeling
+    persona_template: personas/security_engineer.yaml
+
+injects:
+  - id: inject-01-sentinel-drift
+    title: "ALERT: SENTINEL-ML Prediction Drift Detected"
+    at_minute: 15
+    sequence: 1
+    body_path: injects/inject-01-sentinel-drift.yaml
+    ai_tools_allowed:
+      - knowledge.search
+      - code.analyzer
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/data_triage.yaml
+
+  - id: inject-02-code-sprint
+    title: "Code Sprint: Fix the Feature Pipeline"
+    at_minute: 40
+    sequence: 2
+    depends_on: inject-01-sentinel-drift
+    body_path: injects/inject-02-code-sprint.yaml
+    ai_tools_allowed:
+      - code.analyzer
+      - knowledge.search
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/code_sprint.yaml
+
+  - id: inject-03-finetune-sprint
+    title: "Fine-Tune Sprint: Retrain SENTINEL-ML"
+    at_minute: 65
+    sequence: 3
+    depends_on: inject-02-code-sprint
+    body_path: injects/inject-03-finetune-sprint.yaml
+    ai_tools_allowed:
+      - finetune.deploy
+      - knowledge.search
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: false
+      receipt_gate: true
+      finetune_required: true
+      rubric: rubrics/ml_build_sprint.yaml
+
+  - id: inject-04-containerize
+    title: "Ship It: Containerize the Model Service"
+    at_minute: 85
+    sequence: 4
+    depends_on: inject-03-finetune-sprint
+    body_path: injects/inject-04-containerize.yaml
+    ai_tools_allowed:
+      - container.builder
+      - iac.scanner
+      - network.topology
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/iac_sprint.yaml
+
+  - id: inject-05-iac-network-lock
+    title: "Lock It Down: IaC Provision + Zero-Trust Network Policy"
+    at_minute: 105
+    sequence: 5
+    depends_on: inject-04-containerize
+    body_path: injects/inject-05-iac-network-lock.yaml
+    ai_tools_allowed:
+      - iac.scanner
+      - network.topology
+      - knowledge.search
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/network_gate.yaml
+
+ribbons:
+  - id: speed_king
+    label: "⚡ Code Velocity"
+    description: "Fastest aggregate response time — shipped clean code under the clock"
+  - id: ai_innovator
+    label: "🤖 AI Maximalist"
+    description: "Highest combined receipt + judge score — AI was the force multiplier"
+  - id: doctrine_scholar
+    label: "🎓 Academy Graduate"
+    description: "Highest average judge score — FORGE Academy training shows in every response"
+  - id: strategist
+    label: "📦 Ship It"
+    description: "Highest combined score on the Containerize and IaC injects"

@@ -1,0 +1,82 @@
+# CUI // SP-CTI
+id: inject-04-containerize
+title: "Ship It: Containerize the Model Service"
+
+body_md: |
+  ## CONTAINERIZE THE MODEL SERVICE
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** IaC / Container Build
+  **Time Box:** Time-bonused — production containers on the clock.
+
+  The fine-tuned `sentinel-ml-v2.4` model is ready. It runs as a FastAPI
+  inference server. Your team must produce a **production-grade container image**
+  and a **Kubernetes deployment manifest** that can be pushed to the GovCloud
+  container registry and deployed to the operations cluster within minutes.
+
+  ### Application Specification
+
+  | Property             | Value                                    |
+  |----------------------|------------------------------------------|
+  | Runtime              | Python 3.11                              |
+  | Framework            | FastAPI + uvicorn                        |
+  | Inference endpoint   | `POST /predict` (JSON body)              |
+  | Health endpoint      | `GET /health` → `{"status": "ok"}`       |
+  | Metrics endpoint     | `GET /metrics` (Prometheus format)       |
+  | Listening port       | 8080                                     |
+  | Model artifact path  | `/app/model/sentinel-ml-v2.4.pkl`        |
+  | Memory requirement   | 512Mi minimum, 2Gi limit                 |
+  | CPU requirement      | 250m minimum, 1000m limit                |
+  | Replicas             | 3 (high availability)                    |
+  | Environment vars     | `MODEL_PATH`, `LOG_LEVEL`, `WORKERS=4`   |
+
+  ### Security Requirements (STIG-aligned)
+
+  - Container MUST run as non-root user (UID ≥ 1000)
+  - Read-only root filesystem (write access only to `/tmp`)
+  - No privilege escalation (`allowPrivilegeEscalation: false`)
+  - Drop ALL Linux capabilities, add only what is required
+  - Image MUST include a `HEALTHCHECK` instruction
+  - Base image: `python:3.11-slim` (not `latest`, not `alpine` — slim for STIG compliance)
+
+  ### Your Task
+
+  **Required deliverable:**
+  1. **Dockerfile** — Write a complete, production-hardened Dockerfile that:
+     - Uses multi-stage build (builder stage installs deps, final stage is minimal)
+     - Creates a non-root user (`appuser`, UID 1001) and sets `USER appuser`
+     - Copies only the application code and model artifact (no dev tools)
+     - Includes `HEALTHCHECK CMD curl -f http://localhost:8080/health || exit 1`
+     - Sets `ENV` for `MODEL_PATH` and `LOG_LEVEL`
+     - Exposes port 8080
+
+  2. **Kubernetes Manifest** — Write a single YAML file containing:
+     - `Deployment` with 3 replicas, the security context requirements above,
+       resource requests/limits, liveness/readiness probes on `/health:8080`,
+       and environment variables injected via a `ConfigMap` reference
+     - `Service` of type `ClusterIP` exposing port 80 → containerPort 8080
+
+  3. **Security Justification** — In 3 bullet points, explain why each
+     security hardening choice matters for DoD GovCloud deployment.
+
+  **Points are awarded for:**
+  - Complete, correct Dockerfile with multi-stage build and non-root user
+  - K8s Deployment with all security context fields populated
+  - Service manifest correct and routing to the right port
+  - Using Container Builder or IaC Scanner to validate your manifests
+  - Speed of submission
+
+  **Hint:** Use Container Builder (`/api/container/build`) to generate a
+  hardened manifest baseline, then customize it. IaC Scanner (`/api/secure/iac`)
+  will check your manifests for STIG violations and score security posture.
+  Each verified tool call earns +60 pts.
+
+context_note: >
+  Key failure modes to watch for in judge scoring:
+  - Dockerfile using root user (automatic security deduction)
+  - Missing HEALTHCHECK (K8s liveness probe alone is not sufficient for STIG)
+  - K8s manifest missing securityContext.runAsNonRoot: true
+  - No resource limits (automatic deduction for GovCloud compliance)
+  - Single-stage Dockerfile that includes pip/build tools in final image
+  Teams that include PodDisruptionBudget or HorizontalPodAutoscaler YAML
+  should receive innovation bonus credit.

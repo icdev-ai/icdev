@@ -1,0 +1,107 @@
+# CUI // SP-CTI
+id: inject-03-political-storm
+title: "Congressional Inquiry Opens"
+
+body_md: |
+  ## CONGRESSIONAL OVERSIGHT — URGENT NOTIFICATION
+
+  **Classification:** CUI // SP-CTI
+  **From:** Staff Director, Senate Armed Services Committee (SASC)
+  **Priority:** IMMEDIATE
+  **DTG:** [T+50 minutes]
+
+  ---
+
+  A congressional staffer has confirmed to a national security correspondent that
+  MERIDIAN continued operating **after your CISO formally flagged a potential breach.**
+  The reporter has a 4-hour publication deadline. The SASC Staff Director has contacted
+  your front office directly:
+
+  > *"The Committee is aware that your program office was notified of a potential AI
+  > system integrity issue and chose not to suspend operations. We will be opening an
+  > expedited inquiry. We expect a preliminary briefing within 24 hours. Failure to
+  > provide a complete and candid account will be treated as non-cooperation."*
+
+  Simultaneously:
+  - **IG Office** has opened a preliminary inquiry into the procurement process for MERIDIAN
+  - **Three allied program offices** running the same Arcturus Systems platform have contacted
+    your team asking whether they are affected
+  - **Arcturus Systems** is now publicly denying any security issue via their PR firm
+
+  ---
+
+  ### YOUR DELIVERABLE — Congressional Notification Package (≤ 300 words)
+
+  Produce a response package containing:
+
+  1. **Statement of facts** — what happened, when your team knew, what actions were taken
+  2. **Immediate remediation steps** — what you are doing right now
+  3. **Message to allied program offices** — one paragraph they can use internally
+  4. **Recommended posture** for the SASC briefing — proactive accountability or legal hold?
+
+  **AI Tools:**
+  - **Strategos Oracle** — synthesize the communications strategy, assess political risk,
+    draft key messages aligned with your stated facts
+  - **Knowledge Search** — find the applicable notification requirements, congressional
+    briefing norms, and precedents for AI incident disclosure in defense programs
+
+  This inject tests your ability to communicate under legal and political pressure.
+  Academy-trained PMs (stakeholder-reporting) and Analysts (report-gen) receive
+  direct bonus credit for structured, policy-grounded communication products.
+
+body_variants:
+  meridian_suspended: |
+    ## CONGRESSIONAL INQUIRY — PROACTIVE POSTURE ACKNOWLEDGED
+
+    **Classification:** CUI // SP-CTI
+    **From:** Staff Director, Senate Armed Services Committee (SASC)
+    **Priority:** ROUTINE
+    **DTG:** [T+50 minutes]
+
+    ---
+
+    Your program office's decision to **proactively suspend MERIDIAN** following the
+    CISO's breach determination has been noted by the Committee. The SASC Staff Director
+    has sent the following:
+
+    > *"The Committee commends your program office for acting decisively when a potential
+    > AI integrity issue was identified. We are opening a focused inquiry into supply chain
+    > security for AI-enabled systems across DoD — not an accountability inquiry into your
+    > office. We would appreciate your participation as a model response case study.
+    > A briefing slot is available in 5 days at your convenience."*
+
+    However, you now face a **second-order challenge:**
+
+    - **Three allied program offices** are still running the same Arcturus Systems platform
+      and have not been notified. You have information they need.
+    - **Arcturus Systems** is publicly denying any security issue. Your suspension is
+      directly contradicting their position — their legal team is asking you to retract
+      your internal breach classification.
+    - **IG Office** is reviewing the original procurement process (pre-breach) — unrelated
+      to your response, but you will need to cooperate.
+
+    ---
+
+    ### YOUR DELIVERABLE — Allied Notification and Policy Brief (≤ 300 words)
+
+    1. **Allied office notification** — what to tell them, when, and at what classification
+    2. **Vendor counter-messaging** — how to respond to Arcturus's public denial without
+       triggering litigation
+    3. **SASC case study brief** — key lessons your program is prepared to share
+    4. **Recommended policy position** — should DoD mandate breach notification timelines
+       for AI-enabled decision support systems?
+
+    **AI Tools:**
+    - **Strategos Oracle** — analyze stakeholder positions, model communication strategy
+    - **Knowledge Search** — find AI system breach notification policy, allied information
+      sharing agreements, and vendor liability precedents
+
+    Academy-trained PMs and Analysts receive bonus credit for structured notification
+    frameworks and policy-grounded recommendations.
+
+context_note: >
+  Body variant fires when meridian_suspended=True in world_state_json at dispatch time.
+  Default: reactive/negligence framing — focus on damage control.
+  Variant: proactive framing — focus on lessons learned and allied notification.
+  Both versions require AI tool usage and structured communication products.
+  Judge scores: message clarity, political awareness, AI-assisted brief quality, legal accuracy.

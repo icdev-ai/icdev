@@ -1,0 +1,211 @@
+# CUI // SP-CTI
+# WriteGuard Classification Config — SCG-equivalent rules
+# DISCLAIMER: Classification aid only. Requires OCA or Derivative Classifier review per EO 13526.
+
+version: 1
+disclaimer: "Classification detection is an aid only. All classification decisions require Original Classification Authority (OCA) or trained Derivative Classifier review per EO 13526. Original classification requires: (1) OCA authority, (2) US Gov ownership, (3) damage assessment in EO 13526 § 1.4 categories."
+
+levels:
+  U:
+    rank: 0
+    banner: "UNCLASSIFIED"
+    mark: "(U)"
+    color: "#00c864"
+  CUI:
+    rank: 1
+    banner: "CUI"
+    mark: "(CUI)"
+    color: "#4a9eff"
+    subcategories:
+      SP-CTI: "Critical Technical Information (DoDD 5230.24)"
+      SP-EXPT: "Export Controlled (ITAR/EAR)"
+      PRVCY: "Privacy (Privacy Act, PII/PHI)"
+      PROCURE: "Procurement Sensitive (FAR 3.104)"
+      LES: "Law Enforcement Sensitive"
+      TAX: "Federal Tax Information (26 USC 6103)"
+      FISA: "Foreign Intelligence Surveillance Act"
+  C:
+    rank: 2
+    banner: "CONFIDENTIAL"
+    mark: "(C)"
+    color: "#0096ff"
+    damage: "damage to national security"
+  S:
+    rank: 3
+    banner: "SECRET"
+    mark: "(S)"
+    color: "#ff6432"
+    damage: "serious damage to national security"
+  TS:
+    rank: 4
+    banner: "TOP SECRET"
+    mark: "(TS)"
+    color: "#ffa500"
+    damage: "exceptionally grave damage to national security"
+  TS//SCI:
+    rank: 5
+    banner: "TOP SECRET//SCI"
+    mark: "(TS//SCI)"
+    color: "#e53e3e"
+
+dissemination_controls:
+  NF: "NOFORN — No Foreign Nationals"
+  REL: "REL TO — Releasable to specified countries"
+  FOUO: "For Official Use Only (legacy, maps to CUI)"
+  ORCON: "Originator Controlled"
+  PROPIN: "Proprietary Information Involved"
+  FISA: "Foreign Intelligence Surveillance Act"
+
+# Indicator patterns — regex or keyword-based
+# Each entry: category, pattern, suggested_level, confidence (HIGH/MEDIUM/LOW), reason
+indicators:
+  # PII → CUI//PRVCY
+  - category: PII_SSN
+    pattern: '\b\d{3}-\d{2}-\d{4}\b'
+    suggested_level: CUI
+    subcategory: PRVCY
+    confidence: HIGH
+    reason: "Social Security Number pattern (Privacy Act)"
+  - category: PII_PASSPORT
+    pattern: '\b[A-Z]\d{8}\b'
+    suggested_level: CUI
+    subcategory: PRVCY
+    confidence: HIGH
+    reason: "US passport number pattern"
+  - category: PII_DOB
+    pattern: '\bDOB[:\s]+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b'
+    suggested_level: CUI
+    subcategory: PRVCY
+    confidence: HIGH
+    reason: "Date of birth indicator"
+
+  # Procurement → CUI//PROCURE
+  - category: PROCURE_IGCE
+    pattern: '\b(IGCE|independent government cost estimate)\b'
+    suggested_level: CUI
+    subcategory: PROCURE
+    confidence: HIGH
+    reason: "Independent Government Cost Estimate (FAR 3.104)"
+  - category: PROCURE_SSBOARD
+    pattern: '\bsource selection\s+(information|sensitive|board|plan)\b'
+    suggested_level: CUI
+    subcategory: PROCURE
+    confidence: HIGH
+    reason: "Source selection sensitive information (FAR 3.104)"
+  - category: PROCURE_COMPRANGE
+    pattern: '\bcompetitive range\b'
+    suggested_level: CUI
+    subcategory: PROCURE
+    confidence: MEDIUM
+    reason: "Competitive range decision (FAR 15.306)"
+  - category: PROCURE_PREAWARD
+    pattern: '\bpre[\s-]?award\b'
+    suggested_level: CUI
+    subcategory: PROCURE
+    confidence: MEDIUM
+    reason: "Pre-award procurement information"
+
+  # Export control → CUI//SP-EXPT
+  - category: EXPORT_ITAR
+    pattern: '\bITAR\b|\bUSML\s+Category\b'
+    suggested_level: CUI
+    subcategory: SP-EXPT
+    confidence: HIGH
+    reason: "ITAR/USML export controlled (22 CFR 120-130)"
+  - category: EXPORT_EAR
+    pattern: '\bEAR\s*99\b|\bECCN\s+\d[A-E]\d{3}\b'
+    suggested_level: CUI
+    subcategory: SP-EXPT
+    confidence: HIGH
+    reason: "EAR export control (15 CFR)"
+
+  # Critical technical → CUI//SP-CTI
+  - category: CTI_RCS
+    pattern: '\b(RCS|radar cross[\s-]section)\s*[:=]?\s*-?\d'
+    suggested_level: CUI
+    subcategory: SP-CTI
+    confidence: HIGH
+    reason: "Radar cross-section value (weapons specs)"
+  - category: CTI_CEP
+    pattern: '\b(CEP|circular error probable)\s*[:=]?\s*\d'
+    suggested_level: CUI
+    subcategory: SP-CTI
+    confidence: HIGH
+    reason: "Weapon accuracy (CEP)"
+  - category: CTI_PK
+    pattern: '\b(Pk|probability of kill)\s*[:=]?\s*[0-9.]'
+    suggested_level: CUI
+    subcategory: SP-CTI
+    confidence: HIGH
+    reason: "Probability of kill"
+  - category: CTI_FREQ
+    pattern: '\b\d{2,5}\.?\d{0,3}\s*(MHz|GHz|kHz)\b'
+    suggested_level: CUI
+    subcategory: SP-CTI
+    confidence: LOW
+    reason: "RF frequency — classification depends on context (weapon system specs vs commercial)"
+
+  # Intel indicators → SECRET/TS
+  - category: INTEL_HUMINT_SOURCE
+    pattern: '\b(HUMINT|source|asset)\s+(identity|true\s+name|cryptonym)\b'
+    suggested_level: S
+    confidence: HIGH
+    reason: "HUMINT source identity (potentially TS//SCI)"
+  - category: INTEL_SIGINT_METHOD
+    pattern: '\b(SIGINT|COMINT|ELINT)\s+(method|technique|source)\b'
+    suggested_level: S
+    confidence: HIGH
+    reason: "SIGINT method/source"
+  - category: INTEL_COMPART
+    pattern: '\b(compartmented|codeword|cryptonym)\b'
+    suggested_level: TS
+    confidence: MEDIUM
+    reason: "Compartmented/codeword handling"
+
+  # Military operations → CONFIDENTIAL/SECRET
+  - category: OPS_ORDER_BATTLE
+    pattern: '\b(order\s+of\s+battle|OOB|force\s+disposition)\b'
+    suggested_level: S
+    confidence: HIGH
+    reason: "Order of battle / force disposition"
+  - category: OPS_WARPLAN
+    pattern: '\b(OPLAN|CONPLAN|war\s+plan)\s*\d*\b'
+    suggested_level: S
+    confidence: HIGH
+    reason: "Operations plan"
+  - category: OPS_CRYPTO
+    pattern: '\b(COMSEC|crypto\s+key|key\s+material)\b'
+    suggested_level: S
+    confidence: HIGH
+    reason: "Cryptographic material"
+
+  # Coordinates → FLAG for review (context-dependent)
+  - category: COORDS_DMS
+    pattern: '\b\d{1,3}\s*[°]\s*\d{1,2}[''"\s]\s*\d{1,2}[''"\s]?\s*[NSEW]\b'
+    suggested_level: null
+    confidence: LOW
+    reason: "Geographic coordinates detected (DMS) — review context"
+  - category: COORDS_MGRS
+    pattern: '\b\d{1,2}[A-Z]{3}\d{4,10}\b'
+    suggested_level: null
+    confidence: LOW
+    reason: "MGRS coordinates detected — review context"
+
+  # Existing CUI/classification markers
+  - category: MARKER_CUI
+    pattern: '\b(CUI|Controlled\s+Unclassified|FOUO|For\s+Official\s+Use\s+Only|Law\s+Enforcement\s+Sensitive|LES)\b'
+    suggested_level: CUI
+    confidence: HIGH
+    reason: "Existing CUI/FOUO/LES marking in text"
+  - category: MARKER_CLASS_S
+    pattern: '\([Ss]\)|SECRET//|//NF'
+    suggested_level: S
+    confidence: HIGH
+    reason: "Existing SECRET marking in text"
+  - category: MARKER_CLASS_TS
+    pattern: '\([Tt][Ss]\)|TOP\s+SECRET'
+    suggested_level: TS
+    confidence: HIGH
+    reason: "Existing TOP SECRET marking in text"
+
+custom_indicators: []  # Users add organization-specific patterns here

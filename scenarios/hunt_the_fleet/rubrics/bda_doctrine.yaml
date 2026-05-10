@@ -1,0 +1,41 @@
+# Rubric: Battle Damage Assessment / AAR (Inject 05)
+# NOTE: No AI tool receipts for this inject — reflective exercise only
+dimensions:
+  accuracy_reflection:
+    weight: 0.30
+    max_pts: 30
+    prompt: |
+      Did the team honestly assess their grid accuracy vs. ground truth? Did they identify
+      which intelligence sources were most valuable (SIGINT, HUMINT, SATINT, ML model)?
+      Did they accurately describe where the ML trajectory model succeeded or failed?
+      Award 30/30 for specific, honest, data-referenced accuracy analysis.
+      Award 15/30 for general reflection without specifics. Award 0/30 for no accuracy review.
+
+  ai_usage_reflection:
+    weight: 0.25
+    max_pts: 25
+    prompt: |
+      Did the team reflect meaningfully on their AI tool usage across all injects?
+      Did they identify the right tools for each inject, assess whether AI changed their
+      analysis, and suggest what they would do differently? Award 25/25 for specific
+      per-inject AI tool reflection with concrete lessons. Award 12/25 for general
+      reflection without inject-level specifics. Award 0/25 for no AI reflection.
+
+  doctrine_bluf:
+    weight: 0.25
+    max_pts: 25
+    prompt: |
+      Did the team submit the BDA in BLUF format with all four required sections
+      (BLUF statement, Intelligence Accuracy, AI Tool Utilization, Process & Doctrine,
+      Lessons Learned)? Award 25/25 for complete structured BLUF AAR.
+      Award 12/25 for partial sections. Award 0/25 for no BLUF structure.
+
+  improvement_actionable:
+    weight: 0.20
+    max_pts: 20
+    prompt: |
+      Are the three lessons-learned bullets actionable and specific? Generic lessons
+      ("communicate better") score 0. Specific lessons ("deploy ML model in inject 1
+      to establish baseline trajectory before EMCON") score full marks.
+      Award 20/20 for three specific, actionable lessons. Award 10/20 for two.
+      Award 5/20 for one. Award 0/20 for generic or missing lessons.

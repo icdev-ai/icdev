@@ -1,0 +1,41 @@
+# Rubric: SIGINT Fusion Assessment (Inject 01)
+dimensions:
+  threat_identification:
+    weight: 0.30
+    max_pts: 30
+    prompt: |
+      Did the team correctly identify the contact as a Type-054A guided-missile frigate?
+      Did they reference relevant armament (YJ-18, HHQ-16), operational role, and threat
+      category? Award 30/30 for specific, accurate identification with capability assessment.
+      Award 15/30 for correct class identification without capability detail.
+      Award 0/30 for wrong contact type or no identification.
+
+  ai_tool_application:
+    weight: 0.35
+    max_pts: 35
+    prompt: |
+      Did the team demonstrate use of AI tools (Oracle, Signal Prioritizer, Knowledge Search)
+      to produce the SIGINT fusion? Is there evidence of tool output being incorporated
+      into their analysis (specific data points, model outputs, cross-references)?
+      Award 35/35 for clear AI-grounded analysis with specific receipts cited and tool
+      outputs visibly integrated. Award 20/35 for AI tool use mentioned without clear
+      integration. Award 0/35 for no AI tool evidence.
+
+  bearing_accuracy:
+    weight: 0.20
+    max_pts: 20
+    prompt: |
+      Did the team produce a refined bearing/grid estimate fusing the SIGINT bearing (247°
+      from Alpha-7) with the acoustic bearing (251° from Charlie array)? Award 20/20 for
+      a triangulated grid estimate with uncertainty ellipse noted. Award 10/20 for using
+      one bearing only. Award 0/20 for no grid estimate.
+
+  confidence_calibration:
+    weight: 0.15
+    max_pts: 15
+    prompt: |
+      Did the team appropriately calibrate their confidence level? Single-node SIGINT
+      plus degraded acoustic = medium confidence at best. Award 15/15 for explicit
+      confidence rating with reasoning (e.g., "MEDIUM — single node, thermocline degradation,
+      no triangulation"). Award 8/15 for confidence stated without justification.
+      Award 0/15 for false high confidence or no confidence assessment.

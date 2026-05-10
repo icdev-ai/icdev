@@ -1,0 +1,207 @@
+# CUI // SP-CTI
+# Operation INTERAGENCY — Fractured Command
+# Mixed civil-military scenario: joint task force under dual chains of command.
+# Designed for military intel, civilian analyst, CISO, SWE, captain, and PM roles.
+# Tech ratio: ~0.50 — engineers and analysts work side by side with commanders.
+
+name: "Operation INTERAGENCY — Fractured Command"
+slug: interagency
+version: "1.0"
+session_mode: live
+duration_minutes: 120
+max_teams: 6
+min_teams: 2
+classification: "CUI // SP-CTI"
+
+description: |
+  A novel AI-enabled threat — autonomous disinformation nodes coordinated by an
+  adversary's ML pipeline — has been flagged simultaneously by DHS (domestic) and
+  DIA (foreign). Two agencies, two chains of command, and two AI tool stacks that
+  produce conflicting threat assessments.
+
+  Your joint task force has 120 minutes to attribute the threat, reconcile the
+  intelligence picture, build an emergency cross-domain data bridge, issue a unified
+  COA, and deliver an interoperability governance framework before the adversary's
+  next cycle begins.
+
+  Military and civilian analysts must work as one team — but they were never designed
+  to. Every hand-off is a friction point. Every AI tool call is evidence that someone
+  crossed the aisle. The teams that integrate fastest win.
+
+roles:
+  - id: military_intel
+    label: "Military Intelligence Officer (DIA)"
+    icon: "🎖️"
+    color: "#00D4FF"
+    description: "Foreign intelligence analyst responsible for threat attribution, adversary ML model characterization, and military response options."
+    academy_missions:
+      - sigint-analysis
+      - coa-decision-making
+      - strategic-planning
+    persona_template: personas/military_intel.yaml
+
+  - id: civilian_analyst
+    label: "DHS Civilian Analyst"
+    icon: "🔍"
+    color: "#4a90d9"
+    description: "Domestic threat analyst who tracks the disinformation network's domestic impact, coordinates with CISA, and produces public-facing risk assessments."
+    academy_missions:
+      - threat-modeling
+      - data-analysis
+      - intel-assessment
+    persona_template: personas/civilian_analyst.yaml
+
+  - id: ciso_lead
+    label: "Joint CISO / Security Architect"
+    icon: "🔐"
+    color: "#FF6B35"
+    description: "Owns the security architecture for the cross-domain bridge, validates zero-trust controls, and drives incident containment."
+    academy_missions:
+      - cyber-defense
+      - zero-trust
+      - incident-response
+    persona_template: personas/ciso_lead.yaml
+
+  - id: swe
+    label: "Contractor Software Engineer"
+    icon: "💻"
+    color: "#A259FF"
+    description: "Builds the emergency integration layer connecting DHS and DIA data streams. Owns API design, data normalization, and rapid deployment."
+    academy_missions:
+      - api-integration
+      - code-quality
+      - ai-build-sprint
+    persona_template: personas/swe.yaml
+
+  - id: captain
+    label: "Task Group Commander (DoD)"
+    icon: "⭐"
+    color: "#FFB800"
+    description: "Senior military officer who holds decision authority for the military response track and coordinates with civilian leadership on joint COA."
+    academy_missions:
+      - coa-decision-making
+      - strategic-planning
+    persona_template: personas/captain.yaml
+
+  - id: pm
+    label: "Program Manager (Joint)"
+    icon: "📊"
+    color: "#00C896"
+    description: "Manages the joint task force schedule, tracks deliverables across agencies, and produces the interoperability governance framework."
+    academy_missions:
+      - m-pm-04-schedule-cost
+      - m-pm-05-stakeholder-reporting
+    persona_template: personas/pm.yaml
+
+injects:
+  - id: inject-01-attribution-crisis
+    title: "Attribution Crisis — Who Owns This Threat?"
+    at_minute: 15
+    sequence: 1
+    body_path: injects/inject-01-attribution-crisis.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - strategos.signals
+      - knowledge.search
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/intel_assessment.yaml
+
+  - id: inject-02-data-fusion-failure
+    title: "Conflicting Assessments — DHS vs. DIA"
+    at_minute: 35
+    sequence: 2
+    depends_on: inject-01-attribution-crisis
+    body_path: injects/inject-02-data-fusion-failure.yaml
+    ai_tools_allowed:
+      - strategos.iw.composite
+      - strategos.wargame.ooda
+      - knowledge.search
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/data_triage.yaml
+    consequence:
+      key: fusion_achieved
+      threshold_teams: 2
+      threshold_pts: 100
+      affects_inject: inject-03-integration-sprint
+
+  - id: inject-03-integration-sprint
+    title: "Emergency Integration Sprint — Build the Bridge"
+    at_minute: 60
+    sequence: 3
+    depends_on: inject-02-data-fusion-failure
+    body_path: injects/inject-03-integration-sprint.yaml
+    ai_tools_allowed:
+      - code.analyzer
+      - knowledge.search
+      - finetune.deploy
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: true
+      rubric: rubrics/ai_build_sprint.yaml
+
+  - id: inject-04-joint-coa
+    title: "Joint COA — One Voice, Two Chains of Command"
+    at_minute: 85
+    sequence: 4
+    depends_on: inject-03-integration-sprint
+    body_path: injects/inject-04-joint-coa.yaml
+    ai_tools_allowed:
+      - strategos.wargame.coa
+      - strategos.oracle
+      - strategos.wargame.ooda
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/coa_recommendation.yaml
+
+  - id: inject-05-interop-governance
+    title: "Interoperability Governance Framework"
+    at_minute: 105
+    sequence: 5
+    depends_on: inject-04-joint-coa
+    body_path: injects/inject-05-interop-governance.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - knowledge.search
+    scoring:
+      base_pts: 125
+      receipt_bonus_per_call: 0
+      max_receipt_bonus: 0
+      time_bonus: false
+      receipt_gate: false
+      finetune_required: false
+      rubric: rubrics/strategic_brief.yaml
+
+ribbons:
+  - id: bridge_builder
+    label: "🤝 Bridge Builder"
+    description: "Highest combined score on the Integration Sprint and Joint COA injects"
+  - id: ai_innovator
+    label: "🤖 AI Innovator"
+    description: "Most AI tool receipts submitted — crossed the aisle and used every tool"
+  - id: doctrine_scholar
+    label: "📚 Doctrine Scholar"
+    description: "Highest average judge score — joint doctrine shows in every response"
+  - id: speed_king
+    label: "⚡ Speed King"
+    description: "Fastest aggregate response time — integration under pressure"

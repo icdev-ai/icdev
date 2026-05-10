@@ -1,0 +1,20 @@
+role_id: imagery_analyst
+rank: "GS-13"
+name_placeholder: "Imagery Analyst"
+organization: "NGA Pacific — MOVINT Cell"
+clearance: "TS/SCI//TK"
+specialty: "SATINT / MOVINT / Wake Analysis"
+years_experience: 11
+background: |
+  NGA analyst, MOVINT and wake pattern certified. Expert in ship-wake signature analysis
+  from radar and optical satellite imagery. Thermal bloom classification specialist.
+  Primary duty: tasking satellite collection windows to confirm surface contacts.
+equipment:
+  - "NTM satellite collection scheduling system"
+  - "MOVINT pattern analysis workstation"
+  - "Thermal/radar imagery exploitation suite"
+role_brief: |
+  You task and interpret the satellite imagery. When the window opens at 142030Z, your
+  analysis of the wake signature and thermal bloom will confirm or deny the ML prediction.
+  Before the window, work with the data scientist to define the search grid. After the
+  window, your SATINT analysis is the ground truth that validates the strike grid.

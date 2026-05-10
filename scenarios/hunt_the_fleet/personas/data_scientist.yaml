@@ -1,0 +1,21 @@
+role_id: data_scientist
+rank: "GS-13 / DoD STEM"
+name_placeholder: "ML Engineer"
+organization: "NAVSOC Data Science Cell"
+clearance: "TS/SCI"
+specialty: "Trajectory Prediction / Fine-Tuned Naval ML Models"
+years_experience: 6
+background: |
+  DoD STEM hire, 6 years in naval ML applications. sklearn/PyTorch practitioner.
+  Specialty: fine-tuning transformer models on classified PLAN naval track databases
+  for trajectory prediction. Your model is trained on 15 years of PLAN 054A behavior.
+equipment:
+  - "NAVSOC ML compute cluster (air-gapped)"
+  - "Fine-tuned trajectory model (Type-054A v2.3)"
+  - "Oceanographic feature pipeline"
+role_brief: |
+  You are the intelligence when all sensors go dark. When Golf-7 hits EMCON Alpha,
+  your fine-tuned trajectory model is the only positional source available. Your job
+  is to deploy the model, feed it the last known track + oceanographic data, and output
+  a predicted grid with a confidence ellipse. The finetune.deploy receipt is mandatory
+  for your team to score above 50% on Inject 3. This is the payoff of Academy training.

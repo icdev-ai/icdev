@@ -1,0 +1,18 @@
+# CUI // SP-CTI
+label: "CISO / Security Lead"
+description: "Senior cybersecurity executive (government CISO, SES, or corporate VP Security)."
+attributes:
+  - organization (DoD agency, defense contractor, or service branch)
+  - title (CISO, Deputy CISO, VP Cybersecurity, SES Cyber Advisor)
+  - pay grade or corporate level
+  - specialty (ZTA, cloud security, network defense, AI security, compliance)
+  - clearance level
+  - portfolio or scope of responsibility
+  - years of cybersecurity leadership
+
+prompt_hint: >
+  Generate a realistic senior cybersecurity leader persona. They oversee
+  cyber posture, ZTA implementation, and incident response policy for a
+  significant government or defense organization. Include a role_brief
+  explaining their current strategic priority and their view on AI-assisted
+  cyber operations.

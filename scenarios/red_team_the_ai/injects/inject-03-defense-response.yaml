@@ -1,0 +1,45 @@
+title: "Phase 3 — Blue Team Hardening Sprint"
+inject_type: aadc_design_challenge
+
+body: |
+  ## MISSION BRIEF — BLUE TEAMS
+
+  **Classification: CUI // SP-CTI**
+
+  The Red Team has delivered their findings. You have **20 minutes** to patch every vulnerability
+  they identified and achieve a design score of ≥ 80.
+
+  ### Red Team findings summary
+
+  Review the Red Team's Phase 2 submission (provided by facilitator).
+  Your job: close every finding they identified.
+
+  ### Additional hardening targets
+
+  Beyond the Red Team findings, add these nodes if not already present:
+
+  | Node | Check |
+  |---|---|
+  | `circuit-breaker` | OWASP LLM08 / NIST MNG-2 |
+  | `trusted-monitor` | NIST P4-trusted-monitor |
+  | `token-budget` | OWASP LLM04 |
+  | `rate-limiter` | OWASP LLM04 (backup) |
+
+  ### Target checks (all must pass)
+
+  `llm01`, `llm02`, `llm04`, `llm06`, `llm08`, `llm10`,
+  `gov-1`, `mng-2`, `p4-trusted-monitor`
+
+  ### Submission
+
+  Run `aadc.assess` on your updated design. Submit:
+  ```
+  {"design_id": "your-design-id", "notes": "Fixed: [list what you changed]"}
+  ```
+
+  Your score is computed directly from the assessment — the more checks that pass, the higher your score.
+
+hints:
+  - "Use aadc.recommend to see exactly which nodes are still missing"
+  - "circuit-breaker must be DOWNSTREAM of the autonomous-agent in the edge list to count"
+  - "trusted-monitor should connect as a parallel branch, not in the main data flow"

@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+# EKS Fargate profile — run app pods without managing EC2 nodes
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: analytics-eks
+  region: us-east-1
+  version: "1.29"
+
+fargateProfiles:
+  - name: app-profile
+    selectors:
+      - namespace: analytics
+      - namespace: default
+  - name: kube-system
+    selectors:
+      - namespace: kube-system
+
+iam:
+  withOIDC: true        # Required for IRSA
+
+addons:
+  - name: vpc-cni
+  - name: coredns
+    configurationValues: '{"computeType": "Fargate"}'
+  - name: kube-proxy
+  - name: aws-ebs-csi-driver

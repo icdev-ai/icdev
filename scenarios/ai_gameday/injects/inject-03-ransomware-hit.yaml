@@ -1,0 +1,38 @@
+# CUI // SP-CTI
+id: inject-03-ransomware-hit
+title: "Ransomware Cascade — Critical Systems Impacted"
+
+body_md: |
+  ## CYBER INCIDENT FLASH — CRITICAL INFRASTRUCTURE IMPACTED
+
+  **Classification:** CUI // SP-CTI
+  **From:** CISO Operations Center
+  **Precedence:** FLASH
+
+  At [T+65 min], ransomware was detected on the logistics management system.
+  Initial analysis indicates:
+  - **3 critical supply nodes** are offline (rail, fuel depot, command comms)
+  - CVE-2024-1337 (CVSS 9.8) was the likely initial access vector — patch was NOT applied
+  - The ransomware is propagating laterally; estimated 45-minute window before
+    secondary systems are impacted
+  - PMESII-PT Information dimension score dropped from 6.1 to 3.4 in 20 minutes
+
+  ### Your Task
+  Conduct an **incident response triage** using ICDEV AI tools.
+
+  **Required deliverable:**
+  An IR brief (≤ 250 words) containing:
+  1. Blast radius assessment — which systems/missions are at risk?
+  2. Immediate containment recommendation (top 3 actions)
+  3. Supply chain cascade impact (which dependent nodes will fail next?)
+  4. PMESII-PT Information dimension recovery path
+
+  **Points are awarded for:**
+  - Using IW Composite, Supply Chain Simulate, or RAG Knowledge Search
+  - Accuracy of blast radius and cascade identification
+  - Actionability of containment steps
+  - Speed
+
+  **Hint:** Run the Supply Chain Cascade Simulation to model which nodes
+  will fail given the 3 offline nodes. Use RAG search for IR playbook retrieval.
+  Each tool call = +60 pts.

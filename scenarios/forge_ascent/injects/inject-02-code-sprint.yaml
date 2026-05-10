@@ -1,0 +1,115 @@
+# CUI // SP-CTI
+id: inject-02-code-sprint
+title: "Code Sprint: Fix the Feature Pipeline"
+
+body_md: |
+  ## CODE SPRINT — FEATURE PIPELINE FIX REQUIRED
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** Code Fix + Unit Test
+  **Time Box:** This inject is time-bonused — submit fast and correct.
+
+  Root cause confirmed: the `preprocess_features()` function in the feature
+  pipeline has **three bugs** introduced in commit `d4f832c`. These bugs are
+  causing 18% null propagation, incorrect normalization range, and 3,412
+  dropped records per inference batch.
+
+  ### The Broken Code
+
+  ```python
+  import pandas as pd
+  import numpy as np
+  from datetime import datetime
+
+  FEATURE_COLS = [
+      "fuel_consumption_delta",
+      "maintenance_event_count",
+      "parts_backorder_ratio",
+      "sensor_temp_avg",
+      "sortie_rate_7d",
+      "supply_latency_hours",
+  ]
+
+  NORM_BOUNDS = {
+      "fuel_consumption_delta":  (-1.0, 1.0),
+      "sensor_temp_avg":         (0.0, 100.0),
+      "parts_backorder_ratio":   (0.0, 1.0),
+      "supply_latency_hours":    (0.0, 720.0),
+  }
+
+  def preprocess_features(df: pd.DataFrame) -> pd.DataFrame:
+      """Preprocess raw logistics DataFrame for SENTINEL-ML inference."""
+
+      # Bug 1: datetime parsing — convert event_timestamp to Unix epoch seconds
+      df["event_timestamp"] = pd.to_datetime(df["event_timestamp"])
+      df["ts_epoch"] = df["event_timestamp"].dt.timestamp()  # returns float
+
+      # Bug 2: 7-day rolling window for sortie rate
+      df = df.sort_values("event_timestamp")
+      df["sortie_rate_7d"] = (
+          df["sortie_count"]
+          .rolling(window=7, min_periods=1)
+          .sum()
+      )
+
+      # Bug 3: Clip and normalize bounded features
+      result = df[FEATURE_COLS].copy()
+      for col, (lo, hi) in NORM_BOUNDS.items():
+          result[col] = (result[col] - lo) / (hi - lo)
+
+      # Fill nulls with column mean
+      result = result.fillna(result.mean())
+
+      return result[FEATURE_COLS]
+  ```
+
+  ### Known Failure Signatures
+
+  From the production logs:
+  - `datetime parse failed on 3,412 records` — records with timezone-aware
+    timestamps are failing silently because `utc=False` is the default,
+    causing mixed-tz DataFrames that `.dt.timestamp()` cannot handle.
+  - `fuel_consumption_delta out of [-1, 1] range: max=3.74` — the normalization
+    is clipping AFTER dividing, not before — values outside the original range
+    produce normalized values outside [0, 1] without error.
+  - `null_ratio=0.18 on sensor_temp_avg` — `fillna(result.mean())` is called
+    AFTER extracting only `FEATURE_COLS`, but `sensor_temp_avg` is not in
+    `NORM_BOUNDS`, so its nulls are not caught by the clip loop. The `.mean()`
+    call propagates NaN if more than 50% of the column is already null.
+
+  ### Your Task
+
+  **Required deliverable:**
+  1. **Bug List** — Identify all 3 bugs with the exact line and a one-sentence
+     explanation of why each is wrong.
+  2. **Fixed Function** — Write a complete, corrected `preprocess_features()`
+     function. The fix must:
+     - Parse timestamps with `utc=True` and convert to numeric epoch correctly
+     - Clip feature values to NORM_BOUNDS *before* normalizing
+     - Handle nulls in ALL feature columns (including those not in NORM_BOUNDS)
+     before returning the result DataFrame
+  3. **Unit Tests** — Write at least 2 pytest test cases for the fixed function:
+     - One that verifies normalized output stays in [0, 1] for all bounded features
+     - One that verifies no NaN values appear in the output when input has 10% nulls
+
+  **Points are awarded for:**
+  - Correct bug identification (all 3, by line reference)
+  - Fixed function that is clean, readable, and handles all three failure modes
+  - Unit tests that would actually catch regressions (parametrized or covering edge cases)
+  - Using Code Analyzer to validate your fix; Knowledge Search for pandas best practices
+  - Speed of submission
+
+  **Hint:** Paste the broken function into Code Analyzer (`/api/code/analyze`) with
+  the error signatures. It will surface the exact fix locations. Each verified
+  tool call earns +50 pts toward this inject.
+
+context_note: >
+  Bug 1: pd.to_datetime() without utc=True causes mixed-timezone errors on
+  timezone-aware records — fix is pd.to_datetime(df["event_timestamp"], utc=True).
+  Bug 2: Rolling window is correct but should be .rolling(window="7D") when using
+  a DatetimeIndex (time-based) rather than row-count-based — or the sort must
+  guarantee uniform 1-day intervals which is not guaranteed here. The simpler fix
+  is .rolling(window=7, min_periods=1) on .resample("D").sum() first.
+  Bug 3: The clip must precede normalization: result[col] = result[col].clip(lo, hi)
+  then normalize. Also fillna should happen before subsetting to FEATURE_COLS so
+  all columns benefit from cross-column mean imputation.

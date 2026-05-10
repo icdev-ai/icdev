@@ -1,0 +1,50 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}{{ runbook.title }} — Security Runbooks{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div style="display:flex;justify-content:space-between;align-items:center;">
+    <div>
+      <h1>{{ runbook.title }}</h1>
+      <p class="text-muted">{{ runbook.description }}</p>
+    </div>
+    <div>
+      <span class="badge" style="background:{{ '#e74c3c' if runbook.severity == 'CAT1' else '#f39c12' }};color:#fff;padding:4px 12px;border-radius:4px;font-size:12px;">{{ runbook.severity }}</span>
+    </div>
+  </div>
+</div>
+<div style="padding:0 16px 24px;">
+  <div style="margin-bottom:16px;">
+    <strong style="color:var(--text-dim);font-size:12px;">NIST Controls:</strong>
+    <span style="color:#5dade2;font-size:12px;">{{ runbook.nist_controls|join(', ') }}</span>
+    &nbsp;&middot;&nbsp;
+    <strong style="color:var(--text-dim);font-size:12px;">Duration:</strong>
+    <span style="color:var(--text);font-size:12px;">{{ runbook.estimated_duration }}</span>
+    &nbsp;&middot;&nbsp;
+    <strong style="color:var(--text-dim);font-size:12px;">Roles:</strong>
+    <span style="color:var(--text);font-size:12px;">{{ runbook.required_roles|join(', ') }}</span>
+  </div>
+
+  {% for phase in runbook.phases %}
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;font-size:14px;color:{{ '#e74c3c' if phase.name == 'Contain' else '#f39c12' if phase.name == 'Detect' else '#27ae60' if phase.name == 'Recover' else '#5dade2' }};">
+        Phase {{ loop.index }}: {{ phase.name }}
+      </h3>
+      <div style="font-size:11px;color:var(--text-dim);">
+        Max: {{ phase.max_duration }}
+        {% if phase.automated %}<span style="color:#27ae60;margin-left:8px;">&#x2713; Auto-trigger</span>{% endif %}
+      </div>
+    </div>
+    <ol style="margin:0;padding-left:1.5rem;">
+      {% for step in phase.steps %}
+      <li style="font-size:12px;color:var(--text);margin-bottom:4px;">{{ step }}</li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endfor %}
+
+  <div style="margin-top:16px;text-align:center;">
+    <a href="{{ url_for('security_canvas.sc_runbooks_page') }}" class="btn btn-outline">Back to Runbooks</a>
+  </div>
+</div>
+{% endblock %}

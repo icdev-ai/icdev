@@ -1,0 +1,816 @@
+# CUI // SP-CTI
+"""FORGE Academy Flask blueprint — all /academy/* and /api/academy/* routes."""
+
+from __future__ import annotations
+
+import json
+import secrets
+
+from flask import Blueprint, g, jsonify, redirect, render_template, request, url_for
+
+from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_level, xp_to_next_level
+from .db import (
+    migrate, get_or_create_user, get_user, update_user_role, get_user_by_username,
+    list_missions, get_mission, get_mission_steps, upsert_mission,
+    get_mission_progress, start_mission, complete_mission,
+    get_step_progress, complete_step, user_progress_summary,
+    get_user_achievements, grant_achievement, update_user_xp,
+    create_guild, join_guild, get_guild_stats, get_leaderboard,
+    get_user_skills, unlock_skill,
+    check_cert_eligibility, issue_certificate, get_user_certificates,
+    verify_certificate_token,
+)
+from .content_loader import get_mission_with_steps, seed_mission_catalog
+from .gamification import (
+    award_step_xp, award_mission_xp, check_mission_achievements,
+    check_step_achievements, award_daily_login, get_user_stats,
+)
+from .integrations import (
+    record_skill_usage, advance_learning_track, deploy_pattern, list_patterns,
+    detect_role_from_answers, create_workflow,
+)
+
+bp = Blueprint("forge_academy", __name__)
+
+_initialized = False
+
+
+@bp.app_context_processor
+def _inject_fa_nav():
+    """Inject FORGE Academy XP/rank badge data into every page template context."""
+    try:
+        from flask import session
+        user_id = session.get("fa_user_id")
+        if user_id:
+            user = get_user(user_id)
+            if user:
+                ctx = xp_to_next_level(user.get("xp", 0))
+                return {
+                    "fa_nav_user": user,
+                    "fa_nav_level": ctx.get("level", "Recruit"),
+                    "fa_nav_xp": user.get("xp", 0),
+                    "fa_nav_xp_pct": ctx.get("percent", 0),
+                }
+    except Exception:
+        pass
+    return {}
+
+
+def _ensure_init():
+    global _initialized
+    if not _initialized:
+        try:
+            migrate()
+            seed_mission_catalog()
+            _initialized = True
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("FORGE Academy init failed: %s", exc)
+
+
+def _fa_tenant_id() -> str | None:
+    try:
+        from tools.saas.auth.middleware import get_current_tenant_id
+        return get_current_tenant_id()
+    except Exception:
+        return None
+
+
+def _fa_email() -> str:
+    user = getattr(g, "current_user", None)
+    return (user.get("email", "") if user else "") or "guest@system.local"
+
+
+def _fa_user() -> dict | None:
+    email = _fa_email()
+    try:
+        return get_or_create_user(email, display_name=email.split("@")[0], tenant_id=_fa_tenant_id())
+    except Exception:
+        return None
+
+
+def _level_ctx(fa_user: dict) -> dict:
+    xp = fa_user.get("xp", 0) if fa_user else 0
+    return xp_to_next_level(xp)
+
+
+# ---------------------------------------------------------------------------
+# Page routes
+# ---------------------------------------------------------------------------
+
+@bp.route("/academy")
+def hub():
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return redirect(url_for("forge_academy.profile"))
+    daily = award_daily_login(fa_user["id"])
+    stats = get_user_stats(fa_user["id"])
+    missions = list_missions(role=fa_user.get("role"), tier=None)[:6]
+    level_ctx = _level_ctx(fa_user)
+    return render_template(
+        "forge_academy/page.html",
+        fa_user=fa_user,
+        stats=stats,
+        missions=missions,
+        level_ctx=level_ctx,
+        daily_login=daily,
+        roles=ROLES,
+    )
+
+
+@bp.route("/academy/missions")
+def missions_browser():
+    _ensure_init()
+    fa_user = _fa_user()
+    tier = request.args.get("tier", type=int)
+    topic = request.args.get("topic", "")
+    mtype = request.args.get("type", "")
+    role_filter = request.args.get("role", "")
+    # When filtering by type, show all roles so guided missions are visible to any user.
+    # Only narrow by user's role when browsing without a type constraint.
+    effective_role = role_filter or (None if mtype else (fa_user.get("role") if fa_user else None))
+    all_missions = list_missions(role=effective_role, tier=tier)
+    if topic:
+        all_missions = [m for m in all_missions if m.get("topic") == topic]
+    if mtype:
+        all_missions = [m for m in all_missions if m.get("mission_type") == mtype]
+    progress_map = {}
+    if fa_user:
+        for m in all_missions:
+            p = get_mission_progress(fa_user["id"], m["id"])
+            progress_map[m["id"]] = p["status"] if p else "locked"
+    return render_template(
+        "forge_academy/missions.html",
+        fa_user=fa_user,
+        missions=all_missions,
+        progress_map=progress_map,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+        roles=ROLES,
+        active_tier=tier,
+        active_topic=topic,
+        active_type=mtype,
+    )
+
+
+@bp.route("/academy/mission/<slug>")
+def mission_runner(slug):
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return redirect(url_for("forge_academy.profile"))
+    mission = get_mission_with_steps(slug)
+    if not mission:
+        return render_template("forge_academy/missions.html",
+                               error=f"Mission '{slug}' not found.",
+                               fa_user=fa_user, missions=[], progress_map={},
+                               level_ctx=_level_ctx(fa_user), roles=ROLES,
+                               active_tier=None, active_topic="", active_type=""), 404
+    start_mission(fa_user["id"], mission["id"])
+    progress = get_mission_progress(fa_user["id"], mission["id"])
+    step_states = {}
+    for step in mission.get("steps", []):
+        sp = get_step_progress(fa_user["id"], step["id"])
+        step_states[step["id"]] = sp["status"] if sp else "pending"
+    level_ctx = _level_ctx(fa_user)
+    return render_template(
+        "forge_academy/mission.html",
+        fa_user=fa_user,
+        mission=mission,
+        progress=progress,
+        step_states=step_states,
+        level_ctx=level_ctx,
+        roles=ROLES,
+        TECHNICAL_ROLES=TECHNICAL_ROLES,
+    )
+
+
+@bp.route("/academy/skill-tree")
+def skill_tree():
+    _ensure_init()
+    fa_user = _fa_user()
+    from .constants import SKILL_NODES
+    user_skills = set()
+    if fa_user:
+        user_skills = get_user_skills(fa_user["id"])
+    return render_template(
+        "forge_academy/skill_tree.html",
+        fa_user=fa_user,
+        skill_nodes=SKILL_NODES,
+        user_skills=user_skills,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+@bp.route("/academy/guild")
+def guild():
+    _ensure_init()
+    fa_user = _fa_user()
+    guild_data = None
+    if fa_user and fa_user.get("guild_id"):
+        guild_data = get_guild_stats(fa_user["guild_id"])
+    return render_template(
+        "forge_academy/guild.html",
+        fa_user=fa_user,
+        guild=guild_data,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+@bp.route("/academy/leaderboard")
+def leaderboard_page():
+    _ensure_init()
+    fa_user = _fa_user()
+    period = request.args.get("period", "weekly")
+    role_filter = request.args.get("role", "")
+    rows = get_leaderboard(period=period, role=role_filter or None, limit=50, tenant_id=_fa_tenant_id())
+    return render_template(
+        "forge_academy/leaderboard.html",
+        fa_user=fa_user,
+        rows=rows,
+        period=period,
+        role_filter=role_filter,
+        roles=ROLES,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+@bp.route("/academy/achievements")
+def achievements():
+    _ensure_init()
+    fa_user = _fa_user()
+    from .constants import ACHIEVEMENTS
+    earned = {a["slug"]: a for a in (get_user_achievements(fa_user["id"]) if fa_user else [])}
+    return render_template(
+        "forge_academy/achievements.html",
+        fa_user=fa_user,
+        all_achievements=ACHIEVEMENTS,
+        earned=earned,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+@bp.route("/academy/profile")
+def profile():
+    _ensure_init()
+    fa_user = _fa_user()
+    return render_template(
+        "forge_academy/profile.html",
+        fa_user=fa_user,
+        roles=ROLES,
+        levels=LEVELS,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+@bp.route("/academy/arena")
+def arena():
+    _ensure_init()
+    fa_user = _fa_user()
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    try:
+        challenges = [dict(r) for r in conn.execute(
+            "SELECT * FROM fa_challenges WHERE ends_at > datetime('now') ORDER BY starts_at"
+        ).fetchall()]
+    except Exception:
+        challenges = []
+    return render_template(
+        "forge_academy/arena.html",
+        fa_user=fa_user,
+        challenges=challenges,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+        TECHNICAL_ROLES=TECHNICAL_ROLES,
+    )
+
+
+@bp.route("/academy/workflow-builder")
+def workflow_builder_page():
+    _ensure_init()
+    fa_user = _fa_user()
+    patterns = list_patterns()
+    return render_template(
+        "forge_academy/workflow_builder.html",
+        fa_user=fa_user,
+        patterns=patterns,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+# ---------------------------------------------------------------------------
+# API routes
+# ---------------------------------------------------------------------------
+
+@bp.route("/api/academy/user/setup", methods=["POST"])
+def api_user_setup():
+    _ensure_init()
+    data = request.get_json(silent=True) or {}
+    email = _fa_email()
+    display_name = data.get("display_name", email.split("@")[0])
+    role = data.get("role", "devops")
+    fa_user = get_or_create_user(email, display_name=display_name)
+    if role:
+        update_user_role(fa_user["id"], role)
+    wizard_result = {}
+    if data.get("wizard_answers"):
+        wizard_result = detect_role_from_answers(data["wizard_answers"])
+    return jsonify({"ok": True, "user_id": fa_user["id"], "role": role,
+                    "wizard": wizard_result})
+
+
+@bp.route("/api/academy/progress")
+def api_progress():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 404
+    summary = user_progress_summary(fa_user["id"])
+    stats = get_user_stats(fa_user["id"])
+    return jsonify({**summary, "stats": stats})
+
+
+@bp.route("/api/academy/code/run", methods=["POST"])
+def api_code_run():
+    from .code_runner import run_code
+    data = request.get_json(silent=True) or {}
+    code = data.get("code", "")
+    test_code = data.get("test_code", "")
+    result = run_code(code, test_code=test_code)
+    return jsonify(result)
+
+
+@bp.route("/api/academy/step/submit", methods=["POST"])
+def api_step_submit():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    data = request.get_json(silent=True) or {}
+    step_id = data.get("step_id")
+    mission_id = data.get("mission_id")
+    submission = data.get("submission", "")
+    hints_used = int(data.get("hints_used", 0))
+    elapsed_s = data.get("elapsed_seconds")
+    passed = bool(data.get("passed", True))
+
+    if not step_id:
+        return jsonify({"error": "step_id required"}), 400
+
+    complete_step(fa_user["id"], step_id, submission=submission,
+                  passed=passed, hints_used=hints_used)
+
+    summary = user_progress_summary(fa_user["id"])
+    base_xp = int(data.get("base_xp", 50))
+    step_type = data.get("step_type", "coding")
+    xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used,
+                              elapsed_seconds=elapsed_s, step_type=step_type)
+    step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
+    xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
+
+    email = _fa_email()
+    skill_tag = data.get("skill_tag", "")
+    if skill_tag:
+        record_skill_usage(email, skill_tag)
+        unlock_skill(fa_user["id"], skill_tag)
+
+    mission_complete_data = {}
+    if mission_id and data.get("mission_complete"):
+        complete_mission(fa_user["id"], mission_id, score=int(data.get("score", 100)))
+        mission_xp_event = award_mission_xp(fa_user["id"], int(data.get("mission_xp", 100)),
+                                             perfect=(hints_used == 0))
+        mission_ach = check_mission_achievements(fa_user["id"],
+                                                  data.get("mission_slug", ""), hints_used)
+        advance_learning_track(email)
+        mission_complete_data = {
+            "mission_xp": mission_xp_event,
+            "mission_achievements": mission_ach,
+        }
+
+    return jsonify({"ok": True, "xp_event": xp_event, **mission_complete_data})
+
+
+@bp.route("/api/academy/step/design-assess", methods=["POST"])
+def api_step_design_assess():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    from .verifier import verify_step
+    from .gamification import award_step_xp, check_step_achievements, check_mission_achievements, award_mission_xp
+    from .db import complete_step, complete_mission, user_progress_summary, update_user_xp, record_skill_usage, unlock_skill
+    from .learning_track import advance_learning_track
+
+    data = request.get_json(silent=True) or {}
+    step_id = data.get("step_id")
+    mission_id = data.get("mission_id")
+    design_id = data.get("design_id", "")
+    required_checks = data.get("required_checks", [])
+    min_score = int(data.get("min_score", 70))
+    hints_used = int(data.get("hints_used", 0))
+    base_xp = int(data.get("base_xp", 100))
+
+    result = verify_step("aadc_design_compliant", fa_user["id"], {
+        "design_id": design_id,
+        "required_checks": required_checks,
+        "min_score": min_score,
+    })
+
+    resp = {
+        "passed": result.get("passed", False),
+        "score": result.get("score", 0),
+        "checks_passed": [c["id"] for c in result.get("evidence", {}).get("check_results", []) if c.get("passed")],
+        "failed_checks": result.get("failed_checks", []),
+    }
+
+    if result.get("passed"):
+        complete_step(fa_user["id"], step_id, submission=design_id, passed=True, hints_used=hints_used)
+        summary = user_progress_summary(fa_user["id"])
+        xp_event = award_step_xp(fa_user["id"], base_xp, hints_used=hints_used, step_type="design")
+        step_ach = check_step_achievements(fa_user["id"], summary.get("steps_completed", 0))
+        xp_event["achievements"] = xp_event.get("achievements", []) + step_ach
+
+        email = _fa_email()
+        skill_tag = data.get("skill_tag", "")
+        if skill_tag:
+            record_skill_usage(email, skill_tag)
+            unlock_skill(fa_user["id"], skill_tag)
+
+        resp["xp_event"] = xp_event
+
+        if mission_id and data.get("mission_complete"):
+            complete_mission(fa_user["id"], mission_id, score=result.get("score", 100))
+            mission_xp_event = award_mission_xp(fa_user["id"], int(data.get("mission_xp", 400)),
+                                                 perfect=(hints_used == 0))
+            mission_ach = check_mission_achievements(
+                fa_user["id"], data.get("mission_slug", ""), hints_used,
+                aadc_score=result.get("score", 0),
+            )
+            advance_learning_track(email)
+            resp["mission_xp"] = mission_xp_event
+            resp["mission_achievements"] = mission_ach
+
+    return jsonify(resp)
+
+
+@bp.route("/api/academy/step/configure", methods=["POST"])
+def api_step_configure():
+    from .configurator import dispatch_configure
+    data = request.get_json(silent=True) or {}
+    result = dispatch_configure(data)
+    return jsonify(result)
+
+
+@bp.route("/api/academy/coach/hint", methods=["POST"])
+def api_coach_hint():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    from .ai_coach import get_hint
+    data = request.get_json(silent=True) or {}
+    context = data.get("context", "")
+    question = data.get("question", "")
+    mission_slug = data.get("mission_slug", "")
+    design_id = data.get("design_id", "")
+    hint = get_hint(question=question, context=context, mission_slug=mission_slug, design_id=design_id)
+    from .content_loader import _md_to_html
+    hint_html = _md_to_html(hint)
+    update_user_xp(fa_user["id"], -10)
+    return jsonify({"hint": hint_html, "xp_cost": 10})
+
+
+@bp.route("/api/academy/guild/create", methods=["POST"])
+def api_guild_create():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "").strip()
+    description = data.get("description", "")
+    if not name:
+        return jsonify({"error": "name required"}), 400
+    invite_code = secrets.token_urlsafe(6)
+    guild = create_guild(name=name, description=description,
+                         invite_code=invite_code, created_by=fa_user["id"])
+    return jsonify({"ok": True, "guild": guild, "invite_code": invite_code})
+
+
+@bp.route("/api/academy/guild/join", methods=["POST"])
+def api_guild_join():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    data = request.get_json(silent=True) or {}
+    invite_code = data.get("invite_code", "").strip()
+    result = join_guild(user_id=fa_user["id"], invite_code=invite_code)
+    return jsonify(result)
+
+
+@bp.route("/api/academy/guild/<int:guild_id>")
+def api_guild_stats(guild_id):
+    stats = get_guild_stats(guild_id)
+    return jsonify(stats)
+
+
+@bp.route("/api/academy/leaderboard")
+def api_leaderboard():
+    period = request.args.get("period", "weekly")
+    role = request.args.get("role")
+    rows = get_leaderboard(period=period, role=role, limit=100, tenant_id=_fa_tenant_id())
+    return jsonify({"rows": rows, "period": period})
+
+
+@bp.route("/api/academy/challenge/enter", methods=["POST"])
+def api_challenge_enter():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    data = request.get_json(silent=True) or {}
+    challenge_id = data.get("challenge_id")
+    submission = data.get("submission", "")
+    if not challenge_id:
+        return jsonify({"error": "challenge_id required"}), 400
+    from tools.db.storage import get_connection
+    conn = get_connection()
+    conn.execute(
+        "INSERT OR REPLACE INTO fa_challenge_entries "
+        "(challenge_id,user_id,submission,score,submitted_at) VALUES (?,?,?,?,datetime('now'))",
+        (challenge_id, fa_user["id"], submission, 0),
+    )
+    conn.commit()
+    return jsonify({"ok": True, "status": "submitted"})
+
+
+@bp.route("/api/academy/workflow/submit", methods=["POST"])
+def api_workflow_submit():
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    data = request.get_json(silent=True) or {}
+    name = data.get("name", "My Workflow")
+    canvas_json = data.get("canvas", {})
+    email = _fa_email()
+    result = create_workflow(name=name, canvas_json=canvas_json, user_email=email)
+    if result.get("status") == "ok":
+        from tools.db.storage import get_connection
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO fa_workflow_submissions "
+            "(user_id,design_id,score,ai_feedback,tier,submitted_at) VALUES (?,?,?,?,?,datetime('now'))",
+            (fa_user["id"], result.get("design_id", ""), 80, result.get("goal_md", "")[:500], 1),
+        )
+        conn.commit()
+        award_step_xp(fa_user["id"], 150, step_type="guided")
+        grant_achievement(fa_user["id"], "workflow_author")
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Academy Oracle routes  (ep11)
+# ---------------------------------------------------------------------------
+
+@bp.route("/academy/oracle")
+def oracle_page():
+    _ensure_init()
+    from .oracle.db import summary_stats, list_predictions, list_convergence_events
+    stats = summary_stats()
+    predictions = list_predictions(limit=200)
+    convergence = list_convergence_events()
+    lenses = ["learner_risk", "content_quality", "skill_gap"]
+    by_lens = {lid: [p for p in predictions if p["lens_id"] == lid] for lid in lenses}
+    return render_template(
+        "forge_academy/oracle.html",
+        stats=stats,
+        by_lens=by_lens,
+        convergence=convergence,
+        lenses=lenses,
+    )
+
+
+@bp.route("/api/academy/oracle/predictions")
+def api_oracle_predictions():
+    _ensure_init()
+    from .oracle.db import list_predictions
+    lens_id = request.args.get("lens_id")
+    severity = request.args.get("severity")
+    outcome = request.args.get("outcome", "pending")
+    limit = min(int(request.args.get("limit", 100)), 500)
+    rows = list_predictions(lens_id=lens_id, severity=severity, outcome=outcome, limit=limit)
+    return jsonify({"predictions": rows, "count": len(rows)})
+
+
+@bp.route("/api/academy/oracle/summary")
+def api_oracle_summary():
+    _ensure_init()
+    from .oracle.db import summary_stats
+    return jsonify(summary_stats())
+
+
+@bp.route("/api/academy/oracle/run", methods=["POST"])
+def api_oracle_run():
+    _ensure_init()
+    from .oracle.runner import AcademyOracleRunner
+    result = AcademyOracleRunner().run()
+    return jsonify({
+        "ok": True,
+        "persisted": result["persisted_count"],
+        "convergence_events": len(result["convergence"]),
+        "total_predictions": len(result["predictions"]),
+    })
+
+
+@bp.route("/api/academy/oracle/prediction/<pred_id>/outcome", methods=["POST"])
+def api_oracle_update_outcome(pred_id: str):
+    _ensure_init()
+    from .oracle.db import update_prediction_outcome
+    data = request.get_json(silent=True) or {}
+    outcome = data.get("outcome", "actioned")
+    if outcome not in ("actioned", "dismissed", "pending"):
+        return jsonify({"error": "invalid outcome"}), 400
+    update_prediction_outcome(pred_id, outcome)
+    return jsonify({"ok": True})
+
+
+@bp.route("/academy/patterns")
+def pattern_library():
+    _ensure_init()
+    from .patterns import INJECTION_PATTERNS
+    phase_filter = request.args.get("phase", "")
+    approach_filter = request.args.get("approach", "")
+    patterns = INJECTION_PATTERNS
+    if phase_filter:
+        patterns = [p for p in patterns if p.get("phase_tag") == phase_filter]
+    if approach_filter:
+        patterns = [p for p in patterns if approach_filter.lower() in p.get("approach", "").lower()]
+    return render_template(
+        "forge_academy/pattern_library.html",
+        patterns=patterns,
+        all_patterns=INJECTION_PATTERNS,
+        phase_filter=phase_filter,
+        approach_filter=approach_filter,
+    )
+
+
+@bp.route("/academy/patterns/<pattern_id>")
+def pattern_detail(pattern_id: str):
+    _ensure_init()
+    from .patterns import PATTERN_BY_ID, INJECTION_PATTERNS
+    pattern = PATTERN_BY_ID.get(pattern_id)
+    if not pattern:
+        return redirect(url_for("forge_academy.pattern_library"))
+    return render_template(
+        "forge_academy/pattern_detail.html",
+        pattern=pattern,
+        all_patterns=INJECTION_PATTERNS,
+    )
+
+
+@bp.route("/academy/org-readiness")
+def org_readiness_page():
+    _ensure_init()
+    try:
+        from apps.innovation.reporting_engine import compute_org_readiness
+        readiness = compute_org_readiness()
+    except Exception:
+        readiness = {
+            "score": 0, "tier": "red", "tier_color": "#FF4444",
+            "guidance": "Readiness data unavailable — ensure FORGE IGNITE is enabled.",
+            "components": {}, "cohort": {}, "skill_gaps": [],
+        }
+    return render_template("forge_academy/org_readiness.html", readiness=readiness)
+
+
+@bp.route("/api/academy/org-readiness")
+def api_org_readiness():
+    _ensure_init()
+    try:
+        from apps.innovation.reporting_engine import compute_org_readiness
+        return jsonify(compute_org_readiness())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Certification routes  (Phase 5)
+# ---------------------------------------------------------------------------
+
+@bp.route("/academy/certificate/<cert_key>")
+def certificate_page(cert_key: str):
+    _ensure_init()
+    from .constants import CERT_BY_KEY, CERT_TIERS
+    cert_def = CERT_BY_KEY.get(cert_key)
+    if not cert_def:
+        return redirect(url_for("forge_academy.hub"))
+    fa_user = _fa_user()
+    eligibility = check_cert_eligibility(fa_user["id"], cert_key) if fa_user else {"eligible": False, "gates": []}
+    existing_cert = None
+    if fa_user:
+        certs = get_user_certificates(fa_user["id"])
+        existing_cert = next((c for c in certs if c["cert_tier"] == cert_key), None)
+    return render_template(
+        "forge_academy/certificate.html",
+        fa_user=fa_user,
+        cert_def=cert_def,
+        cert_tiers=CERT_TIERS,
+        eligibility=eligibility,
+        existing_cert=existing_cert,
+        level_ctx=_level_ctx(fa_user) if fa_user else {},
+    )
+
+
+@bp.route("/api/academy/certificate/<cert_key>/issue", methods=["POST"])
+def api_issue_certificate(cert_key: str):
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 400
+    cert = issue_certificate(fa_user["id"], cert_key)
+    if not cert:
+        eligibility = check_cert_eligibility(fa_user["id"], cert_key)
+        return jsonify({"ok": False, "reason": "not eligible", "gates": eligibility.get("gates", [])}), 403
+    return jsonify({"ok": True, "cert": dict(cert) if hasattr(cert, "keys") else cert})
+
+
+@bp.route("/academy/verify/<token>")
+def verify_cert(token: str):
+    _ensure_init()
+    result = verify_certificate_token(token)
+    from .constants import CERT_BY_KEY
+    cert_def = CERT_BY_KEY.get(result["cert_tier"]) if result else None
+    return render_template(
+        "forge_academy/cert_verify.html",
+        result=result,
+        cert_def=cert_def,
+    )
+
+
+@bp.route("/academy/my-certificates")
+def my_certificates():
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return redirect(url_for("forge_academy.profile"))
+    from .constants import CERT_BY_KEY, CERT_TIERS
+    certs = get_user_certificates(fa_user["id"])
+    cert_map = {c["cert_tier"]: c for c in certs}
+    eligibility_map = {ct["key"]: check_cert_eligibility(fa_user["id"], ct["key"]) for ct in CERT_TIERS}
+    return render_template(
+        "forge_academy/my_certificates.html",
+        fa_user=fa_user,
+        cert_tiers=CERT_TIERS,
+        cert_map=cert_map,
+        eligibility_map=eligibility_map,
+        level_ctx=_level_ctx(fa_user),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Adaptive learning path  (Phase 5)
+# ---------------------------------------------------------------------------
+
+def _recommend_next_missions(user_id: int, role: str, limit: int = 3) -> list[dict]:
+    """Return up to `limit` missions recommended for the user to attempt next."""
+    completed_ids = set()
+    try:
+        from tools.db.storage import get_connection
+        rows = get_connection().execute(
+            "SELECT mission_id FROM fa_mission_progress WHERE user_id=? AND status='completed'",
+            (user_id,),
+        ).fetchall()
+        completed_ids = {r[0] for r in rows}
+    except Exception:
+        pass
+
+    all_missions = list_missions(role=role or None, tier=None)
+    # Prioritise: in-progress first, then by tier ascending, then by title
+    in_prog_ids = set()
+    try:
+        from tools.db.storage import get_connection
+        rows = get_connection().execute(
+            "SELECT mission_id FROM fa_mission_progress WHERE user_id=? AND status='in_progress'",
+            (user_id,),
+        ).fetchall()
+        in_prog_ids = {r[0] for r in rows}
+    except Exception:
+        pass
+
+    candidates = [m for m in all_missions if m["id"] not in completed_ids]
+
+    def _sort_key(m):
+        in_prog = 0 if m["id"] in in_prog_ids else 1
+        return (in_prog, m.get("tier", 99), m.get("title", ""))
+
+    candidates.sort(key=_sort_key)
+    return candidates[:limit]
+
+
+@bp.route("/api/academy/learning-path")
+def api_learning_path():
+    _ensure_init()
+    fa_user = _fa_user()
+    if not fa_user:
+        return jsonify({"error": "not configured"}), 404
+    role = fa_user.get("role", "")
+    limit = min(int(request.args.get("limit", 5)), 10)
+    recommendations = _recommend_next_missions(fa_user["id"], role, limit=limit)
+    return jsonify({"recommendations": recommendations, "role": role})
+
+
+# Alias for app.py _APP_DEFS registration
+academy_bp = bp

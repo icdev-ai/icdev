@@ -1,0 +1,894 @@
+{
+  "signals": [
+    {
+      "title": "Comey surrenders over charge of threatening Trump's life in Instagram post",
+      "body": "Prosecutors say a 2025 seashell photo posted by the former FBI director was a call for violence against Trump.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 20:24:48 GMT",
+      "url": "https://www.bbc.com/news/articles/c70vzj1nrddo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Royal commission into Bondi shooting says gun reform should be prioritised",
+      "body": "An interim report also says policing arrangements for Jewish holidays should be extended to other 'high-risk' events.",
+      "source": "BBC World News",
+      "date": "Thu, 30 Apr 2026 01:26:28 GMT",
+      "url": "https://www.bbc.com/news/articles/cdjpw0n889yo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Hegseth clashes with lawmakers over Iran war in nearly six-hour-long hearing",
+      "body": "US Defence Secretary Pete Hegseth sparred with Democratic lawmakers during a nearly six-hour-long hearing, in his first time facing questions under oath since the start of the Iran war.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 22:22:18 GMT",
+      "url": "https://www.bbc.com/news/articles/c78qd6ll8xlo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "US singer D4vd bought tools online to dispose of girl's body, prosecutors allege",
+      "body": "The Tiktok star's attorneys have maintained his innocence and vowed to \"vigorously defend\" him.",
+      "source": "BBC World News",
+      "date": "Thu, 30 Apr 2026 01:43:40 GMT",
+      "url": "https://www.bbc.com/news/articles/cvgzll79529o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "'I did not expect it': Kenya's Sabastian Sawe welcomed home with jubilant celebrations",
+      "body": "The first man to run a marathon in under two hours in a competitive race received a hero's welcome from supporters and family when he arrived home.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 23:54:44 GMT",
+      "url": "https://www.bbc.com/news/articles/cddp4y0rzjdo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "King and Queen lay flowers at 9/11 Memorial in New York",
+      "body": "King Charles and Queen Camilla on their state visit to the US visit the memorial in New York.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 23:33:22 GMT",
+      "url": "https://www.bbc.com/news/articles/cd7pxnv4j7ro?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Oil price rises above $120 after reports of 'extended' Iran blockade",
+      "body": "The price of crude oil has swung sharply as uncertainty over the war in the Middle East continues.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 22:49:19 GMT",
+      "url": "https://www.bbc.com/news/articles/cj4pxr0gr02o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Hungary's next PM says frozen EU funds will be paid out soon",
+      "body": "Péter Magyar meets EU leaders in Brussels, for the first time since his Tisza party won a landslide election.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 19:51:54 GMT",
+      "url": "https://www.bbc.com/news/articles/c392ln77w30o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "US charges Mexican governor and other leaders with aiding drug cartel",
+      "body": "The governor of Sinaloa, Rúben Rocha Moya, hails from the same party as the president of Mexico.",
+      "source": "BBC World News",
+      "date": "Thu, 30 Apr 2026 00:00:15 GMT",
+      "url": "https://www.bbc.com/news/articles/cpqpzlrd3wwo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "New images show suspect taking selfies before Washington press dinner shooting",
+      "body": "Prosecutors argue Cole Tomas Allen should remain in custody until trial on a charge of attempted assassination of President Donald Trump.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 16:06:00 GMT",
+      "url": "https://www.bbc.com/news/articles/cm2p99n35z4o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Florida lawmakers approve new voting maps to favour Republicans",
+      "body": "The state is the latest to act in a national redistricting war that could shape what political party controls the US House of Representatives.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 22:00:44 GMT",
+      "url": "https://www.bbc.com/news/articles/c5y9wvl0gkno?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Seven lawsuits filed against OpenAI by families of Canada mass-shooting victims",
+      "body": "The lawsuits, filed in California, accuse OpenAI and Sam Altman of negligence and abetting a mass shooting by failing to flag the suspect's ChatGPT activity.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 19:51:55 GMT",
+      "url": "https://www.bbc.com/news/articles/c99l03k0ly4o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Russia scales back Moscow Victory Day parade, blaming threat from Ukraine",
+      "body": "Russia says the annual commemoration of Soviet victory in World War Two will not feature military vehicles or cadets.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 13:01:57 GMT",
+      "url": "https://www.bbc.com/news/articles/c794wp4yy93o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Stranded whale ferried out of German waters in barge",
+      "body": "The final operation to save the whale is being closely followed, after the failure of earlier attempts.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 17:06:23 GMT",
+      "url": "https://www.bbc.com/news/articles/clyp559l06no?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Madagascar detains French national over alleged plot to stir unrest",
+      "body": "Malagasy prosecuters used a Whatsapp group as evidence for the detained individuals alleged crimes.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 17:03:16 GMT",
+      "url": "https://www.bbc.com/news/articles/c7v96615e99o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "France urges citizens to leave Mali after rebel attacks",
+      "body": "The UK has issued similar advice, telling citizens who stay, that they do so at their own risk.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 16:46:38 GMT",
+      "url": "https://www.bbc.com/news/articles/cp3pdgvpn27o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "France investigates reappearance of website linked to Pelicot crimes",
+      "body": "Authorities say the Coco platform has been linked to sexual abuse of children, drug offences, rape and murder.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 15:10:55 GMT",
+      "url": "https://www.bbc.com/news/articles/c0m2ndp2042o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "US Supreme Court limits use of race in drawing electoral maps",
+      "body": "The decision will make it more difficult to successfully challenge legislative maps for diluting the voting power of racial minorities.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 15:05:55 GMT",
+      "url": "https://www.bbc.com/news/articles/clyw3p7xv4wo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Former US officials criticise Pentagon silence on deadly Iran school attack",
+      "body": "In the two months since the deadly strike, the US defence department has said only that the incident is under investigation.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 02:01:50 GMT",
+      "url": "https://www.bbc.com/news/articles/cwy2482pn0lo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Global forest loss slows but El Niño fires could threaten progress",
+      "body": "The loss of tropical rainforests eased last year, according to new analysis, but scientists warn they are still disappearing rapidly.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 13:26:08 GMT",
+      "url": "https://www.bbc.com/news/articles/c78q5pygn66o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Israeli 'double-tap' strike kills three rescue workers in Lebanon, officials say",
+      "body": "They are among nine people killed in successive attacks on Tuesday, which Israel's military says targeted a Hezbollah commander.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 15:30:50 GMT",
+      "url": "https://www.bbc.com/news/articles/cvgz5rgv4n3o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Comey charged with threatening Trump's life in Instagram post",
+      "body": "The new case stems from a 2025 seashell photo posted by the former FBI director that the justice department says calls for violence against Trump.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 00:24:05 GMT",
+      "url": "https://www.bbc.com/news/articles/cvgz4rvlem5o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Irish government announces further fuel supports after protests",
+      "body": "The Irish government has announced further fuel supports for a number of sectors after nationwide protests in recent weeks.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 12:48:45 GMT",
+      "url": "https://www.bbc.com/news/articles/cvgzd22w5ewo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Robert Mugabe's son to be deported from South Africa over firearms offence",
+      "body": "The 28-year-old was arrested in February after a man had been shot at his home in Johannesburg.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 14:09:59 GMT",
+      "url": "https://www.bbc.com/news/articles/czx2lxevvljo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Kim Jong Un praises troops who 'self-blasted' to avoid capture by Ukraine",
+      "body": "It confirms suspicions that North Korean soldiers are being told to detonate their grenades to kill themselves.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 01:47:51 GMT",
+      "url": "https://www.bbc.com/news/articles/cddp7pzqdvjo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Two dead after small plane crashes into Australia airport hangar",
+      "body": "The aircraft burst into flames after it crashed at Parafield Airport in Adelaide.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 09:08:07 GMT",
+      "url": "https://www.bbc.com/news/articles/ce9pzlvyvejo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Trump's face to feature on commemorative US passports",
+      "body": "The passports will be released as part of the 250th anniversary of the US Declaration of Independence.",
+      "source": "BBC World News",
+      "date": "Tue, 28 Apr 2026 23:41:00 GMT",
+      "url": "https://www.bbc.com/news/articles/cr5pn1ngerpo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "The 'Polar Bear Capital' with Arctic gateway ambitions",
+      "body": "Canada is weighing whether a year-round northern trade route to Europe from Churchill, Manitoba, is viable, as climate change speeds Arctic warming.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 23:35:30 GMT",
+      "url": "https://www.bbc.com/news/articles/cyv1zdey7pmo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "A son overlooked and a jailed tycoon: Inside Samsung's succession drama",
+      "body": "The family dynasty behind Samsung is so complicated it regularly makes headline news in South Korea.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 23:21:44 GMT",
+      "url": "https://www.bbc.com/news/articles/c9d313g91g4o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Indians lost $25bn to digital fraud in 2025 - now its central bank is fighting back",
+      "body": "The RBI is mulling measures to tackle rising cases of digital fraud in India - but will they work?",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 23:36:31 GMT",
+      "url": "https://www.bbc.com/news/articles/cp3l3p7lzppo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Four key takeaways from Jerome Powell's final rate decision as Fed chair",
+      "body": "Powell's news conference after holding rates covered the US-Israel war with Iran, inflation, legal attacks, and the Fed's independence.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 20:01:26 GMT",
+      "url": "https://www.bbc.com/news/articles/c62rm4zk3kgo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Comey's seashell post got him indicted. But experts are sceptical the government can win",
+      "body": "Acting AG Todd Blanche said the case was investigated for months, adding \"it's serious when you threaten the president.\"",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 20:18:28 GMT",
+      "url": "https://www.bbc.com/news/articles/clyp70l1egeo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Syria trial seen as first step on long road for Assad's victims",
+      "body": "There were highly charged scenes as former senior regime official, Atef Najib, appeared before a Damascus court.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 20:11:04 GMT",
+      "url": "https://www.bbc.com/news/articles/cn5pzw4gn1no?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "'Numbskull, moron and too stupid': Trump and Powell's biggest clashes",
+      "body": "How the US President Donald Trump and Federal Reserve chair Jerome Powell came to blows.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 16:12:08 GMT",
+      "url": "https://www.bbc.com/news/articles/c7v952p61dgo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Russian paramilitaries carried out air strikes in Mali as rebels advanced, footage shows",
+      "body": "Last weekend's attacks came as the Africa Corps withdrew from a key base in northern Mali.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 11:24:47 GMT",
+      "url": "https://www.bbc.com/news/articles/cvgz409r5l3o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "In five charts - How UAE's exit could affect Opec's influence over the oil price",
+      "body": "The BBC takes a look in charts at what the UAE's departure could mean for the oil cartel and more widely.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 16:37:08 GMT",
+      "url": "https://www.bbc.com/news/articles/c70vjpny0dno?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Faisal Islam: Why the UAE's exit from Opec is a big deal",
+      "body": "It will have little effect on the current oil blockades, but it could change everything afterwards.",
+      "source": "BBC World News",
+      "date": "Tue, 28 Apr 2026 15:55:46 GMT",
+      "url": "https://www.bbc.com/news/articles/cj4pxyklw1jo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "The King and Queen in the Big Apple: What the royals did on their third day in the US",
+      "body": "After visiting the 9/11 Memorial, Queen Camilla read to children at the New York Public Library and King Charles visited a community organisation in Harlem.",
+      "source": "BBC World News",
+      "date": "Thu, 30 Apr 2026 00:37:45 GMT",
+      "url": "https://www.bbc.com/news/videos/ce9pj2ygmkno?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Watch: Aerial video shows destruction after tornado strikes small Texas town",
+      "body": "A severe storm outbreak has been battering parts of the Midwest and Southern United States for nearly a week.",
+      "source": "BBC World News",
+      "date": "Thu, 30 Apr 2026 00:56:23 GMT",
+      "url": "https://www.bbc.com/news/videos/cvgzlpzglx2o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Watch: There's a ceasefire in Lebanon - but the fighting hasn't stopped",
+      "body": "Israel and Hezbollah are still fighting in Lebanon despite a US-brokered ceasefire that began 12 days ago.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 14:41:26 GMT",
+      "url": "https://www.bbc.com/news/videos/cpdpql7d839o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "'If it wasn't for us, you'd be speaking French': King and Trump joke at dinner",
+      "body": "The King and the US president exchanged several jokes during their speeches at a state banquet.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 11:41:37 GMT",
+      "url": "https://www.bbc.com/news/videos/c332ng27x1jo?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Why has the UAE left Opec - and why does this matter?",
+      "body": "The United Arab Emirates (UAE) is quitting oil cartel Opec after nearly 60 years of membership.",
+      "source": "BBC World News",
+      "date": "Wed, 29 Apr 2026 10:24:54 GMT",
+      "url": "https://www.bbc.com/news/videos/cz92wdvwek8o?at_medium=RSS&at_campaign=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Pro-government rally in Tehran demands end to US threats",
+      "body": "Hundreds of Iranians have rallied in Tehran to demand an end to US threats and the ongoing blockade of Iranian ports.",
+      "source": "Al Jazeera",
+      "date": "Thu, 30 Apr 2026 01:37:51 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/30/pro-government-rally-in-tehran-demands-end-to-us-threats?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Hundreds of Ultra-Orthodox Jews protest Israel’s military draft",
+      "body": "Hundreds of Ultra-Orthodox Jews blocked a main road, as part of protests against Israel’s mandatory military service.",
+      "source": "Al Jazeera",
+      "date": "Thu, 30 Apr 2026 01:16:18 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/30/hundreds-of-ultra-orthodox-jews-protest-israels-military-draft?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Iran war live: Trump urges Tehran to give up; Ghalibaf mocks US strategy",
+      "body": "Mohammad Bagher Ghalibaf ridicules US&#039;s economic pressure campaign as oil prices surge and Hormuz standoff continues.",
+      "source": "Al Jazeera",
+      "date": "Thu, 30 Apr 2026 00:00:20 +0000",
+      "url": "https://www.aljazeera.com/news/liveblog/2026/4/30/iran-war-live-trump-urges-tehran-to-just-give-up-as-oil-prices-surge?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Chile police blast water cannons at student protesters",
+      "body": "Chile’s police has cracked down on student protests against the govt&#039;s proposals to limit free higher education.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 23:57:43 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/chile-police-blast-water-cannons-at-student-protesters?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Carney ‘strong’ in year one, now must deliver on promises in Canada",
+      "body": "Canada&#039;s prime minister has used Trump&#039;s attacks on allies and others to refocus Ottawa&#039;s foreign policy.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 22:33:16 +0000",
+      "url": "https://www.aljazeera.com/economy/2026/4/29/carney-strong-and-resolute-in-first-year-now-has-to-deliver-on-promises?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Israel has begun intercepting Gaza-bound Global Sumud Flotilla aid boats",
+      "body": "Organisers of a Gaza-bound aid mission say their vessels are being intercepted by Israeli military speedboats.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 21:59:08 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/israel-has-begun-intercepting-gaza-bound-global-sumud-flotilla-aid-boats?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Israeli forces raid Global Sumud Flotilla boats in international waters",
+      "body": "Seven out of 58 vessels were captured by Israel near Crete, as flotilla aims to deliver aid to Gaza under blockade.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 21:46:23 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/israeli-military-speedboats-block-gaza-bound-aid-ship?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "UAE quits OPEC",
+      "body": "The UAE announced it’s withdrawing from OPEC on May 1st.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 21:30:22 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/uae-quits-opec?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Arsenal cruelly denied penalty by VAR in Champions League draw at Atletico",
+      "body": "Arsenal scored one penalty, but VAR controversially denied them another in a 1-1 semifinal draw at Atletico Madrid.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 21:08:48 +0000",
+      "url": "https://www.aljazeera.com/sports/2026/4/29/arsenal-cruelly-denied-penalty-by-var-in-champions-league-tie-at-atletico?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "New Florida map boosts Republican seats amid national redistricting fight",
+      "body": "Florida has become latest state to redraw map, as national electoral landscape transforms before midterm elections.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:56:32 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/new-florida-map-boosts-republican-seats-amid-national-redistricting-fight?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Trump: Putin offered to help settle Iranian nuclear enrichment impasse",
+      "body": "Donald Trump said that Vladimir Putin told him he’d “like to be involved” in settling Iranian nuclear enrichment.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:52:47 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/trump-putin-offered-to-help-settle-iranian-nuclear-enrichment-impasse?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Why is the UAE quitting OPEC – and what’s the impact?",
+      "body": "The decision by the United Arab Emirates comes during the worst global energy crisis of modern times.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:51:25 +0000",
+      "url": "https://www.aljazeera.com/video/inside-story/2026/4/29/why-is-the-uae-quitting-opec-and-whats-the-impact?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "What’s behind Israel’s plan to move the Bnei Menashe?",
+      "body": "The new wave of the Bnei Menashe community from Northeast India have arrived in Israel under a 2026 government plan.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:36:46 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/whats-behind-israels-plan-to-move-the-bnei-menashe?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Ukraine asks Israel to seize ship carrying grain ‘stolen’ by Russia",
+      "body": "Kyiv requested that Israel seize the vessel and its cargo, take grain ‌samples, and question crew ​members.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:23:46 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/ukraine-asks-israel-to-seize-ship-carrying-stolen-russian-grain?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Musk accuses Altman of betraying OpenAI’s nonprofit founding mission",
+      "body": "OpenAI’s lawyers argue Musk’s lawsuit aims to undermine the company for his competing venture, xAI.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:23:04 +0000",
+      "url": "https://www.aljazeera.com/economy/2026/4/29/musk-accuses-altman-of-betraying-openais-nonprofit-founding-mission?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Mali’s Tuareg rebels say Russian fighters must withdraw from country",
+      "body": "As military government battles to reassert control, spokesperson for Tuareg rebels says it will fall &#039;sooner or later&#039;.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:17:55 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/malis-tuareg-rebels-say-russian-fighters-must-withdraw-from-country?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Ex-FBI chief Comey appears in court over alleged Trump threat",
+      "body": "Comey turned himself in on two charges, threatening the US president&#039;s life and transmitting threats across state lines.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 20:00:46 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/ex-fbi-chief-comey-appears-in-court-over-alleged-trump-threat?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "US lawmakers question Pete Hegseth over budget for war on Iran",
+      "body": "US Defense Secretary Pete Hegseth testified before Congress on the Pentagon’s budget for the US-Israeli war on Iran.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:39:22 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/us-lawmakers-question-pete-hegseth-over-budget-for-war-on-iran?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Pentagon chief Hegseth first public hearing on Iran war: Key takeaways",
+      "body": "Pete Hegseth testifies alongside General Dan Caine, responds to questions on war Pentagon says has cost $25bn.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:38:54 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/pentagon-chief-hegseth-first-public-hearing-on-iran-war-key-takeaways?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Two Jewish men stabbed in London ‘terrorist attack’",
+      "body": "Two Jewish men were stabbed in north London, after a man armed with a knife was seen running through the area.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:32:49 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/two-jewish-men-stabbed-in-london-terrorist?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Indonesian soldiers on trial after acid attack on activist",
+      "body": "Four Indonesian soldiers are on trial for an acid attack on a prominent activist in Jakarta.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:24:08 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/indonesian-soldiers-on-trial-after-acid-attack-on-activist?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "‘Trump’s Justice Department is on a revenge tour’",
+      "body": "Claire Finkelstein says Comey will likely fight his indictment over a social media post critical of Trump.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:22:21 +0000",
+      "url": "https://www.aljazeera.com/video/quotable/2026/4/29/trumps-justice-department-is-on-a-revenge-tour?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "CCTV footage shows moment Israeli strike targets Palestinians",
+      "body": "Surveillance cameras captured the moment an Israeli strike hit a group of Palestinians in Gaza City on Friday.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:08:45 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/cctv-footage-shows-moment-israeli-strike-targets-palestinians?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Britain’s King Charles visits 9/11 Memorial in New York",
+      "body": "Britain’s King Charles III visited the 9/11 Memorial in New York City a day after his address to the US Congress.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:04:34 +0000",
+      "url": "https://www.aljazeera.com/video/newsfeed/2026/4/29/britains-king-charles-visits-9-11-memorial-in-new?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Trump vows to maintain Iran blockade, Tehran threatens ‘practical’ action",
+      "body": "US president says Washington&#039;s naval siege on Iranian ports is &#039;more effective than the bombing&#039; as oil price soars.",
+      "source": "Al Jazeera",
+      "date": "Wed, 29 Apr 2026 19:00:03 +0000",
+      "url": "https://www.aljazeera.com/news/2026/4/29/trump-vows-to-maintain-iran-blockade-tehran-threaten-practical-action?traffic_source=rss",
+      "geo_hint": null
+    },
+    {
+      "title": "Marine Corps considering Army’s MV-75 as an attack helo replacement",
+      "body": "Bell unveiled an armed version specifically for the Corps at the Modern Day Marine conference.",
+      "source": "Defense One",
+      "date": "Wed, 29 Apr 2026 17:25:07 -0400",
+      "url": "https://www.defenseone.com/defense-systems/2026/04/marine-corps-considering-armys-mv-75-attack-helo-replacement/413219/",
+      "geo_hint": null
+    },
+    {
+      "title": "Sixty days in, Pentagon estimates $25B spent on Iran war",
+      "body": "The defense secretary and Joint Chiefs chairman appeared before Congress for the first time since strikes began Feb. 28.",
+      "source": "Defense One",
+      "date": "Wed, 29 Apr 2026 15:04:35 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/sixty-days-pentagon-estimates-25b-spent-iran-war/413208/",
+      "geo_hint": null
+    },
+    {
+      "title": "Meet the 3-star insiders say will be Space Force’s next top leader",
+      "body": "Lt. Gen. Douglas Schiess is seen as the likely replacement for Gen. Chance Saltzman.",
+      "source": "Defense One",
+      "date": "Wed, 29 Apr 2026 11:05:00 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/meet-3-star-insiders-say-will-be-space-forces-next-top-leader/413218/",
+      "geo_hint": null
+    },
+    {
+      "title": "Acting SecNav: ‘I’m not going to have my son go to war the way I did'",
+      "body": "Industry can help prevent the Pentagon from making GWOT-era mistakes, said Hung Cao, filling in for his recently ousted boss.",
+      "source": "Defense One",
+      "date": "Tue, 28 Apr 2026 19:06:27 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/im-not-going-have-my-son-go-war-way-i-did-acting-secnav-says/413188/",
+      "geo_hint": null
+    },
+    {
+      "title": "SOCOM adding AI, autonomy ‘at every level,’ commander says",
+      "body": "Fast adoption illustrates smaller organizations’ ability to harness disruptive tech.",
+      "source": "Defense One",
+      "date": "Tue, 28 Apr 2026 18:54:16 -0400",
+      "url": "https://www.defenseone.com/technology/2026/04/socom-adding-ai-autonomy-every-level-commander-says/413186/",
+      "geo_hint": null
+    },
+    {
+      "title": "Navy’s drone refueler notches first flight—but it won’t be on aircraft carriers until 2029",
+      "body": "The MQ-25A delay pushes deliveries another two years past the prior reschedule.",
+      "source": "Defense One",
+      "date": "Tue, 28 Apr 2026 15:36:30 -0400",
+      "url": "https://www.defenseone.com/defense-systems/2026/04/navys-drone-refueler-notches-first-flight-it-wont-be-aircraft-carriers-until-2029/413170/",
+      "geo_hint": null
+    },
+    {
+      "title": "Marines will update land warfare doctrine as they prep for near-peer, drone-driven fight",
+      "body": "Officials previewed Ground Combat Element 2040 plan at the Modern Day Marine conference.",
+      "source": "Defense One",
+      "date": "Tue, 28 Apr 2026 15:30:27 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/marines-will-update-land-warfare-doctrine-they-prep-near-peer-drone-driven-fight/413169/",
+      "geo_hint": null
+    },
+    {
+      "title": "Textron unveils autonomous ground vehicle designed for Marine Corps littoral units",
+      "body": "The RIPSAW M1 demonstrator made its debut on the show floor at the Modern Day Marine conference.",
+      "source": "Defense One",
+      "date": "Tue, 28 Apr 2026 08:00:00 -0400",
+      "url": "https://www.defenseone.com/defense-systems/2026/04/textron-unveils-autonomous-ground-vehicle-designed-marine-corps-littoral-units/413153/",
+      "geo_hint": null
+    },
+    {
+      "title": "Experts call for halt of AI chip exports to China after White House distillation warning",
+      "body": "An AI policy group argues the move is necessary after the White House warned that Beijing is attempting to use U.S. AI systems to build similar capabilities.",
+      "source": "Defense One",
+      "date": "Mon, 27 Apr 2026 18:00:00 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/experts-call-halt-ai-chip-exports-china-after-white-house-distillation-warning/413155/",
+      "geo_hint": null
+    },
+    {
+      "title": "First protest filed against the Army’s troubled MAPS contract",
+      "body": "Some in industry are calling the $50 billion professional services vehicle \"still a hot mess\" as the Army works to answer thousands of questions.",
+      "source": "Defense One",
+      "date": "Mon, 27 Apr 2026 16:31:59 -0400",
+      "url": "https://www.defenseone.com/business/2026/04/first-protest-filed-against-armys-troubled-maps-contract/413154/",
+      "geo_hint": null
+    },
+    {
+      "title": "Pentagon adds Google’s latest model to GenAI.mil as usage soars",
+      "body": "Users have built more than 100,000 AI agents using the generative-AI platform, officials said.",
+      "source": "Defense One",
+      "date": "Mon, 27 Apr 2026 11:57:22 -0400",
+      "url": "https://www.defenseone.com/defense-systems/2026/04/pentagon-adds-googles-latest-model-genaimil-usage-soars/413126/",
+      "geo_hint": null
+    },
+    {
+      "title": "Space Force picks firms to develop Golden Dome’s space-based interceptors",
+      "body": "Defense giants and startups vie to create orbital defenses—even as the program’s czar concedes they may be unaffordable.",
+      "source": "Defense One",
+      "date": "Fri, 24 Apr 2026 17:15:43 -0400",
+      "url": "https://www.defenseone.com/threats/2026/04/space-force-picks-firms-develop-golden-domes-space-based-interceptors/413118/",
+      "geo_hint": null
+    },
+    {
+      "title": "US Navy ordered to ‘shoot and kill’ alleged Iranian mine-laying boats amid ceasefire",
+      "body": "Hegseth says U.S. has \"all the time in the world\" as the number of interdicted vessels grows.",
+      "source": "Defense One",
+      "date": "Fri, 24 Apr 2026 11:33:06 -0400",
+      "url": "https://www.defenseone.com/threats/2026/04/us-navy-ordered-shoot-and-kill-suspected-iranian-mine-laying-boats-amid-ceasefire/413093/",
+      "geo_hint": null
+    },
+    {
+      "title": "The Pentagon replicated a Ukrainian-style drone attack in Florida. Now it’s changing its counter-drone strategy",
+      "body": "Several things—from the players to the technology—set the exercise apart from previous experiments.",
+      "source": "Defense One",
+      "date": "Thu, 23 Apr 2026 20:17:29 -0400",
+      "url": "https://www.defenseone.com/threats/2026/04/pentagon-ukraine-counter-drone/413087/",
+      "geo_hint": null
+    },
+    {
+      "title": "China has ‘deliberate, industrial-scale campaigns’ to steal US AI models, White House says",
+      "body": "Administration officials said they would be working with the private sector to counter foreign-led distillation campaigns.",
+      "source": "Defense One",
+      "date": "Thu, 23 Apr 2026 17:40:00 -0400",
+      "url": "https://www.defenseone.com/threats/2026/04/china-steal-ai-models/413103/",
+      "geo_hint": null
+    },
+    {
+      "title": "Exploding shells may turn the Apache helicopter into a drone hunter",
+      "body": "Soldier’s idea may help the service capture lessons from Ukraine, Iran.",
+      "source": "Defense One",
+      "date": "Thu, 23 Apr 2026 14:11:31 -0400",
+      "url": "https://www.defenseone.com/defense-systems/2026/04/exploding-shells-may-turn-apache-helicopter-drone-hunter/413067/",
+      "geo_hint": null
+    },
+    {
+      "title": "DOD completes $1B investment in L3Harris missile unit",
+      "body": "L3Harris Technologies is keeping an 80% stake in the solid-rocket-motor business, which is becoming a public company.",
+      "source": "Defense One",
+      "date": "Thu, 23 Apr 2026 14:00:00 -0400",
+      "url": "https://www.defenseone.com/business/2026/04/dod-completes-1b-investment-l3harris-missile-solutions-unit/413069/",
+      "geo_hint": null
+    },
+    {
+      "title": "Autonomous weapons will be 'key part' of US warfare: Joint Chiefs chairman",
+      "body": "Gen. Dan Caine said the Pentagon is looking at autonomous tech for drones and command-and-control, but lawmakers have questions.",
+      "source": "Defense One",
+      "date": "Thu, 23 Apr 2026 13:35:00 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/autonomous-weapons-warfare-joint-chiefs/413065/",
+      "geo_hint": null
+    },
+    {
+      "title": "Navy scientists seek tech breakthroughs in areas that companies ignore",
+      "body": "With private-sector R&D funding rising, the Office of Naval Research is adjusting to new budget priorities.",
+      "source": "Defense One",
+      "date": "Wed, 22 Apr 2026 19:10:34 -0400",
+      "url": "https://www.defenseone.com/technology/2026/04/navy-scientists-seek-tech-breakthroughs-areas-companies-ignore/413055/",
+      "geo_hint": null
+    },
+    {
+      "title": "Navy secretary leaving the Pentagon, ‘effective immediately’",
+      "body": "His departure, long rumored, came as the Navy is fighting Iran and rolling out its proposed budget.",
+      "source": "Defense One",
+      "date": "Wed, 22 Apr 2026 19:02:28 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/navy-secretary-leaving-pentagon-effective-immediately-amid-iran-blockade/413056/",
+      "geo_hint": null
+    },
+    {
+      "title": "Air Force pushes to fund upgraded refueling systems instead of new tanker development",
+      "body": "One former military official fears delays for a tanker replacement could hurt the combat fleet.",
+      "source": "Defense One",
+      "date": "Wed, 22 Apr 2026 18:52:39 -0400",
+      "url": "https://www.defenseone.com/defense-systems/2026/04/air-force-pushes-fund-upgraded-refueling-systems-instead-new-tanker-development/413054/",
+      "geo_hint": null
+    },
+    {
+      "title": "The Navy will keep shrinking until the industrial base catches up",
+      "body": "A commission on the service’s future is looking at ways to help the service along as ships wear down before they can be replaced.",
+      "source": "Defense One",
+      "date": "Wed, 22 Apr 2026 17:09:58 -0400",
+      "url": "https://www.defenseone.com/business/2026/04/navy-going-keep-shrinking-until-industrial-base-catches/413047/",
+      "geo_hint": null
+    },
+    {
+      "title": "Space Force scrambles to repair workforce as massive budget increase looms",
+      "body": "The service is trying to recruit at a record pace even as Pentagon officials insist civilian departures didn't hurt acquisition.",
+      "source": "Defense One",
+      "date": "Tue, 21 Apr 2026 23:16:38 -0400",
+      "url": "https://www.defenseone.com/threats/2026/04/space-force-workers-budget-increase/413026/",
+      "geo_hint": null
+    },
+    {
+      "title": "The counterterrorism czar without a counterterrorism plan",
+      "body": "Iranian threats against U.S. targets have brought renewed attention to the absence of Sebastian Gorka's long-promised doctrine.",
+      "source": "Defense One",
+      "date": "Tue, 21 Apr 2026 10:48:52 -0400",
+      "url": "https://www.defenseone.com/policy/2026/04/counterterrorism-czar-without-counterterrorism-plan/413004/",
+      "geo_hint": null
+    },
+    {
+      "title": "Defending Against China-Nexus Covert Networks of Compromised Devices",
+      "body": "<div class=\"SCXW131754345 BCX8\">\n<div class=\"OutlineElement Ltr SCXW131754345 BCX8\">\n<h2><a class=\"c-button c-button--on-dark\" href=\"https://urldefense.us/v3/__https://www.ncsc.gov.uk/news/defending-against-china-nexus-covert-networks-of-compromised-devices__;!!BClRuOV5cvtbuNI!Cvg8stIR3jHWVZgHhCVvEwbwDXxXIRSprOQ9JtY2YKwxUIGVovuDAu7QrFsfw3sfAVd8-gxEMIpgldwlY-jTD7G0%24\">Defending against china-nexus covert networks of compromised devices</a></h2>\n<h2><a class=\"c-button c-button--on-dark\" href=\"https://urldefense.us/v3/__https://www.ncsc.gov.uk/news/executive-summary-defending-against-china-nexus-covert-networks-of-compromised-devices__;!!BClRuOV5cvtbuNI!Cvg8stIR3jHWVZgHhCVvEwbwDXxXIRSprOQ9JtY2YKwxUIGVovuDAu7QrFsfw3sfAVd8-gxEMIpgldwlYzP90Ign%24\">executive summary</a></h2>\n<h2><strong>Defending against China-nexus covert networks of compromised devices&nbsp;</strong></h2>\n<p>Explaining the widespread shift in tactics, techniques and procedures (TTPs) towards networks of compromised infrastructure, and how to defend against it&nbsp;</p>\n<h3><strong>Summary</strong></h3>\n<p>With support from the UK <a href=\"https://www.ncsc.gov.uk/information/cyber-league\" target=\"_blank\"><u>Cyber League</u></a>, this advisory has been jointly released by the National Cyber Security Centre (NCSC-UK) and international partners:&nbsp;</p>\n<ul>\n<li>Australian Signals Directorate’s (ASD’s) Australian Cyber Security Centre (ACSC)</li>\n<li>Communications Security Establishment Canada’s (CSE’s) Canadian Centre for Cyber Security (Cyber Centre)</li>\n<li>Germany Federal Office for the Protection of the Constitution -&nbsp;&nbsp; Bundesamt für Verfassungsschutz (BfV)</li>\n<li>Germany Federal Intelligence Service – Bundesnachrichtendienst (BND)</li>\n<li>Germany Federal Office for Information Security - Bundesamt für Sicherheit in der Informationstechnik (BSI)</li>\n<li>Japan National Cybersecurity Office (NCO) - 国家サイバー統括室</li>\n<li>Netherlands General Intelligence and Security Service - Algemene Inlic",
+      "source": "CISA Alerts",
+      "date": "Tue, 21 Apr 2026 11:12:37 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-113a",
+      "geo_hint": null
+    },
+    {
+      "title": "Iranian-Affiliated Cyber Actors Exploit Programmable Logic Controllers Across US Critical Infrastructure",
+      "body": "<h2><strong>Advisory at a Glance</strong></h2>\n<table>\n<tbody>\n<tr>\n<th>Title</th>\n<td>Iranian-Affiliated Cyber Actors Exploit Programmable Logic Controllers Across US Critical Infrastructure</td>\n</tr>\n<tr>\n<th>Original Publication</th>\n<td>April 7, 2026</td>\n</tr>\n<tr>\n<th>Executive Summary</th>\n<td>\n<p>Iran-affiliated advanced persistent threat (APT) actors are conducting exploitation activity targeting internet-facing operational technology (OT) devices, including programmable logic controllers (PLCs) manufactured by Rockwell Automation/Allen-Bradley. This activity has led to PLC disruptions across several U.S. critical infrastructure sectors through malicious interactions with the project file and manipulation of data on human machine interface (HMI) and supervisory control and data acquisition (SCADA) displays, resulting in operational disruption and financial loss.&nbsp;</p>\n<p>U.S. organizations should urgently review the tactics, techniques, and procedures (TTPs) and indicators of compromise (IOCs) in this advisory for indications of current or historical activity on their networks, and apply the recommendations listed in the <a href=\"#Mitigations\"><strong>Mitigations</strong></a><strong> </strong>section of this advisory to reduce the risk of compromise.</p>\n</td>\n</tr>\n<tr>\n<th>Affected Products</th>\n<td>\n<ul>\n<li>Rockwell Automation/Allen-Bradley manufactured PLCs</li>\n<li>Potentially other branded PLCs</li>\n</ul>\n</td>\n</tr>\n<tr>\n<th>Key Actions</th>\n<td>\n<ul>\n<li>Remove PLCs from direct internet exposure via secure gateway and firewall.</li>\n<li>Query available logs for the provided IOCs in the corresponding time frames.</li>\n<li>Check available logs for suspicious traffic on the ports associated with OT devices, including <code>44818</code>, <code>2222</code>, <code>102</code>, and <code>502</code>, especially traffic originating from overseas hosting providers.</li>\n<li>For Rockwell Automation devices, place the physical mode switch on the controller",
+      "source": "CISA Alerts",
+      "date": "Mon, 06 Apr 2026 07:03:58 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa26-097a",
+      "geo_hint": null
+    },
+    {
+      "title": "Pro-Russia Hacktivists Conduct Opportunistic Attacks Against US and Global Critical Infrastructure",
+      "body": "<h2><strong>Summary</strong></h2>\n<p><strong>Note:</strong> This joint Cybersecurity Advisory is being published as an addition to the Cybersecurity and Infrastructure Security Agency (CISA) May 6, 2025, joint fact sheet <a href=\"https://www.cisa.gov/resources-tools/resources/primary-mitigations-reduce-cyber-threats-operational-technology\" title=\"Primary Mitigations to Reduce Cyber Threats to Operational Technology\">Primary Mitigations to Reduce Cyber Threats to Operational Technology</a> and European Cybercrime Centre’s (EC3) <a href=\"https://www.europol.europa.eu/media-press/newsroom/news/global-operation-targets-noname05716-pro-russian-cybercrime-network\" target=\"_blank\" title=\"Operation Eastwood\" data-entity-type=\"external\">Operation Eastwood</a>, in which CISA, Federal Bureau of Investigation (FBI), Department of Energy (DOE), Environmental Protection Agency (EPA), and EC3 shared information about cyber incidents affecting the operational technology (OT) and industrial control systems (ICS) of critical infrastructure entities in the United States and globally.</p>\n<p>FBI, CISA, National Security Agency (NSA), and the following partners—hereafter referred to as “the authoring organizations”—are releasing this joint advisory on the targeting of critical infrastructure by pro-Russia hacktivists:</p>\n<ul>\n<li>U.S. Department of Energy (DOE)</li>\n<li>U.S. Environmental Protection Agency (EPA)</li>\n<li>U.S. Department of Defense Cyber Crime Center (DC3)</li>\n<li>Europol European Cybercrime Centre (EC3)</li>\n<li>EUROJUST – European Union Agency for Criminal Justice Cooperation</li>\n<li>Australian Signals Directorate’s Australian Cyber Security Centre (ASD’s ACSC)</li>\n<li>Canadian Centre for Cyber Security (Cyber Centre)</li>\n<li>Canadian Security Intelligence Service (CSIS)</li>\n<li>Czech Republic Military Intelligence (VZ)</li>\n<li>Czech Republic National Cyber and Information Security Agency (NÚKIB)</li>\n<li>Czech Republic National Centre Against Terrorism, Extremi",
+      "source": "CISA Alerts",
+      "date": "Fri, 05 Dec 2025 14:35:38 EST",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-343a",
+      "geo_hint": null
+    },
+    {
+      "title": "CISA Shares Lessons Learned from an Incident Response Engagement",
+      "body": "<h2><strong>Advisory at a Glance</strong></h2>\n<table>\n<tbody>\n<tr>\n<td>Executive Summary</td>\n<td>CISA began incident response efforts at a U.S. federal civilian executive branch (FCEB) agency following the detection of potential malicious activity identified through security alerts generated by the agency’s endpoint detection and response (EDR) tool. CISA identified three lessons learned from the engagement that illuminate how to effectively mitigate risk, prepare for, and respond to incidents: vulnerabilities were not promptly remediated, the agency did not test or exercise their incident response plan (IRP), and EDR alerts were not continuously reviewed.</td>\n</tr>\n<tr>\n<td>Key Actions</td>\n<td>\n<ul>\n<li><strong>Prevent compromise</strong> by prioritizing the patching of critical vulnerabilities in public-facing systems and known exploited vulnerabilities.</li>\n<li><strong>Prepare for incidents</strong> by maintaining, practicing, and updating incident response plans.</li>\n<li><strong>Prepare for incidents</strong> by implementing comprehensive and verbose logging and aggregate logs in a centralized out-of-band location.</li>\n</ul>\n</td>\n</tr>\n<tr>\n<td>Indicators of Compromise&nbsp;</td>\n<td>\n<p>For a downloadable copy of indicators of compromise, see:&nbsp;</p>\n<ul>\n<li><a href=\"https://www.cisa.gov/sites/default/files/2025-09/AA25-266A-JSON.stix_.json\" title=\"JSON AA25-266A\">AA25-266A-JSON.stix_.json</a></li>\n<li><a href=\"https://www.cisa.gov/sites/default/files/2025-09/AA25-266A-STIX.stix_.xml\" title=\"STIX AA25-266A\">AA25-266A-STIX.stix_.xml</a></li>\n</ul>\n</td>\n</tr>\n<tr>\n<td>Intended Audience</td>\n<td>\n<p><strong>Organizations:</strong> FCEB agencies and critical infrastructure organizations.</p>\n<p><strong>Roles:</strong> <a href=\"https://niccs.cisa.gov/tools/nice-framework/work-role/defensive-cybersecurity\" title=\"Defensive Cybersecurity Analysts\">Defensive Cybersecurity Analysts</a>, <a href=\"https://niccs.cisa.gov/tools/nice-framework/work-role/vulnerab",
+      "source": "CISA Alerts",
+      "date": "Mon, 22 Sep 2025 11:12:49 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-266a",
+      "geo_hint": null
+    },
+    {
+      "title": "Countering Chinese State-Sponsored Actors Compromise of Networks Worldwide to Feed Global Espionage System",
+      "body": "<h2><strong>Executive summary</strong></h2>\n<p>People’s Republic of China (PRC) state-sponsored cyber threat actors are targeting networks globally, including, but not limited to, telecommunications, government, transportation, lodging, and military infrastructure networks. While these actors focus on large backbone routers of major telecommunications providers, as well as provider edge (PE) and customer edge (CE) routers, they also leverage compromised devices and trusted connections to pivot into other networks. These actors often modify routers to maintain persistent, long-term access to networks.&nbsp;</p>\n<p>This activity partially overlaps with cyber threat actor reporting by the cybersecurity industry—commonly referred to as Salt Typhoon, OPERATOR PANDA, RedMike, UNC5807, and GhostEmperor, among others. The authoring agencies are not adopting a particular commercial naming convention and hereafter refer to those responsible for the cyber threat activity more generically as “Advanced Persistent Threat (APT) actors” throughout this advisory. This cluster of cyber threat activity has been observed in the United States, Australia, Canada, New Zealand, the United Kingdom, and other areas globally.</p>\n<p>This Cybersecurity Advisory (CSA) includes observations from various government and industry investigations where the APT actors targeted internal enterprise environments, as well as systems and networks that deliver services directly to customers. This CSA details the tactics, techniques, and procedures (TTPs) leveraged by these APT actors to facilitate detection and threat hunting, and provides mitigation guidance to reduce the risk from these APT actors and their TTPs.</p>\n<p>This CSA is being released by the following authoring and co-sealing agencies:</p>\n<ul>\n<li>United States National Security Agency (NSA)</li>\n<li>United States Cybersecurity and Infrastructure Security Agency (CISA)</li>\n<li>United States Federal Bureau of Investigation (FBI)</li>\n<li>Unit",
+      "source": "CISA Alerts",
+      "date": "Mon, 25 Aug 2025 09:36:40 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-239a",
+      "geo_hint": null
+    },
+    {
+      "title": "CISA and USCG Identify Areas for Cyber Hygiene Improvement After Conducting Proactive Threat Hunt at US Critical Infrastructure Organization",
+      "body": "<div class=\"WordSection1\">\n<h2><strong>Summary</strong></h2>\n<p><em>The Cybersecurity and Infrastructure Security Agency (CISA) and U.S. Coast Guard (USCG) are issuing this Cybersecurity Advisory to present findings from a recent CISA and USCG hunt engagement. The purpose of this advisory is to highlight identified cybersecurity issues, thereby informing security defenders in other organizations of potential similar issues and encouraging them to take proactive measures to enhance their cybersecurity posture. This advisory has been coordinated with the organization involved in the hunt engagement.</em></p>\n<p>CISA led a proactive hunt engagement at a U.S. critical infrastructure organization with the support of USCG analysts. During hunts, CISA proactively searches for evidence of malicious activity or malicious cyber actor presence on customer networks. The organization invited CISA to conduct a proactive hunt to determine if an actor had been present in the organization’s environment. (<strong>Note:</strong> Henceforth, unless otherwise defined, “CISA” is used in this advisory to refer to the hunt team as an umbrella for both CISA and USCG analysts).</p>\n<p>During this engagement, CISA did not identify evidence of malicious cyber activity or actor presence on the organization’s network, but did identify cybersecurity risks, including:</p>\n<ul>\n<li>Insufficient logging;</li>\n<li>Insecurely stored credentials;</li>\n<li>Shared local administrator (admin) credentials across many workstations;</li>\n<li>Unrestricted remote access for local admin accounts;</li>\n<li>Insufficient network segmentation configuration between IT and operational technology (OT) assets; and</li>\n<li>Several device misconfigurations.</li>\n</ul>\n<p>In coordination with the organization where the hunt was conducted, CISA and USCG are sharing cybersecurity risk findings and associated mitigations to assist other critical infrastructure organizations with improving their cybersecurity posture. Recomm",
+      "source": "CISA Alerts",
+      "date": "Tue, 29 Jul 2025 13:53:52 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-212a",
+      "geo_hint": null
+    },
+    {
+      "title": "#StopRansomware: Interlock",
+      "body": "<h2><strong>Summary</strong></h2>\n<p><em><strong>Note</strong>: This joint Cybersecurity Advisory is part of an ongoing #StopRansomware effort to publish advisories for network defenders that detail various ransomware variants and ransomware threat actors. These #StopRansomware advisories include recently and historically observed tactics, techniques, and procedures (TTPs) and indicators of compromise (IOCs) to help organizations protect against ransomware. Visit </em><a href=\"/stopransomware/stopransomware\" target=\"_blank\" data-entity-type=\"node\" data-entity-uuid=\"1a82f9f0-31f8-4dfb-954e-45118ea9cdf0\" data-entity-substitution=\"canonical\" title=\"#StopRansomware\"><em>stopransomware.gov</em></a><em> to see all #StopRansomware advisories and to learn more about other ransomware threats and no-cost resources.</em></p>\n<p>The Federal Bureau of Investigation (FBI), Cybersecurity and Infrastructure Security Agency (CISA), Department of Health and Human Services (HHS), and Multi-State Information Sharing and Analysis Center (MS-ISAC)—hereafter referred to as “the authoring organizations”—are releasing this joint advisory to disseminate known Interlock ransomware IOCs and TTPs identified through FBI investigations (as recently as June 2025) and trusted third-party reporting.</p>\n<p>The Interlock ransomware variant was first observed in late September 2024, targeting various business, critical infrastructure, and other organizations in North America and Europe. FBI maintains these actors target their victims based on opportunity, and their activity is financially motivated. FBI is aware of Interlock ransomware encryptors designed for both Windows and Linux operating systems; these encryptors have been observed encrypting virtual machines (VMs) across both operating systems. FBI observed actors obtaining initial access via drive-by download from compromised legitimate websites, which is an uncommon method among ransomware groups. Actors were also observed using the ClickFix so",
+      "source": "CISA Alerts",
+      "date": "Mon, 21 Jul 2025 10:11:24 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-203a",
+      "geo_hint": null
+    },
+    {
+      "title": "Ransomware Actors Exploit Unpatched SimpleHelp Remote Monitoring and Management to Compromise Utility Billing Software Provider",
+      "body": "<h2><strong>Summary</strong></h2>\n<p>The Cybersecurity and Infrastructure Security Agency (CISA) is releasing this advisory in response to ransomware actors leveraging unpatched instances of a vulnerability in SimpleHelp Remote Monitoring and Management (RMM) to compromise customers of a utility billing software provider. This incident reflects a broader pattern of ransomware actors targeting organizations through unpatched versions of SimpleHelp RMM since January 2025.</p>\n<p>SimpleHelp versions 5.5.7 and earlier contain several vulnerabilities, including <a href=\"https://www.cve.org/CVERecord?id=CVE-2024-57727\" target=\"_blank\" title=\"CVE-2024-57727\">CVE-2024-57727</a>—a path traversal vulnerability.<a href=\"https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-163a#note1\" title=\"Note1\"><sup>1</sup></a><sup> </sup>Ransomware actors likely leveraged CVE-2024-57727 to access downstream customers’ unpatched SimpleHelp RMM for disruption of services in double extortion compromises.<a href=\"https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-163a#note1\" title=\"Note 1\"><sup>1</sup></a><sup>&nbsp;</sup></p>\n<p>CISA added CVE-2024-57727 to its <a href=\"https://www.cisa.gov/known-exploited-vulnerabilities-catalog\" title=\"Known Exploited Vulnerabilities Catalog\">Known Exploited Vulnerabilities (KEV) Catalog</a> on Feb. 13, 2025.</p>\n<p>CISA urges software vendors, downstream customers, and end users to immediately implement the <strong>Mitigations </strong>listed in this advisory based on confirmed compromise or risk of compromise.</p>\n<p>Download the PDF version of this report:</p>\n\n\n\n\n\n<div class=\"c-file\">\n    <div class=\"c-file__download\">\n    <a href=\"/sites/default/files/2025-06/aa25-163a-ransomware-simplehelp-rmm-compromise.pdf\" class=\"c-file__link\" target=\"_blank\">AA25-163A Ransomware Actors Exploit Unpatched SimpleHelp Remote Monitoring and Management to Compromise Utility Billing Software Provider</a>\n    <span class=\"c-file__size\">(PDF,       42",
+      "source": "CISA Alerts",
+      "date": "Thu, 12 Jun 2025 10:29:54 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-163a",
+      "geo_hint": null
+    },
+    {
+      "title": "Russian GRU Targeting Western Logistics Entities and Technology Companies",
+      "body": "<h2><strong>Executive Summary</strong></h2>\n<p>This joint cybersecurity advisory (CSA) highlights a Russian state-sponsored cyber campaign targeting Western logistics entities and technology companies. This includes those involved in the coordination, transport, and delivery of foreign assistance to Ukraine. Since 2022, Western logistics entities and IT companies have faced an elevated risk of targeting by the Russian General Staff Main Intelligence Directorate (GRU) 85th Main Special Service Center (85th GTsSS), military unit 26165—tracked in the cybersecurity community under several names (see “<a href=\"https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a#CybersecurityIndustryTracking\" title=\"CybersecurityIndustryTracking\">Cybersecurity Industry Tracking</a>”). The actors’ cyber espionage-oriented campaign, targeting technology companies and logistics entities, uses a mix of previously disclosed tactics, techniques, and procedures (TTPs). The authoring agencies expect similar targeting and TTP use to continue.</p>\n<p>Executives and network defenders at logistics entities and technology companies should recognize the elevated threat of unit 26165 targeting, increase monitoring and threat hunting for known TTPs and indicators of compromise (IOCs), and posture network defenses with a presumption of targeting.</p>\n<p>This cyber espionage-oriented campaign targeting logistics entities and technology companies uses a mix of previously disclosed TTPs and is likely connected to these actors’ wide scale targeting of IP cameras in Ukraine and bordering NATO nations.</p>\n<p>The following authors and co-sealers are releasing this CSA:</p>\n<ul>\n<li>United States National Security Agency (NSA)</li>\n<li>United States Federal Bureau of Investigation (FBI)</li>\n<li>United Kingdom National Cyber Security Centre (NCSC-UK)</li>\n<li>Germany Federal Intelligence Service (BND)&nbsp;Bundesnachrichtendienst</li>\n<li>Germany Federal Office for Information Security (BSI)&nbsp",
+      "source": "CISA Alerts",
+      "date": "Mon, 12 May 2025 12:49:12 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141a",
+      "geo_hint": null
+    },
+    {
+      "title": "Threat Actors Deploy LummaC2 Malware to Exfiltrate Sensitive Data from Organizations",
+      "body": "<h2><strong>Summary</strong></h2>\n<p>The Federal Bureau of Investigation (FBI) and the Cybersecurity and Infrastructure Security Agency (CISA) are releasing this joint advisory to disseminate known tactics, techniques, and procedures (TTPs) and indicators of compromise (IOCs) associated with threat actors deploying the LummaC2 information stealer (infostealer) malware. LummaC2 malware is able to infiltrate victim computer networks and exfiltrate sensitive information, threatening vulnerable individuals’ and organizations’ computer networks across multiple U.S. critical infrastructure sectors. According to FBI information and trusted third-party reporting, this activity has been observed as recently as May 2025. The IOCs included in this advisory were associated with LummaC2 malware infections from November 2023 through May 2025.</p>\n<p>The FBI and CISA encourage organizations to implement the recommendations in the <strong>Mitigations</strong> section of this advisory to reduce the likelihood and impact of LummaC2 malware.</p>\n<p>Download the PDF version of this report:</p>\n\n\n\n\n\n<div class=\"c-file\">\n    <div class=\"c-file__download\">\n    <a href=\"/sites/default/files/2025-05/aa25-141b-threat-actors-deploy-lummac2-malware-to-exfiltrate-sensitive-data-from-organizations.pdf\" class=\"c-file__link\" target=\"_blank\">AA25-141B Threat Actors Deploy LummaC2 Malware to Exfiltrate Sensitive Data from Organizations</a>\n    <span class=\"c-file__size\">(PDF,       1.28 MB\n  )</span>\n  </div>\n</div>\n<p>For a downloadable copy of IOCs, see:</p>\n\n\n\n\n\n<div class=\"c-file\">\n    <div class=\"c-file__download\">\n    <a href=\"/sites/default/files/2025-05/AA25-141B.stix_.xml\" class=\"c-file__link\" target=\"_blank\">AA25-141B STIX XML</a>\n    <span class=\"c-file__size\">(XML,       146.54 KB\n  )</span>\n  </div>\n</div>\n\n\n\n\n\n<div class=\"c-file\">\n    <div class=\"c-file__download\">\n    <a href=\"/sites/default/files/2025-05/AA25-141B-Threat-Actors-Deploy-LummaC2-Malware-to-Exfiltrate-Sensitive-Data-from",
+      "source": "CISA Alerts",
+      "date": "Tue, 20 May 2025 15:20:23 EDT",
+      "url": "https://www.cisa.gov/news-events/cybersecurity-advisories/aa25-141b",
+      "geo_hint": null
+    },
+    {
+      "title": "“Make Iran Ungovernable” – Tracking Efforts To Destroy Iran’s Police Infrastructure",
+      "body": "<p>Bellingcat has identified at least 80 police stations or infrastructure related to law enforcement agencies and the Basij paramilitary group that has been damaged or destroyed in the first three weeks of the United States and Israel’s war against Iran. Experts told Bellingcat that both countries aim to degrade the Iranian regime’s “repressive capacity”. Combined, [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/04/24/make-iran-ungovernable-tracking-efforts-to-destroy-irans-police-infrastructure/\">“Make Iran Ungovernable” – Tracking Efforts To Destroy Iran’s Police Infrastructure</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Fri, 24 Apr 2026 14:16:34 +0000",
+      "url": "https://www.bellingcat.com/news/2026/04/24/make-iran-ungovernable-tracking-efforts-to-destroy-irans-police-infrastructure/",
+      "geo_hint": null
+    },
+    {
+      "title": "Mining China’s ‘Little Red Book’ for Open Source Gold",
+      "body": "<p>The challenges of conducting open-source research in China are well-documented. Consistently named one of the most digitally oppressive countries in the world, China blocks some of the world’s largest social media platforms, such as Facebook, Google, and YouTube. Those that are still accessible are mostly Chinese-owned, strictly regulated and monitored in real time by AI [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/resources/2026/04/20/xiaohongshu-rednote-open-source-guide/\">Mining China’s ‘Little Red Book’ for Open Source Gold</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Mon, 20 Apr 2026 12:52:25 +0000",
+      "url": "https://www.bellingcat.com/resources/2026/04/20/xiaohongshu-rednote-open-source-guide/",
+      "geo_hint": null
+    },
+    {
+      "title": "Painkiller Pipeline: 300 Million Tapentadol Pills Sent from India to West Africa",
+      "body": "<p>This article is the result of a collaboration with Indian media outlet Newslaundry. You can find Newslaundry’s editorially independent coverage here. Indian companies have shipped more than 320 million synthetic opioid pills to West Africa – where they have not been approved by regulators – over the past three years, a Bellingcat investigation has found. [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/04/17/painkiller-pipeline-300-million-tapentadol-pills-sent-from-india-to-west-africa/\">Painkiller Pipeline: 300 Million Tapentadol Pills Sent from India to West Africa</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Fri, 17 Apr 2026 13:14:24 +0000",
+      "url": "https://www.bellingcat.com/news/2026/04/17/painkiller-pipeline-300-million-tapentadol-pills-sent-from-india-to-west-africa/",
+      "geo_hint": null
+    },
+    {
+      "title": "‘Snoopy’, ‘Adolf’ and ‘Password’: The Hungarian Government Passwords Exposed Online",
+      "body": "<p>Almost 800 Hungarian government email addresses and associated passwords are circulating online, revealing basic vulnerabilities in the security protocols of ministries involved in classified and sensitive work. A Bellingcat analysis of breach data shows that 12 out of the government’s 13 ministries have been affected, which in some cases have exposed the confidential information of [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/04/09/the-hungarian-government-passwords-exposed-online/\">‘Snoopy’, ‘Adolf’ and ‘Password’: The Hungarian Government Passwords Exposed Online</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Thu, 09 Apr 2026 12:25:22 +0000",
+      "url": "https://www.bellingcat.com/news/2026/04/09/the-hungarian-government-passwords-exposed-online/",
+      "geo_hint": null
+    },
+    {
+      "title": "When Satellite Imagery Goes Dark: New Tool Shows Damage in Iran and the Gulf",
+      "body": "<p>Access to open source visuals of the current Iran conflict, which has spread to many parts of the Middle East, continues to be sporadic. Videos and photos from within Iran trickle out on social media as the Iranian internet blackout hinders the flow of digital communication.&#160; In past conflicts, satellite imagery has provided a vital [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/resources/2026/04/07/tool-damage-assessment-destruction-sentinel-satellite-imagery-iran-us-gulf/\">When Satellite Imagery Goes Dark: New Tool Shows Damage in Iran and the Gulf</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Tue, 07 Apr 2026 13:35:12 +0000",
+      "url": "https://www.bellingcat.com/resources/2026/04/07/tool-damage-assessment-destruction-sentinel-satellite-imagery-iran-us-gulf/",
+      "geo_hint": null
+    },
+    {
+      "title": "The War You’re Not Allowed to See: How the UAE Rewrites the Story of Iranian Strikes",
+      "body": "<p>Bellingcat has identified several high-profile incidents where authorities in the United Arab Emirates have downplayed damage, mischaracterised interceptions and in some instances not acknowledged successful Iranian drone strikes on the country. A review of official statements shows that the public account does not always align with what can be observed through open sources. This comes [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/04/02/war-uae-iran-infuencer-dubai-conflict-drone-successful-strike-intercept-fire/\">The War You’re Not Allowed to See: How the UAE Rewrites the Story of Iranian Strikes</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Thu, 02 Apr 2026 15:29:42 +0000",
+      "url": "https://www.bellingcat.com/news/2026/04/02/war-uae-iran-infuencer-dubai-conflict-drone-successful-strike-intercept-fire/",
+      "geo_hint": null
+    },
+    {
+      "title": "Croatia’s Football Team Signed Deal With Gambling Sponsor Whose Rep Used Fake Name",
+      "body": "<p>This article is the result of a collaboration with Josimar. You can find Josimar’s corresponding piece here. A European academic used a false name to represent an opaque Asian-facing bookmaker that is sponsoring Croatia&#8217;s national football team in the run up to the 2026 FIFA World Cup. Croatia’s national governing body of football, the Croatian [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/04/01/croatian-football-teams-deal-with-gambling-sponsor/\">Croatia&#8217;s Football Team Signed Deal With Gambling Sponsor Whose Rep Used Fake Name</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Wed, 01 Apr 2026 10:00:00 +0000",
+      "url": "https://www.bellingcat.com/news/2026/04/01/croatian-football-teams-deal-with-gambling-sponsor/",
+      "geo_hint": null
+    },
+    {
+      "title": "How India’s Ruling Party is Using AI to Boost Hate Speech in States Near Bangladesh",
+      "body": "<p>The video posted by a state branch of India’s ruling Bharatiya Janata Party (BJP) showed Assam chief minister Himanta Biswa Sarma shooting an image of two men in Muslim skull caps. “Foreigner-free Assam”, read one caption across the video. “Why did you not go to Pakistan?” said another.&#160; One of the men in the photo [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/03/31/india-bjp-hate-speech-ai/\">How India’s Ruling Party is Using AI to Boost Hate Speech in States Near Bangladesh</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Tue, 31 Mar 2026 13:00:16 +0000",
+      "url": "https://www.bellingcat.com/news/2026/03/31/india-bjp-hate-speech-ai/",
+      "geo_hint": null
+    },
+    {
+      "title": "Explosive Misinformation: A Guide to Mushroom Clouds, ‘Sonic Weapons’ and Disintegration",
+      "body": "<p>Explosives test in Canada. Source: Defence Research and Development Canada.</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/resources/2026/03/30/explosive-misinformation-a-guide-to-mushroom-clouds-sonic-weapons-and-disintegration/\">Explosive Misinformation: A Guide to Mushroom Clouds, ‘Sonic Weapons’ and Disintegration</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Mon, 30 Mar 2026 13:46:42 +0000",
+      "url": "https://www.bellingcat.com/resources/2026/03/30/explosive-misinformation-a-guide-to-mushroom-clouds-sonic-weapons-and-disintegration/",
+      "geo_hint": null
+    },
+    {
+      "title": "Two Waves of Bombing: New Videos Reveal Further Details About Iran School Strike",
+      "body": "<p>Bellingcat has geolocated and verified two new videos showing the deadly strikes that hit an Iranian Revolutionary Guard Corps (IRGC) compound as well as an adjacent school in the city of Minab in late February. The new videos were released by Iran’s Ministry of Foreign Affairs and show multiple missiles hitting the complex.&#160; One of [&#8230;]</p>\n<p>The post <a rel=\"nofollow\" href=\"https://www.bellingcat.com/news/2026/03/27/new-videos-reveal-more-details-about-iran-girls-school-strike/\">Two Waves of Bombing: New Videos Reveal Further Details About Iran School Strike</a> appeared first on <a rel=\"nofollow\" href=\"https://www.bellingcat.com\">bellingcat</a>.</p>",
+      "source": "Bellingcat",
+      "date": "Fri, 27 Mar 2026 21:12:24 +0000",
+      "url": "https://www.bellingcat.com/news/2026/03/27/new-videos-reveal-more-details-about-iran-girls-school-strike/",
+      "geo_hint": null
+    }
+  ],
+  "count": 111,
+  "prestaged_at": "2026-04-30T02:13:15Z"
+}

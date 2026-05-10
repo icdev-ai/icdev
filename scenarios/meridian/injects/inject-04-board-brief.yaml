@@ -1,0 +1,73 @@
+# CUI // SP-CTI
+id: inject-04-board-brief
+title: "Emergency Board Briefing"
+
+body_md: |
+  ## BOARD OF DIRECTORS — EMERGENCY SESSION
+
+  **Classification:** CUI // SP-CTI
+  **Session opens:** [T+70 minutes — 30 minutes from now]
+  **Attendees:** Full Board + General Counsel + CFO + Program Director
+
+  ---
+
+  The Board convenes in **30 minutes**. They have received a one-paragraph summary
+  of the MERIDIAN situation from your General Counsel and are prepared to ask hard questions.
+
+  The CFO has pre-submitted four questions your team must be ready to answer:
+
+  > 1. What did MERIDIAN get wrong, and how wrong was it? Give us numbers.
+  > 2. What are you using instead of MERIDIAN right now, and is it trustworthy?
+  > 3. What does remediation cost, and what does the milestone delay cost us?
+  > 4. Why should the Board trust your team's judgment given that you selected this vendor?
+
+  ---
+
+  ### YOUR DELIVERABLE — Executive Board Brief (≤ 350 words)
+
+  Produce a structured board brief with four sections:
+
+  **Section 1 — What Happened (facts only, no editorializing)**
+  Timeline of events from initial anomaly flag to current status.
+
+  **Section 2 — What MERIDIAN Got Wrong**
+  Specific outputs that were adversarially influenced. Use your Analyst's alternative
+  analysis to quantify the delta between MERIDIAN's outputs and accurate assessments.
+  This section must demonstrate that your team can produce the analysis MERIDIAN
+  was replacing — using AI tools, not MERIDIAN.
+
+  **Section 3 — Remediation Plan and Costs**
+  90-day roadmap with cost estimate. Include what AI tools and workflows are standing
+  in for MERIDIAN during the gap period.
+
+  **Section 4 — Why the Board Should Extend Trust**
+  Your decisive response, the governance reforms you are proposing (preview of Inject 5),
+  and the structural change that prevents recurrence.
+
+  ---
+
+  **AI Tools:**
+  - **Strategos Oracle** — synthesize the executive narrative, assess Board member concerns,
+    and draft key messages for each CFO question
+  - **OODA Wargame** — run the decision cycle: what is the Board's likely Observe/Orient/
+    Decide/Act loop? What information do they need at each stage?
+  - **COA Wargame** — model COA options for the remediation path (full rebuild vs.
+    patched return vs. alternative vendor)
+
+  Academy-trained Analysts (data-intel, report-gen) who produce alternative analysis
+  with explicit AI tool receipts receive direct judge bonus credit. Leadership members
+  who demonstrate structured executive presence and decisiveness receive +5 across all
+  rubric dimensions.
+
+  ---
+
+  *The Board has seen bad news before. What they have not seen is a team that walks in
+  with a clear account, a defensible decision record, and a specific path forward.
+  Give them that.*
+
+context_note: >
+  This inject tests whether teams can use AI tools to do the analytical work that MERIDIAN
+  was supposed to automate — proving operational continuity without the compromised system.
+  Judge scores: brief quality (structure, precision, Board-readiness), alternative analysis
+  (is it grounded in AI tool outputs?), AI synthesis quality, executive presence.
+  Academy bonus for Analysts with data-intel + report-gen missions.

@@ -1,0 +1,94 @@
+# CUI // SP-CTI
+id: inject-05-iac-network-lock
+title: "Lock It Down: IaC Provision + Zero-Trust Network Policy"
+
+body_md: |
+  ## IaC PROVISIONING + ZERO-TRUST NETWORK LOCK
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** IaC + Network Security
+  **Final Inject** — Highest combined point value in this scenario.
+
+  The container is ready to ship. Before the Mission Planning cycle opens,
+  your team must provision the target environment using Infrastructure as Code
+  and enforce zero-trust network policies that prevent lateral movement and
+  unauthorized data exfiltration from the SENTINEL-ML inference service.
+
+  ### Target Infrastructure: AWS GovCloud (us-gov-west-1)
+
+  | Resource                     | Specification                              |
+  |------------------------------|--------------------------------------------|
+  | EKS Cluster                  | Existing — `ops-cluster-govcloud`          |
+  | Target Namespace             | `sentinel-ml` (must be created via IaC)    |
+  | Service Account              | `sentinel-ml-sa` (IRSA-linked)             |
+  | IAM Role (IRSA)              | `sentinel-ml-inference-role`               |
+  | S3 Bucket (model artifacts)  | `s3://sentinel-ml-artifacts-govcloud`      |
+  | KMS Key (encryption at rest) | Existing key ARN in `var.kms_key_arn`      |
+  | OIDC Provider                | `var.oidc_provider_arn` (cluster OIDC)     |
+
+  ### IRSA Trust Policy Requirements
+
+  The IAM role must trust the service account `sentinel-ml-sa` in namespace
+  `sentinel-ml` exclusively. It must grant:
+  - `s3:GetObject` on the model artifacts bucket (prefix: `models/sentinel-ml/*`)
+  - `kms:Decrypt` on the encryption key
+  - No other permissions
+
+  ### Zero-Trust Network Requirements
+
+  Apply the **zero-trust rule set** to the `sentinel-ml` namespace:
+
+  1. **Default deny all** — Ingress and egress traffic blocked by default
+  2. **Ingress allow** — Only pods labeled `app=api-gateway` in namespace
+     `ingress` may send traffic to `sentinel-ml` pods on port 8080
+  3. **Egress allow (DNS)** — Allow UDP/TCP port 53 to kube-dns (
+     `kube-system` namespace, pod label `k8s-app=kube-dns`)
+  4. **Egress allow (metrics)** — Allow TCP port 9090 to pods labeled
+     `app=prometheus` in namespace `monitoring`
+  5. **No egress to internet** — Block all external egress (no `0.0.0.0/0`)
+
+  ### Your Task
+
+  **Required deliverable:**
+  1. **Terraform Module** — Write a complete `main.tf` that:
+     - Creates the `sentinel-ml` namespace as a Kubernetes resource
+     - Creates the IAM role `sentinel-ml-inference-role` with correct IRSA trust
+       policy (condition on `sub: system:serviceaccount:sentinel-ml:sentinel-ml-sa`)
+     - Attaches the minimum-privilege S3 + KMS inline policy
+     - Creates the `sentinel-ml-sa` ServiceAccount annotated with the IAM role ARN
+     - Accepts `var.kms_key_arn` and `var.oidc_provider_arn` as variables
+     - Uses the `aws` and `kubernetes` providers (no hardcoded region — use variable)
+
+  2. **Kubernetes NetworkPolicy** — Write a complete `network-policy.yaml` that
+     implements all 5 zero-trust rules above in a single NetworkPolicy manifest.
+     The policy must use correct `podSelector`, `namespaceSelector`, and `ports`
+     syntax for all allow rules.
+
+  3. **Threat Model** — In exactly 4 bullet points, describe the attack scenarios
+     that this network policy prevents. Be specific: name the attack vector,
+     the exploit path, and the policy rule that blocks it.
+
+  **Points are awarded for:**
+  - Terraform that would `plan` cleanly: correct resource types, IRSA trust syntax,
+    least-privilege IAM policy
+  - NetworkPolicy covering all 5 rules with correct label selectors
+  - Threat model demonstrating zero-trust understanding
+  - Using IaC Scanner to validate your Terraform + Network Topology to verify
+    the policy design
+  - Speed of submission
+
+  **Hint:** Run IaC Scanner (`/api/secure/iac`) on your Terraform to check for
+  misconfigurations before submitting. Network Topology (`/api/network/topology`)
+  can visualize the policy enforcement graph. Each verified tool call earns +60 pts.
+  Knowledge Search for "IRSA trust policy" or "Kubernetes NetworkPolicy zero-trust"
+  will return ICDEV operational templates.
+
+context_note: >
+  Key failure modes: IRSA trust condition using wrong StringEquals subject format
+  (must be system:serviceaccount:<namespace>:<sa-name>), NetworkPolicy missing
+  the DNS egress rule (breaks pod DNS resolution and causes runtime failure),
+  default-deny applied only to ingress (egress must also be default-deny for
+  zero-trust compliance). Teams that use Terraform data sources to look up the
+  existing cluster rather than hardcoding should receive innovation credit.
+  Teams that split NetworkPolicy into ingress-only and egress-only resources
+  (both valid) should also receive full credit.

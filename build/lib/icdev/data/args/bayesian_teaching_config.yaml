@@ -1,0 +1,75 @@
+# CUI // SP-CTI
+# Bayesian Teaching Configuration (D-BT-1)
+#
+# Adapts Bayesian Teaching (Shafto/Goodman/Griffiths 2014, Zhu 2015, Qiu 2025)
+# and DeepFlow SmartEncoding (ACM SIGCOMM 2023) for ICDEV™ intelligence layer.
+#
+# References:
+#   - Shafto, Goodman & Griffiths 2014 — Cognitive Psychology 71:55-89
+#   - Zhu 2015 — AAAI Blue Sky Ideas (Machine Teaching as inverse ML)
+#   - Qiu et al. 2025 — Nature Communications (Bayesian Teaching for LLMs)
+#   - DeepFlow — deepflow.io (eBPF observability, SmartEncoding)
+
+# Information Gain Scoring (D-BT-2)
+scoring:
+  weights:
+    posterior_shift: 0.35       # How much does this example shift learner belief?
+    discriminability: 0.25      # How well does it distinguish target from alternatives?
+    diversity: 0.20             # How different is it from already-selected items?
+    complexity_match: 0.20      # Is difficulty appropriate for learner's current state?
+
+# Threshold bands (D21 pattern — deterministic weighted average)
+thresholds:
+  auto_select: 0.75            # Auto-include in teaching set
+  suggest: 0.50                # Suggest for human review
+  exclude: 0.0                 # Below this, exclude
+
+# Compliance check ordering (D-BT-4)
+compliance_ordering:
+  # Conditional probability: P(child fails | parent fails)
+  cascade_probability: 0.75
+  # P(child fails | parent passes) — baseline failure rate
+  baseline_probability: 0.15
+  # Family correlation (same NIST control family)
+  family_correlation: 0.30
+  # Reduction when parent already assessed
+  parent_assessed_reduction: 0.40
+
+# Fine-tuning pair ranking (D-BT-2, D-KARL-4)
+pair_scoring:
+  max_candidates: 500          # Max pairs to evaluate per batch
+  default_top_k: 50            # Return top K scored pairs
+  seed: 42                     # Reproducibility seed
+  # Goldilocks difficulty — neither too easy nor too hard
+  optimal_complexity_range:
+    min_chars: 100
+    max_chars: 500
+
+# Teaching Dimension (D-BT-3, Goldman & Kearns 1995)
+teaching_dimension:
+  max_rounds: 100              # Cap greedy selection rounds
+  min_discrimination: 0.1      # Minimum discriminability to select
+
+# SmartEncoding (D-BT-5, DeepFlow-inspired)
+smart_encoding:
+  enabled: true
+  # Pre-encode common tags: agent_id, status, operation, framework, classification
+  auto_encode_fields:
+    - agent_id
+    - status_code
+    - name
+    - classification
+  # Estimated compression: 3-10x for typical ICDEV™ observability data
+  target_compression_ratio: 5.0
+
+# RAG reranker teaching-dimension boost (D-BT-6)
+rag_integration:
+  # Weight for teaching-dimension score in reranker blend
+  teaching_boost_weight: 0.15
+  # Penalise redundant chunks that don't eliminate alternative interpretations
+  redundancy_penalty: 0.30
+
+# Audit (NIST AU-2 compliant)
+audit:
+  enabled: true
+  actor: "intelligence-engine"

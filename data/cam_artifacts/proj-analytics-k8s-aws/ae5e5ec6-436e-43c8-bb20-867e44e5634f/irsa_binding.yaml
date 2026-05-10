@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+# IRSA: IAM Roles for Service Accounts — replaces K8s RBAC + kiam
+# Apply after eksctl creates the OIDC provider.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: analytics-app-sa
+  namespace: analytics
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/analytics-app-irsa-role
+---
+# IAM role trust policy (set via AWS console or Terraform):
+# {
+#   "Version": "2012-10-17",
+#   "Statement": [{
+#     "Effect": "Allow",
+#     "Principal": {
+#       "Federated": "arn:aws:iam::ACCOUNT_ID:oidc-provider/oidc.eks.REGION.amazonaws.com/id/CLUSTER_OIDC_ID"
+#     },
+#     "Action": "sts:AssumeRoleWithWebIdentity",
+#     "Condition": {
+#       "StringEquals": {
+#         "oidc.eks.REGION.amazonaws.com/id/CLUSTER_OIDC_ID:sub": "system:serviceaccount:analytics:analytics-app-sa"
+#       }
+#     }
+#   }]
+# }

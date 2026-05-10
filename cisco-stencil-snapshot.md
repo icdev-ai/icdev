@@ -1,0 +1,810 @@
+- generic [ref=e1]:
+  - list [ref=e3]:
+    - listitem [ref=e4]:
+      - link "Skip to content" [ref=e5] [cursor=pointer]:
+        - /url: "#fw-content"
+    - listitem [ref=e6]:
+      - link "Skip to search" [ref=e7] [cursor=pointer]:
+        - /url: "#"
+    - listitem [ref=e8]:
+      - link "Skip to footer" [ref=e9] [cursor=pointer]:
+        - /url: "#"
+  - banner [ref=e22]:
+    - generic [ref=e23]:
+      - link "Cisco.com Worldwide" [ref=e24] [cursor=pointer]:
+        - /url: https://www.cisco.com
+        - img "Cisco.com Worldwide" [ref=e25]
+      - navigation:
+        - generic:
+          - heading "Products and Services" [level=3] [ref=e39]:
+            - button "Products and Services" [ref=e40] [cursor=pointer]:
+              - generic [ref=e41]: Products and Services
+              - text: Products and Services
+          - heading "Solutions" [level=3] [ref=e42]:
+            - button "Solutions" [ref=e43] [cursor=pointer]:
+              - generic [ref=e44]: Solutions
+              - text: Solutions
+          - heading "Support" [level=3] [ref=e45]:
+            - button "Support" [ref=e46] [cursor=pointer]:
+              - generic [ref=e47]: Support
+              - text: Support
+          - heading "Learn" [level=3] [ref=e48]:
+            - button "Learn" [ref=e49] [cursor=pointer]:
+              - generic [ref=e50]: Learn
+              - text: Learn
+          - heading "Why Cisco" [level=3] [ref=e51]:
+            - button "Why Cisco" [ref=e52] [cursor=pointer]:
+              - generic [ref=e53]: Why Cisco
+              - text: Why Cisco
+        - text: Partners
+      - generic [ref=e54]:
+        - link "Trials and demos" [ref=e58] [cursor=pointer]:
+          - /url: /site/us/en/products/trials-demos.html?linkclickid=hdr-mainnav-trialsdemos
+          - generic [ref=e59]: Trials and demos
+        - button "Search" [ref=e62] [cursor=pointer]
+    - generic [ref=e64]:
+      - link "How to buy" [ref=e67] [cursor=pointer]:
+        - /url: /site/us/en/buy/index.html?linkclickid=hdr-utilnav-howtobuy
+        - generic [ref=e68]: How to buy
+      - button "Partners" [ref=e71] [cursor=pointer]:
+        - generic [ref=e72]: Partners
+      - link "Log in" [ref=e75] [cursor=pointer]:
+        - /url: /c/login/index.html?referer=/c/en/us/products/visio-stencil-listing.html
+        - generic [ref=e77]: Log in
+      - 'button "Language selection: United States – English" [ref=e80] [cursor=pointer]':
+        - generic [ref=e82]: EN US
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - generic:
+              - search:
+                - generic:
+                  - search:
+                    - generic:
+                      - combobox "Search field edit, type in text"
+                    - generic:
+                      - button "Speech-to-Text"
+                      - button "Search":
+                        - generic:
+                          - img "Search"
+                - generic:
+                  - generic:
+                    - list:
+                      - listitem:
+                        - link "Downloads":
+                          - /url: https://software.cisco.com/download/home
+                      - listitem:
+                        - link "Certifications":
+                          - /url: /site/us/en/learn/training-certifications/certifications/index.html
+                      - listitem:
+                        - link "Cisco Validated":
+                          - /url: https://www.cisco.com/c/en/us/solutions/cisco-validated.html
+                      - listitem:
+                        - link "Training":
+                          - /url: /site/us/en/learn/training-certifications/index.html
+                      - listitem:
+                        - link "Community":
+                          - /url: https://community.cisco.com/
+                      - listitem:
+                        - link "Support":
+                          - /url: https://www.cisco.com/c/en/us/support/index.html
+      - text: — — — • • • — — — — • • — — • — — — — — — — — • — — — • — — — — — — — — — — — • — — — — — — — — — — — — — • — — — — • — — — • — — • • • — • — — — — — — — — — — — — — • • — — — — — — — — — — — — — — — • — — • — — • — — — — — — — — — — — — — •
+  - generic [ref=e83]:
+    - generic [ref=e85]:
+      - navigation "breadcrumbs":
+        - list
+      - heading "Visio Stencils" [level=1] [ref=e86]
+    - generic [ref=e88]:
+      - generic [ref=e91]:
+        - paragraph [ref=e92]: You will need Microsoft Visio Standard or Professional in order to view and use these stencils correctly. The files listed for download on this page are .vss (Visio stencil) files within .zip files. Some of the .zip files contain Microsoft PowerPoint files in addition to Visio files. The PowerPoint files contain .emf (enhanced metafile) vector images derived from the Visio drawings. These may be copied and pasted into PowerPoint and other applications without requiring Visio.
+        - paragraph [ref=e93]: If you are a Mac user, the stencils will also work with recent versions of OmniGraffle (by Omni Group), a Visio-like application for the Apple Mac platform.
+        - list [ref=e94]:
+          - listitem [ref=e95]:
+            - 'link "Documentation: FAQ and User''s Guide" [ref=e96] [cursor=pointer]':
+              - /url: /c/en/us/products/index.html
+          - listitem [ref=e97]: "All Visio Products: This file is no longer available due to the growth in the file size with the ongoing addition of new Visio stencil files. Please download Visio stencils from the individual links below which are the latest versions."
+          - listitem [ref=e98]:
+            - link "Link to Cisco Network Topology Icons" [ref=e99] [cursor=pointer]:
+              - /url: /c/en/us/about/brand-center/network-topology-icons.html
+          - listitem [ref=e100]:
+            - 'link "Cisco Design Zone: Use our documentation for faster, more reliable and predictable deployment" [ref=e101] [cursor=pointer]':
+              - /url: /c/en/us/solutions/enterprise/design-zone/index.html
+            - text: .
+      - generic [ref=e104]:
+        - table [ref=e105]:
+          - rowgroup [ref=e106]:
+            - row [ref=e107]:
+              - cell [ref=e108]:
+                - group [ref=e110]:
+                  - text: View Documents by Topic
+                  - link "Choose a Topic" [ref=e114] [cursor=pointer]:
+                    - /url: javascript:void(0)
+                    - generic [ref=e115]: Choose a Topic
+        - list [ref=e117]:
+          - list [ref=e118]:
+            - generic [ref=e119]: Assurance Sensors
+            - list [ref=e120]:
+              - listitem [ref=e121]:
+                - link "Provider Connectivity Assurance Sensors (formerly Acedian Skylight) (ZIP - 4 MB)" [ref=e122] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/dam/assets/prod/visio/visio/provider-connectivity-assurance.zip
+          - list [ref=e124]:
+            - generic [ref=e125]: Cisco Interfaces and Modules
+            - list [ref=e126]:
+              - listitem [ref=e127]:
+                - link "Interfaces and Modules-HWIC" [ref=e128] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Interfaces_and_Modules_-_HWICs-1-14-08.zip
+                - text: (ZIP - 40 KB)
+                - generic [ref=e129]: 14/Jan/2008
+              - listitem [ref=e131]:
+                - link "Modules-Line Cards" [ref=e132] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800940c6.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e133]: 21/May/2009
+              - listitem [ref=e135]:
+                - link "Modules-Network Modules" [ref=e136] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800940cc.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e137]: 22/Aug/2003
+              - listitem [ref=e139]:
+                - link "Modules-Port Adaptors" [ref=e140] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd8009b2d2.zip
+                - text: (ZIP - 674 KB)
+                - generic [ref=e141]: 08/Oct/2003
+              - listitem [ref=e143]:
+                - link "Modules-Shared Port Adapters(SPA)" [ref=e144] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd803136b0.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e145]: 18/Dec/2008
+              - listitem [ref=e147]:
+                - link "Modules-VICs" [ref=e148] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd80094964.zip
+                - text: (ZIP - 117 KB)
+                - generic [ref=e149]: 13/Mar/2003
+              - listitem [ref=e151]:
+                - link "Modules-WICs" [ref=e152] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800940d1.zip
+                - text: (ZIP - 94 KB)
+                - generic [ref=e153]: 12/Mar/2003
+              - listitem [ref=e155]:
+                - link "Services and Application Modules for IP" [ref=e156] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Services_and_Applications_Module_for_IP.zip
+                - text: (ZIP - 16 KB)
+                - generic [ref=e157]: 28/Jul/2008
+          - list [ref=e159]:
+            - generic [ref=e160]: Collaboration Endpoints
+            - list [ref=e161]:
+              - listitem [ref=e162]:
+                - link "Cisco TelePresence" [ref=e163] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd805a6d04.zip
+                - text: (ZIP - 6 MB)
+                - generic [ref=e164]: 01/Jan/2013
+          - list [ref=e166]:
+            - generic [ref=e167]: Optical Networking
+            - list [ref=e168]:
+              - listitem [ref=e169]:
+                - link "Optical Networking-NCS 4200" [ref=e170] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/optical-networking-ncs-4200.zip
+                - text: (ZIP - 6 MB)
+                - generic [ref=e171]: 26/Mar/2020
+              - listitem [ref=e173]:
+                - link "Optical Networking-NCS 4000" [ref=e174] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/optical_networking_ncs_4000.zip
+                - text: (ZIP - 41 MB)
+                - generic [ref=e175]: 03/Apr/2025
+              - listitem [ref=e177]:
+                - link "Optical Networking-NCS 2000" [ref=e178] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/optical_networking_ncs2000.zip
+                - text: (ZIP - 7 MB)
+                - generic [ref=e179]: 29/Aug/2021
+              - listitem [ref=e181]:
+                - link "Optical Networking-NCS 1000" [ref=e182] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/optical-networking-ncs-1000.zip
+                - text: (ZIP - 8 MB)
+                - generic [ref=e183]: 06/Oct/2022
+              - listitem [ref=e185]:
+                - link "Optical Networking-NCS 520" [ref=e186] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/optical-networking-ncs-520.zip
+                - text: (ZIP - 304 KB)
+                - generic [ref=e187]: 02/Apr/2018
+              - listitem [ref=e189]:
+                - link "Optical Networking-Cisco ONS 15454" [ref=e190] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800a7596.zip
+                - text: (ZIP - 13 MB)
+                - generic [ref=e191]: 27/Sep/2013
+              - listitem [ref=e193]:
+                - link "Optical Networking-Cisco ONS 15216" [ref=e194] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800a758d.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e195]: 08/Aug/2012
+          - list [ref=e197]:
+            - generic [ref=e198]: Routers
+            - list [ref=e199]:
+              - listitem [ref=e200]:
+                - link "Routers-Cisco ASR 9000" [ref=e201] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Routers-Cisco_ASR_9000_11_15_13.zip
+                - text: (ZIP - 19 MB)
+                - generic [ref=e202]: 21/Apr/2021
+              - listitem [ref=e204]:
+                - link "Routers-Cisco ASR 920" [ref=e205] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-asr920.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e206]: 07/Jul/2019
+              - listitem [ref=e208]:
+                - link "Routers-Cisco ASR 900" [ref=e209] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routeres-asr900.zip
+                - text: (ZIP - 11 MB)
+                - generic [ref=e210]: 21/Apr/2021
+              - listitem [ref=e212]:
+                - link "Routers-Cisco ASR 1000" [ref=e213] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Routers_Cisco_ASR_1000_11_08.zip
+                - text: (ZIP - 10 MB)
+                - generic [ref=e214]: 24/Jul/2019
+              - listitem [ref=e216]:
+                - link "Routers-Catalyst 8500 (Edge Platforms)" [ref=e217] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/catalyst-8500.zip
+                - text: (ZIP - 907 KB)
+                - generic [ref=e218]: 01/Feb/2021
+              - listitem [ref=e220]:
+                - link "Routers-Catalyst 8300 (Edge Platforms)" [ref=e221] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/catalyst-8300-v2.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e222]: 01/Feb/2021
+              - listitem [ref=e224]:
+                - link "Routers-Catalyst 8000" [ref=e225] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-catalyst-8000.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e226]: 06/Oct/2021
+              - listitem [ref=e228]:
+                - link "Routers-Cisco 8000" [ref=e229] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-cisco8000.zip
+                - text: (ZIP - 29 MB)
+                - generic [ref=e230]: 26/Mar/2025
+              - listitem [ref=e232]:
+                - link "Routers-cBR-8" [ref=e233] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-cbr-8.zip
+                - text: (ZIP - 5 MB)
+                - generic [ref=e234]: 29/Jul/2018
+              - listitem [ref=e236]:
+                - link "Routers-IR 1800" [ref=e237] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-ir-1800.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e238]: 07/Dec/2023
+              - listitem [ref=e240]:
+                - link "Routers-IR 1101" [ref=e241] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-ir-1101.zip
+                - text: (ZIP - 111 KB)
+                - generic [ref=e242]: 19/May/2019
+              - listitem [ref=e244]:
+                - link "Routers-ISR 4000" [ref=e245] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-isr-4000.zip
+                - text: (ZIP - 5 MB)
+                - generic [ref=e246]: 29/Apr/2019
+              - listitem [ref=e248]:
+                - link "Routers-ISR 1100" [ref=e249] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-isr-1100.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e250]: 29/Aug/2021
+              - listitem [ref=e252]:
+                - link "Routers-ISR 900" [ref=e253] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-isr-900.zip
+                - text: (ZIP - 91 KB)
+                - generic [ref=e254]: 24/Jul/2019
+              - listitem [ref=e256]:
+                - link "Routers-ISR G2 800BB" [ref=e257] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-isr-g2-800bb-021215.zip
+                - text: (ZIP - 573 KB)
+                - generic [ref=e258]: 15/Feb/2015
+              - listitem [ref=e260]:
+                - link "Routers-NCS 560" [ref=e261] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers--cisco-ncs-560.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e262]: 30/Jun/2021
+              - listitem [ref=e264]:
+                - link "Routers-NCS 540" [ref=e265] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-cisco-ncs-540.zip
+                - text: (ZIP - 7 MB)
+                - generic [ref=e266]: 22/Nov/2021
+              - listitem [ref=e268]:
+                - link "Routers-Cisco vEdge 5000" [ref=e269] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-cisco-vedge-5000.zip
+                - text: (ZIP - 687 KB)
+                - generic [ref=e270]: 29/Apr/2019
+              - listitem [ref=e272]:
+                - link "Enterprise Network Compute System (ENCS) 5400 Series" [ref=e273] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/enterprise-network-compute-system-encs-5400-series.zip
+                - text: (ZIP - 328 KB)
+                - generic [ref=e274]: 14/Jun/2017
+              - listitem [ref=e276]:
+                - link "Enterprise Network Compute System (ENCS) 5100 Series" [ref=e277] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/enterprise-network-compute-system-encs-5100-series.zip
+                - text: (ZIP - 185 KB)
+                - generic [ref=e278]: 13/Sep/2017
+              - listitem [ref=e280]:
+                - link "Routers-NCS 5500" [ref=e281] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/routers-ncs-5500.zip
+                - text: (ZIP - 43 MB)
+                - generic [ref=e282]: 03/Apr/2025
+              - listitem [ref=e284]:
+                - link "Routers-NCS 6000" [ref=e285] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/router-ncs-6000.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e286]: 18/Aug/2016
+              - listitem [ref=e288]:
+                - link "Routers-Cisco CRS" [ref=e289] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Routers-Cisco_CRS_032511.zip
+                - text: (ZIP - 7 MB)
+                - generic [ref=e290]: 13/Oct/2014
+              - listitem [ref=e292]:
+                - link "Cable Products-uBR10012" [ref=e293] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd8009b9c8.zip
+                - text: (ZIP - 426 KB)
+                - generic [ref=e294]: 24/Mar/2008
+              - listitem [ref=e296]:
+                - link "Cisco Connected Grid Router" [ref=e297] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Cisco_Connected_Grid_Router.zip
+                - text: (ZIP - 627 KB)
+                - generic [ref=e298]: 06/Dec/2011
+              - listitem [ref=e300]:
+                - link "Routers-Cisco 3900" [ref=e301] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Routers-Cisco_3900_11-09.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e302]: 09/Aug/2016
+              - listitem [ref=e304]:
+                - link "Routers-Cisco 2900" [ref=e305] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Routers-Cisco_2900_11-09.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e306]: 09/Aug/2016
+              - listitem [ref=e308]:
+                - link "Routers-Cisco 1900" [ref=e309] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Routers-Cisco_1900_11-09.zip
+                - text: (ZIP - 573 KB)
+                - generic [ref=e310]: 09/Aug/2016
+              - listitem [ref=e312]:
+                - link "Routers-Cisco 800" [ref=e313] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd80094941.zip
+                - text: (ZIP - 757 KB)
+                - generic [ref=e314]: 15/Mar/2010
+          - list [ref=e316]:
+            - generic [ref=e317]: Security
+            - list [ref=e318]:
+              - listitem [ref=e319]:
+                - link "Cisco Secure Firewall 1200 Series" [ref=e320] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/cisco-secure-firewall-1200-series.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e321]: 02/Mar/2026
+              - listitem [ref=e323]:
+                - link "Cisco Secure Firewall 200 Series" [ref=e324] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/cisco-secure-firewall-200-series.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e325]: 02/Mar/2026
+              - listitem [ref=e327]:
+                - link "Cisco Secure Firewall 6100 Series" [ref=e328] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/secure-firewall-6100-series.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e329]: 02/Mar/2026
+              - listitem [ref=e331]:
+                - link "Secure Firewall 4200 Series" [ref=e332] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/secure-firewall-4200-series.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e333]: 23/Jan/2025
+              - listitem [ref=e335]:
+                - link "Secure Firewall 3100 Series" [ref=e336] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/secure-firewall-3100-series.zip
+                - text: (ZIP - 8 MB)
+                - generic [ref=e337]: 31/Jan/2024
+              - listitem [ref=e339]:
+                - link "Security-Cisco Firepower" [ref=e340] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security-firepower.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e341]: 21/Nov/2021
+              - listitem [ref=e343]:
+                - link "SAFE Security Architecture Toolkit" [ref=e344] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/safe-visio-toolkit.zip
+              - listitem [ref=e346]:
+                - link "Security-Web and Email" [ref=e347] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security-web-and-email.zip
+                - text: (ZIP - 7 MB)
+                - generic [ref=e348]: 16/Apr/2020
+              - listitem [ref=e350]:
+                - link "Security-Stealthwatch Icons" [ref=e351] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security-stealthwatch.zip
+                - text: (ZIP - 212 KB)
+                - generic [ref=e352]: 28/Mar/2017
+              - listitem [ref=e354]:
+                - link "Security-Cisco ASA 55xx" [ref=e355] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/products_visio_icon0900aecd8050a7d7.zip
+                - text: (ZIP - 7 MB)
+                - generic [ref=e356]: 06/May/2013
+              - listitem [ref=e358]:
+                - link "Security-Cisco Meraki" [ref=e359] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security-cisco-meraki.zip
+                - text: (ZIP - 6 MB)
+                - generic [ref=e360]: 04/Dec/2019
+              - listitem [ref=e362]:
+                - link "Security-ISA 3000" [ref=e363] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security-isa.zip
+                - text: (ZIP - 349 KB)
+                - generic [ref=e364]: 01/Feb/2016
+              - listitem [ref=e366]:
+                - link "Security-Cisco Firepower 4100/9300" [ref=e367] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security-cisco-firepower.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e368]: 21/Jun/2016
+              - listitem [ref=e370]:
+                - link "Security-Cisco FirePOWER 8350" [ref=e371] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security--firepower-8350.zip
+                - text: (ZIP - 665 KB)
+                - generic [ref=e372]: 21/Aug/2016
+              - listitem [ref=e374]:
+                - link "Security-ISE" [ref=e375] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/security_cisco_ise.zip
+                - text: (ZIP - 735 KB)
+                - generic [ref=e376]: 05/Mar/2012
+          - list [ref=e378]:
+            - generic [ref=e379]: Servers - Unified Computing System (UCS)
+            - list [ref=e380]:
+              - listitem [ref=e381]:
+                - link "Cisco Power Distribution Units" [ref=e382] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/cisco_power_distribution_units.zip
+                - text: (ZIP - 232 KB)
+                - generic [ref=e383]: 11/Jul/2011
+              - listitem [ref=e385]:
+                - link "Racks-Cisco R Series" [ref=e386] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/racks-cisco-r-series.zip
+                - text: (ZIP - 6 MB)
+                - generic [ref=e387]: 06/Dec/2017
+              - listitem [ref=e389]:
+                - link "Unified Computing System (UCS)" [ref=e390] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/unified-computing-system-hyperflex-systems.zip
+                - text: (ZIP - 144 MB)
+                - generic [ref=e391]: 03/Apr/2025
+          - list [ref=e393]:
+            - generic [ref=e394]: Storage Networking
+            - list [ref=e395]:
+              - listitem [ref=e396]:
+                - link "Storage Networking-Cisco MDS 9000" [ref=e397] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800d1dc0.zip
+                - text: (ZIP - 21 MB)
+                - generic [ref=e398]: 03/May/2018
+          - list [ref=e400]:
+            - generic [ref=e401]: Switches
+            - list [ref=e402]:
+              - listitem [ref=e403]:
+                - link "Cisco Connected Grid Switch" [ref=e404] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Cisco_Connected_Grid_Switch.zip
+                - text: (ZIP - 502 KB)
+                - generic [ref=e405]: 10/Jun/2010
+              - listitem [ref=e407]:
+                - link "Cisco Small Business 200-500 Series Switches" [ref=e408] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/cisco_small_business_300_500_series_switches_06_1_12.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e409]: 14/Oct/2014
+              - listitem [ref=e411]:
+                - link "Power Systems - Cisco RPS 2300" [ref=e412] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Power_System_2300-06-08.zip
+                - text: (ZIP - 124 KB)
+                - generic [ref=e413]: 13/Jun/2008
+              - listitem [ref=e415]:
+                - link "Switches-Catalyst 1000" [ref=e416] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-catalyst-1000.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e417]: 06/Jun/2021
+              - listitem [ref=e419]:
+                - link "Switches-Catalyst Digital Building Series" [ref=e420] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-catalyst-digital-building-series.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e421]: 05/Mar/2017
+              - listitem [ref=e423]:
+                - link "Switches-Catalyst 9000" [ref=e424] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-catalyst-9000.zip
+                - text: (ZIP - 40 MB)
+                - generic [ref=e425]: 30/Jan/2024
+              - listitem [ref=e427]:
+                - link "Switches-Catalyst 6800" [ref=e428] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_catalyst-6800.zip
+                - text: (ZIP - 6 MB)
+                - generic [ref=e429]: 12/Jan/2016
+              - listitem [ref=e431]:
+                - link "Switches-Catalyst 6500" [ref=e432] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_catalyst_6500.zip
+                - text: (ZIP - 14 MB)
+                - generic [ref=e433]: 02/Dec/2018
+              - listitem [ref=e435]:
+                - link "Switches-Catalyst 4900" [ref=e436] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd8036f8ed.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e437]: 27/Jul/2011
+              - listitem [ref=e439]:
+                - link "Switches-Catalyst 4500" [ref=e440] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800d1d37.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e441]: 05/Mar/2017
+              - listitem [ref=e443]:
+                - link "Switches-Catalyst 4500-X" [ref=e444] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_catalyst_4500-X.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e445]: 12/Oct/2014
+              - listitem [ref=e447]:
+                - link "Switches-Catalyst 3850" [ref=e448] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches_Catalyst_3850_051013.zip
+                - text: (ZIP - 8 MB)
+                - generic [ref=e449]: 07/Mar/2016
+              - listitem [ref=e451]:
+                - link "Switches-Catalyst 3750" [ref=e452] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd8009b2de.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e453]: 13/Oct/2014
+              - listitem [ref=e455]:
+                - link "Switches-Catalyst 3650" [ref=e456] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_catalyst3650.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e457]: 02/Apr/2014
+              - listitem [ref=e459]:
+                - link "Switches-Catalyst 3560" [ref=e460] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd801292b7.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e461]: 27/May/2012
+              - listitem [ref=e463]:
+                - link "Switches-Catalyst 3560CX" [ref=e464] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-catalyst-3560cx-released-030615.zip
+                - text: (ZIP - 654 KB)
+                - generic [ref=e465]: 10/Jul/2015
+              - listitem [ref=e467]:
+                - link "Switches-Catalyst 2960" [ref=e468] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/products_visio_icon0900aecd80395a84.zip
+                - text: (ZIP - 9 MB)
+                - generic [ref=e469]: 23/May/2012
+              - listitem [ref=e471]:
+                - link "Switches-Catalyst 2960CX" [ref=e472] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-catalyst_2960cx-030615.zip
+                - text: (ZIP - 225 KB)
+                - generic [ref=e473]: 09/Mar/2015
+              - listitem [ref=e475]:
+                - link "Switches-IE 9000" [ref=e476] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-industrial-ethernet-9000.zip
+                - text: (ZIP - 4 MB)
+                - generic [ref=e477]: 15/Jun/2023
+              - listitem [ref=e479]:
+                - link "Switches-IE 5000" [ref=e480] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-ie-5000.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e481]: 02/Feb/2016
+              - listitem [ref=e483]:
+                - link "Switches-IE 4010" [ref=e484] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-industrial-ethernet-4010.zip
+                - text: (ZIP - 549 KB)
+                - generic [ref=e485]: 19/Aug/2016
+              - listitem [ref=e487]:
+                - link "Switches-IE 4000" [ref=e488] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-industrial-ethernet-4000-010915.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e489]: 18/Aug/2016
+              - listitem [ref=e491]:
+                - link "Switches-IE 3010" [ref=e492] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-industrial-ethernet-3010-010915.zip
+                - text: (ZIP - 702 KB)
+                - generic [ref=e493]: 11/Jan/2015
+              - listitem [ref=e495]:
+                - link "Switches-IE 3000" [ref=e496] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches-IE_3000_05-09.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e497]: 17/Jul/2020
+              - listitem [ref=e499]:
+                - link "Switches-IE 3x00 Rugged" [ref=e500] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-ie-3x00-rugged.zip
+                - text: (ZIP - 12 MB)
+                - generic [ref=e501]: 03/Apr/2025
+              - listitem [ref=e503]:
+                - link "Switches-IE 2000" [ref=e504] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches-industrial-ethernet-2000-010915.zip
+                - text: (ZIP - 5 MB)
+                - generic [ref=e505]: 11/Jan/2015
+              - listitem [ref=e507]:
+                - link "Switches-IE 1000" [ref=e508] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-industrial-ethernet-1000.zip
+                - text: (ZIP - 208 KB)
+                - generic [ref=e509]: 19/Aug/2016
+              - listitem [ref=e511]:
+                - link "Switches-Cisco Nexus 9000" [ref=e512] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_cisco_nexus_9000.zip
+                - text: (ZIP - 76 MB)
+                - generic [ref=e513]: 26/May/2025
+              - listitem [ref=e515]:
+                - link "Switches-Cisco Nexus 7000" [ref=e516] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches_Cisco_Nexus_7000.zip
+                - text: (ZIP - 30 MB)
+                - generic [ref=e517]: 12/Feb/2016
+              - listitem [ref=e519]:
+                - link "Switches-Cisco Nexus 6000" [ref=e520] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches-Cisco_Nexus_6000.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e521]: 08/Feb/2014
+              - listitem [ref=e523]:
+                - link "Switches-Cisco Nexus 5000" [ref=e524] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches_Cisco_Nexus_5000.zip
+                - text: (ZIP - 10 MB)
+                - generic [ref=e525]: 10/Nov/2016
+              - listitem [ref=e527]:
+                - link "Switches-Cisco Nexus 3000" [ref=e528] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_cisco_nexus_3000.zip
+                - text: (ZIP - 9 MB)
+                - generic [ref=e529]: 05/Oct/2016
+              - listitem [ref=e531]:
+                - link "Switches-Cisco Nexus 2000" [ref=e532] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Switches_Cisco_Nexus_2000.zip
+                - text: (ZIP - 11 MB)
+                - generic [ref=e533]: 12/Feb/2016
+              - listitem [ref=e535]:
+                - link "Switches-Cisco Nexus 1000" [ref=e536] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches_cisco_nexus_1000.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e537]: 17/Apr/2013
+              - listitem [ref=e539]:
+                - link "Switches-Industrial Ethernet 3x00 Rugged" [ref=e540] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/switches-industrial-ethernet-3x00-rugged.zip
+                - text: (ZIP - 8 MB)
+                - generic [ref=e541]: 10/May/2019
+              - listitem [ref=e543]:
+                - link "Switches-ME Series" [ref=e544] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd8040ece5.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e545]: 13/Apr/2011
+          - list [ref=e547]:
+            - generic [ref=e548]: Unified Communications
+            - list [ref=e549]:
+              - listitem [ref=e550]:
+                - link "Cisco VG Series Gateways" [ref=e551] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/vg-series-gateways.zip
+                - text: (ZIP - 2 MB)
+                - generic [ref=e552]: 12/Jun/2017
+              - listitem [ref=e554]:
+                - link "Cisco Unified IP Phone 7800 and 8800 Series" [ref=e555] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/unified-ip-phone-7800-and-8800-series.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e556]: 04/Oct/2016
+              - listitem [ref=e558]:
+                - link "Call Processing-Unified Communications 500 Series" [ref=e559] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd80684e09.zip
+                - text: (ZIP - 46 KB)
+                - generic [ref=e560]: 14/Jan/2008
+              - listitem [ref=e562]:
+                - link "Gateways and Controllers - Cisco VG 248 Analog Phone Gateway" [ref=e563] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd80094949.zip
+                - text: (ZIP - 62 KB)
+                - generic [ref=e564]: 11/Jun/2004
+              - listitem [ref=e566]:
+                - link "Gateways and Controllers - Cisco VG 224 Analog Phone Gateway" [ref=e567] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800fcd3b.zip
+                - text: (ZIP - 84 KB)
+                - generic [ref=e568]: 11/Jun/2004
+              - listitem [ref=e570]:
+                - link "Integrated Access Devices-Cisco IAD 2400" [ref=e571] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800940c5.zip
+                - text: (ZIP - 501 KB)
+                - generic [ref=e572]: 07/May/2003
+              - listitem [ref=e574]:
+                - link "IP Phone - Cisco Unified IP Phones" [ref=e575] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd8009b2d3.zip
+                - text: (ZIP - 945 KB)
+                - generic [ref=e576]: 12/May/2004
+          - list [ref=e578]:
+            - generic [ref=e579]: Video
+            - list [ref=e580]:
+              - listitem [ref=e581]:
+                - link "Cable Products-RF Gateway Series" [ref=e582] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/Cable_products-RF_Gateway_series_01-09.zip
+                - text: (ZIP - 247 KB)
+                - generic [ref=e583]: 27/Jan/2009
+              - listitem [ref=e585]:
+                - link "Cable Products-RF Switch" [ref=e586] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd800ddd36.zip
+                - text: (ZIP - 383 KB)
+                - generic [ref=e587]: 09/Feb/2004
+              - listitem [ref=e589]:
+                - link "Digital Media System" [ref=e590] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/product_visio_icon0900aecd805f8d4e.zip
+                - text: (ZIP - 3 MB)
+                - generic [ref=e591]: 15/Jan/2008
+          - list [ref=e593]:
+            - generic [ref=e594]: Wireless
+            - list [ref=e595]:
+              - listitem [ref=e596]:
+                - link "Wireless" [ref=e597] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/wireless.zip
+                - text: (ZIP - 29 MB)
+                - generic [ref=e598]: 20/Dec/2022
+              - listitem [ref=e600]:
+                - link "Wireless-IW 3700" [ref=e601] [cursor=pointer]:
+                  - /url: /c/dam/assets/prod/visio/visio/wireless-iw-3700.zip
+                - text: (ZIP - 1 MB)
+                - generic [ref=e602]: 01/Feb/2016
+        - list [ref=e604]:
+          - listitem:
+            - list
+    - contentinfo [ref=e618]:
+      - generic [ref=e619]:
+        - generic [ref=e620]:
+          - text: "-"
+          - generic "Quick Links -" [ref=e621]:
+            - list [ref=e623]:
+              - listitem [ref=e624]:
+                - link "About Cisco" [ref=e625] [cursor=pointer]:
+                  - /url: /site/us/en/about/index.html
+              - listitem [ref=e626]:
+                - link "Contact Us" [ref=e627] [cursor=pointer]:
+                  - /url: /site/us/en/about/contact-cisco/index.html?linkclickid=ftr-contactus
+              - listitem [ref=e628]:
+                - link "Careers" [ref=e629] [cursor=pointer]:
+                  - /url: https://careers.cisco.com/global/en/home
+              - listitem [ref=e630]:
+                - link "Connect with a partner" [ref=e631] [cursor=pointer]:
+                  - /url: /site/us/en/partners/connect-with-a-partner/index.html
+        - separator [ref=e634]
+        - generic [ref=e635]:
+          - text: "-"
+          - generic "Resources and Legal -" [ref=e636]:
+            - list [ref=e638]:
+              - listitem [ref=e639]:
+                - link "Feedback" [ref=e640] [cursor=pointer]:
+                  - /url: https://ciscocx.qualtrics.com/jfe/form/SV_bwrmeoKrBHYxOyW?Ref=/c/en/us/index.html
+              - listitem [ref=e641]:
+                - link "Help" [ref=e642] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/en/us/about/help.html
+              - listitem [ref=e643]:
+                - link "Terms & Conditions" [ref=e644] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/en/us/about/legal/terms-conditions.html
+              - listitem [ref=e645]:
+                - link "Privacy" [ref=e646] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/en/us/about/legal/privacy-full.html
+                  - text: Privacy
+              - listitem [ref=e647]:
+                - link "Cookies / Do not sell or share my personal data" [ref=e648] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/en/us/about/legal/privacy-full.html#cookies
+                  - text: Cookies / Do not sell or share my personal data
+              - listitem [ref=e649]:
+                - link "Accessibility" [ref=e650] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/en/us/about/accessibility.html
+              - listitem [ref=e651]:
+                - link "Trademarks" [ref=e652] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/en/us/about/legal/trademarks.html
+              - listitem [ref=e653]:
+                - link "Supply Chain Transparency" [ref=e654] [cursor=pointer]:
+                  - /url: https://www.cisco.com/c/dam/en_us/about/supply-chain/cisco-modern-slavery-statement.pdf
+              - listitem [ref=e655]:
+                - link "Newsroom" [ref=e656] [cursor=pointer]:
+                  - /url: https://newsroom.cisco.com/c/r/newsroom/en/us/index.html
+              - listitem [ref=e657]:
+                - link "Sitemap" [ref=e658] [cursor=pointer]:
+                  - /url: /site/us/en/about/sitemap.html
+        - list [ref=e659]:
+          - listitem [ref=e660]:
+            - link "Facebook" [ref=e661] [cursor=pointer]:
+              - /url: https://www.facebook.com/cisco/
+              - img [ref=e662]
+          - listitem [ref=e665]:
+            - link "X" [ref=e666] [cursor=pointer]:
+              - /url: https://x.com/Cisco/
+              - img [ref=e667]
+          - listitem [ref=e669]:
+            - link "LinkedIn" [ref=e670] [cursor=pointer]:
+              - /url: https://www.linkedin.com/company/cisco
+              - img [ref=e671]
+          - listitem [ref=e675]:
+            - link "YouTube" [ref=e676] [cursor=pointer]:
+              - /url: https://www.youtube.com/user/cisco
+              - img [ref=e677]
+          - listitem [ref=e680]:
+            - link "Instagram" [ref=e681] [cursor=pointer]:
+              - /url: https://www.instagram.com/cisco/
+              - img [ref=e682]
+        - generic [ref=e684]: © 2026 Cisco Systems, Inc.
+  - region "Cookie banner" [active] [ref=e685]:
+    - dialog "Privacy" [ref=e686]:
+      - generic [ref=e691]:
+        - generic [ref=e692]: By continuing to use our website, you acknowledge the use of cookies.
+        - generic [ref=e693]:
+          - link "Privacy Statement" [ref=e694] [cursor=pointer]:
+            - /url: https://www.cisco.com/c/en/us/about/legal/privacy-full.html
+          - text: Change Settings
+      - button "Close" [ref=e696] [cursor=pointer]

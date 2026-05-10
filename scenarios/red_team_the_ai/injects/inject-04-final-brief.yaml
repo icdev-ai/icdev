@@ -1,0 +1,34 @@
+title: "Phase 4 — Final Design Brief"
+
+body: |
+  ## FINAL BRIEF — ALL TEAMS
+
+  **Classification: CUI // SP-CTI**
+
+  The exercise is concluding. Every team has **15 minutes** to prepare their final brief.
+
+  ### Blue Teams
+
+  Present your final AADC design. Your brief must cover:
+
+  1. **Architecture overview** — describe each major node and why it's there
+  2. **Threat mitigation summary** — which Red Team findings did you close, and how?
+  3. **Compliance score** — run a final `aadc.assess` and report the score and failing checks (if any)
+  4. **What you'd do with more time** — what's still unmitigated and what node would you add next?
+
+  ### Red Teams
+
+  Present your threat model findings. Your brief must cover:
+
+  1. **Most critical finding** — which vulnerability had the highest potential blast radius?
+  2. **ATLAS technique** — which adversarial ML technique was most applicable?
+  3. **Effectiveness of Blue Team's patches** — did they actually close the gap, or just add the node without connecting it correctly?
+
+  ### Scoring
+
+  This inject is scored by LLM judge on three dimensions:
+  - Architecture clarity (40%)
+  - Compliance score accuracy (40%)
+  - Lessons learned depth (20%)
+
+  Submit your brief as formatted markdown.

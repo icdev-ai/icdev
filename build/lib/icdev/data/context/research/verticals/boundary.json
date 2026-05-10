@@ -1,0 +1,185 @@
+{
+  "id": "vert-boundary",
+  "name": "ATO Boundary & Supply Chain Risk Management",
+  "slug": "boundary",
+  "description": "Authorization boundary management for federal/DoD systems: ATO boundary scoping & impact assessment, NIST 800-161 supply chain risk (SCRM), Section 889 prohibited vendor enforcement, ISA/MOU lifecycle, software/hardware/network boundary determination, dependency graph + CVE blast-radius propagation, and continuous boundary attestation. Covers FedRAMP, IL4/IL5/IL6 Defense systems, cATO programs, and zero-trust segmentation gateways (HashiCorp Boundary, Teleport, StrongDM, BeyondCorp).",
+  "keywords": [
+    "authorization boundary",
+    "ATO boundary",
+    "boundary impact assessment",
+    "system boundary",
+    "accreditation boundary",
+    "supply chain risk management",
+    "SCRM",
+    "NIST 800-161",
+    "Section 889",
+    "ICT supply chain",
+    "SBOM",
+    "VEX",
+    "software bill of materials",
+    "dependency graph",
+    "vendor risk",
+    "third-party risk",
+    "ISA",
+    "interconnection security agreement",
+    "MOU",
+    "memorandum of understanding",
+    "CVE blast radius",
+    "vulnerability propagation",
+    "zero trust access",
+    "policy enforcement point",
+    "boundary protection",
+    "data exfiltration",
+    "trust boundary",
+    "segmentation gateway",
+    "PEP",
+    "PDP",
+    "continuous monitoring",
+    "cATO",
+    "ConMon",
+    "FISMA boundary",
+    "HashiCorp Boundary",
+    "Teleport",
+    "StrongDM",
+    "BeyondCorp"
+  ],
+  "regulatory_bodies": [
+    "NIST",
+    "CISA",
+    "DoD",
+    "OMB",
+    "GSA",
+    "FedRAMP PMO",
+    "DISA"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.CR",
+      "cs.NI",
+      "cs.SE"
+    ],
+    "ieee": [
+      "supply chain security",
+      "boundary protection",
+      "zero trust architecture"
+    ],
+    "acm": [
+      "security and privacy",
+      "trust management"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/cybersecurity",
+      "r/govfire",
+      "r/fednews",
+      "r/NISTControls",
+      "r/Compliance",
+      "r/devsecops"
+    ],
+    "stackexchange": [
+      "security.stackexchange.com",
+      "serverfault.com"
+    ],
+    "discord": [],
+    "forums": [
+      "fedscoop.com",
+      "meritalk.com"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "third-party-risk-management",
+      "vendor-management",
+      "vulnerability-management",
+      "zero-trust-networking",
+      "supply-chain-security-software"
+    ],
+    "capterra": [
+      "third-party-risk-management",
+      "vendor-management-software",
+      "supply-chain-management-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "supply-chain-security",
+      "sbom",
+      "vex",
+      "vulnerability-scanner",
+      "zero-trust",
+      "boundary",
+      "segmentation",
+      "cve",
+      "scrm",
+      "in-toto",
+      "sigstore"
+    ],
+    "awesome_lists": [
+      "awesome-supply-chain-security",
+      "awesome-zero-trust",
+      "awesome-sbom"
+    ],
+    "package_registries": {
+      "pypi": [
+        "cyclonedx-python-lib",
+        "in-toto",
+        "sigstore"
+      ],
+      "npm": [
+        "@cyclonedx/cyclonedx-npm"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "supply chain attack",
+      "Section 889 enforcement",
+      "FedRAMP boundary",
+      "ATO boundary expansion",
+      "SBOM mandate",
+      "executive order 14028",
+      "OMB M-22-18",
+      "cATO authorization",
+      "ISA renewal"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F21",
+      "H04L63",
+      "G06Q10"
+    ],
+    "keywords": [
+      "trust boundary enforcement",
+      "supply chain integrity verification",
+      "vendor risk scoring",
+      "zero trust access broker"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "NIST_800_161",
+    "NIST_800_171",
+    "FedRAMP",
+    "CMMC",
+    "FISMA",
+    "DFARS_252_204_7012",
+    "ICD_503"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "ATO boundary scoping",
+      "NIST 800-161 supply chain risk",
+      "SBOM in practice",
+      "zero trust segmentation",
+      "HashiCorp Boundary tutorial",
+      "Section 889 compliance"
+    ],
+    "manual_urls": []
+  }
+}

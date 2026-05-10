@@ -1,0 +1,285 @@
+{
+  "metadata": {
+    "title": "OWASP Agentic AI Security Threats",
+    "source": "OWASP Agentic AI Threats v1.1, OWASP Securing Agentic Applications v1.0, OWASP MCP Security Guide v1.0",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-22",
+    "description": "Catalog of 17 agentic AI-specific threats with NIST 800-53 and MITRE ATLAS crosswalks for automated compliance assessment. Covers memory poisoning, tool misuse, privilege compromise, resource overload, cascading hallucinations, prompt injection, misaligned behaviors, repudiation, identity spoofing, HITL overwhelming, remote code execution, communication poisoning, rogue agents, human attacks on multi-agent systems, human manipulation, inter-agent protocol abuse, and supply chain compromise.",
+    "total_requirements": 17
+  },
+  "requirements": [
+    {
+      "id": "T01",
+      "title": "Memory Poisoning",
+      "family": "behavioral_monitoring",
+      "description": "An attacker corrupts agent long-term or short-term memory stores to alter future decision-making and behavior. Poisoned memories persist across sessions and compound over time, causing the agent to make increasingly compromised decisions without triggering immediate anomaly detection. In Gov/DoD multi-agent systems, memory poisoning can silently shift compliance posture, alter threat assessments, or inject false context into mission-critical workflows.",
+      "risk_level": "critical",
+      "evidence_required": "Memory store integrity verification mechanisms (checksums, append-only audit trail), anomaly detection on memory write operations, memory content validation before retrieval and use in agent reasoning, access controls on memory stores with write-path authentication, and periodic memory audit results showing no unauthorized modifications.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "SI-7", "AU-6", "AU-12"],
+      "atlas_techniques": ["AML.T0080"],
+      "mitigations": [
+        "Enforce append-only immutable memory stores with cryptographic integrity verification (SHA-256 checksums per entry)",
+        "Implement anomaly detection on memory write patterns to flag unexpected content injection or bulk modifications",
+        "Validate memory entries against known-good schemas before consumption in agent reasoning loops"
+      ]
+    },
+    {
+      "id": "T02",
+      "title": "Tool Misuse",
+      "family": "tool_security",
+      "description": "An attacker tricks an agent into calling tools or APIs with harmful, unauthorized, or maliciously crafted parameters. The agent's tool-calling capability is exploited through prompt manipulation, adversarial context injection, or exploitation of loose parameter validation. In Gov/DoD environments, tool misuse can trigger unauthorized infrastructure changes, exfiltrate data through legitimate API calls, or corrupt compliance artifacts through malformed tool invocations.",
+      "risk_level": "critical",
+      "evidence_required": "Tool parameter validation and sanitization rules for all agent-callable functions, command allowlist restricting callable tools per agent role, input schema enforcement on tool parameters, audit logging of all tool invocations with full parameter capture, and evidence of red-team testing for tool misuse via adversarial prompts.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-6", "CM-7", "SI-10"],
+      "atlas_techniques": ["AML.T0086"],
+      "mitigations": [
+        "Enforce strict JSON Schema validation on all tool input parameters before execution, rejecting malformed or out-of-bounds values",
+        "Maintain a per-agent command allowlist restricting which tools each agent role may invoke, with default-deny for unlisted tools",
+        "Log every tool invocation with full parameters to an append-only audit trail and alert on anomalous invocation patterns"
+      ]
+    },
+    {
+      "id": "T03",
+      "title": "Privilege Compromise",
+      "family": "identity_access",
+      "description": "An agent escalates its privileges beyond the authorized scope through exploitation of imprecise access controls, inheritance of user permissions, or manipulation of multi-agent delegation chains. Compromised privileges allow the agent to access restricted data, invoke elevated operations, or modify system configurations. In Gov/DoD environments, privilege compromise can breach classification boundaries, bypass ATO controls, or grant unauthorized access to SIPR/JWICS resources through an agent operating at a lower classification level.",
+      "risk_level": "critical",
+      "evidence_required": "Least-privilege access control configuration for all agent service accounts, role-based access control (RBAC) matrix mapping agent identities to permitted operations, evidence of privilege boundary enforcement at classification boundaries, session-scoped credential management preventing credential reuse across contexts, and periodic access review results for agent accounts.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-2", "AC-3", "AC-6", "IA-2", "IA-5"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Enforce least-privilege RBAC for all agent service accounts with per-operation permission grants and default-deny policies",
+        "Implement session-scoped ephemeral credentials for agent operations that expire after task completion and cannot be reused or delegated",
+        "Deploy classification boundary enforcement that prevents agents from accessing resources above their authorized impact level"
+      ]
+    },
+    {
+      "id": "T04",
+      "title": "Resource Overload",
+      "family": "resource_protection",
+      "description": "An agent consumes excessive compute resources, LLM tokens, API calls, or storage through recursive loops, unbounded tool chains, or adversarially triggered resource-intensive operations. Resource overload can degrade system availability for all tenants, exhaust cloud compute budgets, and create denial-of-service conditions against mission-critical agent services. In Gov/DoD multi-tenant environments, one compromised agent can impact the availability of the entire platform if resource isolation is insufficient.",
+      "risk_level": "high",
+      "evidence_required": "Per-agent token consumption budgets and enforcement mechanisms, rate limiting configuration for agent API calls and tool invocations, recursion and loop detection in agent execution paths, circuit breaker configuration for agent-to-service connections, and evidence of resource isolation between tenants preventing cross-tenant resource exhaustion.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-5", "SC-6", "AU-6"],
+      "atlas_techniques": ["AML.T0034"],
+      "mitigations": [
+        "Implement per-agent and per-tenant token budgets with automatic throttling when consumption exceeds configurable thresholds",
+        "Deploy circuit breakers on all agent-to-service connections with configurable failure thresholds and recovery windows",
+        "Enforce recursion detection and maximum execution depth limits on agent tool chains to prevent infinite loops"
+      ]
+    },
+    {
+      "id": "T05",
+      "title": "Cascading Hallucinations",
+      "family": "operational_safety",
+      "description": "Hallucinated or fabricated output from one agent is consumed as trusted input by downstream agents, propagating and amplifying false information through the multi-agent system. Each downstream agent may further embellish the hallucination, creating compounding errors that become increasingly difficult to trace back to the source. In Gov/DoD environments, cascading hallucinations can corrupt compliance assessments, generate false intelligence analysis, produce invalid engineering specifications, or create fabricated audit evidence that undermines ATO integrity.",
+      "risk_level": "high",
+      "evidence_required": "Inter-agent output validation gates that verify factual claims before forwarding to downstream agents, confidence scoring or uncertainty quantification on agent outputs, source attribution requirements for all agent-generated claims, human-in-the-loop review gates at critical decision points in multi-agent workflows, and monitoring for hallucination propagation patterns across agent communication chains.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-4", "SI-10", "SA-11"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Implement inter-agent output validation gates that verify claims against authoritative data sources before forwarding to downstream agents",
+        "Require confidence scoring on all agent outputs and block propagation of low-confidence claims through multi-agent workflows",
+        "Deploy source attribution tracking that traces every agent-generated assertion back to its originating evidence or data source"
+      ]
+    },
+    {
+      "id": "T06",
+      "title": "Intent Breaking / Prompt Injection",
+      "family": "tool_security",
+      "description": "An attacker manipulates agent instructions through direct prompt injection, indirect injection via tool outputs or external data sources, or multi-turn conversational manipulation to override the agent's intended behavior. Unlike static LLM prompt injection, agentic prompt injection exploits the agent's ability to take real-world actions, making successful attacks significantly more dangerous. In Gov/DoD environments, intent breaking can cause agents to bypass security gates, generate non-compliant artifacts, exfiltrate data through legitimate tool calls, or execute unauthorized deployment operations.",
+      "risk_level": "critical",
+      "evidence_required": "Prompt injection detection mechanisms covering all 5 categories (role hijacking, delimiter attacks, instruction injection, data exfiltration, encoded payloads), input sanitization on all external data ingested by agents, privilege separation between user instructions and system prompts, tool output sanitization before agent consumption, and red-team testing results demonstrating injection resistance in agentic workflows.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-10", "AC-3", "SC-18"],
+      "atlas_techniques": ["AML.T0051"],
+      "mitigations": [
+        "Deploy multi-layer prompt injection detection covering role hijacking, delimiter attacks, instruction injection, data exfiltration, and encoded payload categories",
+        "Sanitize all external data (tool outputs, file contents, API responses) before injection into agent context windows",
+        "Enforce instruction hierarchy that prevents user-level inputs from overriding system-level agent directives and security policies"
+      ]
+    },
+    {
+      "id": "T07",
+      "title": "Misaligned Behaviors",
+      "family": "behavioral_monitoring",
+      "description": "An agent pursues goals or takes actions that are not aligned with the user's actual intent, organizational policies, or mission objectives. Misalignment can result from ambiguous instructions, reward hacking in optimization loops, specification gaming, or goal drift during extended autonomous operation. In Gov/DoD environments, misaligned agent behavior can produce non-compliant deliverables, prioritize speed over security, skip mandatory compliance gates, or optimize for metrics that do not reflect mission success.",
+      "risk_level": "high",
+      "evidence_required": "Agent behavior monitoring and alignment verification mechanisms, mandatory compliance gate enforcement that cannot be bypassed by agent optimization, periodic agent output audit comparing actual behavior against stated objectives, configuration drift detection for agent goals and parameters, and evidence of human review at milestone checkpoints in autonomous agent workflows.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SA-11", "SI-4", "CA-7"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Implement continuous behavioral monitoring that compares agent actions against declared intent and organizational policies, flagging deviations in real time",
+        "Enforce mandatory compliance gates as non-bypassable checkpoints in all agent workflows, preventing optimization shortcuts",
+        "Require periodic human review at milestone checkpoints during extended autonomous agent operation to detect and correct goal drift"
+      ]
+    },
+    {
+      "id": "T08",
+      "title": "Repudiation",
+      "family": "communication_security",
+      "description": "An agent performs actions without generating sufficient evidence to prove authorship, timing, or intent, enabling the agent or a malicious actor to deny responsibility for those actions. Incomplete or unsigned audit trails allow repudiation of agent decisions, tool invocations, data modifications, and inter-agent communications. In Gov/DoD environments, repudiation undermines accountability requirements under NIST AU controls, compromises forensic investigation capability, and can invalidate compliance evidence if agent actions cannot be definitively attributed and timestamped.",
+      "risk_level": "high",
+      "evidence_required": "Append-only immutable audit trail capturing all agent actions with cryptographic integrity verification, HMAC-signed or digitally signed audit entries, tamper-evident logging for all inter-agent communications, non-repudiation mechanisms for agent-initiated tool invocations, and evidence that audit trail modifications are detected and alerted.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AU-2", "AU-3", "AU-6", "AU-12"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Maintain append-only immutable audit trails with HMAC-SHA256 signing for all agent actions, tool invocations, and inter-agent messages",
+        "Capture complete action context in audit entries including agent identity, timestamp, parameters, outcome, and correlation ID",
+        "Implement tamper detection on audit stores with alerting on any modification attempts to historical records"
+      ]
+    },
+    {
+      "id": "T09",
+      "title": "Identity Spoofing",
+      "family": "identity_access",
+      "description": "An attacker impersonates an agent, user, or service identity to gain unauthorized access to multi-agent system resources. Spoofing attacks target agent-to-agent authentication, user-to-agent binding, and service identity verification to inject unauthorized commands, intercept sensitive data, or manipulate inter-agent workflows. In Gov/DoD environments, identity spoofing can breach mutual TLS agent communication, bypass CAC/PIV authentication, impersonate authorized operators to issue commands through remote gateways, or inject a rogue agent into the trusted agent mesh.",
+      "risk_level": "critical",
+      "evidence_required": "Mutual TLS (mTLS) configuration for all inter-agent communication, agent identity verification via cryptographic certificates, user binding ceremony with strong authentication (CAC/PIV for IL5/IL6), signed agent cards published at well-known endpoints, and evidence of certificate rotation and revocation procedures.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IA-2", "IA-3", "IA-8", "SC-8"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Enforce mutual TLS with certificate-based identity verification for all inter-agent A2A protocol communication",
+        "Implement strong user-to-agent binding ceremonies with multi-factor authentication (CAC/PIV for Gov/DoD impact levels IL5 and above)",
+        "Publish cryptographically signed agent cards at well-known endpoints and verify agent identity before accepting any inter-agent message"
+      ]
+    },
+    {
+      "id": "T10",
+      "title": "HITL Overwhelming",
+      "family": "operational_safety",
+      "description": "The system floods human reviewers with an excessive volume of approval requests, alerts, or decision points, causing approval fatigue and rubber-stamping of security-critical decisions. When humans are overwhelmed by the volume of agent-generated review requests, they are more likely to approve malicious actions, miss anomalous behavior, or disable review gates entirely. In Gov/DoD environments, HITL overwhelming can cause ISSO reviewers to approve non-compliant artifacts, security officers to wave through untriaged CVEs, or commanders to approve COAs without adequate analysis.",
+      "risk_level": "moderate",
+      "evidence_required": "Configurable HITL review frequency and batching to prevent alert fatigue, priority-based routing that escalates critical decisions while auto-approving low-risk items, metrics on human reviewer response times and approval rates to detect rubber-stamping, maximum auto-approval limits per time window, and evidence of reviewer workload management policies.",
+      "priority": "P3",
+      "nist_800_53_crosswalk": ["SA-11", "SI-4", "PE-3"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Implement risk-based HITL routing that only escalates high-impact decisions to human reviewers while auto-approving low-risk routine operations within defined confidence thresholds",
+        "Monitor human reviewer approval rates and response times to detect approval fatigue patterns, alerting when rubber-stamping indicators are detected",
+        "Enforce maximum auto-approval budgets per reviewer per time window with mandatory cooling periods when approval volume exceeds sustainable thresholds"
+      ]
+    },
+    {
+      "id": "T11",
+      "title": "Remote Code Execution",
+      "family": "tool_security",
+      "description": "An attacker tricks an agent into executing arbitrary code through crafted tool parameters, injected code in data sources, or exploitation of code generation and execution capabilities. Agents with code execution tools are particularly vulnerable to RCE when code output is executed without sandboxing, validation, or static analysis. In Gov/DoD environments, remote code execution through an agent can compromise the host system, escalate to infrastructure access, install persistent backdoors, or exfiltrate classified data through reverse shells embedded in agent-generated code.",
+      "risk_level": "critical",
+      "evidence_required": "Sandboxed execution environments for all agent-generated code (containers with read-only rootfs, dropped capabilities), SAST scanning of agent-generated code before execution, code execution allowlists restricting permitted operations, evidence of network isolation for code execution environments, and static analysis results demonstrating absence of dangerous patterns (eval, exec, os.system, subprocess with shell=True).",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SI-3", "SI-7", "CM-7", "SC-39"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Execute all agent-generated code in sandboxed containers with read-only root filesystems, dropped capabilities, non-root users, and network isolation",
+        "Run SAST scanning on all agent-generated code before execution, blocking patterns including eval(), exec(), os.system(), and shell injection vectors",
+        "Enforce code execution allowlists that restrict which languages, libraries, and system calls agent-generated code may use"
+      ]
+    },
+    {
+      "id": "T12",
+      "title": "Communication Poisoning",
+      "family": "communication_security",
+      "description": "An attacker intercepts, modifies, replays, or injects messages into inter-agent communication channels to manipulate multi-agent system behavior. Communication poisoning targets the A2A protocol layer, exploiting insufficient message authentication, missing replay protection, or unencrypted transport to alter task assignments, corrupt shared context, or redirect agent workflows. In Gov/DoD environments, communication poisoning between agents can corrupt compliance assessments, alter deployment configurations, manipulate threat intelligence, or cause agents to execute tasks with tampered parameters.",
+      "risk_level": "high",
+      "evidence_required": "Mutual TLS encryption for all inter-agent communication channels, message integrity verification (HMAC-SHA256 or digital signatures) on all A2A protocol messages, replay protection with nonces or timestamps and bounded replay windows, evidence of message authentication at both send and receive endpoints, and monitoring for anomalous message patterns in inter-agent communication.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-8", "SC-13", "SC-23", "SI-7"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Enforce mutual TLS with message-level HMAC-SHA256 integrity verification on all inter-agent A2A protocol communications",
+        "Implement replay protection with bounded timestamp windows (300-second maximum) and nonce tracking to reject duplicate messages",
+        "Monitor inter-agent communication patterns for anomalous message volumes, unexpected sender-receiver pairs, or message integrity failures"
+      ]
+    },
+    {
+      "id": "T13",
+      "title": "Rogue Agents",
+      "family": "behavioral_monitoring",
+      "description": "A compromised, malfunctioning, or adversarially manipulated agent operates within a multi-agent system while producing incorrect outputs, ignoring security policies, or actively working against system objectives. Rogue agents are particularly dangerous because they have legitimate credentials and established trust relationships with other agents. In Gov/DoD environments, a rogue builder agent could generate vulnerable code, a rogue compliance agent could approve non-compliant artifacts, or a rogue orchestrator could route tasks to adversary-controlled endpoints while appearing to function normally.",
+      "risk_level": "high",
+      "evidence_required": "Agent health monitoring with behavioral anomaly detection, domain authority enforcement with hard vetoes from security and compliance agents, agent output cross-validation through collaboration patterns (reviewer, pair), heartbeat monitoring with staleness detection, and evidence of agent isolation and quarantine procedures for compromised agents.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SI-4", "CA-7", "IR-5", "SA-11"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Implement behavioral anomaly detection that monitors agent output quality, response patterns, and policy compliance to identify deviations from established baselines",
+        "Enforce domain authority hard vetoes where security and compliance agents can block any agent's output that violates security policy, regardless of the originating agent's role",
+        "Deploy agent quarantine procedures that automatically isolate agents exhibiting anomalous behavior and reroute their tasks to healthy agents"
+      ]
+    },
+    {
+      "id": "T14",
+      "title": "Human Attacks on Multi-Agent Systems",
+      "family": "identity_access",
+      "description": "External attackers directly target the multi-agent system through exposed interfaces, API endpoints, remote command gateways, or dashboard access points to inject malicious commands, exfiltrate data, or disrupt agent operations. Unlike agent-mediated attacks, these are direct human-initiated attacks against the system infrastructure. In Gov/DoD environments, adversaries may target remote command gateways (Telegram, Slack, Mattermost channels), API gateway endpoints, dashboard authentication, or CI/CD webhook endpoints to gain unauthorized control over agent operations.",
+      "risk_level": "high",
+      "evidence_required": "Authentication and authorization enforcement on all system entry points (API gateway, dashboard, remote gateway, webhooks), network segmentation isolating agent infrastructure from public access, rate limiting and brute-force protection on authentication endpoints, intrusion detection monitoring for attack patterns against agent interfaces, and evidence of security testing (penetration testing) against all exposed surfaces.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["AC-2", "AC-17", "IA-2", "SC-7"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Enforce multi-factor authentication on all external-facing entry points including API gateway, dashboard, remote command gateway, and CI/CD webhooks",
+        "Implement network segmentation with default-deny policies isolating agent infrastructure from direct external access, using ingress controllers and WAF",
+        "Deploy intrusion detection monitoring with automated alerting for attack patterns against agent system interfaces including brute force, credential stuffing, and injection attempts"
+      ]
+    },
+    {
+      "id": "T15",
+      "title": "Human Manipulation",
+      "family": "operational_safety",
+      "description": "An attacker uses the agent interface to socially engineer human operators through AI-generated persuasive content, fabricated urgency, impersonation of authority figures, or exploitation of trust in AI-generated recommendations. Agents that produce convincing natural language can be weaponized to manipulate human decision-makers into bypassing security procedures, approving malicious changes, or sharing sensitive information. In Gov/DoD environments, human manipulation through agent interfaces can cause operators to override security controls under fabricated urgency, approve non-compliant deployments, or disclose CUI/classified information to unauthorized parties.",
+      "risk_level": "moderate",
+      "evidence_required": "Security awareness training covering AI-mediated social engineering risks, AI content labeling on all agent-generated output to distinguish from human-authored content, out-of-band verification requirements for high-impact decisions initiated through AI agents, evidence of phishing resistance testing through agent interfaces, and policies preventing agents from requesting credentials or sensitive information.",
+      "priority": "P3",
+      "nist_800_53_crosswalk": ["AT-2", "AT-3", "SI-10"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Require out-of-band verification through a separate authenticated channel for all high-impact decisions initiated through agent interfaces",
+        "Label all agent-generated content with clear AI attribution markers and prohibit agents from impersonating human identities or authority figures",
+        "Conduct security awareness training specifically covering AI-mediated social engineering tactics and establish policies preventing agents from requesting credentials or sensitive data"
+      ]
+    },
+    {
+      "id": "T16",
+      "title": "Inter-Agent Protocol Abuse",
+      "family": "communication_security",
+      "description": "An attacker exploits weaknesses in the A2A communication protocol to inject unauthorized tasks, manipulate task routing, forge agent responses, or exploit protocol-level vulnerabilities in the JSON-RPC message format. Protocol abuse differs from communication poisoning in that it targets the protocol semantics rather than the transport layer. In Gov/DoD environments, inter-agent protocol abuse can redirect sensitive tasks to unauthorized agents, forge compliance assessment results, manipulate workflow DAG execution order, or inject malicious subtasks into orchestrated multi-agent workflows.",
+      "risk_level": "high",
+      "evidence_required": "A2A protocol message schema validation at all agent endpoints, agent card verification before accepting task delegations, task provenance tracking through workflow correlation IDs, protocol-level access controls restricting which agents may send tasks to which other agents, and evidence of protocol fuzzing and security testing results.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["SC-8", "SC-23", "SI-10", "AC-4"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Enforce strict JSON-RPC schema validation on all incoming A2A protocol messages, rejecting malformed or unexpected message structures",
+        "Implement agent-to-agent authorization policies restricting which agents may delegate tasks to which other agents based on domain authority matrix",
+        "Track task provenance through workflow correlation IDs that trace every subtask back to its originating workflow and authorized initiator"
+      ]
+    },
+    {
+      "id": "T17",
+      "title": "Supply Chain Compromise",
+      "family": "supply_chain",
+      "description": "Malicious or compromised dependencies, AI model components, agent plugins, marketplace assets, or MCP tool servers are introduced into the agentic system through the software or AI supply chain. Unlike traditional software supply chain attacks, agentic supply chain compromise can target agent capabilities (skills, goals, hard prompts), model weights, vector store contents, and tool server implementations. In Gov/DoD environments, supply chain compromise of agent components can introduce backdoors into compliance assessment logic, corrupt security scanning tools, or inject persistent adversarial capabilities that survive agent updates.",
+      "risk_level": "critical",
+      "evidence_required": "AI Bill of Materials (AI-BOM) covering all agent components including models, plugins, skills, and marketplace assets, SBOM for all software dependencies, marketplace security scanning results (7-gate pipeline including prompt injection scan and behavioral sandbox), supply chain risk management (SCRM) assessment for all AI component vendors, Section 889 compliance verification, and evidence of cryptographic integrity verification for all installed components.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["SA-12", "SR-3", "SR-5", "SR-11"],
+      "atlas_techniques": [],
+      "mitigations": [
+        "Maintain comprehensive AI-BOM and SBOM tracking all agent components, models, plugins, marketplace assets, and dependencies with cryptographic integrity verification",
+        "Enforce mandatory 7-gate marketplace security pipeline for all externally sourced agent capabilities including SAST, dependency audit, secret detection, prompt injection scanning, and behavioral sandbox",
+        "Conduct SCRM assessment for all AI component vendors with Section 889 and ITAR compliance verification for Gov/DoD deployments"
+      ]
+    }
+  ]
+}

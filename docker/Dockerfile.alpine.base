@@ -1,0 +1,78 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ Alpine Base Image — multi-stage, musl-libc compatible
+# Supports Python 3.9+, ARMv8 (arm64) and AMD64.
+#
+# Smaller than Debian slim (~80-150 MB vs ~300-700 MB).
+# Requires build-time compilation for some binary packages (psutil, Pillow, psycopg2).
+#
+# Build:
+#   docker build -f docker/Dockerfile.alpine.base -t icdev/base:alpine .
+#
+# Use as base in other Dockerfiles:
+#   FROM icdev/base:alpine
+
+# ── Build stage ──────────────────────────────────────────────────────────────
+FROM python:3.12-alpine AS builder
+
+LABEL stage="builder"
+
+# Build-time deps: compilers and headers for binary packages.
+# These are NOT included in the runtime stage (multi-stage build).
+RUN apk add --no-cache \
+    gcc \
+    g++ \
+    musl-dev \
+    linux-headers \
+    libffi-dev \
+    openssl-dev \
+    libjpeg-turbo-dev \
+    zlib-dev \
+    libpq-dev \
+    libxml2-dev \
+    libxslt-dev
+
+WORKDIR /build
+# Use Alpine-specific requirements if present, else fall back to base requirements.
+# requirements-alpine.txt replaces psycopg2-binary with psycopg2 (source build).
+COPY requirements.txt requirements-alpine.txt* ./
+RUN pip install --no-cache-dir --upgrade pip && \
+    if [ -f requirements-alpine.txt ]; then \
+        pip install --no-cache-dir --prefix=/install -r requirements-alpine.txt; \
+    else \
+        pip install --no-cache-dir --prefix=/install -r requirements.txt; \
+    fi
+
+# ── Runtime stage ─────────────────────────────────────────────────────────────
+FROM python:3.12-alpine
+
+LABEL org.opencontainers.image.vendor="ICDEV™" \
+      org.opencontainers.image.title="ICDEV Alpine Base" \
+      classification="CUI" \
+      dissemination_control="SP-CTI"
+
+# Runtime shared libraries only — no compilers.
+RUN apk add --no-cache \
+    libffi \
+    libjpeg-turbo \
+    zlib \
+    libpq \
+    libxml2 \
+    libxslt \
+    curl \
+    && adduser -D -u 1000 icdev
+
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
+
+WORKDIR /app
+RUN mkdir -p /app/data /app/.tmp/genesis && chown -R icdev:icdev /app
+
+USER icdev
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONIOENCODING=utf-8 \
+    PYTHONPATH=/app
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -sf http://localhost:${PORT:-5000}/health || exit 1

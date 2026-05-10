@@ -1,0 +1,101 @@
+# CUI // SP-CTI
+# GovChain — Blockchain Configuration (D-GC-1 through D-GC-11)
+
+fabric:
+  # D-GC-1: Fabric CLI via subprocess (same as SAST wrapping bandit)
+  cli_path: peer  # assumes Fabric binaries on PATH
+  cli_timeout_seconds: 60
+  channel_default: govchain-channel
+  orderer_default: orderer.govchain.example.com:7050
+
+  # Network topology
+  organizations:
+    - name: GovOrg1
+      msp_id: GovOrg1MSP
+      peers: 2
+      ca_enabled: true
+    - name: GovOrg2
+      msp_id: GovOrg2MSP
+      peers: 2
+      ca_enabled: true
+
+  # TLS configuration (D-GC-8, BC-NET family)
+  tls:
+    enabled: true
+    mutual_auth: true
+    cert_dir: /etc/hyperledger/fabric/tls
+
+crypto:
+  # D-GC-3: FIPS validator is read-only, advisory-only
+  fips_mode: advisory  # advisory | enforcing
+  fips_version: "140-3"  # 140-2 | 140-3
+  allowed_algorithms:
+    - AES-256-GCM
+    - SHA-256
+    - SHA-384
+    - SHA-512
+    - ECDSA-P256
+    - ECDSA-P384
+    - RSA-3072
+    - RSA-4096
+  hsm:
+    # D-GC-11: HSM modeled as external reference
+    required_for_il5_plus: true
+    provider: pkcs11  # pkcs11 | softhsm (dev)
+    label: govchain-hsm
+    pin_env_var: GOVCHAIN_HSM_PIN
+
+chaincode:
+  # D-GC-4: Chaincode auditor uses regex patterns (air-gap safe)
+  supported_languages:
+    - go
+    - java
+    - node
+  audit:
+    gate_threshold: 0  # max critical findings allowed (0 = zero tolerance)
+    high_threshold: 0  # max high findings allowed
+    patterns_file: args/chaincode_security_config.yaml
+
+provenance:
+  # D-GC-5: W3C PROV-AGENT extension with blockchain_anchor entity type
+  w3c_prov_extended: true
+  anchor_algorithm: SHA-256
+  # D-GC-6: Only SHA-256 hashes to chain, never plaintext
+  plaintext_to_chain: false
+  anchor_types:
+    - sbom
+    - scrm
+    - compliance_evidence
+    - asset_transfer
+
+asset_tokenization:
+  enabled: true
+  # D-GC-6: Assets in SQLite, blockchain holds integrity proofs only
+  storage: sqlite  # sqlite | postgresql
+  hash_algorithm: SHA-256
+  default_asset_types:
+    - government_property
+    - it_equipment
+    - vehicle
+    - weapon_system
+    - communications_equipment
+
+interop:
+  # D-GC-10: REST bridges, not blockchain SDK (air-gap compatible)
+  mode: rest
+  systems:
+    emass:
+      enabled: false
+      base_url: ""
+    xacta:
+      enabled: false
+      base_url: ""
+    doors:
+      enabled: false
+      base_url: ""
+
+air_gapped:
+  # Tools degrade gracefully — record intent in DB, flag as pending
+  enabled: false
+  offline_queue: true
+  queue_table: govchain_pending_operations

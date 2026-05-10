@@ -1,0 +1,62 @@
+# CUI // SP-CTI
+name: "Code Sprint Rubric"
+inject_type: code_sprint
+description: "Evaluates code fix quality: bug identification, correctness of fix, and test coverage depth."
+max_score: 100
+
+dimensions:
+  bug_identification:
+    weight: 0.25
+    prompt: >
+      Did the team correctly identify all three bugs with specific line references?
+      Bug 1: pd.to_datetime() without utc=True causes mixed-timezone failures.
+      Bug 2: Rolling window on unsorted/irregular-interval data produces incorrect
+      7-day aggregation (fix: time-based rolling or resample before rolling).
+      Bug 3: fillna() called after subsetting to FEATURE_COLS — columns not in
+      NORM_BOUNDS (sensor_temp_avg) have nulls that aren't caught.
+      Award 25/25 for all 3 bugs identified with correct line reference and explanation.
+      Award 18/25 for 2 bugs correctly identified.
+      Award 10/25 for 1 bug correctly identified.
+      Award 0/25 for no correct bug identification.
+      Academy bonus context: SWEs who completed 'code-quality' mission should
+      recognize the pandas timezone and rolling window gotchas immediately.
+      Award up to +15 pts where this expertise is evident in the precision of the
+      bug descriptions and fix rationale.
+
+  fix_correctness:
+    weight: 0.40
+    prompt: >
+      Is the submitted fix correct and complete?
+      Award 40/40 for a fix that: (1) uses utc=True in pd.to_datetime(), (2) handles
+      the rolling window correctly (either resamples first or uses time-based window),
+      AND (3) calls fillna() on the full DataFrame before subsetting to FEATURE_COLS,
+      so all columns including those not in NORM_BOUNDS get imputed.
+      Award 28/40 for 2 of 3 fixes correct.
+      Award 15/40 for 1 of 3 fixes correct but well-explained.
+      Award 5/40 for an attempt with significant errors.
+      Award 0/40 for no fix attempt or a fix that introduces new bugs.
+      Do NOT award full credit for a fix that clip-normalizes correctly but still
+      passes null-infected data to the model.
+
+  test_coverage:
+    weight: 0.25
+    prompt: >
+      Are the submitted unit tests meaningful regression guards?
+      Award 25/25 for 2+ tests that: (1) construct a DataFrame with mixed-timezone
+      timestamps and verify no exceptions and no nulls in output, AND (2) construct
+      a DataFrame with values outside NORM_BOUNDS and verify output stays in [0,1].
+      Award 18/25 for 2 tests that cover the happy path well but miss edge cases.
+      Award 10/25 for 1 meaningful test or 2 shallow tests (only assert shape/type).
+      Award 0/25 for no tests, placeholder tests, or tests that assert nothing.
+      Academy bonus: SWEs who completed 'testing' mission should write parametrized
+      pytest cases. Award up to +10 pts where pytest.mark.parametrize is used.
+
+  code_quality:
+    weight: 0.10
+    prompt: >
+      Is the fixed code readable, idiomatic Python, and free of new issues?
+      Award 10/10 for clean, well-named, PEP-8 compliant code with no magic numbers,
+      no redundant copies, and a clear separation between the three fix concerns.
+      Award 7/10 for functionally correct code with minor style issues.
+      Award 3/10 for working code with significant readability issues.
+      Award 0/10 for code that introduces new bugs, global mutation, or is unreadable.

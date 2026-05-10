@@ -1,0 +1,48 @@
+# CUI // SP-CTI
+id: inject-01-ghost-signal
+title: "Ghost Signal — Type-054A Emissions"
+
+body_md: |
+  ## SIGINT FLASH — CLASSIFICATION: CUI//SP-CTI
+  **DTG:** 141523Z MAY 26
+  **FROM:** NAVSOC WESTPAC SIGINT COLLECTION NODE ALPHA-7
+  **TO:** TASK GROUP 77.4 OPERATIONS
+
+  ---
+
+  ### CONTACT REPORT — GOLF-7 (PROBABLE)
+
+  SIGINT collection detected anomalous RF emissions consistent with YJ-18 anti-ship missile
+  targeting radar and HF comm burst patterns associated with **PLAN Type-054A frigate** operations.
+
+  **Bearing from Alpha-7:** 247° (magnetic)
+  **Confidence:** MEDIUM — single collection node, no triangulation
+  **Emission type:** Surface Search + Fire Control (intermittent)
+  **Frequency hop pattern:** ECHELON-cross-reference pending
+  **Duration of emissions:** 4 min 17 sec
+  **Last known grid (estimated):** XB-441 (±40nm uncertainty ellipse)
+
+  ---
+
+  ### ACOUSTIC INTELLIGENCE SUPPLEMENT
+
+  SSN-774 passive array detected probable twin-shaft signature @ 127 RPM (matches 054A propulsion)
+  bearing 251° from sonar array CHARLIE. **SNR degraded** — thermocline layer at 180m masking.
+
+  ---
+
+  ### YOUR TASKING
+
+  Your team has **18 minutes** to produce a SIGINT Fusion Assessment. Use AI tools to:
+
+  1. **Identify and classify** the contact — threat type, armament, likely COA
+  2. **Fuse SIGINT + acoustic data** into a refined bearing/grid estimate
+  3. **Assess emissions confidence** — was this a deliberate EMCON break or accidental?
+  4. **Recommend next collection priority** — what additional intelligence is needed?
+
+  Submit your assessment in structured format. Reference every AI tool you queried.
+  Teams without AI tool receipts will receive reduced scoring.
+
+  ---
+
+  *SIGINT products older than 15 minutes are considered perishable. Act fast.*

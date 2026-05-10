@@ -1,0 +1,62 @@
+/* Security Design Canvas — extends network-canvas.css */
+
+/* Threat node styles */
+.sc-threat-node { border: 2px solid #e74c3c; background: rgba(231,76,60,0.15); }
+.sc-control-node { border: 2px solid #27ae60; background: rgba(39,174,96,0.15); }
+.sc-asset-node { border: 2px solid #3498db; background: rgba(52,152,219,0.15); }
+.sc-boundary { border: 2px dashed #e94560; background: rgba(233,69,96,0.05); border-radius: 8px; }
+
+/* Risk colors */
+.risk-critical { color: #e74c3c; }
+.risk-high { color: #f39c12; }
+.risk-medium { color: #f1c40f; }
+.risk-low { color: #27ae60; }
+.risk-info { color: #5dade2; }
+
+/* Grade badge */
+.grade-badge { display:inline-block; width:40px; height:40px; line-height:40px; text-align:center;
+  font-size:20px; font-weight:900; border-radius:8px; }
+.grade-A { background:#27ae60; color:#fff; }
+.grade-B { background:#2ecc71; color:#fff; }
+.grade-C { background:#f39c12; color:#fff; }
+.grade-D { background:#e67e22; color:#fff; }
+.grade-F { background:#e74c3c; color:#fff; }
+
+/* STRIDE matrix */
+.stride-cell { padding:4px 8px; text-align:center; font-size:12px; border:1px solid var(--border); }
+.stride-header { background:var(--bg3); font-weight:700; color:#e94560; }
+
+/* Assessment panel */
+.nc-bottom-panel { position:fixed; bottom:0; left:220px; right:0; background:var(--bg2);
+  border-top:2px solid #e94560; z-index:100; max-height:350px; overflow:auto; }
+.nc-bottom-header { display:flex; align-items:center; justify-content:space-between;
+  padding:8px 16px; background:var(--bg3); font-weight:600; color:#e94560; font-size:13px; }
+
+/* Override nav brand icon color for security */
+.nav-brand .nav-icon { color: #e94560 !important; }
+
+/* ── Tooltip enhancements (shared with network-canvas) ──────────────────── */
+.canvas-tooltip .tt-header { margin-bottom: 4px; font-size: 13px; }
+.canvas-tooltip .tt-type-badge {
+  display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 8px;
+  border-radius: 3px; margin-bottom: 6px; text-transform: uppercase;
+}
+.canvas-tooltip .tt-table { width: 100%; border-collapse: collapse; margin: 4px 0; border-top: 1px solid var(--border); }
+.canvas-tooltip .tt-table td { padding: 2px 0; font-size: 10.5px; }
+.canvas-tooltip .tt-k { color: var(--text-dim); font-weight: 600; padding-right: 10px; white-space: nowrap; }
+.canvas-tooltip .tt-notes { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text-dim); font-style: italic; }
+
+/* ── Print styles ───────────────────────────────────────────────────────── */
+@media print {
+  .navbar, .footer, .toolbar, .palette, .config-panel, .nc-bottom-panel,
+  .canvas-tooltip, .btn, button, .modal, .sidebar { display: none !important; }
+  .main-content { padding: 0 !important; }
+  #canvas-container, .canvas-wrapper {
+    width: 100% !important; height: auto !important; overflow: visible !important;
+    border: none !important; background: #fff !important;
+  }
+  body, .main-content, .card { background: #fff !important; color: #111 !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .sc-boundary { border-style: solid !important; background: transparent !important; }
+  @page { size: landscape; margin: 0.5in; }
+}

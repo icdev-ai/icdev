@@ -1,0 +1,248 @@
+{
+  "metadata": {
+    "title": "OMB Memorandum M-25-21 — Advancing the Responsible Acquisition and Governance of Artificial Intelligence",
+    "source": "Office of Management and Budget, M-25-21, November 2025",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-23",
+    "description": "OMB M-25-21 requirements for federal agencies on high-impact AI classification, risk management, transparency, human oversight, and annual reporting. Maps to NIST 800-53 Rev 5 controls via crosswalk for multi-regime deduplication (D113). Supersedes portions of M-24-10."
+  },
+  "categories": [
+    {
+      "id": "INVENTORY",
+      "title": "AI Use Case Inventory",
+      "description": "Agencies must maintain and publicly release an inventory of AI use cases",
+      "requirement_count": 3
+    },
+    {
+      "id": "CLASSIFICATION",
+      "title": "High-Impact AI Classification",
+      "description": "Agencies must identify and classify AI systems as high-impact based on safety, rights, and civil liberties criteria",
+      "requirement_count": 4
+    },
+    {
+      "id": "RISK_MGMT",
+      "title": "Risk Management",
+      "description": "Agencies must implement risk management practices for all AI systems, with enhanced requirements for high-impact AI",
+      "requirement_count": 4
+    },
+    {
+      "id": "OVERSIGHT",
+      "title": "Human Oversight and Accountability",
+      "description": "Agencies must ensure adequate human oversight, appeal processes, and accountability structures",
+      "requirement_count": 4
+    }
+  ],
+  "requirements": [
+    {
+      "id": "M25-INV-1",
+      "family": "AI Use Case Inventory",
+      "title": "Maintain AI Use Case Inventory",
+      "description": "Agencies shall maintain a comprehensive inventory of AI use cases, updated at least annually. The inventory must include each AI system's name, purpose, deployment status, operational domain, data sources, and responsible official. Agencies shall make the inventory publicly available, excluding classified or sensitive use cases that may be reported separately to OMB.",
+      "evidence_required": "Published AI use case inventory, evidence of annual update cadence, inventory completeness review records.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-5", "PM-7", "PL-2"],
+      "key_actions": [
+        "Create and maintain AI use case inventory",
+        "Publish inventory publicly (unclassified portions)",
+        "Establish annual update cycle"
+      ]
+    },
+    {
+      "id": "M25-INV-2",
+      "family": "AI Use Case Inventory",
+      "title": "AI Component Registration",
+      "description": "Each AI component in the organization's portfolio shall be individually registered with metadata including: model name and version, intended purpose, training data provenance summary, risk classification, deployment date, date of last risk assessment, human oversight role designation, and contact information for the responsible official.",
+      "evidence_required": "AI component registration records, metadata completeness audit, responsible official designations.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CM-8", "PM-5", "SA-4"],
+      "key_actions": [
+        "Register each AI component with required metadata",
+        "Assign responsible official per component",
+        "Track deployment and assessment dates"
+      ]
+    },
+    {
+      "id": "M25-INV-3",
+      "family": "AI Use Case Inventory",
+      "title": "Annual AI Reporting to OMB",
+      "description": "Agencies shall submit annual reports to OMB on AI use, including metrics on high-impact AI systems, risk management activities, compliance status, and any incidents or unintended consequences. Reports must include both quantitative metrics and qualitative assessments of AI governance maturity.",
+      "evidence_required": "Annual AI report submissions to OMB, incident log, compliance metrics dashboard, governance maturity self-assessment.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-9", "CA-7", "AU-6"],
+      "key_actions": [
+        "Compile annual AI metrics report",
+        "Track and report AI incidents",
+        "Self-assess AI governance maturity"
+      ]
+    },
+    {
+      "id": "M25-CLS-1",
+      "family": "High-Impact AI Classification",
+      "title": "High-Impact AI Identification Criteria",
+      "description": "Agencies shall classify AI systems as high-impact when they are used in or directly support decisions that have a significant effect on: (1) individual or community safety, (2) civil rights or civil liberties, (3) access to critical resources or services including healthcare, housing, education, employment, or financial services, or (4) privacy. Classification decisions must be documented with rationale and reviewed at least annually.",
+      "evidence_required": "High-impact classification determinations, classification criteria documentation, annual review records, classification rationale.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-2", "RA-3", "PM-9"],
+      "key_actions": [
+        "Apply high-impact classification criteria to all AI systems",
+        "Document classification rationale",
+        "Conduct annual classification review"
+      ]
+    },
+    {
+      "id": "M25-CLS-2",
+      "family": "High-Impact AI Classification",
+      "title": "Safety-Impacting AI Designation",
+      "description": "AI systems that directly control or materially inform decisions affecting physical safety of individuals shall be designated as safety-impacting. Safety-impacting AI requires additional safeguards including independent testing, fallback mechanisms, real-time monitoring, and documented failure mode analysis.",
+      "evidence_required": "Safety-impacting AI designation records, independent test results, fallback mechanism documentation, failure mode analysis.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "RA-5", "SI-4", "CP-2"],
+      "key_actions": [
+        "Identify safety-impacting AI systems",
+        "Conduct independent safety testing",
+        "Document failure modes and fallback mechanisms"
+      ]
+    },
+    {
+      "id": "M25-CLS-3",
+      "family": "High-Impact AI Classification",
+      "title": "Rights-Impacting AI Designation",
+      "description": "AI systems that directly affect individual rights, access to services, or civil liberties shall be designated as rights-impacting. Rights-impacting AI requires bias testing, human review of adverse decisions, appeal mechanisms, and transparency notices to affected individuals.",
+      "evidence_required": "Rights-impacting designation records, bias testing results, human review process documentation, appeal mechanism documentation, transparency notice templates.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-6", "AU-2", "PM-15", "IR-4"],
+      "key_actions": [
+        "Identify rights-impacting AI systems",
+        "Implement bias testing protocols",
+        "Establish human review and appeal processes"
+      ]
+    },
+    {
+      "id": "M25-CLS-4",
+      "family": "High-Impact AI Classification",
+      "title": "Minimal-Risk AI Documentation",
+      "description": "AI systems not classified as high-impact shall still be documented in the inventory with basic metadata, undergo periodic review for classification changes, and comply with baseline risk management practices. Minimal-risk designation does not exempt systems from inventory, monitoring, or governance requirements.",
+      "evidence_required": "Minimal-risk classification records, periodic review schedule, baseline risk management evidence.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["PM-5", "CA-7", "PL-2"],
+      "key_actions": [
+        "Document minimal-risk classification",
+        "Schedule periodic classification reviews",
+        "Apply baseline risk management"
+      ]
+    },
+    {
+      "id": "M25-RISK-1",
+      "family": "Risk Management",
+      "title": "AI Risk Assessment Process",
+      "description": "Agencies shall conduct risk assessments for all AI systems commensurate with their impact classification. Risk assessments shall evaluate: technical performance risks, bias and fairness risks, privacy risks, security risks, and operational risks. High-impact AI systems require formal risk assessments documented in accordance with NIST AI RMF principles, updated at least annually or upon significant system changes.",
+      "evidence_required": "AI risk assessment reports, risk register, risk assessment update schedule, NIST AI RMF alignment documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["RA-3", "RA-5", "PM-9", "CA-2"],
+      "key_actions": [
+        "Conduct formal AI risk assessments",
+        "Maintain AI risk register",
+        "Align with NIST AI RMF"
+      ]
+    },
+    {
+      "id": "M25-RISK-2",
+      "family": "Risk Management",
+      "title": "AI Testing and Evaluation",
+      "description": "Agencies shall test AI systems before deployment and conduct ongoing evaluation during operation. Testing shall include performance benchmarking, bias and fairness testing, adversarial testing, and privacy impact assessment. High-impact AI requires independent third-party testing or red-team evaluation.",
+      "evidence_required": "Pre-deployment test results, performance benchmarks, bias testing results, adversarial test results, privacy impact assessment, third-party test reports (for high-impact).",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-2", "CA-8", "SA-11", "RA-5"],
+      "key_actions": [
+        "Test AI systems before deployment",
+        "Conduct bias and adversarial testing",
+        "Obtain independent testing for high-impact AI"
+      ]
+    },
+    {
+      "id": "M25-RISK-3",
+      "family": "Risk Management",
+      "title": "AI Continuous Monitoring",
+      "description": "Agencies shall implement continuous monitoring for deployed AI systems to detect performance degradation, model drift, emerging biases, and security threats. Monitoring shall include automated alerting, periodic performance reviews, and defined thresholds for intervention or system deactivation.",
+      "evidence_required": "Monitoring system documentation, alerting configuration, performance review records, drift detection reports, intervention threshold documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["CA-7", "SI-4", "AU-6", "IR-4"],
+      "key_actions": [
+        "Deploy continuous AI monitoring",
+        "Configure automated alerts for drift and degradation",
+        "Define intervention thresholds"
+      ]
+    },
+    {
+      "id": "M25-RISK-4",
+      "family": "Risk Management",
+      "title": "AI Incident Response",
+      "description": "Agencies shall establish AI-specific incident response procedures integrated with existing cyber incident response plans. Procedures shall address AI-specific incidents including model poisoning, adversarial attacks, unintended bias discovery, privacy breaches from AI inference, and system failures causing harm. Post-incident reviews shall update risk assessments and inform future risk management.",
+      "evidence_required": "AI incident response plan, incident log, post-incident review reports, risk assessment updates from incidents.",
+      "priority": "P2",
+      "nist_800_53_crosswalk": ["IR-1", "IR-4", "IR-5", "IR-8"],
+      "key_actions": [
+        "Establish AI incident response procedures",
+        "Integrate with existing cyber IR plans",
+        "Conduct post-incident reviews"
+      ]
+    },
+    {
+      "id": "M25-OVR-1",
+      "family": "Human Oversight and Accountability",
+      "title": "Human Oversight Requirement",
+      "description": "Agencies shall ensure meaningful human oversight for high-impact AI systems. Human oversight includes the ability to understand AI system outputs, override automated decisions, intervene in real-time when necessary, and deactivate the system if it poses unacceptable risk. The level of human oversight shall be proportional to the system's impact classification and the reversibility of its decisions.",
+      "evidence_required": "Human oversight plan, override capability documentation, operator training records, intervention procedure documentation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["AC-6", "AU-2", "PM-10", "SA-8"],
+      "key_actions": [
+        "Define human oversight roles for each high-impact AI system",
+        "Document override and intervention capabilities",
+        "Train human operators"
+      ]
+    },
+    {
+      "id": "M25-OVR-2",
+      "family": "Human Oversight and Accountability",
+      "title": "Transparency and Notice",
+      "description": "Agencies shall provide clear and accessible notice to individuals when AI is used to make or materially support decisions that affect them. Notice shall include: that AI is being used, what information the AI considers, how to request human review, and how to appeal adverse decisions. Transparency notices shall be provided in plain language appropriate for the affected population.",
+      "evidence_required": "Transparency notice templates, evidence of notice delivery, plain language review, accessibility compliance.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-15", "AC-8", "PL-4"],
+      "key_actions": [
+        "Create transparency notice templates",
+        "Deliver notices to affected individuals",
+        "Ensure plain language and accessibility"
+      ]
+    },
+    {
+      "id": "M25-OVR-3",
+      "family": "Human Oversight and Accountability",
+      "title": "Appeal and Redress Process",
+      "description": "Agencies shall establish and maintain accessible processes for individuals to appeal AI-assisted decisions and seek redress. Appeal processes shall include: clear instructions for filing appeals, timely human review of appealed decisions, the ability to provide additional information or context, and notification of appeal outcomes. Appeals of high-impact AI decisions must receive human review independent of the original AI-assisted decision maker.",
+      "evidence_required": "Appeal process documentation, appeal submission mechanism, appeal review records, outcome notification records, independent reviewer designation (for high-impact).",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["IR-4", "PM-15", "AU-6"],
+      "key_actions": [
+        "Establish appeal process for AI-assisted decisions",
+        "Ensure timely human review of appeals",
+        "Designate independent reviewers for high-impact decisions"
+      ]
+    },
+    {
+      "id": "M25-OVR-4",
+      "family": "Human Oversight and Accountability",
+      "title": "Chief AI Officer Designation",
+      "description": "Agencies shall designate a Chief AI Officer (CAIO) or equivalent senior official responsible for coordinating AI governance, overseeing the AI use case inventory, ensuring compliance with AI policies, managing AI risk, and serving as the primary point of contact for OMB on AI matters. The CAIO shall have sufficient authority, resources, and access to agency leadership to fulfill these responsibilities.",
+      "evidence_required": "CAIO designation letter, role and responsibilities documentation, organizational chart showing reporting structure, evidence of resource allocation.",
+      "priority": "P1",
+      "nist_800_53_crosswalk": ["PM-2", "PM-10", "PM-1"],
+      "key_actions": [
+        "Designate Chief AI Officer",
+        "Define CAIO roles and authority",
+        "Ensure adequate resources for AI governance"
+      ]
+    }
+  ]
+}

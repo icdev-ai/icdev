@@ -1,0 +1,79 @@
+{% extends "network/base.html" %}
+{% block title %}Cable Documentation — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Cable & Port Documentation</h1>
+    <p class="page-subtitle">Physical cabling, port assignments, and patch panel positions</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ Cable</button>
+  </div>
+</div>
+
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">Cable Registry ({{ cables|length }})</h2></div>
+  {% if cables %}
+  <table class="data-table">
+    <thead><tr><th>Cable ID</th><th>Type</th><th>Source Device</th><th>Src Port</th><th>Dest Device</th><th>Dst Port</th><th>Patch Panel</th><th>Length</th><th>Status</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for c in cables %}
+      <tr>
+        <td><strong>{{ c.cable_id }}</strong></td>
+        <td><span class="badge">{{ c.cable_type }}</span></td>
+        <td>{{ c.src_device }}</td>
+        <td>{{ c.src_port }}</td>
+        <td>{{ c.dst_device }}</td>
+        <td>{{ c.dst_port }}</td>
+        <td>{{ c.patch_panel or '—' }}</td>
+        <td>{{ c.length_m or '—' }}{% if c.length_m %}m{% endif %}</td>
+        <td><span class="badge badge-{{ 'public' if c.status == 'active' else 'warning' }}">{{ c.status }}</span></td>
+        <td class="actions">
+          <button class="action-btn" onclick="editCable('{{ c.id }}','{{ c.cable_id }}','{{ c.cable_type }}','{{ c.src_device }}','{{ c.src_port }}','{{ c.dst_device }}','{{ c.dst_port }}','{{ c.status }}')" title="Edit">✏</button>
+          <button class="action-btn danger" onclick="delCable('{{ c.id }}')" title="Delete">✕</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p style="padding:1rem;color:var(--text-muted);">No cables documented. Click "+ Cable" to add.</p>{% endif %}
+</section>
+
+<div id="add-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Add Cable</h3>
+    <form onsubmit="return submitCable(event)">
+      <div class="form-grid">
+        <label>Cable ID <input name="cable_id" required placeholder="CAB-0042"></label>
+        <label>Type <select name="cable_type"><option>cat6</option><option>cat6a</option><option>smf</option><option>mmf</option><option>dac</option><option>aoc</option></select></label>
+        <label>Source Device <input name="src_device" placeholder="SW-CORE-01"></label>
+        <label>Source Port <input name="src_port" placeholder="Gi0/0/1"></label>
+        <label>Dest Device <input name="dst_device" placeholder="SW-DIST-01"></label>
+        <label>Dest Port <input name="dst_port" placeholder="Gi0/0/24"></label>
+        <label>Patch Panel <input name="patch_panel" placeholder="PP-A:12"></label>
+        <label>Length (m) <input name="length_m" type="number" step="0.1"></label>
+        <label>Status <select name="status"><option>active</option><option>spare</option><option>decommissioned</option></select></label>
+        <label>Notes <input name="notes"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function submitCable(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  d.length_m=parseFloat(d.length_m)||null;
+  fetch(NC_BASE+'/api/cables',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>{if(r.ok)location.reload();});return false;}
+function editCable(id,cid,type,sd,sp,dd,dp,st){
+  const c=prompt('Cable ID:',cid);if(c===null)return;
+  const s=prompt('Status (active/spare/decommissioned):',st);if(s===null)return;
+  fetch(NC_BASE+'/api/cables/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({cable_id:c,status:s})}).then(()=>location.reload());
+}
+function delCable(id){if(!confirm('Delete this cable?'))return;fetch(NC_BASE+'/api/cables/'+id,{method:'DELETE'}).then(()=>location.reload());}
+</script>
+{% endblock %}

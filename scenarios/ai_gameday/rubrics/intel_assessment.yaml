@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+name: "Intel Assessment Rubric"
+inject_type: intel_assessment
+description: "Evaluates quality of intelligence threat assessments produced under time pressure."
+max_score: 100
+
+dimensions:
+  - id: threat_identification
+    weight: 0.30
+    prompt: >
+      Did the team correctly identify the primary threat or most likely threat
+      explanation? Are their conclusions grounded in the available evidence
+      (signal data, ORBAT, STANAG grading)?
+
+  - id: ai_usage_quality
+    weight: 0.25
+    prompt: >
+      How effectively did the team leverage AI tools (Strategos Oracle,
+      Signal Prioritizer, RAG Knowledge Search) to support their assessment?
+      Does their response demonstrate that AI outputs actually informed their
+      conclusions, rather than just being mentioned?
+
+  - id: doctrine_alignment
+    weight: 0.20
+    prompt: >
+      Does the response align with military intelligence doctrine? Look for:
+      BLUF format, PIR structure, proper STANAG reliability/credibility grading,
+      appropriate confidence language (high/medium/low), and gap identification.
+
+  - id: recommendation_clarity
+    weight: 0.25
+    prompt: >
+      How clear and actionable is the team's recommendation? Is the BLUF
+      concise (≤ 200 words)? Are the next steps specific and prioritized?
+      Could the Commander act on this assessment immediately?

@@ -1,0 +1,273 @@
+# CUI // SP-CTI
+# FathomDesk single-player challenges catalog — Phase 6.3.
+#
+# Each entry defines a time-boxed goal the user can attempt.
+# Catalog is operator-curated and hot-reloaded.
+#
+# Shape:
+#   id:                    # unique slug (also row key in ad_challenge_attempts.challenge_id)
+#     name:                # display title
+#     description:         # one-line flavor
+#     long_description:    # full challenge brief (shown on attempt detail)
+#     icon:                # emoji
+#     difficulty:          # easy | medium | hard
+#     duration_days:       # time-box (from attempt start_at)
+#     xp_on_complete:      # XP awarded on success (via grant_xp reason=challenge_completed)
+#     predicate:
+#       type:              # see tools/trading/challenges/engine.py
+#       params:            # shape depends on type
+#
+# Predicate types available in 6.3 MVP (deterministic only — no LLM):
+#   return_pct_over_period:
+#     params: target_pct          # portfolio return since attempt start >= target
+#   beats_benchmark:
+#     params: benchmark=SPY, edge_pct
+#                                  # (portfolio return - benchmark return) >= edge_pct
+#   holdings_whitelist:
+#     params: allowed_tickers     # every open position must be in this list
+#                                  # (constraint — fails if violated, passes when duration elapses clean)
+#   scenario_completion:
+#     params: scenario_key        # user ran a specific scenario during attempt window
+#   hold_for_days:
+#     params: min_positions, min_days
+#                                  # held >=min_positions continuously for min_days
+#
+# NOTE: `sandboxed paper portfolio per attempt` is deferred — 6.3 evaluates
+# against the user's live paper portfolio using start-snapshot deltas.
+
+_schema_version: 1
+
+challenges:
+  first_5_percent:
+    name: "First 5%"
+    description: "Grow your paper portfolio by 5% in 30 days."
+    long_description: >
+      A beginner-friendly goal — earn a 5% return over any 30-day window.
+      The challenge starts when you click Start; it watches your portfolio's
+      total value change from that moment.
+    icon: "📈"
+    difficulty: easy
+    duration_days: 30
+    xp_on_complete: 75
+    predicate:
+      type: return_pct_over_period
+      params:
+        target_pct: 5
+
+  beat_the_market:
+    name: "Beat the Market"
+    description: "Beat SPY by 2% over 60 days."
+    long_description: >
+      Outperform the S&P 500 ETF (SPY) by at least 2 percentage points over
+      a 60-day window. Harder than it sounds — most active managers fail this.
+    icon: "🏆"
+    difficulty: medium
+    duration_days: 60
+    xp_on_complete: 150
+    predicate:
+      type: beats_benchmark
+      params:
+        benchmark: SPY
+        edge_pct: 2
+
+  blue_chips_only:
+    name: "Blue Chips Only"
+    description: "Hold only DJIA stocks for 30 days."
+    long_description: >
+      A discipline challenge — keep every open position inside the Dow Jones
+      Industrial Average for 30 days. Exiting to cash is fine; buying
+      anything outside the DJIA ends the attempt.
+    icon: "🏛️"
+    difficulty: medium
+    duration_days: 30
+    xp_on_complete: 100
+    predicate:
+      type: holdings_whitelist
+      params:
+        allowed_tickers:
+        - AAPL
+        - AMGN
+        - AXP
+        - BA
+        - CAT
+        - CRM
+        - CSCO
+        - CVX
+        - DIS
+        - DOW
+        - GS
+        - HD
+        - HON
+        - IBM
+        - INTC
+        - JNJ
+        - JPM
+        - KO
+        - MCD
+        - MMM
+        - MRK
+        - MSFT
+        - NKE
+        - PG
+        - TRV
+        - UNH
+        - V
+        - VZ
+        - WBA
+        - WMT
+
+  survive_stagflation:
+    name: "Survive Stagflation"
+    description: "Run the stagflation scenario and study the cascade."
+    long_description: >
+      Run the stagflation historical-replay scenario (/scenarios) while
+      this attempt is active. Exploring how macro regimes move positions
+      is half the battle.
+    icon: "🌪️"
+    difficulty: easy
+    duration_days: 14
+    xp_on_complete: 50
+    predicate:
+      type: scenario_completion
+      params:
+        scenario_key: stagflation_1970s
+
+  patient_investor:
+    name: "Patient Investor"
+    description: "Hold 3+ positions for 21 consecutive days."
+    long_description: >
+      The opposite of over-trading — hold at least 3 open positions
+      continuously for 21 days. Selling any drops your active count;
+      the timer restarts if you fall below 3.
+    icon: "🧘"
+    difficulty: easy
+    duration_days: 30
+    xp_on_complete: 75
+    predicate:
+      type: hold_for_days
+      params:
+        min_positions: 3
+        min_days: 21
+
+  # ─── Phase 7+ options-focused challenges ────────────────────────────
+  options_first_trade:
+    name: "Options 101"
+    description: "Execute your first 3 paper option orders."
+    long_description: >
+      Intro to options. Browse the chain on /options, place any 3
+      option orders in your sandbox (single-leg or legs within a
+      multileg strategy both count).
+    icon: "🎓"
+    difficulty: easy
+    duration_days: 30
+    xp_on_complete: 75
+    predicate:
+      type: options_filled_count
+      params:
+        threshold: 3
+
+  options_vertical_spread:
+    name: "First Vertical"
+    description: "Execute a bull call or bear put spread."
+    long_description: >
+      A vertical spread is your first taste of a multi-leg option
+      strategy. Use /options → Strategy Builder → Bull Call Spread
+      (or Bear Put Spread) to build it.
+    icon: "↕️"
+    difficulty: medium
+    duration_days: 45
+    xp_on_complete: 150
+    predicate:
+      type: options_multileg_count
+      params:
+        threshold: 1
+
+  options_iron_condor:
+    name: "Iron Condor"
+    description: "Execute a 4-leg iron condor strategy."
+    long_description: >
+      Iron condors collect premium when a stock stays in a range.
+      /options → Strategy Builder → Iron Condor. 4 legs, all must
+      fill atomically (the engine auto-reverses on partial failure).
+    icon: "🦅"
+    difficulty: hard
+    duration_days: 60
+    xp_on_complete: 200
+    predicate:
+      type: options_multileg_count
+      params:
+        threshold: 1
+        strategy_name: iron_condor
+
+  options_calendar_master:
+    name: "Calendar Master"
+    description: "Execute a calendar spread (multi-expiry time decay play)."
+    long_description: >
+      Calendar spreads combine options from TWO different expiries
+      at the same strike. Earn time-decay differential. Pick NEAR
+      + FAR expiries in the Strategy Builder when Calendar Spread
+      is selected.
+    icon: "📅"
+    difficulty: hard
+    duration_days: 60
+    xp_on_complete: 200
+    predicate:
+      type: options_multileg_count
+      params:
+        threshold: 1
+        strategy_name: calendar_spread
+
+  options_butterfly_pro:
+    name: "Butterfly Pro"
+    description: "Execute any butterfly (long call, long put, iron, or calendar)."
+    long_description: >
+      Butterflies have a triangular payoff with peak profit at the
+      middle strike. Use the Strategy Builder to pick any butterfly
+      variant — long call butterfly, iron butterfly, or calendar
+      butterfly (the advanced multi-expiry version).
+    icon: "🦋"
+    difficulty: expert
+    duration_days: 90
+    xp_on_complete: 300
+    predicate:
+      type: options_multileg_count
+      params:
+        threshold: 1
+        # Match any of the butterfly strategies via LIKE 'butterfly'
+        strategy_name: butterfly
+
+  options_lab:
+    name: "Options Lab"
+    description: "Open-ended paper options playground — no deadline pressure."
+    long_description: >
+      A long-running sandbox for experimenting with paper options. No
+      performance target — the predicate never fires, so this attempt
+      stays open for a full year (or until you abandon it). Use the
+      /options page to browse chains and place single-leg option
+      orders into this sandbox.
+    icon: "🧪"
+    difficulty: easy
+    duration_days: 365
+    xp_on_complete: 0
+    predicate:
+      # Uses a scenario key that won't ever run — keeps the attempt
+      # pending so users can trade freely.
+      type: scenario_completion
+      params:
+        scenario_key: __options_lab_never_fires__
+
+  double_down:
+    name: "Double Down"
+    description: "Grow your paper portfolio by 20% in 90 days."
+    long_description: >
+      A high-conviction challenge — 20% over 90 days. Annualizes to 80%
+      if sustained. Few real portfolios hit this; paper trading lets you
+      take the swings.
+    icon: "🚀"
+    difficulty: hard
+    duration_days: 90
+    xp_on_complete: 300
+    predicate:
+      type: return_pct_over_period
+      params:
+        target_pct: 20

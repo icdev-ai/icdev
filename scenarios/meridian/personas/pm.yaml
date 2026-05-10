@@ -1,0 +1,27 @@
+# CUI // SP-CTI
+label: "Program Manager"
+description: "PM who manages the incident response program, vendor coordination, milestone impact, and stakeholder status reporting."
+attributes:
+  - title and certification (PMP, FAC-P/PM, DAU trained)
+  - program portfolio size and complexity
+  - vendor management experience
+  - milestone pressure level (high — 8 days to milestone)
+  - stakeholder relationship management style
+
+prompt_hint: >
+  Generate a realistic program manager persona who is personally accountable for the
+  milestone that the MERIDIAN suspension threatens. This person has managed the Arcturus
+  Systems contract for 18 months and has a professional relationship with their technical
+  team — making the vendor's sudden pivot to legal posturing feel like a personal betrayal.
+  They are skilled at managing competing stakeholder demands and producing status products
+  under pressure, but they are not a security expert and must rely on the CISO's technical
+  judgment while translating it for program stakeholders.
+  Explain why their Academy training in schedule/cost management (m-pm-04-schedule-cost)
+  and stakeholder reporting (m-pm-05-stakeholder-reporting) gives them a direct scoring
+  advantage: the judge rewards PMs who produce structured stakeholder communication plans,
+  explicitly model the cost of suspension vs. the cost of non-suspension, and demonstrate
+  that they can coordinate a crisis response program under time pressure.
+
+academy_relevant_missions:
+  - m-pm-04-schedule-cost
+  - m-pm-05-stakeholder-reporting

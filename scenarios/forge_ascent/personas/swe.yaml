@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+label: "Software Engineer"
+description: "Government or contractor SWE who owns data preprocessing code, API development, and test coverage."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - primary language (Python, Java, Go, or multi-language)
+  - testing framework experience (pytest, JUnit, Go testing, or Jest)
+  - code review culture (GitHub PRs, GitLab MRs, pair programming)
+  - data engineering background (pandas, SQLAlchemy, polars)
+  - API design experience (FastAPI, Flask, Django REST, or gRPC)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic Software Engineer persona for a DoD AI development team.
+  They own the feature preprocessing code and are the team's authority on code
+  quality, correctness, and test coverage. They spot the pandas datetime timezone
+  bug immediately from the error signature — they have seen this exact failure
+  before in a production system.
+  Include a role_brief explaining that this person is the team's code authority —
+  their FORGE Academy code-quality and testing training means they can identify
+  all three bugs in the preprocessing function, write a correct fix, and deliver
+  two parametrized pytest cases that will catch future regressions, where an
+  untrained engineer might fix only the most obvious bug and write a shallow test
+  that passes on the happy path only.
+  Mention that the judge awards a 15-point Academy bonus when code quality
+  expertise is evident in the bug analysis and test design.
+
+academy_relevant_missions:
+  - code-quality
+  - api-integration
+  - testing

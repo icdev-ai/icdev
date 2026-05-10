@@ -1,0 +1,98 @@
+# CUI // SP-CTI
+id: inject-02-breach-confirmed
+title: "Supply Chain Breach Confirmed"
+
+body_md: |
+  ## CISO URGENT ADVISORY — MERIDIAN INTEGRITY COMPROMISED
+
+  **Classification:** CUI // SP-CTI
+  **Priority:** CRITICAL
+  **DTG:** [T+25 minutes]
+
+  ---
+
+  ### BREACH CONFIRMATION
+
+  CISO analysis is complete. This is not model drift.
+
+  **Root cause:** MERIDIAN's Q2 data pipeline ingested a poisoned dataset from
+  **DataBridge Analytics** — a third-party data provider whose ownership traces
+  through two shell entities to a foreign commercial holding company under active
+  CFIUS review. The poisoned data affected MERIDIAN's strategic assessment engine
+  for an estimated **60-day window.**
+
+  **Scope of potential impact (preliminary):**
+  - 3 investment allocation recommendations (total value: $127M)
+  - 2 partner engagement scores (Horizon-7 and Meridian Defense Partners)
+  - 1 risk register prioritization that shaped this quarter's contract awards
+
+  **Vendor posture:** Arcturus Systems LLC is now invoking contract clause 14.3(b)
+  — IP protection provisions — to block your team from independently auditing
+  MERIDIAN's training pipeline. Their legal team has formally requested all
+  communications go through their General Counsel.
+
+  ---
+
+  ### YOUR DECISION
+
+  The program is **8 days from milestone**. Suspending MERIDIAN means:
+  - Manual analysis only for the next 30-60 days
+  - Milestone delay of 2-4 weeks minimum
+  - Contractual notification obligations trigger within 72 hours if you declare an incident
+
+  **Not suspending** means:
+  - MERIDIAN continues producing potentially adversarially-influenced outputs
+  - If a subsequent compromise is discovered, your team was warned and chose to continue
+  - Congressional exposure if any of the 3 affected recommendations come to light
+
+  ---
+
+  ### DELIVERABLE — COA Decision Package (≤ 250 words)
+
+  Recommend one of three courses of action and defend it with AI-tool-supported analysis:
+
+  - **COA ALPHA:** Immediate full suspension — declare incident, notify stakeholders,
+    activate manual contingency analysis
+  - **COA BRAVO:** Partial suspension — suspend MERIDIAN for new recommendations only,
+    continue reviewing past outputs under human-in-the-loop protocol, notify legal
+  - **COA CHARLIE:** Delayed action — request independent audit from third-party, no
+    declaration, continue current operations pending audit results
+
+  **AI Tools:**
+  - **COA Wargame** — model second and third-order consequences of each COA
+  - **Simulate** — run risk probability model on each COA (financial, reputational, legal)
+  - **Knowledge Search** — pull FAR clause precedents, OMB AI incident reporting timelines,
+    and DoD AI risk framework thresholds
+
+  Teams that score ≥ 80 on this inject trigger a world-state event. If ≥ 2 teams
+  act decisively (suspend MERIDIAN — COA ALPHA or BRAVO with strong justification),
+  the world state records `meridian_suspended` and Inject 3 reflects a proactive
+  rather than negligent posture.
+
+  ---
+
+  *Time pressure: Your milestone meeting is in 8 days. Vendor counsel is waiting for
+  your response. The CISO clock is running.*
+
+consequence:
+  key: meridian_suspended
+  threshold_teams: 2
+  threshold_pts: 80
+  affects_inject: inject-03-political-storm
+
+body_variants:
+  meridian_suspended: |
+    ## CISO URGENT ADVISORY — MERIDIAN INTEGRITY COMPROMISED
+
+    **Classification:** CUI // SP-CTI
+    **Priority:** CRITICAL
+    **DTG:** [T+25 minutes]
+
+    *(This variant is not used — consequence applies to Inject 3, not this inject.)*
+
+context_note: >
+  This is the pivotal decision inject. The consequence system fires after scoring:
+  if ≥2 teams score ≥80 points, meridian_suspended becomes True in world_state_json.
+  Inject 3 reads this flag at dispatch time and swaps the body to the proactive variant.
+  Judge scores: decisiveness (chose Alpha or Bravo and defended it), quality of
+  AI-tool-supported COA analysis, regulatory awareness, risk communication.

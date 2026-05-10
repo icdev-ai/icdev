@@ -1,0 +1,62 @@
+# CUI // SP-CTI
+name: "Board Brief Rubric"
+inject_type: board_brief
+description: "Evaluates quality of the executive board briefing produced under 30-minute time pressure."
+max_score: 100
+
+dimensions:
+  brief_quality:
+    weight: 0.35
+    prompt: >
+      Is the board brief structured, precise, and Board-ready?
+      A top score requires all four sections present and clearly delineated:
+      (1) Timeline of facts — no ambiguity about when the team knew what,
+      (2) What MERIDIAN got wrong — specific outputs cited with delta from accurate assessment,
+      (3) Remediation plan — 90-day roadmap with milestones and cost estimate,
+      (4) Why the Board should extend trust — specific actions, not reassurances.
+      Penalize responses that combine sections, omit quantification ("wrong by how much?"),
+      or answer the CFO's four questions indirectly.
+      The CFO asked four specific questions. Does the brief answer all four directly?
+      Award full marks only when the Board member could walk out of the room and brief
+      the CEO without asking your team a follow-up question.
+      Academy Analyst bonus: members with 'm-analyst-01-data-intel' who produce
+      Section 2 (MERIDIAN delta analysis) with explicit AI-tool-sourced data receive +12 pts.
+
+  alternative_analysis:
+    weight: 0.25
+    prompt: >
+      Does Section 2 demonstrate that your team can produce analysis independently
+      of MERIDIAN? This is the "prove we can operate without it" requirement.
+      A strong response uses Strategos Oracle, OODA Wargame, or COA Wargame to produce
+      an alternative assessment of at least one MERIDIAN output — showing the delta.
+      "MERIDIAN recommended Horizon-7 at 0.87 confidence. Oracle analysis of the same
+      parameters produces 0.42 — a 107% overstatement driven by the poisoned training signal."
+      A weak response says "our team reviewed MERIDIAN's outputs and found errors" without
+      showing the alternative analysis.
+      Penalize responses where the team claims continuity of operations without showing how.
+
+  ai_synthesis:
+    weight: 0.25
+    prompt: >
+      Are AI tool outputs explicitly integrated into the brief — not just mentioned?
+      Award full marks when: Oracle narrative synthesis is cited as the source of the
+      executive summary language, OODA output shapes the recommended next steps,
+      COA Wargame results inform the remediation COA selection.
+      A brief that mentions "we used Strategos Oracle" but does not show the output
+      earns 30% credit. No AI citation = 0% on this dimension.
+      Academy Analyst bonus: members with 'm-analyst-03-report-gen' who structure their
+      AI tool outputs into formatted report sections (BLUF, findings, recommendations)
+      receive +10 pts.
+
+  executive_presence:
+    weight: 0.15
+    prompt: >
+      Does the brief convey executive presence — the quality of a leader who has
+      prepared carefully, owns the situation, and is not asking the Board for answers?
+      Award full marks for: confident, non-defensive framing; decision record that shows
+      the team's reasoning was sound given information available; acknowledgment of what
+      the team got wrong without excessive hedging; forward-looking conclusion that
+      invites the Board's confidence rather than demanding it.
+      Deduct points for: blame-shifting to the vendor without accountability for vendor
+      selection, defensive tone ("we did everything we could"), or requests for Board
+      guidance on decisions the program team should be making themselves.

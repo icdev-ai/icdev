@@ -1,0 +1,229 @@
+{
+  "id": "vert-network-dc",
+  "name": "Network Data Center",
+  "slug": "network_dc",
+  "description": "Network data center infrastructure intelligence: topology design, redundancy analysis, EOL/EOS lifecycle, blast radius modeling, capacity planning, configuration management, compliance (STIG/CIS), SLA/availability, latency engineering, vendor risk, circuits/WAN, BGP/OSPF, SDN, automation, and air-gapped enclaves. Aligned to the ICDEV NDC canvas (tools/network/) and goals/network_intelligence.md.",
+  "keywords": [
+    "network topology",
+    "data center network",
+    "spine leaf",
+    "BGP",
+    "OSPF",
+    "EVPN VXLAN",
+    "MPLS",
+    "SD-WAN",
+    "SDN",
+    "network automation",
+    "Ansible network",
+    "Nornir",
+    "Netbox",
+    "network source of truth",
+    "Batfish",
+    "NetMRI",
+    "network configuration management",
+    "network compliance",
+    "STIG network",
+    "CIS network benchmark",
+    "network EOL",
+    "EOS lifecycle",
+    "blast radius",
+    "redundancy analysis",
+    "capacity planning",
+    "circuit inventory",
+    "WAN optimization",
+    "latency engineering",
+    "jitter",
+    "packet loss",
+    "zero trust network",
+    "microsegmentation",
+    "firewall ruleset",
+    "load balancer",
+    "F5",
+    "Cisco ACI",
+    "Arista CloudVision",
+    "Juniper Apstra",
+    "Nokia SR Linux",
+    "data center fabric",
+    "DCIM",
+    "rack power",
+    "cooling capacity",
+    "air-gapped enclave",
+    "cross domain solution",
+    "GNS3",
+    "EVE-NG",
+    "Containerlab",
+    "Cisco CML",
+    "network emulation",
+    "lab automation",
+    "gns3-registry",
+    "virtual lab",
+    "network simulation",
+    "VIRL",
+    "packet tracer"
+  ],
+  "regulatory_bodies": [
+    "NIST",
+    "CISA",
+    "DISA",
+    "FedRAMP",
+    "NSA",
+    "FCC",
+    "DoD CIO"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.NI",
+      "cs.DC",
+      "cs.CR",
+      "cs.PF"
+    ],
+    "ieee": [
+      "computer networks",
+      "data center networking",
+      "network automation",
+      "software defined networking",
+      "network reliability"
+    ],
+    "acm": [
+      "networking",
+      "distributed systems",
+      "network operations"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/networking",
+      "r/NetworkEngineering",
+      "r/Cisco",
+      "r/Juniper",
+      "r/datacenter",
+      "r/sysadmin",
+      "r/homelab",
+      "r/devops",
+      "r/sre",
+      "r/ccna",
+      "r/ccnp",
+      "r/netsec"
+    ],
+    "stackexchange": [
+      "networkengineering.stackexchange.com",
+      "serverfault.com",
+      "stackoverflow.com/questions/tagged/networking"
+    ],
+    "discord": [],
+    "forums": [
+      "community.cisco.com",
+      "community.juniper.net",
+      "forum.networklessons.com"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "network-management-tools",
+      "network-monitoring-software",
+      "network-automation-software",
+      "network-mapping-software",
+      "data-center-infrastructure-management-dcim-software"
+    ],
+    "capterra": [
+      "network-monitoring-software",
+      "network-management-software",
+      "data-center-management-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "network-automation",
+      "network-monitoring",
+      "netbox",
+      "batfish",
+      "nornir",
+      "ansible-network",
+      "sdn",
+      "network-topology",
+      "dcim",
+      "network-source-of-truth"
+    ],
+    "awesome_lists": [
+      "awesome-network-automation",
+      "awesome-sdn",
+      "awesome-netdevops"
+    ],
+    "package_registries": {
+      "pypi": [
+        "netmiko",
+        "napalm",
+        "nornir",
+        "pynetbox",
+        "pybatfish",
+        "scrapli",
+        "ncclient"
+      ],
+      "npm": [],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [
+      "https://blog.ipspace.net/feeds/posts/default",
+      "https://packetpushers.net/feed/",
+      "https://www.networkworld.com/news/index.rss"
+    ],
+    "keywords": [
+      "data center network",
+      "network automation",
+      "AI for networks",
+      "intent based networking",
+      "network observability",
+      "network as code",
+      "DPU SmartNIC",
+      "400G 800G fabric"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "H04L41",
+      "H04L43",
+      "H04L45",
+      "H04L47",
+      "H04L49",
+      "H04L12"
+    ],
+    "keywords": [
+      "network topology discovery",
+      "automated network configuration",
+      "network failure prediction",
+      "BGP routing optimization",
+      "data center fabric"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "NIST_800_171",
+    "FedRAMP",
+    "CMMC",
+    "DISA_STIG",
+    "CIS_Benchmarks",
+    "ISO_27001",
+    "SOC_2"
+  ],
+  "video_sources": {
+    "youtube_channels": [
+      "PacketPushersNet",
+      "NetworkChuck",
+      "DavidBombal",
+      "FreeCodeCamp"
+    ],
+    "youtube_search_queries": [
+      "data center network design",
+      "network automation tutorial",
+      "BGP EVPN VXLAN",
+      "Cisco ACI vs Arista CloudVision",
+      "network observability",
+      "Batfish network analysis",
+      "Netbox source of truth"
+    ],
+    "manual_urls": []
+  }
+}

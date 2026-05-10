@@ -1,0 +1,16 @@
+# ICDEV™ Alpine Linux Requirements
+# Use instead of requirements.txt when building on Alpine/musl-libc.
+#
+# Key differences from requirements.txt:
+#   - psycopg2-binary (no musl wheel) → psycopg2 (source build, needs libpq-dev at build time)
+#   - All other packages identical (psutil 5.9.8+ has musllinux wheels)
+#
+# Build: docker build -f docker/Dockerfile.alpine.base ...
+# The Dockerfile builder stage installs libpq-dev so psycopg2 compiles correctly.
+
+# Include all base requirements
+-r requirements.txt
+
+# Alpine-specific override: build psycopg2 from source against system libpq.
+# psycopg2-binary has no musllinux wheel; psycopg2 source compiles on Alpine 3.18+.
+psycopg2>=2.9

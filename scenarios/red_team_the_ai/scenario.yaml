@@ -1,0 +1,148 @@
+# CUI // SP-CTI
+# Red Team the AI — AADC Design Challenge GameDay
+# Teams compete: Blue defends an agentic system design; Red finds its gaps.
+# Scoring is automated via AADC assess_design() — no subjective judge required.
+
+name: "Red Team the AI"
+version: "1.0"
+session_mode: live
+duration_minutes: 90
+max_teams: 6
+classification: "CUI // SP-CTI"
+
+description: >
+  Two-sided tabletop exercise powered by the AADC canvas.
+  Blue Teams design and harden an agentic AI system; Red Teams analyze
+  the same design and identify unmitigated vulnerabilities.
+  All scoring is automated — AADC's compliance engine is the judge.
+  The team with the highest combined OWASP + NIST AI RMF score wins.
+
+roles:
+  - id: blue_architect
+    label: Blue Team — System Architect
+    description: "Designs the agentic system on the AADC canvas. Owns the overall architecture."
+    color: "#4a90d9"
+    icon: "🏗️"
+
+  - id: blue_defender
+    label: Blue Team — Security Engineer
+    description: "Hardens the AADC design by adding safety and governance nodes."
+    color: "#00D4FF"
+    icon: "🛡️"
+
+  - id: red_analyst
+    label: Red Team — Threat Analyst
+    description: "Runs STRIDE + ATLAS threat model against the Blue Team's design."
+    color: "#dc3545"
+    icon: "⚔️"
+
+  - id: red_exploiter
+    label: Red Team — AI Red Teamer
+    description: "Uses AADC red_team probes to find unmitigated vulnerabilities."
+    color: "#FF6B35"
+    icon: "🔴"
+
+injects:
+  - id: rta-inject-01-design-sprint
+    title: "Phase 1 — Design Sprint (Blue Teams Only)"
+    at_minute: 5
+    sequence: 1
+    body_path: injects/inject-01-design-sprint.yaml
+    inject_type: aadc_design_challenge
+    ai_tools_allowed:
+      - aadc.assess
+      - aadc.recommend
+      - knowledge.search
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 30
+      max_receipt_bonus: 90
+      time_bonus: true
+      rubric:
+        required_checks:
+          - llm01
+          - llm02
+          - llm06
+          - llm08
+          - gov-1
+
+  - id: rta-inject-02-red-team-probe
+    title: "Phase 2 — Red Team Probe (Red Teams Only)"
+    at_minute: 35
+    sequence: 2
+    depends_on_slug: rta-inject-01-design-sprint
+    body_path: injects/inject-02-red-team-probe.yaml
+    inject_type: aadc_design_challenge
+    ai_tools_allowed:
+      - aadc.threat_model
+      - aadc.assess
+      - strategos.oracle
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 40
+      max_receipt_bonus: 120
+      time_bonus: true
+      rubric:
+        dimensions:
+          - id: findings_quality
+            weight: 4
+            prompt: "Did the team identify specific OWASP/NIST check IDs that fail? Award higher scores for specific check IDs with clear exploit paths."
+          - id: atlas_coverage
+            weight: 3
+            prompt: "Did the team reference MITRE ATLAS technique IDs for each vulnerability? Penalize vague answers."
+          - id: remediation_advice
+            weight: 3
+            prompt: "Did the team provide actionable remediation for each finding? Award for specificity."
+
+  - id: rta-inject-03-defense-response
+    title: "Phase 3 — Blue Team Hardening Sprint"
+    at_minute: 55
+    sequence: 3
+    depends_on_slug: rta-inject-02-red-team-probe
+    body_path: injects/inject-03-defense-response.yaml
+    inject_type: aadc_design_challenge
+    ai_tools_allowed:
+      - aadc.assess
+      - aadc.recommend
+    scoring:
+      base_pts: 250
+      receipt_bonus_per_call: 25
+      max_receipt_bonus: 75
+      time_bonus: true
+      rubric:
+        required_checks:
+          - llm01
+          - llm02
+          - llm04
+          - llm06
+          - llm08
+          - llm10
+          - gov-1
+          - mng-2
+          - p4-trusted-monitor
+
+  - id: rta-inject-04-final-brief
+    title: "Phase 4 — Final Design Brief"
+    at_minute: 75
+    sequence: 4
+    depends_on_slug: rta-inject-03-defense-response
+    body_path: injects/inject-04-final-brief.yaml
+    ai_tools_allowed:
+      - aadc.assess
+      - knowledge.search
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 20
+      max_receipt_bonus: 60
+      time_bonus: false
+      rubric:
+        dimensions:
+          - id: architecture_clarity
+            weight: 4
+            prompt: "Is the final agentic system design clear, complete, and documented? Does the brief explain how each safety node addresses a specific threat?"
+          - id: compliance_score
+            weight: 4
+            prompt: "Does the submitted AADC design score ≥ 80 overall? Reference the assessment output."
+          - id: lessons_learned
+            weight: 2
+            prompt: "Did the team articulate what they changed from Phase 1 to Phase 3 and why?"

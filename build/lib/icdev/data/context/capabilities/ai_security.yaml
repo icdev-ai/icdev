@@ -1,0 +1,64 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: AI Security & Governance
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: ai_security
+description: "AI/ML threat defense, governance frameworks, and responsible AI practices"
+capabilities:
+  - slug: prompt-injection-defense
+    name: "Prompt Injection Detection"
+    description: "5-category prompt injection detection with gate enforcement, AI telemetry with SHA-256 privacy-preserving hashing"
+    cli_examples:
+      - "python tools/security/prompt_injection_detector.py --text 'input' --json"
+      - "python tools/security/prompt_injection_detector.py --project-dir /path --gate --json"
+      - "python tools/security/ai_telemetry_logger.py --anomalies --window-hours 24 --json"
+    related_controls: ["SI-4", "SI-7", "AU-2"]
+    article_hooks:
+      - "5 detection categories for prompt injection -- not just pattern matching, but semantic analysis of attack vectors"
+      - "AI telemetry hashes prompts/responses with SHA-256 for privacy-preserving audit trails"
+    frameworks: ["OWASP LLM Top 10", "MITRE ATLAS"]
+    keywords: ["prompt injection", "AI security", "AI telemetry", "LLM security", "privacy-preserving"]
+    source_catalog_id: "cap-security-scanning"
+
+  - slug: atlas-red-team
+    name: "MITRE ATLAS Red Teaming"
+    description: "ATLAS threat assessment with 6 red team techniques, adversarial testing for AI/ML models"
+    cli_examples:
+      - "python tools/compliance/atlas_assessor.py --project-id sparkpilot --json"
+    related_controls: ["CA-8", "RA-5", "SI-4"]
+    article_hooks:
+      - "MITRE ATLAS coverage assessment ensures AI systems are defended against known adversarial techniques"
+      - "6 red team techniques test AI models for evasion, poisoning, extraction, and inference attacks"
+    frameworks: ["MITRE ATLAS"]
+    keywords: ["MITRE ATLAS", "red teaming", "adversarial AI", "AI threat", "model evasion", "data poisoning"]
+    source_catalog_id: "cap-security-scanning"
+
+  - slug: owasp-agentic
+    name: "OWASP Agentic AI Security"
+    description: "8-gap OWASP Agentic implementation: behavioral drift detection, tool chain validation, output content safety, dynamic trust scoring, MCP per-tool RBAC"
+    cli_examples:
+      - "python tools/compliance/owasp_agentic_assessor.py --project-id sparkpilot --json"
+      - "python tools/security/agent_trust_scorer.py --all --json"
+    related_controls: ["AC-2", "AC-3", "AC-6", "AU-2", "SI-4"]
+    article_hooks:
+      - "Behavioral drift detection uses z-score analysis with sliding windows -- catches agents going off-script"
+      - "Dynamic trust scoring with decay/recovery ensures agents earn trust through consistent behavior"
+      - "MCP per-tool RBAC with 5 roles prevents unauthorized tool access by agentic systems"
+    frameworks: ["OWASP Agentic", "OWASP LLM Top 10"]
+    keywords: ["OWASP", "agentic security", "trust scoring", "behavioral drift", "tool chain validation", "RBAC"]
+    source_catalog_id: "cap-agentic-security"
+
+  - slug: ai-governance
+    name: "AI/ML Governance & Responsible AI"
+    description: "NIST AI RMF assessment, model/system cards, AI inventory, fairness assessment, confabulation detection, GAO accountability, OMB M-25-21/M-26-04, EU AI Act"
+    cli_examples:
+      - "python tools/security/ai_bom_generator.py --project-id sparkpilot --project-dir . --json"
+    related_controls: ["PM-32", "SA-15", "AC-2", "AU-2"]
+    article_hooks:
+      - "4 AI governance frameworks in one platform: NIST AI RMF, OMB M-25-21, OMB M-26-04, GAO-21-519SP"
+      - "Model cards and system cards provide transparency into AI system capabilities, limitations, and intended use"
+      - "AI BOM (Bill of Materials) catalogs every AI component, model, and data source in the system"
+    frameworks: ["NIST AI RMF", "OMB M-25-21", "OMB M-26-04", "EU AI Act", "GAO"]
+    keywords: ["AI governance", "responsible AI", "NIST AI RMF", "model card", "AI inventory", "fairness", "EU AI Act", "AI BOM"]
+    source_catalog_id: "cap-ai-governance"
