@@ -474,7 +474,7 @@ def _build_pros(strategy: str, category: str, mapping: dict, cloud: str, ai_opps
         target = mapping.get("gcp_service", "GCP managed service")
 
     extras.append(f"Managed {target} — no patching, automatic backups")
-    extras.append(f"Pay-as-you-go pricing vs. perpetual licensing")
+    extras.append("Pay-as-you-go pricing vs. perpetual licensing")
 
     if ai_opps:
         first_opp = ai_opps[0]
@@ -629,6 +629,6 @@ def _generic_coas(tech: str, cloud: str, include_retain_retire: bool) -> list[di
             "refactor_jobs": [],
             "canvas_hints": {},
             "recommended": strategy == "replatform",
-            "recommended_reason": f"Replatform is typically the best starting point for unknown workloads." if strategy == "replatform" else None,
+            "recommended_reason": "Replatform is typically the best starting point for unknown workloads." if strategy == "replatform" else None,
         })
     return coas
