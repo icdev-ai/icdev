@@ -10,7 +10,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 _ROOT = Path(__file__).resolve().parents[3]
 if str(_ROOT) not in sys.path:
@@ -651,4 +651,102 @@ def api_app_builder_build(session_id: str):
     result = execute_build(session_id, output_dir=data.get("output_dir"))
     if result.get("status") == "error":
         return jsonify(result), 400
+    return jsonify(result)
+
+
+# ── Workflow Execution (wex Phase 1-3) ─────────────────────
+
+
+@studio_api.route("/workflows/<workflow_id>/run", methods=["POST"])
+def api_run_workflow(workflow_id: str):
+    """Start an async workflow execution. Returns run_id for SSE streaming."""
+    from tools.studio.workflow_runner import start_run
+
+    data = request.get_json(silent=True) or {}
+    project_id = data.get("project_id", "default")
+    try:
+        run_id = start_run(workflow_id, project_id=project_id)
+        return jsonify({"status": "ok", "run_id": run_id}), 202
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@studio_api.route("/workflows/runs/<run_id>/stream", methods=["GET"])
+def api_stream_run(run_id: str):
+    """Per-run SSE stream. Each event is: data: <json>\n\n"""
+    from tools.studio.workflow_runner import stream_run
+
+    def generate():
+        yield from stream_run(run_id)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@studio_api.route("/workflows/runs", methods=["GET"])
+def api_list_runs():
+    """List workflow runs. Optional ?workflow_id= filter."""
+    from tools.studio.workflow_runner import list_runs
+
+    workflow_id = request.args.get("workflow_id")
+    limit = int(request.args.get("limit", 50))
+    return jsonify({"runs": list_runs(workflow_id=workflow_id, limit=limit)})
+
+
+@studio_api.route("/workflows/runs/<run_id>", methods=["GET"])
+def api_get_run(run_id: str):
+    from tools.studio.workflow_runner import get_run, get_run_steps
+
+    run = get_run(run_id)
+    if not run:
+        return jsonify({"error": "Run not found"}), 404
+    run["steps"] = get_run_steps(run_id)
+    return jsonify(run)
+
+
+@studio_api.route("/workflows/<workflow_id>/generate-code", methods=["POST"])
+def api_generate_code(workflow_id: str):
+    """Generate a standalone Python script for this workflow."""
+    from tools.studio.workflow_runner import generate_python_script
+
+    try:
+        script = generate_python_script(workflow_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    wf_name = workflow_id.replace("-", "_")
+    return Response(
+        script,
+        mimetype="text/x-python",
+        headers={"Content-Disposition": f'attachment; filename="workflow_{wf_name}.py"'},
+    )
+
+
+# ── Chat-to-Workflow (wex Phase 4-5) ───────────────────────
+
+
+@studio_api.route("/chat/generate-workflow", methods=["POST"])
+def api_chat_generate_workflow():
+    """Generate workflow YAML from a natural language message via Ollama/Qwen3."""
+    from tools.studio.workflow_chat import generate_workflow_yaml
+
+    data = request.get_json(silent=True) or {}
+    message = (data.get("message") or "").strip()
+    if not message:
+        return jsonify({"error": "message is required"}), 400
+
+    history = data.get("history", [])
+    result = generate_workflow_yaml(message, conversation_history=history or None)
+    if result.get("status") == "error":
+        return jsonify(result), 422
     return jsonify(result)
