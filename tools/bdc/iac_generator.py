@@ -528,7 +528,7 @@ def main():
         ok = check("Boundary SG ingress check", False, str(e))
         passed += ok; failed += not ok
 
-    print(f"\\n=== Result: {{passed}} passed, {{failed}} failed ===\\n")
+    print("\\n=== Result: " + str(passed) + " passed, " + str(failed) + " failed ===\\n")
     sys.exit(0 if failed == 0 else 1)
 
 

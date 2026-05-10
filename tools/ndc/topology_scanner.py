@@ -33,6 +33,7 @@ _CATEGORY_KEYWORDS = {
     "subnet": ["subnet", "sub-net", "cidr-block"],
     "security_group": ["security-group", "sg", "acl", "nacl", "firewall-rule"],
     "gateway": ["gateway", "igw", "nat", "tgw", "transit", "vpn"],
+    "route": ["route-table", "route table", "routing-table", "rtb", " route"],
     "link": ["link", "connection", "peering", "direct-connect", "vpn-tunnel"],
 }
 
