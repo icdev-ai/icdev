@@ -1770,6 +1770,31 @@ def create_workflow(
         conn.close()
 
 
+def save_workflow(
+    workflow_id: str,
+    name: str,
+    template_yaml: str,
+    *,
+    category: str = "general",
+    description: str = "",
+    created_by: str = "studio",
+) -> None:
+    """Persist a workflow with a caller-supplied workflow_id."""
+    now = _now_iso()
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO studio_workflows
+               (workflow_id, name, description, template_yaml, category,
+                created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (workflow_id, name, description, template_yaml, category, created_by, now, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def update_workflow(
     workflow_id: str,
     *,
