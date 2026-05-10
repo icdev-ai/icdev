@@ -15,9 +15,12 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml as _yaml
+_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_ROOT))
 
-from tools.studio.executors._base import (
+import yaml as _yaml  # noqa: E402
+
+from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, find_artifact,
     docker_available, pull_image, docker_run, docker_aws_flags,
     aws_env, detect_mode,

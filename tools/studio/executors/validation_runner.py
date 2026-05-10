@@ -15,11 +15,12 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from tools.studio.executors._base import (
+_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(_ROOT))
+
+from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, find_artifact,
 )
-
-_ROOT = Path(__file__).resolve().parents[3]
 
 
 def run(run_id: str, project_id: str, canvas: str = "") -> dict:
