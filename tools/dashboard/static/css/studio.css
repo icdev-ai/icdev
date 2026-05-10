@@ -1043,14 +1043,59 @@
   background: var(--studio-bg-card);
 }
 
+/* Chat panel open — 3rd grid column slides in */
+.wf-studio--chat-open {
+  grid-template-columns: 280px 1fr 340px;
+}
+.wf-studio--palette-collapsed.wf-studio--chat-open {
+  grid-template-columns: 40px 1fr 340px;
+}
+
+/* Chat panel — hidden by default, shown when parent has wf-studio--chat-open */
+#wf-chat-panel {
+  display: none;
+  grid-column: 3;
+  grid-row: 2;
+  flex-direction: column;
+  background: var(--studio-bg-elevated, #1e2030);
+  border-left: 1px solid var(--studio-border, #2d3047);
+  overflow: hidden;
+  width: 340px;
+}
+
+.wf-studio--chat-open #wf-chat-panel {
+  display: flex;
+}
+
+/* Run progress bar spans all columns inside toolbar (not a grid row) */
+#wf-run-bar {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 16px;
+  border-top: 1px solid var(--studio-border, #2d3047);
+  background: var(--studio-bg-elevated, #1e2030);
+  font-size: 0.8rem;
+}
+#wf-run-bar.wf-run-bar--visible {
+  display: flex;
+}
+
 .wf-studio__toolbar {
   grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  background: var(--studio-bg-elevated);
+  border-bottom: 1px solid var(--studio-border);
+}
+
+.wf-studio__toolbar-row {
   display: flex;
   align-items: center;
   gap: var(--studio-space-3);
   padding: var(--studio-space-2) var(--studio-space-4);
-  background: var(--studio-bg-elevated);
-  border-bottom: 1px solid var(--studio-border);
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .wf-studio__palette {

@@ -478,15 +478,12 @@
 
   StudioWF.toggleChat = function() {
     _chatOpen = !_chatOpen;
-    const panel = $('wf-chat-panel');
-    if (!panel) return;
-    panel.style.width = _chatOpen ? '340px' : '0';
+    const layout = document.getElementById('wf-studio-layout');
+    if (layout) layout.classList.toggle('wf-studio--chat-open', _chatOpen);
     const btn = $('wf-chat-toggle-btn');
-    if (btn) {
-      btn.style.background = _chatOpen ? 'rgba(99,102,241,0.15)' : '';
-    }
+    if (btn) btn.style.background = _chatOpen ? 'rgba(99,102,241,0.15)' : '';
     if (_chatOpen) {
-      setTimeout(() => { const inp = $('wf-chat-input'); if (inp) inp.focus(); }, 300);
+      setTimeout(() => { const inp = $('wf-chat-input'); if (inp) inp.focus(); }, 50);
     }
   };
 
