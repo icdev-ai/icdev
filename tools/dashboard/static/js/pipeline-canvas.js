@@ -435,15 +435,43 @@ function onDragStart(event) {
   }
 }
 
+function _findFreePosition(x, y, w, h) {
+  const PAD = 15;
+  const occupied = graph.getElements().map(el => {
+    const p = el.position(), s = el.size();
+    return { x: p.x - PAD, y: p.y - PAD, x2: p.x + s.width + PAD, y2: p.y + s.height + PAD };
+  });
+  const overlaps = (cx, cy) => occupied.some(b => cx < b.x2 && cx + w > b.x && cy < b.y2 && cy + h > b.y);
+  if (!overlaps(x, y)) return { x, y };
+  const STEP = Math.max(w, h) + PAD;
+  for (let ring = 1; ring <= 12; ring++) {
+    const candidates = [];
+    for (let i = -ring; i <= ring; i++) {
+      candidates.push({ x: x + i * STEP, y: y - ring * STEP });
+      candidates.push({ x: x + i * STEP, y: y + ring * STEP });
+    }
+    for (let j = -ring + 1; j < ring; j++) {
+      candidates.push({ x: x - ring * STEP, y: y + j * STEP });
+      candidates.push({ x: x + ring * STEP, y: y + j * STEP });
+    }
+    for (const c of candidates) {
+      if (c.x >= 0 && c.y >= 0 && !overlaps(c.x, c.y)) return c;
+    }
+  }
+  return { x: x + Math.random() * 60, y: y + Math.random() * 60 };
+}
+
 function onDrop(event) {
   event.preventDefault();
   const type = event.dataTransfer.getData('text/plain');
   if (!type) return;
   const rect = document.getElementById('pc-canvas-container').getBoundingClientRect();
-  const x = Math.round((event.clientX - rect.left) / 10) * 10;
-  const y = Math.round((event.clientY - rect.top) / 10) * 10;
+  const t = paper.translate(), s = paper.scale();
+  const rawX = Math.round(((event.clientX - rect.left - t.tx) / s.sx) / 10) * 10;
+  const rawY = Math.round(((event.clientY - rect.top  - t.ty) / s.sy) / 10) * 10;
+  const pos = _findFreePosition(rawX, rawY, 110, 60);
   pushUndo();
-  const node = createNode(type, x, y);
+  const node = createNode(type, pos.x, pos.y);
   selectCell(node);
   markDirty();
   updateStatus(`Added: ${getStyle(type).label}`);

@@ -806,7 +806,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (DESIGN_ID) loadParallelGroups();
   render();
   applyVP();
-  if (graph.nodes.length > 0) document.getElementById('drop-hint').style.display = 'none';
+  if (graph.nodes.length > 0) {
+    document.getElementById('drop-hint').style.display = 'none';
+    requestAnimationFrame(() => setTimeout(fitView, 100));
+  }
 });
 
 // ────────────────────────────────────────────────
