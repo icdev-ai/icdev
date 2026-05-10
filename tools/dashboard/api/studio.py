@@ -24,6 +24,7 @@ from tools.studio.workflow_editor import (  # noqa: E402
     get_workflow,
     list_builtin_templates,
     list_workflows,
+    save_workflow,
     update_workflow,
     workflow_to_composer_format,
 )
@@ -140,6 +141,40 @@ def api_workflow_composer_format(workflow_id: str):
     if not data:
         return jsonify({"error": "Workflow not found or invalid YAML"}), 404
     return jsonify(data)
+
+
+@studio_api.route("/workflows/from-canvas", methods=["POST"])
+def create_workflow_from_canvas():
+    """Create a pre-filled workflow draft from a canvas template."""
+    try:
+        from tools.studio.canvas_bridge import get_canvas_workflow_template, list_canvas_ids
+    except ImportError as exc:
+        return jsonify({"error": f"canvas_bridge unavailable: {exc}"}), 503
+
+    import uuid
+    import yaml
+
+    data = request.get_json(silent=True) or {}
+    canvas_id = (data.get("canvas_id") or "").strip().lower()
+    context_label = (data.get("context_label") or "").strip()
+
+    if not canvas_id or canvas_id not in list_canvas_ids():
+        return jsonify({"error": f"Unknown canvas_id: {canvas_id!r}"}), 400
+
+    template = dict(get_canvas_workflow_template(canvas_id))
+    if context_label:
+        base_desc = template.get("description", "")
+        template["description"] = f"{base_desc} — {context_label}".strip(" —")
+
+    wf_id = str(uuid.uuid4())
+    wf_name = f"{canvas_id.upper()} Workflow" + (f" — {context_label}" if context_label else "")
+    yaml_str = yaml.dump(template, default_flow_style=False, allow_unicode=True)
+
+    save_workflow(wf_id, wf_name, yaml_str, category=template.get("category", "general"))
+
+    return jsonify(
+        {"workflow_id": wf_id, "name": wf_name, "redirect": f"/studio/workflows?load={wf_id}"}
+    ), 201
 
 
 # ── Tool Catalog ───────────────────────────────────────────
