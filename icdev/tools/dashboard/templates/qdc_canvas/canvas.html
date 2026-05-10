@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ design.name or 'New Design' }} - Quality Design Canvas{% endblock %}
 {% block extra_css %}<style>
-  body { overflow: hidden; }
+  body { overflow: hidden; height: 100vh; }
   .main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
 </style>{% endblock %}
 {% block content %}
