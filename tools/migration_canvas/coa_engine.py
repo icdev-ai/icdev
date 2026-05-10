@@ -215,7 +215,6 @@ def get_deprecation_status(tech: str) -> dict:
     # Check service mappings for any hints
     key, mapping = _find_mapping(tech)
     if mapping:
-        category = mapping.get("category", "")
         strategy = mapping.get("strategy_7r", "replatform")
         label = mapping.get("label", tech)
         return {
