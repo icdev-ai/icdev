@@ -1086,7 +1086,7 @@ function filterTemplates(q) {
 }
 
 function applyTemplate(tid) {
-  if (!DESIGN_ID) { toast('Save design first'); return; }
+  if (!DESIGN_ID) { saveDesign(function(){ applyTemplate(tid); }); return; }
   if (!confirm('Apply template? This replaces the current canvas.')) return;
   fetch('/ai-ml/api/templates/'+tid+'/apply/'+DESIGN_ID,{method:'POST'})
     .then(function(r){return r.json();}).then(function(d){
@@ -1147,7 +1147,7 @@ function closeSnippets() {
 }
 
 function insertSnippet(sid) {
-  if (!DESIGN_ID) { toast('Save design first'); return; }
+  if (!DESIGN_ID) { saveDesign(function(){ insertSnippet(sid); }); return; }
   fetch('/ai-ml/api/snippets/'+sid+'/insert/'+DESIGN_ID,{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({offset_x:100+Math.random()*120,offset_y:100+Math.random()*80})
