@@ -345,7 +345,7 @@ _ANSIBLE_PLAYBOOK = '''\
 
     - name: Report Lambda status
       ansible.builtin.debug:
-        msg: "Agent orchestrator Lambda: {{ lambda_info.get('configuration', {}).get('State', 'UNKNOWN') }}"
+        msg: "Agent orchestrator Lambda: {{ lambda_info.get('configuration', {{}}).get('State', 'UNKNOWN') }}"
 '''
 
 _VALIDATION_SCRIPT = '''\

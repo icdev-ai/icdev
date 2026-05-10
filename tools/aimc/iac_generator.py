@@ -324,15 +324,15 @@ def main():
         sm = session.client("sagemaker")
         domains = sm.list_domains()["Domains"]
         found = any(d.get("DomainName") == domain for d in domains)
-        ok = check(f"SageMaker domain '{domain}'", found)
+        ok = check(f"SageMaker domain '{{domain}}'", found)
     except Exception as e:
-        ok = check(f"SageMaker domain '{domain}'", False, str(e))
+        ok = check(f"SageMaker domain '{{domain}}'", False, str(e))
     passed += ok; failed += not ok
 
     # ECR repository
     try:
         ecr = session.client("ecr")
-        repos = ecr.describe_repositories(repositoryNames=[f"{env}-aimc-model-images"])["repositories"]
+        repos = ecr.describe_repositories(repositoryNames=[f"{{env}}-aimc-model-images"])["repositories"]
         ok = check("ECR model-images repository", bool(repos))
     except Exception as e:
         ok = check("ECR model-images repository", False, str(e))
@@ -343,7 +343,7 @@ def main():
         s3 = session.client("s3")
         sts = session.client("sts")
         account_id = sts.get_caller_identity()["Account"]
-        bucket = f"{env}-aimc-ml-artifacts-{account_id}"
+        bucket = f"{{env}}-aimc-ml-artifacts-{{account_id}}"
         s3.head_bucket(Bucket=bucket)
         ok = check("S3 ml-artifacts bucket", True, bucket)
     except Exception as e:
@@ -353,7 +353,7 @@ def main():
     # CloudWatch alarm
     try:
         cw = session.client("cloudwatch")
-        alarms = cw.describe_alarms(AlarmNames=[f"{env}-aimc-model-latency-high"])["MetricAlarms"]
+        alarms = cw.describe_alarms(AlarmNames=[f"{{env}}-aimc-model-latency-high"])["MetricAlarms"]
         ok = check("CloudWatch model-latency alarm", bool(alarms))
     except Exception as e:
         ok = check("CloudWatch model-latency alarm", False, str(e))
@@ -362,7 +362,7 @@ def main():
     # SSM parameter
     try:
         ssm = session.client("ssm")
-        ssm.get_parameter(Name=f"/aimc/{env}/model_registry")
+        ssm.get_parameter(Name=f"/aimc/{{env}}/model_registry")
         ok = check("SSM model_registry parameter", True)
     except Exception as e:
         ok = check("SSM model_registry parameter", False, str(e))
