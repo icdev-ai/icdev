@@ -44,6 +44,38 @@ _approval_results: dict[str, str] = {}   # "approved" | "rejected"
 _approval_reasons: dict[str, str] = {}   # free-text reason from approver
 
 
+def _cleanup_orphaned_gates() -> None:
+    """Mark any awaiting_approval runs/steps as failed on startup.
+
+    These are left over from a previous process that died while blocked on
+    ev.wait() — there is no live thread to resume them, so they must be
+    timed-out so the UI and DB reflect reality.
+    """
+    try:
+        conn = get_connection()
+        try:
+            conn.execute(
+                "UPDATE studio_workflow_run_steps "
+                "SET status='timeout', stderr='Approval timed out: server restarted' "
+                "WHERE status='awaiting_approval'"
+            )
+            conn.execute(
+                "UPDATE studio_workflow_runs "
+                "SET status='failed', "
+                "summary_json='{\"error\": \"Orphaned: server restarted while awaiting approval\"}' "
+                "WHERE status='awaiting_approval'"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+
+# Run cleanup once at import time (i.e., when the dashboard starts)
+_cleanup_orphaned_gates()
+
+
 # ── DAG helpers ────────────────────────────────────────────
 
 def _resolve_dag(steps: list) -> list:
@@ -218,9 +250,9 @@ def _notify_approval_gate(run_id: str, step_run_id: str, step_name: str, role: s
         from tools.notifications.adapters.telegram import send  # noqa: PLC0415
         send(
             "Approval Required",
-            f"Workflow run `{run_id}` is paused at **{step_name}** ({role})\n"
-            f"Step ID: `{step_run_id}`\n"
-            f"Open Workflow Studio → Run History → Details to approve or reject.",
+            f"Workflow run <code>{run_id}</code> is paused at <b>{step_name}</b> ({role})\n\n"
+            f"Reply <b>approve</b> or <b>reject [reason]</b> to action this gate.\n\n"
+            f"Step ID: <code>{step_run_id}</code>",
             severity="warning",
         )
     except Exception:
