@@ -14,10 +14,7 @@
 <div class="page-header">
     <h1>Multi-Stream Chat</h1>
     <p class="text-muted">Parallel agent conversations with requirements intake, COA generation, and build pipeline — up to 5 concurrent contexts.</p>
-    <div style="margin-top:0.6rem;padding:0.6rem 1rem;background:var(--bg-card);border:1px solid var(--border-color);border-left:4px solid #3949ab;border-radius:8px;font-size:0.88rem;display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap;color:var(--text-primary);">
-      <span>🚀 <strong>Migrating to cloud?</strong> Get AI-powered migration path analysis, COAs with pros/cons, deprecated code detection, and refactor job dispatch.</span>
-      <a href="/simulate/chat?canvas=cam" style="padding:0.3rem 0.85rem;background:#3949ab;color:#fff;border-radius:6px;font-weight:600;font-size:0.82rem;text-decoration:none;flex-shrink:0;">Open Migration Chat</a>
-    </div>
+    <div style="margin-top:0.6rem;font-size:0.84rem;color:var(--text-muted);">AI detects your intent automatically — ask about migration, network design, security architecture, or requirements and it routes to the right backend.</div>
 </div>
 
 <!-- Stats bar -->
@@ -63,6 +60,7 @@
         <div id="chat-header" class="chat-header">
             <span id="chat-title" class="chat-header__title">Select or create a context</span>
             <span id="chat-model-chip" class="chat-model-chip" style="display:none;"></span>
+            <span id="chat-mode-chip" class="chat-model-chip" style="display:none;cursor:pointer;" title="Click to change canvas mode"></span>
             <div class="chat-header__actions">
                 <span id="chat-status" class="badge chat-header__status"></span>
                 <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle RICOAS sidebar">RICOAS</button>
@@ -110,6 +108,10 @@
             <button id="btn-send" class="chat-send-btn" type="button" disabled title="Send message (Enter)" aria-label="Send">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
+        </div>
+        <div id="chat-slash-bar" style="display:none;padding:0.35rem 0.75rem;font-size:0.82rem;color:var(--text-secondary);background:var(--bg-secondary);border-radius:6px;margin-top:0.35rem;position:relative;">
+            <span id="chat-slash-hint"></span>
+            <div id="chat-slash-dropdown" style="display:none;position:absolute;left:0;bottom:100%;z-index:200;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.4);"></div>
         </div>
         <div class="chat-input-footer">
             <span class="chat-input-shortcut">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</span>
@@ -355,6 +357,20 @@
             </select>
         </div>
         <div class="chat-modal__field">
+            <label class="chat-modal__label">Canvas Mode</label>
+            <select id="new-ctx-canvas" class="chat-modal__select">
+                <option value="intake">Requirements Intake (default)</option>
+                <option value="cam">Migration Analysis (CAM)</option>
+                <option value="ndc">Network Design (NDC)</option>
+                <option value="sdc">Security Design (SDC)</option>
+                <option value="eda">Data Architecture (EDA)</option>
+                <option value="ddc">Database Design (DDC)</option>
+                <option value="pdc">Process Design (PDC)</option>
+                <option value="odc">Observability Design (ODC)</option>
+                <option value="idc">Infrastructure Design (IDC)</option>
+            </select>
+        </div>
+        <div class="chat-modal__field" id="intake-checkbox-row">
             <label class="chat-modal__label chat-modal__label--inline">
                 <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox" checked>
                 Link to Requirements Intake (RICOAS)
@@ -380,7 +396,8 @@
         wizardClassification: {{ (wizard_classification or '')|tojson if wizard_classification is defined else '""' }},
         wizardFrameworks: {{ (wizard_frameworks or '')|tojson if wizard_frameworks is defined else '""' }},
         customRoleName: {{ (wizard_custom_role_name or '')|tojson if wizard_custom_role_name is defined else '""' }},
-        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }}
+        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }},
+        wizardCanvas: {{ (wizard_canvas or '')|tojson if wizard_canvas is defined else '""' }}
     };
 </script>
 {% endblock %}

@@ -5,6 +5,7 @@ Provides endpoints for creating/managing chat contexts, sending messages,
 mid-stream intervention, and dirty-tracking state queries.
 """
 
+import json
 import sys
 from pathlib import Path
 
@@ -37,11 +38,48 @@ except ImportError:
 chat_api = Blueprint("chat_api", __name__, url_prefix="/api/chat")
 
 
+_CANVAS_MODES = {"intake", "cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
+
+
 def _require_chat():
     """Check that chat manager is available."""
     if not _HAS_CHAT or chat_manager is None:
         return jsonify({"error": "Chat manager not available"}), 503
     return None
+
+
+def _get_db():
+    try:
+        from tools.dashboard.config import DB_PATH
+        from tools.db.storage import get_connection
+        return get_connection(db_path=str(DB_PATH))
+    except Exception:
+        return None
+
+
+def _read_canvas_type(context_id: str) -> str:
+    """Read canvas_type from context_config JSON in DB. Defaults to 'intake'."""
+    try:
+        conn = _get_db()
+        if conn is None:
+            return "intake"
+        row = conn.execute(
+            "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            cfg = json.loads(row[0])
+            return cfg.get("canvas_type", "intake")
+    except Exception:
+        pass
+    return "intake"
+
+
+def _inject_canvas_type(ctx: dict) -> dict:
+    """Add canvas_type to a context dict."""
+    ctx_id = ctx.get("context_id") or ctx.get("id", "")
+    ctx["canvas_type"] = _read_canvas_type(ctx_id)
+    return ctx
 
 
 # ---------------------------------------------------------------------------
@@ -97,6 +135,7 @@ def list_contexts():
         tenant_id=tenant_id,
         include_closed=include_closed,
     )
+    contexts = [_inject_canvas_type(c) for c in contexts]
     return jsonify({"contexts": contexts, "total": len(contexts)})
 
 
@@ -111,7 +150,7 @@ def get_context(context_id):
     if not ctx:
         return jsonify({"error": "Context not found"}), 404
 
-    # Include recent messages
+    ctx = _inject_canvas_type(ctx)
     messages = chat_manager.get_messages(context_id, since_turn=0, limit=50)
     ctx["messages"] = messages
     return jsonify(ctx)
@@ -208,6 +247,47 @@ def link_intake(context_id):
     if "error" in result:
         return jsonify(result), 404
     return jsonify(result)
+
+
+@chat_api.route("/<context_id>/mode", methods=["PATCH"])
+def update_context_mode(context_id):
+    """Set the canvas mode for a chat context.
+
+    Body: {canvas_type: "intake"|"cam"|"ndc"|"sdc"|"eda"|"ddc"|"pdc"|"bdc"|"odc"|"idc"}
+    Persists to context_config JSON column in chat_contexts.
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    canvas_type = (data.get("canvas_type") or "intake").strip().lower()
+    if canvas_type not in _CANVAS_MODES:
+        return jsonify({"error": f"Invalid canvas_type '{canvas_type}'. Must be one of: {sorted(_CANVAS_MODES)}"}), 400
+
+    conn = _get_db()
+    if conn is None:
+        return jsonify({"error": "Database unavailable"}), 503
+    try:
+        row = conn.execute(
+            "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
+        ).fetchone()
+        if row is None:
+            conn.close()
+            return jsonify({"error": "Context not found"}), 404
+        existing = {}
+        if row[0]:
+            try:
+                existing = json.loads(row[0])
+            except Exception:
+                pass
+        existing["canvas_type"] = canvas_type
+        conn.execute(
+            "UPDATE chat_contexts SET context_config = ?, updated_at = datetime('now') WHERE id = ?",
+            (json.dumps(existing), context_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({"context_id": context_id, "canvas_type": canvas_type})
 
 
 @chat_api.route("/<context_id>/state", methods=["GET"])

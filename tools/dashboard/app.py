@@ -2468,6 +2468,10 @@ def create_app() -> Flask:
         frameworks = flask_request.args.get("frameworks", "")
         custom_role_name = flask_request.args.get("custom_role_name", "")
         custom_role_desc = flask_request.args.get("custom_role_desc", "")
+        # ?canvas= deep link — pre-selects canvas mode (forwarded from /simulate/chat redirect)
+        canvas = flask_request.args.get("canvas", "") or flask_request.args.get("canvas_type", "")
+        _allowed = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
+        wizard_canvas = canvas if canvas in _allowed else ""
         return render_template(
             "chat.html",
             session_id=None,
@@ -2478,6 +2482,7 @@ def create_app() -> Flask:
             wizard_frameworks=frameworks,
             wizard_custom_role_name=custom_role_name,
             wizard_custom_role_desc=custom_role_desc,
+            wizard_canvas=wizard_canvas,
         )
 
     @app.route("/chat/<session_id>")
@@ -7831,6 +7836,25 @@ def create_app() -> Flask:
     # ================================================================
     # Phase 69: Chat Personas API (D-CU-3)
     # ================================================================
+
+    @app.route("/api/chat/route-intent", methods=["POST"])
+    def api_chat_route_intent():
+        """Classify a user message to a canvas mode for intent-based routing.
+
+        Body: {message: str, context_id: str (optional)}
+        Returns: {mode, canvas_type, confidence, reason}
+        """
+        data = flask_request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        if not message:
+            return jsonify({"mode": "intake", "canvas_type": None, "confidence": 1.0, "reason": "empty message"})
+        try:
+            from tools.chat_router.intent_classifier import classify
+            result = classify(message)
+            return jsonify(result)
+        except Exception as exc:
+            logger.warning("intent_classifier error: %s", exc)
+            return jsonify({"mode": "intake", "canvas_type": None, "confidence": 0.5, "reason": "classifier unavailable"})
 
     @app.route("/api/chat/personas")
     def api_chat_personas():
