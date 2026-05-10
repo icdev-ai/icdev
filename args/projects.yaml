@@ -3321,30 +3321,56 @@ projects:
   task_prefix: wex-
   default_open: true
   briefs:
-  - 'ep1: studio_workflow_runs + studio_workflow_run_steps tables in studio/init_db.py'
-  - 'ep2: tools/studio/workflow_runner.py — per-run queue, SSE stream, DB persistence'
-  - 'ep3: API routes — POST /run, GET /runs/{id}/stream, GET /runs, GET /runs/{id}/steps, POST /generate-code'
-  - 'ep4: tools/studio/workflow_chat.py — LLMRouter + tool catalog system prompt → YAML generation'
-  - 'ep5: API route — POST /api/studio/chat/generate-workflow'
-  - 'ep6: UI — Run btn, Export as Script, chat panel, progress bar, node status colors, output drawer, run history'
+  - 'ep1: studio_workflow_runs + studio_workflow_run_steps tables in studio/init_db.py [DONE]'
+  - 'ep2: tools/studio/workflow_runner.py — per-run queue, SSE stream, DB persistence [DONE]'
+  - 'ep3: API routes — POST /run, GET /runs/{id}/stream, GET /runs, GET /runs/{id}/steps, POST /generate-code [DONE]'
+  - 'ep4: tools/studio/workflow_chat.py — LLMRouter + tool catalog system prompt → YAML generation [DONE]'
+  - 'ep5: API route — POST /api/studio/chat/generate-workflow [DONE]'
+  - 'ep6: UI — Run btn, Export as Script, chat panel, progress bar, node status colors, output drawer, run history [DONE]'
+  - 'ep7: Canvas Bridge — canvas_bridge.py + POST /from-canvas + workflow_trigger_btn.html partial'
+  - 'ep8: Canvas Wiring — add trigger button to all 12 canvases (4 parallel groups)'
+  - 'ep9: Template Library — seed 18 YAMLs + GET /templates route + UI card grid'
+  - 'ep10: Saved Workflows + Run History tab — full JS rendering with Edit/Run/Delete + step detail modal'
+  - 'ep11: Manifest + companion sync + Playwright E2E V&V'
   epics:
   - key: ep1
     title: DB — studio_workflow_runs + studio_workflow_run_steps tables
     priority: critical
+    status: done
   - key: ep2
     title: Engine — workflow_runner.py (per-run SSE + DB)
     priority: critical
+    status: done
   - key: ep3
     title: API — run + stream + history + generate-code endpoints
     priority: critical
+    status: done
   - key: ep4
     title: Chat Engine — workflow_chat.py (Ollama YAML generation)
     priority: critical
+    status: done
   - key: ep5
     title: Chat API — POST /api/studio/chat/generate-workflow
     priority: high
+    status: done
   - key: ep6
     title: UI — Run button + SSE client + chat panel + node status + output drawer
+    priority: critical
+    status: done
+  - key: ep7
+    title: Canvas Bridge — canvas_bridge.py + from-canvas API + trigger partial
+    priority: critical
+  - key: ep8
+    title: Canvas Wiring — workflow trigger button added to all 12 canvases
+    priority: high
+  - key: ep9
+    title: Template Library — 18 YAML seeds + API route + UI card grid
+    priority: high
+  - key: ep10
+    title: Saved Workflows + Run History — complete JS tab rendering
+    priority: high
+  - key: ep11
+    title: Manifest + companion sync + Playwright E2E V&V
     priority: critical
 
 - key: ai-trace
