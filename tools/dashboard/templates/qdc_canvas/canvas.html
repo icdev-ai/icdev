@@ -136,6 +136,9 @@
                 style="padding:4px 12px;background:#0f3460;color:#4caf50;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;cursor:pointer;">UQS</button>
         <button onclick="showGates()" title="Security gates"
                 style="padding:4px 12px;background:#0f3460;color:#e94560;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;cursor:pointer;">Gates</button>
+        {% set wf_canvas_id = "qdc" %}
+        {% set wf_context_label = design.name if design else '' %}
+        {% include 'includes/workflow_trigger_btn.html' %}
         <a href="/quality/" title="Back to designs"
            style="padding:4px 12px;background:#16213e;color:#7a8cb0;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;text-decoration:none;display:flex;align-items:center;">Back</a>
       </div>
