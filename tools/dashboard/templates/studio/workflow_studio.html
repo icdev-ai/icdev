@@ -257,7 +257,10 @@
   <div class="studio-tab-panel" id="panel-runs" style="display:none;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
       <span id="wf-runs-count" style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);"></span>
-      <div style="display:flex;gap:8px;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button id="wf-delete-selected-btn" class="studio-btn studio-btn--sm"
+                style="display:none;background:#7f1d1d;border-color:#991b1b;color:#fca5a5;"
+                onclick="StudioWF.deleteSelectedRuns()">&#128465; Delete Selected (<span id="wf-selected-count">0</span>)</button>
         <button class="studio-btn studio-btn--secondary studio-btn--sm"
                 onclick="StudioWF.loadRunHistory()">&#8635; Refresh</button>
         <button class="studio-btn studio-btn--sm"
@@ -269,6 +272,11 @@
       <table class="studio-table">
         <thead>
           <tr>
+            <th style="width:32px;text-align:center;">
+              <input type="checkbox" id="wf-runs-select-all" title="Select all"
+                     style="cursor:pointer;accent-color:var(--studio-accent,#6366f1);"
+                     onchange="StudioWF.toggleSelectAllRuns(this.checked)">
+            </th>
             <th>Workflow</th>
             <th>Status</th>
             <th>Steps</th>
@@ -280,7 +288,7 @@
         </thead>
         <tbody id="wf-runs-body">
           <tr>
-            <td colspan="6" class="studio-text-muted" style="text-align:center; padding:32px;">
+            <td colspan="8" class="studio-text-muted" style="text-align:center; padding:32px;">
               No workflow runs yet
             </td>
           </tr>

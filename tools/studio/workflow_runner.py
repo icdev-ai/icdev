@@ -211,6 +211,8 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
         template_yaml = wf.get("template_yaml", "")
         data = yaml.safe_load(template_yaml)
         steps = data.get("steps", [])
+        if project_id == "default" and data.get("project_id"):
+            project_id = data["project_id"]
 
         if not steps:
             _update_run_status(run_id, "failed", json.dumps({"error": "No steps in workflow"}))
