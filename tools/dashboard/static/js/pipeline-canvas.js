@@ -597,6 +597,39 @@ function _showSdcToast(sdc, source) {
   setTimeout(() => { if (toast.parentElement) toast.remove(); }, 8000);
 }
 
+function _resolveNodeOverlaps(g, padding) {
+  padding = padding == null ? 20 : padding;
+  const els = g.getElements();
+  if (els.length < 2) return;
+  for (let iter = 0; iter < 80; iter++) {
+    let moved = false;
+    for (let i = 0; i < els.length; i++) {
+      for (let j = i + 1; j < els.length; j++) {
+        const a = els[i], b = els[j];
+        const ap = a.position(), as_ = a.size();
+        const bp = b.position(), bs = b.size();
+        const p2 = padding / 2;
+        const ax1 = ap.x - p2, ay1 = ap.y - p2, ax2 = ap.x + as_.width + p2, ay2 = ap.y + as_.height + p2;
+        const bx1 = bp.x - p2, by1 = bp.y - p2, bx2 = bp.x + bs.width + p2, by2 = bp.y + bs.height + p2;
+        if (ax2 <= bx1 || bx2 <= ax1 || ay2 <= by1 || by2 <= ay1) continue;
+        let dx = (bx1 + bx2) / 2 - (ax1 + ax2) / 2;
+        let dy = (by1 + by2) / 2 - (ay1 + ay2) / 2;
+        if (dx === 0 && dy === 0) { dx = 1; dy = 0; }
+        const ovX = (ax2 - ax1) / 2 + (bx2 - bx1) / 2 - Math.abs(dx);
+        const ovY = (ay2 - ay1) / 2 + (by2 - by1) / 2 - Math.abs(dy);
+        if (ovX <= 0 || ovY <= 0) continue;
+        let px = 0, py = 0;
+        if (ovX <= ovY) { px = (ovX / 2 + 0.5) * (dx >= 0 ? 1 : -1); }
+        else            { py = (ovY / 2 + 0.5) * (dy >= 0 ? 1 : -1); }
+        a.position(ap.x - px, ap.y - py);
+        b.position(bp.x + px, bp.y + py);
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
 function loadGraph(graphJson) {
   const data = typeof graphJson === 'string' ? JSON.parse(graphJson) : graphJson;
   graph.clear();
@@ -621,6 +654,7 @@ function loadGraph(graphJson) {
   if (dropped > 0) {
     console.warn('loadGraph: dropped ' + dropped + ' edge(s) referencing missing nodes');
   }
+  _resolveNodeOverlaps(graph, 20);
 }
 
 // ── Zoom ────────────────────────────────────────────────────────────────────

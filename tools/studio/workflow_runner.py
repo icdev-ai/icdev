@@ -86,7 +86,7 @@ def _resolve_dag(steps: list) -> list:
     return list(sorter.static_order())
 
 
-def _build_command(step: dict, project_id: str) -> list:
+def _build_command(step: dict, project_id: str, run_id: str = "") -> list:
     tool_path = step.get("tool", "")
     if not tool_path:
         return []
@@ -94,6 +94,8 @@ def _build_command(step: dict, project_id: str) -> list:
     step_args = dict(step.get("args", {}) or {})
     if step.get("inject_project_id", True):
         cmd.extend(["--project-id", project_id])
+    if run_id and step.get("inject_run_id", True):
+        cmd.extend(["--run-id", run_id])
     if step.get("json_output", True):
         cmd.append("--json")
     for key, value in step_args.items():
@@ -106,7 +108,7 @@ def _build_command(step: dict, project_id: str) -> list:
 
 # ── Step execution ─────────────────────────────────────────
 
-def _exec_step(step: dict, project_id: str) -> dict:
+def _exec_step(step: dict, project_id: str, run_id: str = "") -> dict:
     result: dict = {
         "step_id": step["id"],
         "step_name": step.get("name", step["id"]),
@@ -124,7 +126,7 @@ def _exec_step(step: dict, project_id: str) -> dict:
         result["stderr"] = "Awaiting human approval — use the workflow Details modal to approve or reject"
         return result
 
-    cmd = _build_command(step, project_id)
+    cmd = _build_command(step, project_id, run_id)
     if not cmd:
         result["status"] = "skipped"
         result["stderr"] = "No tool path configured"
@@ -340,7 +342,7 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
             step_run_id = _create_step_record(
                 run_id, step["id"], step.get("name", step["id"]), step.get("tool", "")
             )
-            result = _exec_step(step, project_id)
+            result = _exec_step(step, project_id, run_id)
 
             if result["status"] == "awaiting_approval":
                 # Persist the gate state and pause the run

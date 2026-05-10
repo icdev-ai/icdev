@@ -1178,6 +1178,7 @@ def build_report(result: dict) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Data IaC Generator")
     parser.add_argument("--project-id", default="default")
+    parser.add_argument("--run-id", default="")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
