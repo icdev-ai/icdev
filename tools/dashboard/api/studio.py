@@ -157,6 +157,7 @@ def create_workflow_from_canvas():
     data = request.get_json(silent=True) or {}
     canvas_id = (data.get("canvas_id") or "").strip().lower()
     context_label = (data.get("context_label") or "").strip()
+    design_id = (data.get("design_id") or "").strip()
 
     if not canvas_id or canvas_id not in list_canvas_ids():
         return jsonify({"error": f"Unknown canvas_id: {canvas_id!r}"}), 400
@@ -165,6 +166,8 @@ def create_workflow_from_canvas():
     if context_label:
         base_desc = template.get("description", "")
         template["description"] = f"{base_desc} — {context_label}".strip(" —")
+    if design_id:
+        template["project_id"] = design_id
 
     wf_id = str(uuid.uuid4())
     wf_name = f"{canvas_id.upper()} Workflow" + (f" — {context_label}" if context_label else "")

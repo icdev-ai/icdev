@@ -393,15 +393,18 @@
   StudioWF.loadRunHistory = async function() {
     const tbody = $('wf-runs-body');
     const countEl = $('wf-runs-count');
+    const masterCb = document.getElementById('wf-runs-select-all');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;"><div class="studio-spinner"></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><div class="studio-spinner"></div></td></tr>';
+    if (masterCb) masterCb.checked = false;
+    StudioWF._updateRunSelectionUI();
     try {
       const resp = await fetch('/api/studio/workflows/runs?limit=100');
       const data = await resp.json();
       const runs = data.runs || [];
       if (countEl) countEl.textContent = runs.length ? `${runs.length} run${runs.length !== 1 ? 's' : ''}` : '';
       if (!runs.length) {
-        tbody.innerHTML = '<tr><td colspan="7" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
         return;
       }
       tbody.innerHTML = runs.map(run => {
@@ -411,6 +414,11 @@
         const statusBadge = _runStatusBadge(effectiveStatus);
         const rid = _esc(run.run_id);
         return `<tr id="run-row-${rid}">
+          <td style="text-align:center;width:32px;">
+            <input type="checkbox" class="wf-run-cb" data-run-id="${rid}"
+                   style="cursor:pointer;accent-color:var(--studio-accent,#6366f1);"
+                   onchange="StudioWF._updateRunSelectionUI()">
+          </td>
           <td style="font-weight:500;">${_esc(run.workflow_name || run.workflow_id)}</td>
           <td>${statusBadge}</td>
           <td style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);">
@@ -433,8 +441,28 @@
         </tr>`;
       }).join('');
     } catch (e) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#ef4444;">Failed to load run history</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:#ef4444;">Failed to load run history</td></tr>';
     }
+  };
+
+  StudioWF._updateRunSelectionUI = function() {
+    const checkboxes = document.querySelectorAll('.wf-run-cb');
+    const checked = document.querySelectorAll('.wf-run-cb:checked');
+    const masterCb = document.getElementById('wf-runs-select-all');
+    const btn = document.getElementById('wf-delete-selected-btn');
+    const countSpan = document.getElementById('wf-selected-count');
+    const n = checked.length;
+    if (masterCb) {
+      masterCb.indeterminate = n > 0 && n < checkboxes.length;
+      masterCb.checked = checkboxes.length > 0 && n === checkboxes.length;
+    }
+    if (btn) btn.style.display = n > 0 ? '' : 'none';
+    if (countSpan) countSpan.textContent = n;
+  };
+
+  StudioWF.toggleSelectAllRuns = function(checked) {
+    document.querySelectorAll('.wf-run-cb').forEach(cb => { cb.checked = checked; });
+    StudioWF._updateRunSelectionUI();
   };
 
   StudioWF.deleteRun = async function(runId) {
@@ -449,14 +477,46 @@
         const remaining = tbody ? tbody.querySelectorAll('tr[id^="run-row-"]').length : 0;
         if (countEl) countEl.textContent = remaining ? `${remaining} run${remaining !== 1 ? 's' : ''}` : '';
         if (!remaining && tbody) {
-          tbody.innerHTML = '<tr><td colspan="7" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="8" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
         }
+        StudioWF._updateRunSelectionUI();
       } else {
         StudioWF._toast('Failed to delete run', 'error');
       }
     } catch (e) {
       StudioWF._toast('Network error deleting run', 'error');
     }
+  };
+
+  StudioWF.deleteSelectedRuns = async function() {
+    const checked = document.querySelectorAll('.wf-run-cb:checked');
+    const ids = Array.from(checked).map(cb => cb.dataset.runId);
+    if (!ids.length) return;
+    if (!confirm(`Delete ${ids.length} selected run${ids.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    let deleted = 0, failed = 0;
+    for (const id of ids) {
+      try {
+        const resp = await fetch('/api/studio/workflows/runs/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (resp.ok) {
+          const row = document.getElementById('run-row-' + id);
+          if (row) row.remove();
+          deleted++;
+        } else {
+          failed++;
+        }
+      } catch (e) {
+        failed++;
+      }
+    }
+    const tbody = $('wf-runs-body');
+    const countEl = $('wf-runs-count');
+    const remaining = tbody ? tbody.querySelectorAll('tr[id^="run-row-"]').length : 0;
+    if (countEl) countEl.textContent = remaining ? `${remaining} run${remaining !== 1 ? 's' : ''}` : '';
+    if (!remaining && tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
+    }
+    StudioWF._updateRunSelectionUI();
+    if (deleted) StudioWF._toast(`Deleted ${deleted} run${deleted !== 1 ? 's' : ''}${failed ? `, ${failed} failed` : ''}`, failed ? 'error' : 'success');
   };
 
   StudioWF.deleteAllRuns = async function() {
