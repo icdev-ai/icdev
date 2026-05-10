@@ -19,6 +19,11 @@ Slash commands dispatched here:
   /diff         → Diff current topology vs baseline / previous REFINE state
   /spec         → Structured spec from REFINE session (delegates to spec_generator)
   /audit        → AUDIT mode: scan topology → surface findings → add to POAM
+  /refactor     → Generate Python snippets to convert Java/legacy modules (CAM)
+  /components   → Map AWS components to application features (CAM)
+  /deprecated   → Identify EOL/legacy libraries to replace (CAM)
+  /status       → Simulate migration readiness DRYRUN check (CAM)
+  /coa          → Cloud Optimization Advice for a topic or component (CAM)
 
 session.canvas_type is always auto-injected from the session DB record; callers
 only need to pass session_id.
@@ -537,6 +542,216 @@ def _handle_analyze(session_id: str, canvas_type: str, args_text: str) -> dict:
         return {"reply": f"[Analyze error: {exc}]", "mode": "error"}
 
 
+def _llm_call(system_prompt: str, user_content: str) -> str | None:
+    """Invoke LLM via router. Returns text or None on failure."""
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_content},
+            ],
+            model="haiku",
+        )
+        resp = router.invoke("chat_response", req)
+        return (resp.content or "").strip() if resp else None
+    except Exception as exc:
+        logger.warning("LLM call failed: %s", exc)
+        return None
+
+
+def _handle_refactor(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Generate Python conversion snippets for a Java/legacy module."""
+    module = args_text.strip()
+    if not module:
+        return {
+            "reply": (
+                "**Usage:** `/refactor <module>`\n\n"
+                "Examples:\n"
+                "- `/refactor AuthService` — Java auth service → Python equivalent\n"
+                "- `/refactor DataAccessLayer` — JDBC/Hibernate → SQLAlchemy\n"
+                "- `/refactor CacheManager` — EhCache → Redis/ElastiCache client\n\n"
+                "Provide a module or class name and I'll generate idiomatic Python "
+                "conversion snippets with migration notes."
+            ),
+            "mode": "refactor",
+        }
+
+    system = (
+        "You are a senior migration architect specializing in Java-to-Python modernization for AWS cloud deployments. "
+        "Produce concise, idiomatic Python 3.12 code snippets for the requested module conversion. "
+        "Include: (1) equivalent Python class/function, (2) key library mappings (e.g. JDBC→SQLAlchemy, "
+        "Spring→FastAPI, EhCache→redis-py), (3) gotchas or behavioral differences to watch. "
+        "Format with markdown code fences."
+    )
+    user = f"Generate Python conversion snippets for the Java/legacy module: **{module}**"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            f"**[REFACTOR — {module}]** LLM unavailable.\n\n"
+            "Common Java→Python mappings:\n"
+            "- `Spring @Service` → `class MyService:` with dependency injection via constructor\n"
+            "- `JDBC/Hibernate` → `SQLAlchemy` ORM or `asyncpg` for async\n"
+            "- `EhCache` → `redis-py` with `@lru_cache` for in-process caching\n"
+            "- `Log4j` → `logging` stdlib + `structlog` for structured output\n"
+            "- `JUnit` → `pytest` with fixtures"
+        )
+    return {"reply": f"**[REFACTOR — {module}]**\n\n{reply}", "mode": "refactor"}
+
+
+def _handle_components(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """List AWS components mapped to application functions/features."""
+    feature = args_text.strip()
+    if not feature:
+        return {
+            "reply": (
+                "**Usage:** `/components <feature>`\n\n"
+                "Examples:\n"
+                "- `/components authentication` — IAM, Cognito, WAF mappings\n"
+                "- `/components caching` — ElastiCache, DAX, CloudFront\n"
+                "- `/components inference` — Bedrock, SageMaker, Lambda\n"
+                "- `/components storage` — S3, EFS, DynamoDB, RDS\n\n"
+                "Describe a feature or function and I'll map it to the optimal AWS component stack."
+            ),
+            "mode": "components",
+        }
+
+    system = (
+        "You are an AWS solutions architect. For the requested feature, produce a structured table "
+        "mapping application functions to AWS components. Include: Component, Purpose, Tier "
+        "(Compute/Storage/Network/Security/AI-ML), and Migration Notes. "
+        "Focus on GovCloud-compatible services. Use markdown tables."
+    )
+    user = f"Map AWS components for the feature: **{feature}**"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            f"**[COMPONENTS — {feature}]** LLM unavailable. Core AWS component patterns:\n\n"
+            "| Component | Purpose | Tier |\n|-----------|---------|------|\n"
+            "| EKS | Container orchestration | Compute |\n"
+            "| ElastiCache | Distributed caching | Storage |\n"
+            "| Bedrock | Foundation model inference | AI/ML |\n"
+            "| RDS Aurora | Relational DB | Storage |\n"
+            "| API Gateway | REST/WebSocket routing | Network |\n"
+            "| WAF + Shield | DDoS / OWASP protection | Security |"
+        )
+    return {"reply": f"**[COMPONENTS — {feature}]**\n\n{reply}", "mode": "components"}
+
+
+def _handle_deprecated(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Identify legacy/deprecated libraries in a codebase to replace."""
+    codebase = args_text.strip() or "the current codebase"
+    system = (
+        "You are a modernization engineer performing a dependency audit. "
+        "For the provided codebase or tech stack, identify: (1) EOL/deprecated libraries, "
+        "(2) security-risky packages (known CVEs or unmaintained), "
+        "(3) recommended replacements with migration effort estimate (Low/Medium/High). "
+        "Format as a markdown table: Library | Status | Replacement | Effort | Notes."
+    )
+    user = f"Identify deprecated or legacy libraries in: **{codebase}**"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            f"**[DEPRECATED — {codebase}]** LLM unavailable. Common deprecated patterns:\n\n"
+            "| Library | Status | Replacement | Effort |\n|---------|--------|-------------|--------|\n"
+            "| Log4j 1.x | EOL + CVEs | Log4j 2.x / Logback | Low |\n"
+            "| Spring 4.x | EOL | Spring Boot 3.x | Medium |\n"
+            "| Java 8 / 11 | Nearing EOL | Java 21 LTS | Medium |\n"
+            "| EhCache 2.x | EOL | Caffeine / Redis | Low |\n"
+            "| Struts 2 | CVE history | Spring MVC / Quarkus | High |"
+        )
+    return {"reply": f"**[DEPRECATED — {codebase}]**\n\n{reply}", "mode": "deprecated"}
+
+
+def _handle_status(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Simulate migration readiness checks (DRYRUN) for a component."""
+    component = args_text.strip()
+    if not component:
+        return {
+            "reply": (
+                "**Usage:** `/status <component>`\n\n"
+                "Examples:\n"
+                "- `/status AuthService` — readiness check for auth module\n"
+                "- `/status database` — DB migration readiness\n"
+                "- `/status all` — full system migration readiness scan\n\n"
+                "Runs a simulated DRYRUN migration readiness check against the named component."
+            ),
+            "mode": "status",
+        }
+
+    system = (
+        "You are a migration readiness assessor running a DRYRUN check. "
+        "Produce a structured readiness report for the named component. Include: "
+        "(1) Readiness Score 0–100, (2) Go/No-Go verdict, (3) Blocker items (must fix before migration), "
+        "(4) Warning items (fix after migration), (5) Passing checks. "
+        "Format with clear headers and color-coded status (✅ Pass / ⚠️ Warn / ❌ Block)."
+        " Label the report clearly as DRYRUN — SIMULATED."
+    )
+    user = f"Run a DRYRUN migration readiness check for: **{component}**"
+    reply = _llm_call(system, user)
+    if not reply:
+        import random
+        score = random.randint(55, 85)
+        reply = (
+            f"> ⚠️ **DRYRUN — SIMULATED** (LLM unavailable)\n\n"
+            f"**Readiness Score:** {score}/100 — {'🟡 Conditional Go' if score < 75 else '🟢 Go'}\n\n"
+            "✅ Source code compiles without errors\n"
+            "✅ Unit test coverage ≥ 60%\n"
+            "⚠️ Integration tests not yet migrated\n"
+            "⚠️ Secrets still in environment variables (move to Secrets Manager)\n"
+            "❌ Database schema migration not validated in target environment\n\n"
+            "*Run `/analyze <repo-url>` to enrich this check with actual source data.*"
+        )
+    return {"reply": f"**[STATUS — DRYRUN: {component}]**\n\n{reply}", "mode": "status"}
+
+
+def _handle_coa(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Get Cloud Optimization Advice for a specific topic or component."""
+    topic = args_text.strip()
+    if not topic:
+        return {
+            "reply": (
+                "**Usage:** `/coa <topic>`\n\n"
+                "Examples:\n"
+                "- `/coa latency` — reduce API response time\n"
+                "- `/coa cost` — optimize AWS spend\n"
+                "- `/coa scaling` — auto-scaling and load distribution\n"
+                "- `/coa cold-start` — Lambda/EKS startup optimization\n"
+                "- `/coa database` — RDS/DynamoDB performance tuning\n\n"
+                "Describe a performance or cost concern and I'll provide specific, "
+                "actionable Cloud Optimization Advice."
+            ),
+            "mode": "coa",
+        }
+
+    system = (
+        "You are a cloud performance and cost optimization expert specializing in AWS GovCloud. "
+        "For the given topic, provide specific Cloud Optimization Advice (COA). Structure as: "
+        "(1) Problem Analysis — root causes to investigate, "
+        "(2) Quick Wins — changes achievable in < 1 sprint, "
+        "(3) Strategic Changes — architectural improvements for long-term gain, "
+        "(4) Expected Impact — latency reduction %, cost savings estimate, or throughput gain. "
+        "Be specific: name AWS services, configuration flags, and numeric thresholds."
+    )
+    user = f"Provide Cloud Optimization Advice for: **{topic}**"
+    reply = _llm_call(system, user)
+    if not reply:
+        reply = (
+            f"**[COA — {topic}]** LLM unavailable. General optimization patterns:\n\n"
+            "**Quick Wins:**\n"
+            "- Enable ElastiCache in front of RDS for read-heavy queries (↓ latency ~60–80%)\n"
+            "- Right-size EC2/EKS nodes with Compute Optimizer recommendations\n"
+            "- Add CloudFront CDN for static assets and API responses\n\n"
+            "**Strategic Changes:**\n"
+            "- Migrate hot-path endpoints to Lambda@Edge for sub-10ms global response\n"
+            "- Adopt DynamoDB for session/state storage instead of RDS\n"
+            "- Enable Graviton3 instances for 20–40% cost reduction on compute"
+        )
+    return {"reply": f"**[COA — {topic}]**\n\n{reply}", "mode": "coa"}
+
+
 _COMMAND_HANDLERS: dict[str, Any] = {
     "/ppsm": _handle_ppsm,
     "/api-surface": _handle_ppsm,
@@ -551,6 +766,11 @@ _COMMAND_HANDLERS: dict[str, Any] = {
     "/spec": _handle_spec,
     "/audit": _handle_audit,
     "/analyze": _handle_analyze,
+    "/refactor": _handle_refactor,
+    "/components": _handle_components,
+    "/deprecated": _handle_deprecated,
+    "/status": _handle_status,
+    "/coa": _handle_coa,
 }
 
 
