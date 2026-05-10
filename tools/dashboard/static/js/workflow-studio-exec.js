@@ -199,6 +199,9 @@
         const pct = _runStepCount > 0 ? Math.round((_runStepDone / _runStepCount) * 100) : 0;
         if (progress) progress.style.width = pct + '%';
         if (fraction) fraction.textContent = `${_runStepDone} / ${_runStepCount}`;
+        if (label && event.status === 'skipped') {
+          label.textContent = `${event.step_name || event.step_id}: skipped — ${event.error || 'no tool path'}`;
+        }
 
         // Store output for drawer on click
         const nodeEl = _findNodeEl(event.step_id);
@@ -217,9 +220,19 @@
         if (bar) setTimeout(() => { if (bar) bar.style.display = 'none'; }, 2000);
         const s = event.summary || {};
         const overall = event.status;
-        const msg = `Run ${overall}: ${s.success || 0} passed, ${s.failed || 0} failed, ${s.skipped || 0} skipped`;
-        StudioWF._toast(msg, overall === 'success' ? 'success' : 'error');
-        if (progress) progress.style.background = overall === 'success' ? '#22c55e' : '#ef4444';
+        let toastType, barColor, msg;
+        if (overall === 'success') {
+          toastType = 'success'; barColor = '#22c55e';
+          msg = `Run complete: ${s.success || 0} passed, ${s.failed || 0} failed, ${s.skipped || 0} skipped`;
+        } else if (overall === 'warning') {
+          toastType = 'warning'; barColor = '#f59e0b';
+          msg = `All ${s.skipped || 0} steps skipped — tool scripts not found. Click a node to see details, or configure tool paths.`;
+        } else {
+          toastType = 'error'; barColor = '#ef4444';
+          msg = `Run failed: ${s.success || 0} passed, ${s.failed || 0} failed, ${s.skipped || 0} skipped`;
+        }
+        StudioWF._toast(msg, toastType);
+        if (progress) progress.style.background = barColor;
       }
 
       if (type === 'error') {
@@ -464,6 +477,7 @@
   function _runStatusBadge(status) {
     const map = {
       success:   ['#22c55e', '✓ Success'],
+      warning:   ['#f59e0b', '⚠ All Skipped'],
       failed:    ['#ef4444', '✗ Failed'],
       running:   ['#6366f1', '◉ Running'],
       pending:   ['#94a3b8', '○ Pending'],
