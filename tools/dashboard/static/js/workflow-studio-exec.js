@@ -392,14 +392,16 @@
 
   StudioWF.loadRunHistory = async function() {
     const tbody = $('wf-runs-body');
+    const countEl = $('wf-runs-count');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;"><div class="studio-spinner"></div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;"><div class="studio-spinner"></div></td></tr>';
     try {
       const resp = await fetch('/api/studio/workflows/runs?limit=100');
       const data = await resp.json();
       const runs = data.runs || [];
+      if (countEl) countEl.textContent = runs.length ? `${runs.length} run${runs.length !== 1 ? 's' : ''}` : '';
       if (!runs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
         return;
       }
       tbody.innerHTML = runs.map(run => {
@@ -407,7 +409,8 @@
         const duration = _runDuration(run.started_at, run.completed_at);
         const effectiveStatus = (run.status === 'success' && summary.all_skipped) ? 'warning' : run.status;
         const statusBadge = _runStatusBadge(effectiveStatus);
-        return `<tr>
+        const rid = _esc(run.run_id);
+        return `<tr id="run-row-${rid}">
           <td style="font-weight:500;">${_esc(run.workflow_name || run.workflow_id)}</td>
           <td>${statusBadge}</td>
           <td style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);">
@@ -419,12 +422,59 @@
           </td>
           <td>
             <button class="studio-btn studio-btn--ghost studio-btn--sm"
-                    onclick="StudioWF.showRunDetail('${run.run_id}')">Details</button>
+                    onclick="StudioWF.showRunDetail('${rid}')">Details</button>
+          </td>
+          <td>
+            <button class="studio-btn studio-btn--ghost studio-btn--sm"
+                    title="Delete this run"
+                    style="color:#f87171;border-color:#7f1d1d;"
+                    onclick="StudioWF.deleteRun('${rid}')">&#128465;</button>
           </td>
         </tr>`;
       }).join('');
     } catch (e) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:#ef4444;">Failed to load run history</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;padding:24px;color:#ef4444;">Failed to load run history</td></tr>';
+    }
+  };
+
+  StudioWF.deleteRun = async function(runId) {
+    if (!confirm('Delete this run record?')) return;
+    try {
+      const resp = await fetch('/api/studio/workflows/runs/' + encodeURIComponent(runId), { method: 'DELETE' });
+      if (resp.ok) {
+        const row = document.getElementById('run-row-' + runId);
+        if (row) row.remove();
+        const tbody = $('wf-runs-body');
+        const countEl = $('wf-runs-count');
+        const remaining = tbody ? tbody.querySelectorAll('tr[id^="run-row-"]').length : 0;
+        if (countEl) countEl.textContent = remaining ? `${remaining} run${remaining !== 1 ? 's' : ''}` : '';
+        if (!remaining && tbody) {
+          tbody.innerHTML = '<tr><td colspan="7" class="studio-text-muted" style="text-align:center;padding:32px;">No workflow runs yet</td></tr>';
+        }
+      } else {
+        StudioWF._toast('Failed to delete run', 'error');
+      }
+    } catch (e) {
+      StudioWF._toast('Network error deleting run', 'error');
+    }
+  };
+
+  StudioWF.deleteAllRuns = async function() {
+    const tbody = $('wf-runs-body');
+    const count = tbody ? tbody.querySelectorAll('tr[id^="run-row-"]').length : 0;
+    if (!count) { StudioWF._toast('No runs to delete', 'info'); return; }
+    if (!confirm(`Delete all ${count} run record${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    try {
+      const resp = await fetch('/api/studio/workflows/runs', { method: 'DELETE' });
+      const data = await resp.json();
+      if (resp.ok) {
+        StudioWF._toast(`Deleted ${data.count} run${data.count !== 1 ? 's' : ''}`, 'success');
+        StudioWF.loadRunHistory();
+      } else {
+        StudioWF._toast('Failed to delete runs', 'error');
+      }
+    } catch (e) {
+      StudioWF._toast('Network error deleting runs', 'error');
     }
   };
 

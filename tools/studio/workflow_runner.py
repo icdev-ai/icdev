@@ -410,6 +410,39 @@ def get_run_steps(run_id: str) -> list:
         conn.close()
 
 
+def delete_run(run_id: str) -> bool:
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM studio_workflow_run_steps WHERE run_id = ?", (run_id,))
+        cur = conn.execute("DELETE FROM studio_workflow_runs WHERE run_id = ?", (run_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def delete_all_runs(workflow_id: str | None = None) -> int:
+    conn = get_connection()
+    try:
+        if workflow_id:
+            run_ids = [r[0] for r in conn.execute(
+                "SELECT run_id FROM studio_workflow_runs WHERE workflow_id = ?", (workflow_id,)
+            ).fetchall()]
+            if run_ids:
+                placeholders = ",".join("?" * len(run_ids))
+                conn.execute(f"DELETE FROM studio_workflow_run_steps WHERE run_id IN ({placeholders})", run_ids)
+            cur = conn.execute(
+                "DELETE FROM studio_workflow_runs WHERE workflow_id = ?", (workflow_id,)
+            )
+        else:
+            conn.execute("DELETE FROM studio_workflow_run_steps")
+            cur = conn.execute("DELETE FROM studio_workflow_runs")
+        conn.commit()
+        return cur.rowcount
+    finally:
+        conn.close()
+
+
 # ── Code generation ────────────────────────────────────────
 
 def generate_python_script(workflow_id: str) -> str:

@@ -255,9 +255,15 @@
 
   <!-- Tab: Run History -->
   <div class="studio-tab-panel" id="panel-runs" style="display:none;">
-    <div style="display:flex; justify-content:flex-end; margin-bottom:12px;">
-      <button class="studio-btn studio-btn--secondary studio-btn--sm"
-              onclick="StudioWF.loadRunHistory()">&#8635; Refresh</button>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <span id="wf-runs-count" style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);"></span>
+      <div style="display:flex;gap:8px;">
+        <button class="studio-btn studio-btn--secondary studio-btn--sm"
+                onclick="StudioWF.loadRunHistory()">&#8635; Refresh</button>
+        <button class="studio-btn studio-btn--sm"
+                style="background:#7f1d1d;border-color:#991b1b;color:#fca5a5;"
+                onclick="StudioWF.deleteAllRuns()">&#128465; Delete All</button>
+      </div>
     </div>
     <div class="studio-table-wrap">
       <table class="studio-table">
@@ -268,6 +274,7 @@
             <th>Steps</th>
             <th>Duration</th>
             <th>Started</th>
+            <th></th>
             <th></th>
           </tr>
         </thead>
@@ -369,6 +376,6 @@
 @keyframes wf-pulse-dot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
 </style>
 
-<script src="/static/js/workflow-studio.js"></script>
-<script src="/static/js/workflow-studio-exec.js"></script>
+<script src="/static/js/workflow-studio.js?v=2"></script>
+<script src="/static/js/workflow-studio-exec.js?v=2"></script>
 {% endblock %}
