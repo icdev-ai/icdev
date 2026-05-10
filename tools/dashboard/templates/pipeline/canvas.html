@@ -158,9 +158,11 @@ if (typeof TOOL_INFO !== 'undefined') {
     const graphJson = {{ graph_json | safe }};
     if (graphJson && (graphJson.nodes?.length || graphJson.edges?.length)) {
       loadGraph(graphJson);
-      zoomFit();
+      // Defer fit until JointJS has finished painting cells into the SVG
+      requestAnimationFrame(() => requestAnimationFrame(() => { zoomFit(); _updateZoomLabel(); }));
+    } else {
+      _updateZoomLabel();
     }
-    _updateZoomLabel();
 
     // Load templates for modal
     fetch('/devops/api/templates')
