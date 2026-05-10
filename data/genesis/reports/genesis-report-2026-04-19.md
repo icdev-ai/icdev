@@ -1,0 +1,118 @@
+# Genesis Weekly Report
+
+**Period:** 2026-04-12 to 2026-04-19
+**Generated:** 2026-04-19T20:00:28Z
+**Classification:** CUI // SP-CTI
+
+---
+
+## Executive Summary
+
+| Metric | Value |
+|--------|-------|
+| Total Reflex Runs | 288 |
+| Successes | 278 (96.5%) |
+| Failures | 10 |
+| GKPs Promoted | 0 |
+| GKPs Rejected | 0 |
+| GKPs Pending Review | 45 |
+| Circuit Breakers Open | 1 |
+
+---
+
+## Reflex Activity
+
+| Reflex | Runs | OK | Fail | Last Metric |
+|--------|------|----|------|-------------|
+| audit | 33 | 32 | 1 | 2.00 |
+| awareness | 35 | 34 | 1 | 1.00 |
+| canvas_indexer | 0 | 0 | 0 | — |
+| comply | 34 | 34 | 0 | 0.00 |
+| docs | 9 | 6 | 3 | 535.00 |
+| evolve | 33 | 33 | 0 | 0.00 |
+| experiment | 0 | 0 | 0 | — |
+| goal_learner | 12 | 12 | 0 | 0.00 |
+| heal | 3941 | 3941 | 0 | 0.00 |
+| ingest | 53 | 48 | 5 | 0.00 |
+| kanban | 8496 | 8488 | 8 | 0.00 |
+| learn | 34 | 34 | 0 | 0.00 |
+| market | 34 | 34 | 0 | 1.00 |
+| oracle | 13 | 13 | 0 | 0.00 |
+| publish | 35 | 35 | 0 | 0.00 |
+| remediation_lens | 79 | 79 | 0 | 0.00 |
+| report | 11 | 11 | 0 | 1.00 |
+| research | 21 | 18 | 3 | 0.00 |
+| scout | 33 | 30 | 3 | 16.00 |
+| synthesize | 5 | 0 | 5 | — |
+| test | 13 | 9 | 4 | 1.00 |
+
+---
+
+## Knowledge Promotions
+
+### Awaiting Human Review (45)
+
+- **gkp-c3906d3d51** (learned_goal) from `goal_learner` — confidence 0.44
+- **gkp-95cabcd70d** (learned_goal) from `goal_learner` — confidence 0.44
+- **gkp-40a3875f4c** (learned_goal) from `goal_learner` — confidence 0.44
+- **gkp-95645e94fa** (learned_goal) from `goal_learner` — confidence 0.44
+- **gkp-8142173cf8** (learned_goal) from `goal_learner` — confidence 0.44
+- **gkp-3003d03f83** (learned_goal) from `goal_learner` — confidence 0.44
+- **gkp-4c6137d086** (learned_goal) from `goal_learner` — confidence 0.39
+- **gkp-f43f771bfe** (anticipation_report) from `oracle` — confidence 0.70
+- **gkp-ed99fa27ce** (anticipation_report) from `oracle` — confidence 0.70
+- **gkp-ace5323177** (anticipation_report) from `oracle` — confidence 0.70
+- **gkp-010ae74dc5** (anticipation_report) from `oracle` — confidence 0.70
+- **gkp-a2ca40876b** (research_signal) from `research` — confidence 0.70
+- **gkp-229b8afb49** (research_signal) from `research` — confidence 0.70
+- **gkp-adff6ce0d6** (research_signal) from `research` — confidence 0.70
+- **gkp-b9eaa3ebf8** (research_signal) from `research` — confidence 0.70
+- **gkp-f492647c19** (research_signal) from `research` — confidence 0.70
+- **gkp-6c97e8b31d** (research_signal) from `research` — confidence 0.70
+- **gkp-7c0511818e** (research_signal) from `research` — confidence 0.70
+- **gkp-7bd7de3c88** (research_signal) from `research` — confidence 0.70
+- **gkp-11e3234167** (research_signal) from `research` — confidence 0.70
+- **gkp-d137dffe84** (research_signal) from `research` — confidence 0.70
+- **gkp-04c1e630ad** (research_signal) from `research` — confidence 0.70
+- **gkp-bb2d6c1de8** (research_signal) from `research` — confidence 0.70
+- **gkp-28e302e2b7** (research_signal) from `research` — confidence 0.70
+- **gkp-076ad24b5a** (research_signal) from `research` — confidence 0.70
+- **gkp-3d150b469a** (research_signal) from `research` — confidence 0.70
+- **gkp-fc7aa69b02** (research_signal) from `research` — confidence 0.70
+- **gkp-5219e1e46b** (research_signal) from `research` — confidence 0.70
+- **gkp-76818aa05d** (research_signal) from `research` — confidence 0.70
+- **gkp-b83ab5b045** (research_signal) from `research` — confidence 0.70
+- **gkp-ca04034ade** (research_signal) from `research` — confidence 0.70
+- **gkp-90680989b3** (research_signal) from `research` — confidence 0.70
+- **gkp-795a949e99** (research_signal) from `research` — confidence 0.70
+- **gkp-5ce7033b1e** (research_signal) from `research` — confidence 0.70
+- **gkp-51412435a6** (research_signal) from `research` — confidence 0.70
+- **gkp-c74ee73fc1** (research_signal) from `research` — confidence 0.70
+- **gkp-7f14a651a8** (research_signal) from `research` — confidence 0.70
+- **gkp-c4d3b03be2** (research_signal) from `research` — confidence 0.70
+- **gkp-e7dd447f7b** (research_signal) from `research` — confidence 0.70
+- **gkp-a4758180c8** (research_signal) from `research` — confidence 0.70
+- **gkp-b930fddb1f** (research_signal) from `research` — confidence 0.70
+- **gkp-dad9ba45fc** (research_signal) from `research` — confidence 0.70
+- **gkp-6d4b0a60f4** (research_signal) from `research` — confidence 0.70
+- **gkp-5539da37bc** (research_signal) from `research` — confidence 0.70
+- **gkp-7c3153456a** (research_signal) from `research` — confidence 0.70
+
+---
+
+## Circuit Breakers (ATTENTION REQUIRED)
+
+- **kanban** — OPEN since 2026-04-18T21:37:31Z (3 consecutive failures)
+
+Run `python tools/genesis/daemon.py --reset <reflex>` to re-enable.
+
+---
+
+## Recommendations
+
+1. Review 45 pending GKPs: `python tools/genesis/promoter.py --list --status-filter pending_review --json`
+2. Investigate 1 tripped circuit breaker(s)
+
+---
+
+*Generated by Genesis Reporter — ICDEV™ v2.0 Autonomous Research Lab*

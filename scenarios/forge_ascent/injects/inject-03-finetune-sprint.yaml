@@ -1,0 +1,87 @@
+# CUI // SP-CTI
+id: inject-03-finetune-sprint
+title: "Fine-Tune Sprint: Retrain SENTINEL-ML"
+
+body_md: |
+  ## FINE-TUNE SPRINT — RETRAIN AND DEPLOY SENTINEL-ML
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** Build & Prove — Fine-Tune Required
+  **Sprint Window:** This inject is NOT time-bonused. Accuracy > speed.
+
+  The fixed feature pipeline is now deployed. A clean training dataset has been
+  automatically assembled from the last 30 days of validated logistics records.
+  Your job: configure the fine-tuning job, launch it, and submit proof of a
+  deployed model that meets operational thresholds.
+
+  ### Dataset Summary
+
+  | Property              | Value                          |
+  |-----------------------|--------------------------------|
+  | Total samples         | 12,847                         |
+  | Positive (anomalous)  | 1,923 (15.0%)                  |
+  | Negative (normal)     | 10,924 (85.0%)                 |
+  | Feature count         | 6                              |
+  | Split                 | 80% train / 10% val / 10% test |
+  | Class imbalance ratio | 1:5.7                          |
+
+  **Dataset ID:** `sentinel-ml-clean-20260502`
+  **Format:** Tabular (parquet), all features normalized to [0, 1]
+
+  ### SENTINEL-ML Model Specification
+
+  - **Base architecture:** Binary classifier (transformer-based tabular encoder)
+  - **Current production model:** `sentinel-ml-v2.3` (degraded)
+  - **Target:** Fine-tune a new version `sentinel-ml-v2.4` from the base
+  - **Minimum acceptance criteria:** Precision ≥ 0.85, Recall ≥ 0.80, F1 ≥ 0.82
+
+  ### Fine-Tuning Configuration Choices
+
+  Your team must choose and justify each of the following parameters:
+
+  | Parameter       | Options to Choose From                          |
+  |-----------------|------------------------------------------------|
+  | learning_rate   | 1e-5 / 5e-5 / 1e-4 / 5e-4                      |
+  | epochs          | 3 / 5 / 10 / 20                                |
+  | batch_size      | 16 / 32 / 64 / 128                             |
+  | loss_function   | cross_entropy / focal_loss / weighted_bce      |
+  | primary_metric  | f1_macro / precision / recall / roc_auc        |
+  | early_stopping  | true / false (patience=3 if true)              |
+
+  ### Your Task
+
+  **Required deliverable:**
+  1. **Fine-Tune Config** — Specify all 6 parameters with a one-sentence
+     justification for each choice. Given the class imbalance (1:5.7),
+     your parameter choices should reflect understanding of minority-class recall.
+  2. **Launch the Job** — Use the Fine-Tune Deploy tool (`/api/finetune/jobs`)
+     to launch the training job. Submit the `model_id` returned by the API.
+     This is a hard gate: **no fine-tune receipt = base_pts capped at 50%.**
+  3. **Evaluation Results** — Submit exactly 3 sample predictions from your
+     deployed model:
+     - Prediction 1: A true positive (anomalous record correctly flagged)
+     - Prediction 2: A true negative (normal record correctly cleared)
+     - Prediction 3: A borderline case (probability between 0.45–0.65) with
+       your team's recommendation on whether to flag for analyst review
+  4. **Pass/Fail Assessment** — Does your deployed model meet the acceptance
+     criteria? Show the validation metrics from the job output.
+
+  **Points are awarded for:**
+  - Evidence of actual fine-tune job (model_id in response + finetune.deploy receipt)
+  - Correct parameter selection demonstrating understanding of class imbalance
+  - Quality and realism of the 3 evaluation predictions
+  - Validated metrics meeting or exceeding acceptance criteria thresholds
+
+  **Hint:** Run `finetune.deploy` via the Fine-Tune Deploy tool at the top of
+  your player console. The API accepts dataset_id, model_base, and config.
+  Knowledge Search can retrieve ICDEV fine-tuning best practices for tabular
+  binary classifiers. Each verified tool call earns +75 pts.
+
+context_note: >
+  Correct parameter choices for this problem: focal_loss (handles class imbalance
+  better than cross_entropy), learning_rate=5e-5 (conservative for fine-tuning),
+  epochs=10 with early_stopping=true, batch_size=32 (reasonable for 12K samples),
+  primary_metric=f1_macro (balanced between precision/recall). Teams choosing
+  recall as primary metric should also earn credit — defensible for anomaly detection.
+  Teams who use weighted_bce are also correct. Award full credit for any justified
+  imbalance-aware approach.

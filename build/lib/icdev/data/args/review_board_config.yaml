@@ -1,0 +1,247 @@
+# CUI // SP-CTI
+# Engineering Review Board Daemon — Phase 67 (D-RB-1 through D-RB-7)
+# Continuous multi-persona code analysis: SRE, QA, Security, Performance, UX, Docs, Product
+
+classification: "CUI // SP-CTI"
+enabled: false
+env_override: ICDEV_REVIEW_BOARD_ENABLED
+
+llm:
+  tier: scanner
+  model: qwen3.5-local
+  max_tokens: 4096
+
+trust_kernel:
+  risk_tiers:
+    green:
+      approval: auto
+      sandbox: false
+    yellow:
+      approval: auto
+      sandbox: true
+      rollback_window_hours: 24
+    orange:
+      approval: human
+      sandbox: true
+      require_tests_pass: true
+
+  circuit_breaker:
+    max_consecutive_failures: 3
+    cooldown_minutes: 60
+    auto_reenable: false
+    notify_on_trip: true
+
+  allowed_actions:
+    green:
+      - read_file
+      - query_database
+      - run_tool_readonly
+      - log_audit
+    yellow:
+      - read_file
+      - query_database
+      - run_tool_readonly
+      - log_audit
+      - run_tests
+      - create_issue
+    orange:
+      - read_file
+      - query_database
+      - run_tool_readonly
+      - log_audit
+      - run_tests
+      - create_issue
+      - create_pr
+
+paths:
+  reports: data/review_board/reports
+
+# -----------------------------------------------------------------------
+# Reflex Definitions — 7 engineering personas
+# -----------------------------------------------------------------------
+reflexes:
+  sre:
+    enabled: true
+    risk_tier: green
+    schedule: "every 1h"
+    description: "SRE reliability checks — health endpoints, circuit breaker trips, error budget burn, backup age, disk usage"
+    success_metric:
+      name: issues_found
+      threshold: 0
+      operator: gte
+    checks:
+      - health_endpoint_latency
+      - circuit_breaker_trip_rate
+      - error_rate_budget
+      - backup_freshness
+      - disk_usage
+      - hpa_utilization
+    thresholds:
+      max_error_rate_pct: 1.0
+      max_p95_latency_ms: 500
+      backup_max_age_hours: 48
+      disk_usage_warn_pct: 80
+
+  qa:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    description: "QA coverage checks — untested modules, E2E coverage gaps, flaky test detection, test-to-code ratio"
+    success_metric:
+      name: gaps_found
+      threshold: 0
+      operator: gte
+    checks:
+      - untested_modules
+      - e2e_coverage_gaps
+      - flaky_test_detection
+      - test_to_code_ratio
+      - conftest_schema_drift
+    thresholds:
+      min_test_ratio: 0.3
+      max_flaky_reruns: 3
+      min_e2e_page_coverage_pct: 50
+
+  security:
+    enabled: true
+    risk_tier: green
+    schedule: "every 4h"
+    description: "Security red team — secret scan freshness, CVE age, SAST finding drift, prompt injection patterns on new code"
+    success_metric:
+      name: findings_count
+      threshold: 0
+      operator: gte
+    checks:
+      - secret_scan_freshness
+      - cve_sla_compliance
+      - sast_finding_age
+      - owasp_gate_drift
+      - new_code_injection_scan
+    thresholds:
+      max_secret_scan_age_hours: 24
+      max_critical_cve_age_days: 7
+      max_high_cve_age_days: 30
+
+  perf:
+    enabled: true
+    risk_tier: green
+    schedule: "every 2h"
+    description: "Performance checks — DB query timing, response time percentiles, memory/disk growth rate"
+    success_metric:
+      name: perf_issues
+      threshold: 0
+      operator: gte
+    checks:
+      - db_query_timing
+      - response_time_percentiles
+      - memory_growth_rate
+      - disk_growth_rate
+      - db_file_size
+    thresholds:
+      max_db_query_ms: 1000
+      max_db_file_size_mb: 500
+      max_response_p95_ms: 500
+
+  ux:
+    enabled: true
+    risk_tier: green
+    schedule: "every 12h"
+    description: "UX quality checks — error rate per page, 404/500 frequency, accessibility pattern scan, template quality"
+    success_metric:
+      name: ux_issues
+      threshold: 0
+      operator: gte
+    checks:
+      - page_error_rate
+      - http_error_frequency
+      - aria_coverage
+      - template_quality
+      - glossary_coverage
+    thresholds:
+      max_500_rate_pct: 0.1
+      min_aria_coverage_pct: 80
+
+  docs:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 06:00"
+    description: "Documentation freshness — stale docs vs code, undocumented tools, broken internal links, missing CLI examples"
+    success_metric:
+      name: doc_issues
+      threshold: 0
+      operator: gte
+    checks:
+      - stale_docs
+      - undocumented_tools
+      - broken_links
+      - missing_cli_examples
+      - changelog_currency
+    thresholds:
+      max_doc_age_days: 90
+      max_undocumented_tools: 5
+
+  product:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 07:00"
+    description: "Product analytics — feature usage frequency, unused tools, most-failed gates, adoption metrics"
+    success_metric:
+      name: product_insights
+      threshold: 0
+      operator: gte
+    checks:
+      - feature_usage_frequency
+      - unused_tools
+      - most_failed_gates
+      - gate_pass_rate_trend
+    thresholds:
+      unused_tool_threshold_days: 30
+      min_gate_pass_rate_pct: 80
+
+  report:
+    enabled: true
+    risk_tier: green
+    schedule: "weekly Sun 20:00"
+    description: "Weekly digest report — health score, findings summary, remediation stats, top issues"
+    success_metric:
+      name: health_score
+      threshold: 0
+      operator: gte
+
+# -----------------------------------------------------------------------
+# Findings pipeline
+# -----------------------------------------------------------------------
+findings:
+  auto_remediate:
+    enabled: true
+    min_confidence: 0.7
+    max_per_hour: 5
+    cooldown_minutes: 10
+  escalation:
+    critical_channels:
+      - audit_trail
+      - gateway
+    high_channels:
+      - audit_trail
+      - heartbeat
+    medium_channels:
+      - audit_trail
+
+# -----------------------------------------------------------------------
+# Dashboard
+# -----------------------------------------------------------------------
+dashboard:
+  route: /review-board
+  refresh_interval_seconds: 30
+  max_findings_displayed: 100
+
+# -----------------------------------------------------------------------
+# Scheduling
+# -----------------------------------------------------------------------
+scheduling:
+  daemon_loop_interval_seconds: 60
+  quiet_hours:
+    enabled: false
+    start: "22:00"
+    end: "06:00"
+    timezone: "US/Eastern"

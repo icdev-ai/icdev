@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+name: "AI Build Sprint Rubric"
+inject_type: ai_build_sprint
+description: "Evaluates AI tools actually built or deployed during the 15-minute sprint."
+max_score: 100
+
+dimensions:
+  - id: ai_tool_actually_used
+    weight: 0.35
+    prompt: >
+      Did the team actually use ICDEV AI tools to build their classifier?
+      Score highly for: fine-tune job deployed (10/10), RAG pipeline built (7/10),
+      prompt engineering with documented outputs (4/10). Score 0 for manual/rule-based
+      approaches with no AI evidence.
+
+  - id: classification_quality
+    weight: 0.30
+    prompt: >
+      How well does the submitted classifier distinguish between the three signal
+      categories (military tactical, commercial interference, unknown)? Are the
+      3 test outputs correctly classified with clear explanations?
+
+  - id: deployment_proof
+    weight: 0.20
+    prompt: >
+      Did the team provide verifiable proof of deployment? Look for: fine-tune
+      model ID, RAG search receipt token, or working code that can be run.
+      Penalize claims without evidence.
+
+  - id: innovation
+    weight: 0.15
+    prompt: >
+      Did the team demonstrate creative or novel AI usage beyond the minimum?
+      Examples: chaining multiple tools, using RAG to seed training data before
+      fine-tuning, or building a multi-label classifier when only binary was required.

@@ -1,0 +1,16 @@
+# CUI // SP-CTI
+label: "Civilian Analyst"
+description: "Government civilian intelligence or cyber analyst, GS-11 to SES."
+attributes:
+  - agency (DIA, NSA, CIA, DHS CISA, Army G2, etc.)
+  - pay grade (GS-11 through SES)
+  - specialty domain
+  - division or office
+  - clearance level
+  - years of government service
+  - AI/ML familiarity level (beginner/intermediate/advanced)
+
+prompt_hint: >
+  Generate a realistic government civilian analyst persona. They work in an
+  intelligence or cybersecurity role. Include a role_brief explaining their
+  current project and what they hope to learn from AI-assisted threat analysis.

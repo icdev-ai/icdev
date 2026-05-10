@@ -1,0 +1,42 @@
+# Rubric: ML Trajectory Prediction (Inject 03)
+# NOTE: finetune_required=true — teams without finetune.deploy receipt score max 50% of base_pts
+dimensions:
+  model_evidence:
+    weight: 0.35
+    max_pts: 35
+    prompt: |
+      Award 35/35 ONLY if the team provides a verifiable fine-tune deployment receipt
+      with a model_id visible in their response. The model output (predicted grid + confidence
+      ellipse) must be explicitly cited from the model run.
+      Award 20/35 if any other AI tool was used for prediction but no finetune receipt.
+      Award 0/35 for manual prediction with no AI evidence whatsoever.
+
+  grid_confidence:
+    weight: 0.30
+    max_pts: 30
+    prompt: |
+      Did the team produce a specific predicted grid with a confidence interval?
+      The grid should be in the XC-100 to XC-220 range (or XC-200-XC-300 if supply was
+      interdicted and the course shifted to 042°). Award 30/30 for specific 6-digit grid
+      with uncertainty radius in nautical miles. Award 15/30 for grid without uncertainty.
+      Award 5/30 for general area only. Award 0/30 for no grid estimate.
+
+  ai_usage:
+    weight: 0.20
+    max_pts: 20
+    prompt: |
+      Beyond the fine-tune model, did the team use additional AI tools (Oracle, Knowledge
+      Search) to inform the trajectory prediction? Did they explain which model features
+      drove the prediction (current sets, PLAN doctrine, fuel state)? Award 20/20 for
+      multi-tool AI approach with feature importance explained. Award 10/20 for single
+      tool only. Award 0/20 for no additional AI grounding.
+
+  timeliness_rationale:
+    weight: 0.15
+    max_pts: 15
+    prompt: |
+      Did the team recommend a specific satellite tasking priority (which grid square to
+      task first) and explain why? Is the recommendation logically derived from the
+      prediction output? Award 15/15 for specific grid tasking recommendation with
+      rationale tied to model output. Award 8/15 for recommendation without rationale.
+      Award 0/15 for no satellite tasking recommendation.

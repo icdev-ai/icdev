@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+name: "COA Recommendation Rubric"
+inject_type: coa_recommendation
+description: "Evaluates quality of Courses of Action developed using AI wargame tools."
+max_score: 100
+
+dimensions:
+  - id: coa_differentiation
+    weight: 0.25
+    prompt: >
+      Are the three COAs genuinely distinct from each other? Do they represent
+      meaningfully different approaches (e.g., offensive vs defensive, cyber vs
+      kinetic, immediate vs deliberate)? Penalize near-identical COAs.
+
+  - id: scoring_rigor
+    weight: 0.25
+    prompt: >
+      Did the team apply a rigorous scoring methodology? Look for feasibility,
+      acceptability, and suitability scores with justification. Bonus if they
+      used the composite formula (0.4×F + 0.3×A + 0.3×S) or cited the
+      Strategos wargame output.
+
+  - id: ai_usage_quality
+    weight: 0.25
+    prompt: >
+      Did the team use AI tools (COA Generator, OODA Tempo, PMESII-PT IW Composite)
+      to generate or validate their COAs? Does the response cite AI-derived
+      insights (e.g., adversary OODA tempo, IW dimension scores)?
+
+  - id: doctrine_basis
+    weight: 0.25
+    prompt: >
+      Is the recommended COA grounded in doctrine? Look for FM/JP citations
+      (FM 3-0, JP 3-0, JP 5-0, Clausewitz Center of Gravity theory),
+      historical analogies, and proper MDMP framing.

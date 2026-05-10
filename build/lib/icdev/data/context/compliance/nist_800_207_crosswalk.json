@@ -1,0 +1,399 @@
+{
+  "metadata": {
+    "title": "NIST SP 800-207 to NIST 800-53 Rev 5 Crosswalk",
+    "source_framework": "nist_800_207",
+    "target_framework": "nist_800_53",
+    "version": "1.0",
+    "last_updated": "2026-02-18",
+    "classification": "CUI // SP-CTI",
+    "description": "Bidirectional crosswalk mapping ZTA requirements to NIST 800-53 Rev 5 controls. Enables implement-once-satisfy-many for Zero Trust compliance. Implementing a NIST 800-53 control auto-satisfies all ZTA requirements that map to it via the crosswalk engine dual-hub model (ADR D111)."
+  },
+  "mappings": [
+    {
+      "source_id": "ZTA-ARCH-1",
+      "source_title": "ZTA Architecture Definition",
+      "source_pillar": "Architecture",
+      "target_controls": ["SA-3", "SA-8", "PL-7"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA architecture planning maps to system development lifecycle (SA-3), security engineering principles (SA-8), and security concept of operations (PL-7). These controls establish the formal ZTA architectural foundation."
+    },
+    {
+      "source_id": "ZTA-ARCH-2",
+      "source_title": "ZTA Access Control and Policy Enforcement",
+      "source_pillar": "Architecture",
+      "target_controls": ["AC-3", "PE-3"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA access control policy enforcement maps to access enforcement (AC-3) for logical access and physical access control (PE-3) for physical enforcement. Together these controls enforce ZTA policy decisions at all access points."
+    },
+    {
+      "source_id": "ZTA-ARCH-3",
+      "source_title": "ZTA Continuous Monitoring Requirements",
+      "source_pillar": "Architecture",
+      "target_controls": ["RA-3", "CA-7"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA continuous monitoring requirements map to risk assessment (RA-3) for threat context and continuous monitoring (CA-7) for ongoing control effectiveness evaluation. CA-7 is the primary control supporting the ZTA continuous verification posture."
+    },
+    {
+      "source_id": "ZTA-ARCH-4",
+      "source_title": "ZTA Least Privilege Access",
+      "source_pillar": "Architecture",
+      "target_controls": ["AC-6", "AC-3"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA least privilege architecture maps to least privilege (AC-6) as the primary principle and access enforcement (AC-3) as the enforcement mechanism. AC-6 ensures subjects receive only the permissions necessary for their authorized tasks."
+    },
+    {
+      "source_id": "ZTA-ID-1",
+      "source_title": "Identity Management for ZTA",
+      "source_pillar": "Identity",
+      "target_controls": ["AC-2", "IA-2", "IA-5"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA identity management maps to account management (AC-2) for lifecycle governance, identification and authentication (IA-2) for user identity verification, and authenticator management (IA-5) for credential lifecycle. These three controls collectively satisfy the ZTA identity pillar foundation."
+    },
+    {
+      "source_id": "ZTA-ID-2",
+      "source_title": "Multi-Factor Authentication",
+      "source_pillar": "Identity",
+      "target_controls": ["IA-2(1)", "IA-2(2)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA MFA requirement maps to MFA for privileged accounts (IA-2(1)) and MFA for non-privileged accounts (IA-2(2)). Both enhancements are required to satisfy ZTA's universal MFA mandate — no single-factor authentication is permitted in a ZTA model."
+    },
+    {
+      "source_id": "ZTA-ID-3",
+      "source_title": "Privileged Account Management",
+      "source_pillar": "Identity",
+      "target_controls": ["AC-2(4)", "AC-2(7)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA privileged account management maps to automated audit actions on accounts (AC-2(4)) and role-based account management schemes (AC-2(7)). These enhancements enforce ZTA's requirement for automated oversight and role-scoped privilege assignment."
+    },
+    {
+      "source_id": "ZTA-ID-4",
+      "source_title": "Privileged Access Minimization",
+      "source_pillar": "Identity",
+      "target_controls": ["AC-6(5)", "AC-6(9)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA privileged access minimization maps to privileged accounts (AC-6(5)) for scoping privilege to the minimum necessary and auditing of privileged function use (AC-6(9)) for accountability. Together these satisfy ZTA's just-in-time and just-enough-access requirements."
+    },
+    {
+      "source_id": "ZTA-DEV-1",
+      "source_title": "Device Inventory and Management",
+      "source_pillar": "Devices",
+      "target_controls": ["CM-8", "CM-8(1)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA device inventory maps to system component inventory (CM-8) for maintaining a comprehensive device registry and automated inventory updates (CM-8(1)) for continuous inventory accuracy. ZTA requires every device to be known and catalogued before it can be granted access."
+    },
+    {
+      "source_id": "ZTA-DEV-2",
+      "source_title": "Device Authentication",
+      "source_pillar": "Devices",
+      "target_controls": ["IA-3", "SA-4(9)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA device authentication maps to device identification and authentication (IA-3) for cryptographic device identity and acquisition/development/use of approved functions (SA-4(9)) for ensuring only approved device types can authenticate. IA-3 is the primary control for ZTA device trust establishment."
+    },
+    {
+      "source_id": "ZTA-DEV-3",
+      "source_title": "Device Health and Integrity",
+      "source_pillar": "Devices",
+      "target_controls": ["SC-7(12)", "SI-3"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA device health maps to host-based protection (SC-7(12)) for endpoint security posture enforcement and malicious code protection (SI-3) for integrity verification. ZTA policy engines consume device health signals from these controls to make dynamic access decisions."
+    },
+    {
+      "source_id": "ZTA-NET-1",
+      "source_title": "Network Access Control",
+      "source_pillar": "Networks",
+      "target_controls": ["AC-3", "SC-7", "SC-7(5)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA network access control maps to access enforcement (AC-3) for policy-driven access decisions, boundary protection (SC-7) for network perimeter controls, and deny-by-default (SC-7(5)) which is the fundamental ZTA network principle — all traffic is denied unless explicitly permitted by policy."
+    },
+    {
+      "source_id": "ZTA-NET-2",
+      "source_title": "Data-in-Transit Protection",
+      "source_pillar": "Networks",
+      "target_controls": ["SC-8", "SC-13", "SC-28"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA data-in-transit protection maps to transmission confidentiality and integrity (SC-8), cryptographic protection (SC-13) for approved algorithm enforcement, and protection of information at rest (SC-28). ZTA mandates encryption of all communications regardless of network location."
+    },
+    {
+      "source_id": "ZTA-NET-3",
+      "source_title": "Micro-Segmentation",
+      "source_pillar": "Networks",
+      "target_controls": ["AC-3(3)", "SC-7(5)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA micro-segmentation maps to mandatory access control (AC-3(3)) for fine-grained access enforcement and deny-by-default (SC-7(5)) for default-deny network posture between segments. Micro-segmentation is the network implementation of ZTA's assume-breach principle."
+    },
+    {
+      "source_id": "ZTA-NET-4",
+      "source_title": "Network Traffic Analysis",
+      "source_pillar": "Networks",
+      "target_controls": ["SI-4", "AC-4"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA network traffic analysis maps to system monitoring (SI-4) for real-time traffic inspection and information flow enforcement (AC-4) for policy-based traffic filtering. These controls provide the visibility required for ZTA's continuous trust evaluation of network flows."
+    },
+    {
+      "source_id": "ZTA-APP-1",
+      "source_title": "Secure Application Development",
+      "source_pillar": "Applications and Workloads",
+      "target_controls": ["SA-11", "SA-15", "SI-7"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA secure application development maps to developer testing (SA-11) for verification, development process/standards (SA-15) for secure SDLC requirements, and software/firmware/information integrity (SI-7) for runtime integrity verification. These controls enforce ZTA's requirement that applications themselves are verified trustworthy."
+    },
+    {
+      "source_id": "ZTA-APP-2",
+      "source_title": "Application Least Functionality",
+      "source_pillar": "Applications and Workloads",
+      "target_controls": ["CM-7", "SC-39"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA application least functionality maps to least functionality (CM-7) for disabling unnecessary functions and process isolation (SC-39) for workload isolation. Minimizing the attack surface of each application is a core ZTA workload security principle."
+    },
+    {
+      "source_id": "ZTA-APP-3",
+      "source_title": "Application Authentication",
+      "source_pillar": "Applications and Workloads",
+      "target_controls": ["IA-9", "SC-23"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA application authentication maps to service identification and authentication (IA-9) for authenticating services/APIs to one another and session authenticity (SC-23) for protecting established sessions. ZTA requires mutual authentication between all workloads — no implicit trust between services."
+    },
+    {
+      "source_id": "ZTA-APP-4",
+      "source_title": "Application Supply Chain Security",
+      "source_pillar": "Applications and Workloads",
+      "target_controls": ["SA-12", "SR-3"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA application supply chain security maps to supply chain protection (SA-12) for acquisition risk management and supply chain controls (SR-3) for component provenance verification. ZTA workloads must include verified software supply chain integrity — malicious components undermine device and application trust."
+    },
+    {
+      "source_id": "ZTA-DATA-1",
+      "source_title": "Data Classification and Labeling",
+      "source_pillar": "Data",
+      "target_controls": ["AC-16", "MP-4", "SC-28"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA data classification maps to security attributes (AC-16) for applying and enforcing data labels, media access (MP-4) for controlling access to labeled data stores, and protection of information at rest (SC-28) for encrypted storage of classified data. ZTA policy engines require classification labels to make access decisions."
+    },
+    {
+      "source_id": "ZTA-DATA-2",
+      "source_title": "Data Encryption",
+      "source_pillar": "Data",
+      "target_controls": ["SC-8", "SC-13", "SC-28(1)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA data encryption maps to transmission confidentiality and integrity (SC-8) for data in motion, cryptographic protection (SC-13) for FIPS-validated algorithms, and cryptographic protection of information at rest (SC-28(1)) for data at rest. ZTA mandates encryption as the primary data protection mechanism — the network cannot be trusted."
+    },
+    {
+      "source_id": "ZTA-DATA-3",
+      "source_title": "Data Flow Enforcement",
+      "source_pillar": "Data",
+      "target_controls": ["AC-4(4)", "SC-7(10)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA data flow enforcement maps to flow control of encrypted information (AC-4(4)) for policy-based encrypted data flow control and network disconnect (SC-7(10)) for terminating unauthorized flows. These controls enforce ZTA data pillar requirements — data must only flow through authorized, policy-compliant paths."
+    },
+    {
+      "source_id": "ZTA-VIS-1",
+      "source_title": "Security Monitoring and Logging",
+      "source_pillar": "Visibility and Analytics",
+      "target_controls": ["SI-4", "AU-2", "AU-12"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA security monitoring maps to system monitoring (SI-4) for real-time event detection, event logging (AU-2) for identifying auditable events, and audit record generation (AU-12) for capturing comprehensive logs. ZTA's assume-breach principle requires pervasive, continuous monitoring across all pillars."
+    },
+    {
+      "source_id": "ZTA-VIS-2",
+      "source_title": "Log Analysis and Correlation",
+      "source_pillar": "Visibility and Analytics",
+      "target_controls": ["AU-6", "SI-4(2)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA log analysis maps to audit record review/analysis/reporting (AU-6) for structured log analysis and automated security alerts (SI-4(2)) for real-time correlation. Cross-pillar log correlation is essential for ZTA's ability to detect lateral movement and policy violations."
+    },
+    {
+      "source_id": "ZTA-VIS-3",
+      "source_title": "Behavioral Monitoring",
+      "source_pillar": "Visibility and Analytics",
+      "target_controls": ["SI-4(4)", "SI-4(5)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA behavioral monitoring maps to inbound/outbound communications traffic analysis (SI-4(4)) and system-generated alerts (SI-4(5)) for anomaly detection. ZTA analytics pillar requires user and entity behavior analytics (UEBA) to detect deviations from baseline — satisfied by these SI-4 enhancements."
+    },
+    {
+      "source_id": "ZTA-AUTO-1",
+      "source_title": "Automated Incident Response",
+      "source_pillar": "Automation and Orchestration",
+      "target_controls": ["IR-4", "SI-4(7)", "CP-2"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA automated incident response maps to incident handling (IR-4) for response procedures, automated response to suspicious events (SI-4(7)) for machine-speed reaction, and contingency plan (CP-2) for continuity during incidents. ZTA automation pillar requires response faster than human operators — SI-4(7) enables automated containment."
+    },
+    {
+      "source_id": "ZTA-AUTO-2",
+      "source_title": "Security Orchestration and Automation",
+      "source_pillar": "Automation and Orchestration",
+      "target_controls": ["IR-4(1)", "SA-3(1)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA security orchestration maps to automated incident handling processes (IR-4(1)) for SOAR integration and software development lifecycle management (SA-3(1)) for automated security toolchain integration. These controls support ZTA's requirement for coordinated, automated security operations across the enterprise."
+    },
+    {
+      "source_id": "ZTA-AUTO-3",
+      "source_title": "Dynamic Policy Enforcement",
+      "source_pillar": "Automation and Orchestration",
+      "target_controls": ["AC-3", "CM-3(2)"],
+      "relationship": "maps_to",
+      "strength": "strong",
+      "notes": "ZTA dynamic policy enforcement maps to access enforcement (AC-3) for real-time policy decision application and automated security impact analysis for configuration changes (CM-3(2)) for ensuring policy updates take effect immediately. ZTA policies must be dynamic — access decisions re-evaluated on every request."
+    }
+  ],
+  "reverse_mappings": {
+    "AC-2": ["ZTA-ID-1"],
+    "AC-2(4)": ["ZTA-ID-3"],
+    "AC-2(7)": ["ZTA-ID-3"],
+    "AC-3": ["ZTA-ARCH-2", "ZTA-ARCH-4", "ZTA-NET-1", "ZTA-AUTO-3"],
+    "AC-3(3)": ["ZTA-NET-3"],
+    "AC-4": ["ZTA-NET-4"],
+    "AC-4(4)": ["ZTA-DATA-3"],
+    "AC-6": ["ZTA-ARCH-4"],
+    "AC-6(5)": ["ZTA-ID-4"],
+    "AC-6(9)": ["ZTA-ID-4"],
+    "AC-16": ["ZTA-DATA-1"],
+    "AU-2": ["ZTA-VIS-1"],
+    "AU-6": ["ZTA-VIS-2"],
+    "AU-12": ["ZTA-VIS-1"],
+    "CA-7": ["ZTA-ARCH-3"],
+    "CM-3(2)": ["ZTA-AUTO-3"],
+    "CM-7": ["ZTA-APP-2"],
+    "CM-8": ["ZTA-DEV-1"],
+    "CM-8(1)": ["ZTA-DEV-1"],
+    "CP-2": ["ZTA-AUTO-1"],
+    "IA-2": ["ZTA-ID-1"],
+    "IA-2(1)": ["ZTA-ID-2"],
+    "IA-2(2)": ["ZTA-ID-2"],
+    "IA-3": ["ZTA-DEV-2"],
+    "IA-5": ["ZTA-ID-1"],
+    "IA-9": ["ZTA-APP-3"],
+    "IR-4": ["ZTA-AUTO-1"],
+    "IR-4(1)": ["ZTA-AUTO-2"],
+    "MP-4": ["ZTA-DATA-1"],
+    "PE-3": ["ZTA-ARCH-2"],
+    "PL-7": ["ZTA-ARCH-1"],
+    "RA-3": ["ZTA-ARCH-3"],
+    "SA-3": ["ZTA-ARCH-1"],
+    "SA-3(1)": ["ZTA-AUTO-2"],
+    "SA-4(9)": ["ZTA-DEV-2"],
+    "SA-8": ["ZTA-ARCH-1"],
+    "SA-11": ["ZTA-APP-1"],
+    "SA-12": ["ZTA-APP-4"],
+    "SA-15": ["ZTA-APP-1"],
+    "SC-7": ["ZTA-NET-1"],
+    "SC-7(5)": ["ZTA-NET-1", "ZTA-NET-3"],
+    "SC-7(10)": ["ZTA-DATA-3"],
+    "SC-7(12)": ["ZTA-DEV-3"],
+    "SC-8": ["ZTA-NET-2", "ZTA-DATA-2"],
+    "SC-13": ["ZTA-NET-2", "ZTA-DATA-2"],
+    "SC-23": ["ZTA-APP-3"],
+    "SC-28": ["ZTA-NET-2", "ZTA-DATA-1"],
+    "SC-28(1)": ["ZTA-DATA-2"],
+    "SC-39": ["ZTA-APP-2"],
+    "SI-3": ["ZTA-DEV-3"],
+    "SI-4": ["ZTA-NET-4", "ZTA-VIS-1"],
+    "SI-4(2)": ["ZTA-VIS-2"],
+    "SI-4(4)": ["ZTA-VIS-3"],
+    "SI-4(5)": ["ZTA-VIS-3"],
+    "SI-4(7)": ["ZTA-AUTO-1"],
+    "SI-7": ["ZTA-APP-1"],
+    "SR-3": ["ZTA-APP-4"]
+  },
+  "coverage_summary": {
+    "total_zta_requirements": 28,
+    "total_nist_controls_referenced": 54,
+    "families_covered": 15,
+    "family_list": [
+      "AC",
+      "AU",
+      "CA",
+      "CM",
+      "CP",
+      "IA",
+      "IR",
+      "MP",
+      "PE",
+      "PL",
+      "RA",
+      "SA",
+      "SC",
+      "SI",
+      "SR"
+    ],
+    "zta_pillars": {
+      "Architecture": {
+        "requirements": ["ZTA-ARCH-1", "ZTA-ARCH-2", "ZTA-ARCH-3", "ZTA-ARCH-4"],
+        "nist_controls": ["SA-3", "SA-8", "PL-7", "AC-3", "PE-3", "RA-3", "CA-7", "AC-6"]
+      },
+      "Identity": {
+        "requirements": ["ZTA-ID-1", "ZTA-ID-2", "ZTA-ID-3", "ZTA-ID-4"],
+        "nist_controls": ["AC-2", "IA-2", "IA-5", "IA-2(1)", "IA-2(2)", "AC-2(4)", "AC-2(7)", "AC-6(5)", "AC-6(9)"]
+      },
+      "Devices": {
+        "requirements": ["ZTA-DEV-1", "ZTA-DEV-2", "ZTA-DEV-3"],
+        "nist_controls": ["CM-8", "CM-8(1)", "IA-3", "SA-4(9)", "SC-7(12)", "SI-3"]
+      },
+      "Networks": {
+        "requirements": ["ZTA-NET-1", "ZTA-NET-2", "ZTA-NET-3", "ZTA-NET-4"],
+        "nist_controls": ["AC-3", "SC-7", "SC-7(5)", "SC-8", "SC-13", "SC-28", "AC-3(3)", "SI-4", "AC-4"]
+      },
+      "Applications and Workloads": {
+        "requirements": ["ZTA-APP-1", "ZTA-APP-2", "ZTA-APP-3", "ZTA-APP-4"],
+        "nist_controls": ["SA-11", "SA-15", "SI-7", "CM-7", "SC-39", "IA-9", "SC-23", "SA-12", "SR-3"]
+      },
+      "Data": {
+        "requirements": ["ZTA-DATA-1", "ZTA-DATA-2", "ZTA-DATA-3"],
+        "nist_controls": ["AC-16", "MP-4", "SC-28", "SC-8", "SC-13", "SC-28(1)", "AC-4(4)", "SC-7(10)"]
+      },
+      "Visibility and Analytics": {
+        "requirements": ["ZTA-VIS-1", "ZTA-VIS-2", "ZTA-VIS-3"],
+        "nist_controls": ["SI-4", "AU-2", "AU-12", "AU-6", "SI-4(2)", "SI-4(4)", "SI-4(5)"]
+      },
+      "Automation and Orchestration": {
+        "requirements": ["ZTA-AUTO-1", "ZTA-AUTO-2", "ZTA-AUTO-3"],
+        "nist_controls": ["IR-4", "SI-4(7)", "CP-2", "IR-4(1)", "SA-3(1)", "AC-3", "CM-3(2)"]
+      }
+    },
+    "controls_with_multiple_zta_mappings": {
+      "AC-3": ["ZTA-ARCH-2", "ZTA-ARCH-4", "ZTA-NET-1", "ZTA-AUTO-3"],
+      "SC-7(5)": ["ZTA-NET-1", "ZTA-NET-3"],
+      "SC-8": ["ZTA-NET-2", "ZTA-DATA-2"],
+      "SC-13": ["ZTA-NET-2", "ZTA-DATA-2"],
+      "SC-28": ["ZTA-NET-2", "ZTA-DATA-1"],
+      "SI-4": ["ZTA-NET-4", "ZTA-VIS-1"]
+    },
+    "zta_requirements_with_multiple_controls": {
+      "ZTA-ARCH-1": ["SA-3", "SA-8", "PL-7"],
+      "ZTA-ID-1": ["AC-2", "IA-2", "IA-5"],
+      "ZTA-NET-1": ["AC-3", "SC-7", "SC-7(5)"],
+      "ZTA-NET-2": ["SC-8", "SC-13", "SC-28"],
+      "ZTA-APP-1": ["SA-11", "SA-15", "SI-7"],
+      "ZTA-DATA-1": ["AC-16", "MP-4", "SC-28"],
+      "ZTA-DATA-2": ["SC-8", "SC-13", "SC-28(1)"],
+      "ZTA-VIS-1": ["SI-4", "AU-2", "AU-12"],
+      "ZTA-AUTO-1": ["IR-4", "SI-4(7)", "CP-2"]
+    }
+  }
+}

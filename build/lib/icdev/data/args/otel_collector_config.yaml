@@ -1,0 +1,42 @@
+# CUI // SP-CTI
+# ICDEV™ OpenTelemetry Collector Configuration
+# Used by the ODC Twin to bridge telemetry into the MITRE coverage gap engine.
+# Validate: otelcol validate --config=args/otel_collector_config.yaml
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+exporters:
+  file:
+    path: ".tmp/otel/telemetry.jsonl"
+    rotation:
+      max_megabytes: 100
+      max_days: 7
+      max_backups: 3
+      localtime: false
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [file]

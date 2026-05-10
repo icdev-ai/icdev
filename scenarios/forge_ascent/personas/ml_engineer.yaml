@@ -1,0 +1,31 @@
+# CUI // SP-CTI
+label: "ML Engineer / Model Ops"
+description: "Government or contractor ML Engineer who owns model lifecycle, fine-tuning, and serving."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - ML specialization (tabular models, NLP, computer vision, or multi-modal)
+  - cloud ML platform experience (SageMaker, Vertex AI, Azure ML, or on-prem MLflow)
+  - years fine-tuning experience
+  - preferred framework (PyTorch, TensorFlow, JAX, or scikit-learn)
+  - current model portfolio (number and types of models maintained)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic ML Engineer persona for a DoD logistics AI program.
+  They own the SENTINEL-ML model lifecycle — training, evaluation, deployment,
+  and performance monitoring. They have hands-on experience fine-tuning binary
+  classifiers on imbalanced tabular datasets and know exactly why focal_loss
+  outperforms standard cross_entropy when the positive class is < 20% of data.
+  Include a role_brief explaining that this person is the team's model authority —
+  their fine-tuning Academy training means they know to use focal_loss and
+  conservative learning rates for fine-tuning, and they can configure a
+  training job that will hit Precision ≥ 0.85 where an untrained engineer
+  might pick naive cross_entropy and fail the acceptance gate.
+  Mention that the judge awards a 15-point Academy bonus when model-fine-tuning
+  expertise is evident in the fine-tune config choices and rationale.
+
+academy_relevant_missions:
+  - ml-fundamentals
+  - model-fine-tuning
+  - model-deployment

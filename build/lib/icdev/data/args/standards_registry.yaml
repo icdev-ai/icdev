@@ -1,0 +1,75 @@
+# CUI // SP-CTI
+# Standards registry for WG 22 — standards_validator.py
+# Representative entries (not exhaustive). Extend as needed.
+
+standards:
+  NIST_SP_800-53:
+    title: "Security and Privacy Controls for Information Systems"
+    controls:
+      AC-1: "Policy and Procedures"
+      AC-2: "Account Management"
+      AC-3: "Access Enforcement"
+      AC-4: "Information Flow Enforcement"
+      AU-2: "Event Logging"
+      AU-3: "Content of Audit Records"
+      SC-7: "Boundary Protection"
+      SC-8: "Transmission Confidentiality and Integrity"
+      SI-4: "System Monitoring"
+      IA-2: "Identification and Authentication"
+      CM-2: "Baseline Configuration"
+      RA-5: "Vulnerability Monitoring and Scanning"
+  NIST_SP_800-171:
+    title: "Protecting CUI in Nonfederal Systems"
+    controls:
+      "3.1.1": "Limit access"
+      "3.3.1": "Audit logs"
+      "3.13.11": "FIPS encryption"
+  TOGAF:
+    version: "9.2"
+    phases:
+      A: "Architecture Vision"
+      B: "Business Architecture"
+      C: "Information Systems"
+      D: "Technology Architecture"
+      E: "Opportunities and Solutions"
+      F: "Migration Planning"
+      G: "Implementation Governance"
+      H: "Architecture Change Management"
+  OWASP_TOP_10:
+    year: 2021
+    items:
+      A01: "Broken Access Control"
+      A02: "Cryptographic Failures"
+      A03: "Injection"
+      A04: "Insecure Design"
+      A05: "Security Misconfiguration"
+      A06: "Vulnerable and Outdated Components"
+      A07: "Identification and Authentication Failures"
+      A08: "Software and Data Integrity Failures"
+      A09: "Security Logging and Monitoring Failures"
+      A10: "Server-Side Request Forgery"
+  CIS_CONTROLS:
+    version: "8"
+    items:
+      "1": "Inventory of Enterprise Assets"
+      "2": "Inventory of Software Assets"
+      "3": "Data Protection"
+  ISO_27001:
+    version: "2022"
+    clauses:
+      "5.1": "Leadership and commitment"
+      "5.2": "Policy"
+      "5.3": "Organizational roles"
+  PCI_DSS:
+    version: "4.0"
+    requirements:
+      "1": "Install and Maintain Network Security Controls"
+      "2": "Apply Secure Configurations"
+  SABSA:
+    layers:
+      - Contextual
+      - Conceptual
+      - Logical
+      - Physical
+      - Component
+      - Operational

@@ -1,0 +1,50 @@
+title: "Phase 1 — Design Sprint: Build Your Agentic System"
+inject_type: aadc_design_challenge
+
+body: |
+  ## MISSION BRIEF — BLUE TEAMS ONLY
+
+  **Classification: CUI // SP-CTI**
+
+  You have **30 minutes** to design a production-ready agentic AI system on the AADC canvas.
+
+  ### Your system: Autonomous Document Intelligence Agent
+
+  The system must:
+  - Accept user document queries (inference-input)
+  - Use an LLM for reasoning
+  - Search a vector knowledge base (RAG)
+  - Return structured, validated responses
+  - Log all actions for audit
+
+  ### Minimum architecture requirements
+
+  Your design must include ALL of the following node types:
+
+  | Required Node | Why |
+  |---|---|
+  | `inference-input` | Entry point |
+  | `llm` | Core reasoning |
+  | `vector-db` | RAG retrieval |
+  | `input-sanitizer` | OWASP LLM01 |
+  | `output-validator` | OWASP LLM02 |
+  | `pii-detector` | OWASP LLM06 |
+  | `redaction-engine` | OWASP LLM06 |
+  | `audit-logger` | OWASP LLM10 |
+  | `approval-workflow` or `hitl-gate` | NIST AI RMF GOV-1 |
+
+  ### Submission
+
+  1. Open the AADC canvas at `/agentic-ai/canvas` — start a new design
+  2. Build the required architecture with correct connections
+  3. Click **Assess** — note which checks pass/fail
+  4. Use `aadc.assess` and `aadc.recommend` tools to close gaps
+  5. Click **Save** and copy your **design ID**
+  6. Submit your response as: `{"design_id": "your-design-id", "notes": "..."}`
+
+  **Red Teams:** Stand by. Your Phase 2 brief will reference the Blue Team designs.
+
+hints:
+  - "Connect input-sanitizer BEFORE the LLM node — it must be upstream"
+  - "Both pii-detector and redaction-engine must exist; one alone won't satisfy LLM06"
+  - "Use aadc.recommend to see which nodes you're missing"

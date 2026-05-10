@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+id: inject-01-signal-cluster
+title: "Anomalous Signal Cluster — Sector 7"
+
+body_md: |
+  ## FLASH TRAFFIC — INTELLIGENCE REQUIREMENT
+
+  **Classification:** CUI // SP-CTI
+  **DTG:** [Current]
+  **PRECEDENCE:** FLASH
+
+  SIGINT assets have detected an unprecedented cluster of RF emissions across
+  Sector 7 (grid reference withheld). The Strategos ghost signal log shows
+  **14 new entries** in the last 4 hours — a 340% spike above baseline.
+  Three signals exhibit frequency-hopping patterns consistent with military
+  tactical comms. Two are on known adversarial frequencies (STANAG reliability: B/2).
+
+  ### Intel Gaps
+  - Unknown actor attribution (no ORBAT correlation yet)
+  - No corroborating HUMINT or GEOINT
+  - PIR-12 (force positioning) remains unsatisfied
+
+  ### Your Task
+  Your team must **assess the threat** using ICDEV's AI ecosystem.
+
+  **Required deliverable:**
+  A concise BLUF assessment (≤ 200 words) answering:
+  1. What is the most likely threat explanation?
+  2. What is your confidence level and why?
+  3. What is your immediate PIR recommendation?
+
+  **Points are awarded for:**
+  - Using Strategos Oracle, Signal Prioritizer, or RAG Knowledge Search to ground your assessment
+  - Accuracy and doctrine alignment of your BLUF
+  - Speed of submission
+
+  **Hint:** Run the Strategos Oracle (`/api/strategos/oracle`) — the SIO engine will
+  assess threat posture, behavior pattern, and intent across all available signals.
+  Each verified tool call earns +50 pts.
+
+context_note: >
+  Teams should use the "Link AI Tool" button to call Strategos Oracle, Signal
+  Prioritizer, and/or Knowledge RAG. Each call logs a receipt. The LLM judge
+  will score their response on threat identification, AI usage quality,
+  doctrine alignment, and recommendation clarity.

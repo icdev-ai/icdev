@@ -1,0 +1,60 @@
+# CUI // SP-CTI
+name: "IaC / Container Sprint Rubric"
+inject_type: iac_sprint
+description: "Evaluates Dockerfile hardening, Kubernetes manifest correctness, and security justification quality."
+max_score: 100
+
+dimensions:
+  dockerfile_quality:
+    weight: 0.35
+    prompt: >
+      Is the Dockerfile production-hardened and STIG-compliant?
+      Award 35/35 for a Dockerfile that: (1) uses multi-stage build with python:3.11-slim
+      as final stage, (2) creates a non-root user (USER appuser, UID 1001), (3) includes
+      HEALTHCHECK CMD curl -f http://localhost:8080/health || exit 1, (4) sets
+      ENV for MODEL_PATH and LOG_LEVEL, (5) EXPOSE 8080, and (6) does NOT copy
+      dev tools or pip cache into the final stage.
+      Award 25/35 for 4-5 of 6 requirements met.
+      Award 15/35 for 2-3 requirements met (functional but not hardened).
+      Award 5/35 for a Dockerfile that would build but runs as root.
+      Award 0/35 for no Dockerfile or a Dockerfile with syntax errors.
+      Academy bonus: DevOps engineers who completed 'container-deployment' mission
+      know multi-stage builds and STIG non-root requirements. Award up to +15 pts
+      where explicit STIG awareness is evident in the Dockerfile comments or choices.
+
+  k8s_manifest_correctness:
+    weight: 0.35
+    prompt: >
+      Is the Kubernetes Deployment + Service manifest correct and secure?
+      Award 35/35 for a Deployment that: (1) sets replicas: 3, (2) includes
+      securityContext with runAsNonRoot: true, allowPrivilegeEscalation: false,
+      readOnlyRootFilesystem: true, and capabilities.drop: [ALL], (3) sets
+      resource requests (cpu: 250m, memory: 512Mi) and limits (cpu: 1000m, memory: 2Gi),
+      (4) includes livenessProbe and readinessProbe on /health port 8080,
+      (5) references ConfigMap for env vars, plus a ClusterIP Service routing
+      port 80 to containerPort 8080.
+      Award 25/35 for 4-5 of 5 Deployment requirements plus correct Service.
+      Award 15/35 for 3-4 requirements met with correct Service.
+      Award 5/35 for a Deployment missing security context but otherwise correct.
+      Award 0/35 for no manifest or a manifest with major structural errors.
+
+  security_justification:
+    weight: 0.20
+    prompt: >
+      Do the 3 security justification bullet points demonstrate DoD GovCloud awareness?
+      Award 20/20 for 3 bullets that each: name a specific STIG finding or compliance
+      requirement (e.g., "STIG V-242415: containers must not run as root"), explain
+      the specific attack vector it mitigates, and reference a real-world incident
+      or threat category. Award 14/20 for 2/3 bullets with this quality. Award 8/20
+      for 3 bullets that are accurate but generic (no STIG reference). Award 0/20
+      for no justification or bullets that are incorrect.
+
+  innovation:
+    weight: 0.10
+    prompt: >
+      Did the team go beyond the minimum manifest requirements?
+      Award 10/10 for including a PodDisruptionBudget (minAvailable: 2) to protect
+      HA during cluster maintenance, OR a HorizontalPodAutoscaler targeting 70% CPU,
+      OR a Pod Anti-Affinity rule spreading replicas across AZs.
+      Award 5/10 for one well-reasoned addition that isn't required but improves
+      the operational posture. Award 0/10 for minimum execution only.

@@ -1,0 +1,84 @@
+# CUI // SP-CTI
+# Workflow Discipline Engine Configuration (Phase 66, D-WF-1 through D-WF-7)
+#
+# Adapts PAUL (Plan-Apply-Unify Loop) concepts into LLM-agnostic
+# deterministic tools for the FORGE framework.
+
+# Loop lifecycle settings
+loop:
+  # Maximum tasks per plan (context window discipline)
+  max_tasks_per_plan: 5
+  # Warn when plan exceeds this many tasks
+  warn_tasks_threshold: 3
+  # Require acceptance criteria for every plan
+  require_acceptance_criteria: true
+  # Minimum acceptance criteria per plan
+  min_acceptance_criteria: 1
+  # Auto-close abandoned loops after N hours of inactivity
+  abandon_after_hours: 72
+
+# Reconciliation settings (UNIFY phase)
+reconciliation:
+  # Require reconciliation before closing a loop
+  require_unify: true
+  # Auto-generate deviation records when tasks added/removed during APPLY
+  track_deviations: true
+  # Minimum pass rate for acceptance criteria to close as 'success'
+  min_pass_rate: 0.80
+
+# Single next action routing
+next_action:
+  # Weight dimensions for priority scoring (D21 pattern)
+  weights:
+    staleness: 0.30       # How long since last activity
+    compliance_gap: 0.25  # Unresolved compliance items
+    security_risk: 0.20   # Open security findings
+    loop_state: 0.15      # Open loops needing closure
+    handoff_age: 0.10     # Stale handoff documents
+
+# Session handoff settings
+handoff:
+  # Include recent decisions from audit trail
+  max_recent_decisions: 10
+  # Include blockers from open loops
+  include_blockers: true
+  # Include next actions (prioritised)
+  max_next_actions: 5
+  # Auto-generate handoff on context pressure
+  auto_on_context_pressure: true
+
+# Process verification (skill invocation tracking)
+process_verification:
+  # Required processes per loop type
+  required_processes:
+    build:
+      - "security.sast"
+      - "security.secret_detection"
+      - "compliance.cui_marking"
+      - "testing.unit"
+    compliance:
+      - "compliance.ssp_generate"
+      - "compliance.control_map"
+      - "compliance.cui_marking"
+    deploy:
+      - "security.sast"
+      - "security.dependency_audit"
+      - "compliance.sbom_generate"
+      - "testing.unit"
+      - "testing.bdd"
+  # How far back to search audit trail (hours)
+  audit_lookback_hours: 24
+
+# Boundary enforcement
+boundaries:
+  # Default protected patterns (extend file_access_tiers.yaml)
+  default_protected:
+    - "*.ato.*"
+    - "*.ssp.*"
+    - "args/security_gates.yaml"
+    - "args/cui_markings.yaml"
+
+# Audit (NIST AU-2 compliant)
+audit:
+  enabled: true
+  actor: "workflow-engine"

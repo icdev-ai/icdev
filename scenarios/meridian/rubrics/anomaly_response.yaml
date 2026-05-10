@@ -1,0 +1,48 @@
+# CUI // SP-CTI
+name: "Anomaly Response Rubric"
+inject_type: anomaly_response
+description: "Evaluates quality of initial AI system anomaly assessment produced by non-technical leadership."
+max_score: 100
+
+dimensions:
+  ai_tool_application:
+    weight: 0.30
+    prompt: >
+      How effectively did the team use Strategos Oracle and/or Knowledge Search to ground their
+      assessment? Award full marks when AI outputs are explicitly cited — Oracle threat pattern
+      matching, Knowledge Search policy references — that visibly shaped the team's posture
+      recommendation. Penalize responses where AI tools are mentioned but outputs are not cited.
+      Academy CISO bonus: members who completed 'm-ciso-01-ai-inventory' should demonstrate
+      structured AI risk taxonomy — categorizing the anomaly by system type, data pipeline
+      exposure, and potential impact surface. Award up to +15 pts where this framing is evident.
+      Academy Analyst bonus: members who completed 'm-analyst-02-pattern-detection' should
+      identify the anomaly pattern (self-diagnostic + analyst flags + vendor denial = escalation
+      signal). Award up to +8 pts where pattern synthesis is explicit.
+
+  threat_framing:
+    weight: 0.25
+    prompt: >
+      Did the team correctly frame this as a potential security/integrity event rather than a
+      routine technical issue? A score of 80-100 requires: explicit rejection of the vendor's
+      "routine drift" framing with supporting rationale, identification of the PACOM guidance
+      discrepancy as a data pipeline failure signal, and recognition that the CISO's concern
+      warrants escalation not dismissal. Penalize responses that accept the vendor's framing
+      uncritically or treat both perspectives as equally credible without analysis.
+
+  risk_communication:
+    weight: 0.25
+    prompt: >
+      Is the BLUF assessment clearly structured (≤ 200 words), concise, and actionable?
+      Does it distinguish between "act" and "don't act" risks with specificity?
+      Can a senior executive make an immediate decision based on this assessment alone?
+      Award full marks for: BLUF format, exactly two risks each direction, decision-ready
+      framing. Deduct points for vague language ("potential concerns", "may need to consider").
+
+  action_clarity:
+    weight: 0.20
+    prompt: >
+      Is the recommended immediate posture (monitor, investigate, escalate) specific and
+      defensible? Does the team identify a concrete next step with a named owner and timeline?
+      A weak response says "escalate." A strong response says "CISO to conduct pipeline
+      integrity check within 4 hours; no new MERIDIAN recommendations acted upon pending
+      result; vendor notified in writing." Score accordingly.

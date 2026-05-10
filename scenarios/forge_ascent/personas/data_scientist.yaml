@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+label: "Data Scientist"
+description: "Government or contractor Data Scientist who owns feature engineering, drift analysis, and data pipelines."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - domain expertise (logistics, ISR, finance, health, or multi-domain)
+  - statistical background (PhD / MS / BS + self-taught)
+  - primary tools (pandas, PySpark, R, SQL, dbt)
+  - drift detection methodology experience (KS test, PSI, CUSUM)
+  - data governance clearance experience
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic Data Scientist persona for a DoD AI operations team.
+  They own the SENTINEL-ML feature pipeline and are the team's authority on
+  data quality and drift analysis. They can read a KS statistic table instantly
+  and know that a KS > 0.30 with p < 0.005 on time-windowed features means the
+  datetime handling is broken, not that the world changed.
+  Include a role_brief explaining that this person diagnosed 90% of the triage
+  within the first 5 minutes — their FORGE Academy feature-engineering training
+  means they can identify the datetime parse failure from the log error pattern
+  alone, and they know exactly which bugs to look for in the preprocessing code.
+  Mention that the judge awards a 12-point Academy bonus when feature-engineering
+  domain expertise is evident in the drift analysis write-up.
+
+academy_relevant_missions:
+  - data-analysis
+  - feature-engineering
+  - model-evaluation

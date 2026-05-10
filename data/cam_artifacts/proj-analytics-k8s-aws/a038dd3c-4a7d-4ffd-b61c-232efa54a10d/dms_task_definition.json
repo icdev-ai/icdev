@@ -1,0 +1,42 @@
+{
+  "ReplicationTaskIdentifier": "dms-oracle-db-19c-migration",
+  "SourceEndpointArn": "arn:aws:dms:us-east-1:ACCOUNT_ID:endpoint:SOURCE_ENDPOINT",
+  "TargetEndpointArn": "arn:aws:dms:us-east-1:ACCOUNT_ID:endpoint:TARGET_ENDPOINT",
+  "ReplicationInstanceArn": "arn:aws:dms:us-east-1:ACCOUNT_ID:rep:REPLICATION_INSTANCE",
+  "MigrationType": "full-load-and-cdc",
+  "TableMappings": {
+    "rules": [
+      {
+        "rule-type": "selection",
+        "rule-id": "1",
+        "rule-name": "include-all-tables",
+        "object-locator": {
+          "schema-name": "APP_SCHEMA",
+          "table-name": "%"
+        },
+        "rule-action": "include"
+      }
+    ]
+  },
+  "ReplicationTaskSettings": {
+    "TargetMetadata": {
+      "TargetSchema": "public",
+      "SupportLobs": true,
+      "FullLobMode": false,
+      "LobChunkSize": 64
+    },
+    "FullLoadSettings": {
+      "TargetTablePrepMode": "DO_NOTHING",
+      "CreatePkAfterFullLoad": false
+    },
+    "Logging": {
+      "EnableLogging": true,
+      "LogComponents": [
+        {
+          "Id": "SOURCE_UNLOAD",
+          "Severity": "LOGGER_SEVERITY_DEFAULT"
+        }
+      ]
+    }
+  }
+}

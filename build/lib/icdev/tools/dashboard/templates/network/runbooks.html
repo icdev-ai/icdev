@@ -1,0 +1,319 @@
+<!-- CUI // SP-CTI — NDC Runbooks Page -->
+{% extends "network/base.html" %}
+{% block title %}Runbooks — Network Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .rb-hero { padding: 20px 30px 10px; }
+  .rb-hero h1 { font-size: 22px; margin: 0 0 4px; color: #eaeaea; }
+  .rb-hero p { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .rb-back { display: inline-block; padding: 6px 16px; background: #0f3460; color: #7a8cb0; border-radius: 6px; text-decoration: none; font-size: 12px; margin-bottom: 16px; }
+  .rb-back:hover { background: #1e3a6e; color: #eaeaea; }
+
+  /* Toolbar */
+  .rb-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 30px 16px; flex-wrap: wrap; }
+  .rb-toolbar select, .rb-toolbar input { background: #16213e; color: #eaeaea; border: 1px solid #1e3a6e; padding: 6px 12px; border-radius: 4px; font-size: 13px; }
+  .rb-toolbar input { flex: 1; min-width: 180px; }
+  .rb-btn { padding: 7px 18px; border-radius: 5px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .rb-btn-primary { background: #00bcd4; color: #0d1b2a; }
+  .rb-btn-primary:hover { background: #00acc1; }
+
+  /* Grid */
+  .rb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; padding: 0 30px 30px; }
+  .rb-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; border-left: 4px solid #7a8cb0; cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+  .rb-card:hover { box-shadow: 0 2px 12px rgba(0,188,212,.18); }
+  .rb-card.sev-critical { border-left-color: #ef5350; }
+  .rb-card.sev-high     { border-left-color: #ffa726; }
+  .rb-card.sev-medium   { border-left-color: #ffee58; }
+  .rb-card.sev-low      { border-left-color: #66bb6a; }
+
+  .rb-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .rb-card-title  { font-size: 14px; font-weight: 600; color: #eaeaea; margin: 0; }
+  .rb-badges { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+  .rb-badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .rb-badge.sev-critical { background: #b71c1c33; color: #ef5350; }
+  .rb-badge.sev-high     { background: #f57f1733; color: #ffa726; }
+  .rb-badge.sev-medium   { background: #f9a82533; color: #ffee58; }
+  .rb-badge.sev-low      { background: #1b5e2033; color: #66bb6a; }
+  .rb-trigger-badge { background: #00bcd433; color: #00bcd4; }
+  .rb-desc   { font-size: 12px; color: #7a8cb0; margin: 6px 0 0; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .rb-footer { margin-top: 10px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #5a6e8c; }
+
+  .rb-empty { color: #7a8cb0; text-align: center; padding: 50px 30px; font-size: 14px; }
+
+  /* Modal */
+  .rb-modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 1000; align-items: center; justify-content: center; }
+  .rb-modal-overlay.open { display: flex; }
+  .rb-modal { background: #0d1b2a; border: 1px solid #1e3a6e; border-radius: 10px; width: 680px; max-width: 96vw; max-height: 88vh; overflow-y: auto; padding: 24px; position: relative; }
+  .rb-modal h2 { font-size: 18px; color: #eaeaea; margin: 0 0 4px; }
+  .rb-modal .rb-modal-meta { font-size: 12px; color: #7a8cb0; margin-bottom: 16px; }
+  .rb-modal .rb-modal-desc { font-size: 13px; color: #b0bec5; margin-bottom: 18px; line-height: 1.6; }
+  .rb-steps-title { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: #7a8cb0; margin-bottom: 10px; }
+  .rb-step { display: flex; gap: 12px; margin-bottom: 10px; align-items: flex-start; }
+  .rb-step-num { flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%; background: #00bcd4; color: #0d1b2a; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .rb-step-body { flex: 1; }
+  .rb-step-action { font-size: 13px; color: #eaeaea; line-height: 1.5; }
+  .rb-step-owner  { font-size: 11px; color: #5a6e8c; margin-top: 2px; }
+  .rb-modal-close { position: absolute; top: 14px; right: 16px; background: none; border: none; color: #7a8cb0; font-size: 20px; cursor: pointer; line-height: 1; }
+  .rb-modal-close:hover { color: #eaeaea; }
+  .rb-modal-actions { margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end; }
+  .rb-btn-danger    { background: #c62828; color: #fff; }
+  .rb-btn-danger:hover { background: #b71c1c; }
+  .rb-btn-secondary { background: #1e3a6e; color: #eaeaea; }
+  .rb-btn-secondary:hover { background: #0f3460; }
+
+  /* Create / Edit form */
+  .rb-form-group { margin-bottom: 14px; }
+  .rb-form-group label { display: block; font-size: 12px; color: #7a8cb0; margin-bottom: 5px; }
+  .rb-form-group input, .rb-form-group select, .rb-form-group textarea {
+    width: 100%; background: #16213e; color: #eaeaea; border: 1px solid #1e3a6e;
+    padding: 8px 10px; border-radius: 4px; font-size: 13px; box-sizing: border-box;
+  }
+  .rb-form-group textarea { min-height: 80px; resize: vertical; }
+  .rb-steps-editor { border: 1px solid #1e3a6e; border-radius: 6px; padding: 10px; margin-top: 6px; }
+  .rb-step-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+  .rb-step-row input { flex: 1; }
+  .rb-step-row .rb-step-owner-input { width: 130px; flex-shrink: 0; }
+  .rb-step-row .rb-remove-step { background: #c62828; color: #fff; border: none; border-radius: 3px; cursor: pointer; padding: 4px 8px; font-size: 12px; flex-shrink: 0; margin-top: 2px; }
+  .rb-add-step-btn { background: #1e3a6e; color: #eaeaea; border: none; border-radius: 4px; padding: 5px 12px; font-size: 12px; cursor: pointer; margin-top: 4px; }
+  .rb-add-step-btn:hover { background: #0f3460; }
+</style>
+
+<div class="rb-hero">
+  <a href="/network/" class="rb-back">&larr; Back to Network Canvas</a>
+  <h1 style="color:#00bcd4;">Runbooks</h1>
+  <p>Network incident response playbooks — link failure, routing loops, BGP recovery, circuit outage triage, and STIG remediation.</p>
+</div>
+
+<div class="rb-toolbar">
+  <input type="text" id="rbSearch" placeholder="Search runbooks..." oninput="filterRunbooks()" />
+  <select id="rbTriggerFilter" onchange="filterRunbooks()">
+    <option value="">All Trigger Events</option>
+    {% for t in valid_triggers %}
+    <option value="{{ t }}">{{ t.replace('_', ' ').title() }}</option>
+    {% endfor %}
+  </select>
+  <select id="rbSevFilter" onchange="filterRunbooks()">
+    <option value="">All Severities</option>
+    {% for s in valid_severities %}
+    <option value="{{ s }}">{{ s.title() }}</option>
+    {% endfor %}
+  </select>
+  <button class="rb-btn rb-btn-primary" onclick="openCreateModal()">+ New Runbook</button>
+</div>
+
+<div class="rb-grid" id="rbGrid">
+  {% if runbooks %}
+    {% for rb in runbooks %}
+    <div class="rb-card sev-{{ rb.severity }}"
+         onclick="openRunbook('{{ rb.id }}')"
+         data-title="{{ rb.title|lower }}"
+         data-trigger="{{ rb.trigger_event }}"
+         data-severity="{{ rb.severity }}">
+      <div class="rb-card-header">
+        <div class="rb-card-title">{{ rb.title }}</div>
+      </div>
+      <div class="rb-badges">
+        <span class="rb-badge sev-{{ rb.severity }}">{{ rb.severity|upper }}</span>
+        <span class="rb-badge rb-trigger-badge">{{ rb.trigger_event.replace('_', ' ') }}</span>
+      </div>
+      <div class="rb-desc">{{ rb.description }}</div>
+      <div class="rb-footer">
+        <span>Owner: {{ rb.owner or '—' }}</span>
+        <span>{{ rb.updated_at[:10] if rb.updated_at else '' }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div style="grid-column:1/-1" class="rb-empty">No runbooks yet. Click <strong>+ New Runbook</strong> to create one.</div>
+  {% endif %}
+</div>
+
+<!-- Detail Modal -->
+<div class="rb-modal-overlay" id="rbDetailModal">
+  <div class="rb-modal">
+    <button class="rb-modal-close" onclick="closeModal('rbDetailModal')">&times;</button>
+    <h2 id="rbDetailTitle"></h2>
+    <div class="rb-modal-meta" id="rbDetailMeta"></div>
+    <div class="rb-modal-desc" id="rbDetailDesc"></div>
+    <div class="rb-steps-title">Response Steps</div>
+    <div id="rbDetailSteps"></div>
+    <div class="rb-modal-actions">
+      <button class="rb-btn rb-btn-danger" id="rbDeleteBtn" onclick="deleteRunbook()">Delete</button>
+      <button class="rb-btn rb-btn-secondary" onclick="closeModal('rbDetailModal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Create Modal -->
+<div class="rb-modal-overlay" id="rbCreateModal">
+  <div class="rb-modal">
+    <button class="rb-modal-close" onclick="closeModal('rbCreateModal')">&times;</button>
+    <h2 id="rbCreateTitle">New Runbook</h2>
+    <div class="rb-form-group">
+      <label>Title *</label>
+      <input type="text" id="rbFormTitle" placeholder="e.g. Link Failure Response" />
+    </div>
+    <div class="rb-form-group">
+      <label>Trigger Event *</label>
+      <select id="rbFormTrigger">
+        {% for t in valid_triggers %}
+        <option value="{{ t }}">{{ t.replace('_', ' ').title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="rb-form-group">
+      <label>Severity</label>
+      <select id="rbFormSeverity">
+        {% for s in valid_severities %}
+        <option value="{{ s }}" {% if s == 'high' %}selected{% endif %}>{{ s.title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="rb-form-group">
+      <label>Owner</label>
+      <input type="text" id="rbFormOwner" placeholder="e.g. NOC Lead" />
+    </div>
+    <div class="rb-form-group">
+      <label>Topology (optional)</label>
+      <select id="rbFormTopology">
+        <option value="">— Global (all topologies) —</option>
+        {% for t in topologies %}
+        <option value="{{ t.id }}">{{ t.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="rb-form-group">
+      <label>Description</label>
+      <textarea id="rbFormDesc" placeholder="Describe when this runbook applies..."></textarea>
+    </div>
+    <div class="rb-form-group">
+      <label>Response Steps</label>
+      <div class="rb-steps-editor" id="rbFormSteps"></div>
+      <button class="rb-add-step-btn" onclick="addStepRow()">+ Add Step</button>
+    </div>
+    <div class="rb-modal-actions">
+      <button class="rb-btn rb-btn-secondary" onclick="closeModal('rbCreateModal')">Cancel</button>
+      <button class="rb-btn rb-btn-primary" onclick="saveRunbook()">Save Runbook</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  let _currentRunbookId = null;
+
+  window.filterRunbooks = function() {
+    const q = document.getElementById('rbSearch').value.toLowerCase();
+    const trig = document.getElementById('rbTriggerFilter').value;
+    const sev = document.getElementById('rbSevFilter').value;
+    document.querySelectorAll('.rb-card').forEach(card => {
+      const ok = (!q || card.dataset.title.includes(q)) &&
+                 (!trig || card.dataset.trigger === trig) &&
+                 (!sev || card.dataset.severity === sev);
+      card.style.display = ok ? '' : 'none';
+    });
+  };
+
+  window.closeModal = function(id) {
+    document.getElementById(id).classList.remove('open');
+  };
+
+  window.openRunbook = function(id) {
+    _currentRunbookId = id;
+    fetch(`/network/api/runbooks/${id}`)
+      .then(r => r.json())
+      .then(rb => {
+        document.getElementById('rbDetailTitle').textContent = rb.title;
+        document.getElementById('rbDetailMeta').innerHTML =
+          `<span class="rb-badge sev-${rb.severity}">${(rb.severity||'').toUpperCase()}</span> ` +
+          `<span class="rb-badge rb-trigger-badge">${(rb.trigger_event||'').replace(/_/g,' ')}</span>` +
+          ` &nbsp; Owner: <strong>${rb.owner||'—'}</strong> &nbsp; ${rb.classification||''}`;
+        document.getElementById('rbDetailDesc').textContent = rb.description || '';
+        const stepsEl = document.getElementById('rbDetailSteps');
+        const steps = rb.steps || [];
+        stepsEl.innerHTML = steps.length
+          ? steps.map(s =>
+              `<div class="rb-step">
+                <div class="rb-step-num">${s.order||''}</div>
+                <div class="rb-step-body">
+                  <div class="rb-step-action">${s.action||''}</div>
+                  ${s.owner ? `<div class="rb-step-owner">Owner: ${s.owner}</div>` : ''}
+                </div>
+              </div>`).join('')
+          : '<p style="color:#5a6e8c;font-size:13px;">No steps defined.</p>';
+        document.getElementById('rbDetailModal').classList.add('open');
+      })
+      .catch(() => alert('Failed to load runbook.'));
+  };
+
+  window.deleteRunbook = function() {
+    if (!_currentRunbookId) return;
+    if (!confirm('Delete this runbook? This cannot be undone.')) return;
+    fetch(`/network/api/runbooks/${_currentRunbookId}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(d => {
+        if (d.status === 'deleted') location.reload();
+        else alert('Delete failed: ' + (d.error || 'unknown'));
+      });
+  };
+
+  window.openCreateModal = function() {
+    _currentRunbookId = null;
+    document.getElementById('rbCreateTitle').textContent = 'New Runbook';
+    document.getElementById('rbFormTitle').value = '';
+    document.getElementById('rbFormOwner').value = '';
+    document.getElementById('rbFormDesc').value = '';
+    document.getElementById('rbFormTrigger').selectedIndex = 0;
+    document.getElementById('rbFormSeverity').value = 'high';
+    document.getElementById('rbFormTopology').value = '';
+    document.getElementById('rbFormSteps').innerHTML = '';
+    addStepRow();
+    document.getElementById('rbCreateModal').classList.add('open');
+  };
+
+  window.addStepRow = function() {
+    const container = document.getElementById('rbFormSteps');
+    const idx = container.querySelectorAll('.rb-step-row').length + 1;
+    const row = document.createElement('div');
+    row.className = 'rb-step-row';
+    row.innerHTML = `
+      <input type="text" placeholder="Step ${idx}: action description" class="rb-step-action-input" />
+      <input type="text" placeholder="Owner" class="rb-step-owner-input" />
+      <button class="rb-remove-step" onclick="this.parentElement.remove()">&#x2715;</button>
+    `;
+    container.appendChild(row);
+  };
+
+  window.saveRunbook = function() {
+    const title = document.getElementById('rbFormTitle').value.trim();
+    if (!title) { alert('Title is required.'); return; }
+    const steps = [];
+    document.querySelectorAll('#rbFormSteps .rb-step-row').forEach((row, i) => {
+      const action = row.querySelector('.rb-step-action-input').value.trim();
+      const owner  = row.querySelector('.rb-step-owner-input').value.trim();
+      if (action) steps.push({ order: i + 1, action, owner });
+    });
+    const payload = {
+      title,
+      trigger_event: document.getElementById('rbFormTrigger').value,
+      severity:      document.getElementById('rbFormSeverity').value,
+      owner:         document.getElementById('rbFormOwner').value.trim(),
+      topology_id:   document.getElementById('rbFormTopology').value || null,
+      description:   document.getElementById('rbFormDesc').value.trim(),
+      steps,
+    };
+    fetch('/network/api/runbooks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.id || d.status) location.reload();
+        else alert('Save failed: ' + (d.error || 'unknown'));
+      })
+      .catch(() => alert('Network error saving runbook.'));
+  };
+})();
+</script>
+{% endblock %}

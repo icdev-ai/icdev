@@ -1,0 +1,97 @@
+# CUI // SP-CTI
+# Genesis Scout Reflex — competitor/adjacent project targets
+#
+# These repos are monitored for: new releases, star velocity,
+# architectural patterns, and capability gaps.
+#
+# Classification: CUI // SP-CTI
+
+targets:
+  # ── Autonomous AI / Agent Systems ────────────────────────────────
+  - repo: karpathy/autoresearch
+    category: autonomous_research
+    watch: [releases, stars, readme_changes]
+    notes: "Autoresearch pattern — tight experiment loops"
+
+  - repo: SigNoz/signoz
+    category: observability
+    watch: [releases, stars]
+    notes: "Open-source APM, traces, metrics, logs"
+
+  - repo: opentofu/opentofu
+    category: iac
+    watch: [releases]
+    notes: "Terraform fork — IaC ecosystem evolution"
+
+  # ── Compliance & Security ────────────────────────────────────────
+  - repo: oscal-compass/compliance-trestle
+    category: compliance
+    watch: [releases, stars]
+    notes: "NIST OSCAL tooling — direct competitor for compliance automation"
+
+  - repo: ComplianceAsCode/content
+    category: compliance
+    watch: [releases]
+    notes: "SCAP/STIG automation content"
+
+  - repo: anchore/grype
+    category: security
+    watch: [releases]
+    notes: "Vulnerability scanner for container images"
+
+  - repo: aquasecurity/trivy
+    category: security
+    watch: [releases]
+    notes: "Comprehensive security scanner"
+
+  # ── DevSecOps & Platform Engineering ─────────────────────────────
+  - repo: backstage/backstage
+    category: platform_engineering
+    watch: [releases, stars]
+    notes: "Internal developer portal — golden path pattern"
+
+  - repo: argoproj/argo-cd
+    category: devsecops
+    watch: [releases]
+    notes: "GitOps continuous delivery"
+
+  - repo: kyverno/kyverno
+    category: policy_as_code
+    watch: [releases]
+    notes: "Kubernetes-native policy engine"
+
+  # ── AI / ML / LLM Infrastructure ────────────────────────────────
+  - repo: ollama/ollama
+    category: llm_infrastructure
+    watch: [releases, models]
+    notes: "Local LLM runtime — our scanner-tier backbone"
+
+  - repo: mlflow/mlflow
+    category: mlops
+    watch: [releases]
+    notes: "ML lifecycle management"
+
+  # ── Embedded / IoT ──────────────────────────────────────────────
+  - repo: espressif/esp-idf
+    category: embedded
+    watch: [releases]
+    notes: "ESP32 development framework"
+
+  - repo: FreeRTOS/FreeRTOS
+    category: rtos
+    watch: [releases]
+    notes: "Core RTOS — SparkPilot foundation"
+
+  # ── Agent Frameworks ────────────────────────────────────────────
+  - repo: anthropics/claude-code
+    category: agent_framework
+    watch: [releases, stars]
+    notes: "Our runtime platform"
+
+  - repo: microsoft/autogen
+    category: agent_framework
+    watch: [releases, stars]
+    notes: "Multi-agent conversation framework"
+
+# Scout frequency: daily 07:00 UTC
+# Output: intel briefs in data/genesis/reports/scout-YYYY-MM-DD.md

@@ -1,0 +1,24 @@
+# CUI // SP-CTI
+label: "Executive / Program Director"
+description: "Senior executive or Program Director with budget authority, external relationship ownership, and organizational accountability."
+attributes:
+  - title (Program Director / Deputy Assistant Secretary / SES / VP)
+  - organization and portfolio size
+  - years in senior leadership
+  - current program milestone and political pressures
+  - congressional relationships (supportive, neutral, or adversarial)
+  - risk tolerance profile (risk-averse, risk-accepting, risk-balanced)
+
+prompt_hint: >
+  Generate a realistic senior executive persona at the GS-15/SES or O-6/flag equivalent level
+  who serves as Program Director for a DoD AI-enabled program. Include their leadership
+  philosophy, their relationship with the Board and Congressional staff, and their gut
+  reaction to the MERIDIAN situation (skeptical of vendor / protective of milestone /
+  trusting of CISO — pick one as a primary instinct).
+  Explain why their Academy training in AI governance and strategic communications gives
+  them a direct advantage in this exercise: the judge rewards executives who frame decisions
+  using governance maturity language and communicate with political precision.
+
+academy_relevant_missions:
+  - ai-governance
+  - strategic-comms

@@ -1,0 +1,207 @@
+# CUI // SP-CTI
+# Proposal Genesis — Exit Criteria Configuration
+#
+# Declarative exit criteria for proposal lifecycle phase transitions.
+# Used by harness engineering (D-HARNESS-4) and workflow loops (D-WF-1).
+#
+# Each workflow defines criteria that must be satisfied before the
+# opportunity can advance to the next phase.
+#
+# Classification: CUI // SP-CTI
+
+# ── CAPTURE → PROPOSE ────────────────────────────────────────────────────────
+
+proposal_capture:
+  description: "Exit criteria for CAPTURE phase (R1 Discover → R4 Engage)"
+  criteria:
+    - name: opportunity_registered
+      description: "Opportunity exists in sam_gov_opportunities with valid data"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM sam_gov_opportunities WHERE id = :opp_id AND status IN ('tracked', 'qualifying', 'active')"
+      threshold: 1
+      operator: gte
+      blocking: true
+
+    - name: shall_statements_extracted
+      description: "Minimum shall/must/will statements extracted from RFP"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM rfp_shall_statements WHERE opportunity_id = :opp_id"
+      threshold: 5
+      operator: gte
+      blocking: true
+
+    - name: capability_coverage_minimum
+      description: "Capability mapping coverage exceeds minimum threshold"
+      check_type: db_query
+      query: >
+        SELECT COALESCE(
+          CAST(SUM(CASE WHEN capability_match IS NOT NULL AND capability_match != '' THEN 1 ELSE 0 END) AS REAL) /
+          NULLIF(COUNT(*), 0), 0
+        ) as coverage
+        FROM rfp_shall_statements WHERE opportunity_id = :opp_id
+      threshold: 0.60
+      operator: gte
+      blocking: false
+
+    - name: capture_plan_exists
+      description: "Capture plan created with win strategy"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM pg_capture_plans WHERE opportunity_id = :opp_id AND win_strategy IS NOT NULL"
+      threshold: 1
+      operator: gte
+      blocking: false
+
+# ── PROPOSE → DECIDE ─────────────────────────────────────────────────────────
+
+proposal_propose:
+  description: "Exit criteria for PROPOSE phase (R5 Extract → R8 Polish)"
+  criteria:
+    - name: all_sections_drafted
+      description: "All required sections have draft content"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM proposal_section_drafts WHERE opportunity_id = :opp_id AND status = 'draft'"
+      threshold: 1
+      operator: gte
+      blocking: true
+
+    - name: no_stub_sections
+      description: "No sections flagged as stub (4-level stub detection)"
+      check_type: db_query
+      query: >
+        SELECT COUNT(*) as cnt FROM pg_proposal_quality_scores pqs
+        WHERE pqs.opportunity_id = :opp_id
+        AND json_extract(pqs.check_details, '$.stub_detection.stub_level') IN ('EMPTY', 'STUB')
+      threshold: 0
+      operator: eq
+      blocking: true
+
+    - name: quality_gate_passed
+      description: "Average quality score meets minimum threshold"
+      check_type: db_query
+      query: >
+        SELECT COALESCE(AVG(composite_score), 0) as avg_score
+        FROM pg_proposal_quality_scores
+        WHERE opportunity_id = :opp_id
+      threshold: 0.65
+      operator: gte
+      blocking: true
+
+    - name: graphrag_enrichment_completed
+      description: "GraphRAG capability enrichment has been run"
+      check_type: advisory
+      description_long: "Verify GraphRAG compliance neighborhood has been queried for all requirements"
+      blocking: false
+
+# ── DECIDE → DELIVER ─────────────────────────────────────────────────────────
+
+proposal_decide:
+  description: "Exit criteria for DECIDE phase (R9 Decide → bid/no-bid)"
+  criteria:
+    - name: bid_decision_made
+      description: "Bid/no-bid decision has been scored and recorded"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM pg_bid_decisions WHERE opportunity_id = :opp_id AND decision IN ('bid', 'no_bid')"
+      threshold: 1
+      operator: gte
+      blocking: true
+
+    - name: bid_recommendation_positive
+      description: "Decision must be 'bid' to proceed to delivery"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM pg_bid_decisions WHERE opportunity_id = :opp_id AND decision = 'bid'"
+      threshold: 1
+      operator: gte
+      blocking: true
+
+    - name: human_approval_received
+      description: "Human capture manager has approved the bid decision"
+      check_type: advisory
+      description_long: "Bid decisions require human approval before contract execution"
+      blocking: true
+
+# ── DELIVER → LEARN ──────────────────────────────────────────────────────────
+
+proposal_deliver:
+  description: "Exit criteria for DELIVER phase (R10 Monitor → R12 Publish)"
+  criteria:
+    - name: all_cdrls_delivered
+      description: "All required CDRLs have been generated and delivered"
+      check_type: db_query
+      query: >
+        SELECT COUNT(*) as cnt FROM cpmp_deliverables
+        WHERE contract_id IN (
+          SELECT id FROM cpmp_contracts WHERE opportunity_id = :opp_id
+        )
+        AND status NOT IN ('accepted', 'submitted', 'government_review')
+        AND due_date <= date('now')
+      threshold: 0
+      operator: eq
+      blocking: false
+
+    - name: goveval_quality_passed
+      description: "All compliance CDRLs passed GovEval quality gate"
+      check_type: db_query
+      query: >
+        SELECT COUNT(*) as cnt FROM cpmp_cdrl_generations
+        WHERE contract_id IN (
+          SELECT id FROM cpmp_contracts WHERE opportunity_id = :opp_id
+        )
+        AND status = 'generated'
+        AND (metadata IS NULL OR json_extract(metadata, '$.goveval_status') != 'failed')
+      threshold: 0
+      operator: gte
+      blocking: false
+
+    - name: dochub_health_acceptable
+      description: "Contract documentation health score meets minimum"
+      check_type: advisory
+      description_long: "DocHub portfolio health should be above 0.6 for active contracts"
+      blocking: false
+
+    - name: contract_status_completed
+      description: "Contract status is completed or closeout"
+      check_type: db_query
+      query: >
+        SELECT COUNT(*) as cnt FROM cpmp_contracts
+        WHERE opportunity_id = :opp_id
+        AND status IN ('completed', 'closeout', 'option_pending')
+      threshold: 1
+      operator: gte
+      blocking: true
+
+# ── LEARN (Continuous) ───────────────────────────────────────────────────────
+
+proposal_learn:
+  description: "Exit criteria for LEARN phase (R13 Analyze → R14 Train)"
+  criteria:
+    - name: win_loss_analyzed
+      description: "Win/loss analysis has been completed for closed opportunities"
+      check_type: db_query
+      query: "SELECT COUNT(*) as cnt FROM pg_win_loss_records WHERE opportunity_id = :opp_id"
+      threshold: 1
+      operator: gte
+      blocking: false
+
+    - name: training_pairs_generated
+      description: "Fine-tuning training pairs have been generated from approved content"
+      check_type: db_query
+      query: >
+        SELECT COUNT(*) as cnt FROM pg_training_pair_sources
+        WHERE source_type = 'approved_draft'
+        AND source_id IN (
+          SELECT id FROM proposal_section_drafts WHERE opportunity_id = :opp_id AND status = 'approved'
+        )
+      threshold: 1
+      operator: gte
+      blocking: false
+
+    - name: bayesian_calibration_current
+      description: "Bid scoring weights have been recalibrated with latest outcomes"
+      check_type: db_query
+      query: >
+        SELECT COUNT(*) as cnt FROM pg_proposal_genesis_config
+        WHERE key IN ('calibrated_score_weights', 'bayesian_score_weights')
+        AND updated_at >= date('now', '-30 days')
+      threshold: 1
+      operator: gte
+      blocking: false

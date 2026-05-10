@@ -1,0 +1,70 @@
+# CUI // SP-CTI
+id: inject-05-governance-reform
+title: "AI Governance Framework"
+
+body_md: |
+  ## BOARD TASKING — AI GOVERNANCE FRAMEWORK
+
+  **Classification:** CUI // SP-CTI
+  **Tasking Authority:** Board of Directors + Program Executive Office
+  **Due:** End of session
+
+  ---
+
+  The Board has formally tasked your program office with producing a **standing AI
+  Governance Framework** applicable to all AI-enabled decision support systems across
+  the four program offices in your portfolio.
+
+  The framework must be:
+  - **Non-technical** — written for senior leadership, not engineers
+  - **Implementable in 90 days** — no multi-year transformation programs
+  - **Applicable across all four offices** — different systems, same governance model
+  - **Defensible to Congress and the IG** — grounded in existing policy and regulation
+
+  ---
+
+  ### REQUIRED FRAMEWORK ELEMENTS (your response must address all four)
+
+  **1. Vendor Accountability Standards**
+  What contractual and operational requirements must AI vendors meet before deployment?
+  How do you verify training data provenance? What are the breach notification timelines?
+
+  **2. Model Integrity Verification**
+  How does a non-technical leader know if an AI system's outputs are trustworthy?
+  What is the human-in-the-loop requirement for high-stakes recommendations?
+  What are the tripwires that automatically trigger review?
+
+  **3. AI Incident Response Procedures**
+  When MERIDIAN happened — what should the response playbook look like?
+  Define: detection → escalation → containment → notification → remediation timelines.
+
+  **4. Organizational Accountability**
+  Who owns AI system integrity across the program office?
+  How is AI governance reported to the Board?
+  What is the CISO's standing authority to suspend AI systems?
+
+  ---
+
+  **AI Tools:**
+  - **Simulate** — model the policy impact of different governance thresholds
+    (e.g., what happens to program velocity if you require third-party audits on all AI systems?)
+  - **Knowledge Search** — ground your framework in NIST AI RMF, DoD AI Ethics Principles,
+    OMB M-24-10 (AI governance policy), Executive Order 13960, and FAR AI provisions
+
+  This is your Academy graduation moment. Members who completed AI Inventory, Risk Posture,
+  Stakeholder Reporting, and Data Intelligence missions have trained specifically for this
+  deliverable. The judge rewards frameworks that are specific, policy-grounded, and
+  implementable — not generic platitudes about "responsible AI."
+
+  ---
+
+  *A good governance framework is one that would have caught MERIDIAN before it was deployed.
+  Write the framework your past self needed.*
+
+context_note: >
+  Final inject. No receipt gate (base_pts awarded regardless of AI tool usage).
+  This rewards the quality of the governance thinking, not just AI tool usage.
+  Judge scores: policy quality (specific, actionable, defensible), AI governance maturity
+  (NIST AI RMF fluency, DoD policy grounding), implementation plan realism,
+  stakeholder impact consideration.
+  Academy leadership bonus applies for demonstrating governance framework maturity.

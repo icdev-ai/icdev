@@ -1,0 +1,111 @@
+# CUI // SP-CTI
+id: inject-03-comms-blackout
+title: "Comms Blackout — ML Trajectory Payoff"
+
+body_md: |
+  ## COMMS BLACKOUT — CLASSIFICATION: CUI//SP-CTI
+  **DTG:** 141942Z MAY 26
+  **FROM:** NAVSOC WESTPAC — SATELLITE TASKING AUTHORITY
+  **TO:** TASK GROUP 77.4 OPERATIONS
+
+  ---
+
+  ### COMMS BLACKOUT REPORT
+
+  Golf-7 has entered **EMCON Alpha** — all emissions ceased at 141910Z. Last confirmed fix:
+  Grid **XB-441**, course 073°, speed 18 knots. SATCOM relay to collection node Alpha-7
+  degraded due to PLA electronic warfare activity.
+
+  **No SIGINT available.** No new AIS. Visual reconnaissance not feasible (cloud deck 8/8).
+
+  ---
+
+  ### ML TRAJECTORY PREDICTION REQUIRED
+
+  With all sensors dark, your **ML trajectory model is the only source of positional intelligence**.
+  Your data scientist must deploy a fine-tuned model against the last known track and environmental
+  data to predict Golf-7's current position and projected course.
+
+  **Available inputs for model:**
+  - Last fix: XB-441 @ 141910Z, 073°, 18 kts
+  - Historical PLAN Type-054A behavior patterns (training data)
+  - Oceanographic data: current sets, thermocline depth, likely acoustic shadow zones
+  - Satellite tasking window opens at 142030Z — you need a grid estimate **before** then
+
+  ---
+
+  ### YOUR TASKING
+
+  Your team has **18 minutes** to produce an ML-grounded Trajectory Prediction. Use AI tools to:
+
+  1. **Deploy your fine-tuned trajectory model** — submit the model receipt (model_id required)
+  2. **Output a predicted grid** with confidence interval at 142030Z (±nm radius)
+  3. **Justify model inputs** — which features drove the prediction?
+  4. **Recommend satellite tasking priority** — which grid square should we task first?
+
+  **This inject requires a `finetune.deploy` receipt.** Teams without a fine-tune receipt
+  will receive maximum 50% of base score regardless of response quality.
+
+  ---
+
+  *Without ML, we are blind. The model is the intelligence.*
+
+body_variants:
+  supply_depot_hit: |
+    ## COMMS BLACKOUT + SUPPLY INTERDICTION CONFIRMED — CLASSIFICATION: CUI//SP-CTI
+    **DTG:** 141942Z MAY 26
+    **FROM:** NAVSOC WESTPAC — SATELLITE TASKING AUTHORITY
+    **TO:** TASK GROUP 77.4 OPERATIONS
+
+    ---
+
+    ### SUPPLY INTERDICTION: WORLD STATE CONFIRMED
+
+    AT-229 interdiction **SUCCESSFUL**. Golf-7 did NOT receive its full resupply.
+    Intelligence assessment: **endurance reduced by estimated 60 hours**. Golf-7 has
+    **altered course** — last confirmed bearing shift to 042° detected before EMCON Alpha.
+
+    The flagship is no longer heading toward XB-441 corridor. It has diverted to
+    **alternate resupply point BR-441** (northeast, grid XC-217 area).
+
+    ---
+
+    ### COMMS BLACKOUT REPORT
+
+    Golf-7 entered EMCON Alpha at 141910Z from grid **XB-441**, but last bearing was
+    now **042°** — consistent with diversion to BR-441. SATCOM relay degraded.
+    No SIGINT available. Visual recon not feasible.
+
+    ---
+
+    ### ML TRAJECTORY PREDICTION REQUIRED
+
+    Your **fine-tuned model must account for the course deviation**. The flagship is
+    no longer on its original track. Update your model with the new bearing (042°),
+    reduced speed estimate (fuel conservation due to low reserves), and the
+    BR-441 waypoint hypothesis.
+
+    **Available inputs for model:**
+    - Last fix: XB-441 @ 141910Z, bearing shift to 042°, ~14 kts (estimated, fuel conservation)
+    - Alternate resupply point BR-441 hypothesis: grid XC-217 ±30nm
+    - PLAN doctrine: diversion COAs under supply stress (training data)
+    - Satellite tasking window opens at 142030Z
+
+    ---
+
+    ### YOUR TASKING
+
+    Your team has **18 minutes** to produce an updated ML-grounded Trajectory Prediction
+    incorporating the supply interdiction diversion. Use AI tools to:
+
+    1. **Deploy your fine-tuned trajectory model** with updated track parameters
+    2. **Output revised predicted grid** at 142030Z — account for diversion to BR-441
+    3. **Justify model feature updates** — how did the course change affect the prediction?
+    4. **Recommend satellite tasking priority** — which grid square to task first?
+
+    **This inject requires a `finetune.deploy` receipt.** Teams without it receive max 50% base.
+    Teams that scored ≥80 on the Supply Run inject receive a +10 world-state bonus on this inject.
+
+    ---
+
+    *Supply interdiction confirmed. Model must reflect the new reality.*

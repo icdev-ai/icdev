@@ -1,0 +1,51 @@
+title: "Phase 2 — Red Team Probe: Find the Gaps"
+inject_type: aadc_design_challenge
+
+body: |
+  ## MISSION BRIEF — RED TEAMS ONLY
+
+  **Classification: CUI // SP-CTI**
+
+  The Blue Teams have submitted their designs. Your mission: **find every unmitigated vulnerability.**
+
+  ### Your target
+
+  Load the opposing Blue Team's design using the `aadc.assess` and `aadc.threat_model` tools.
+  You will receive the Blue Team's design ID from the facilitator.
+
+  ### What you're looking for
+
+  For each vulnerability you find, you must provide:
+  1. **OWASP Check ID** or **NIST AI RMF Check ID** that fails (e.g., `llm01`, `mng-2`)
+  2. **MITRE ATLAS technique** that exploits it (e.g., `AML.T0051 — Prompt Injection`)
+  3. **Exploit path**: how an attacker would actually abuse this gap
+  4. **Remediation**: the specific node(s) they should add
+
+  ### Scoring
+
+  - Each specific finding with check ID + ATLAS technique = maximum points
+  - Vague findings ("the design could be more secure") = zero points
+  - Findings the Blue Team already mitigated = zero points (they win that one)
+
+  ### Submission
+
+  Submit your findings as structured markdown:
+
+  ```
+  ## Red Team Report — [Blue Team Name] Design
+
+  ### Finding 1: [Check ID] — [Title]
+  - ATLAS: AML.T####
+  - Exploit path: ...
+  - Remediation: add [node-type] upstream of [target-node]
+
+  ### Finding 2: ...
+  ```
+
+  Use `aadc.threat_model` to generate the STRIDE analysis as your starting point.
+  Use `aadc.assess` to see the exact failing checks.
+
+hints:
+  - "Run aadc.threat_model first — it surfaces STRIDE findings automatically"
+  - "OWASP LLM08 (Excessive Agency) is the most commonly missed — check for autonomous-agents without circuit-breakers"
+  - "Cross-reference failing checks with ATLAS_THREAT_MAP for the technique IDs"

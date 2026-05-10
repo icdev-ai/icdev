@@ -1,0 +1,121 @@
+# ICDEV™ Category-Based Deviation Rules (GSD-adapted)
+# Layered ON TOP of existing confidence-based self-healing (D-GSD-7)
+#
+# GSD's 4 deviation rules adapted for ICDEV™:
+#   Rule 1: Auto-fix bugs (security vulns, logic errors)
+#   Rule 2: Auto-add critical functionality (error handling, validation)
+#   Rule 3: Auto-fix blocking issues (missing deps, broken imports)
+#   Rule 4: Architectural decisions → always human gate
+#
+# Category rules override confidence thresholds when matched.
+# If no category matches, fall back to confidence-based decision.
+
+version: 1
+
+# Category definitions with override behavior
+categories:
+  # Rule 1: Security vulnerabilities — always auto-fix if possible
+  security_vulnerability:
+    description: "Security vulnerabilities (CVE, injection, auth bypass)"
+    keywords:
+      - "CVE-"
+      - "sql injection"
+      - "xss"
+      - "command injection"
+      - "authentication bypass"
+      - "privilege escalation"
+      - "path traversal"
+      - "insecure deserialization"
+      - "hardcoded secret"
+      - "hardcoded password"
+      - "bandit"
+      - "sast finding"
+    min_confidence_override: 0.5    # Lower threshold for security (normally 0.7)
+    max_auto_heals_per_hour: 10     # Higher limit for security
+    decision: "auto_heal"            # Always auto-heal if above min confidence
+    priority: 1                      # Highest priority
+
+  # Rule 2: Critical functionality — auto-add if straightforward
+  critical_functionality:
+    description: "Missing error handling, input validation, auth checks"
+    keywords:
+      - "missing error handling"
+      - "unhandled exception"
+      - "input validation"
+      - "missing auth check"
+      - "rate limiting missing"
+      - "timeout not configured"
+      - "connection not closed"
+      - "resource leak"
+    min_confidence_override: 0.6
+    max_auto_heals_per_hour: 5
+    decision: "auto_heal"
+    priority: 2
+
+  # Rule 3: Blocking issues — auto-fix to unblock pipeline
+  blocking_issue:
+    description: "Missing dependencies, broken imports, syntax errors"
+    keywords:
+      - "import error"
+      - "module not found"
+      - "missing dependency"
+      - "syntax error"
+      - "indentation error"
+      - "name error"
+      - "broken pipe"
+      - "connection refused"
+      - "file not found"
+      - "permission denied"
+      - "compile error"
+      - "type error"
+    min_confidence_override: 0.5
+    max_auto_heals_per_hour: 8
+    decision: "auto_heal"
+    priority: 3
+
+  # Rule 4: Architectural decisions — ALWAYS human gate
+  architectural_change:
+    description: "Schema changes, API contract changes, dependency additions"
+    keywords:
+      - "schema change"
+      - "migration"
+      - "api contract"
+      - "breaking change"
+      - "new dependency"
+      - "database redesign"
+      - "architecture change"
+      - "framework upgrade"
+      - "major version"
+      - "data model change"
+    min_confidence_override: 1.0    # Effectively never auto-heal
+    max_auto_heals_per_hour: 0      # Never auto-heal
+    decision: "escalate"             # Always escalate to human
+    priority: 4
+
+  # Rule 5 (ICDEV™ addition): Compliance violations — always escalate
+  compliance_violation:
+    description: "CUI markings, NIST controls, ATO boundary changes"
+    keywords:
+      - "cui marking"
+      - "classification"
+      - "nist control"
+      - "ato boundary"
+      - "fedramp"
+      - "cmmc"
+      - "stig finding"
+      - "compliance gap"
+      - "audit trail"
+      - "append-only"
+    min_confidence_override: 1.0
+    max_auto_heals_per_hour: 0
+    decision: "escalate"
+    priority: 5
+
+# Global settings
+global:
+  # When category rules conflict with confidence, category wins
+  category_overrides_confidence: true
+  # Log all category matches to audit trail
+  log_category_matches: true
+  # Maximum total auto-heals per hour across all categories
+  max_total_auto_heals_per_hour: 20

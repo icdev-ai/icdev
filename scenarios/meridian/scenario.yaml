@@ -1,0 +1,205 @@
+# CUI // SP-CTI
+# Operation MERIDIAN — Trust No Machine
+# Non-technical leadership scenario: AI governance crisis.
+# Designed for Leadership, CISO, Analyst, and PM roles.
+# FORGE Academy guided-track missions are the scoring edge.
+
+name: "Operation MERIDIAN — Trust No Machine"
+slug: meridian
+version: "1.0"
+session_mode: live
+duration_minutes: 110
+max_teams: 8
+classification: "CUI // SP-CTI"
+
+description: |
+  MERIDIAN — your program office's AI-enabled Decision Support System — has just
+  flagged anomalies in its own outputs. Within 90 minutes the situation will escalate
+  from a model calibration question to a Congressional negligence inquiry.
+
+  Your non-technical leadership team must: assess the threat, decide whether to suspend
+  a $40M system mid-milestone, manage a hostile vendor, brief the board, and deliver
+  a governance reform framework that prevents this from happening again.
+
+  No technical skills required. Every decision point, every communication product,
+  every governance policy lives entirely in your domain. The AI tools — Oracle, Simulate,
+  COA Wargame, Knowledge Search — are your analysts. Academy graduates who trained on
+  AI inventory, risk posture, stakeholder reporting, and data intelligence receive direct
+  judge bonuses. The gap between a trained team and an untrained one should be decisive.
+
+roles:
+  - id: leadership
+    label: Executive / Program Director
+    icon: "🎯"
+    color: "#e83e8c"
+    description: "Senior executive who authorizes all major decisions, owns external relationships (Congress, IG, allies), and takes organizational accountability."
+    academy_missions:
+      - ai-governance
+      - strategic-comms
+    persona_template: personas/leadership.yaml
+
+  - id: ciso
+    label: Chief Information Security Officer
+    icon: "👁️"
+    color: "#dc3545"
+    description: "CISO responsible for AI system security posture, breach scope determination, and regulatory interface. Drives the suspend/continue recommendation."
+    academy_missions:
+      - m-ciso-01-ai-inventory
+      - m-ciso-02-ai-risk-posture
+    persona_template: personas/ciso.yaml
+
+  - id: analyst
+    label: Program / Intelligence Analyst
+    icon: "🔍"
+    color: "#20c997"
+    description: "Analyst who synthesizes what MERIDIAN got wrong, produces alternative analysis for leadership briefs, and validates AI tool outputs."
+    academy_missions:
+      - m-analyst-01-data-intel
+      - m-analyst-02-pattern-detection
+      - m-analyst-03-report-gen
+    persona_template: personas/analyst.yaml
+
+  - id: pm
+    label: Program Manager
+    icon: "📊"
+    color: "#28a745"
+    description: "PM who stands up the incident response program, manages vendor coordination, tracks timelines, and produces stakeholder status reports."
+    academy_missions:
+      - m-pm-04-schedule-cost
+      - m-pm-05-stakeholder-reporting
+    persona_template: personas/pm.yaml
+
+  - id: general_counsel
+    label: General Counsel / Legal Advisor
+    icon: "⚖️"
+    color: "#6f42c1"
+    description: "Legal advisor who determines regulatory obligations, manages Congressional exposure, and advises on vendor contract remedies and liability."
+    academy_missions:
+      - ai-governance
+      - strategic-comms
+      - rules-of-engagement
+    persona_template: personas/general_counsel.yaml
+
+  - id: cto
+    label: Chief Technology Officer
+    icon: "🔭"
+    color: "#17a2b8"
+    description: "CTO who assesses technical feasibility of MERIDIAN alternatives, evaluates vendor claims, and recommends architectural safeguards for future AI systems."
+    academy_missions:
+      - ml-fundamentals
+      - model-fine-tuning
+      - ai-governance
+    persona_template: personas/cto.yaml
+
+injects:
+  - id: inject-01-anomaly-flag
+    title: "MERIDIAN Flags Itself"
+    at_minute: 10
+    sequence: 1
+    body_path: injects/inject-01-anomaly-flag.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - knowledge.search
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/anomaly_response.yaml
+
+  - id: inject-02-breach-confirmed
+    title: "Supply Chain Breach Confirmed"
+    at_minute: 30
+    sequence: 2
+    depends_on: inject-01-anomaly-flag
+    body_path: injects/inject-02-breach-confirmed.yaml
+    ai_tools_allowed:
+      - strategos.wargame.coa
+      - strategos.simulate
+      - knowledge.search
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/breach_decision.yaml
+    consequence:
+      key: meridian_suspended
+      threshold_teams: 2
+      threshold_pts: 80
+      affects_inject: inject-03-political-storm
+
+  - id: inject-03-political-storm
+    title: "Congressional Inquiry Opens"
+    at_minute: 55
+    sequence: 3
+    depends_on: inject-02-breach-confirmed
+    body_path: injects/inject-03-political-storm.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - strategos.iw.composite
+      - knowledge.search
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/stakeholder_comms.yaml
+
+  - id: inject-04-board-brief
+    title: "Emergency Board Briefing"
+    at_minute: 75
+    sequence: 4
+    depends_on: inject-03-political-storm
+    body_path: injects/inject-04-board-brief.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - strategos.iw.composite
+      - strategos.wargame.coa
+      - knowledge.search
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: rubrics/board_brief.yaml
+
+  - id: inject-05-governance-reform
+    title: "AI Governance Framework"
+    at_minute: 95
+    sequence: 5
+    depends_on: inject-04-board-brief
+    body_path: injects/inject-05-governance-reform.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - knowledge.search
+    scoring:
+      base_pts: 125
+      receipt_bonus_per_call: 0
+      max_receipt_bonus: 0
+      time_bonus: false
+      receipt_gate: false
+      finetune_required: false
+      rubric: rubrics/governance_framework.yaml
+
+ribbons:
+  - id: crisis_manager
+    label: "🧯 Crisis Manager"
+    description: "Highest combined score on injects 1, 2, and 3 — decisive early-crisis response"
+  - id: governance_architect
+    label: "🏛️ Governance Architect"
+    description: "Highest score on inject 5 — best AI governance policy framework"
+  - id: communicator
+    label: "📣 Communicator"
+    description: "Highest combined score on injects 3 and 4 — best stakeholder and board output"
+  - id: ai_champion
+    label: "🤖 AI Champion"
+    description: "Most AI tool receipts submitted across the session"

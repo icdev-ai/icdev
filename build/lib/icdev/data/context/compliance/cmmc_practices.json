@@ -1,0 +1,2494 @@
+{
+  "metadata": {
+    "title": "CMMC Model v2.0 — Practice Catalog",
+    "source": "CMMC Model v2.0 (November 2021), 32 CFR Part 170, NIST SP 800-171 Rev 2, NIST SP 800-172",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "Cybersecurity Maturity Model Certification practices for protecting CUI in the Defense Industrial Base"
+  },
+  "levels": {
+    "2": {
+      "practice_count": 110,
+      "description": "Advanced — aligned with NIST 800-171 Rev 2 (110 practices)",
+      "assessment_type": "third_party"
+    },
+    "3": {
+      "practice_count": 134,
+      "description": "Expert — 110 L2 + 24 additional from NIST 800-172",
+      "assessment_type": "government_led"
+    }
+  },
+  "domains": [
+    {
+      "code": "AC",
+      "name": "Access Control",
+      "l2_count": 22,
+      "l3_additional": 4,
+      "description": "Limit system access to authorized users, processes acting on behalf of authorized users, and devices"
+    },
+    {
+      "code": "AT",
+      "name": "Awareness & Training",
+      "l2_count": 3,
+      "l3_additional": 0,
+      "description": "Ensure personnel are aware of security risks and applicable policies"
+    },
+    {
+      "code": "AU",
+      "name": "Audit & Accountability",
+      "l2_count": 9,
+      "l3_additional": 3,
+      "description": "Create, protect, and retain system audit logs and records"
+    },
+    {
+      "code": "CM",
+      "name": "Configuration Management",
+      "l2_count": 9,
+      "l3_additional": 2,
+      "description": "Establish and maintain baseline configurations and inventories of organizational systems"
+    },
+    {
+      "code": "IA",
+      "name": "Identification & Authentication",
+      "l2_count": 11,
+      "l3_additional": 3,
+      "description": "Identify and authenticate users, processes, and devices"
+    },
+    {
+      "code": "IR",
+      "name": "Incident Response",
+      "l2_count": 3,
+      "l3_additional": 2,
+      "description": "Establish incident handling capability including preparation, detection, analysis, containment, recovery, and response"
+    },
+    {
+      "code": "MA",
+      "name": "Maintenance",
+      "l2_count": 6,
+      "l3_additional": 1,
+      "description": "Perform maintenance on organizational systems"
+    },
+    {
+      "code": "MP",
+      "name": "Media Protection",
+      "l2_count": 9,
+      "l3_additional": 1,
+      "description": "Protect, sanitize, and destroy system media containing CUI"
+    },
+    {
+      "code": "PS",
+      "name": "Personnel Security",
+      "l2_count": 2,
+      "l3_additional": 0,
+      "description": "Screen individuals prior to authorizing access and ensure CUI is protected during personnel actions"
+    },
+    {
+      "code": "PE",
+      "name": "Physical Protection",
+      "l2_count": 6,
+      "l3_additional": 1,
+      "description": "Limit physical access to organizational systems, equipment, and operating environments"
+    },
+    {
+      "code": "RA",
+      "name": "Risk Assessment",
+      "l2_count": 3,
+      "l3_additional": 2,
+      "description": "Assess risk to organizational operations, assets, and individuals"
+    },
+    {
+      "code": "CA",
+      "name": "Security Assessment",
+      "l2_count": 4,
+      "l3_additional": 1,
+      "description": "Assess security controls, develop and implement plans of action, and monitor security controls on an ongoing basis"
+    },
+    {
+      "code": "SC",
+      "name": "System & Communications Protection",
+      "l2_count": 16,
+      "l3_additional": 3,
+      "description": "Monitor, control, and protect communications at system boundaries"
+    },
+    {
+      "code": "SI",
+      "name": "System & Information Integrity",
+      "l2_count": 7,
+      "l3_additional": 1,
+      "description": "Identify, report, and correct system flaws in a timely manner"
+    }
+  ],
+  "practices": [
+    {
+      "id": "AC.L2-3.1.1",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Authorized Access Control",
+      "description": "Limit system access to authorized users, processes acting on behalf of authorized users, and devices (including other systems).",
+      "nist_800_171_id": "171-3.1.1",
+      "nist_800_53_controls": ["AC-2", "AC-3", "AC-17"],
+      "assessment_objectives": [
+        "Authorized users are identified",
+        "Processes acting on behalf of authorized users are identified",
+        "Devices (and other systems) authorized to connect to the system are identified",
+        "System access is limited to authorized users",
+        "System access is limited to processes acting on behalf of authorized users",
+        "System access is limited to authorized devices (including other systems)"
+      ],
+      "evidence_required": "Access control policy, user account inventory, authorized device list, access control enforcement mechanism documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.2",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Transaction & Function Control",
+      "description": "Limit system access to the types of transactions and functions that authorized users are permitted to execute.",
+      "nist_800_171_id": "171-3.1.2",
+      "nist_800_53_controls": ["AC-3", "AC-6"],
+      "assessment_objectives": [
+        "Types of transactions and functions that authorized users are permitted to execute are defined",
+        "System access is limited to the defined types of transactions and functions for authorized users"
+      ],
+      "evidence_required": "Role-based access control matrix, transaction authorization policy, function permission mappings",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.3",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Control CUI Flow",
+      "description": "Control the flow of CUI in accordance with approved authorizations.",
+      "nist_800_171_id": "171-3.1.3",
+      "nist_800_53_controls": ["AC-4"],
+      "assessment_objectives": [
+        "Information flow control policies are defined",
+        "Methods and enforcement mechanisms for controlling the flow of CUI are defined",
+        "Designated sources and destinations for CUI within the system and between systems are identified",
+        "Authorizations for controlling the flow of CUI are defined",
+        "Approved authorizations for controlling the flow of CUI are enforced"
+      ],
+      "evidence_required": "Data flow diagrams, information flow control policy, network segmentation documentation, DLP configuration",
+      "automation_level": "semi",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.4",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Separation of Duties",
+      "description": "Separate the duties of individuals to reduce the risk of malevolent activity without collusion.",
+      "nist_800_171_id": "171-3.1.4",
+      "nist_800_53_controls": ["AC-5"],
+      "assessment_objectives": [
+        "The duties of individuals requiring separation are defined",
+        "Responsibilities for duties that require separation are assigned to separate individuals",
+        "Access privileges that enable individuals to exercise the duties that require separation are granted to separate individuals"
+      ],
+      "evidence_required": "Separation of duties policy, role matrix, privilege assignment records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.5",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Least Privilege",
+      "description": "Employ the principle of least privilege, including for specific security functions and privileged accounts.",
+      "nist_800_171_id": "171-3.1.5",
+      "nist_800_53_controls": ["AC-6", "AC-6(1)", "AC-6(5)"],
+      "assessment_objectives": [
+        "Privileged accounts are identified",
+        "Access to privileged accounts is authorized in accordance with the principle of least privilege",
+        "Security functions are identified",
+        "Access to security functions is authorized in accordance with the principle of least privilege"
+      ],
+      "evidence_required": "Privileged account inventory, least privilege policy, privilege escalation procedures, access review records",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.6",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Non-Privileged Account Use",
+      "description": "Use non-privileged accounts or roles when accessing nonsecurity functions.",
+      "nist_800_171_id": "171-3.1.6",
+      "nist_800_53_controls": ["AC-6(2)"],
+      "assessment_objectives": [
+        "Nonsecurity functions are identified",
+        "Users are required to use non-privileged accounts or roles when accessing nonsecurity functions"
+      ],
+      "evidence_required": "Account usage policy, privileged vs non-privileged account mapping, admin account usage logs",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.7",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Privileged Functions",
+      "description": "Prevent non-privileged users from executing privileged functions and capture the execution of such functions in audit logs.",
+      "nist_800_171_id": "171-3.1.7",
+      "nist_800_53_controls": ["AC-6(9)", "AC-6(10)"],
+      "assessment_objectives": [
+        "Privileged functions are defined",
+        "Non-privileged users are prevented from executing privileged functions",
+        "The execution of privileged functions is captured in audit logs"
+      ],
+      "evidence_required": "Privileged function inventory, enforcement mechanism documentation, audit log samples showing privileged function execution",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.8",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Unsuccessful Logon Attempts",
+      "description": "Limit unsuccessful logon attempts.",
+      "nist_800_171_id": "171-3.1.8",
+      "nist_800_53_controls": ["AC-7"],
+      "assessment_objectives": [
+        "The means of limiting unsuccessful logon attempts is defined",
+        "Unsuccessful logon attempts are limited"
+      ],
+      "evidence_required": "Account lockout policy configuration, lockout threshold settings, lockout duration documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.9",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Privacy & Security Notices",
+      "description": "Provide privacy and security notices consistent with applicable CUI rules.",
+      "nist_800_171_id": "171-3.1.9",
+      "nist_800_53_controls": ["AC-8"],
+      "assessment_objectives": [
+        "Privacy and security notices required by CUI rules are identified",
+        "Privacy and security notices are displayed"
+      ],
+      "evidence_required": "System banners, login notice screenshots, CUI notice configuration documentation",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "AC.L2-3.1.10",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Session Lock",
+      "description": "Use session lock with pattern-hiding displays to prevent access and viewing of data after a period of inactivity.",
+      "nist_800_171_id": "171-3.1.10",
+      "nist_800_53_controls": ["AC-11", "AC-11(1)"],
+      "assessment_objectives": [
+        "The period of inactivity after which the system initiates a session lock is defined",
+        "Access to the system and viewing of data is prevented by initiating a session lock after the defined period of inactivity",
+        "Previously visible information is concealed via a pattern-hiding display after the defined period of inactivity"
+      ],
+      "evidence_required": "Session lock policy, GPO/MDM configuration, screensaver/lock settings documentation",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "AC.L2-3.1.11",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Session Termination",
+      "description": "Terminate (automatically) a user session after a defined condition.",
+      "nist_800_171_id": "171-3.1.11",
+      "nist_800_53_controls": ["AC-12"],
+      "assessment_objectives": [
+        "Conditions requiring a user session to terminate are defined",
+        "A user session is automatically terminated after any of the defined conditions"
+      ],
+      "evidence_required": "Session timeout configuration, auto-logoff settings, session termination policy",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "AC.L2-3.1.12",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Control Remote Access",
+      "description": "Monitor and control remote access sessions.",
+      "nist_800_171_id": "171-3.1.12",
+      "nist_800_53_controls": ["AC-17(1)", "AC-17(2)"],
+      "assessment_objectives": [
+        "Remote access sessions are permitted",
+        "The types of permitted remote access are identified",
+        "Remote access sessions are controlled",
+        "Remote access sessions are monitored"
+      ],
+      "evidence_required": "Remote access policy, VPN configuration, remote access monitoring logs, session recording documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.13",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Remote Access Confidentiality",
+      "description": "Employ cryptographic mechanisms to protect the confidentiality of remote access sessions.",
+      "nist_800_171_id": "171-3.1.13",
+      "nist_800_53_controls": ["AC-17(2)"],
+      "assessment_objectives": [
+        "Cryptographic mechanisms to protect the confidentiality of remote access sessions are identified",
+        "Cryptographic mechanisms to protect the confidentiality of remote access sessions are implemented"
+      ],
+      "evidence_required": "VPN encryption configuration, TLS/SSL certificate documentation, FIPS 140-2 validated module documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.14",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Remote Access Routing",
+      "description": "Route remote access via managed access control points.",
+      "nist_800_171_id": "171-3.1.14",
+      "nist_800_53_controls": ["AC-17(3)"],
+      "assessment_objectives": [
+        "Managed access control points are identified and implemented",
+        "Remote access is routed through managed network access control points"
+      ],
+      "evidence_required": "Network architecture diagrams, access control point documentation, routing configuration",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.15",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Privileged Remote Access",
+      "description": "Authorize remote execution of privileged commands and remote access to security-relevant information.",
+      "nist_800_171_id": "171-3.1.15",
+      "nist_800_53_controls": ["AC-17(4)"],
+      "assessment_objectives": [
+        "Privileged commands authorized for remote execution are identified",
+        "Security-relevant information authorized to be accessed remotely is identified",
+        "The execution of the identified privileged commands via remote access is authorized",
+        "Access to the identified security-relevant information via remote access is authorized"
+      ],
+      "evidence_required": "Privileged remote access authorization records, jump server/bastion host documentation, PAM configuration",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.16",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Wireless Access Authorization",
+      "description": "Authorize wireless access prior to allowing such connections.",
+      "nist_800_171_id": "171-3.1.16",
+      "nist_800_53_controls": ["AC-18"],
+      "assessment_objectives": [
+        "Wireless access points to the system are identified",
+        "Wireless access is authorized prior to allowing such connections"
+      ],
+      "evidence_required": "Wireless access policy, authorized wireless device list, wireless access point inventory",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.17",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Wireless Access Protection",
+      "description": "Protect wireless access using authentication and encryption.",
+      "nist_800_171_id": "171-3.1.17",
+      "nist_800_53_controls": ["AC-18(1)"],
+      "assessment_objectives": [
+        "Wireless access to the system is protected using authentication",
+        "Wireless access to the system is protected using encryption"
+      ],
+      "evidence_required": "WPA3/WPA2-Enterprise configuration, 802.1X authentication settings, wireless encryption documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.18",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Mobile Device Connection",
+      "description": "Control connection of mobile devices.",
+      "nist_800_171_id": "171-3.1.18",
+      "nist_800_53_controls": ["AC-19"],
+      "assessment_objectives": [
+        "Mobile devices that process, store, or transmit CUI are identified",
+        "Connection of mobile devices is controlled"
+      ],
+      "evidence_required": "Mobile device management (MDM) policy, approved device list, connection authorization records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.19",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Encrypt CUI on Mobile",
+      "description": "Encrypt CUI on mobile devices and mobile computing platforms.",
+      "nist_800_171_id": "171-3.1.19",
+      "nist_800_53_controls": ["AC-19(5)"],
+      "assessment_objectives": [
+        "Mobile devices and mobile computing platforms that process, store, or transmit CUI are identified",
+        "Encryption is employed to protect CUI on identified mobile devices and mobile computing platforms"
+      ],
+      "evidence_required": "Device encryption configuration, MDM encryption enforcement policy, FIPS 140-2 module documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L2-3.1.20",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "External System Connections",
+      "description": "Verify and control/limit connections to and use of external systems.",
+      "nist_800_171_id": "171-3.1.20",
+      "nist_800_53_controls": ["AC-20", "AC-20(1)"],
+      "assessment_objectives": [
+        "Connections to external systems are identified",
+        "The use of external systems is identified",
+        "Connections to external systems are verified",
+        "Connections to external systems are controlled/limited",
+        "The use of external systems is controlled/limited"
+      ],
+      "evidence_required": "External system inventory, interconnection security agreements (ISAs), boundary protection documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.21",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Portable Storage Use",
+      "description": "Limit use of portable storage devices on external systems.",
+      "nist_800_171_id": "171-3.1.21",
+      "nist_800_53_controls": ["AC-20(2)"],
+      "assessment_objectives": [
+        "The use of portable storage devices containing CUI on external systems is identified",
+        "Limits on the use of portable storage devices containing CUI on external systems are defined",
+        "The use of portable storage devices containing CUI on external systems is limited"
+      ],
+      "evidence_required": "Portable storage policy, USB device control configuration, DLP policy for removable media",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L2-3.1.22",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 2,
+      "title": "Control Public Information",
+      "description": "Control information posted or processed on publicly accessible systems.",
+      "nist_800_171_id": "171-3.1.22",
+      "nist_800_53_controls": ["AC-22"],
+      "assessment_objectives": [
+        "Individuals authorized to post or process information on publicly accessible systems are identified",
+        "Procedures to ensure CUI is not posted or processed on publicly accessible systems are identified",
+        "A review process is in place prior to posting of any content to publicly accessible systems",
+        "Content on publicly accessible systems is reviewed to ensure that it does not include CUI"
+      ],
+      "evidence_required": "Public information posting policy, content review procedures, authorized poster list",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "AT.L2-3.2.1",
+      "domain": "Awareness & Training",
+      "domain_code": "AT",
+      "level": 2,
+      "title": "Role-Based Risk Awareness",
+      "description": "Ensure that managers, systems administrators, and users of organizational systems are made aware of the security risks associated with their activities and of the applicable policies, standards, and procedures related to the security of those systems.",
+      "nist_800_171_id": "171-3.2.1",
+      "nist_800_53_controls": ["AT-2"],
+      "assessment_objectives": [
+        "Security risks associated with organizational activities involving CUI are identified",
+        "Policies, standards, and procedures related to the security of the system are identified",
+        "Managers, systems administrators, and users of organizational systems are made aware of security risks",
+        "Managers, systems administrators, and users of organizational systems are made aware of applicable policies, standards, and procedures"
+      ],
+      "evidence_required": "Security awareness training materials, training completion records, training policy documentation",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "AT.L2-3.2.2",
+      "domain": "Awareness & Training",
+      "domain_code": "AT",
+      "level": 2,
+      "title": "Role-Based Training",
+      "description": "Ensure that personnel are trained to carry out their assigned information security-related duties and responsibilities.",
+      "nist_800_171_id": "171-3.2.2",
+      "nist_800_53_controls": ["AT-3"],
+      "assessment_objectives": [
+        "Information security-related duties and responsibilities requiring training are identified",
+        "Information security-related training content is defined based on assigned duties and responsibilities",
+        "Personnel are trained to carry out their assigned information security-related duties and responsibilities"
+      ],
+      "evidence_required": "Role-based training curriculum, training completion records, certification documentation",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "AT.L2-3.2.3",
+      "domain": "Awareness & Training",
+      "domain_code": "AT",
+      "level": 2,
+      "title": "Insider Threat Awareness",
+      "description": "Provide security awareness training on recognizing and reporting potential indicators of insider threat.",
+      "nist_800_171_id": "171-3.2.3",
+      "nist_800_53_controls": ["AT-2(2)"],
+      "assessment_objectives": [
+        "Potential indicators of insider threat are identified",
+        "Security awareness training on recognizing potential indicators of insider threat is provided to managers and employees",
+        "Security awareness training on reporting potential indicators of insider threat is provided to managers and employees"
+      ],
+      "evidence_required": "Insider threat training materials, training completion records, reporting procedures documentation",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "AU.L2-3.3.1",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "System Auditing",
+      "description": "Create and retain system audit logs and records to the extent needed to enable the monitoring, analysis, investigation, and reporting of unlawful or unauthorized system activity.",
+      "nist_800_171_id": "171-3.3.1",
+      "nist_800_53_controls": ["AU-2", "AU-3", "AU-3(1)", "AU-6"],
+      "assessment_objectives": [
+        "Audit logs needed to enable monitoring, analysis, investigation, and reporting of unlawful or unauthorized system activity are specified",
+        "The content of audit records needed to support monitoring, analysis, investigation, and reporting is defined",
+        "Audit records are created (generated)",
+        "Audit records once created are retained for a defined period",
+        "Audit records are sufficient to support monitoring",
+        "Audit records are sufficient to support analysis",
+        "Audit records are sufficient to support investigation",
+        "Audit records are sufficient to support reporting"
+      ],
+      "evidence_required": "Audit policy, audit log samples, log retention configuration, SIEM integration documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AU.L2-3.3.2",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "User Accountability",
+      "description": "Ensure that the actions of individual system users can be uniquely traced to those users so they can be held accountable for their actions.",
+      "nist_800_171_id": "171-3.3.2",
+      "nist_800_53_controls": ["AU-2", "AU-3", "AU-6"],
+      "assessment_objectives": [
+        "The content of the audit records needed to support the ability to uniquely trace users to their actions is defined",
+        "Audit records are created (generated)",
+        "The content of the audit records is sufficient to support the ability to uniquely trace users to their actions"
+      ],
+      "evidence_required": "User identification in audit records, unique user ID policy, log correlation documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AU.L2-3.3.3",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Event Review",
+      "description": "Review and update logged events.",
+      "nist_800_171_id": "171-3.3.3",
+      "nist_800_53_controls": ["AU-2(3)"],
+      "assessment_objectives": [
+        "Logged events are reviewed",
+        "Logged events are updated"
+      ],
+      "evidence_required": "Log review procedures, review schedule documentation, event update records",
+      "automation_level": "semi",
+      "priority": "medium"
+    },
+    {
+      "id": "AU.L2-3.3.4",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Audit Failure Alerting",
+      "description": "Alert in the event of an audit logging process failure.",
+      "nist_800_171_id": "171-3.3.4",
+      "nist_800_53_controls": ["AU-5"],
+      "assessment_objectives": [
+        "Personnel or roles to be alerted in the event of an audit logging process failure are identified",
+        "Types of audit logging process failures for which alert will be generated are defined",
+        "Identified personnel or roles are alerted in the event of an audit logging process failure"
+      ],
+      "evidence_required": "Audit failure alerting configuration, alert notification procedures, monitoring system documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "AU.L2-3.3.5",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Audit Correlation",
+      "description": "Correlate audit record review, analysis, and reporting processes for investigation and response to indications of unlawful, unauthorized, suspicious, or unusual activity.",
+      "nist_800_171_id": "171-3.3.5",
+      "nist_800_53_controls": ["AU-6(3)"],
+      "assessment_objectives": [
+        "Audit record review, analysis, and reporting processes for investigation and response to indications of unlawful, unauthorized, suspicious, or unusual activity are defined",
+        "Defined audit record review, analysis, and reporting processes are correlated"
+      ],
+      "evidence_required": "SIEM correlation rules, incident investigation procedures, cross-system log correlation documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AU.L2-3.3.6",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Audit Reduction & Reporting",
+      "description": "Provide audit record reduction and report generation to support on-demand analysis and reporting.",
+      "nist_800_171_id": "171-3.3.6",
+      "nist_800_53_controls": ["AU-7"],
+      "assessment_objectives": [
+        "An audit record reduction capability that supports on-demand analysis is provided",
+        "A report generation capability that supports on-demand reporting is provided"
+      ],
+      "evidence_required": "Log management tool documentation, reporting capability demonstration, on-demand analysis procedures",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "AU.L2-3.3.7",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Authoritative Time Source",
+      "description": "Provide a system capability that compares and synchronizes internal system clocks with an authoritative source to generate time stamps for audit records.",
+      "nist_800_171_id": "171-3.3.7",
+      "nist_800_53_controls": ["AU-8"],
+      "assessment_objectives": [
+        "Internal system clocks are used to generate time stamps for audit records",
+        "An authoritative time source is defined",
+        "Internal system clocks are compared to an authoritative time source",
+        "Internal system clocks are synchronized with an authoritative time source"
+      ],
+      "evidence_required": "NTP configuration, time synchronization documentation, authoritative time source identification",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "AU.L2-3.3.8",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Audit Protection",
+      "description": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion.",
+      "nist_800_171_id": "171-3.3.8",
+      "nist_800_53_controls": ["AU-9"],
+      "assessment_objectives": [
+        "Audit information is protected from unauthorized access",
+        "Audit information is protected from unauthorized modification",
+        "Audit information is protected from unauthorized deletion",
+        "Audit logging tools are protected from unauthorized access, modification, and deletion"
+      ],
+      "evidence_required": "Audit log access controls, immutable log storage configuration, write-once media documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AU.L2-3.3.9",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 2,
+      "title": "Audit Management",
+      "description": "Limit management of audit logging functionality to a subset of privileged users.",
+      "nist_800_171_id": "171-3.3.9",
+      "nist_800_53_controls": ["AU-9(4)"],
+      "assessment_objectives": [
+        "A subset of privileged users granted access to manage audit logging functionality is defined",
+        "Management of audit logging functionality is limited to the defined subset of privileged users"
+      ],
+      "evidence_required": "Audit management role assignments, privileged user list for audit functions, access control documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.1",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "System Baselining",
+      "description": "Establish and maintain baseline configurations and inventories of organizational systems (including hardware, software, firmware, and documentation) throughout the respective system development life cycles.",
+      "nist_800_171_id": "171-3.4.1",
+      "nist_800_53_controls": ["CM-2", "CM-6", "CM-8", "CM-8(1)"],
+      "assessment_objectives": [
+        "A baseline configuration is established",
+        "The baseline configuration includes hardware, software, firmware, and documentation",
+        "The baseline configuration is maintained (reviewed and updated) throughout the system development life cycle",
+        "A system inventory is established",
+        "The system inventory includes hardware, software, firmware, and documentation",
+        "The inventory is maintained (reviewed and updated) throughout the system development life cycle"
+      ],
+      "evidence_required": "Baseline configuration documentation, hardware/software inventory, configuration management plan",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.2",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "Security Configuration Enforcement",
+      "description": "Establish and enforce security configuration settings for information technology products employed in organizational systems.",
+      "nist_800_171_id": "171-3.4.2",
+      "nist_800_53_controls": ["CM-6"],
+      "assessment_objectives": [
+        "Security configuration settings for IT products employed in the system are established and included in the baseline configuration",
+        "Security configuration settings for IT products are enforced"
+      ],
+      "evidence_required": "Security configuration baselines (STIG, CIS), GPO/configuration enforcement documentation, compliance scan results",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.3",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "System Change Management",
+      "description": "Track, review, approve or disapprove, and log changes to organizational systems.",
+      "nist_800_171_id": "171-3.4.3",
+      "nist_800_53_controls": ["CM-3"],
+      "assessment_objectives": [
+        "Changes to the system are tracked",
+        "Changes to the system are reviewed",
+        "Changes to the system are approved or disapproved",
+        "Changes to the system are logged"
+      ],
+      "evidence_required": "Change management process documentation, change request records, change approval logs, change tracking system",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.4",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "Security Impact Analysis",
+      "description": "Analyze the security impact of changes prior to implementation.",
+      "nist_800_171_id": "171-3.4.4",
+      "nist_800_53_controls": ["CM-4"],
+      "assessment_objectives": [
+        "The security impact of changes to the system is analyzed prior to implementation"
+      ],
+      "evidence_required": "Security impact analysis reports, change review documentation, risk assessment records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.5",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "Access Restrictions for Change",
+      "description": "Define, document, approve, and enforce physical and logical access restrictions associated with changes to organizational systems.",
+      "nist_800_171_id": "171-3.4.5",
+      "nist_800_53_controls": ["CM-5"],
+      "assessment_objectives": [
+        "Physical access restrictions associated with changes to the system are defined",
+        "Physical access restrictions associated with changes to the system are documented",
+        "Physical access restrictions associated with changes to the system are approved",
+        "Physical access restrictions associated with changes to the system are enforced",
+        "Logical access restrictions associated with changes to the system are defined",
+        "Logical access restrictions associated with changes to the system are documented",
+        "Logical access restrictions associated with changes to the system are approved",
+        "Logical access restrictions associated with changes to the system are enforced"
+      ],
+      "evidence_required": "Change control access policy, access restriction documentation, approval records, enforcement mechanism documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.6",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "Least Functionality",
+      "description": "Employ the principle of least functionality by configuring organizational systems to provide only essential capabilities.",
+      "nist_800_171_id": "171-3.4.6",
+      "nist_800_53_controls": ["CM-7"],
+      "assessment_objectives": [
+        "Essential system capabilities are defined based on the principle of least functionality",
+        "The system is configured to provide only the defined essential capabilities"
+      ],
+      "evidence_required": "System hardening documentation, disabled services list, least functionality policy",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.7",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "Nonessential Functionality",
+      "description": "Restrict, disable, or prevent the use of nonessential programs, functions, ports, protocols, and services.",
+      "nist_800_171_id": "171-3.4.7",
+      "nist_800_53_controls": ["CM-7(1)", "CM-7(2)"],
+      "assessment_objectives": [
+        "Essential programs are defined",
+        "Essential functions are defined",
+        "Essential ports are defined",
+        "Essential protocols are defined",
+        "Essential services are defined",
+        "The use of nonessential programs is restricted, disabled, or prevented as defined",
+        "The use of nonessential functions is restricted, disabled, or prevented as defined",
+        "The use of nonessential ports is restricted, disabled, or prevented as defined",
+        "The use of nonessential protocols is restricted, disabled, or prevented as defined",
+        "The use of nonessential services is restricted, disabled, or prevented as defined"
+      ],
+      "evidence_required": "Port/protocol/service matrix, disabled services documentation, application whitelisting configuration",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.8",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "Application Execution Policy",
+      "description": "Apply deny-by-exception (blacklisting) policy to prevent the use of unauthorized software or deny-all, permit-by-exception (whitelisting) policy to allow the execution of authorized software.",
+      "nist_800_171_id": "171-3.4.8",
+      "nist_800_53_controls": ["CM-7(4)", "CM-7(5)"],
+      "assessment_objectives": [
+        "A software execution policy is specified (deny-by-exception or deny-all permit-by-exception)",
+        "Software allowed or not allowed to execute is specified",
+        "The software execution policy is enforced"
+      ],
+      "evidence_required": "Application whitelisting/blacklisting policy, AppLocker/SRP configuration, authorized software list",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L2-3.4.9",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 2,
+      "title": "User-Installed Software",
+      "description": "Control and monitor user-installed software.",
+      "nist_800_171_id": "171-3.4.9",
+      "nist_800_53_controls": ["CM-11"],
+      "assessment_objectives": [
+        "A policy for controlling the installation of software by users is established",
+        "Installation of software by users is controlled based on the established policy",
+        "Installation of software by users is monitored"
+      ],
+      "evidence_required": "Software installation policy, monitoring tool configuration, installation approval records",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "IA.L2-3.5.1",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Identification",
+      "description": "Identify system users, processes acting on behalf of users, and devices.",
+      "nist_800_171_id": "171-3.5.1",
+      "nist_800_53_controls": ["IA-2", "IA-5"],
+      "assessment_objectives": [
+        "System users are identified",
+        "Processes acting on behalf of users are identified",
+        "Devices accessing the system are identified"
+      ],
+      "evidence_required": "User identification policy, unique user ID records, device identification mechanism documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "IA.L2-3.5.2",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Authentication",
+      "description": "Authenticate (or verify) the identities of users, processes, or devices, as a prerequisite to allowing access to organizational systems.",
+      "nist_800_171_id": "171-3.5.2",
+      "nist_800_53_controls": ["IA-2", "IA-5"],
+      "assessment_objectives": [
+        "The identity of each user is authenticated or verified as a prerequisite to system access",
+        "The identity of each process acting on behalf of a user is authenticated or verified as a prerequisite to system access",
+        "The identity of each device is authenticated or verified as a prerequisite to system access"
+      ],
+      "evidence_required": "Authentication mechanism documentation, login procedures, device authentication configuration",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "IA.L2-3.5.3",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Multifactor Authentication",
+      "description": "Use multifactor authentication for local and network access to privileged accounts and for network access to non-privileged accounts.",
+      "nist_800_171_id": "171-3.5.3",
+      "nist_800_53_controls": ["IA-2(1)", "IA-2(2)"],
+      "assessment_objectives": [
+        "Privileged accounts are identified",
+        "Multifactor authentication is implemented for local access to privileged accounts",
+        "Multifactor authentication is implemented for network access to privileged accounts",
+        "Multifactor authentication is implemented for network access to non-privileged accounts"
+      ],
+      "evidence_required": "MFA configuration, PIV/CAC enrollment records, MFA enforcement policy, authentication system documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "IA.L2-3.5.4",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Replay-Resistant Authentication",
+      "description": "Employ replay-resistant authentication mechanisms for network access to privileged and non-privileged accounts.",
+      "nist_800_171_id": "171-3.5.4",
+      "nist_800_53_controls": ["IA-2(8)"],
+      "assessment_objectives": [
+        "Replay-resistant authentication mechanisms are implemented for network account access"
+      ],
+      "evidence_required": "Authentication protocol documentation (Kerberos, TLS), anti-replay mechanism configuration",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "IA.L2-3.5.5",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Identifier Reuse Prevention",
+      "description": "Prevent reuse of identifiers for a defined period.",
+      "nist_800_171_id": "171-3.5.5",
+      "nist_800_53_controls": ["IA-4"],
+      "assessment_objectives": [
+        "A period within which identifiers cannot be reused is defined",
+        "Reuse of identifiers is prevented within the defined period"
+      ],
+      "evidence_required": "Identifier management policy, account deprovisioning procedures, identifier reuse prevention configuration",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "IA.L2-3.5.6",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Identifier Handling",
+      "description": "Disable identifiers after a defined period of inactivity.",
+      "nist_800_171_id": "171-3.5.6",
+      "nist_800_53_controls": ["IA-4(4)"],
+      "assessment_objectives": [
+        "A period of inactivity after which an identifier is disabled is defined",
+        "Identifiers are disabled after the defined period of inactivity"
+      ],
+      "evidence_required": "Account inactivity policy, auto-disable configuration, inactive account review records",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "IA.L2-3.5.7",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Password Complexity",
+      "description": "Enforce a minimum password complexity and change of characters when new passwords are created.",
+      "nist_800_171_id": "171-3.5.7",
+      "nist_800_53_controls": ["IA-5(1)"],
+      "assessment_objectives": [
+        "Password complexity requirements are defined",
+        "Password change of character requirements are defined",
+        "Minimum password complexity requirements as defined are enforced when new passwords are created",
+        "Minimum password change of character requirements as defined are enforced when new passwords are created"
+      ],
+      "evidence_required": "Password policy configuration, GPO/IAM password settings, complexity enforcement documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "IA.L2-3.5.8",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Password Reuse",
+      "description": "Prohibit password reuse for a specified number of generations.",
+      "nist_800_171_id": "171-3.5.8",
+      "nist_800_53_controls": ["IA-5(1)"],
+      "assessment_objectives": [
+        "The number of generations during which a password cannot be reused is specified",
+        "Reuse of passwords is prohibited during the specified number of generations"
+      ],
+      "evidence_required": "Password history configuration, password reuse prevention settings documentation",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "IA.L2-3.5.9",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Temporary Passwords",
+      "description": "Allow temporary password use for system logons with an immediate change to a permanent password.",
+      "nist_800_171_id": "171-3.5.9",
+      "nist_800_53_controls": ["IA-5(1)"],
+      "assessment_objectives": [
+        "Users are required to change temporary passwords upon first use"
+      ],
+      "evidence_required": "Temporary password issuance procedures, force-change-on-first-login configuration",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "IA.L2-3.5.10",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Cryptographically-Protected Passwords",
+      "description": "Store and transmit only cryptographically-protected passwords.",
+      "nist_800_171_id": "171-3.5.10",
+      "nist_800_53_controls": ["IA-5(1)"],
+      "assessment_objectives": [
+        "Passwords are cryptographically protected in storage",
+        "Passwords are cryptographically protected in transmission"
+      ],
+      "evidence_required": "Password hashing algorithm documentation, encrypted transmission configuration (TLS), credential store configuration",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "IA.L2-3.5.11",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 2,
+      "title": "Obscure Feedback",
+      "description": "Obscure feedback of authentication information.",
+      "nist_800_171_id": "171-3.5.11",
+      "nist_800_53_controls": ["IA-6"],
+      "assessment_objectives": [
+        "Authentication information is obscured during the authentication process"
+      ],
+      "evidence_required": "Login screen configuration, password masking implementation, authentication feedback documentation",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "IR.L2-3.6.1",
+      "domain": "Incident Response",
+      "domain_code": "IR",
+      "level": 2,
+      "title": "Incident Handling",
+      "description": "Establish an operational incident-handling capability for organizational systems that includes preparation, detection, analysis, containment, recovery, and user response activities.",
+      "nist_800_171_id": "171-3.6.1",
+      "nist_800_53_controls": ["IR-2", "IR-4", "IR-5", "IR-6", "IR-7"],
+      "assessment_objectives": [
+        "An operational incident-handling capability is established",
+        "The incident-handling capability includes preparation",
+        "The incident-handling capability includes detection",
+        "The incident-handling capability includes analysis",
+        "The incident-handling capability includes containment",
+        "The incident-handling capability includes recovery",
+        "The incident-handling capability includes user response activities"
+      ],
+      "evidence_required": "Incident response plan, IR procedures, IR team roster, detection tool documentation, playbooks",
+      "automation_level": "semi",
+      "priority": "critical"
+    },
+    {
+      "id": "IR.L2-3.6.2",
+      "domain": "Incident Response",
+      "domain_code": "IR",
+      "level": 2,
+      "title": "Incident Reporting",
+      "description": "Track, document, and report incidents to designated officials and/or authorities both internal and external to the organization.",
+      "nist_800_171_id": "171-3.6.2",
+      "nist_800_53_controls": ["IR-6"],
+      "assessment_objectives": [
+        "Incidents are tracked",
+        "Incidents are documented",
+        "Incidents are reported to designated internal officials or authorities",
+        "Incidents are reported to designated external officials or authorities"
+      ],
+      "evidence_required": "Incident tracking system, incident report templates, reporting procedures, DIBNet reporting documentation",
+      "automation_level": "semi",
+      "priority": "critical"
+    },
+    {
+      "id": "IR.L2-3.6.3",
+      "domain": "Incident Response",
+      "domain_code": "IR",
+      "level": 2,
+      "title": "Incident Response Testing",
+      "description": "Test the organizational incident response capability.",
+      "nist_800_171_id": "171-3.6.3",
+      "nist_800_53_controls": ["IR-3"],
+      "assessment_objectives": [
+        "The incident response capability for the organization is tested"
+      ],
+      "evidence_required": "Tabletop exercise documentation, IR test results, after-action reports, lessons learned",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "MA.L2-3.7.1",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 2,
+      "title": "Perform Maintenance",
+      "description": "Perform maintenance on organizational systems.",
+      "nist_800_171_id": "171-3.7.1",
+      "nist_800_53_controls": ["MA-2"],
+      "assessment_objectives": [
+        "Maintenance is performed on the system in accordance with the maintenance policy and/or maintenance schedule"
+      ],
+      "evidence_required": "Maintenance schedule, maintenance logs, maintenance policy documentation",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "MA.L2-3.7.2",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 2,
+      "title": "System Maintenance Control",
+      "description": "Provide controls on the tools, techniques, mechanisms, and personnel used to conduct system maintenance.",
+      "nist_800_171_id": "171-3.7.2",
+      "nist_800_53_controls": ["MA-2", "MA-3", "MA-3(1)", "MA-3(2)"],
+      "assessment_objectives": [
+        "Tools used to conduct system maintenance are controlled",
+        "Techniques used to conduct system maintenance are controlled",
+        "Mechanisms used to conduct system maintenance are controlled",
+        "Personnel used to conduct system maintenance are controlled"
+      ],
+      "evidence_required": "Approved maintenance tools list, maintenance personnel authorization records, tool inspection procedures",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "MA.L2-3.7.3",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 2,
+      "title": "Equipment Sanitization",
+      "description": "Ensure equipment removed for off-site maintenance is sanitized of any CUI.",
+      "nist_800_171_id": "171-3.7.3",
+      "nist_800_53_controls": ["MA-2"],
+      "assessment_objectives": [
+        "Equipment to be removed from the facility for off-site maintenance is sanitized of any CUI"
+      ],
+      "evidence_required": "Equipment sanitization procedures, sanitization records, CUI data removal verification documentation",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "MA.L2-3.7.4",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 2,
+      "title": "Media Inspection",
+      "description": "Check media containing diagnostic and test programs for malicious code before the media are used in organizational systems.",
+      "nist_800_171_id": "171-3.7.4",
+      "nist_800_53_controls": ["MA-3(2)"],
+      "assessment_objectives": [
+        "Media containing diagnostic and test programs are checked for malicious code before the media are used in the system"
+      ],
+      "evidence_required": "Media scanning procedures, antivirus scan records for maintenance media, media inspection policy",
+      "automation_level": "semi",
+      "priority": "medium"
+    },
+    {
+      "id": "MA.L2-3.7.5",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 2,
+      "title": "Nonlocal Maintenance",
+      "description": "Require multifactor authentication to establish nonlocal maintenance sessions via external network connections and terminate such connections when nonlocal maintenance is complete.",
+      "nist_800_171_id": "171-3.7.5",
+      "nist_800_53_controls": ["MA-4"],
+      "assessment_objectives": [
+        "Multifactor authentication is used to establish nonlocal maintenance sessions via external network connections",
+        "Nonlocal maintenance sessions established via external network connections are terminated when nonlocal maintenance is complete"
+      ],
+      "evidence_required": "Remote maintenance authentication configuration, session termination procedures, MFA enforcement for remote maintenance",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "MA.L2-3.7.6",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 2,
+      "title": "Maintenance Personnel",
+      "description": "Supervise the maintenance activities of maintenance personnel without required access authorization.",
+      "nist_800_171_id": "171-3.7.6",
+      "nist_800_53_controls": ["MA-5"],
+      "assessment_objectives": [
+        "Individuals performing maintenance who are without required access authorization are supervised during maintenance activities"
+      ],
+      "evidence_required": "Maintenance escort policy, supervision records, maintenance personnel access authorization documentation",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "MP.L2-3.8.1",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Media Protection",
+      "description": "Protect (i.e., physically control and securely store) system media containing CUI, both paper and digital.",
+      "nist_800_171_id": "171-3.8.1",
+      "nist_800_53_controls": ["MP-2", "MP-4"],
+      "assessment_objectives": [
+        "System media containing CUI (paper and digital) are physically controlled",
+        "System media containing CUI (paper and digital) are securely stored"
+      ],
+      "evidence_required": "Media storage policy, physical security measures for media, media inventory, secure storage locations",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "MP.L2-3.8.2",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Media Access",
+      "description": "Limit access to CUI on system media to authorized users.",
+      "nist_800_171_id": "171-3.8.2",
+      "nist_800_53_controls": ["MP-2"],
+      "assessment_objectives": [
+        "Access to CUI on system media is limited to authorized users"
+      ],
+      "evidence_required": "Media access control policy, authorized user list for media access, access control mechanism documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "MP.L2-3.8.3",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Media Disposal",
+      "description": "Sanitize or destroy system media containing CUI before disposal or release for reuse.",
+      "nist_800_171_id": "171-3.8.3",
+      "nist_800_53_controls": ["MP-6"],
+      "assessment_objectives": [
+        "System media containing CUI is sanitized or destroyed before disposal",
+        "System media containing CUI is sanitized before release for reuse"
+      ],
+      "evidence_required": "Media sanitization procedures, sanitization records, destruction certificates, NSA/CSS EPL approved equipment",
+      "automation_level": "manual",
+      "priority": "critical"
+    },
+    {
+      "id": "MP.L2-3.8.4",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Media Markings",
+      "description": "Mark media with necessary CUI markings and distribution limitations.",
+      "nist_800_171_id": "171-3.8.4",
+      "nist_800_53_controls": ["MP-3"],
+      "assessment_objectives": [
+        "Media containing CUI is marked with applicable CUI markings",
+        "Media containing CUI is marked with distribution limitations"
+      ],
+      "evidence_required": "Media marking policy, CUI marking procedures, marked media samples/photographs",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "MP.L2-3.8.5",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Media Accountability",
+      "description": "Control access to media containing CUI and maintain accountability for media during transport outside of controlled areas.",
+      "nist_800_171_id": "171-3.8.5",
+      "nist_800_53_controls": ["MP-5"],
+      "assessment_objectives": [
+        "Access to media containing CUI is controlled",
+        "Accountability for media containing CUI is maintained during transport outside of controlled areas"
+      ],
+      "evidence_required": "Media transport policy, chain of custody records, media accountability logs",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "MP.L2-3.8.6",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Portable Storage Encryption",
+      "description": "Implement cryptographic mechanisms to protect the confidentiality of CUI stored on digital media during transport unless otherwise protected by alternative physical safeguards.",
+      "nist_800_171_id": "171-3.8.6",
+      "nist_800_53_controls": ["MP-5(4)"],
+      "assessment_objectives": [
+        "Cryptographic mechanisms are implemented to protect the confidentiality of CUI stored on digital media during transport, or alternative physical safeguards are implemented"
+      ],
+      "evidence_required": "Portable media encryption policy, encryption tool documentation, FIPS 140-2 validated module records",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "MP.L2-3.8.7",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Removable Media",
+      "description": "Control the use of removable media on system components.",
+      "nist_800_171_id": "171-3.8.7",
+      "nist_800_53_controls": ["MP-7"],
+      "assessment_objectives": [
+        "The use of removable media on system components is controlled"
+      ],
+      "evidence_required": "Removable media policy, USB control configuration, device control software documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "MP.L2-3.8.8",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Shared Media",
+      "description": "Prohibit the use of portable storage devices when such devices have no identifiable owner.",
+      "nist_800_171_id": "171-3.8.8",
+      "nist_800_53_controls": ["MP-7(1)"],
+      "assessment_objectives": [
+        "The use of portable storage devices is prohibited when such devices have no identifiable owner"
+      ],
+      "evidence_required": "Portable storage device ownership policy, device registration records, unowned device prohibition procedures",
+      "automation_level": "semi",
+      "priority": "medium"
+    },
+    {
+      "id": "MP.L2-3.8.9",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 2,
+      "title": "Protect Backups",
+      "description": "Protect the confidentiality of backup CUI at storage locations.",
+      "nist_800_171_id": "171-3.8.9",
+      "nist_800_53_controls": ["CP-9"],
+      "assessment_objectives": [
+        "The confidentiality of backup CUI at storage locations is protected"
+      ],
+      "evidence_required": "Backup encryption configuration, secure backup storage documentation, backup access control records",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "PS.L2-3.9.1",
+      "domain": "Personnel Security",
+      "domain_code": "PS",
+      "level": 2,
+      "title": "Screen Individuals",
+      "description": "Screen individuals prior to authorizing access to organizational systems containing CUI.",
+      "nist_800_171_id": "171-3.9.1",
+      "nist_800_53_controls": ["PS-3"],
+      "assessment_objectives": [
+        "Individuals are screened prior to authorizing access to organizational systems containing CUI"
+      ],
+      "evidence_required": "Personnel screening policy, background check records, screening completion documentation",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "PS.L2-3.9.2",
+      "domain": "Personnel Security",
+      "domain_code": "PS",
+      "level": 2,
+      "title": "Personnel Actions",
+      "description": "Ensure that organizational systems containing CUI are protected during and after personnel actions such as terminations and transfers.",
+      "nist_800_171_id": "171-3.9.2",
+      "nist_800_53_controls": ["PS-4", "PS-5"],
+      "assessment_objectives": [
+        "Policy or process for protecting CUI during personnel actions is established",
+        "System access is revoked and/or CUI is protected upon personnel termination",
+        "System access is adjusted and/or CUI is protected upon personnel transfer"
+      ],
+      "evidence_required": "Personnel termination/transfer procedures, access revocation records, exit checklists, account deprovisioning logs",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "PE.L2-3.10.1",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 2,
+      "title": "Limit Physical Access",
+      "description": "Limit physical access to organizational systems, equipment, and the respective operating environments to authorized individuals.",
+      "nist_800_171_id": "171-3.10.1",
+      "nist_800_53_controls": ["PE-2", "PE-3"],
+      "assessment_objectives": [
+        "Authorized individuals allowed physical access are identified",
+        "Physical access to organizational systems is limited to authorized individuals",
+        "Physical access to equipment is limited to authorized individuals",
+        "Physical access to operating environments is limited to authorized individuals"
+      ],
+      "evidence_required": "Physical access policy, authorized personnel list, badge/access card records, physical access logs",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "PE.L2-3.10.2",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 2,
+      "title": "Monitor Physical Facility",
+      "description": "Protect and monitor the physical facility and support infrastructure for organizational systems.",
+      "nist_800_171_id": "171-3.10.2",
+      "nist_800_53_controls": ["PE-2", "PE-3", "PE-6"],
+      "assessment_objectives": [
+        "The physical facility where the system resides is protected",
+        "The support infrastructure for the system is protected",
+        "The physical facility is monitored",
+        "The support infrastructure is monitored"
+      ],
+      "evidence_required": "Physical security measures documentation, surveillance system records, monitoring procedures, facility protection documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "PE.L2-3.10.3",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 2,
+      "title": "Escort Visitors",
+      "description": "Escort visitors and monitor visitor activity.",
+      "nist_800_171_id": "171-3.10.3",
+      "nist_800_53_controls": ["PE-3"],
+      "assessment_objectives": [
+        "Visitors are escorted",
+        "Visitor activity is monitored"
+      ],
+      "evidence_required": "Visitor escort policy, visitor logs, visitor badge procedures, escort documentation",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "PE.L2-3.10.4",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 2,
+      "title": "Physical Access Logs",
+      "description": "Maintain audit logs of physical access.",
+      "nist_800_171_id": "171-3.10.4",
+      "nist_800_53_controls": ["PE-3"],
+      "assessment_objectives": [
+        "Audit logs of physical access are maintained"
+      ],
+      "evidence_required": "Physical access log records, badge reader reports, access log retention documentation",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "PE.L2-3.10.5",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 2,
+      "title": "Manage Physical Access",
+      "description": "Control and manage physical access devices.",
+      "nist_800_171_id": "171-3.10.5",
+      "nist_800_53_controls": ["PE-3"],
+      "assessment_objectives": [
+        "Physical access devices are identified",
+        "Physical access devices are controlled",
+        "Physical access devices are managed"
+      ],
+      "evidence_required": "Key/badge inventory, access device management procedures, lock/key control records",
+      "automation_level": "semi",
+      "priority": "medium"
+    },
+    {
+      "id": "PE.L2-3.10.6",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 2,
+      "title": "Alternative Work Sites",
+      "description": "Enforce safeguarding measures for CUI at alternate work sites.",
+      "nist_800_171_id": "171-3.10.6",
+      "nist_800_53_controls": ["PE-17"],
+      "assessment_objectives": [
+        "Safeguarding measures for CUI are defined for alternate work sites",
+        "Safeguarding measures for CUI at alternate work sites are enforced"
+      ],
+      "evidence_required": "Telework policy, alternate work site security requirements, VPN/encryption requirements for remote work",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "RA.L2-3.11.1",
+      "domain": "Risk Assessment",
+      "domain_code": "RA",
+      "level": 2,
+      "title": "Risk Assessments",
+      "description": "Periodically assess the risk to organizational operations (including mission, functions, image, or reputation), organizational assets, and individuals, resulting from the operation of organizational systems and the associated processing, storage, or transmission of CUI.",
+      "nist_800_171_id": "171-3.11.1",
+      "nist_800_53_controls": ["RA-3"],
+      "assessment_objectives": [
+        "The frequency of risk assessments is defined",
+        "Risk assessments are conducted with the defined frequency",
+        "Risk assessments identify risks from the operation of organizational systems and associated processing, storage, or transmission of CUI"
+      ],
+      "evidence_required": "Risk assessment reports, risk assessment schedule, threat/vulnerability assessment documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "RA.L2-3.11.2",
+      "domain": "Risk Assessment",
+      "domain_code": "RA",
+      "level": 2,
+      "title": "Vulnerability Scan",
+      "description": "Scan for vulnerabilities in organizational systems and applications periodically and when new vulnerabilities affecting those systems and applications are identified.",
+      "nist_800_171_id": "171-3.11.2",
+      "nist_800_53_controls": ["RA-5", "RA-5(5)"],
+      "assessment_objectives": [
+        "The frequency to scan for vulnerabilities in the system and applications is defined",
+        "Vulnerability scans are performed with the defined frequency",
+        "Vulnerability scans are performed when new vulnerabilities are identified",
+        "Vulnerabilities are identified and reported"
+      ],
+      "evidence_required": "Vulnerability scan reports, scan schedule, vulnerability management procedures, remediation tracking",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "RA.L2-3.11.3",
+      "domain": "Risk Assessment",
+      "domain_code": "RA",
+      "level": 2,
+      "title": "Vulnerability Remediation",
+      "description": "Remediate vulnerabilities in accordance with risk assessments.",
+      "nist_800_171_id": "171-3.11.3",
+      "nist_800_53_controls": ["RA-5"],
+      "assessment_objectives": [
+        "Vulnerabilities are remediated in accordance with risk assessments"
+      ],
+      "evidence_required": "Vulnerability remediation records, patching documentation, risk-based remediation priority records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CA.L2-3.12.1",
+      "domain": "Security Assessment",
+      "domain_code": "CA",
+      "level": 2,
+      "title": "Security Control Assessment",
+      "description": "Periodically assess the security controls in organizational systems to determine if the controls are effective in their application.",
+      "nist_800_171_id": "171-3.12.1",
+      "nist_800_53_controls": ["CA-2"],
+      "assessment_objectives": [
+        "The frequency of security control assessments is defined",
+        "Security controls are assessed with the defined frequency to determine if they are effective"
+      ],
+      "evidence_required": "Security assessment plans, assessment reports, control effectiveness evaluations",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CA.L2-3.12.2",
+      "domain": "Security Assessment",
+      "domain_code": "CA",
+      "level": 2,
+      "title": "Plan of Action",
+      "description": "Develop and implement plans of action designed to correct deficiencies and reduce or eliminate vulnerabilities in organizational systems.",
+      "nist_800_171_id": "171-3.12.2",
+      "nist_800_53_controls": ["CA-5"],
+      "assessment_objectives": [
+        "Deficiencies and vulnerabilities to be addressed by the plan of action are identified",
+        "A plan of action is developed to correct identified deficiencies and reduce or eliminate identified vulnerabilities",
+        "The plan of action is implemented to correct identified deficiencies and reduce or eliminate identified vulnerabilities"
+      ],
+      "evidence_required": "POA&M documentation, remediation status tracking, milestone completion records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CA.L2-3.12.3",
+      "domain": "Security Assessment",
+      "domain_code": "CA",
+      "level": 2,
+      "title": "Security Control Monitoring",
+      "description": "Monitor security controls on an ongoing basis to ensure the continued effectiveness of the controls.",
+      "nist_800_171_id": "171-3.12.3",
+      "nist_800_53_controls": ["CA-7"],
+      "assessment_objectives": [
+        "A monitoring strategy is developed",
+        "Security controls are monitored on an ongoing basis to ensure the continued effectiveness of the controls"
+      ],
+      "evidence_required": "Continuous monitoring strategy, monitoring tool configuration, ongoing assessment records",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CA.L2-3.12.4",
+      "domain": "Security Assessment",
+      "domain_code": "CA",
+      "level": 2,
+      "title": "System Security Plan",
+      "description": "Develop, document, and periodically update system security plans that describe system boundaries, system environments of operation, how security requirements are implemented, and the relationships with or connections to other systems.",
+      "nist_800_171_id": "171-3.12.4",
+      "nist_800_53_controls": ["PL-2"],
+      "assessment_objectives": [
+        "A system security plan is developed",
+        "The system security plan describes the system boundary",
+        "The system security plan describes the environment of operation",
+        "The system security plan describes how security requirements are implemented",
+        "The system security plan describes relationships with or connections to other systems",
+        "The system security plan is periodically updated"
+      ],
+      "evidence_required": "System security plan document, network diagrams, system boundary documentation, update history",
+      "automation_level": "semi",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L2-3.13.1",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Boundary Protection",
+      "description": "Monitor, control, and protect communications (i.e., information transmitted or received by organizational systems) at the external boundaries and key internal boundaries of organizational systems.",
+      "nist_800_171_id": "171-3.13.1",
+      "nist_800_53_controls": ["SC-7", "SA-8"],
+      "assessment_objectives": [
+        "Communications at the external system boundary are monitored",
+        "Communications at the external system boundary are controlled",
+        "Communications at the external system boundary are protected",
+        "Communications at key internal boundaries are monitored",
+        "Communications at key internal boundaries are controlled",
+        "Communications at key internal boundaries are protected"
+      ],
+      "evidence_required": "Network architecture diagram, firewall configuration, boundary protection documentation, IDS/IPS configuration",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L2-3.13.2",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Security Engineering",
+      "description": "Employ architectural designs, software development techniques, and systems engineering principles that promote effective information security within organizational systems.",
+      "nist_800_171_id": "171-3.13.2",
+      "nist_800_53_controls": ["SA-8"],
+      "assessment_objectives": [
+        "Architectural designs that promote effective information security are employed",
+        "Software development techniques that promote effective information security are employed",
+        "Systems engineering principles that promote effective information security are employed"
+      ],
+      "evidence_required": "System architecture documentation, secure development practices, defense-in-depth design records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L2-3.13.3",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Role Separation",
+      "description": "Separate user functionality from system management functionality.",
+      "nist_800_171_id": "171-3.13.3",
+      "nist_800_53_controls": ["SC-2"],
+      "assessment_objectives": [
+        "User functionality is identified",
+        "System management functionality is identified",
+        "User functionality is separated from system management functionality"
+      ],
+      "evidence_required": "System architecture showing separation, role-based access configuration, management network segmentation documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L2-3.13.4",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Shared Resource Control",
+      "description": "Prevent unauthorized and unintended information transfer via shared system resources.",
+      "nist_800_171_id": "171-3.13.4",
+      "nist_800_53_controls": ["SC-4"],
+      "assessment_objectives": [
+        "Unauthorized and unintended information transfer via shared system resources is prevented"
+      ],
+      "evidence_required": "Memory management configuration, object reuse controls, shared resource isolation documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L2-3.13.5",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Public Access System Separation",
+      "description": "Implement subnetworks for publicly accessible system components that are physically or logically separated from internal networks.",
+      "nist_800_171_id": "171-3.13.5",
+      "nist_800_53_controls": ["SC-7"],
+      "assessment_objectives": [
+        "Publicly accessible system components are identified",
+        "Subnetworks for publicly accessible system components are physically or logically separated from internal networks"
+      ],
+      "evidence_required": "DMZ architecture documentation, network segmentation diagrams, firewall rule sets",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L2-3.13.6",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Network Communication by Exception",
+      "description": "Deny network communications traffic by default and allow network communications traffic by exception (i.e., deny all, permit by exception).",
+      "nist_800_171_id": "171-3.13.6",
+      "nist_800_53_controls": ["SC-7(5)"],
+      "assessment_objectives": [
+        "Network communications traffic is denied by default",
+        "Network communications traffic is allowed by exception"
+      ],
+      "evidence_required": "Firewall default deny rules, network ACL configuration, exception/allow list documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L2-3.13.7",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Split Tunneling",
+      "description": "Prevent remote devices from simultaneously establishing non-remote connections with organizational systems and communicating via some other connection to resources in external networks (i.e., split tunneling).",
+      "nist_800_171_id": "171-3.13.7",
+      "nist_800_53_controls": ["SC-7(7)"],
+      "assessment_objectives": [
+        "Split tunneling is prevented for remote devices connecting to organizational systems"
+      ],
+      "evidence_required": "VPN configuration showing split tunneling prevention, remote access policy documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L2-3.13.8",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Data in Transit",
+      "description": "Implement cryptographic mechanisms to prevent unauthorized disclosure of CUI during transmission unless otherwise protected by alternative physical safeguards.",
+      "nist_800_171_id": "171-3.13.8",
+      "nist_800_53_controls": ["SC-8", "SC-8(1)"],
+      "assessment_objectives": [
+        "Cryptographic mechanisms are implemented to prevent unauthorized disclosure of CUI during transmission, unless otherwise protected by alternative physical safeguards"
+      ],
+      "evidence_required": "TLS/IPsec configuration, encryption-in-transit documentation, FIPS 140-2 validated module documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L2-3.13.9",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Network Disconnect",
+      "description": "Terminate network connections associated with communications sessions at the end of the sessions or after a defined period of inactivity.",
+      "nist_800_171_id": "171-3.13.9",
+      "nist_800_53_controls": ["SC-10"],
+      "assessment_objectives": [
+        "A period of inactivity to terminate network connections associated with communications sessions is defined",
+        "Network connections are terminated at the end of the sessions",
+        "Network connections are terminated after the defined period of inactivity"
+      ],
+      "evidence_required": "Session timeout configuration, network connection termination settings, inactivity threshold documentation",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "SC.L2-3.13.10",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Key Management",
+      "description": "Establish and manage cryptographic keys for cryptography employed in organizational systems.",
+      "nist_800_171_id": "171-3.13.10",
+      "nist_800_53_controls": ["SC-12"],
+      "assessment_objectives": [
+        "Cryptographic keys are established for cryptography employed in the system",
+        "Cryptographic keys are managed for cryptography employed in the system"
+      ],
+      "evidence_required": "Key management policy, key generation procedures, key storage and rotation documentation, PKI documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L2-3.13.11",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "CUI Encryption",
+      "description": "Employ FIPS-validated cryptography when used to protect the confidentiality of CUI.",
+      "nist_800_171_id": "171-3.13.11",
+      "nist_800_53_controls": ["SC-13"],
+      "assessment_objectives": [
+        "FIPS-validated cryptography is employed to protect the confidentiality of CUI"
+      ],
+      "evidence_required": "FIPS 140-2/140-3 validation certificates, cryptographic module inventory, algorithm documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L2-3.13.12",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Collaborative Device Control",
+      "description": "Prohibit remote activation of collaborative computing devices and provide indication of devices in use to users present at the device.",
+      "nist_800_171_id": "171-3.13.12",
+      "nist_800_53_controls": ["SC-15"],
+      "assessment_objectives": [
+        "Remote activation of collaborative computing devices is prohibited",
+        "An indication of collaborative computing devices in use is provided to users present at the device"
+      ],
+      "evidence_required": "Collaborative device policy, device configuration showing remote activation prevention, indicator documentation",
+      "automation_level": "semi",
+      "priority": "medium"
+    },
+    {
+      "id": "SC.L2-3.13.13",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Mobile Code",
+      "description": "Control and monitor the use of mobile code.",
+      "nist_800_171_id": "171-3.13.13",
+      "nist_800_53_controls": ["SC-18"],
+      "assessment_objectives": [
+        "The use of mobile code is controlled",
+        "The use of mobile code is monitored"
+      ],
+      "evidence_required": "Mobile code policy, browser/application security settings, mobile code restriction configuration",
+      "automation_level": "auto",
+      "priority": "medium"
+    },
+    {
+      "id": "SC.L2-3.13.14",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Voice over IP",
+      "description": "Control and monitor the use of Voice over Internet Protocol (VoIP) technologies.",
+      "nist_800_171_id": "171-3.13.14",
+      "nist_800_53_controls": ["SC-19"],
+      "assessment_objectives": [
+        "The use of VoIP technologies is controlled",
+        "The use of VoIP technologies is monitored"
+      ],
+      "evidence_required": "VoIP security policy, VoIP system configuration, monitoring tool documentation",
+      "automation_level": "semi",
+      "priority": "medium"
+    },
+    {
+      "id": "SC.L2-3.13.15",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Communications Authenticity",
+      "description": "Protect the authenticity of communications sessions.",
+      "nist_800_171_id": "171-3.13.15",
+      "nist_800_53_controls": ["SC-23"],
+      "assessment_objectives": [
+        "The authenticity of communications sessions is protected"
+      ],
+      "evidence_required": "Session authentication configuration, TLS certificate documentation, session integrity mechanisms",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L2-3.13.16",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 2,
+      "title": "Data at Rest",
+      "description": "Protect the confidentiality of CUI at rest.",
+      "nist_800_171_id": "171-3.13.16",
+      "nist_800_53_controls": ["SC-28"],
+      "assessment_objectives": [
+        "The confidentiality of CUI at rest is protected"
+      ],
+      "evidence_required": "Encryption at rest configuration, disk/volume encryption documentation, database encryption settings, FIPS 140-2 module documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SI.L2-3.14.1",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "Flaw Remediation",
+      "description": "Identify, report, and correct system flaws in a timely manner.",
+      "nist_800_171_id": "171-3.14.1",
+      "nist_800_53_controls": ["SI-2"],
+      "assessment_objectives": [
+        "The time within which to identify system flaws is specified",
+        "System flaws are identified within the specified time frame",
+        "System flaws are reported within the specified time frame",
+        "System flaws are corrected within the specified time frame"
+      ],
+      "evidence_required": "Patch management policy, vulnerability remediation records, patch deployment documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SI.L2-3.14.2",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "Malicious Code Protection",
+      "description": "Provide protection from malicious code at designated locations within organizational systems.",
+      "nist_800_171_id": "171-3.14.2",
+      "nist_800_53_controls": ["SI-3"],
+      "assessment_objectives": [
+        "Designated locations for malicious code protection are identified",
+        "Protection from malicious code at designated locations is provided"
+      ],
+      "evidence_required": "Antivirus/anti-malware configuration, endpoint protection deployment, malware detection logs",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SI.L2-3.14.3",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "Security Alerts & Advisories",
+      "description": "Monitor system security alerts and advisories and take action in response.",
+      "nist_800_171_id": "171-3.14.3",
+      "nist_800_53_controls": ["SI-5"],
+      "assessment_objectives": [
+        "System security alerts and advisories are monitored",
+        "Actions in response to system security alerts and advisories are taken"
+      ],
+      "evidence_required": "Alert monitoring procedures, advisory subscription records, response action documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "SI.L2-3.14.4",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "Update Malicious Code Protection",
+      "description": "Update malicious code protection mechanisms when new releases are available.",
+      "nist_800_171_id": "171-3.14.4",
+      "nist_800_53_controls": ["SI-3"],
+      "assessment_objectives": [
+        "Malicious code protection mechanisms are updated when new releases are available"
+      ],
+      "evidence_required": "Antivirus definition update configuration, auto-update settings, update compliance reports",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SI.L2-3.14.5",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "System & File Scanning",
+      "description": "Perform periodic scans of organizational systems and real-time scans of files from external sources as files are downloaded, opened, or executed.",
+      "nist_800_171_id": "171-3.14.5",
+      "nist_800_53_controls": ["SI-3"],
+      "assessment_objectives": [
+        "The frequency for malicious code scans is defined",
+        "Malicious code scans are performed with the defined frequency",
+        "Real-time malicious code scans of files from external sources as files are downloaded, opened, or executed are performed"
+      ],
+      "evidence_required": "Scan schedule, scan results, real-time scanning configuration, on-access scan settings",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SI.L2-3.14.6",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "Inbound & Outbound Traffic",
+      "description": "Monitor organizational systems, including inbound and outbound communications traffic, to detect attacks and indicators of potential attacks.",
+      "nist_800_171_id": "171-3.14.6",
+      "nist_800_53_controls": ["SI-4"],
+      "assessment_objectives": [
+        "The system is monitored to detect attacks and indicators of potential attacks",
+        "Inbound communications traffic is monitored to detect attacks and indicators of potential attacks",
+        "Outbound communications traffic is monitored to detect attacks and indicators of potential attacks"
+      ],
+      "evidence_required": "IDS/IPS configuration, network monitoring tools, traffic analysis procedures, alert configuration",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SI.L2-3.14.7",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 2,
+      "title": "Identify Unauthorized Use",
+      "description": "Identify unauthorized use of organizational systems.",
+      "nist_800_171_id": "171-3.14.7",
+      "nist_800_53_controls": ["SI-4"],
+      "assessment_objectives": [
+        "Unauthorized use of the system is identified"
+      ],
+      "evidence_required": "User behavior analytics, unauthorized access detection tools, anomaly detection configuration",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L3-3.1.2e",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 3,
+      "title": "Dual Authorization",
+      "description": "Employ dual authorization to execute critical or sensitive system operations.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AC-3(2)"],
+      "assessment_objectives": [
+        "Critical or sensitive system operations requiring dual authorization are identified",
+        "Dual authorization is employed for the execution of identified critical or sensitive operations"
+      ],
+      "evidence_required": "Dual authorization policy, two-person rule implementation, critical operation list, authorization mechanism documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AC.L3-3.1.3e",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 3,
+      "title": "Controlled Information Flows",
+      "description": "Employ organization-defined solutions to control the flow of CUI using organization-defined managed interfaces.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AC-4(6)", "AC-4(21)"],
+      "assessment_objectives": [
+        "Managed interfaces for controlling CUI flow are defined",
+        "Solutions for controlling CUI flow are defined and employed at managed interfaces",
+        "CUI flows are controlled through the managed interfaces using the defined solutions"
+      ],
+      "evidence_required": "Managed interface inventory, data flow control policy, DLP tool configuration, cross-domain solution documentation",
+      "automation_level": "semi",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L3-3.1.5e",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 3,
+      "title": "Privileged Access — Security Functions",
+      "description": "Restrict privileged accounts on the system to organization-defined security functions.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AC-6(1)", "AC-6(2)"],
+      "assessment_objectives": [
+        "Security functions for which privileged access is restricted are defined",
+        "Privileged accounts on the system are restricted to the defined security functions"
+      ],
+      "evidence_required": "Privileged account restriction policy, security function mapping to accounts, PAM configuration",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AC.L3-3.1.7e",
+      "domain": "Access Control",
+      "domain_code": "AC",
+      "level": 3,
+      "title": "Access from Untrusted Endpoints",
+      "description": "Restrict access to systems and system components from organization-defined untrusted endpoints under organization-defined conditions.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AC-3(13)"],
+      "assessment_objectives": [
+        "Untrusted endpoints are defined",
+        "Conditions under which access is restricted are defined",
+        "Access to systems and system components from untrusted endpoints is restricted under the defined conditions"
+      ],
+      "evidence_required": "Untrusted endpoint policy, NAC configuration, conditional access rules, device trust assessment documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "AU.L3-3.3.1e",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 3,
+      "title": "Audit Log Access",
+      "description": "Authorize access to management of audit logging functionality to only a subset of privileged users or roles.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AU-9(4)"],
+      "assessment_objectives": [
+        "Privileged users or roles authorized to manage audit logging functionality are identified",
+        "Access to manage audit logging functionality is restricted to the identified privileged users or roles"
+      ],
+      "evidence_required": "Audit management access policy, role-based access to SIEM/logging infrastructure, privileged user access records",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "AU.L3-3.3.2e",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 3,
+      "title": "Cross-Organizational Audit Sharing",
+      "description": "Share audit information with organization-defined entities to support investigations.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AU-16"],
+      "assessment_objectives": [
+        "Entities with which audit information is to be shared are defined",
+        "Audit information is shared with defined entities to support investigations"
+      ],
+      "evidence_required": "Audit information sharing agreements, cross-organizational audit correlation procedures, shared SIEM configuration",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "AU.L3-3.3.3e",
+      "domain": "Audit & Accountability",
+      "domain_code": "AU",
+      "level": 3,
+      "title": "Immutable Audit Trail",
+      "description": "Provide an immutable audit trail that cannot be altered or deleted by any user.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["AU-9(2)", "AU-9(3)"],
+      "assessment_objectives": [
+        "The audit trail is configured to be immutable",
+        "No user (including privileged users) can alter or delete audit trail records"
+      ],
+      "evidence_required": "Write-once audit storage configuration, immutable log architecture documentation, tamper-detection mechanism documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "CM.L3-3.4.1e",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 3,
+      "title": "Automated Configuration Management",
+      "description": "Use automated mechanisms to detect misconfiguration and unauthorized changes to system components, and respond to detected misconfigurations.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["CM-3(5)", "CM-6(2)"],
+      "assessment_objectives": [
+        "Automated mechanisms to detect misconfigurations are employed",
+        "Automated mechanisms to detect unauthorized changes are employed",
+        "Automated responses to detected misconfigurations are implemented"
+      ],
+      "evidence_required": "Configuration monitoring tool documentation, auto-remediation policies, drift detection configuration, compliance dashboard",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "CM.L3-3.4.2e",
+      "domain": "Configuration Management",
+      "domain_code": "CM",
+      "level": 3,
+      "title": "Component Inventory — Automated Detection",
+      "description": "Employ automated discovery and management for system components within the system.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["CM-8(2)", "CM-8(4)"],
+      "assessment_objectives": [
+        "Automated discovery mechanisms for system components are employed",
+        "Automated management for system components is employed",
+        "Component inventory is maintained automatically through automated discovery"
+      ],
+      "evidence_required": "Automated discovery tool configuration, real-time inventory management system, component detection scan results",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "IA.L3-3.5.1e",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 3,
+      "title": "Phishing-Resistant Authentication",
+      "description": "Implement phishing-resistant multifactor authentication for access to privileged and non-privileged accounts.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["IA-2(6)", "IA-2(13)"],
+      "assessment_objectives": [
+        "Phishing-resistant MFA mechanisms are identified (e.g., FIDO2, PIV/CAC)",
+        "Phishing-resistant MFA is implemented for privileged account access",
+        "Phishing-resistant MFA is implemented for non-privileged account access"
+      ],
+      "evidence_required": "FIDO2/PIV deployment documentation, phishing-resistant authenticator inventory, MFA configuration showing phishing resistance",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "IA.L3-3.5.2e",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 3,
+      "title": "Bidirectional Authentication",
+      "description": "Implement multifactor authentication for network access that achieves bidirectional authentication between client and server.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["IA-2(12)"],
+      "assessment_objectives": [
+        "Bidirectional authentication mechanisms are implemented",
+        "Both client-to-server and server-to-client authentication are verified",
+        "Bidirectional authentication is employed for network access"
+      ],
+      "evidence_required": "Mutual TLS configuration, bidirectional certificate authentication documentation, mTLS deployment records",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "IA.L3-3.5.3e",
+      "domain": "Identification & Authentication",
+      "domain_code": "IA",
+      "level": 3,
+      "title": "Hardware-Based Authentication",
+      "description": "Employ automated mechanisms for the generation, protection, rotation, and management of passwords for systems and system accounts.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["IA-5(18)"],
+      "assessment_objectives": [
+        "Automated mechanisms for password generation are employed",
+        "Automated mechanisms for password protection are employed",
+        "Automated mechanisms for password rotation are employed",
+        "Automated mechanisms for password management are employed"
+      ],
+      "evidence_required": "Automated password management tool configuration, rotation schedules, hardware security module documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "IR.L3-3.6.1e",
+      "domain": "Incident Response",
+      "domain_code": "IR",
+      "level": 3,
+      "title": "Automated Incident Handling",
+      "description": "Establish and maintain a security operations center capability to facilitate a 24/7 response capability.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["IR-4(1)", "SI-4(7)"],
+      "assessment_objectives": [
+        "A security operations center (SOC) capability is established",
+        "The SOC provides 24/7 incident response capability",
+        "Automated incident handling mechanisms are implemented"
+      ],
+      "evidence_required": "SOC operational procedures, 24/7 staffing schedule, SOAR platform configuration, automated response playbooks",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "IR.L3-3.6.2e",
+      "domain": "Incident Response",
+      "domain_code": "IR",
+      "level": 3,
+      "title": "Cyber Incident Coordination",
+      "description": "Establish a cyber incident response team that can investigate incidents that span organizational boundaries.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["IR-7(2)", "IR-10"],
+      "assessment_objectives": [
+        "A cross-organizational cyber incident response team is established",
+        "The team can investigate incidents spanning organizational boundaries",
+        "Coordination mechanisms with external incident response organizations are defined"
+      ],
+      "evidence_required": "CIRT charter, inter-organizational coordination procedures, external reporting agreements, DIBNet integration documentation",
+      "automation_level": "manual",
+      "priority": "high"
+    },
+    {
+      "id": "MA.L3-3.7.1e",
+      "domain": "Maintenance",
+      "domain_code": "MA",
+      "level": 3,
+      "title": "Designated Maintenance Facilities",
+      "description": "Designate organizational systems for maintenance processing and control the transfer of equipment to and from the designated facilities.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["MA-6"],
+      "assessment_objectives": [
+        "Organizational systems designated for maintenance processing are identified",
+        "Transfer of equipment to designated maintenance facilities is controlled",
+        "Transfer of equipment from designated maintenance facilities is controlled"
+      ],
+      "evidence_required": "Designated maintenance facility documentation, equipment transfer procedures, chain-of-custody records",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "MP.L3-3.8.1e",
+      "domain": "Media Protection",
+      "domain_code": "MP",
+      "level": 3,
+      "title": "Cryptographic Erasure",
+      "description": "Use cryptographic erasure to sanitize CUI on media when sanitization cannot be achieved through standard methods.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["MP-6(8)"],
+      "assessment_objectives": [
+        "Situations where standard sanitization cannot be achieved are identified",
+        "Cryptographic erasure methods are employed to sanitize CUI on media in those situations"
+      ],
+      "evidence_required": "Cryptographic erasure procedures, key destruction records, sanitization verification documentation",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "PE.L3-3.10.1e",
+      "domain": "Physical Protection",
+      "domain_code": "PE",
+      "level": 3,
+      "title": "Penetration Testing — Physical",
+      "description": "Include physical penetration testing as part of the overall security assessment of organizational facilities.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["CA-8", "PE-3"],
+      "assessment_objectives": [
+        "Physical penetration testing is included in the security assessment program",
+        "Physical penetration test results are documented and remediated"
+      ],
+      "evidence_required": "Physical penetration test reports, remediation records, assessment schedule",
+      "automation_level": "manual",
+      "priority": "medium"
+    },
+    {
+      "id": "RA.L3-3.11.1e",
+      "domain": "Risk Assessment",
+      "domain_code": "RA",
+      "level": 3,
+      "title": "Threat Hunting",
+      "description": "Employ threat hunting activities to search for indicators of compromise in organizational systems on an organization-defined frequency.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["RA-10"],
+      "assessment_objectives": [
+        "Threat hunting frequency is defined",
+        "Threat hunting activities are conducted with the defined frequency",
+        "Indicators of compromise are searched for within organizational systems"
+      ],
+      "evidence_required": "Threat hunting procedures, hunting schedule, IOC library, hunting exercise reports",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "RA.L3-3.11.2e",
+      "domain": "Risk Assessment",
+      "domain_code": "RA",
+      "level": 3,
+      "title": "Cyber Threat Intelligence",
+      "description": "Employ cyber threat intelligence as an input to risk assessment and threat hunting activities.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["PM-16", "RA-3(2)"],
+      "assessment_objectives": [
+        "Cyber threat intelligence sources are identified",
+        "Cyber threat intelligence is integrated into risk assessment processes",
+        "Cyber threat intelligence informs threat hunting activities"
+      ],
+      "evidence_required": "Threat intelligence feed subscriptions, intelligence integration documentation, threat-informed risk assessment records",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "CA.L3-3.12.1e",
+      "domain": "Security Assessment",
+      "domain_code": "CA",
+      "level": 3,
+      "title": "Penetration Testing",
+      "description": "Conduct penetration testing at an organization-defined frequency on organization-defined systems or system components.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["CA-8"],
+      "assessment_objectives": [
+        "Systems or system components for penetration testing are defined",
+        "Penetration testing frequency is defined",
+        "Penetration testing is conducted with the defined frequency on defined systems"
+      ],
+      "evidence_required": "Penetration test reports, rules of engagement, remediation tracking, test schedule",
+      "automation_level": "semi",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L3-3.13.1e",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 3,
+      "title": "Network Segmentation",
+      "description": "Employ network segmentation, isolation, and micro-segmentation to restrict the ability of adversaries to laterally move within the network.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["SC-7(21)", "SC-7(29)"],
+      "assessment_objectives": [
+        "Network segmentation boundaries are defined and implemented",
+        "Isolation techniques restrict lateral movement",
+        "Micro-segmentation is employed for critical assets"
+      ],
+      "evidence_required": "Network segmentation architecture, micro-segmentation policy configuration, zero-trust network documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SC.L3-3.13.2e",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 3,
+      "title": "Threat-Informed Communications Monitoring",
+      "description": "Employ organization-defined enhanced monitoring of communications traffic at managed interfaces based on threat intelligence.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["SC-7(24)", "SI-4(18)"],
+      "assessment_objectives": [
+        "Managed interfaces for enhanced monitoring are identified",
+        "Enhanced monitoring measures are defined based on threat intelligence",
+        "Enhanced monitoring is employed at managed interfaces"
+      ],
+      "evidence_required": "Threat-informed monitoring rules, advanced IDS/IPS signatures, threat intelligence-driven monitoring documentation",
+      "automation_level": "auto",
+      "priority": "high"
+    },
+    {
+      "id": "SC.L3-3.13.4e",
+      "domain": "System & Communications Protection",
+      "domain_code": "SC",
+      "level": 3,
+      "title": "Isolation Techniques",
+      "description": "Employ isolation techniques to separate organizational components that process, store, or transmit CUI from components that do not process, store, or transmit CUI.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["SC-3", "SC-39"],
+      "assessment_objectives": [
+        "Components that process, store, or transmit CUI are identified",
+        "Isolation techniques are employed to separate CUI-processing components from non-CUI components"
+      ],
+      "evidence_required": "CUI enclave architecture, isolation implementation documentation, VLAN/VPC separation records",
+      "automation_level": "auto",
+      "priority": "critical"
+    },
+    {
+      "id": "SI.L3-3.14.1e",
+      "domain": "System & Information Integrity",
+      "domain_code": "SI",
+      "level": 3,
+      "title": "Automated Threat Detection",
+      "description": "Use automated tools and mechanisms with supporting processes to detect and respond to potential security incidents on organizational systems.",
+      "nist_800_171_id": null,
+      "nist_800_53_controls": ["SI-4(2)", "SI-4(4)", "SI-4(5)"],
+      "assessment_objectives": [
+        "Automated tools for detecting potential security incidents are identified and deployed",
+        "Automated mechanisms for responding to detected security incidents are implemented",
+        "Supporting processes for automated threat detection and response are documented"
+      ],
+      "evidence_required": "SOAR platform configuration, automated detection tool inventory, automated response playbooks, EDR/XDR deployment documentation",
+      "automation_level": "auto",
+      "priority": "critical"
+    }
+  ]
+}

@@ -1,0 +1,164 @@
+# CUI // SP-CTI
+# AI GameDay — Operation FORGE
+# Master scenario definition for the AI GameDay tabletop exercise.
+
+name: "AI GameDay — Operation FORGE"
+version: "1.0"
+session_mode: live          # live | async (facilitator can override at session creation)
+duration_minutes: 120
+max_teams: 8
+classification: "CUI // SP-CTI"
+
+description: >
+  A competitive, AI-focused tabletop exercise where teams race to assess a
+  rapidly evolving threat using ICDEV's full AI ecosystem — Strategos, RAG,
+  wargame COAs, and fine-tuned models. Teams earn points by actually using AI,
+  not just by knowing the right answers.
+
+roles:
+  - id: military_intel
+    label: Intelligence Officer
+    description: "Active duty intelligence officer responsible for threat assessment and PIR management."
+    persona_template: personas/military_intel.yaml
+    color: "#4a90d9"
+    icon: "🎖️"
+
+  - id: civilian_analyst
+    label: Civilian Analyst
+    description: "Government civilian analyst (GS-12 to SES) with deep domain expertise."
+    persona_template: personas/civilian_analyst.yaml
+    color: "#00D4FF"
+    icon: "🏛️"
+
+  - id: contractor_swe
+    label: Contractor / Engineer
+    description: "Defense contractor engineer responsible for AI tooling and system integration."
+    persona_template: personas/contractor_swe.yaml
+    color: "#FF6B35"
+    icon: "⚙️"
+
+  - id: ciso_lead
+    label: CISO / Security Lead
+    description: "Senior security executive responsible for cyber posture, ZTA, and incident policy."
+    persona_template: personas/ciso_lead.yaml
+    color: "#FFB800"
+    icon: "🛡️"
+
+injects:
+  - id: inject-01-signal-cluster
+    title: "Anomalous Signal Cluster — Sector 7"
+    at_minute: 15
+    sequence: 1
+    body_path: injects/inject-01-signal-cluster.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - strategos.signals
+      - knowledge.search
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      rubric: rubrics/intel_assessment.yaml
+      time_bonus: true
+
+  - id: inject-02-coa-force-posture
+    title: "COA Required: Recommend Force Posture"
+    at_minute: 40
+    sequence: 2
+    depends_on: inject-01-signal-cluster
+    body_path: injects/inject-02-coa-force-posture.yaml
+    ai_tools_allowed:
+      - strategos.wargame.coa
+      - strategos.wargame.ooda
+      - strategos.iw.composite
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 75
+      max_receipt_bonus: 225
+      rubric: rubrics/coa_recommendation.yaml
+      time_bonus: true
+
+  - id: inject-03-ransomware-hit
+    title: "Ransomware Cascade — Critical Systems Impacted"
+    at_minute: 65
+    sequence: 3
+    depends_on: inject-02-coa-force-posture
+    body_path: injects/inject-03-ransomware-hit.yaml
+    ai_tools_allowed:
+      - strategos.iw.composite
+      - strategos.simulate
+      - knowledge.search
+    scoring:
+      base_pts: 125
+      receipt_bonus_per_call: 60
+      max_receipt_bonus: 180
+      rubric: rubrics/intel_assessment.yaml
+      time_bonus: true
+
+  - id: inject-04-fine-tune-sprint
+    title: "15-Minute AI Sprint: Build a Threat Classifier"
+    at_minute: 85
+    sequence: 4
+    depends_on: inject-03-ransomware-hit
+    body_path: injects/inject-04-fine-tune-sprint.yaml
+    ai_tools_allowed:
+      - finetune.deploy
+      - knowledge.search
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 100
+      max_receipt_bonus: 300
+      rubric: rubrics/ai_build_sprint.yaml
+      time_bonus: false     # sprint already time-boxed; no additional bonus
+
+  - id: inject-05-war-council-brief
+    title: "War Council: Final Strategic Assessment"
+    at_minute: 105
+    sequence: 5
+    depends_on: inject-04-fine-tune-sprint
+    body_path: injects/inject-05-war-council-brief.yaml
+    ai_tools_allowed:
+      - strategos.oracle
+      - strategos.wargame.coa
+      - strategos.iw.composite
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 75
+      max_receipt_bonus: 225
+      rubric: rubrics/coa_recommendation.yaml
+      time_bonus: true
+
+  - id: inject-06-model-governance
+    title: "Model Selection Under Fire: Governance Emergency"
+    at_minute: 90
+    sequence: 6
+    depends_on: inject-04-fine-tune-sprint
+    body_path: injects/inject-06-model-governance.yaml
+    ai_tools_allowed:
+      - aimc.assess
+      - aimc.gov_assess
+      - aimc.adapt_recommend
+      - aimc.deploy_plan
+    scoring:
+      base_pts: 375
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+
+ribbons:
+  - id: signal_hunter
+    label: "Signal Hunter"
+    description: "First team to submit a valid intel assessment in Inject-01"
+    icon: "radar"
+  - id: model_architect
+    label: "Model Architect"
+    description: "Highest AIMC governance score in the Model Governance inject"
+    icon: "blueprint"
+  - id: speed_demon
+    label: "Speed Demon"
+    description: "Fastest team to complete the AI Build Sprint"
+    icon: "lightning"
+  - id: zero_trust_hero
+    label: "Zero-Trust Hero"
+    description: "First team to identify and remediate the ransomware cascade"
+    icon: "shield"

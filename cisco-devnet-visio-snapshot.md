@@ -1,0 +1,199 @@
+- generic [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e10]:
+      - link "Cisco DevNet" [ref=e13] [cursor=pointer]:
+        - /url: /
+        - img [ref=e14]
+      - list [ref=e23]:
+        - listitem [ref=e24]:
+          - link "Documentation" [ref=e25] [cursor=pointer]:
+            - /url: /docs/
+        - listitem [ref=e26]:
+          - generic [ref=e27] [cursor=pointer]: Learn
+        - listitem [ref=e29]:
+          - generic [ref=e30] [cursor=pointer]: Technologies
+        - listitem [ref=e32]:
+          - generic [ref=e33] [cursor=pointer]: Community
+        - listitem [ref=e35]:
+          - link "Events" [ref=e36] [cursor=pointer]:
+            - /url: /events/
+      - generic [ref=e39]:
+        - generic:
+          - generic:
+            - searchbox "Search"
+      - generic [ref=e42]:
+        - generic [ref=e43] [cursor=pointer]: Sign up free
+        - generic [ref=e44] [cursor=pointer]: Log in
+    - generic [ref=e48]:
+      - generic [ref=e51]:
+        - generic [ref=e52]: Sorry. Page doesn't exist.
+        - generic [ref=e53]: The page you are looking for may have been removed, discontinued, or is temporarily unavailable.
+        - link "Go to homepage" [ref=e55] [cursor=pointer]:
+          - /url: /
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - generic [ref=e61]: "Find what you're looking for:"
+          - textbox [ref=e65]
+          - generic [ref=e66]:
+            - text: If you'd like to contact us, please leave your
+            - link "feedback" [ref=e67] [cursor=pointer]:
+              - /url: /feedback/
+            - text: .
+        - generic [ref=e68]:
+          - generic [ref=e69]: Browse developer resources
+          - list [ref=e70]:
+            - link "Get started" [ref=e73] [cursor=pointer]:
+              - /url: /startnow/
+              - text: Get started
+              - img [ref=e74]
+            - link "Cisco Developer Blogs" [ref=e78] [cursor=pointer]:
+              - /url: https://blogs.cisco.com/developer
+              - text: Cisco Developer Blogs
+              - img [ref=e79]
+            - link "Cisco Communities" [ref=e84] [cursor=pointer]:
+              - /url: https://community.cisco.com/t5/developer-hub/ct-p/4409j-developer-home
+              - text: Cisco Communities
+              - img [ref=e85]
+            - link "Events" [ref=e90] [cursor=pointer]:
+              - /url: /events/
+              - text: Events
+              - img [ref=e91]
+    - generic [ref=e95]:
+      - generic [ref=e98]:
+        - generic [ref=e100]:
+          - generic [ref=e101]: Site
+          - list [ref=e102]:
+            - listitem [ref=e103]:
+              - link "About us" [ref=e104] [cursor=pointer]:
+                - /url: /about/
+                - generic [ref=e105]: About us
+            - listitem [ref=e106]:
+              - link "Documentation" [ref=e107] [cursor=pointer]:
+                - /url: /docs/
+                - generic [ref=e108]: Documentation
+            - listitem [ref=e109]:
+              - link "Learning Labs" [ref=e110] [cursor=pointer]:
+                - /url: /learning/
+                - generic [ref=e111]: Learning Labs
+            - listitem [ref=e112]:
+              - link "Sample Code" [ref=e113] [cursor=pointer]:
+                - /url: /codeexchange/
+                - generic [ref=e114]: Sample Code
+            - listitem [ref=e115]:
+              - link "Sandbox" [ref=e116] [cursor=pointer]:
+                - /url: /site/sandbox/
+                - generic [ref=e117]: Sandbox
+        - generic [ref=e119]:
+          - generic [ref=e120]: Technologies
+          - list [ref=e121]:
+            - listitem [ref=e122]:
+              - link "IoT" [ref=e123] [cursor=pointer]:
+                - /url: /iot/
+                - generic [ref=e124]: IoT
+            - listitem [ref=e125]:
+              - link "Networking" [ref=e126] [cursor=pointer]:
+                - /url: /site/networking/
+                - generic [ref=e127]: Networking
+            - listitem [ref=e128]:
+              - link "Data Center" [ref=e129] [cursor=pointer]:
+                - /url: /site/data-center/
+                - generic [ref=e130]: Data Center
+            - listitem [ref=e131]:
+              - link "Collaboration" [ref=e132] [cursor=pointer]:
+                - /url: /site/collaboration/
+                - generic [ref=e133]: Collaboration
+            - listitem [ref=e134]:
+              - link "Security" [ref=e135] [cursor=pointer]:
+                - /url: /site/security/
+                - generic [ref=e136]: Security
+            - listitem [ref=e137]:
+              - link "Customer Experience" [ref=e138] [cursor=pointer]:
+                - /url: /cx/
+                - generic [ref=e139]: Customer Experience
+        - generic [ref=e141]:
+          - generic [ref=e142]: Connect
+          - list [ref=e143]:
+            - listitem [ref=e144]:
+              - link "Feedback" [ref=e145] [cursor=pointer]:
+                - /url: /feedback/
+                - generic [ref=e146]: Feedback
+            - listitem [ref=e147]:
+              - link "Community" [ref=e148] [cursor=pointer]:
+                - /url: https://community.cisco.com/t5/developer-hub/ct-p/4409j-developer-home
+                - generic [ref=e149]: Community
+            - listitem [ref=e150]:
+              - link "Blogs" [ref=e151] [cursor=pointer]:
+                - /url: https://blogs.cisco.com/developer
+                - generic [ref=e152]: Blogs
+            - listitem [ref=e153]:
+              - link "Events" [ref=e154] [cursor=pointer]:
+                - /url: /events/
+                - generic [ref=e155]: Events
+            - listitem [ref=e156]:
+              - link "Cisco.com" [ref=e157] [cursor=pointer]:
+                - /url: https://www.cisco.com/
+                - generic [ref=e158]: Cisco.com
+        - generic [ref=e160]:
+          - generic [ref=e161]: Follow us
+          - list [ref=e162]:
+            - listitem [ref=e163]:
+              - link "X/Twitter" [ref=e164] [cursor=pointer]:
+                - /url: https://twitter.com/ciscodevnet
+                - img [ref=e165]
+                - generic [ref=e167]: X/Twitter
+            - listitem [ref=e168]:
+              - link "Facebook" [ref=e169] [cursor=pointer]:
+                - /url: https://www.facebook.com/CiscoDevNet
+                - img [ref=e170]
+                - generic [ref=e172]: Facebook
+            - listitem [ref=e173]:
+              - link "YouTube" [ref=e174] [cursor=pointer]:
+                - /url: https://www.youtube.com/channel/UChRmUH4H5hiYzPiFhvNoCIg
+                - img [ref=e175]
+                - generic [ref=e177]: YouTube
+            - listitem [ref=e178]:
+              - link "GitHub" [ref=e179] [cursor=pointer]:
+                - /url: https://github.com/CiscoDevNet
+                - img [ref=e180]
+                - generic [ref=e182]: GitHub
+            - listitem [ref=e183]:
+              - link "LinkedIn" [ref=e184] [cursor=pointer]:
+                - /url: https://www.linkedin.com/company/cisco-devnet
+                - img [ref=e185]
+                - generic [ref=e187]: LinkedIn
+      - generic [ref=e190]:
+        - list [ref=e192]:
+          - listitem [ref=e193]:
+            - link "Terms & Conditions" [ref=e194] [cursor=pointer]:
+              - /url: /site/license/terms-and-conditions/
+            - text: "|"
+          - listitem [ref=e195]:
+            - link "Privacy Statement" [ref=e196] [cursor=pointer]:
+              - /url: http://www.cisco.com/web/siteassets/legal/privacy.html
+            - text: "|"
+          - listitem [ref=e197]:
+            - link "Cookies / Do not sell or share my personal data" [ref=e198] [cursor=pointer]:
+              - /url: http://www.cisco.com/web/siteassets/legal/privacy.html#cookies
+            - text: "|"
+          - listitem [ref=e199]:
+            - link "Trademarks" [ref=e200] [cursor=pointer]:
+              - /url: http://www.cisco.com/web/siteassets/legal/trademark.html
+            - text: "|"
+          - listitem [ref=e201]:
+            - link "Feedback" [ref=e202] [cursor=pointer]:
+              - /url: /feedback/
+        - generic [ref=e205]:
+          - img [ref=e207]
+          - combobox [ref=e210]:
+            - option "UNITED STATES (EN)" [selected]
+            - option "中文"
+        - generic [ref=e212]: © Copyright 2026 Cisco DevNet
+  - region "Cookie banner" [active] [ref=e213]:
+    - dialog "Privacy" [ref=e214]:
+      - generic [ref=e219]:
+        - generic [ref=e220]: By continuing to use our website, you acknowledge the use of cookies.
+        - generic [ref=e221]:
+          - link "Privacy Statement" [ref=e222] [cursor=pointer]:
+            - /url: https://www.cisco.com/c/en/us/about/legal/privacy-full.html
+          - text: Change Settings
+      - button "Close" [ref=e224] [cursor=pointer]

@@ -1,0 +1,180 @@
+# CUI // SP-CTI
+name: "Operation Neptune — Hunt the Fleet"
+slug: hunt_the_fleet
+session_mode: live
+duration_minutes: 120
+max_teams: 10
+min_teams: 2
+
+description: |
+  A Type-054A guided-missile frigate and its task group have gone dark in the Western Pacific.
+  Your crew has 120 minutes to fuse SIGINT, HUMINT, SATINT, and ML trajectory prediction into
+  a verified strike package before the fleet reaches its denial zone. Every decision matters.
+  Every AI tool you use is evidence. Hunt the fleet.
+
+roles:
+  - id: captain
+    label: "Captain / Task Group Commander"
+    icon: "🎖️"
+    persona_template: "personas/captain.yaml"
+    academy_missions:
+      - coa-decision-making
+      - strategic-planning
+
+  - id: sonar_analyst
+    label: "Sonar Analyst"
+    icon: "🔊"
+    persona_template: "personas/sonar_analyst.yaml"
+    academy_missions:
+      - acoustic-analysis
+
+  - id: signals_intel
+    label: "Signals Intelligence Officer"
+    icon: "📡"
+    persona_template: "personas/signals_intel.yaml"
+    academy_missions:
+      - sigint-analysis
+      - intel-assessment
+
+  - id: imagery_analyst
+    label: "Imagery Analyst (SATINT)"
+    icon: "🛰️"
+    persona_template: "personas/imagery_analyst.yaml"
+    academy_missions:
+      - geospatial-analysis
+
+  - id: data_scientist
+    label: "Data Scientist / ML Engineer"
+    icon: "🧠"
+    persona_template: "personas/data_scientist.yaml"
+    academy_missions:
+      - ml-fundamentals
+      - ai-build-sprint
+
+  - id: cyber_analyst
+    label: "Cyber Intelligence Analyst"
+    icon: "🔐"
+    persona_template: "personas/cyber_analyst.yaml"
+    academy_missions:
+      - cyber-defense
+      - zero-trust
+      - threat-modeling
+
+  - id: legal_advisor
+    label: "Legal Advisor / Rules of Engagement"
+    icon: "⚖️"
+    persona_template: "personas/legal_advisor.yaml"
+    academy_missions:
+      - rules-of-engagement
+      - strategic-planning
+
+injects:
+  - id: inject-01-ghost-signal
+    title: "Ghost Signal — Type-054A Emissions"
+    sequence: 1
+    at_minute: 15
+    body_path: "injects/inject-01-ghost-signal.yaml"
+    ai_tools_allowed:
+      - strategos.oracle
+      - strategos.signals
+      - strategos.wargame.ooda
+      - knowledge.search
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: "rubrics/sigint_fusion.yaml"
+
+  - id: inject-02-supply-run
+    title: "Supply Run Intercepted — AT-229"
+    sequence: 2
+    at_minute: 35
+    body_path: "injects/inject-02-supply-run.yaml"
+    ai_tools_allowed:
+      - strategos.simulate
+      - strategos.wargame.ooda
+      - knowledge.search
+    scoring:
+      base_pts: 150
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: "rubrics/interdiction_decision.yaml"
+    consequence:
+      key: supply_depot_hit
+      threshold_teams: 3
+      threshold_pts: 80
+      affects_inject: inject-03-comms-blackout
+
+  - id: inject-03-comms-blackout
+    title: "Comms Blackout — ML Trajectory Payoff"
+    sequence: 3
+    at_minute: 55
+    body_path: "injects/inject-03-comms-blackout.yaml"
+    ai_tools_allowed:
+      - finetune.deploy
+      - knowledge.search
+      - strategos.oracle
+    scoring:
+      base_pts: 200
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: true
+      rubric: "rubrics/trajectory_prediction.yaml"
+
+  - id: inject-04-strike-window
+    title: "Strike Window Opens"
+    sequence: 4
+    at_minute: 75
+    body_path: "injects/inject-04-strike-window.yaml"
+    ai_tools_allowed:
+      - strategos.wargame.coa
+      - strategos.oracle
+      - strategos.wargame.ooda
+    scoring:
+      base_pts: 175
+      receipt_bonus_per_call: 50
+      max_receipt_bonus: 150
+      time_bonus: true
+      receipt_gate: true
+      finetune_required: false
+      rubric: "rubrics/strike_package.yaml"
+
+  - id: inject-05-bda
+    title: "Battle Damage Assessment"
+    sequence: 5
+    at_minute: 100
+    body_path: "injects/inject-05-bda.yaml"
+    ai_tools_allowed: []
+    scoring:
+      base_pts: 100
+      receipt_bonus_per_call: 0
+      max_receipt_bonus: 0
+      time_bonus: false
+      receipt_gate: false
+      finetune_required: false
+      rubric: "rubrics/bda_doctrine.yaml"
+
+ribbons:
+  - id: speed_king
+    label: "⚡ Speed King"
+    description: "Fastest aggregate response time across all injects"
+  - id: ai_innovator
+    label: "🤖 AI Innovator"
+    description: "Most AI tool receipts submitted across the session"
+  - id: doctrine_scholar
+    label: "📚 Doctrine Scholar"
+    description: "Highest average judge score — Academy training shows in every response"
+  - id: marksman
+    label: "🎯 Marksman"
+    description: "Highest score on the Strike Window inject — most accurate COA"
+  - id: interceptor
+    label: "🔗 Interceptor"
+    description: "Highest combined score on Supply Run + Comms Blackout injects"

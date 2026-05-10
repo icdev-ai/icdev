@@ -1,0 +1,18 @@
+# CUI // SP-CTI
+label: "Contractor / Engineer"
+description: "Defense contractor engineer or AI/ML specialist supporting DoD programs."
+attributes:
+  - company name (realistic defense contractor)
+  - contract vehicle (ITES-3H, OASIS+, GSA STARS III, SEWP, etc.)
+  - prime or subcontractor
+  - NAICS code
+  - clearance level
+  - technical specialty
+  - years of relevant experience
+  - current program or contract
+
+prompt_hint: >
+  Generate a realistic defense contractor engineer persona. They specialize in
+  AI/ML, software engineering, or data engineering for government programs.
+  Include a role_brief explaining their current contract work and why AI
+  tool proficiency is critical to their program's success.

@@ -1,0 +1,289 @@
+{% extends "network/base.html" %}
+{% block title %}Intent-Based Validation — {{ topology.name }}{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Intent-Based Validation</h1>
+    <p class="page-subtitle">{{ topology.name }} — Define constraints, validate topology</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/canvas/{{ topology.id }}" class="btn btn-secondary">Canvas</a>
+    <a href="/network/compliance/{{ topology.id }}" class="btn btn-secondary">Compliance</a>
+    <button class="btn btn-primary" onclick="validateAll()">Validate All Policies</button>
+  </div>
+</div>
+
+<!-- Overall Status -->
+<div id="overall-status" class="stats-bar" style="display:none;"></div>
+
+<!-- Create Policy -->
+<section class="panel panel-wide">
+  <div class="panel-header">
+    <h2 class="panel-title">Intent Policies</h2>
+    <button class="btn btn-primary-sm" onclick="showCreatePolicy()">+ New Policy</button>
+  </div>
+  <div id="create-policy-form" style="display:none;padding:1rem;border-bottom:1px solid var(--border);">
+    <div class="form-grid" style="max-width:600px;">
+      <label>Policy Name
+        <input type="text" id="new-policy-name" placeholder="e.g. Production Readiness" />
+      </label>
+      <label>Description
+        <input type="text" id="new-policy-desc" placeholder="Optional description" />
+      </label>
+    </div>
+    <div style="margin-top:0.75rem;">
+      <button class="btn btn-primary" onclick="createPolicy()">Create</button>
+      <button class="btn btn-secondary" onclick="hideCreatePolicy()">Cancel</button>
+    </div>
+  </div>
+
+  {% if not policies %}
+  <div style="padding:2rem;text-align:center;color:var(--text-dim);">
+    No intent policies defined yet. Create a policy, then add constraints to it.
+  </div>
+  {% endif %}
+
+  {% for policy in policies %}
+  <div class="policy-card" id="policy-{{ policy.id }}" style="border-bottom:1px solid var(--border);">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem;">
+      <div>
+        <strong style="font-size:1rem;">{{ policy.name }}</strong>
+        {% if policy.description %}<span style="color:var(--text-dim);margin-left:8px;">{{ policy.description }}</span>{% endif %}
+        <span class="badge {% if policy.is_active %}badge-green{% else %}badge-dim{% endif %}" style="margin-left:8px;">
+          {{ "Active" if policy.is_active else "Inactive" }}
+        </span>
+        {% if policy.last_validation %}
+          {% set lv = policy.last_validation %}
+          <span class="badge {% if lv.failed == 0 %}badge-green{% else %}badge-red{% endif %}" style="margin-left:4px;">
+            {{ "PASS" if lv.failed == 0 else "FAIL" }} ({{ lv.passed }}/{{ lv.total_constraints }})
+          </span>
+        {% endif %}
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-primary-sm" onclick="validatePolicy('{{ policy.id }}')">Validate</button>
+        <button class="btn btn-secondary-sm" onclick="toggleConstraintForm('{{ policy.id }}')">+ Constraint</button>
+        <button class="btn btn-danger-sm" onclick="deletePolicy('{{ policy.id }}')">Delete</button>
+      </div>
+    </div>
+
+    <!-- Add Constraint Form (hidden) -->
+    <div id="add-constraint-{{ policy.id }}" style="display:none;padding:0 1rem 1rem;background:var(--bg-dim);">
+      <div class="form-grid" style="max-width:800px;">
+        <label>Constraint Type
+          <select id="ctype-{{ policy.id }}" onchange="updateRuleFields('{{ policy.id }}')">
+            {% for ckey, cval in constraint_types.items() %}
+            <option value="{{ ckey }}">{{ cval.name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Severity
+          <select id="csev-{{ policy.id }}">
+            <option value="CAT1">CAT1 (Critical)</option>
+            <option value="CAT2" selected>CAT2 (High)</option>
+            <option value="CAT3">CAT3 (Medium)</option>
+          </select>
+        </label>
+        <label>Description
+          <input type="text" id="cdesc-{{ policy.id }}" placeholder="Optional label" />
+        </label>
+      </div>
+      <div id="rule-fields-{{ policy.id }}" style="margin-top:0.5rem;"></div>
+      <div style="margin-top:0.75rem;">
+        <button class="btn btn-primary" onclick="addConstraint('{{ policy.id }}')">Add</button>
+        <button class="btn btn-secondary" onclick="toggleConstraintForm('{{ policy.id }}')">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Constraint List -->
+    <div id="constraints-{{ policy.id }}" style="padding:0 1rem 0.5rem;">
+      {% for c in policy.constraints %}
+      <div class="constraint-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border-faint);">
+        <span class="badge badge-type">{{ c.constraint_type }}</span>
+        <span class="badge {% if c.severity == 'CAT1' %}badge-red{% elif c.severity == 'CAT2' %}badge-orange{% else %}badge-dim{% endif %}">{{ c.severity }}</span>
+        <span style="font-size:0.85rem;">{{ c.description or "—" }}</span>
+        <code style="font-size:0.75rem;color:var(--text-dim);margin-left:auto;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ c.rule_json }}</code>
+        <button class="btn btn-danger-sm" onclick="deleteConstraint('{{ topology.id }}', '{{ c.id }}', '{{ policy.id }}')">x</button>
+      </div>
+      {% endfor %}
+      {% if not policy.constraints %}
+      <p style="font-size:0.85rem;color:var(--text-dim);padding:6px 0;">No constraints yet. Add one above.</p>
+      {% endif %}
+    </div>
+
+    <!-- Violations (populated by JS) -->
+    <div id="violations-{{ policy.id }}" style="display:none;padding:0 1rem 1rem;"></div>
+  </div>
+  {% endfor %}
+</section>
+
+<style>
+  .badge { display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600; }
+  .badge-green { background:#27ae6022;color:#27ae60; }
+  .badge-red { background:#e74c3c22;color:#e74c3c; }
+  .badge-orange { background:#f39c1222;color:#f39c12; }
+  .badge-dim { background:var(--border);color:var(--text-dim); }
+  .badge-type { background:#3498db22;color:#3498db;text-transform:uppercase;letter-spacing:0.5px; }
+  .btn-danger-sm { background:#e74c3c;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem; }
+  .btn-danger-sm:hover { background:#c0392b; }
+  .btn-secondary-sm { background:var(--border);color:var(--text);border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:0.75rem; }
+  .violation-row { display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-top:1px solid var(--border-faint);font-size:0.85rem; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TOPO_ID = '{{ topology.id }}';
+const BASE = NC_BASE + '/api/intent/' + TOPO_ID;
+
+const RULE_FIELDS = {
+  bandwidth: [
+    {key:'min_bandwidth_mbps', label:'Min Bandwidth (Mbps)', type:'number', default:1000},
+    {key:'selector', label:'Node Selector', type:'text', default:'all', hint:'all, all_critical, type:router, label:core'},
+  ],
+  redundancy: [
+    {key:'min_links', label:'Min Links', type:'number', default:2},
+    {key:'selector', label:'Node Selector', type:'text', default:'all_critical'},
+  ],
+  isolation: [
+    {key:'zone_a', label:'Zone A Selector', type:'text', default:'', hint:'type:server, label:dmz'},
+    {key:'zone_b', label:'Zone B Selector', type:'text', default:'', hint:'type:router, label:wan'},
+    {key:'require_firewall', label:'Require Firewall', type:'checkbox', default:true},
+  ],
+  latency: [
+    {key:'max_hops', label:'Max Hops', type:'number', default:3},
+    {key:'source_selector', label:'Source Selector', type:'text', default:'all'},
+    {key:'target_selector', label:'Target Selector', type:'text', default:'all'},
+  ],
+  encryption: [
+    {key:'selector', label:'Link Selector', type:'text', default:'all_wan', hint:'all_wan, all_cross_zone, all'},
+    {key:'min_level', label:'Min Level', type:'text', default:'any', hint:'any, type1, fips-140-l2'},
+  ],
+  custom: [
+    {key:'check', label:'Check Name', type:'text', default:'no_single_point_of_failure', hint:'no_single_point_of_failure, max_node_count, required_node_type'},
+    {key:'params', label:'Params (JSON)', type:'text', default:'{}'},
+  ],
+};
+
+function showCreatePolicy(){ document.getElementById('create-policy-form').style.display='block'; }
+function hideCreatePolicy(){ document.getElementById('create-policy-form').style.display='none'; }
+
+async function createPolicy(){
+  const name = document.getElementById('new-policy-name').value.trim();
+  if(!name){ alert('Name required'); return; }
+  const desc = document.getElementById('new-policy-desc').value.trim();
+  const r = await fetch(BASE+'/policies',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:desc})});
+  if(r.ok) location.reload();
+  else alert('Error: '+(await r.json()).error);
+}
+
+async function deletePolicy(pid){
+  if(!confirm('Delete this policy and all its constraints?')) return;
+  await fetch(BASE+'/policies/'+pid,{method:'DELETE'});
+  location.reload();
+}
+
+function toggleConstraintForm(pid){
+  const el = document.getElementById('add-constraint-'+pid);
+  el.style.display = el.style.display==='none'?'block':'none';
+  if(el.style.display==='block') updateRuleFields(pid);
+}
+
+function updateRuleFields(pid){
+  const ctype = document.getElementById('ctype-'+pid).value;
+  const fields = RULE_FIELDS[ctype] || [];
+  const container = document.getElementById('rule-fields-'+pid);
+  container.innerHTML = '<div class="form-grid" style="max-width:800px;">'+fields.map(f=>{
+    if(f.type==='checkbox'){
+      return `<label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="rule-${pid}-${f.key}" ${f.default?'checked':''}/> ${f.label}</label>`;
+    }
+    return `<label>${f.label}${f.hint?'<br><small style="color:var(--text-dim)">'+f.hint+'</small>':''}
+      <input type="${f.type}" id="rule-${pid}-${f.key}" value="${f.default}" /></label>`;
+  }).join('')+'</div>';
+}
+
+async function addConstraint(pid){
+  const ctype = document.getElementById('ctype-'+pid).value;
+  const sev = document.getElementById('csev-'+pid).value;
+  const desc = document.getElementById('cdesc-'+pid).value.trim();
+  const fields = RULE_FIELDS[ctype] || [];
+  const rule = {};
+  for(const f of fields){
+    const el = document.getElementById('rule-'+pid+'-'+f.key);
+    if(f.type==='checkbox') rule[f.key] = el.checked;
+    else if(f.type==='number') rule[f.key] = parseInt(el.value)||0;
+    else rule[f.key] = el.value;
+  }
+  if(rule.params && typeof rule.params==='string'){
+    try{ rule.params = JSON.parse(rule.params); }catch(e){ rule.params = {}; }
+  }
+  const r = await fetch(BASE+'/policies/'+pid+'/constraints',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({constraint_type:ctype,severity:sev,description:desc,rule:rule})
+  });
+  if(r.ok) location.reload();
+  else alert('Error: '+(await r.json()).error);
+}
+
+async function deleteConstraint(topoId, cid, pid){
+  await fetch(NC_BASE+'/api/intent/'+topoId+'/constraints/'+cid,{method:'DELETE'});
+  location.reload();
+}
+
+async function validatePolicy(pid){
+  const btn = event.target;
+  btn.disabled=true; btn.textContent='Running...';
+  const r = await fetch(BASE+'/policies/'+pid+'/validate',{method:'POST'});
+  const data = await r.json();
+  btn.disabled=false; btn.textContent='Validate';
+  if(!r.ok){ alert(data.error||'Error'); return; }
+  renderViolations(pid, data);
+}
+
+async function validateAll(){
+  const btn = event.target;
+  btn.disabled=true; btn.textContent='Validating...';
+  const r = await fetch(BASE+'/validate-all',{method:'POST'});
+  const data = await r.json();
+  btn.disabled=false; btn.textContent='Validate All Policies';
+  if(!r.ok){ alert(data.error||'Error'); return; }
+  // Overall status bar
+  const bar = document.getElementById('overall-status');
+  bar.style.display='flex';
+  const color = data.overall_status==='PASS'?'#27ae60':data.overall_status==='FAIL'?'#e74c3c':'#95a5a6';
+  bar.innerHTML = `
+    <div class="stat-card"><div class="stat-value" style="color:${color}">${data.overall_status}</div><div class="stat-label">Overall</div></div>
+    <div class="stat-card"><div class="stat-value">${data.policies_validated}</div><div class="stat-label">Policies</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#27ae60">${data.total_passed}</div><div class="stat-label">Passed</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#e74c3c">${data.total_failed}</div><div class="stat-label">Failed</div></div>
+  `;
+  // Per-policy results
+  for(const res of data.results){
+    renderViolations(res.policy_id, res);
+  }
+}
+
+function renderViolations(pid, data){
+  const el = document.getElementById('violations-'+pid);
+  if(!el) return;
+  el.style.display='block';
+  if(data.violations.length===0){
+    el.innerHTML = '<div style="padding:0.5rem;color:#27ae60;font-weight:600;">PASS — All constraints satisfied</div>';
+    return;
+  }
+  let html = `<div style="padding:0.5rem 0;font-weight:600;color:#e74c3c;">FAIL — ${data.violations.length} violation(s)</div>`;
+  html += '<table style="width:100%;font-size:0.85rem;border-collapse:collapse;">';
+  html += '<tr style="background:var(--bg-dim);"><th style="text-align:left;padding:4px 8px;">Severity</th><th style="text-align:left;padding:4px 8px;">Type</th><th style="text-align:left;padding:4px 8px;">Message</th><th style="text-align:left;padding:4px 8px;">Affected</th></tr>';
+  for(const v of data.violations){
+    const sevColor = v.severity==='CAT1'?'#e74c3c':v.severity==='CAT2'?'#f39c12':'#95a5a6';
+    html += `<tr class="violation-row" style="border-top:1px solid var(--border-faint);">
+      <td style="padding:4px 8px;"><span class="badge" style="background:${sevColor}22;color:${sevColor}">${v.severity}</span></td>
+      <td style="padding:4px 8px;"><span class="badge badge-type">${v.constraint_type}</span></td>
+      <td style="padding:4px 8px;">${v.message}</td>
+      <td style="padding:4px 8px;color:var(--text-dim);">${v.affected_entity||''}</td>
+    </tr>`;
+  }
+  html += '</table>';
+  el.innerHTML = html;
+}
+</script>
+{% endblock %}

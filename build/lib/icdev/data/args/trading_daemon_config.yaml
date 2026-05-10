@@ -1,0 +1,339 @@
+# FathomDesk Trading Daemon Configuration
+# Feature flag: ICDEV_TRADING_DAEMON_ENABLED=true
+
+enabled: true
+version: "1.0.0"
+
+llm:
+  tier: scanner
+  model: qwen3.5-local
+
+trust_kernel:
+  circuit_breaker:
+    max_consecutive_failures: 3
+    cooldown_minutes: 30
+    auto_reenable: true
+  risk_tiers:
+    green:
+      approval: auto
+      sandbox: false
+    yellow:
+      approval: auto
+      sandbox: true
+    orange:
+      approval: human
+      sandbox: true
+      require_tests_pass: true
+
+reflexes:
+  market_scanner:
+    enabled: true
+    schedule: "every 1h"
+    risk_tier: green
+    description: "Batch scan full universe (223 tickers) for signals"
+    max_workers: 8
+    success_metric:
+      name: tickers_scanned
+      operator: gte
+      threshold: 200
+
+  approved_monitor:
+    enabled: true
+    schedule: "continuous"
+    interval_seconds: 900  # every 15 minutes
+    risk_tier: green
+    description: "Re-scan auto-approved BUY tickers for fresh signals"
+    auto_approve_min_confidence: 0.67
+    success_metric:
+      name: tickers_refreshed
+      operator: gte
+      threshold: 1
+
+  macro_watcher:
+    enabled: true
+    schedule: "continuous"
+    interval_seconds: 1800  # every 30 minutes
+    risk_tier: green
+    description: "Refresh macro context (14 indicators + Van Metre monetary system)"
+    success_metric:
+      name: macro_score
+      operator: gte
+      threshold: 0
+
+  alert_detector:
+    enabled: true
+    schedule: "continuous"
+    interval_seconds: 600  # every 10 minutes
+    risk_tier: yellow
+    description: "Detect direction flips, confidence swings, regime changes, KG propagation"
+    success_metric:
+      name: alerts_detected
+      operator: gte
+      threshold: 0
+
+  kg_enricher:
+    enabled: true
+    schedule: "every 6h"
+    risk_tier: green
+    description: "Re-seed KG, compute centrality, update supply chain edges"
+    success_metric:
+      name: nodes_enriched
+      operator: gte
+      threshold: 100
+
+  challenge_snapshot_daily:
+    enabled: true
+    schedule: "every 24h"
+    risk_tier: green
+    description: "Phase 6.3.5 — write one daily snapshot per active challenge sandbox attempt (feeds continuously-held predicates)"
+    success_metric:
+      name: inserted
+      operator: gte
+      threshold: 0
+
+  challenge_order_watcher:
+    enabled: true
+    schedule: "continuous"
+    interval_seconds: 900  # every 15 minutes
+    risk_tier: green
+    description: "Phase 6.3.5 follow-up #2 — evaluate pending limit/stop orders on challenge sandbox attempts; fill when triggers cross"
+    success_metric:
+      name: filled
+      operator: gte
+      threshold: 0
+
+  challenge_option_expiry:
+    enabled: true
+    schedule: "every 24h"
+    risk_tier: green
+    description: "Phase 7.5 — cash-settle expired sandbox option positions (ITM intrinsic paid/received; OTM expires worthless); idempotent"
+    success_metric:
+      name: expired
+      operator: gte
+      threshold: 0
+
+  options_coach:
+    enabled: true
+    schedule: "continuous"
+    interval_seconds: 600  # every 10 minutes
+    risk_tier: green
+    description: "Phase 7.6 — scan open option positions for coach triggers (profit target, loss threshold, DTE warnings, IV crush); emit append-only events with LLM-written recommendations. Does not modify positions."
+    success_metric:
+      name: events_emitted
+      operator: gte
+      threshold: 0
+
+  scenario_analyzer:
+    enabled: true
+    schedule: "every 4h"
+    risk_tier: yellow
+    description: "Re-run active scenarios to refresh signal adjustments and portfolio impact"
+    success_metric:
+      name: adjustments_updated
+      operator: gte
+      threshold: 0
+
+  expert_advisor:
+    enabled: true
+    schedule: "every 2h"
+    risk_tier: yellow
+    description: "Run 6 expert agents on top tickers, CIS synthesis, auto-trade paper"
+    success_metric:
+      name: tickers_analyzed
+      operator: gte
+      threshold: 1
+
+  news_impact_tracer:
+    enabled: true
+    schedule: "every 30m"
+    risk_tier: yellow
+    description: "Trace supply-chain impact for recent news via KG propagation; persist per-ticker aggregates for Oracle + experts + SROR"
+    lookback_hours: 6
+    max_items_per_run: 20
+    success_metric:
+      name: rows_written
+      operator: gte
+      threshold: 0
+
+  portfolio_snapshotter:
+    enabled: true
+    schedule: "daily 21:00"
+    risk_tier: green
+    description: "Snapshot live portfolio state + SPY close each market-close. Accumulated snapshots replace the backward-looking simulation in /portfolio history after ~5 days."
+    success_metric:
+      name: snapshots_written
+      operator: gte
+      threshold: 1
+
+  exit_executor:
+    enabled: true
+    schedule: "every 2m"
+    risk_tier: yellow
+    description: "Close round-trip: evaluate exit rules, submit SELL for triggered exits"
+    success_metric:
+      name: exits_processed
+      operator: gte
+      threshold: 0
+
+  # ── ML retraining + feedback (daytime-scheduled so laptop is usually on) ──
+  # All schedules are UTC. ET conversion: EDT (Mar–Nov) = UTC-4, EST (Nov–Mar) = UTC-5.
+  # Chosen to fire in the 11am–5pm ET window year-round; catches up on next boot
+  # if the laptop was off at the scheduled moment.
+
+  ml_pillar_retrain:
+    enabled: true
+    schedule: "weekly sat 16:00"   # Sat 12:00 ET (EDT) / 11:00 ET (EST)
+    risk_tier: green
+    description: "Retrain confluence pillar weights from last 90d realized P&L (daytime)"
+    success_metric:
+      name: samples
+      operator: gte
+      threshold: 0
+
+  ml_fill_retrain:
+    enabled: true
+    schedule: "weekly sat 16:15"   # Sat 12:15 ET (EDT) / 11:15 ET (EST)
+    risk_tier: green
+    description: "Retrain fill-quality slippage predictor from last 90d fills (daytime)"
+    success_metric:
+      name: samples
+      operator: gte
+      threshold: 0
+
+  ml_regime_retrain:
+    enabled: true
+    schedule: "monthly 01 17:00"   # 1st of month 13:00 ET (EDT) / 12:00 ET (EST)
+    risk_tier: green
+    description: "Retrain 5-state Gaussian HMM regime model from last 180d macro series (daytime)"
+    success_metric:
+      name: samples
+      operator: gte
+      threshold: 0
+
+  exit_outcome_recorder:
+    enabled: true
+    schedule: "every 10m"
+    risk_tier: green
+    description: "Record realized P&L per triggered exit; feeds exit-tuning analytics"
+    success_metric:
+      name: recorded
+      operator: gte
+      threshold: 0
+
+  counterfactual_resolver:
+    enabled: true
+    schedule: "every 1h"
+    risk_tier: green
+    description: "Score old fill-quality skips against what price did in the next 24h"
+    success_metric:
+      name: resolved
+      operator: gte
+      threshold: 0
+
+  strategy_retirement:
+    enabled: true
+    schedule: "daily 20:30"        # 16:30 ET (EDT) / 15:30 ET (EST) — after close, laptop usually on
+    risk_tier: yellow
+    description: "Auto-disable strategies with ≥5 fills and negative realized P&L over 30d"
+    success_metric:
+      name: retired
+      operator: gte
+      threshold: 0
+
+  daily_brief:
+    enabled: true
+    schedule: "daily 01:00"
+    risk_tier: green
+    description: "Generate evening brief at 8 PM EST (01:00 UTC next day)"
+    success_metric:
+      name: top_ideas
+      operator: gte
+      threshold: 0
+
+  gap_detector:
+    enabled: true
+    schedule: "every 4h"
+    risk_tier: yellow
+    description: "Detect structural gaps between KG clusters, generate contrarian opportunities"
+    use_llm: false
+    auto_create_signals: true
+    min_gap_score: 0.02
+    success_metric:
+      name: gaps_detected
+      operator: gte
+      threshold: 0
+
+  snapshot_refresher:
+    enabled: true
+    schedule: "continuous"
+    interval_seconds: 120  # every 2 minutes
+    risk_tier: green
+    description: "Materialize ad_market_snapshot (latest signal + KG + regime per ticker); rebuild ad_ticker_performance when empty"
+    success_metric:
+      name: tickers_refreshed
+      operator: gte
+      threshold: 1
+
+  portfolio_strategist:
+    enabled: true
+    schedule: "every 6h"
+    risk_tier: yellow
+    description: "Autonomous portfolio strategist — synthesizes heatmap, multi-timeframe performance, macro regime, KG centrality, scenario resilience, and expert consensus into 4-tier allocation (core/tactical/opportunistic/hedge)"
+    max_core: 25
+    max_tactical: 15
+    max_opportunistic: 10
+    max_hedge: 8
+    success_metric:
+      name: total_holdings
+      operator: gte
+      threshold: 1
+
+  news_poller:
+    enabled: true
+    schedule: "every 15m"
+    risk_tier: green
+    description: "Poll RSS feeds for new items, classify unclassified"
+    success_metric:
+      name: items_new
+      operator: gte
+      threshold: 0
+
+  news_aggregator:
+    enabled: true
+    schedule: "every 5m"
+    risk_tier: green
+    description: "Cluster news items and check regime-level promotion"
+    success_metric:
+      name: clusters_created
+      operator: gte
+      threshold: 0
+
+  oracle_sweep:
+    enabled: true
+    schedule: "every 30m"
+    risk_tier: green
+    description: "Trading Oracle — run all lenses, detect convergence, persist predictions"
+    success_metric:
+      name: total_predictions
+      operator: gte
+      threshold: 0
+
+  systemic_radar:
+    enabled: true
+    schedule: "every 15m"
+    risk_tier: green
+    description: "Compute Systemic Risk & Opportunity Radar — 8 indicator families × 3 time horizons, composite danger/opportunity scoring with regime classification"
+    success_metric:
+      name: composite_danger
+      operator: gte
+      threshold: 0
+
+  alert_evaluator:
+    enabled: true
+    schedule: "every 1m"
+    risk_tier: green
+    description: "Evaluate user-defined alert rules (price moves, signal changes, news impact, regime changes) — fires matches into ad_alerts_log"
+    success_metric:
+      name: fired
+      operator: gte
+      threshold: 0

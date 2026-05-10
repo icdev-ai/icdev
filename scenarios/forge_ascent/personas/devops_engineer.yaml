@@ -1,0 +1,30 @@
+# CUI // SP-CTI
+label: "DevOps / Platform Engineer"
+description: "Government or contractor DevOps engineer who owns Kubernetes, Terraform, CI/CD, and container security."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - primary cloud (AWS GovCloud, Azure Government, GCP Assured Workloads)
+  - IaC toolchain (Terraform + Ansible, or Pulumi, or CDK)
+  - container orchestration experience (EKS, AKS, OpenShift, RKE2)
+  - STIG hardening experience (container STIGs, K8s STIGs)
+  - CI/CD platform (GitLab, Tekton, Jenkins, GitHub Actions)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic DevOps/Platform Engineer persona for a DoD cloud operations team.
+  They own the SENTINEL-ML deployment pipeline and know every STIG finding for
+  container images by heart — they refuse to deploy anything running as root, and they
+  always use multi-stage Dockerfiles to keep final images clean.
+  Include a role_brief explaining that this person is the team's platform authority —
+  their FORGE Academy container-deployment and iac-terraform training means they can
+  write a STIG-compliant Dockerfile and IRSA Terraform module in under 15 minutes
+  where an untrained engineer would miss the non-root user requirement and the
+  IRSA trust policy syntax, causing the deployment to fail the security gate.
+  Mention that the judge awards a 15-point Academy bonus when container security
+  hardening expertise is evident in the Dockerfile and K8s manifest security context.
+
+academy_relevant_missions:
+  - container-deployment
+  - iac-terraform
+  - ci-cd-pipeline

@@ -1,0 +1,163 @@
+# Prompt Chain Templates — LLM-to-LLM sequential reasoning
+# Each chain defines a series of steps where each agent processes
+# the previous agent's output through its domain lens.
+#
+# Variable substitution:
+#   $INPUT    — previous step's output (first step gets the user's input)
+#   $ORIGINAL — the initial user input (available in every step)
+#   $STEP{step_id} — output from a specific named step
+#
+# Decision D-PC-1: YAML-driven prompt chains — add new chains without code changes (D26 pattern)
+# Decision D-PC-2: LLM reasoning chains, not tool execution — uses LLMRouter.invoke(), not A2A dispatch
+# Decision D-PC-3: Sequential execution only — no DAG parallelism (that's team_orchestrator.py's job)
+
+prompt_chains:
+  plan_critique_refine:
+    description: "Iterative planning with adversarial review"
+    max_iterations: 1
+    steps:
+      - step_id: initial_plan
+        agent: architect
+        prompt: |
+          Plan the implementation for the following requirement.
+          Output a structured plan with phases, components, and risks.
+
+          Requirement: $INPUT
+        timeout_s: 120
+      - step_id: compliance_critique
+        agent: compliance
+        prompt: |
+          Review this implementation plan for NIST 800-53 compliance gaps,
+          FedRAMP requirements, and security control coverage.
+          List specific gaps with severity (critical/high/medium/low).
+
+          Plan to review:
+          $INPUT
+
+          Original requirement: $ORIGINAL
+        timeout_s: 90
+      - step_id: security_critique
+        agent: security
+        prompt: |
+          Review this implementation plan for security vulnerabilities,
+          attack surface concerns, and OWASP risks.
+          List specific concerns with severity.
+
+          Plan to review:
+          $INPUT
+
+          Original requirement: $ORIGINAL
+        timeout_s: 90
+      - step_id: refined_plan
+        agent: architect
+        prompt: |
+          Revise your plan addressing ALL compliance and security gaps below.
+          For each gap, explain how the revised plan addresses it.
+
+          Compliance gaps:
+          $STEP{compliance_critique}
+
+          Security concerns:
+          $STEP{security_critique}
+
+          Original requirement: $ORIGINAL
+        timeout_s: 120
+
+  scout_analyze_recommend:
+    description: "Scout codebase, analyze patterns, recommend improvements"
+    steps:
+      - step_id: scout
+        agent: knowledge
+        prompt: |
+          Analyze the following codebase area for patterns, anti-patterns,
+          technical debt, and architectural concerns.
+
+          Area to analyze: $INPUT
+        timeout_s: 90
+      - step_id: analyze
+        agent: architect
+        prompt: |
+          Given this codebase analysis, identify the top 5 improvement
+          opportunities ranked by impact and effort.
+
+          Analysis: $INPUT
+          Original request: $ORIGINAL
+        timeout_s: 90
+      - step_id: recommend
+        agent: builder
+        prompt: |
+          For each improvement opportunity, provide a concrete implementation
+          plan with specific files, functions, and code changes needed.
+
+          Opportunities: $INPUT
+          Original request: $ORIGINAL
+        timeout_s: 120
+
+  security_review_chain:
+    description: "Multi-perspective security review"
+    steps:
+      - step_id: threat_model
+        agent: security
+        prompt: |
+          Perform STRIDE threat modeling on the following component.
+          Identify threats, attack vectors, and mitigations.
+
+          Component: $INPUT
+        timeout_s: 120
+      - step_id: compliance_check
+        agent: compliance
+        prompt: |
+          Map the identified threats to NIST 800-53 controls.
+          Identify any controls not adequately addressed.
+
+          Threat model: $INPUT
+          Component: $ORIGINAL
+        timeout_s: 90
+      - step_id: remediation_plan
+        agent: builder
+        prompt: |
+          Generate a remediation implementation plan addressing
+          all identified threats and compliance gaps.
+
+          Compliance gaps: $INPUT
+          Threat model: $STEP{threat_model}
+          Component: $ORIGINAL
+        timeout_s: 120
+
+  build_review_iterate:
+    description: "Build code then review and iterate"
+    steps:
+      - step_id: initial_build
+        agent: builder
+        prompt: |
+          Implement the following feature using TDD (RED-GREEN-REFACTOR).
+          Include test code and implementation code.
+
+          Feature: $INPUT
+        timeout_s: 180
+      - step_id: code_review
+        agent: architect
+        prompt: |
+          Review this code for architecture, patterns, maintainability,
+          and adherence to SOLID principles. Provide specific feedback.
+
+          Code: $INPUT
+          Feature requirement: $ORIGINAL
+        timeout_s: 90
+      - step_id: final_build
+        agent: builder
+        prompt: |
+          Revise the implementation addressing ALL review feedback.
+          Show the final, production-ready code.
+
+          Review feedback: $INPUT
+          Original code: $STEP{initial_build}
+          Feature: $ORIGINAL
+        timeout_s: 180
+
+# Default settings
+defaults:
+  timeout_s: 120
+  model_effort: high
+  record_chain: true
+  audit_trail: true

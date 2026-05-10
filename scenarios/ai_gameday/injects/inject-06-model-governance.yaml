@@ -1,0 +1,101 @@
+# CUI // SP-CTI
+id: inject-06-model-governance
+title: "Model Selection Under Fire: Governance Emergency"
+
+body_md: |
+  ## GOVERNANCE INCIDENT — IMMEDIATE ACTION REQUIRED
+
+  **Classification:** CUI // SP-CTI
+  **Challenge Type:** Design & Assess
+  **Time Limit:** 20 minutes
+
+  ---
+
+  **FLASH MESSAGE FROM J6:**
+
+  The fine-tuned model deployed in **Inject-04** was trained on **unvalidated data** from
+  an uncertified contractor feed. Signals intelligence reports indicate potential bias
+  toward false positives in Category A (military tactical emissions).
+
+  **Command decision:** The model is **suspended pending governance review.**
+  You have **20 minutes** to produce a governance-compliant replacement design.
+
+  ---
+
+  ### Your Task
+
+  Open the AIMC (AI/ML Model Canvas) at `/ai-ml` and produce a governance-compliant
+  AI design that:
+
+  1. **Selects an IL4-approved model** from the AIMC catalog
+  2. **Adds required safety nodes:**
+     - Input Guardrail (`safety-guardrail`)
+     - Output Validator (`safety-output-validator`)
+  3. **Adds evaluation nodes:**
+     - Red Team Set (`eval-red-team`) — adversarial bias testing
+  4. **Adds governance nodes:**
+     - Model Card (`gov-model-card`)
+     - DoD RAI node (`gov-dod-rai`)
+  5. **Runs governance assessment** via `POST /ai-ml/api/designs/<id>/assess-gov`
+  6. **Achieves ≥ 75% overall governance score**
+
+  ---
+
+  ### API Evidence Required
+
+  Submit a screenshot or JSON blob showing:
+  - `design_id` (from AIMC)
+  - `overall_score` ≥ 75%
+  - `dod_rai.score` ≥ 60%
+  - `omm_m25_21.score` ≥ 60%
+  - Model IL suitability confirmed for IL4
+
+  ---
+
+  ### Optional Bonus (max points)
+
+  Also call the **Adaptation Recommendation API:**
+
+  ```
+  POST /ai-ml/api/adapt/recommend
+  {
+    "has_corpus": true,
+    "has_training_data": false,
+    "il_level": "IL4",
+    "requires_source_citation": true
+  }
+  ```
+
+  And justify why that recommendation replaces the biased fine-tuned model.
+
+trigger_after_inject: inject-04-fine-tune-sprint
+duration_minutes: 20
+classification: CUI
+
+scoring:
+  tools_scored:
+    - tool: aimc.assess
+      base_points: 100
+      description: "Run canvas compliance assessment"
+    - tool: aimc.gov_assess
+      base_points: 150
+      description: "Achieve ≥ 75% governance score"
+    - tool: aimc.adapt_recommend
+      base_points: 75
+      description: "Submit adaptation recommendation with rationale"
+  time_bonus: true
+  rubric:
+    - check: "gov-model-card present in canvas graph"
+      points: 50
+    - check: "gov-dod-rai present in canvas graph"
+      points: 50
+    - check: "eval-red-team present in canvas graph"
+      points: 50
+    - check: "overall governance score ≥ 75"
+      points: 100
+    - check: "il_suitability includes IL4 for selected model"
+      points: 50
+    - check: "adapt_recommend called with IL4 params (bonus)"
+      points: 75
+
+ribbon_awarded: model_architect

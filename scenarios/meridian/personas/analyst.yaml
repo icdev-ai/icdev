@@ -1,0 +1,28 @@
+# CUI // SP-CTI
+label: "Program / Intelligence Analyst"
+description: "Analyst who synthesizes what MERIDIAN got wrong, validates AI tool outputs, and produces alternative analysis for leadership briefs."
+attributes:
+  - title and grade (GS-11 to GS-14)
+  - analytical specialty (program analysis, financial, intelligence, policy)
+  - AI tool proficiency level (novice, intermediate, advanced)
+  - experience producing executive-level products
+  - familiarity with MERIDIAN's outputs (low, medium, high)
+
+prompt_hint: >
+  Generate a realistic program analyst persona who has been using MERIDIAN's outputs
+  as a key input to their work for the past 60 days — meaning they now have to assess
+  which of their own work products may have been based on compromised data.
+  This person is technically curious (uses AI tools extensively) but non-technical
+  (understands outputs, not model internals). They are the team's best hope for producing
+  the alternative analysis that shows what MERIDIAN should have said.
+  Explain why their Academy training in data intelligence (m-analyst-01-data-intel),
+  pattern detection (m-analyst-02-pattern-detection), and report generation
+  (m-analyst-03-report-gen) gives them a direct scoring advantage: the judge rewards
+  analysts who produce structured intelligence products with explicit AI sourcing,
+  identify the pattern of anomalies across multiple MERIDIAN outputs, and deliver
+  Board-ready alternative analysis with cited tool receipts.
+
+academy_relevant_missions:
+  - m-analyst-01-data-intel
+  - m-analyst-02-pattern-detection
+  - m-analyst-03-report-gen

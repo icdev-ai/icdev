@@ -1,0 +1,49 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: Embedded Systems (SparkPilot)
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: embedded
+description: "AI co-pilot for embedded RTOS development with NL-to-firmware, fleet management, and edge AI"
+capabilities:
+  - slug: nl-to-firmware
+    name: "Natural Language to Firmware"
+    description: "Convert natural language commands to FreeRTOS C code, cross-compile, and deploy to ESP32-S3, STM32F407, nRF52840, RPi Pico, or POSIX simulator"
+    cli_examples:
+      - "python tools/embedded/nl_to_firmware.py --command 'Blink LED every 2 seconds' --board simulator --json"
+      - "python tools/embedded/nl_to_firmware.py --command 'Read temperature sensor' --board esp32-s3 --json"
+    related_controls: ["SA-11", "CM-3"]
+    article_hooks:
+      - "'Blink LED every 2 seconds' -> C code -> cross-compile -> deploy. From English to firmware in seconds"
+      - "4-tier architecture: Browser Simulator (WASM) -> MCU (FreeRTOS) -> Edge Gateway -> Cloud"
+    frameworks: ["IEC 62443", "DO-178C", "ISO 26262"]
+    keywords: ["embedded", "firmware", "FreeRTOS", "ESP32", "STM32", "natural language", "IoT", "RTOS"]
+    source_catalog_id: "cap-embedded"
+
+  - slug: fleet-management
+    name: "IoT Fleet Management & OTA"
+    description: "Device registry, canary deployments, health heartbeat, OTA firmware/model updates with MCUboot rollback"
+    cli_examples:
+      - "python tools/fleet/device_registry.py --list --json"
+      - "python tools/fleet/ota_manager.py --canary --firmware-id fw-001 --group-id grp-001 --canary-pct 10 --json"
+    related_controls: ["CM-2", "CM-3", "SI-2"]
+    article_hooks:
+      - "Canary deployments for firmware -- roll out to 10% of devices, monitor, then promote or rollback"
+      - "Self-healing firmware: crash dump analysis triggers auto-rollback via MCUboot with 72-hour stability window"
+    frameworks: ["NIST 800-53"]
+    keywords: ["fleet management", "OTA", "IoT", "device registry", "canary deployment", "MCUboot", "firmware update"]
+    source_catalog_id: "cap-embedded"
+
+  - slug: edge-ai
+    name: "Edge AI / TinyML"
+    description: "TFLite Micro integration, model OTA deployment to edge devices, inference scheduler as FreeRTOS task, anomaly detection templates"
+    cli_examples:
+      - "python tools/edge_ai/model_manager.py --templates --json"
+      - "python tools/edge_ai/model_manager.py --deploy --model-id mdl-001 --device-id dev-001 --json"
+    related_controls: ["SI-4", "SA-11"]
+    article_hooks:
+      - "TinyML models run directly on microcontrollers -- anomaly detection at the edge without cloud connectivity"
+      - "Model OTA deployment pushes updated ML models to devices with version tracking and rollback"
+    frameworks: ["EU AI Act"]
+    keywords: ["TinyML", "edge AI", "TFLite", "inference", "anomaly detection", "model deployment", "edge computing"]
+    source_catalog_id: "cap-embedded"

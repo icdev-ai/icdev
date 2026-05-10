@@ -1,0 +1,1004 @@
+{% extends "base.html" %}
+{% block title %}{{ app_name }} — Pulse{% endblock %}
+{% block content %}
+<h1>ICDEV™ Pulse — Content Engine</h1>
+
+<div class="intro-panel" style="display: flex; justify-content: space-between; align-items: center;">
+    <div>
+        <h2>AI-Powered Blog Pipeline</h2>
+        <p>Research → Draft → Quality Check (WriteGuard) → Rewrite → Review → Publish</p>
+    </div>
+    <div id="dual-model-toggle" style="text-align: right; min-width: 200px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85em;">
+            <span id="dm-label" style="white-space: nowrap;">Loading...</span>
+            <div style="position: relative; width: 48px; height: 24px;">
+                <input type="checkbox" id="dm-switch" style="opacity:0; width:0; height:0;" onchange="toggleDualModel(this.checked)">
+                <span id="dm-slider" style="position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#888; border-radius:12px; transition:.3s;"></span>
+                <span id="dm-knob" style="position:absolute; content:''; height:18px; width:18px; left:3px; top:3px; background:white; border-radius:50%; transition:.3s;"></span>
+            </div>
+        </label>
+        <div id="dm-detail" style="font-size: 0.75em; color: var(--muted); margin-top: 2px;"></div>
+    </div>
+</div>
+
+{% if error %}
+<div class="card" style="border-left: 3px solid var(--error); margin-bottom: 16px; padding: 12px 16px;">
+    <strong style="color: var(--error);">Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<!-- Stat Grid -->
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">Total Posts</div>
+        <div class="value blue">{{ stats.total_posts or 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Published</div>
+        <div class="value green">{{ stats.by_status.get('published', 0) if stats.by_status else 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Drafts</div>
+        <div class="value orange">{{ stats.by_status.get('draft', 0) if stats.by_status else 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">In Review</div>
+        <div class="value purple">{{ stats.by_status.get('in_review', 0) if stats.by_status else 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Research Entries</div>
+        <div class="value blue">{{ stats.research_entries or 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Topic Clusters</div>
+        <div class="value purple">{{ stats.clusters or 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Pipeline Runs</div>
+        <div class="value blue">{{ stats.pipeline_runs or 0 }}</div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Capabilities</div>
+        <div class="value purple">{{ stats.capabilities or 0 }}</div>
+    </div>
+    <div class="stat-card" id="hostinger-card" style="cursor: pointer;" onclick="checkHostingerSession()">
+        <div class="label">WordPress</div>
+        <div class="value" id="hostinger-badge" style="font-size: 13px;">Checking...</div>
+    </div>
+</div>
+
+<!-- Pipeline Wizard -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <h2>Content Pipeline</h2>
+    </div>
+
+    <!-- Stage Progress Bar -->
+    <div class="pipeline-stages" id="pipeline-stages">
+        <div class="stage" data-stage="research"><span class="stage-num">1</span> Research</div>
+        <div class="stage-arrow" data-after="research">&rarr;</div>
+        <div class="stage" data-stage="draft"><span class="stage-num">2</span> Draft</div>
+        <div class="stage-arrow" data-after="draft">&rarr;</div>
+        <div class="stage" data-stage="quality_check"><span class="stage-num">3</span> Quality</div>
+        <div class="stage-arrow" data-after="quality_check">&rarr;</div>
+        <div class="stage" data-stage="rewrite"><span class="stage-num">4</span> Rewrite</div>
+        <div class="stage-arrow" data-after="rewrite">&rarr;</div>
+        <div class="stage" data-stage="publish"><span class="stage-num">5</span> Publish</div>
+    </div>
+
+    <!-- Pipeline Controls -->
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px 0;">
+        <select id="pipeline-template" aria-label="Article template" style="padding: 6px 10px; border-radius: 6px;
+            border: 1px solid #1e2d45; background: #131c2e; color: #e2e8f0; font-size: 13px;">
+            <option value="challenge_solution">Challenge-Solution</option>
+            <option value="feature_spotlight">Feature Spotlight</option>
+        </select>
+        <input type="text" id="pipeline-topic" placeholder="Topic override (optional)"
+               aria-label="Topic override"
+               style="padding: 6px 10px; border-radius: 6px; border: 1px solid #1e2d45;
+                      background: #131c2e; color: #e2e8f0; font-size: 13px; width: 250px;">
+        <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px;">
+            <input type="checkbox" id="pipeline-auto-rewrite" checked> Auto-rewrite (Sonnet)
+        </label>
+        <button class="btn btn-primary" onclick="runFullPipeline()" id="btn-run-pipeline">Run Full Pipeline</button>
+    </div>
+    <div id="pipeline-status" style="padding: 8px 0; font-size: 13px; color: var(--text-dim); display: none;"></div>
+</div>
+
+<!-- SAM Bridge -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <h2>SAM.gov &rarr; Pulse Bridge</h2>
+        <span style="font-size: 12px; color: var(--text-dim);">Extract pain points from federal solicitations &rarr; generate evergreen articles</span>
+    </div>
+
+    <!-- SAM Bridge Stats Row -->
+    <div id="sam-stats" class="stat-grid" style="margin-bottom: 8px;">
+        <div class="stat-card"><div class="label">SAM Articles</div><div class="value blue" id="sam-total">—</div></div>
+        <div class="stat-card"><div class="label">Drafted</div><div class="value green" id="sam-drafted">—</div></div>
+        <div class="stat-card"><div class="label">Pending</div><div class="value orange" id="sam-pending">—</div></div>
+        <div class="stat-card"><div class="label">Skipped</div><div class="value purple" id="sam-skipped">—</div></div>
+    </div>
+
+    <!-- SAM Bridge Controls -->
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0;">
+        <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px;">
+            Max articles:
+            <input type="number" id="sam-max-articles" value="5" min="1" max="20"
+                   style="width: 55px; padding: 4px 6px; border-radius: 6px; border: 1px solid #1e2d45;
+                          background: #131c2e; color: #e2e8f0; font-size: 13px; text-align: center;">
+        </label>
+        <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px;">
+            <input type="checkbox" id="sam-dry-run"> Dry run (extract only)
+        </label>
+        <button class="btn btn-primary" onclick="runSamBridge()" id="btn-run-sam">Run SAM Bridge</button>
+    </div>
+    <div id="sam-status" style="padding: 8px 0; font-size: 13px; color: var(--text-dim); display: none;"></div>
+
+    <!-- Recent SAM Articles -->
+    <div id="sam-recent" style="max-height: 200px; overflow-y: auto; padding: 4px 0;"></div>
+</div>
+
+<!-- Demand Signals (D-PULSE-CAP-2) -->
+<div class="card" style="margin-bottom: 16px;">
+    <div class="card-header">
+        <h2>Demand Signals</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <label style="font-size: 12px; color: var(--text-dim); display: flex; align-items: center; gap: 4px;">
+                <input type="checkbox" id="demand-high-only" onchange="loadDemandSignals()"> High demand only
+            </label>
+            <button class="btn btn-sm" onclick="loadDemandSignals()" title="Refresh">&#x21bb;</button>
+        </div>
+    </div>
+    <div id="demand-stats" class="stat-grid" style="margin-bottom: 8px;">
+        <div class="stat-card"><div class="label">Total Signals</div><div class="value blue" id="demand-total">—</div></div>
+        <div class="stat-card"><div class="label">High Demand</div><div class="value orange" id="demand-high">—</div></div>
+        <div class="stat-card"><div class="label">Domains</div><div class="value green" id="demand-domains">—</div></div>
+    </div>
+    <div id="demand-signals-list" style="max-height: 240px; overflow-y: auto; padding: 4px 0;">
+        <div style="color: var(--text-dim); font-size: 13px; padding: 8px;">Loading...</div>
+    </div>
+</div>
+
+<!-- Posts Table — Redesigned: 7 columns (Status, Title, Words, Quality, Media, Caps, Actions) -->
+<div class="card">
+    <div class="card-header">
+        <h2>Posts</h2>
+        <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-sm" onclick="enrichAllPosts()" id="btn-enrich-all" title="Rewrite all published posts with ICDEV™ capability context (Claude Sonnet)">Enrich All</button>
+            <select id="filter-status" aria-label="Filter by status" onchange="filterPosts()" style="padding: 6px 10px; border-radius: 6px;
+                border: 1px solid #1e2d45; background: #131c2e; color: #e2e8f0; font-size: 13px;">
+                <option value="">All Statuses</option>
+                <option value="draft">Draft</option>
+                <option value="in_review">In Review</option>
+                <option value="approved">Approved</option>
+                <option value="published">Published</option>
+                <option value="rejected">Rejected</option>
+            </select>
+        </div>
+    </div>
+    <table class="pulse-posts-table">
+        <thead>
+            <tr>
+                <th style="width:72px;">Status</th>
+                <th>Title</th>
+                <th style="width:52px;text-align:right;">Words</th>
+                <th style="width:120px;text-align:center;">Quality</th>
+                <th style="width:62px;text-align:center;">Judge</th>
+                <th style="width:48px;text-align:center;">Media</th>
+                <th style="width:140px;">Capabilities</th>
+                <th style="width:130px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody id="posts-table">
+            {% for p in posts %}
+            {% set _g = p.grammar_score or 0 %}
+            {% set _r = p.readability_score or 0 %}
+            {% set _p = p.plagiarism_score or 0 %}
+            {% set _a = p.ai_detection_score or 0 %}
+            {% set _t = p.tone_score or 0 %}
+            {% set _overall = ((_g + _r + _p + _a + _t) / 5)|round(0)|int if _g else 0 %}
+            <tr data-status="{{ p.status }}" data-id="{{ p.id }}">
+                <td>
+                    <span class="badge {% if p.status == 'published' %}badge-green{% elif p.status == 'draft' %}badge-orange{% elif p.status == 'approved' %}badge-green{% elif p.status == 'rejected' %}badge-red{% else %}badge-blue{% endif %}">
+                        {{ p.status or '?' }}
+                    </span>
+                </td>
+                <td><a href="/pulse/post/{{ p.id }}" style="color: var(--primary);">{{ p.title or 'Untitled' }}</a></td>
+                <td style="text-align:right;font-variant-numeric:tabular-nums;">{{ p.word_count or 0 }}</td>
+                <!-- Compact quality: overall pill + mini score bars -->
+                <td>
+                    <div class="quality-compact">
+                        <span class="score-pill score-overall {{ 'score-good' if _overall >= 80 else 'score-warn' if _overall >= 60 else 'score-bad' }}">
+                            {{ _overall if _overall else '—' }}
+                        </span>
+                        <div class="quality-bars" title="Grammar: {{ _g|round(0)|int }}  Readability: {{ _r|round(0)|int }}  Plagiarism: {{ _p|round(0)|int }}  AI Detection: {{ _a|round(0)|int }}  Tone: {{ _t|round(0)|int }}">
+                            <div class="qbar" style="--pct:{{ _g }}%;" data-label="G"></div>
+                            <div class="qbar" style="--pct:{{ _r }}%;" data-label="R"></div>
+                            <div class="qbar" style="--pct:{{ _p }}%;" data-label="P"></div>
+                            <div class="qbar" style="--pct:{{ _a }}%;" data-label="A"></div>
+                            <div class="qbar" style="--pct:{{ _t }}%;" data-label="T"></div>
+                        </div>
+                    </div>
+                </td>
+                <!-- Judge color rating -->
+                <td style="text-align:center;">
+                    {% if p.judge_color %}
+                        <span class="judge-badge judge-{{ p.judge_color }}"
+                              title="LLM Judge: {{ p.judge_color|upper }} ({{ p.judge_composite|round(1) if p.judge_composite else '?' }}/5)">
+                            {{ p.judge_color[:1]|upper }}
+                        </span>
+                    {% else %}
+                        <button class="btn btn-sm media-gen" onclick="judgePost('{{ p.id }}')" title="Run LLM Judge">&#9878;</button>
+                    {% endif %}
+                </td>
+                <!-- Media: Image + Video icons -->
+                <td style="text-align:center;">
+                    <div style="display:flex;gap:4px;justify-content:center;">
+                        {% if p.hero_image_path %}
+                            <span title="Image: {{ p.hero_image_method or 'uploaded' }}" style="cursor:help;font-size:14px;">&#127912;</span>
+                        {% else %}
+                            <button class="btn btn-sm media-gen" onclick="generateImage('{{ p.id }}')" title="Generate image">&#127912;</button>
+                        {% endif %}
+                        {% if p.generated_video_path %}
+                            <span title="Video: {{ p.generated_video_method or 'generated' }}" style="cursor:help;font-size:14px;">&#127909;</span>
+                        {% else %}
+                            <button class="btn btn-sm media-gen" onclick="generateVideo('{{ p.id }}')" title="Generate video">&#127909;</button>
+                        {% endif %}
+                    </div>
+                </td>
+                <!-- Capabilities -->
+                <td class="cap-cell" data-caps="{{ p.capabilities_referenced or '' | e }}">
+                    <span style="color: var(--text-dim); font-size: 11px;">—</span>
+                </td>
+                <td>
+                    <div style="display: flex; gap: 3px; flex-wrap: wrap;">
+                        {% if p.status in ('draft', 'in_review') %}
+                        <button class="btn btn-sm btn-rewrite" onclick="rewritePost('{{ p.id }}')" title="Rewrite via Claude Sonnet">Rewrite</button>
+                        <button class="btn btn-sm btn-success" onclick="approvePost('{{ p.id }}')">&#10003;</button>
+                        <button class="btn btn-sm btn-danger" onclick="rejectPost('{{ p.id }}')">&#10007;</button>
+                        {% elif p.status == 'approved' %}
+                        <button class="btn btn-sm btn-primary" onclick="publishPost('{{ p.id }}')">Publish</button>
+                        {% elif p.status == 'published' %}
+                        <button class="btn btn-sm btn-warning" onclick="unpublishPost('{{ p.id }}')" title="Revert to draft">Unpub</button>
+                        {% elif p.status == 'rejected' %}
+                        <button class="btn btn-sm btn-undo" onclick="undoReject('{{ p.id }}')" title="Undo rejection — revert to draft">Undo</button>
+                        {% endif %}
+                        <button class="btn btn-sm" onclick="exportPost('{{ p.id }}')" title="Export MDX/HTML">Exp</button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePost('{{ p.id }}')" title="Permanently delete">&#128465;</button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not posts %}
+            <tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 24px;">
+                No posts yet. Run the pipeline to create your first article.
+            </td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Research & Clusters Tabs -->
+<div class="card" style="margin-top: 16px;">
+    <div class="card-header">
+        <h2>Research & Topics</h2>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button class="btn btn-sm" onclick="showTab('research')" id="tab-research">Research</button>
+            <button class="btn btn-sm" onclick="showTab('clusters')" id="tab-clusters">Clusters</button>
+            <button class="btn btn-sm" onclick="showTab('history')" id="tab-history">Pipeline History</button>
+            <button class="btn btn-sm" onclick="showTab('capabilities')" id="tab-capabilities">Capabilities</button>
+        </div>
+    </div>
+    <div id="tab-content" style="max-height: 400px; overflow-y: auto; padding: 8px 0;">
+        <p style="color: var(--text-dim); font-size: 13px;">Click a tab above to load data.</p>
+    </div>
+</div>
+
+<style>
+    .badge { padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .badge-green { background: rgba(34,197,94,.15); color: #22c55e; }
+    .badge-orange { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .badge-red { background: rgba(239,68,68,.15); color: #ef4444; }
+    .badge-blue { background: rgba(14,165,233,.15); color: var(--accent); }
+    .badge-purple { background: rgba(168,85,247,.15); color: #a855f7; }
+    .btn-sm { padding: 3px 8px; font-size: 11px; }
+    .btn-danger { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.3); }
+    .btn-danger:hover { background: rgba(239,68,68,.25); }
+    .btn-rewrite { background: rgba(168,85,247,.15); color: #a855f7; border: 1px solid rgba(168,85,247,.3); }
+    .btn-rewrite:hover { background: rgba(168,85,247,.25); }
+    .btn-warning { background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid rgba(245,158,11,.3); }
+    .btn-warning:hover { background: rgba(245,158,11,.25); }
+    .btn-undo { background: rgba(14,165,233,.15); color: var(--accent); border: 1px solid rgba(14,165,233,.3); }
+    .btn-undo:hover { background: rgba(14,165,233,.25); }
+
+    /* Judge color badges (FAR 15.305) */
+    .judge-badge { display: inline-block; width: 24px; height: 24px; border-radius: 50%;
+                   font-size: 12px; font-weight: 700; line-height: 24px; text-align: center;
+                   cursor: help; }
+    .judge-blue { background: #2563eb; color: #fff; }
+    .judge-purple { background: #9333ea; color: #fff; }
+    .judge-green { background: #16a34a; color: #fff; }
+    .judge-yellow { background: #ca8a04; color: #000; }
+    .judge-red { background: #dc2626; color: #fff; }
+    .intro-panel { background: rgba(14,165,233,.06); border: 1px solid rgba(14,165,233,.2);
+                   border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; }
+    .intro-panel h2 { font-size: 15px; margin: 0 0 4px 0; }
+    .intro-panel p { font-size: 13px; color: var(--text-dim); margin: 0; }
+
+    /* Pipeline Stages */
+    .pipeline-stages { display: flex; align-items: center; gap: 6px; padding: 12px 0; flex-wrap: wrap; }
+    .stage { padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+             background: rgba(255,255,255,.05); color: var(--text-dim);
+             border: 2px solid transparent; transition: all 0.4s ease; }
+    .stage.active { background: rgba(14,165,233,.25); color: #38bdf8; border-color: #38bdf8;
+                    box-shadow: 0 0 12px rgba(56,189,248,0.3); animation: pulse-glow 1.5s ease-in-out infinite; }
+    .stage.completed { background: rgba(34,197,94,.2); color: #22c55e; border-color: #22c55e; }
+    .stage.failed { background: rgba(239,68,68,.2); color: #ef4444; border-color: #ef4444; }
+    .stage-num { display: inline-block; width: 20px; height: 20px; border-radius: 50%;
+                 background: rgba(255,255,255,.1); text-align: center; line-height: 20px;
+                 font-size: 11px; margin-right: 6px; transition: all 0.3s ease; }
+    .stage.active .stage-num { background: #38bdf8; color: #000; }
+    .stage.completed .stage-num { background: #22c55e; color: #000; }
+    .stage.failed .stage-num { background: #ef4444; color: #fff; }
+    .stage-arrow { color: var(--text-dim); font-size: 16px; transition: color 0.3s ease; }
+    .stage-arrow.completed { color: #22c55e; }
+    @keyframes pulse-glow {
+        0%, 100% { box-shadow: 0 0 8px rgba(56,189,248,0.2); }
+        50% { box-shadow: 0 0 16px rgba(56,189,248,0.5); }
+    }
+
+    /* Score Pills */
+    .score-pill { padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .score-good { background: rgba(34,197,94,.15); color: #22c55e; }
+    .score-warn { background: rgba(245,158,11,.15); color: #f59e0b; }
+    .score-bad { background: rgba(239,68,68,.15); color: #ef4444; }
+    .score-overall { font-size: 12px; font-weight: 700; }
+
+    /* Compact quality display — overall pill + 5 mini bars */
+    .quality-compact { display: flex; align-items: center; gap: 8px; }
+    .quality-bars { display: flex; gap: 2px; align-items: flex-end; height: 24px; cursor: help; }
+    .qbar { width: 14px; border-radius: 2px 2px 0 0; position: relative;
+            background: linear-gradient(to top, rgba(34,197,94,.6) var(--pct), rgba(255,255,255,.08) var(--pct));
+            height: 100%; min-height: 4px; }
+    .qbar::after { content: attr(data-label); position: absolute; bottom: -12px; left: 50%;
+                   transform: translateX(-50%); font-size: 8px; color: var(--text-dim); line-height: 1; }
+
+    /* Media gen button */
+    .media-gen { padding: 1px 4px; font-size: 12px; opacity: 0.5; border: 1px dashed rgba(255,255,255,.2);
+                 background: transparent; cursor: pointer; border-radius: 4px; }
+    .media-gen:hover { opacity: 1; border-color: var(--accent); }
+
+    /* Posts table — title wraps, all other columns shrink to content */
+    .pulse-posts-table { width: 100%; table-layout: fixed; }
+    .pulse-posts-table td, .pulse-posts-table th { padding: 6px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pulse-posts-table td:nth-child(2) { white-space: normal; word-break: break-word; overflow: visible; }
+</style>
+
+<script>
+let currentRunId = null;
+
+function filterPosts() {
+    const status = document.getElementById('filter-status').value;
+    document.querySelectorAll('#posts-table tr[data-status]').forEach(row => {
+        row.style.display = (!status || row.dataset.status === status) ? '' : 'none';
+    });
+}
+
+function setStageActive(stageId) {
+    document.querySelectorAll('.stage').forEach(s => s.classList.remove('active'));
+    const el = document.querySelector('.stage[data-stage="' + stageId + '"]');
+    if (el) el.classList.add('active');
+}
+
+function setStageCompleted(stageId) {
+    const el = document.querySelector('.stage[data-stage="' + stageId + '"]');
+    if (el) { el.classList.remove('active'); el.classList.add('completed'); }
+    // Color the arrow after this stage green
+    const arrow = document.querySelector('.stage-arrow[data-after="' + stageId + '"]');
+    if (arrow) arrow.classList.add('completed');
+}
+
+function setStageFailed(stageId) {
+    const el = document.querySelector('.stage[data-stage="' + stageId + '"]');
+    if (el) { el.classList.remove('active'); el.classList.add('failed'); }
+}
+
+function resetStages() {
+    document.querySelectorAll('.stage').forEach(s => {
+        s.classList.remove('active', 'completed', 'failed');
+    });
+    document.querySelectorAll('.stage-arrow').forEach(a => {
+        a.classList.remove('completed');
+    });
+}
+
+async function runFullPipeline() {
+    const topic = document.getElementById('pipeline-topic').value || null;
+    const template = document.getElementById('pipeline-template').value;
+    const autoRewrite = document.getElementById('pipeline-auto-rewrite').checked;
+    const statusEl = document.getElementById('pipeline-status');
+    const btn = document.getElementById('btn-run-pipeline');
+
+    btn.disabled = true;
+    btn.textContent = 'Running...';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<span style="color:var(--warning);">Pipeline starting...</span>';
+    resetStages();
+    setStageActive('research');
+
+    try {
+        const res = await fetch('/api/pulse/pipeline/run-full', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({topic, template_type: template, auto_rewrite: autoRewrite})
+        });
+        const data = await res.json();
+        if (data.run_id) {
+            currentRunId = data.run_id;
+            pollFullPipeline(data.run_id);
+        } else {
+            statusEl.innerHTML = '<span style="color:var(--error);">Failed: ' + (data.error || 'Unknown') + '</span>';
+            btn.disabled = false;
+            btn.textContent = 'Run Full Pipeline';
+        }
+    } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--error);">Error: ' + e.message + '</span>';
+        btn.disabled = false;
+        btn.textContent = 'Run Full Pipeline';
+    }
+}
+
+function pollFullPipeline(runId) {
+    const statusEl = document.getElementById('pipeline-status');
+    const btn = document.getElementById('btn-run-pipeline');
+    const startTime = Date.now();
+    const stageMessages = {
+        'research': 'Researching topics (RAG + web scraping)...',
+        'draft': 'Drafting article via Qwen3.5...',
+        'quality_check': 'Running WriteGuard + LLM Judge...',
+        'rewrite': 'Rewriting via Claude Sonnet...',
+        'publish': 'Exporting and publishing...',
+    };
+    const iv = setInterval(async () => {
+        try {
+            const res = await fetch('/api/pulse/pipeline/status/' + runId);
+            const data = await res.json();
+            const elapsed = Math.round((Date.now() - startTime) / 1000);
+            const mins = Math.floor(elapsed / 60);
+            const secs = elapsed % 60;
+            const timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+
+            // Update stage indicators based on status
+            const stage = data.stage || '';
+            const STAGES = ['research', 'draft', 'quality_check', 'rewrite', 'publish'];
+            const idx = STAGES.indexOf(stage);
+            if (idx >= 0) {
+                // Mark all prior stages as completed
+                for (let i = 0; i < idx; i++) {
+                    setStageCompleted(STAGES[i]);
+                }
+                // Mark current stage as active
+                setStageActive(stage);
+            }
+
+            if (data.status === 'completed') {
+                clearInterval(iv);
+                setStageCompleted('research'); setStageCompleted('draft');
+                setStageCompleted('quality_check');
+                if (data.auto_rewritten) setStageCompleted('rewrite');
+                setStageActive('review');
+
+                const stats = data.quality_stats || {};
+                let html = '<span style="color:var(--success);">Pipeline complete!</span>';
+                html += '<br><strong>' + (data.title || '') + '</strong> (' + (data.word_count || 0) + ' words)';
+                html += '<br><span style="font-size:12px;">Grammar: ' + (stats.grammar||0).toFixed(0);
+                html += ' | Readability: ' + (stats.readability||0).toFixed(0);
+                html += ' | Plagiarism: ' + (stats.plagiarism||0).toFixed(0);
+                html += ' | AI Det: ' + (stats.ai_detection||0).toFixed(0);
+                html += ' | Overall: <strong>' + (stats.overall||0).toFixed(0) + '</strong>';
+                if (data.auto_rewritten) html += ' | <span style="color:#a855f7;">Rewritten by ' + (data.rewrite_model||'Sonnet') + '</span>';
+                html += '</span>';
+                statusEl.innerHTML = html;
+                btn.disabled = false;
+                btn.textContent = 'Run Full Pipeline';
+                setTimeout(() => location.reload(), 3000);
+            } else if (data.status === 'failed') {
+                clearInterval(iv);
+                setStageFailed(stage || 'research');
+                statusEl.innerHTML = '<span style="color:var(--error);">Failed: ' + (data.error || 'Unknown') + '</span>';
+                btn.disabled = false;
+                btn.textContent = 'Run Full Pipeline';
+            } else {
+                const msg = stageMessages[stage] || 'Processing...';
+                statusEl.innerHTML = '<span style="color:var(--warning);">' + msg +
+                    '</span> <span style="color:var(--text-dim);font-size:12px;">(' + timeStr + ')</span>';
+            }
+        } catch(e) { /* keep polling */ }
+    }, 3000);
+}
+
+async function rewritePost(id) {
+    if (!confirm('Rewrite this post via Claude Sonnet? This will analyze quality issues and auto-fix them.')) return;
+    const row = document.querySelector('tr[data-id="' + id + '"]');
+    const btn = row ? row.querySelector('.btn-rewrite') : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Rewriting...'; }
+
+    try {
+        const res = await fetch('/api/pulse/posts/' + id + '/rewrite-llm', {method: 'POST'});
+        const data = await res.json();
+        if (data.quality_stats) {
+            alert('Rewrite complete! New score: ' + (data.quality_score||0).toFixed(0) +
+                  '\nGrammar: ' + (data.quality_stats.grammar||0).toFixed(0) +
+                  '\nReadability: ' + (data.quality_stats.readability||0).toFixed(0) +
+                  '\nPlagiarism: ' + (data.quality_stats.plagiarism||0).toFixed(0));
+        } else if (data.error) {
+            alert('Rewrite failed: ' + data.error);
+        } else {
+            alert('Rewrite: ' + (data.message || data.status || 'done'));
+        }
+        location.reload();
+    } catch(e) {
+        alert('Error: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = 'Rewrite'; }
+    }
+}
+
+async function approvePost(id) {
+    if (!confirm('Approve this post?')) return;
+    await fetch('/api/pulse/posts/' + id + '/approve', {method: 'POST'});
+    location.reload();
+}
+
+async function rejectPost(id) {
+    const notes = prompt('Rejection notes (optional):') || '';
+    await fetch('/api/pulse/posts/' + id + '/reject', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({notes})
+    });
+    location.reload();
+}
+
+async function publishPost(id) {
+    if (!confirm('Publish this post? This will also push to WordPress/Hostinger.')) return;
+    const res = await fetch('/api/pulse/posts/' + id + '/publish', {method: 'POST'});
+    const data = await res.json();
+    if (data.hostinger && data.hostinger.status === 'error') {
+        alert('Published locally but WordPress push failed: ' + data.hostinger.message);
+    }
+    location.reload();
+}
+
+async function unpublishPost(id) {
+    if (!confirm('Unpublish this post? It will revert to draft and be set to draft on WordPress.')) return;
+    const res = await fetch('/api/pulse/posts/' + id + '/unpublish', {method: 'POST'});
+    const data = await res.json();
+    if (data.wordpress && data.wordpress.status === 'error') {
+        alert('Reverted locally but WordPress unpublish failed: ' + data.wordpress.message);
+    }
+    location.reload();
+}
+
+async function deletePost(id) {
+    if (!confirm('Permanently delete this post? This cannot be undone.')) return;
+    await fetch('/api/pulse/posts/' + id + '?permanent=true', {method: 'DELETE'});
+    location.reload();
+}
+
+async function exportPost(id) {
+    const res = await fetch('/api/pulse/posts/' + id + '/export', {method: 'POST'});
+    const data = await res.json();
+    if (data.exports) {
+        alert('Exported!\nMDX: ' + (data.exports.mdx || 'N/A') + '\nHTML: ' + (data.exports.html || 'N/A'));
+    } else {
+        alert('Export failed: ' + (data.error || 'Unknown'));
+    }
+}
+
+async function showTab(tab) {
+    const el = document.getElementById('tab-content');
+    document.querySelectorAll('[id^="tab-"]').forEach(b => { if(b.tagName==='BUTTON') b.classList.remove('btn-primary'); });
+    const btn = document.getElementById('tab-' + tab);
+    if (btn) btn.classList.add('btn-primary');
+
+    el.innerHTML = '<p style="color:var(--text-dim);">Loading...</p>';
+
+    try {
+        if (tab === 'research') {
+            const res = await fetch('/api/pulse/research?limit=50');
+            const data = await res.json();
+            if (!data.length) { el.innerHTML = '<p style="color:var(--text-dim);">No research data yet.</p>'; return; }
+            let html = '<table><thead><tr><th>Source</th><th>Title</th><th>Score</th><th>Fetched</th></tr></thead><tbody>';
+            data.forEach(r => {
+                html += '<tr><td><span class="badge badge-blue">' + (r.source||'') + '</span></td>';
+                html += '<td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.title||r.snippet||'').substring(0,80) + '</td>';
+                html += '<td>' + (r.relevance_score ? r.relevance_score.toFixed(2) : '—') + '</td>';
+                html += '<td style="font-size:12px;color:var(--text-dim);">' + (r.fetched_at||'').substring(0,10) + '</td></tr>';
+            });
+            el.innerHTML = html + '</tbody></table>';
+        } else if (tab === 'clusters') {
+            const res = await fetch('/api/pulse/clusters');
+            const data = await res.json();
+            if (!data.length) { el.innerHTML = '<p style="color:var(--text-dim);">No clusters yet. Run research first.</p>'; return; }
+            let html = '<table><thead><tr><th>Priority</th><th>Topic</th><th>Used</th></tr></thead><tbody>';
+            data.forEach(c => {
+                html += '<tr><td>' + (c.priority_score ? c.priority_score.toFixed(2) : '—') + '</td>';
+                html += '<td>' + (c.name||'').substring(0,60) + '</td>';
+                html += '<td>' + (c.used_count||0) + '</td></tr>';
+            });
+            el.innerHTML = html + '</tbody></table>';
+        } else if (tab === 'history') {
+            const res = await fetch('/api/pulse/pipeline/history');
+            const data = await res.json();
+            if (!data.length) { el.innerHTML = '<p style="color:var(--text-dim);">No pipeline runs yet.</p>'; return; }
+            let html = '<table><thead><tr><th>ID</th><th>Type</th><th>Status</th><th>Started</th></tr></thead><tbody>';
+            data.forEach(r => {
+                const sc = r.status === 'completed' ? 'green' : r.status === 'failed' ? 'red' : 'orange';
+                html += '<tr><td style="font-size:12px;">' + (r.id||'').substring(0,16) + '</td>';
+                html += '<td>' + (r.run_type||'') + '</td>';
+                html += '<td><span class="badge badge-' + sc + '">' + (r.status||'') + '</span></td>';
+                html += '<td style="font-size:12px;color:var(--text-dim);">' + (r.started_at||'').substring(0,19) + '</td></tr>';
+            });
+            el.innerHTML = html + '</tbody></table>';
+        } else if (tab === 'capabilities') {
+            const res = await fetch('/api/pulse/capabilities');
+            const data = await res.json();
+            if (!data.domains || !data.domains.length) { el.innerHTML = '<p style="color:var(--text-dim);">No capability files found.</p>'; return; }
+            let html = '<div style="margin-bottom:8px;font-size:13px;color:var(--text-dim);">' +
+                '<strong>' + data.total_capabilities + '</strong> capabilities across <strong>' + data.total_domains + '</strong> domains</div>';
+            html += '<table><thead><tr><th>Domain</th><th>Description</th><th>Capabilities</th></tr></thead><tbody>';
+            data.domains.forEach(d => {
+                html += '<tr><td><span class="badge badge-blue">' + d.domain + '</span></td>';
+                html += '<td style="max-width:400px;font-size:12px;">' + (d.description || '').substring(0, 100) + '</td>';
+                html += '<td style="text-align:center;"><strong>' + d.capability_count + '</strong></td></tr>';
+                if (d.capabilities) {
+                    d.capabilities.forEach(c => {
+                        html += '<tr style="background:rgba(0,0,0,0.1);"><td style="padding-left:24px;font-size:12px;">' + c.slug + '</td>';
+                        html += '<td style="font-size:12px;">' + (c.name || '') + '</td>';
+                        html += '<td style="font-size:11px;color:var(--text-dim);">' + (c.keywords || []).slice(0,3).join(', ') + '</td></tr>';
+                    });
+                }
+            });
+            el.innerHTML = html + '</tbody></table>';
+        }
+    } catch(e) {
+        el.innerHTML = '<p style="color:var(--error);">Error loading data: ' + e.message + '</p>';
+    }
+}
+
+// ── Enrich All Posts with Capabilities ──────────────────────────
+async function enrichAllPosts() {
+    const btn = document.getElementById('btn-enrich-all');
+    if (!confirm('This will rewrite all published posts with ICDEV™ capability references via Claude Sonnet. Continue?')) return;
+    btn.disabled = true;
+    btn.textContent = 'Enriching...';
+    try {
+        const res = await fetch('/api/pulse/posts/enrich-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'started') {
+            btn.textContent = 'Enriching ' + data.posts_queued + ' posts...';
+            // Poll — rewrites take time
+            setTimeout(() => {
+                btn.textContent = 'Enrich All with Capabilities';
+                btn.disabled = false;
+                alert('Capability enrichment started for ' + data.posts_queued + ' posts. Rewrites run in background — refresh the page in a few minutes to see results.');
+            }, 3000);
+        } else {
+            btn.textContent = 'Enrich All with Capabilities';
+            btn.disabled = false;
+            alert('Error: ' + (data.error || 'Unknown'));
+        }
+    } catch(e) {
+        btn.textContent = 'Enrich All with Capabilities';
+        btn.disabled = false;
+        alert('Error: ' + e.message);
+    }
+}
+
+// ── SAM Bridge ──────────────────────────────────────────────────
+async function loadSamStats() {
+    try {
+        const res = await fetch('/api/pulse/sam-bridge/stats');
+        const data = await res.json();
+        document.getElementById('sam-total').textContent = data.total || 0;
+        document.getElementById('sam-drafted').textContent = (data.by_status || {}).drafted || 0;
+        document.getElementById('sam-pending').textContent = (data.by_status || {}).pending || 0;
+        document.getElementById('sam-skipped').textContent = (data.by_status || {}).skipped || 0;
+
+        const recentEl = document.getElementById('sam-recent');
+        const recent = data.recent || [];
+        if (!recent.length) {
+            recentEl.innerHTML = '<p style="color:var(--text-dim);font-size:12px;">No SAM articles yet. Run the bridge to extract topics from federal solicitations.</p>';
+            return;
+        }
+        let html = '<table><thead><tr><th>Status</th><th>Domain</th><th>Topic</th><th>Date</th></tr></thead><tbody>';
+        recent.forEach(r => {
+            const sc = r.pipeline_status === 'drafted' ? 'green' : r.pipeline_status === 'pending' ? 'orange' :
+                       r.pipeline_status === 'skipped' ? 'purple' : r.pipeline_status === 'failed' ? 'red' : 'blue';
+            html += '<tr><td><span class="badge badge-' + sc + '">' + (r.pipeline_status || '') + '</span></td>';
+            html += '<td style="font-size:12px;">' + (r.domain_category || '—') + '</td>';
+            html += '<td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.article_topic || '') + '</td>';
+            html += '<td style="font-size:12px;color:var(--text-dim);">' + (r.created_at || '').substring(0, 10) + '</td></tr>';
+        });
+        recentEl.innerHTML = html + '</tbody></table>';
+    } catch(e) {
+        /* stats not available yet */
+    }
+}
+
+async function runSamBridge() {
+    const dryRun = document.getElementById('sam-dry-run').checked;
+    const maxArticles = parseInt(document.getElementById('sam-max-articles').value) || 5;
+    const statusEl = document.getElementById('sam-status');
+    const btn = document.getElementById('btn-run-sam');
+
+    btn.disabled = true;
+    btn.textContent = dryRun ? 'Scanning...' : 'Running...';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<span style="color:var(--warning);">SAM Bridge starting' + (dryRun ? ' (dry run)' : '') + '...</span>';
+
+    try {
+        const res = await fetch('/api/pulse/sam-bridge/run', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({dry_run: dryRun, max_articles: maxArticles})
+        });
+        const data = await res.json();
+        if (data.run_id) {
+            pollSamBridge(data.run_id);
+        } else {
+            statusEl.innerHTML = '<span style="color:var(--error);">Failed: ' + (data.error || 'Unknown') + '</span>';
+            btn.disabled = false;
+            btn.textContent = 'Run SAM Bridge';
+        }
+    } catch(e) {
+        statusEl.innerHTML = '<span style="color:var(--error);">Error: ' + e.message + '</span>';
+        btn.disabled = false;
+        btn.textContent = 'Run SAM Bridge';
+    }
+}
+
+function pollSamBridge(runId) {
+    const statusEl = document.getElementById('sam-status');
+    const btn = document.getElementById('btn-run-sam');
+    const iv = setInterval(async () => {
+        try {
+            const res = await fetch('/api/pulse/sam-bridge/status/' + runId);
+            const data = await res.json();
+
+            if (data.status === 'completed') {
+                clearInterval(iv);
+                const articles = data.articles_generated || data.topics_extracted || 0;
+                const skipped = data.skipped || 0;
+                let html = '<span style="color:var(--success);">SAM Bridge complete!</span>';
+                if (data.dry_run) {
+                    html += '<br>Topics extracted: <strong>' + (data.topics_extracted || 0) + '</strong>';
+                    if (data.topics && data.topics.length) {
+                        html += '<ul style="margin:4px 0;padding-left:20px;font-size:12px;">';
+                        data.topics.forEach(t => { html += '<li>' + (t.topic || t) + '</li>'; });
+                        html += '</ul>';
+                    }
+                } else {
+                    html += '<br>Articles generated: <strong>' + articles + '</strong>';
+                    html += ' | Skipped (dedup): <strong>' + skipped + '</strong>';
+                }
+                statusEl.innerHTML = html;
+                btn.disabled = false;
+                btn.textContent = 'Run SAM Bridge';
+                loadSamStats();
+                if (!data.dry_run) setTimeout(() => location.reload(), 3000);
+            } else if (data.status === 'failed') {
+                clearInterval(iv);
+                statusEl.innerHTML = '<span style="color:var(--error);">Failed: ' + (data.error || 'Unknown') + '</span>';
+                btn.disabled = false;
+                btn.textContent = 'Run SAM Bridge';
+            } else {
+                statusEl.innerHTML = '<span style="color:var(--warning);">Stage: ' + (data.stage || 'processing') + '...</span>';
+            }
+        } catch(e) { /* keep polling */ }
+    }, 5000);
+}
+
+// Load SAM stats on page load
+loadSamStats();
+
+// WordPress connection check
+async function checkHostingerSession() {
+    const badge = document.getElementById('hostinger-badge');
+    try {
+        const res = await fetch('/api/pulse/hostinger/session');
+        const data = await res.json();
+        const sess = data.session || {};
+        if (sess.status === 'ok') {
+            badge.textContent = 'Connected';
+            badge.style.color = '#22c55e';
+            if (sess.blog_name) badge.textContent += ' (' + sess.blog_name + ')';
+        } else {
+            badge.textContent = 'Not Connected';
+            badge.style.color = '#ef4444';
+        }
+    } catch(e) {
+        badge.textContent = 'Unavailable';
+        badge.style.color = 'var(--text-dim)';
+    }
+}
+// Auto-check on load
+checkHostingerSession();
+
+// ── Demand Signals ──────────────────────────────────────────────
+async function loadDemandSignals() {
+    try {
+        const highOnly = document.getElementById('demand-high-only')?.checked ? '1' : '0';
+        const [sigRes, aggRes] = await Promise.all([
+            fetch('/api/pulse/demand-signals?high_demand=' + highOnly),
+            fetch('/api/pulse/demand-signals/aggregate')
+        ]);
+        const sigData = await sigRes.json();
+        const aggData = await aggRes.json();
+
+        document.getElementById('demand-total').textContent = aggData.total || 0;
+        document.getElementById('demand-high').textContent = aggData.high_demand_total || 0;
+        document.getElementById('demand-domains').textContent = (aggData.by_domain || []).length;
+
+        const listEl = document.getElementById('demand-signals-list');
+        const signals = sigData.signals || [];
+        if (!signals.length) {
+            listEl.innerHTML = '<div style="color:var(--text-dim);font-size:13px;padding:8px;">No demand signals detected yet. Run the SAM Bridge to extract pain points.</div>';
+            return;
+        }
+        let html = '<table style="width:100%;font-size:12px;"><thead><tr><th>Pain Point</th><th>Domain</th><th>Freq</th><th>High?</th></tr></thead><tbody>';
+        signals.forEach(s => {
+            const highBadge = s.is_high_demand ? '<span class="badge badge-orange">HIGH</span>' : '';
+            html += '<tr><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' +
+                    (s.pain_point_text || '').substring(0, 80) + '</td>' +
+                    '<td>' + (s.domain_category || '—') + '</td>' +
+                    '<td>' + (s.frequency || 0) + '</td>' +
+                    '<td>' + highBadge + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        listEl.innerHTML = html;
+    } catch(e) {
+        document.getElementById('demand-signals-list').innerHTML =
+            '<div style="color:var(--text-dim);font-size:13px;padding:8px;">Demand signals unavailable.</div>';
+    }
+}
+loadDemandSignals();
+
+// ── Capability Names on Posts — show ALL ─────────────────────────
+document.querySelectorAll('.cap-cell').forEach(cell => {
+    const raw = cell.getAttribute('data-caps');
+    if (!raw) return;
+    try {
+        const caps = JSON.parse(raw);
+        if (Array.isArray(caps) && caps.length) {
+            cell.style.whiteSpace = 'normal';
+            cell.style.lineHeight = '1.6';
+            cell.innerHTML = caps.map(c => {
+                const name = (c.name || c.slug || '');
+                return '<span class="badge badge-blue" style="font-size:9px;margin:1px;display:inline-block;" title="' +
+                    (c.domain || '') + '">' + name + '</span>';
+            }).join('');
+        }
+    } catch(e) { /* leave default dash */ }
+});
+
+// ── LLM Judge ───────────────────────────────────────────────────
+async function judgePost(id) {
+    if (!confirm('Run LLM Judge (Prometheus-2) on this post? Takes ~60 seconds.')) return;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+        await fetch('/api/pulse/posts/' + id + '/judge', {method: 'POST'});
+        setTimeout(() => location.reload(), 65000); // Reload after judge completes
+        btn.textContent = 'Judging...';
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = '\u2696';
+    }
+}
+
+// ── Undo Reject ─────────────────────────────────────────────────
+async function undoReject(id) {
+    if (!confirm('Undo rejection and revert this post to draft?')) return;
+    try {
+        await fetch('/api/pulse/posts/' + id + '/undo-reject', {method: 'POST'});
+        location.reload();
+    } catch(e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+// ── Hero Image Generation ────────────────────────────────────────
+async function generateImage(postId) {
+    if (!confirm('Generate a hero image for this post using SDXL Turbo on your local GPU? This takes ~40 seconds.')) return;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    try {
+        const res = await fetch('/api/pulse/posts/' + postId + '/generate-image', {method: 'POST'});
+        const data = await res.json();
+        if (data.success) {
+            alert('Hero image generated via ' + data.method + ' (' + (data.elapsed_ms || 0) + 'ms)');
+            location.reload();
+        } else {
+            alert('Image generation failed: ' + (data.error || 'Unknown'));
+            btn.disabled = false;
+            btn.textContent = 'Gen';
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = 'Gen';
+    }
+}
+
+async function generateVideo(postId) {
+    if (!confirm('Generate a hero video for this post? Uses LTX-Video 2B on local GPU (or animated SVG fallback). May take 30-60 seconds.')) return;
+    const btn = event.target;
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    try {
+        const res = await fetch('/api/pulse/posts/' + postId + '/generate-video', {method: 'POST'});
+        const data = await res.json();
+        if (data.success) {
+            alert('Video generated via ' + data.method + ' (' + (data.elapsed_ms || 0) + 'ms, ' + (data.duration_sec || 0) + 's clip)');
+            location.reload();
+        } else {
+            alert('Video generation failed: ' + (data.error || 'Unknown'));
+            btn.disabled = false;
+            btn.textContent = 'Gen';
+        }
+    } catch(e) {
+        alert('Error: ' + e.message);
+        btn.disabled = false;
+        btn.textContent = 'Gen';
+    }
+}
+
+/* --- Dual-Model Toggle --- */
+function updateDualModelUI(data) {
+    const sw = document.getElementById('dm-switch');
+    const slider = document.getElementById('dm-slider');
+    const knob = document.getElementById('dm-knob');
+    const label = document.getElementById('dm-label');
+    const detail = document.getElementById('dm-detail');
+    if (!sw) return;
+    sw.checked = data.dual_model;
+    slider.style.background = data.dual_model ? 'var(--accent, #4a9eff)' : '#888';
+    knob.style.left = data.dual_model ? '27px' : '3px';
+    label.textContent = data.dual_model ? 'Speed Mode' : 'Quality Mode';
+    detail.textContent = data.description || '';
+}
+
+async function loadDualModelStatus() {
+    try {
+        const resp = await fetch('/api/llm/dual-model');
+        const data = await resp.json();
+        updateDualModelUI(data);
+    } catch(e) {
+        document.getElementById('dm-label').textContent = 'Unavailable';
+    }
+}
+
+async function toggleDualModel(enabled) {
+    try {
+        const resp = await fetch('/api/llm/dual-model', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({enabled: enabled})
+        });
+        const data = await resp.json();
+        updateDualModelUI(data);
+        showToast(enabled ? 'Speed Mode: 1.7B + Gemma3 (dual VRAM)' : 'Quality Mode: 9B (single model)', 'info');
+    } catch(e) {
+        showToast('Failed to toggle: ' + e.message, 'error');
+    }
+}
+
+// Init on page load
+document.addEventListener('DOMContentLoaded', loadDualModelStatus);
+</script>
+{% endblock %}

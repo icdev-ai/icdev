@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Label — Fine-Tuning — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <span><a href="/">Home</a></span> &gt; <span><a href="/finetune">Fine-Tuning</a></span> &gt; <span>Bulk Labeling</span>
+    </nav>
+
+    <h1>Training Data Labeling</h1>
+    <p class="text-muted">Review and label training examples across all datasets. Multi-dimensional scoring: quality, compliance, relevance (1-5). Batch approve/reject with keyboard shortcuts (D-FT-12).</p>
+
+    <!-- Dataset Selector -->
+    <div style="margin:1rem 0;display:flex;gap:1rem;align-items:center;flex-wrap:wrap;">
+        <label for="dataset-select"><strong>Dataset:</strong></label>
+        <select id="dataset-select" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;min-width:250px;">
+            <option value="">-- Select a dataset --</option>
+            {% for ds in datasets %}
+            <option value="{{ ds.id }}" {% if selected_dataset_id == ds.id %}selected{% endif %}>{{ ds.name }} ({{ ds.example_count }} examples, {{ ds.status }})</option>
+            {% endfor %}
+        </select>
+        <button onclick="loadExamples()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Load</button>
+    </div>
+
+    <!-- Keyboard Shortcut Help -->
+    <div style="margin:1rem 0;padding:0.5rem 1rem;background:#f5f5f5;border:1px solid #ddd;border-radius:4px;font-size:0.85rem;">
+        <strong>Shortcuts:</strong> <kbd>a</kbd> = Approve selected &nbsp; <kbd>r</kbd> = Reject selected &nbsp; <kbd>Ctrl+A</kbd> = Select all
+    </div>
+
+    <!-- Labeling Stats -->
+    <div id="label-stats" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:0.5rem;margin:1rem 0;">
+        <div class="stat-card" style="text-align:center;padding:0.5rem;background:#e8f5e9;border-radius:4px;">
+            <div id="stat-total" style="font-size:1.5rem;font-weight:bold;">0</div>
+            <div style="font-size:0.8rem;color:#666;">Total</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:0.5rem;background:#e3f2fd;border-radius:4px;">
+            <div id="stat-labeled" style="font-size:1.5rem;font-weight:bold;">0</div>
+            <div style="font-size:0.8rem;color:#666;">Labeled</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:0.5rem;background:#fff3e0;border-radius:4px;">
+            <div id="stat-pending" style="font-size:1.5rem;font-weight:bold;">0</div>
+            <div style="font-size:0.8rem;color:#666;">Pending</div>
+        </div>
+        <div class="stat-card" style="text-align:center;padding:0.5rem;background:#e8f5e9;border-radius:4px;">
+            <div id="stat-approved" style="font-size:1.5rem;font-weight:bold;">0</div>
+            <div style="font-size:0.8rem;color:#666;">Approved</div>
+        </div>
+    </div>
+
+    <!-- Batch Actions -->
+    <div style="margin:1rem 0;display:flex;gap:0.5rem;">
+        <button id="btn-approve" onclick="batchLabel(true)" style="padding:0.4rem 1rem;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;" disabled>Approve Selected</button>
+        <button id="btn-reject" onclick="batchLabel(false)" style="padding:0.4rem 1rem;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer;" disabled>Reject Selected</button>
+        <span id="selection-count" style="line-height:2.2;color:#666;font-size:0.85rem;margin-left:0.5rem;">0 selected</span>
+    </div>
+
+    <!-- Examples Table -->
+    <div class="table-container">
+        <table id="tbl-examples">
+            <thead>
+                <tr>
+                    <th><input type="checkbox" id="select-all" onchange="toggleAll(this.checked)"></th>
+                    <th>ID</th>
+                    <th>User Input</th>
+                    <th>Expected Output</th>
+                    <th>Source</th>
+                    <th>Quality</th>
+                    <th>Compliance</th>
+                    <th>Relevance</th>
+                    <th>Status</th>
+                    <th>Labeled By</th>
+                </tr>
+            </thead>
+            <tbody id="examples-body">
+                <tr><td colspan="10" style="text-align:center;color:#999;">Select a dataset and click Load.</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+let currentDatasetId = '';
+let examplesData = [];
+
+function loadExamples() {
+    const sel = document.getElementById('dataset-select');
+    currentDatasetId = sel.value;
+    if (!currentDatasetId) return;
+    window.location.href = '/finetune/label?dataset_id=' + encodeURIComponent(currentDatasetId);
+}
+
+// If examples were loaded server-side
+{% if examples %}
+examplesData = {{ examples|tojson }};
+currentDatasetId = '{{ selected_dataset_id }}';
+renderExamples(examplesData);
+updateStats(examplesData);
+{% endif %}
+
+function renderExamples(examples) {
+    const tbody = document.getElementById('examples-body');
+    if (!examples || examples.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:#999;">No examples found.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = examples.map(ex => {
+        const statusColor = ex.approved ? '#4caf50' : (ex.labeled_at ? '#f44336' : '#999');
+        const statusText = ex.approved ? 'Approved' : (ex.labeled_at ? 'Rejected' : 'Pending');
+        const userInput = (ex.user_input || '').substring(0, 80);
+        const expectedOutput = (ex.expected_output || '').substring(0, 80);
+        return '<tr>' +
+            '<td><input type="checkbox" class="ex-check" value="' + ex.id + '" onchange="updateSelection()"></td>' +
+            '<td>' + ex.id + '</td>' +
+            '<td title="' + (ex.user_input || '').replace(/"/g, '&quot;') + '">' + userInput + (ex.user_input && ex.user_input.length > 80 ? '...' : '') + '</td>' +
+            '<td title="' + (ex.expected_output || '').replace(/"/g, '&quot;') + '">' + expectedOutput + (ex.expected_output && ex.expected_output.length > 80 ? '...' : '') + '</td>' +
+            '<td>' + (ex.source || '--') + '</td>' +
+            '<td>' + (ex.quality_score || 0).toFixed(1) + '</td>' +
+            '<td>' + (ex.compliance_score || 0).toFixed(1) + '</td>' +
+            '<td>' + (ex.relevance_score || 0).toFixed(1) + '</td>' +
+            '<td style="color:' + statusColor + ';font-weight:bold;">' + statusText + '</td>' +
+            '<td>' + (ex.labeled_by || '--') + '</td>' +
+            '</tr>';
+    }).join('');
+}
+
+function updateStats(examples) {
+    const total = examples.length;
+    const labeled = examples.filter(e => e.labeled_at).length;
+    const approved = examples.filter(e => e.approved).length;
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-labeled').textContent = labeled;
+    document.getElementById('stat-pending').textContent = total - labeled;
+    document.getElementById('stat-approved').textContent = approved;
+}
+
+function toggleAll(checked) {
+    document.querySelectorAll('.ex-check').forEach(cb => cb.checked = checked);
+    updateSelection();
+}
+
+function updateSelection() {
+    const checked = document.querySelectorAll('.ex-check:checked');
+    document.getElementById('selection-count').textContent = checked.length + ' selected';
+    document.getElementById('btn-approve').disabled = checked.length === 0;
+    document.getElementById('btn-reject').disabled = checked.length === 0;
+}
+
+function batchLabel(approved) {
+    const ids = Array.from(document.querySelectorAll('.ex-check:checked')).map(cb => parseInt(cb.value));
+    if (ids.length === 0) return;
+    fetch('/api/finetune/datasets/' + currentDatasetId + '/batch-label', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({example_ids: ids, approved: approved, labeled_by: 'dashboard_user'}),
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            window.location.reload();
+        } else {
+            alert('Error: ' + (data.error || 'Unknown'));
+        }
+    }).catch(err => alert('Request failed: ' + err));
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'a') batchLabel(true);
+    if (e.key === 'r') batchLabel(false);
+});
+</script>
+
+{% endblock %}

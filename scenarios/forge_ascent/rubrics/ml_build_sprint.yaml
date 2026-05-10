@@ -1,0 +1,61 @@
+# CUI // SP-CTI
+name: "ML Build Sprint Rubric"
+inject_type: ml_build_sprint
+description: "Evaluates fine-tuning config quality, deployment proof, and model evaluation rigor. Finetune receipt is mandatory."
+max_score: 100
+
+dimensions:
+  finetune_config_quality:
+    weight: 0.30
+    prompt: >
+      Did the team demonstrate understanding of class-imbalance-aware fine-tuning?
+      Award 30/30 for a config that chooses an imbalance-aware loss (focal_loss or
+      weighted_bce) AND a conservative learning rate (1e-5 or 5e-5) AND sets
+      early_stopping=true with f1_macro or recall as primary metric. This combination
+      is the correct choice for a 1:5.7 class-imbalanced binary classifier.
+      Award 22/30 for 2 of 3 correct choices with justification.
+      Award 15/30 for cross_entropy with explicit class_weight compensation — valid
+      but suboptimal, accept with partial credit.
+      Award 8/30 for any config with 1 correct choice and some justification.
+      Award 0/30 for no config or a config with no justification.
+      Academy bonus: ML Engineers who completed 'model-fine-tuning' mission know
+      focal_loss by name and can explain the gamma parameter. Award up to +15 pts
+      where this expertise is demonstrated in the parameter justification.
+
+  deployment_proof:
+    weight: 0.35
+    prompt: >
+      Did the team provide verifiable proof of a deployed fine-tuned model?
+      Award 35/35 ONLY for a response that includes: (1) a model_id from the
+      finetune.deploy receipt, AND (2) validation metrics showing Precision ≥ 0.85,
+      Recall ≥ 0.80, F1 ≥ 0.82 from the job output.
+      Award 24/35 for model_id present but validation metrics missing or not meeting
+      acceptance criteria (model deployed but not verified).
+      Award 12/35 for a Knowledge Search receipt with documented configuration but
+      no fine-tune deployment (RAG-only approach).
+      Award 0/35 for no deployment receipt. This is the hard gate: if the
+      finetune.deploy receipt is absent, base_pts are capped at 50% by the engine.
+
+  evaluation_quality:
+    weight: 0.25
+    prompt: >
+      Are the 3 submitted predictions realistic and correctly formatted?
+      Award 25/25 for all 3 predictions: TP with probability ≥ 0.85 and feature
+      analysis explaining why it's anomalous; TN with probability ≤ 0.15 and
+      normal-state reasoning; borderline case (0.45–0.65) with a recommendation
+      that considers both false-positive and false-negative operational costs.
+      Award 18/25 for 2/3 correct with meaningful explanations.
+      Award 10/25 for correctly structured predictions with shallow reasoning.
+      Award 0/25 for fabricated predictions not tied to the dataset or model output.
+
+  innovation:
+    weight: 0.10
+    prompt: >
+      Did the team go beyond minimum requirements?
+      Award 10/10 for evidence of: using Knowledge Search to find training best
+      practices AND incorporating specific findings into config choices, OR for
+      proposing a model monitoring plan (drift threshold, retraining trigger),
+      OR for noting that the borderline prediction suggests a human-in-the-loop
+      review workflow is needed given the operational stakes.
+      Award 5/10 for one creative addition.
+      Award 0/10 for minimum execution only.

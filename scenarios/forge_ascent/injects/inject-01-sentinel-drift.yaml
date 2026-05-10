@@ -1,0 +1,86 @@
+# CUI // SP-CTI
+id: inject-01-sentinel-drift
+title: "ALERT: SENTINEL-ML Prediction Drift Detected"
+
+body_md: |
+  ## SENTINEL-ML SYSTEM ALERT — DRIFT THRESHOLD EXCEEDED
+
+  **Classification:** CUI // SP-CTI
+  **DTG:** [Current]
+  **Severity:** P1 — Operational Impact
+
+  The SENTINEL-ML monitoring dashboard has fired a P1 alert. Prediction quality
+  metrics have crossed below the minimum operational threshold:
+
+  | Metric         | Baseline | Current  | Delta    | Threshold |
+  |----------------|----------|----------|----------|-----------|
+  | Precision      | 0.94     | **0.61** | -0.33    | ≥ 0.85    |
+  | Recall         | 0.91     | **0.43** | -0.48    | ≥ 0.80    |
+  | F1 Score       | 0.92     | **0.50** | -0.42    | ≥ 0.82    |
+  | False Positive | 0.06     | **0.31** | +0.25    | ≤ 0.10    |
+
+  **Feature Drift Report (KS Test, last 48h vs. 30-day baseline):**
+
+  | Feature Name               | KS Statistic | p-value  | Drift Severity |
+  |----------------------------|--------------|----------|----------------|
+  | `fuel_consumption_delta`   | 0.41         | 0.0003   | HIGH           |
+  | `maintenance_event_count`  | 0.38         | 0.0011   | HIGH           |
+  | `supply_latency_hours`     | 0.09         | 0.42     | NONE           |
+  | `sortie_rate_7d`           | 0.11         | 0.38     | NONE           |
+  | `parts_backorder_ratio`    | 0.34         | 0.0027   | HIGH           |
+  | `sensor_temp_avg`          | 0.44         | 0.0001   | HIGH           |
+
+  **System Logs (last error block):**
+  ```
+  [2026-05-02 02:14:33 UTC] WARN  feature_pipeline: null_ratio=0.18 on sensor_temp_avg (expected <0.02)
+  [2026-05-02 02:14:33 UTC] ERROR feature_pipeline: datetime parse failed on 3,412 records — skipping
+  [2026-05-02 02:14:34 UTC] WARN  normalizer: fuel_consumption_delta out of [-1, 1] range: max=3.74
+  [2026-05-02 02:14:34 UTC] INFO  model.inference: 14,833 records processed, 2,648 flagged anomalous
+  ```
+
+  ### Four Candidate Root Causes
+
+  Your team must identify which is most likely and why:
+
+  **Candidate A — Schema Change in Upstream Data Feed**
+  A new field was added to the logistics data schema 3 days ago. The pipeline
+  may be misaligning column indices, causing values to populate wrong features.
+
+  **Candidate B — Sensor Calibration Drift on Forward-Deployed Assets**
+  Forward-deployed platforms recalibrated temperature sensors on 2026-04-29.
+  New baseline offsets were not propagated to the feature normalization config.
+
+  **Candidate C — Training Distribution Shift (Seasonal)**
+  The model was trained on 18 months of winter/spring data. Summer operational
+  patterns may be genuinely different and outside the training distribution.
+
+  **Candidate D — Feature Encoding Bug in Preprocessing Code**
+  A recent code deployment (commit `d4f832c`) changed datetime handling logic.
+  The `datetime parse failed` errors in the logs suggest records are being dropped,
+  shrinking the effective batch size and skewing aggregated feature windows.
+
+  ### Your Task
+
+  **Required deliverable:**
+  1. **Root Cause Hypothesis** — Which candidate (A, B, C, or D) is most likely?
+     Justify with specific reference to the drift metrics and log evidence.
+  2. **Confidence Level** — State your confidence (High / Medium / Low) and why.
+  3. **Investigation Steps** — List exactly 3 concrete next steps your team will
+     take in the next 10 minutes to confirm the root cause before the Code Sprint.
+
+  **Points are awarded for:**
+  - Using Knowledge Search or Code Analyzer to ground your diagnosis
+  - Evidence-based reasoning tied directly to the metrics and log entries
+  - Speed of submission (time bonus: ≤120s = +50, ≤300s = +25, ≤600s = +10)
+
+  **Hint:** Run Knowledge Search (`/api/knowledge/search`) for "feature drift diagnosis"
+  or "datetime parse pipeline failure" — the RAG engine has ICDEV operational docs
+  that describe this failure pattern. Code Analyzer can also flag likely bug locations
+  if you paste the error trace. Each verified tool call earns +40 pts.
+
+context_note: >
+  The correct answer is D (datetime encoding bug — confirmed by the parse errors
+  in the log + the high KS statistics on features that depend on time-windowed
+  aggregation). However, teams that argue convincingly for B (sensor calibration)
+  with specific metric reference should still earn significant judge credit.
+  The judge should reward structured diagnostic reasoning, not just the correct guess.

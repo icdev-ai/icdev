@@ -1,0 +1,184 @@
+<!-- CUI // SP-CTI — Migration Compliance Gate Wizard -->
+{% extends "base.html" %}
+{% block title %}Compliance Gate Wizard — Migration Canvas — ICDEV{% endblock %}
+{% block extra_css %}
+<style>
+.cw-wrap { max-width: 760px; margin: 32px auto; padding: 0 24px; }
+.cw-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 10px; padding: 28px; margin-bottom: 20px; }
+.cw-title { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+.cw-sub { color: #7a8cb0; font-size: 13px; margin: 0 0 24px; }
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 12px; color: #7a8cb0; margin-bottom: 5px; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.form-group select { width: 100%; background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 5px; color: #eaeaea; padding: 9px 12px; font-size: 13px; }
+.form-group select:focus { outline: none; border-color: #2980b9; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.fw-checks { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.fw-checks label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #eaeaea; cursor: pointer; }
+.fw-checks input { accent-color: #2980b9; }
+.btn-check { background: #2980b9; color: #fff; border: none; border-radius: 6px; padding: 10px 28px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.btn-check:hover { background: #2471a3; }
+.btn-check:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Result banners */
+#cw-result { display: none; margin-top: 20px; }
+.result-block { background: #1a0808; border: 2px solid #c0392b; border-radius: 8px; padding: 18px 20px; }
+.result-block .result-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.result-block .result-icon { font-size: 22px; }
+.result-block .result-title { font-size: 16px; font-weight: 700; color: #e74c3c; }
+.result-warn { background: #1a1200; border-color: #d68910; border-radius: 8px; padding: 18px 20px; }
+.result-warn .result-title { color: #f39c12; }
+.result-pass { background: #071a0e; border: 2px solid #1e8449; border-radius: 8px; padding: 18px 20px; }
+.result-pass .result-title { color: #27ae60; }
+
+.badge-block { display: inline-block; background: #3d1515; color: #e74c3c; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 8px; }
+.badge-warn  { display: inline-block; background: #3d2e0d; color: #f39c12; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 8px; }
+.badge-pass  { display: inline-block; background: #1a5e2d; color: #27ae60; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; margin-left: 8px; }
+
+.finding-list { list-style: none; padding: 0; margin: 10px 0 0; }
+.finding-item { font-size: 12px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.07); display: flex; gap: 8px; align-items: flex-start; }
+.finding-item:last-child { border-bottom: none; }
+.finding-rule { flex-shrink: 0; font-weight: 700; font-size: 11px; }
+.finding-msg { color: #c8d6e5; }
+.fw-applied { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.fw-tag { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 12px; font-size: 11px; color: #7a8cb0; padding: 2px 10px; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #1e3a6e; border-top-color: #2980b9; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="cw-wrap" id="main-content">
+  <div class="cw-card">
+    <h1 class="cw-title">Migration Compliance Gate</h1>
+    <p class="cw-sub">Check your migration scenario against IL-level and target-environment compliance rules (NIST 800-53, FedRAMP, DISA STIG).</p>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label for="cw-migration-type">Migration Type</label>
+        <select id="cw-migration-type">
+          <option value="p2c">P2C — Physical to Commercial Cloud</option>
+          <option value="p2v_cloud">P2V — Physical to Cloud VM</option>
+          <option value="v2v_cloud">V2V — VM to Cloud</option>
+          <option value="v2v_cloud2cloud">V2V — Cloud to Cloud</option>
+          <option value="p2p">P2P — Physical to Physical</option>
+          <option value="p2v_onprem">P2V — Physical to On-Prem VM</option>
+          <option value="v2v_hypervisor">V2V — Hypervisor to Hypervisor</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="cw-il-level">Impact Level (IL)</label>
+        <select id="cw-il-level">
+          <option value="IL2">IL2 — Public / Low</option>
+          <option value="IL4">IL4 — CUI / Medium</option>
+          <option value="IL5">IL5 — CUI-High / High</option>
+          <option value="IL6">IL6 — SECRET</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="cw-target-env">Target Environment</label>
+      <select id="cw-target-env">
+        <option value="commercial">Commercial Cloud (AWS / Azure / GCP)</option>
+        <option value="govcloud">AWS GovCloud / Azure Government</option>
+        <option value="dod">DoD / SIPR</option>
+        <option value="on_prem">On-Premises / Data Center</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Declared Frameworks (optional — leave unchecked to skip framework completeness check)</label>
+      <div class="fw-checks">
+        <label><input type="checkbox" id="fw-fedramp" value="fedramp"> FedRAMP</label>
+        <label><input type="checkbox" id="fw-nist" value="nist_800_53"> NIST 800-53</label>
+        <label><input type="checkbox" id="fw-stig" value="disa_stig"> DISA STIG</label>
+        <label><input type="checkbox" id="fw-cmmc" value="cmmc"> CMMC</label>
+        <label><input type="checkbox" id="fw-none" value="__none__"> None declared (trigger completeness check)</label>
+      </div>
+    </div>
+
+    <button class="btn-check" id="cw-btn" onclick="runCheck()">Check Compliance</button>
+
+    <div id="cw-result"></div>
+  </div>
+</div>
+
+<script>
+async function runCheck() {
+  const btn = document.getElementById('cw-btn');
+  const resultDiv = document.getElementById('cw-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Checking…';
+  resultDiv.style.display = 'none';
+
+  const mtype  = document.getElementById('cw-migration-type').value;
+  const il     = document.getElementById('cw-il-level').value;
+  const env    = document.getElementById('cw-target-env').value;
+
+  // Collect frameworks; if "none declared" checked → pass empty list; if nothing checked → pass null
+  const fwBoxes = [...document.querySelectorAll('.fw-checks input[type=checkbox]:checked')];
+  let frameworks = null;
+  if (fwBoxes.length > 0) {
+    if (fwBoxes.some(b => b.value === '__none__')) {
+      frameworks = [];
+    } else {
+      frameworks = fwBoxes.map(b => b.value);
+    }
+  }
+
+  try {
+    const resp = await fetch('/migration-canvas/api/compliance-gate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({il_level: il, target_env: env, migration_type: mtype, frameworks})
+    });
+    const data = await resp.json();
+    renderResult(data);
+  } catch (e) {
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = `<div class="result-block"><div class="result-header"><span class="result-icon">⚠</span><span class="result-title">Error — ${e.message}</span></div></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Check Compliance';
+  }
+}
+
+function renderResult(data) {
+  const resultDiv = document.getElementById('cw-result');
+  resultDiv.style.display = 'block';
+
+  const status = data.status;
+  const findings = data.findings || [];
+  const fws = data.frameworks_applied || [];
+
+  let cls, icon, title, badge;
+  if (status === 'block') {
+    cls = 'result-block'; icon = '🚫'; title = 'BLOCKED — Migration cannot proceed';
+    badge = '<span class="badge-block">BLOCK</span>';
+  } else if (status === 'warn') {
+    cls = 'result-warn'; icon = '⚠'; title = 'WARNING — Review required before proceeding';
+    badge = '<span class="badge-warn">WARN</span>';
+  } else {
+    cls = 'result-pass'; icon = '✔'; title = 'PASS — Migration is compliant';
+    badge = '<span class="badge-pass">PASS</span>';
+  }
+
+  const findingRows = findings.map(f => `
+    <li class="finding-item">
+      <span class="finding-rule" style="color:${f.severity === 'block' ? '#e74c3c' : '#f39c12'}">[${f.rule}]</span>
+      <span class="finding-msg">${f.message}</span>
+    </li>`).join('');
+
+  const fwTags = fws.map(f => `<span class="fw-tag">${f}</span>`).join('');
+
+  resultDiv.innerHTML = `
+    <div class="${cls}">
+      <div class="result-header">
+        <span class="result-icon">${icon}</span>
+        <span class="result-title">${title}${badge}</span>
+      </div>
+      ${findings.length ? `<ul class="finding-list">${findingRows}</ul>` : '<p style="font-size:12px;color:#7a8cb0;margin:0">No findings.</p>'}
+      <div class="fw-applied">${fwTags}</div>
+    </div>`;
+}
+</script>
+{% endblock %}

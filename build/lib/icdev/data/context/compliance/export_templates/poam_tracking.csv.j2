@@ -1,0 +1,4 @@
+POAM ID,Control,Weakness,Risk Level,Remediation Plan,Target Date,Responsible Party,Status
+{% for item in items %}
+"{{ item.poam_id }}","{{ item.control_id }}","{{ item.weakness }}","{{ item.risk_level }}","{{ item.remediation }}","{{ item.target_date }}","{{ item.responsible_party }}","{{ item.status }}"
+{% endfor %}

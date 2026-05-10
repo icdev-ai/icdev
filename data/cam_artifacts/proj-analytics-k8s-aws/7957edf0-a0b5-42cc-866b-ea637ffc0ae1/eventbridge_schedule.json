@@ -1,0 +1,11 @@
+{
+  "Name": "analytics-nifi-replacement-schedule",
+  "Description": "Replaces NiFi cron processor \u2014 runs ETL batch job on schedule",
+  "ScheduleExpression": "cron(0 2 * * ? *)",
+  "State": "ENABLED",
+  "Target": {
+    "Arn": "arn:aws:glue:us-east-1:ACCOUNT_ID:job/analytics-etl-batch",
+    "RoleArn": "arn:aws:iam::ACCOUNT_ID:role/EventBridgeGlueRole",
+    "Input": "{\"JOB_NAME\": \"analytics-etl-batch\", \"source_database\": \"analytics_catalog\", \"source_table\": \"raw_events\", \"target_path\": \"s3://analytics-output/processed/\"}"
+  }
+}

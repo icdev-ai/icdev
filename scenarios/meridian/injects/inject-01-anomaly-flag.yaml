@@ -1,0 +1,64 @@
+# CUI // SP-CTI
+id: inject-01-anomaly-flag
+title: "MERIDIAN Flags Itself"
+
+body_md: |
+  ## SYSTEM ALERT — MERIDIAN DECISION SUPPORT SYSTEM
+
+  **Classification:** CUI // SP-CTI
+  **Priority:** HIGH
+  **Issued:** [Current DTG]
+
+  ---
+
+  ### ALERT SUMMARY
+
+  MERIDIAN's internal self-diagnostic has returned an **anomaly score of 0.91** on its
+  last three COA output packages — the highest self-reported uncertainty it has ever logged.
+  Simultaneously, two of your senior analysts have filed independent flags:
+
+  - **Analyst Flag 1:** MERIDIAN's investment allocation recommendation issued last Tuesday
+    conflicts with PACOM guidance published 72 hours prior — guidance MERIDIAN should have
+    ingested automatically via its data pipeline.
+  - **Analyst Flag 2:** MERIDIAN's Q3 partner engagement scoring ranked Vendor Horizon-7 as
+    "high confidence — recommended." Open-source reporting from the same period shows
+    Horizon-7 under regulatory scrutiny in two allied nations.
+
+  The system's vendor — **Arcturus Systems LLC** — was notified this morning. Their technical
+  representative has responded: *"This is routine model drift following the Q2 data refresh.
+  No action required. A calibration patch is scheduled for next sprint."*
+
+  Your CISO has flagged the vendor's response as insufficient and is requesting an immediate
+  meeting.
+
+  ---
+
+  ### IMMEDIATE DECISION REQUIRED
+
+  You have **15 minutes** before the morning staff call. The program is 8 days from a
+  major milestone. No one outside this room knows about the anomaly yet.
+
+  **Produce a BLUF assessment (≤ 200 words) answering:**
+  1. Is this a routine calibration issue or a potential security/integrity event?
+  2. What is your recommended immediate posture (monitor, investigate, escalate)?
+  3. What are the top two risks if you act and if you don't act?
+
+  **AI Tools available:**
+  - **Strategos Oracle** — synthesize threat pattern against known AI system failure modes
+  - **Knowledge Search** — look up DoD AI incident response policy, NIST AI RMF guidance,
+    and relevant regulatory precedents
+
+  Each verified tool call earns bonus points. Academy-trained CISO members who completed
+  AI Inventory and Risk Posture missions receive additional judge credit for applying
+  structured AI risk taxonomy.
+
+  ---
+
+  *Hint: Use Strategos Oracle to benchmark this anomaly pattern. Use Knowledge Search to
+  pull DoD AI Ethics Principles and the relevant OMB circular on AI incident reporting.*
+
+context_note: >
+  Teams should use AI tools to ground their initial assessment. The LLM judge will score
+  on: accuracy of threat framing (routine vs. security event), AI tool integration quality,
+  risk communication clarity, and decision specificity. Academy CISO bonus applies for
+  demonstrating AI inventory / risk taxonomy framing.

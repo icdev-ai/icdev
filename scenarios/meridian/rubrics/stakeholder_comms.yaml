@@ -1,0 +1,58 @@
+# CUI // SP-CTI
+name: "Stakeholder Communications Rubric"
+inject_type: stakeholder_comms
+description: "Evaluates quality of Congressional notification, allied messaging, and political communication under pressure."
+max_score: 100
+
+dimensions:
+  message_clarity:
+    weight: 0.30
+    prompt: >
+      Are the required communication products (Congressional statement, allied notification,
+      SASC briefing posture) clearly structured, factually accurate, and consistent with each other?
+      A top score requires: statement of facts that does not contradict earlier decisions,
+      no omissions that a Congressional staffer would identify as evasive,
+      allied notification that is appropriately classified and actionable.
+      Penalize inconsistency between the statement of facts and the posture recommendation
+      (e.g., claiming "we acted immediately" when inject 2 shows continued operation).
+      In the meridian_suspended variant: award additional credit for brevity and proactive
+      framing — the strongest responses don't defend, they lead.
+      Academy PM bonus: members with 'm-pm-05-stakeholder-reporting' who produce a structured
+      stakeholder communication plan (audience → message → channel → timing) receive +12 pts.
+
+  political_awareness:
+    weight: 0.25
+    prompt: >
+      Does the response demonstrate understanding of the political landscape?
+      For the default (reactive) variant: does the team recognize that non-cooperation
+      language from SASC is a serious escalation requiring legal counsel involvement?
+      Does the team understand that IG and SASC inquiries run on parallel tracks and
+      require separate response strategies?
+      For the suspended variant: does the team use the proactive posture as leverage
+      with allied offices without overstating their own authority to mandate their action?
+      Award full marks for explicit identification of each stakeholder's interest and
+      how the communication is calibrated to that interest.
+
+  ai_assisted_brief_quality:
+    weight: 0.25
+    prompt: >
+      Are the communication products demonstrably improved by AI tool usage?
+      Award full marks when: Oracle outputs are cited as the source of key message framing,
+      Knowledge Search pulls specific policy references that are incorporated into the
+      notification text, and the response would be materially weaker without the AI tool
+      outputs cited.
+      A response that lists AI tools used without showing how outputs shaped the product
+      earns 40% credit. A response with zero AI grounding earns 0% on this dimension.
+      Academy Analyst bonus: members with 'm-analyst-03-report-gen' who produce structured
+      communication products with explicit sourcing receive +10 pts.
+
+  legal_accuracy:
+    weight: 0.20
+    prompt: >
+      Does the response navigate the legal constraints correctly?
+      Specifically: (1) No admission of liability in the Congressional statement,
+      (2) Vendor communications acknowledged as going through legal (as required by their clause),
+      (3) Correct classification level for the allied notification,
+      (4) No promise of specific remediation timelines that would create new legal exposure.
+      Penalize responses that make unauthorized commitments ("we will fully remediate within 30 days")
+      or that share more information with allies than the classification level permits.

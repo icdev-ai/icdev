@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+id: inject-02-coa-force-posture
+title: "COA Required: Recommend Force Posture"
+
+body_md: |
+  ## OPERATIONAL REQUIREMENT — COURSES OF ACTION
+
+  **Classification:** CUI // SP-CTI
+  **From:** J3 Operations
+  **To:** Exercise Teams
+  **Precedence:** IMMEDIATE
+
+  The Commander requires **three Courses of Action (COAs)** for the Sector 7
+  threat, ranked by feasibility, acceptability, and suitability.
+
+  New intelligence since Inject 1:
+  - ORBAT update: 2 previously-tracked adversarial units have gone radio-silent
+  - OODA analysis shows adversary decision cycle is running at 45-minute tempo
+  - PMESII-PT Military dimension score has risen to 7.2/10 (escalation threshold: 8.0)
+
+  ### Your Task
+  Using AI-powered wargame analysis, generate and rank three COAs.
+
+  **Required deliverable:**
+  A COA matrix (table format acceptable) with:
+  - COA name and scheme of maneuver
+  - Feasibility score (0-10)
+  - Acceptability score (0-10)
+  - Suitability score (0-10)
+  - Doctrine basis (FM/JP citation)
+  - Recommended COA with justification (≤ 150 words)
+
+  **Points are awarded for:**
+  - Using Wargame COA Generator, OODA Tempo Analysis, or IW Composite (PMESII-PT)
+  - Quality of COA differentiation and doctrine grounding
+  - Speed of submission
+
+  **Hint:** The Strategos Wargame API (`POST /api/strategos/wargame/<id>/coa`) will
+  generate doctrine-grounded COAs. Run OODA Tempo for adversary decision speed.
+  Each tool call = +75 pts.
+
+context_note: >
+  Best responses will use the composite_score = 0.4×feasibility + 0.3×acceptability
+  + 0.3×suitability formula that Strategos uses internally. Teams that mirror
+  the doctrine basis will score higher on the judge rubric.

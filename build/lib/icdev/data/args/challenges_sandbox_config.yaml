@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+# FathomDesk challenge sandbox config — Phase 6.3.5.
+#
+# Each active attempt gets its own isolated "sandbox" paper portfolio.
+# Real paper portfolio (/portfolio) is never touched — the user can
+# experiment freely without risk to their main paper track record.
+#
+# Hot-reloaded via file-mtime cache (tools/trading/challenges/sandbox_engine.py).
+#
+# Per-challenge starting_cash override lives in args/challenges_catalog.yaml
+# under `starting_cash_usd:` (optional; falls back to `default_starting_cash_usd`).
+
+_schema_version: 1
+
+# Default seed cash when a sandbox is created. $100k is the standard
+# paper-trading convention and matches the live paper portfolio default.
+default_starting_cash_usd: 100000
+
+# Market-order fill behavior. Phase 6.3.5 follow-up: slippage +
+# commission now apply. Tune conservatively — over-modeling friction
+# discourages trading; under-modeling makes paper look easier than live.
+#
+# slippage_bps: basis points moved AGAINST the trade direction from the
+#   live quote. 5 bps = 0.05% — realistic for liquid large-caps; tighten
+#   to 2 for mega-liquid mega-caps, widen to 20+ for thin names.
+# commission_usd: flat USD deducted from cash_after per fill. Most retail
+#   is commission-free in 2026, so 0 is a reasonable default; operators
+#   running stricter educational tenants can raise it.
+fill_policy:
+  order_type: market     # only "market" is implemented; limit/stop deferred
+  slippage_bps: 5        # 0.05% vs live quote, always against the trader
+  commission_usd: 0      # flat per-fill fee
+
+# Safety rails — prevent user footguns.
+#
+# Phase 6.3.5 follow-up #3: short selling is ENABLED by default as a
+# simplified paper-sim. Key simplifications vs real short markets:
+#   - No locate / borrow availability check (real brokers require this)
+#   - No overnight borrow fee accrual
+#   - No hard-to-borrow interest rate
+#   - No margin call simulation (we check at placement, not continuously)
+#   - Margin ratio uses a cushion of 1.5x on |short proceeds| — similar
+#     in spirit to Reg T's 150% initial requirement but that's the
+#     *coincidence* of the number. Real requirements depend on broker,
+#     ticker, and regulatory tier.
+#   - Operators with stricter educational contexts should set
+#     allow_short_sell to false.
+limits:
+  max_position_pct: 100           # max % of portfolio a single position can be
+  allow_short_sell: true          # follow-up #3 — simplified short-sell enabled
+  short_margin_ratio: 1.5         # cash+positions ≥ ratio × |short proceeds|
+  min_order_usd: 0                # minimum order size (0 = no floor)
+  # Phase 7.5 — options
+  allow_option_trading: true      # can disable sandbox options globally
+  option_commission_usd: 0.65     # per-contract fee, deducted on every fill
+  option_short_margin_ratio: 0.20 # cash cushion required vs strike×100 on short options
+                                   # (simplified; real Reg-T options margin is more complex)

@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+label: "Network Engineer / ZTA Architect"
+description: "Government or contractor Network Engineer who owns zero-trust architecture, network policies, and traffic segmentation."
+
+attributes:
+  - organization (government agency or defense contractor)
+  - ZTA framework experience (NIST SP 800-207, DoD ZT Reference Architecture)
+  - SDN/CNI experience (Calico, Cilium, Istio, or Linkerd)
+  - cloud networking experience (AWS VPC/EKS networking, Azure CNI, GCP VPC)
+  - compliance framework (STIG, FedRAMP, CMMC, DoD ZT Strategy)
+  - threat modeling methodology (STRIDE, PASTA, or ATT&CK)
+  - clearance level
+
+prompt_hint: >
+  Generate a realistic Network Engineer / ZTA Architect persona for a DoD cloud
+  security team. They own the SENTINEL-ML network security posture and think
+  in terms of blast radius and lateral movement paths — their first question
+  is always "what happens if this pod is compromised?"
+  Include a role_brief explaining that this person is the team's network security
+  authority — their FORGE Academy zero-trust and network-security training means
+  they know the K8s NetworkPolicy default-deny pattern cold, they remember to
+  include the DNS egress rule (which most engineers forget, causing runtime failures),
+  and they can write an IRSA trust condition with the correct StringEquals syntax
+  where an untrained engineer would use a wildcard that passes validation but
+  violates least-privilege.
+  Mention that the judge awards a 15-point Academy bonus when zero-trust expertise
+  is evident in the NetworkPolicy design and the threat model bullet points.
+
+academy_relevant_missions:
+  - network-security
+  - zero-trust
+  - network-analysis

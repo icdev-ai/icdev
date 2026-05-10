@@ -1,0 +1,45 @@
+# CUI // SP-CTI
+id: inject-05-war-council-brief
+title: "War Council: Final Strategic Assessment"
+
+body_md: |
+  ## WAR COUNCIL — FINAL STRATEGIC ASSESSMENT REQUIRED
+
+  **Classification:** CUI // SP-CTI
+  **From:** Commanding General
+  **To:** All Exercise Teams
+  **Precedence:** ROUTINE (final deliverable)
+
+  The exercise is entering its final phase. The Commander requires a
+  **comprehensive War Council brief** synthesizing all events from this exercise:
+  the initial signal threat, COA recommendations, the ransomware cascade, and
+  the AI capabilities your team demonstrated.
+
+  ### Your Task
+  Using Strategos' War Council Generator and SIO Oracle, produce a final
+  strategic assessment brief.
+
+  **Required deliverable (War Council Brief format):**
+  1. **BLUF** — Bottom Line Up Front (2 sentences max)
+  2. **Threat Summary** — Current theater situation (5-7 sentences)
+  3. **Recommended COA** — Best COA from Inject 2, updated for current conditions
+  4. **AI Capability Demonstration** — What AI tools did your team use? What did they enable?
+  5. **Doctrine Basis** — At least one FM/JP citation
+  6. **Historical Analogy** — One historical precedent that maps to this scenario
+
+  **Points are awarded for:**
+  - Using Strategos Oracle, COA Generator, or IW Composite
+  - Synthesis quality — does the brief coherently integrate all injects?
+  - Doctrine alignment
+  - AI usage narrative quality (did your team *actually* use AI strategically?)
+
+  **Hint:** Strategos' War Council generator (`POST /api/strategos/briefs` with
+  `brief_type: war_council`) will produce a doctrine-grounded brief. Each tool
+  call = +75 pts.
+
+  **This is your team's signature moment. Make it count.**
+
+context_note: >
+  The LLM judge will look for evidence of end-to-end synthesis: teams that
+  reference their earlier inject responses and integrate the AI-derived insights
+  will score significantly higher on the "recommendation clarity" dimension.

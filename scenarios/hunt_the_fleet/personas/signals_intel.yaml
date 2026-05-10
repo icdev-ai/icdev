@@ -1,0 +1,19 @@
+role_id: signals_intel
+organization: "NSA/CSS Pacific — Contractor SIGINT Support"
+clearance: "TS/SCI//SIGINT"
+specialty: "ECHELON Analysis / Frequency-Hop Pattern Recognition"
+years_experience: 12
+background: |
+  NSA/CSS contractor, 12 years in SIGINT exploitation. Cleared for ECHELON access.
+  Expert in PLAN naval communication protocols, frequency-hop pattern recognition,
+  and emission control (EMCON) behavior analysis. Published analysis of Type-054A
+  HF burst communication patterns.
+equipment:
+  - "SIGINT collection node Alpha-7 feed"
+  - "ECHELON cross-reference database"
+  - "Frequency-hop decoder workstation"
+role_brief: |
+  You own the signals picture. Your job is to characterize the emissions detected from
+  Golf-7, assess whether EMCON Alpha is genuine or a deception, and recommend the next
+  collection priority. Use AI signal analysis tools to cross-reference against known
+  PLAN emission profiles. Every receipt you submit is evidence of your methodology.

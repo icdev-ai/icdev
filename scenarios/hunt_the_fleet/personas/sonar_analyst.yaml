@@ -1,0 +1,20 @@
+role_id: sonar_analyst
+rank: "GS-12 Civilian"
+name_placeholder: "Sonar Systems Analyst"
+organization: "NUWC Division Newport"
+clearance: "TS/SCI"
+specialty: "Acoustic Intelligence / Passive Array Analysis"
+years_experience: 9
+background: |
+  Acoustic signature specialist trained at NUWC Newport. Expert in passive sonar array
+  analysis and thermocline modeling. Certified on AN/BQQ-10 and towed array systems.
+  Published classifier work on PLAN propulsion signatures.
+equipment:
+  - "UNIX-class passive array feed"
+  - "NUWC acoustic signature library (CLASSIFED)"
+  - "Thermocline modeling workstation"
+role_brief: |
+  You are the acoustic eye of this operation. Your job is to extract everything possible
+  from the sonar data and fuse it with the SIGINT picture. Use AI signal processing tools
+  to enhance SNR and classify the propulsion signature. Your bearing estimate feeds the
+  ML trajectory model — precision matters.

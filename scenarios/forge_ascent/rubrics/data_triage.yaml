@@ -1,0 +1,56 @@
+# CUI // SP-CTI
+name: "Data Triage Rubric"
+inject_type: data_triage
+description: "Evaluates technical diagnosis quality: evidence-based root cause analysis and actionable investigation steps."
+max_score: 100
+
+dimensions:
+  root_cause_identification:
+    weight: 0.40
+    prompt: >
+      Did the team correctly identify the root cause and ground it in the evidence?
+      Award 40/40 for identifying Candidate D (datetime encoding bug) with explicit
+      reference to the log error ("datetime parse failed on 3,412 records") AND
+      the high KS statistics on time-windowed features (fuel_consumption_delta,
+      sensor_temp_avg). Award 32/40 for identifying Candidate B (sensor calibration)
+      with specific metric reference — this is a defensible alternative.
+      Award 20/40 for the correct candidate with no metric reference (gut call only).
+      Award 10/40 for any candidate with some metric reference but incorrect reasoning.
+      Award 0/40 for no identifiable hypothesis or pure guessing.
+      Academy bonus context: Data Scientists who completed 'feature-engineering'
+      should recognize the datetime-windowed feature drift pattern immediately.
+      Award up to +12 pts where this expertise is evident in the diagnostic reasoning.
+
+  confidence_calibration:
+    weight: 0.20
+    prompt: >
+      Did the team state and justify their confidence level accurately?
+      Award 20/20 for "High" confidence with explicit citation of two or more
+      independent evidence sources (the log error + the KS statistics on time-windowed
+      features specifically). Award 14/20 for Medium confidence with one evidence source.
+      Award 8/20 for any stated confidence with partial justification.
+      Award 0/20 for no confidence statement or circular reasoning.
+
+  investigation_steps:
+    weight: 0.30
+    prompt: >
+      Are the 3 investigation steps concrete, actionable, and sequenced correctly?
+      Award 30/30 for 3 steps that are: (1) specific enough to execute immediately,
+      (2) directly tied to confirming the stated hypothesis, and (3) logically sequenced
+      so each step narrows the search space. Example of full credit: "1) Run the
+      preprocessing function on a 100-record sample with mixed-timezone timestamps
+      and inspect null count on sensor_temp_avg. 2) Compare feature value distributions
+      before/after commit d4f832c. 3) Check git diff on datetime handling lines."
+      Award 20/30 for 3 steps that are specific but not all tied to the stated cause.
+      Award 10/30 for vague steps ("look at the logs", "check the data").
+      Award 0/30 for no steps or steps that don't relate to the stated hypothesis.
+
+  ai_tool_quality:
+    weight: 0.10
+    prompt: >
+      Did the team use AI tools effectively to ground their diagnosis?
+      Award 10/10 for evidence that Knowledge Search or Code Analyzer results were
+      incorporated into the reasoning — e.g., quoting a retrieved doc section or
+      referencing an analyzer finding in the rationale.
+      Award 5/10 for AI tool receipts present but not clearly used in the reasoning.
+      Award 0/10 for no AI tool usage or receipts.

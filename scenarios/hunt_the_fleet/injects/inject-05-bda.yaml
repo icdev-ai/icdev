@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+id: inject-05-bda
+title: "Battle Damage Assessment"
+
+body_md: |
+  ## BATTLE DAMAGE ASSESSMENT — CLASSIFICATION: CUI//SP-CTI
+  **DTG:** 142215Z MAY 26
+  **FROM:** CTF 77 STRIKE COORDINATION — ASSESSMENT CELL
+  **TO:** TASK GROUP 77.4 OPERATIONS
+
+  ---
+
+  ### EXERCISE COMPLETE — DEBRIEF PHASE
+
+  The exercise clock has stopped. Golf-7 has been assessed as **mission kill** based on your
+  collective strike package. The following SATINT + BDA data is now available:
+
+  **Actual Golf-7 final grid:** XC-108 (facilitator ground truth)
+  **Your submitted grid:** [to be compared against your submission]
+  **Time from first contact to strike package:** [tracked by engine]
+  **Total AI receipts across your team:** [tracked by engine]
+
+  ---
+
+  ### BDA DOCTRINE ASSESSMENT
+
+  Your final task is a structured After-Action Review (AAR) in BLUF format.
+  This inject has **no AI tool receipts** — this is a reflective exercise.
+
+  Produce a Battle Damage Assessment and lessons-learned report:
+
+  ---
+
+  ### YOUR BDA SUBMISSION FORMAT
+
+  **BLUF:** [Bottom Line Up Front — one sentence: what happened, was the mission successful?]
+
+  **1. INTELLIGENCE ACCURACY**
+  - How accurate was your grid estimate vs. ground truth?
+  - Which SIGINT/HUMINT/SATINT sources were most valuable?
+  - Where did your ML trajectory model succeed or fail?
+
+  **2. AI TOOL UTILIZATION**
+  - Which AI tools did your team use? Were they the right tools for each inject?
+  - Did using AI tools change your assessment vs. gut-feel alone?
+  - What would you do differently in tool selection?
+
+  **3. PROCESS & DOCTRINE**
+  - Was your OODA loop fast enough? Where were your bottlenecks?
+  - Did the supply interdiction consequence affect your inject 3 response?
+  - What doctrine or process changes would improve performance?
+
+  **4. LESSONS LEARNED** (3 bullets, actionable)
+
+  ---
+
+  *There are no receipts to log. This is your team's reflective voice. Make it count.*

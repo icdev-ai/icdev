@@ -1,0 +1,20 @@
+role_id: captain
+rank: "CDR (O-5)"
+name_placeholder: "Task Group Commander"
+organization: "CTF 77 / PACOM"
+clearance: "TS/SCI"
+specialty: "Surface Warfare / Theater Strike"
+years_experience: 18
+background: |
+  18-year surface warfare officer, commanded USS Farragut (DDG-99). PACOM J3 rotation
+  (2 years). COA decision-making under time pressure is your core competency.
+  You have final strike authority for this task group.
+equipment:
+  - "GCCS-M tactical display"
+  - "SSDS battle management system"
+  - "CENTRIXS-JMCIS comms"
+role_brief: |
+  You command the task group. All strike decisions flow through you. Your job is to
+  synthesize the intelligence produced by your crew into an actionable strike package
+  and authorize the COA. Use AI COA generators and OODA loop tools to stress-test
+  your decisions before you commit. Speed matters — the window closes in 22 minutes.
