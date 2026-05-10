@@ -405,7 +405,8 @@
       tbody.innerHTML = runs.map(run => {
         const summary = _parseSummary(run.summary_json);
         const duration = _runDuration(run.started_at, run.completed_at);
-        const statusBadge = _runStatusBadge(run.status);
+        const effectiveStatus = (run.status === 'success' && summary.all_skipped) ? 'warning' : run.status;
+        const statusBadge = _runStatusBadge(effectiveStatus);
         return `<tr>
           <td style="font-weight:500;">${_esc(run.workflow_name || run.workflow_id)}</td>
           <td>${statusBadge}</td>
@@ -441,11 +442,12 @@
       const steps = run.steps || [];
       const summary = _parseSummary(run.summary_json);
       const runArts = summary.artifacts || [];
+      const detailStatus = (run.status === 'success' && summary.all_skipped) ? 'warning' : run.status;
       body.innerHTML = `
         <div style="margin-bottom:12px; padding:12px; background:var(--studio-bg,#161829);
              border-radius:6px; font-size:0.82rem;">
           <div><strong>Workflow:</strong> ${_esc(run.workflow_name || run.workflow_id)}</div>
-          <div><strong>Status:</strong> ${_runStatusBadge(run.status)}</div>
+          <div><strong>Status:</strong> ${_runStatusBadge(detailStatus)}</div>
           <div><strong>Started:</strong> ${run.started_at ? new Date(run.started_at).toLocaleString() : '—'}</div>
           <div><strong>Completed:</strong> ${run.completed_at ? new Date(run.completed_at).toLocaleString() : '—'}</div>
         </div>
@@ -457,7 +459,7 @@
             let stepArts = [];
             try { stepArts = JSON.parse(s.stdout || '{}').artifacts || []; } catch {}
             const artLinks = stepArts.map(a => {
-              const viewUrl = `/api/studio/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
+              const viewUrl = `/api/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
               return `<a href="${viewUrl}" target="_blank" style="color:#60a5fa;font-size:10px;margin-right:4px;">${_esc(a.name)}</a>`;
             }).join('');
             return `<tr>
@@ -488,7 +490,7 @@
       const ext = (a.path || a.name || '').split('.').pop().toLowerCase();
       const icon = _EXT_ICONS[ext] || '📎';
       const name = a.name || a.path || 'Artifact';
-      const viewUrl  = `/api/studio/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
+      const viewUrl  = `/api/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
       const dlUrl    = `${viewUrl}?download=1`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e3a6e;">
         <span style="font-size:16px;">${icon}</span>

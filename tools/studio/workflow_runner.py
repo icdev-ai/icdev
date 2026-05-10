@@ -292,10 +292,10 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
         }
         if not overall_ok:
             overall = "failed"
-        elif summary["success"] == 0 and summary["skipped"] > 0:
-            overall = "warning"
         else:
             overall = "success"
+        if summary["success"] == 0 and summary["skipped"] > 0 and overall == "success":
+            summary["all_skipped"] = True
         summary["artifacts"] = all_artifacts
         _update_run_status(run_id, overall, json.dumps(summary))
         _push(run_queue, {
