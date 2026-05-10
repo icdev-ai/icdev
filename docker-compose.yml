@@ -765,10 +765,9 @@ services:
       - "3080:3080"   # HTTP API / WebSocket notifications
       - "3081:3081"   # console proxy
     volumes:
-      - gns3-images:/gns3/images
+      - ./data/gns3-vendor-images:/gns3/images
       - gns3-projects:/gns3/projects
       - gns3-appliances:/gns3/appliances
-      - ./data/gns3-vendor-images:/gns3/images/vendor:ro
     environment:
       GNS3_CONTROLLER_ADDRESSES: "0.0.0.0"
     networks:
@@ -857,8 +856,6 @@ volumes:
   icdev-data:
     driver: local
   # icdev-pgdata uses bind mount ./data/pgdata (not a Docker volume)
-  gns3-images:
-    driver: local
   gns3-projects:
     driver: local
   gns3-appliances:
