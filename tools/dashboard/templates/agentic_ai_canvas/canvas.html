@@ -163,7 +163,7 @@ body { overflow: hidden; height: 100vh; }
       style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:5px;">
       ☰ <span style="font-size:11px;color:#6366f1;font-weight:700;">AADC</span>
     </button>
-    <div id="aadc-menu" class="aadc-menu-dd" style="display:none;">
+    <div id="aadc-menu" class="aadc-menu-dd" popover="manual" style="display:none;">
       <a href="/agentic-ai/"><span>←</span> All Designs</a>
       <hr class="aadc-menu-sep">
       <a href="/agentic-ai/templates"><span>📋</span> Templates</a>
@@ -1340,38 +1340,47 @@ function toggleCat(cat) {
 }
 
 // ────────────────────────────────────────────────
-// MENU
+// MENU — uses popover top-layer API (Chrome 114+) with display fallback
+// popover renders above GPU compositing layers; no z-index can beat it
 // ────────────────────────────────────────────────
+const _menuEl = document.getElementById('aadc-menu');
+document.body.appendChild(_menuEl); // portal so fixed coords work from body origin
+const _popoverOk = typeof _menuEl.showPopover === 'function';
+
 function _menuPos() {
   const r = document.getElementById('aadc-menu-btn').getBoundingClientRect();
-  const m = document.getElementById('aadc-menu');
-  m.style.top  = r.bottom + 'px';
-  m.style.left = r.left   + 'px';
+  _menuEl.style.top  = r.bottom + 'px';
+  _menuEl.style.left = r.left   + 'px';
+}
+function _isMenuOpen() {
+  return _popoverOk ? _menuEl.matches(':popover-open') : _menuEl.style.display === 'block';
+}
+function _showMenu() {
+  _menuPos();
+  if (_popoverOk) { _menuEl.style.removeProperty('display'); _menuEl.showPopover(); }
+  else { _menuEl.style.display = 'block'; }
+}
+function _hideMenu() {
+  if (_popoverOk) { try { _menuEl.hidePopover(); } catch(e){} }
+  _menuEl.style.display = 'none';
 }
 function toggleMenu(e) {
   e && e.stopPropagation();
-  const m = document.getElementById('aadc-menu');
-  if (m.style.display === 'block') { m.style.display = 'none'; }
-  else { _menuPos(); m.style.display = 'block'; }
+  if (_isMenuOpen()) _hideMenu(); else _showMenu();
 }
-// Hovercard pattern: 150ms grace period between wrap-leave and menu-enter
+// Hovercard: 150ms grace period between wrap-leave and menu-enter
 let _menuHideTimer = null;
 (function() {
   const wrap = document.querySelector('.aadc-menu-wrap');
-  const menu = document.getElementById('aadc-menu');
-  // Portal to <body>: escapes GPU compositing layers from canvas-wrapper / palette sidebar
-  document.body.appendChild(menu);
   function _keep()  { clearTimeout(_menuHideTimer); }
-  function _sched() { _menuHideTimer = setTimeout(() => { menu.style.display = 'none'; }, 150); }
-  wrap.addEventListener('mouseenter', () => { _keep(); _menuPos(); menu.style.display = 'block'; });
+  function _sched() { _menuHideTimer = setTimeout(_hideMenu, 150); }
+  wrap.addEventListener('mouseenter', () => { _keep(); _showMenu(); });
   wrap.addEventListener('mouseleave', _sched);
-  menu.addEventListener('mouseenter', _keep);
-  menu.addEventListener('mouseleave', _sched);
+  _menuEl.addEventListener('mouseenter', _keep);
+  _menuEl.addEventListener('mouseleave', _sched);
 })();
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.aadc-menu-wrap') && !e.target.closest('#aadc-menu')) {
-    document.getElementById('aadc-menu').style.display = 'none';
-  }
+  if (!e.target.closest('.aadc-menu-wrap') && !e.target.closest('#aadc-menu')) _hideMenu();
 });
 
 // ────────────────────────────────────────────────
@@ -1388,7 +1397,7 @@ function doExportJSON() {
   a.href = URL.createObjectURL(blob);
   a.download = (document.getElementById('design-name').value||'aadc-design')+'.json';
   a.click();
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
 }
 
 function doExportSVG() {
@@ -1419,11 +1428,11 @@ function doExportSVG() {
   a.href = URL.createObjectURL(blob);
   a.download = (document.getElementById('design-name').value||'aadc-design')+'.svg';
   a.click();
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
 }
 
 function doExportPDF() {
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
   if (!DESIGN_ID) { alert('Save the design first before exporting PDF.'); return; }
   setStatus('Generating PDF…');
   fetch('/agentic-ai/canvas/' + DESIGN_ID + '/export-pdf', {
@@ -1446,7 +1455,7 @@ function doExportPDF() {
 }
 
 function doExportDrawio() {
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
   const cells = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>'];
   graph.nodes.forEach((n, i) => {
     const id = 'cell' + (i + 2);
@@ -1463,7 +1472,7 @@ function doExportDrawio() {
 }
 
 function doExportCSV() {
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
   const rows = [['id', 'label', 'type', 'x', 'y', 'width', 'height', 'color']];
   graph.nodes.forEach(n => {
     rows.push([n.id, n.label || '', n.type || '', n.x, n.y, n.w || 140, n.h || 50, n.color || '']);
@@ -1480,7 +1489,7 @@ function doExportCSV() {
 function doToggleFullscreen() {
   if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
   else document.exitFullscreen();
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
 }
 
 // ────────────────────────────────────────────────
@@ -1958,7 +1967,7 @@ function _syncProvenancePanel(node) {
 
 function showProvenance() {
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
-  toggleMenu();
+  _hideMenu();
   const modal = document.getElementById('provenance-modal');
   modal.style.display = 'flex';
   document.getElementById('provenance-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>';
@@ -2065,7 +2074,7 @@ function hideSafetyMap() {
 // ── Coordination Matrix ─────────────────────────────────────────────────────
 function showCoordMatrix() {
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
-  toggleMenu();
+  _hideMenu();
   const modal = document.getElementById('coord-modal');
   modal.style.display = 'flex';
   document.getElementById('coord-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>';
@@ -2275,7 +2284,7 @@ function openLinkedTask() {
 // PHASE 2 — Send to Fine-Tuning
 // ────────────────────────────────────────────────
 function doSendToFineTuning() {
-  document.getElementById('aadc-menu').style.display = 'none';
+  _hideMenu();
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
   setStatus('Sending to Fine-Tuning…');
   fetch('/agentic-ai/canvas/' + DESIGN_ID + '/ft-link')
@@ -2321,7 +2330,7 @@ if (DESIGN_ID) {
 let _lintActive = false;
 
 function runLint() {
-  toggleMenu();
+  _hideMenu();
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
   setStatus('Running design linter…');
   fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/lint')
@@ -2406,7 +2415,7 @@ function _clearLintOverlay() {
 // PHASE 6 — Regulatory Tracker
 // ────────────────────────────────────────────────
 function showRegulatoryTracker() {
-  toggleMenu();
+  _hideMenu();
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
   document.getElementById('reg-modal').style.display = 'flex';
   fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/regulatory')
@@ -2513,7 +2522,7 @@ function renderRegModal(d) {
 // PHASE 5 — Threat Model
 // ────────────────────────────────────────────────
 function showThreatModel() {
-  toggleMenu();
+  _hideMenu();
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
   document.getElementById('threat-modal').style.display = 'flex';
   // Try loading existing threat model
@@ -2802,7 +2811,7 @@ function _esc(s) {
 // PHASE 5 — OSCAL Export
 // ────────────────────────────────────────────────
 function doOscalExport() {
-  toggleMenu();
+  _hideMenu();
   if (!DESIGN_ID) { alert('Save the design first.'); return; }
   setStatus('Generating OSCAL Component Definition…');
   fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/oscal')

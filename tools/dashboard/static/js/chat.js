@@ -557,6 +557,100 @@
 
     function _esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
+    // ===================================================================
+    // Inline Q&A widget — detect questions in assistant messages and
+    // render interactive answer fields so users don't copy/paste.
+    // ===================================================================
+
+    function _extractQuestions(text) {
+        // Strip markdown syntax before scanning for questions
+        var plain = text
+            .replace(/```[\s\S]*?```/g, '')   // code blocks
+            .replace(/`[^`]+`/g, '')           // inline code
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // links
+            .replace(/[*_>#]/g, '');           // emphasis/headers
+
+        // Split on question marks — each segment ending with ? is a candidate
+        var candidates = plain.match(/[^?!.\n]{10,}[^?!.]*\?/g) || [];
+
+        var questions = [];
+        var seen = {};
+        for (var i = 0; i < candidates.length; i++) {
+            var q = candidates[i]
+                .replace(/^\s*[-*\d.]+\s*/, '') // strip list markers
+                .replace(/\s+/g, ' ')
+                .trim();
+            if (q.length < 15) continue;        // ignore trivial fragments
+            // Deduplicate loosely
+            var key = q.slice(0, 40).toLowerCase();
+            if (seen[key]) continue;
+            seen[key] = true;
+            questions.push(q);
+        }
+        return questions;
+    }
+
+    function _injectQAWidget(stream, rawContent) {
+        var questions = _extractQuestions(rawContent);
+        if (questions.length < 2) return; // only show when there are multiple questions
+
+        var lastBubble = stream.lastElementChild;
+        if (!lastBubble || lastBubble.classList.contains('qa-widget')) return;
+
+        var widgetId = 'qa-' + Date.now();
+        var html = '<div class="qa-widget" id="' + widgetId + '">';
+        html += '<div class="qa-widget__header">';
+        html += '<span class="qa-widget__header-icon">💬</span>';
+        html += 'Answer inline <span class="qa-widget__count">— ' + questions.length + ' question' + (questions.length > 1 ? 's' : '') + '</span>';
+        html += '</div>';
+        html += '<div class="qa-widget__fields">';
+        for (var i = 0; i < questions.length; i++) {
+            html += '<div class="qa-widget__item">';
+            html += '<label class="qa-widget__label"><span class="qa-widget__label-num">' + (i + 1) + '.</span>' + escHtml(questions[i]) + '</label>';
+            html += '<textarea class="qa-widget__input" rows="2" placeholder="Your answer…" data-qi="' + i + '"></textarea>';
+            html += '</div>';
+        }
+        html += '</div>';
+        html += '<div class="qa-widget__footer">';
+        html += '<button class="qa-widget__submit" id="' + widgetId + '-send">Send All Answers</button>';
+        html += '<button class="qa-widget__skip" id="' + widgetId + '-skip">Dismiss</button>';
+        html += '</div>';
+        html += '</div>';
+
+        lastBubble.insertAdjacentHTML('afterend', html);
+        stream.scrollTop = stream.scrollHeight;
+
+        var widget = document.getElementById(widgetId);
+        if (!widget) return;
+
+        document.getElementById(widgetId + '-skip').addEventListener('click', function () {
+            widget.remove();
+        });
+
+        document.getElementById(widgetId + '-send').addEventListener('click', function () {
+            var inputs = widget.querySelectorAll('.qa-widget__input');
+            var parts = [];
+            for (var j = 0; j < questions.length; j++) {
+                var answer = inputs[j] ? inputs[j].value.trim() : '';
+                if (answer) parts.push((j + 1) + '. ' + questions[j] + '\n   ' + answer);
+            }
+            if (!parts.length) return;
+
+            // Collapse widget before sending
+            widget.classList.add('qa-widget--sent');
+            widget.innerHTML = '<div class="qa-widget__sent-label">Answers submitted</div>';
+
+            // Put composed text in input and fire send
+            var msgInput = document.getElementById('message-input');
+            if (msgInput) {
+                msgInput.value = parts.join('\n\n');
+                var sendBtn = document.getElementById('btn-send');
+                if (sendBtn) sendBtn.click();
+                else { sendMessage(msgInput.value); msgInput.value = ''; }
+            }
+        });
+    }
+
     function _renderDepWarning(dep) {
         var isCrit = dep.severity === 'critical' || dep.severity === 'high';
         return '<div style="background:rgba(' + (isCrit ? '198,40,40' : '230,81,0') + ',0.15);border-left:4px solid ' + (isCrit ? '#f87171' : '#fb923c') + ';border-radius:6px;padding:0.65rem 1rem;margin:0.5rem 0;font-size:0.88rem;">'
@@ -1610,6 +1704,9 @@
         for (var i = 0; i < messages.length; i++) html += renderMessageHtml(messages[i]);
         stream.innerHTML = html;
         stream.scrollTop = stream.scrollHeight;
+        // Show Q&A widget on the last assistant message (if it has multiple questions)
+        var last = messages[messages.length - 1];
+        if (last && last.role === 'assistant') _injectQAWidget(stream, last.content || '');
     }
 
     function appendMessage(msg) {
@@ -1619,6 +1716,7 @@
         if (placeholder && stream.children.length === 1) stream.innerHTML = '';
         stream.innerHTML += renderMessageHtml(msg);
         stream.scrollTop = stream.scrollHeight;
+        if (msg.role === 'assistant') _injectQAWidget(stream, msg.content || '');
     }
 
     function renderMessageHtml(msg) {
