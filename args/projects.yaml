@@ -3277,6 +3277,39 @@ projects:
     title: V&V — GovLift E2E lifecycle test + IQE dispatch fix
     priority: high
 
+- key: uci
+  name: Unified Chat Interface — /chat as Central Hub with AI Intent Routing
+  description: >
+    Consolidates all chat surfaces (RICOAS intake, migration CAM, NDC/SDC/EDA/DDC/PDC canvas simulation)
+    under a single /chat entry point. AI intent classifier detects what the user wants and routes to the
+    right backend automatically — no more separate /simulate/chat URLs. Each chat context tracks its
+    canvas mode. /simulate/chat redirects to /chat. Five epics: intent API, context mode storage,
+    message dispatch, UI enhancements (COA cards + Mermaid + slash commands), navigation + V&V.
+  task_prefix: uci-
+  default_open: true
+  briefs:
+  - 'ep1: tools/chat_router/intent_classifier.py (keyword + LLM), POST /api/chat/route-intent in app.py'
+  - 'ep2: PATCH /api/chat/contexts/<id>/mode endpoint, include canvas_type in GET contexts response'
+  - 'ep3: chat.js reads canvas_type per context, calls route-intent on first msg, routes to /api/simulate/message for canvas modes, renders COA cards + Mermaid'
+  - 'ep4: mode indicator chip in header, COA card renderer, Mermaid in message stream, slash autocomplete, remove migration banner'
+  - 'ep5: /simulate/chat redirect to /chat, ?canvas= deep link, Playwright E2E, companion sync'
+  epics:
+  - key: ep1
+    title: Intent Router API — Classifier + Route Endpoint
+    priority: critical
+  - key: ep2
+    title: Context Mode Storage — canvas_type in chat_contexts
+    priority: critical
+  - key: ep3
+    title: Message Dispatch — Per-Context Canvas Routing in chat.js
+    priority: critical
+  - key: ep4
+    title: UI Enhancements — COA Cards, Mermaid, Slash Commands, Mode Chip
+    priority: high
+  - key: ep5
+    title: Navigation, Redirect, V&V
+    priority: high
+
 - key: ai-trace
   name: AI Traceability, Observability & Visibility — Canvas-Wide Gap Remediation
   description: >

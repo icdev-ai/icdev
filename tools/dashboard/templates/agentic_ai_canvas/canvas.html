@@ -13,14 +13,13 @@ body { overflow: hidden; height: 100vh; }
 /* ── AADC menu dropdown ── */
 .aadc-menu-wrap { position: relative; }
 .aadc-menu-dd {
-  position: absolute; top: 100%; left: 0;
+  /* fixed breaks out of every stacking context — toolbar wrap/row2 buttons can't overlap it */
+  position: fixed; top: 0; left: 0;
   background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px;
-  min-width: 190px; z-index: 999; padding: 4px;
+  min-width: 190px; z-index: 9999; padding: 4px;
   box-shadow: 0 6px 24px rgba(0,0,0,0.6);
   max-height: calc(100vh - 200px); overflow-y: auto;
 }
-/* Keep menu open while mouse is anywhere inside the wrap (button OR items) */
-.aadc-menu-wrap:hover .aadc-menu-dd { display: block !important; }
 .aadc-menu-dd a,
 .aadc-menu-dd button {
   display: flex; align-items: center; gap: 8px;
@@ -1345,10 +1344,17 @@ function toggleCat(cat) {
 function toggleMenu(e) {
   e && e.stopPropagation();
   const m = document.getElementById('aadc-menu');
-  m.style.display = m.style.display === 'block' ? 'none' : 'block';
+  if (m.style.display === 'block') {
+    m.style.display = 'none';
+  } else {
+    const r = document.getElementById('aadc-menu-btn').getBoundingClientRect();
+    m.style.top  = r.bottom + 'px';
+    m.style.left = r.left   + 'px';
+    m.style.display = 'block';
+  }
 }
 document.addEventListener('click', (e) => {
-  if (!e.target.closest('.aadc-menu-wrap')) {
+  if (!e.target.closest('.aadc-menu-wrap') && !e.target.closest('#aadc-menu')) {
     document.getElementById('aadc-menu').style.display = 'none';
   }
 });
