@@ -1738,7 +1738,7 @@
         var cfg = window._CHAT_CONFIG || {};
         var goal = options.goal || cfg.wizardGoal || 'build';
         var role = options.role || cfg.wizardRole || 'developer';
-        var classification = options.classification || cfg.wizardClassification || 'il4';
+        var classification = options.classification !== undefined ? options.classification : (cfg.wizardClassification || '');
         var frameworks = (options.frameworks || cfg.wizardFrameworks || '').split(',').filter(function (f) { return f.trim(); });
 
         // Step 1: Create intake session
@@ -1843,12 +1843,15 @@
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
         });
-        // Hide intake checkbox when canvas mode is non-intake
+        // Hide intake-only fields when canvas mode is non-intake
         var canvasSelect = document.getElementById('new-ctx-canvas');
         var intakeRow = document.getElementById('intake-checkbox-row');
-        if (canvasSelect && intakeRow) {
+        var classificationRow = document.getElementById('intake-classification-row');
+        if (canvasSelect) {
             canvasSelect.addEventListener('change', function () {
-                intakeRow.style.display = this.value === 'intake' ? '' : 'none';
+                var isIntakeMode = this.value === 'intake';
+                if (intakeRow) intakeRow.style.display = isIntakeMode ? '' : 'none';
+                if (classificationRow) classificationRow.style.display = isIntakeMode ? '' : 'none';
             });
         }
 
@@ -1857,6 +1860,7 @@
             var model = document.getElementById('new-ctx-model').value;
             var prompt = document.getElementById('new-ctx-prompt').value.trim();
             var canvasMode = (document.getElementById('new-ctx-canvas') || {}).value || 'intake';
+            var classification = (document.getElementById('new-ctx-classification') || {}).value || '';
             var isIntake = canvasMode === 'intake' && document.getElementById('new-ctx-intake').checked;
 
             if (canvasMode !== 'intake') {
@@ -1867,7 +1871,7 @@
                     }
                 });
             } else if (isIntake) {
-                createIntakeContext({ title: title, agent_model: model });
+                createIntakeContext({ title: title, agent_model: model, classification: classification });
             } else {
                 createContext({ title: title, agent_model: model, system_prompt: prompt });
             }
@@ -1877,6 +1881,9 @@
             document.getElementById('new-ctx-intake').checked = true;
             if (canvasSelect) canvasSelect.value = 'intake';
             if (intakeRow) intakeRow.style.display = '';
+            if (classificationRow) classificationRow.style.display = '';
+            var clsEl = document.getElementById('new-ctx-classification');
+            if (clsEl) clsEl.value = '';
         });
 
         // Send message

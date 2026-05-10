@@ -274,9 +274,11 @@ def _build_llm_system_prompt(session_data, signals, persona, ctx, session_id, co
         persona.get("system_prompt", ""), "",
         "--- Session Context ---",
         f"Goal: {goal}",
-        f"Classification: {session_data.get('classification', 'CUI')}",
-        f"Impact Level: {session_data.get('impact_level', 'IL5')}",
+        f"Classification: {session_data.get('classification', 'UNCLASSIFIED')}",
     ]
+    _il = session_data.get("impact_level", "")
+    if _il:
+        system_parts.append(f"Impact Level: {_il}")
     if selected_fw:
         system_parts.append(f"Selected Frameworks: {', '.join(selected_fw)}")
     system_parts.append(f"Requirements captured so far: {req_count}")

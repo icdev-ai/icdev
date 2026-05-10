@@ -145,16 +145,16 @@ def create_intake_session():
     data = request.get_json(silent=True) or {}
     goal = data.get("goal", "build")
     role = data.get("role", "developer")
-    classification = data.get("classification", "il4")
+    classification = data.get("classification", "")
     customer_name = data.get("customer_name", "Dashboard User")
     customer_org = data.get("customer_org", "")
     frameworks = data.get("frameworks", [])
     custom_role_name = data.get("custom_role_name", "")
     custom_role_description = data.get("custom_role_description", "")
 
-    # Map classification to impact level
+    # Map classification to impact level — empty string means no compliance framing
     il_map = {"il2": "IL2", "il4": "IL4", "il5": "IL5", "il6": "IL6"}
-    impact_level = il_map.get(classification, "IL4")
+    impact_level = il_map.get(classification, "")
 
     if not _HAS_INTAKE:
         return jsonify({"error": "Intake engine not available"}), 503
