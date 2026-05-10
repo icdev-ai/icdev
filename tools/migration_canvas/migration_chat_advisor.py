@@ -354,39 +354,32 @@ def handle_components(session_id: str = "") -> dict:
         return {"reply": f"[Components] Error: {exc}", "mode": "components", "components": []}
 
 
-def handle_analyze(code_or_text: str) -> dict:
-    """Handle /analyze <code> — scan for deprecated patterns, EOL frameworks, issues."""
-    if not code_or_text.strip():
-        return {
-            "reply": "[Analyze] Usage: `/analyze <code or config>` — paste code, a dependency list, or a config snippet.",
-            "mode": "analyze",
-            "findings": [],
-        }
+_EOL_CHECKS = [
+    (r"import\s+java\.util\.Date\b", "java_date", "java8", "Java Date API deprecated — use java.time.LocalDate"),
+    (r"python_requires\s*=\s*['\"]<3\b", "python2_req", "python2", "Package targets Python 2"),
+    (r"from\s+struts2\b|Struts2\b", "struts2_import", "struts2", "Apache Struts 2 import detected — EOL framework"),
+    (r"log4j-1\.\d|log4j:log4j:", "log4j1_dep", "log4j1", "Log4j 1.x dependency — EOL with known RCE CVEs"),
+    (r"spring-core.*[34]\.\d|spring-framework.*[34]\.\d", "spring_old", "spring4", "Spring Framework 3/4.x — upgrade to Spring Boot 3.x"),
+    (r"angular.*['\"]1\.\d|AngularJS", "angularjs", "angular1", "AngularJS (1.x) detected — EOL Dec 2021"),
+    (r"elasticsearch.*[67]\.\d", "es_old", "elasticsearch7", "Elasticsearch 6/7.x — SSPL license change, migrate to OpenSearch"),
+    (r"oracle\.jdbc|jdbc:oracle", "oracle_jdbc", "oracle", "Oracle JDBC detected — consider Aurora PostgreSQL migration"),
+    (r"jedis|lettuce.*redis", "redis_client", "redis", "Redis client — consider ElastiCache for Redis migration"),
+    (r"@SuppressWarnings.*deprecated|@Deprecated", "java_deprecated", None, "Deprecated Java API usage detected"),
+    (r"TODO.*migrate|FIXME.*deprecated|HACK.*legacy", "todo_migrate", None, "Code comments indicate known migration debt"),
+]
 
+
+def _scan_eol_patterns(text: str) -> list[dict]:
     findings = []
-    text = code_or_text
-
-    # Check EOL patterns in text
-    eol_checks = [
-        (r"import\s+java\.util\.Date\b", "java_date", "java8", "Java Date API deprecated — use java.time.LocalDate"),
-        (r"python_requires\s*=\s*['\"]<3\b", "python2_req", "python2", "Package targets Python 2"),
-        (r"from\s+struts2\b|Struts2\b", "struts2_import", "struts2", "Apache Struts 2 import detected — EOL framework"),
-        (r"log4j-1\.\d|log4j:log4j:", "log4j1_dep", "log4j1", "Log4j 1.x dependency — EOL with known RCE CVEs"),
-        (r"spring-core.*[34]\.\d|spring-framework.*[34]\.\d", "spring_old", "spring4", "Spring Framework 3/4.x — upgrade to Spring Boot 3.x"),
-        (r"angular.*['\"]1\.\d|AngularJS", "angularjs", "angular1", "AngularJS (1.x) detected — EOL Dec 2021"),
-        (r"elasticsearch.*[67]\.\d", "es_old", "elasticsearch7", "Elasticsearch 6/7.x — SSPL license change, migrate to OpenSearch"),
-        (r"oracle\.jdbc|jdbc:oracle", "oracle_jdbc", "oracle", "Oracle JDBC detected — consider Aurora PostgreSQL migration"),
-        (r"jedis|lettuce.*redis", "redis_client", "redis", "Redis client — consider ElastiCache for Redis migration"),
-        (r"@SuppressWarnings.*deprecated|@Deprecated", "java_deprecated", None, "Deprecated Java API usage detected"),
-        (r"TODO.*migrate|FIXME.*deprecated|HACK.*legacy", "todo_migrate", None, "Code comments indicate known migration debt"),
-    ]
-
-    for pattern, finding_id, tech_key, message in eol_checks:
+    for pattern, finding_id, tech_key, message in _EOL_CHECKS:
         if re.search(pattern, text, re.I):
             dep_info = None
             if tech_key:
-                from tools.migration_canvas.coa_engine import get_deprecation_status
-                dep_info = get_deprecation_status(tech_key)
+                try:
+                    from tools.migration_canvas.coa_engine import get_deprecation_status
+                    dep_info = get_deprecation_status(tech_key)
+                except Exception:
+                    pass
             findings.append({
                 "id": finding_id,
                 "message": message,
@@ -394,19 +387,45 @@ def handle_analyze(code_or_text: str) -> dict:
                 "severity": dep_info.get("severity", "medium") if dep_info else "info",
                 "suggestion": f"Run `/coa {tech_key}`" if tech_key else "Review and modernize",
             })
+    return findings
+
+
+def handle_analyze(code_or_text: str) -> dict:
+    """Handle /analyze — accepts a URL (fetches + LLM analysis) or pasted code (EOL scan + LLM)."""
+    arg = code_or_text.strip()
+    if not arg:
+        return {
+            "reply": (
+                "**Usage:** `/analyze <url | code>`\n\n"
+                "- `/analyze https://github.com/org/repo` — fetch and analyze a repo\n"
+                "- `/analyze <paste code or dependency list>` — scan for deprecated patterns"
+            ),
+            "mode": "analyze",
+            "findings": [],
+        }
+
+    # URL path — delegate to url_analyzer for fetch + LLM analysis
+    if arg.startswith("http://") or arg.startswith("https://"):
+        try:
+            from tools.chat_router.url_analyzer import analyze as _url_analyze
+            result = _url_analyze(arg, canvas_type="cam")
+            return {"reply": result["reply"], "mode": "analyze", "findings": []}
+        except Exception as exc:
+            return {"reply": f"[Analyze] URL fetch error: {exc}", "mode": "analyze", "findings": []}
+
+    # Text path — EOL pattern scan + LLM enrichment
+    findings = _scan_eol_patterns(arg)
 
     if not findings:
-        # Detect known good patterns as confirmation
-        if re.search(r"spring-boot.*3\.\d|springboot3", text, re.I):
+        if re.search(r"spring-boot.*3\.\d|springboot3", arg, re.I):
             findings.append({"id": "spring_boot3_ok", "message": "Spring Boot 3.x detected — current and supported.", "severity": "info", "tech": None})
-        elif re.search(r"python_requires.*>=.*3\.", text, re.I):
+        elif re.search(r"python_requires.*>=.*3\.", arg, re.I):
             findings.append({"id": "python3_ok", "message": "Python 3.x requirement — no action needed.", "severity": "info", "tech": None})
 
     if findings:
         lines = [f"## Code Analysis Findings ({len(findings)})\n"]
         for f in findings:
-            sev = f.get("severity", "info")
-            icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", "info": "ℹ️"}.get(sev, "⚪")
+            icon = {"critical": "🔴", "high": "🟠", "medium": "🟡", "low": "🟢", "info": "ℹ️"}.get(f.get("severity", "info"), "⚪")
             lines.append(f"{icon} **{f['message']}**")
             if f.get("suggestion"):
                 lines.append(f"   → {f['suggestion']}")
@@ -420,47 +439,90 @@ def handle_analyze(code_or_text: str) -> dict:
     return {"reply": reply, "mode": "analyze", "findings": findings}
 
 
+_URL_RE = re.compile(r"https?://\S+", re.I)
+_ANALYZE_INTENT_RE = re.compile(
+    r"\b(analyze|analyse|review|inspect|check out|look at|scan|what is|tell me about|assess)\b",
+    re.I,
+)
+_DEPRECATED_INTENT_RE = re.compile(
+    r"\b(deprecated|end.of.life|eol|outdated|obsolete|legacy|old version|unmaintained|sunset)\b",
+    re.I,
+)
+_REFACTOR_INTENT_RE = re.compile(
+    r"\b(refactor|convert|rewrite|port|translate|migrate.*code|code.*migration)\b",
+    re.I,
+)
+_STATUS_INTENT_RE = re.compile(
+    r"\b(status|readiness|how.*(ready|far|done)|progress|report|dryrun|dry.run)\b",
+    re.I,
+)
+_COA_INTENT_RE = re.compile(
+    r"\b(optimize|optimise|performance|cost|scaling|improve|speed.?up|slow|latency|expensive)\b",
+    re.I,
+)
+
+
 def handle_free_text(content: str, session_id: str = "") -> dict:
-    """Handle free-text messages in cam canvas — detect migration intent and inject context."""
-    # Detect explicit migration questions
+    """Handle free-text messages in cam canvas.
+
+    Auto-detects intent and routes to the appropriate handler without
+    requiring the user to type explicit slash commands.
+    """
+    # --- Auto-route: URL in message → /analyze ---
+    url_match = _URL_RE.search(content)
+    if url_match:
+        url = url_match.group(0).rstrip(".,;)")
+        return handle_analyze(url)
+
+    # --- Auto-route: code/config pasted (multi-line, no natural language) ---
+    lines = content.strip().splitlines()
+    if len(lines) >= 3 and sum(1 for ln in lines if re.search(r"[{};=<>]|import |require |def |class ", ln)) >= 2:
+        return handle_analyze(content)
+
+    # --- Intent detection ---
+    is_eol_q = bool(_DEPRECATED_INTENT_RE.search(content))
     is_migration_q = bool(_MIGRATION_QUESTION_RE.search(content))
-    is_eol_q = bool(_EOL_QUESTION_RE.search(content))
+    is_refactor_q = bool(_REFACTOR_INTENT_RE.search(content))
+    is_status_q = bool(_STATUS_INTENT_RE.search(content))
+    is_coa_q = bool(_COA_INTENT_RE.search(content))
     mentioned_techs = list({m.lower() for m in _COMPILED_TECH_RE.findall(content)})
 
-    hints = []
+    # Deprecated / EOL question about a specific tech
+    if is_eol_q and mentioned_techs:
+        return handle_deprecated(mentioned_techs[0])
 
-    if mentioned_techs and (is_migration_q or is_eol_q):
-        tech = mentioned_techs[0]
-        if is_eol_q:
-            return handle_deprecated(tech)
-        else:
-            return handle_coa(tech, session_id=session_id)
+    # Refactor question
+    if is_refactor_q and mentioned_techs:
+        return handle_refactor(mentioned_techs[0], session_id=session_id)
 
-    if mentioned_techs:
-        tech_list = ", ".join(f"`{t}`" for t in mentioned_techs[:4])
-        hints.append(f"I noticed these technologies: {tech_list}. Run `/coa <tech>` for migration options or `/deprecated <tech>` for EOL status.")
+    # Status / readiness check
+    if is_status_q:
+        return handle_status(session_id=session_id)
 
-    if not hints:
-        hints.append(
-            "**Migration Chat Commands:**\n"
-            "  `/coa <tech>` — Courses of Action with pros/cons (e.g. `/coa oracle`)\n"
-            "  `/deprecated <tech>` — EOL / deprecation status check\n"
-            "  `/refactor <component>` — Dispatch code transformation job\n"
-            "  `/analyze <code>` — Scan for deprecated patterns in pasted code\n"
-            "  `/components` — List app inventory with migration status\n"
-            "  `/status` — Current migration project overview"
-        )
+    # COA / optimization for a tech
+    if (is_coa_q or is_migration_q) and mentioned_techs:
+        return handle_coa(mentioned_techs[0], session_id=session_id)
 
-    # Attempt LLM response with migration context injected
+    # General migration question → LLM with context
     llm_response = _call_llm_with_migration_context(content, session_id)
     if llm_response:
-        return {"reply": llm_response, "mode": "cam", "hints": hints}
+        return {"reply": llm_response, "mode": "cam"}
 
-    return {
-        "reply": "\n\n".join(hints),
-        "mode": "cam",
-        "hints": hints,
-    }
+    # Fallback: command guide
+    hints = []
+    if mentioned_techs:
+        tech_list = ", ".join(f"`{t}`" for t in mentioned_techs[:4])
+        hints.append(f"I noticed: {tech_list}. Try `/coa {mentioned_techs[0]}` for migration options or `/deprecated {mentioned_techs[0]}` for EOL status.")
+    hints.append(
+        "**Available commands** (or just describe what you need — I'll run the right one):\n"
+        "  `/analyze <url or code>` — fetch + analyze a repo URL or paste code\n"
+        "  `/coa <tech>` — Cloud migration courses of action\n"
+        "  `/deprecated <tech>` — EOL / deprecation status\n"
+        "  `/refactor <component>` — Python conversion snippets\n"
+        "  `/components` — App inventory with migration status\n"
+        "  `/status` — Migration project readiness overview"
+    )
+    return {"reply": "\n\n".join(hints), "mode": "cam"}
 
 
 # ---------------------------------------------------------------------------
