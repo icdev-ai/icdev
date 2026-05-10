@@ -27,6 +27,9 @@
   <p>Visual infrastructure designer — 200+ compute, storage, database, serverless, AI/ML, and security services across AWS, Azure, GCP, OCI, IBM, and on-premises.</p>
   <a href="/infra/canvas/new" class="idc-new-btn">+ New Infrastructure Design</a>
   <a href="/infra/templates" class="idc-new-btn" style="background:#0f3460;">Templates</a>
+  {% set wf_canvas_id = 'idc' %}
+  {% set wf_context_label = item.name|default('') %}
+  {% include 'includes/workflow_trigger_btn.html' %}
 </div>
 
 {% if templates %}
