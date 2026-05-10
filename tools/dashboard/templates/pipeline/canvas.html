@@ -158,8 +158,9 @@ if (typeof TOOL_INFO !== 'undefined') {
     const graphJson = {{ graph_json | safe }};
     if (graphJson && (graphJson.nodes?.length || graphJson.edges?.length)) {
       loadGraph(graphJson);
-      // Defer fit until JointJS has finished painting cells into the SVG
-      requestAnimationFrame(() => requestAnimationFrame(() => { zoomFit(); _updateZoomLabel(); }));
+      // Defer fit: first RAF lets JointJS paint cells; setTimeout lets the
+      // browser compute flex layout so paper.scaleContentToFit has real dimensions.
+      requestAnimationFrame(() => setTimeout(() => { zoomFit(); _updateZoomLabel(); }, 100));
     } else {
       _updateZoomLabel();
     }
