@@ -1420,13 +1420,8 @@ def create_app() -> Flask:
     except Exception as exc:
         app.logger.debug("Agent auto-registration skipped: %s", exc)
 
-    # ---- Register API blueprints (P1.1: centralized via register_api_blueprints) ----
-    # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
-    # See tools/dashboard/api/__init__.py for the full registration sequence.
-    register_api_blueprints(app)
-
-    # ---- Studio Artifact Download (bypass blueprint double-registration quirk) ----
-    @app.route("/api/studio/artifacts/<path:filepath>", methods=["GET"])
+    # ---- Studio Artifact Download — standalone route outside blueprint namespace ----
+    @app.route("/api/artifacts/<path:filepath>", methods=["GET"])
     def studio_artifact_download(filepath: str):
         import mimetypes
         from flask import send_file as _sf, jsonify as _jf, request as _req
@@ -1440,6 +1435,11 @@ def create_app() -> Flask:
         as_attachment = _req.args.get("download", "0") == "1"
         return _sf(safe, mimetype=mime or "text/plain", as_attachment=as_attachment,
                    download_name=safe.name)
+
+    # ---- Register API blueprints (P1.1: centralized via register_api_blueprints) ----
+    # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
+    # See tools/dashboard/api/__init__.py for the full registration sequence.
+    register_api_blueprints(app)
 
     # ---- SRE Dashboard Page ----
     @app.route("/sre")
