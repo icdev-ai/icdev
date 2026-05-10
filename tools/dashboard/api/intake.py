@@ -154,7 +154,7 @@ def create_intake_session():
 
     # Map classification to impact level — empty string means no compliance framing
     il_map = {"il2": "IL2", "il4": "IL4", "il5": "IL5", "il6": "IL6"}
-    impact_level = il_map.get(classification, "")
+    impact_level = il_map.get(classification, 'IL4') or 'IL4'
 
     if not _HAS_INTAKE:
         return jsonify({"error": "Intake engine not available"}), 503
