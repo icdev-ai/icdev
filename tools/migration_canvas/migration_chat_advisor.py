@@ -91,7 +91,7 @@ def handle_coa(tech_arg: str, session_id: str = "") -> dict:
     try:
         conn = _get_cam_conn()
         if _table_exists(conn, "mc_projects"):
-            row = conn.execute(
+            conn.execute(
                 "SELECT name FROM mc_projects ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
             conn.close()
