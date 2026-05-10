@@ -40,6 +40,48 @@ def api_list_workflows():
     return jsonify({"workflows": list_workflows(shared_only=shared)})
 
 
+@studio_api.route("/workflows/templates", methods=["GET"])
+def list_workflow_templates():
+    """List workflow templates from context/workflow_templates/*.yaml."""
+    import yaml  # noqa: PLC0415 — deferred to avoid startup cost
+
+    tpl_dir = _ROOT / "context" / "workflow_templates"
+    if not tpl_dir.is_dir():
+        return jsonify({"templates": [], "total": 0, "builtin": 0, "community": 0, "categories": {}})
+
+    templates = []
+    for path in sorted(tpl_dir.glob("*.yaml")):
+        raw = path.read_text(encoding="utf-8")
+        try:
+            data = yaml.safe_load(raw) or {}
+        except yaml.YAMLError:
+            data = {}
+        steps = data.get("steps", [])
+        templates.append({
+            "id": path.stem,
+            "name": data.get("name", path.stem.replace("-", " ").replace("_", " ").title()),
+            "description": data.get("description", ""),
+            "category": data.get("category", "general"),
+            "tags": data.get("tags", []),
+            "author": data.get("author", "builtin"),
+            "steps_count": len(steps) if isinstance(steps, list) else 0,
+            "yaml": raw,
+        })
+
+    categories: dict[str, int] = {}
+    for t in templates:
+        cat = t["category"]
+        categories[cat] = categories.get(cat, 0) + 1
+
+    return jsonify({
+        "templates": templates,
+        "total": len(templates),
+        "builtin": len(templates),
+        "community": 0,
+        "categories": categories,
+    })
+
+
 @studio_api.route("/workflows/<workflow_id>", methods=["GET"])
 def api_get_workflow(workflow_id: str):
     wf = get_workflow(workflow_id)
