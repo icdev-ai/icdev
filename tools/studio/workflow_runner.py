@@ -272,13 +272,18 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                 "total": len(ordered_steps),
             })
 
-        overall = "success" if overall_ok else "failed"
         summary = {
             "total": len(results),
             "success": sum(1 for r in results if r["status"] == "success"),
             "failed": sum(1 for r in results if r["status"] in ("failed", "timeout")),
             "skipped": sum(1 for r in results if r["status"] in ("skipped",)),
         }
+        if not overall_ok:
+            overall = "failed"
+        elif summary["success"] == 0 and summary["skipped"] > 0:
+            overall = "warning"
+        else:
+            overall = "success"
         _update_run_status(run_id, overall, json.dumps(summary))
         _push(run_queue, {
             "type": "run_complete",
