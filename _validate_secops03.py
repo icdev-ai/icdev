@@ -64,4 +64,4 @@ g = {"__builtins__":builtins,"SCAN_RESULTS":SCAN_RESULTS,"POLICY_DOCS":POLICY_DO
      "collect_scan_evidence":collect_scan_evidence,"collect_policy_evidence":collect_policy_evidence,
      "score_evidence":score_evidence,"EvidencePipeline":EvidencePipeline,"date":date}
 with open(r"apps\forge_academy\content\tier2\m-secops-03-evidence-pipeline\steps\step1_test.py", encoding="utf-8") as f:
-    exec(f.read(), g)  # noqa: S102
+    exec(f.read(), g)  # nosec B102  # noqa: S102
