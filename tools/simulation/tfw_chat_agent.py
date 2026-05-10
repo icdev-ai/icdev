@@ -49,42 +49,42 @@ CANVAS_SLASH_COMMANDS: dict[str, list[str]] = {
         "/coa", "/deprecated", "/refactor", "/status", "/analyze", "/components",
     ],
     "ndc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "sdc": [
-        "/explain", "/troubleshoot", "/audit",
+        "/explain", "/troubleshoot", "/audit", "/analyze",
         "/api-surface", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "eda": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/event-catalog", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "ddc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "pdc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "bdc": [
-        "/explain", "/troubleshoot", "/audit",
+        "/explain", "/troubleshoot", "/audit", "/analyze",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "odc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
     "idc": [
-        "/explain", "/troubleshoot", "/refine", "/audit",
+        "/explain", "/troubleshoot", "/refine", "/audit", "/analyze",
         "/ppsm", "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
     ],
 }
 
 # Fallback for unknown canvas types
 _DEFAULT_COMMANDS = [
-    "/explain", "/troubleshoot", "/audit",
+    "/explain", "/troubleshoot", "/audit", "/analyze",
     "/dfd", "/cis", "/isa", "/poam", "/oscal", "/bundle", "/diff", "/spec",
 ]
 
@@ -509,6 +509,34 @@ def _handle_audit(session_id: str, canvas_type: str, args_text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 # Maps command prefix → handler function
+def _handle_analyze(session_id: str, canvas_type: str, args_text: str) -> dict:
+    """Fetch a URL and return a canvas-aware LLM analysis."""
+    url = args_text.strip()
+    if not url:
+        return {
+            "reply": (
+                "**Usage:** `/analyze <url>`\n\n"
+                "Examples:\n"
+                "- `/analyze https://github.com/org/repo/tree/main/src`\n"
+                "- `/analyze https://docs.example.com/architecture`\n\n"
+                "Paste a GitHub repo, directory, file, or any web page — "
+                "I'll fetch it and produce a structured analysis tuned to the current canvas."
+            ),
+            "mode": "analyze",
+        }
+    if not url.startswith("http"):
+        return {
+            "reply": f"**Invalid URL:** `{url}` — must start with `http://` or `https://`",
+            "mode": "analyze",
+        }
+    try:
+        from tools.chat_router.url_analyzer import analyze
+        result = analyze(url, canvas_type)
+        return {"reply": result["reply"], "mode": "analyze"}
+    except Exception as exc:
+        return {"reply": f"[Analyze error: {exc}]", "mode": "error"}
+
+
 _COMMAND_HANDLERS: dict[str, Any] = {
     "/ppsm": _handle_ppsm,
     "/api-surface": _handle_ppsm,
@@ -522,6 +550,7 @@ _COMMAND_HANDLERS: dict[str, Any] = {
     "/diff": _handle_diff,
     "/spec": _handle_spec,
     "/audit": _handle_audit,
+    "/analyze": _handle_analyze,
 }
 
 

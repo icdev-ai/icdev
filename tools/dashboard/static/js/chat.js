@@ -404,10 +404,60 @@
     // SECTION 2: Messaging (routes to chat or intake API)
     // ===================================================================
 
+    // ===================================================================
+    // /analyze <url> — works in all modes (canvas, intake, regular)
+    // ===================================================================
+
+    function sendAnalyzeCommand(url) {
+        appendMessage({ role: 'user', content: '/analyze ' + url });
+
+        var typingId = 'typing-' + Date.now();
+        var stream = document.getElementById('message-stream');
+        if (stream) {
+            stream.innerHTML += '<div id="' + typingId + '" class="msg-bubble msg-bubble--system">'
+                + '<div class="agent-name">Analyzer</div>'
+                + '<div style="opacity:0.6;font-size:0.85rem;">Fetching and analyzing <code>'
+                + escHtml(url) + '</code>…</div></div>';
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        fetch('/api/chat/analyze', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: url, canvas_type: _activeCanvasType || 'intake' })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var typing = document.getElementById(typingId);
+            if (typing) typing.remove();
+            if (data.error && !data.reply) {
+                appendMessage({ role: 'system', content: 'Error: ' + data.error });
+                return;
+            }
+            appendMessage({ role: 'assistant', content: data.reply || '(no response)' });
+        })
+        .catch(function (err) {
+            var typing = document.getElementById(typingId);
+            if (typing) typing.remove();
+            appendMessage({ role: 'system', content: 'Analyze error: ' + err.message });
+        });
+    }
+
     function sendMessage() {
         var inp = document.getElementById('message-input');
         var content = inp ? inp.value.trim() : '';
         if (!content || !_activeContextId) return;
+
+        // /analyze <url> — intercept before any canvas/intake routing
+        if (content.toLowerCase().startsWith('/analyze')) {
+            var analyzeArg = content.slice(8).trim();
+            if (analyzeArg) {
+                inp.value = '';
+                sendAnalyzeCommand(analyzeArg);
+                return;
+            }
+            // No URL given — show usage hint via the regular canvas path if available
+        }
 
         if (_activeCanvasType && _activeCanvasType !== 'intake') {
             sendCanvasMessage(_activeContextId, content, _activeCanvasType);
