@@ -354,7 +354,7 @@ def main():
         ct = session.client("cloudtrail")
         trails = ct.describe_trails(includeShadowTrails=False)["trailList"]
         active = [t for t in trails if t.get("IsMultiRegionTrail")]
-        ok = check("CloudTrail (multi-region)", bool(active), f"{len(active)} trail(s)")
+        ok = check("CloudTrail (multi-region)", bool(active), str(len(active)) + " trail(s)")
         passed += ok
         failed += not ok
     except Exception as e:
@@ -366,7 +366,7 @@ def main():
     try:
         gd = session.client("guardduty")
         detectors = gd.list_detectors()["DetectorIds"]
-        ok = check("GuardDuty detector", bool(detectors), f"{len(detectors)} detector(s)")
+        ok = check("GuardDuty detector", bool(detectors), str(len(detectors)) + " detector(s)")
         passed += ok
         failed += not ok
     except Exception as e:
