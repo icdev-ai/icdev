@@ -359,9 +359,9 @@ def run(project_id: str = "default") -> dict:
                 f"Ansible playbook ({len(all_waves)} plays), inventory, and runbook generated."
             ),
             "artifacts": [
-                {"name": "Ansible Playbook", "path": str(playbook_path.relative_to(_ROOT)), "type": "yaml"},
-                {"name": "Ansible Inventory", "path": str(inventory_path.relative_to(_ROOT)), "type": "ini"},
-                {"name": "Migration Runbook", "path": str(runbook_path.relative_to(_ROOT)), "type": "markdown"},
+                {"name": "Ansible Playbook", "path": playbook_path.relative_to(_ROOT).as_posix(), "type": "yaml"},
+                {"name": "Ansible Inventory", "path": inventory_path.relative_to(_ROOT).as_posix(), "type": "ini"},
+                {"name": "Migration Runbook", "path": runbook_path.relative_to(_ROOT).as_posix(), "type": "markdown"},
             ],
         }
     finally:

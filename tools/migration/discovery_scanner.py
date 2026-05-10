@@ -228,7 +228,7 @@ def run(project_id: str = "default") -> dict:
             f"Readiness: {readiness}%."
         )
         data["artifacts"] = [
-            {"name": "Discovery Report", "path": str(report_path.relative_to(_ROOT)), "type": "markdown"},
+            {"name": "Discovery Report", "path": report_path.relative_to(_ROOT).as_posix(), "type": "markdown"},
         ]
         return data
     finally:

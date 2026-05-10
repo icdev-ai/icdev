@@ -114,6 +114,8 @@
       <button class="tb-btn" onclick="exportCanvasPDF()" title="Export PDF — opens print-ready canvas in new tab for Print to PDF">&#x1f4c4; Export PDF</button>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
+      <button class="tb-btn" style="background:#d5f0e0;color:#1e7e34;border:1px solid #1e7e34;font-weight:600;" onclick="validateNetworkIaC()" title="Validate IaC — check generated Terraform for this topology">✓ Validate IaC</button>
+      <button class="tb-btn" style="background:#d6eaf8;color:#1a5276;border:1px solid #1a5276;font-weight:600;" onclick="deployNetworkIaC()" title="Generate Terraform deployment bundle for this network topology">🚀 Deploy IaC</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
       <button class="tb-btn" onclick="toggleRackView()" title="Rack Elevation View — shows rack layout for selected device">&#x229e; Rack</button>
       <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>

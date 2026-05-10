@@ -772,7 +772,8 @@ def api_stream_run(run_id: str):
 def api_download_artifact(filepath: str):
     """Download a generated workflow artifact file."""
     import mimetypes
-    safe_path = (_ROOT / filepath).resolve()
+    filepath = filepath.replace("\\", "/")
+    safe_path = (_ROOT / Path(filepath)).resolve()
     # Security: must stay inside _ROOT/data/studio_artifacts
     artifacts_root = (_ROOT / "data" / "studio_artifacts").resolve()
     if not str(safe_path).startswith(str(artifacts_root)):
