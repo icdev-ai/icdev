@@ -126,15 +126,15 @@
     <div id="right-sidebar" class="chat-right-panel">
         <!-- Tabs -->
         <div class="chat-right-tabs" id="right-sidebar-tabs">
-            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas" title="Requirements Intake (RICOAS)">
+            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas" title="Requirements Intake — readiness score, test scenarios, and recommended next steps">
                 <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="2" y="1" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><line x1="4.5" y1="4.5" x2="9.5" y2="4.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><line x1="4.5" y1="7" x2="9.5" y2="7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><line x1="4.5" y1="9.5" x2="7.5" y2="9.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
                 RICOAS
             </button>
-            <button class="chat-right-tab" data-tab="gov" id="tab-gov" title="AI Governance">
+            <button class="chat-right-tab" data-tab="gov" id="tab-gov" title="AI Governance — transparency and accountability status">
                 <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 1.5L2 4v2c0 3.3 2.1 5.8 5 6.5 2.9-.7 5-3.2 5-6.5V4L7 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
                 Gov
             </button>
-            <button class="chat-right-tab" data-tab="intel" id="tab-intel" title="Intelligence (RAG, KG, Bayesian)">
+            <button class="chat-right-tab" data-tab="intel" id="tab-intel" title="Knowledge — documents, knowledge graph, and AI learning status">
                 <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><line x1="9" y1="9" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
                 Intel
             </button>
@@ -196,7 +196,7 @@
 
             <!-- Elicitation Techniques -->
             <div class="sidebar-section" id="techniques-section">
-                <h4 class="chat-sidebar-heading">Elicitation Techniques</h4>
+                <h4 class="chat-sidebar-heading">Ways to Explore Requirements</h4>
                 <div id="technique-active" class="technique-active-banner" style="display:none;">
                     <span id="technique-active-name"></span>
                     <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
@@ -206,13 +206,13 @@
 
             <!-- BDD Preview -->
             <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
-                <h4 class="chat-sidebar-heading">BDD Scenarios (Draft)</h4>
+                <h4 class="chat-sidebar-heading">Test Scenarios (Draft)</h4>
                 <div id="bdd-preview-list" class="bdd-preview-list"></div>
             </div>
 
             <!-- Courses of Action -->
             <div class="sidebar-section" id="coa-section" style="display:none;">
-                <h4 class="chat-sidebar-heading">Courses of Action</h4>
+                <h4 class="chat-sidebar-heading">Options to Consider</h4>
                 <div id="coa-list"></div>
                 <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">&#x2713; <span id="coa-selected-name"></span> selected</div>
             </div>
@@ -252,7 +252,7 @@
                 <strong class="gov-sidebar-title">AI Governance</strong>
             </div>
             <div id="gov-sidebar-content">
-                <p class="gov-sidebar-placeholder">Loading governance status...</p>
+                <p class="gov-sidebar-placeholder">Loading AI Governance status...</p>
             </div>
         </div>
 
@@ -260,7 +260,7 @@
         <div id="intel-sidebar" class="chat-right-tab-content" data-tab-content="intel">
             <div class="intel-sidebar-header">
                 <strong class="intel-sidebar-title">Intelligence</strong>
-                <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>
+                <span class="intel-sidebar-subtitle">Documents · Learning · Research</span>
             </div>
 
             <!-- Document Upload & Index -->
