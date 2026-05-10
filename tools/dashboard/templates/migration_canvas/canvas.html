@@ -98,6 +98,10 @@
       <button class="secondary analysis" onclick="canvasReadiness()" title="Migration Readiness">Readiness</button>
       <button class="secondary analysis" onclick="canvasStats()" title="Design Statistics">Stats</button>
       <button class="secondary analysis" onclick="canvasOracle()" title="Oracle Anticipation" style="color:#f39c12;">Oracle</button>
+      <!-- Workflow -->
+      {% set wf_canvas_id = "mdc" %}
+      {% set wf_context_label = design.name if design else '' %}
+      {% include 'includes/workflow_trigger_btn.html' %}
       <!-- Navigation -->
       <button class="secondary" onclick="location.href='/migration-canvas/'" title="Back to Dashboard">Back</button>
     </div>
