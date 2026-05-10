@@ -476,3 +476,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Intent Classifier | tools\chat_router\intent_classifier.py | Auto-registered: chat_router/intent_classifier.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Url Analyzer | tools\chat_router\url_analyzer.py | Auto-registered: chat_router/url_analyzer.py | --json | JSON |
+| Seed Wex Kanban | tools\studio\seed_wex_kanban.py | Auto-registered: studio/seed_wex_kanban.py | --json | JSON |
+| Seed Wex Pg | tools\studio\seed_wex_pg.py | Auto-registered: studio/seed_wex_pg.py | --json | JSON |

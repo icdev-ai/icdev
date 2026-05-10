@@ -1460,6 +1460,126 @@ def idc_api_ai_trace():
         return jsonify({"ok": False, "error": str(exc)}), 500
 
 
+def _compute_infra_governance(graph_data: dict) -> dict:
+    """Infrastructure governance check — ISO 27001 / NIST 800-53 / FedRAMP aligned."""
+    from datetime import datetime, timezone as _tz
+    nodes = graph_data.get("nodes", [])
+    types = [n.get("type", "").lower() for n in nodes]
+    labels = [str(n.get("label", "")).lower() for n in nodes]
+
+    def _any(*prefixes):
+        return any(any(t.startswith(p) for p in prefixes) for t in types)
+
+    def _label(*kws):
+        return any(kw in l for l in labels for kw in kws)
+
+    CHECKS = [
+        ("Network Segmentation", "Network Security", "CAT2", _any("aws-vpc","az-vnet","gcp-vpc","oci-vcn") or _label("vpc","vnet","subnet","segment")),
+        ("Encryption at Rest (KMS)", "Data Protection", "CAT1", _any("aws-kms","az-keyvault","gcp-kms","oci-vault") or _label("kms","key vault","encrypt")),
+        ("TLS / Encryption in Transit", "Data Protection", "CAT1", _label("tls","ssl","certificate","https")),
+        ("Identity & Access Management", "Access Control", "CAT1", _any("aws-iam","az-ad","gcp-iam","oci-iam") or _label("iam","rbac","azure ad","identity")),
+        ("Load Balancing / HA", "Resilience", "CAT2", _any("aws-elb","aws-alb","az-lb","gcp-lb","oci-lb") or _label("load balanc","elb","alb","nlb","gateway")),
+        ("Auto-Scaling", "Resilience", "CAT2", _any("aws-asg","az-vmss") or _label("auto scal","asg","vmss","scale")),
+        ("Monitoring & Metrics", "Operations", "CAT2", _any("aws-cw","az-mon","gcp-mon","plt-prom","plt-datadog","plt-grafana") or _label("cloudwatch","monitor","prometheus","grafana","datadog","metrics")),
+        ("Centralized Logging", "Operations", "CAT2", _any("aws-ct","aws-cwl","az-la","gcp-log") or _label("cloudtrail","logging","log analytics","stackdriver","elk","splunk")),
+        ("Backup & Disaster Recovery", "Resilience", "CAT3", _label("backup","snapshot","replicat","disaster","dr","rto","rpo")),
+        ("WAF / DDoS Protection", "Network Security", "CAT1", _any("aws-waf","az-waf","gcp-armor") or _label("waf","ddos","shield","armor")),
+        ("Secrets Management", "Access Control", "CAT1", _any("aws-sm","az-keyvault") or _label("secret","vault","credential manager","parameter store")),
+        ("Container Security", "Application Security", "CAT2", _any("aws-eks","aws-ecs","az-aks","gcp-gke","oci-oke") or _label("container","kubernetes","k8s","docker","eks","ecs","aks","gke")),
+        ("IaC Defined", "Compliance", "CAT2", _any("iac-") or _label("terraform","ansible","cloudformation","bicep","pulumi","iac")),
+        ("Multi-AZ / Multi-Region", "Resilience", "CAT2", _label("multi-az","multi-region","availability zone","region","ha","high availability")),
+        ("Patch Management", "Operations", "CAT3", _any("aws-ssm") or _label("patch","ssm","systems manager","update","upgrade")),
+        ("CDN / Edge Caching", "Performance", "CAT3", _any("aws-cf","az-cdn","gcp-cdn") or _label("cdn","cloudfront","edge","cache")),
+        ("Security Groups / NACLs", "Network Security", "CAT1", _label("security group","nacl","acl","firewall","nsg")),
+        ("FIPS 140-2/3 Compliance", "Compliance", "CAT1", _label("fips","gov","fedramp","govcloud")),
+        ("Cost Tagging & Governance", "Compliance", "CAT3", _label("tag","cost","billing","budget")),
+        ("Database Security", "Data Protection", "CAT2", _any("aws-rds","aws-ddb","az-sql","gcp-sql","oci-db") or _label("database","rds","dynamodb","sql","postgres","mysql")),
+    ]
+
+    PILLARS = ["Access Control", "Network Security", "Data Protection", "Resilience",
+               "Operations", "Application Security", "Compliance", "Performance"]
+    WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+    MATURITY = [
+        (0,  "Level 1 — Initial",      "Ad-hoc infrastructure, no formal controls."),
+        (30, "Level 2 — Developing",   "Some controls in place but inconsistent."),
+        (50, "Level 3 — Defined",      "Core controls standardised and documented."),
+        (70, "Level 4 — Managed",      "Measured and monitored with metrics."),
+        (85, "Level 5 — Optimised",    "Continuous improvement, automated enforcement."),
+    ]
+
+    check_results = []
+    total_w = passed_w = 0
+    cats: dict = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+    for title, pillar, sev, passed in CHECKS:
+        w = WEIGHTS[sev]
+        total_w += w
+        status = "pass" if passed else "fail"
+        if passed:
+            passed_w += w
+        cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+        cats[pillar]["total"] += 1
+        if passed:
+            cats[pillar]["passed"] += 1
+        check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                               "status": status, "weight": w, "detail": ""})
+
+    for p, c in cats.items():
+        c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+    score = round(passed_w / total_w * 100) if total_w else 0
+    grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+
+    mat_level = 1
+    for threshold, label, desc in MATURITY:
+        if score >= threshold:
+            mat_level += 1
+    mat_level = min(mat_level - 1, 5)
+    mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+    passed_count = sum(1 for c in check_results if c["status"] == "pass")
+    recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+            for c in check_results if c["status"] == "fail"]
+    recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+
+    return {
+        "score": score, "grade": grade,
+        "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+        "checks": check_results, "categories": cats, "recommendations": recs,
+        "total_checks": len(CHECKS), "passed_checks": passed_count,
+        "assessed_at": datetime.now(_tz.utc).isoformat(),
+    }
+
+
+@infra_bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+def idc_api_governance(design_id):
+    """Run infrastructure governance framework check."""
+    conn = _get_conn()
+    row = conn.execute("SELECT graph_json FROM infra_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Not found"}), 404
+    try:
+        graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+    except (json.JSONDecodeError, TypeError):
+        conn.close()
+        return jsonify({"error": "Invalid graph data"}), 400
+
+    result = _compute_infra_governance(graph_data)
+
+    assess_id = f"ia-{uuid.uuid4().hex[:10]}"
+    conn.execute(
+        "INSERT INTO idc_assessments (id, design_id, assessment_type, findings_json, score, created_at) "
+        "VALUES (?,?,?,?,?,?)",
+        (assess_id, design_id, "governance",
+         json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                     for c in result["checks"]]),
+         result["score"], _utcnow()),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify(result)
+
+
 # Register IDC event bus subscriptions at import time
 try:
     from tools.infra_canvas import bus_subscriber as _idc_bus

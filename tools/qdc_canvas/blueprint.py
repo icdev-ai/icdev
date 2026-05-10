@@ -1338,3 +1338,102 @@ def api_genesis_quality():
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+def _compute_qdc_governance(graph_data: dict) -> dict:
+    """Quality governance check — DAMA DMBOK / ISO 25010 / SA-11 / TMMi aligned."""
+    nodes = graph_data.get("nodes", [])
+    types = [n.get("type", "").lower() for n in nodes]
+    labels = [str(n.get("label", "")).lower() for n in nodes]
+
+    def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in types)
+    def _lbl(*kws): return any(kw in l for l in labels for kw in kws)
+
+    CHECKS = [
+        ("Quality Gate Defined",           "Quality Gates",      "CAT1", _any("gate-") or _lbl("quality gate","qg","pass/fail","threshold gate")),
+        ("Automated Testing Nodes",        "Test Coverage",      "CAT1", _any("test-","tst-") or _lbl("unit test","integration test","automated test","test suite","pytest","jest","junit")),
+        ("Code Coverage Measurement",      "Test Coverage",      "CAT2", _lbl("coverage","jacoco","istanbul","lcov","coverage threshold","80%","90%")),
+        ("Static Analysis (SAST)",         "Test Coverage",      "CAT2", _any("sast-","lint-") or _lbl("sast","sonar","lint","bandit","semgrep","static analysis")),
+        ("Performance Benchmarks",         "Test Coverage",      "CAT2", _lbl("benchmark","performance test","load test","k6","locust","jmeter","gatling")),
+        ("Data Quality Profiling",         "Data Quality",       "CAT1", _any("dq-","profile-") or _lbl("data profile","profil","null check","row count","completeness")),
+        ("Anomaly / Outlier Detection",    "Data Quality",       "CAT2", _lbl("anomaly","outlier","drift","schema change","data drift")),
+        ("Quality Metrics Dashboard",      "Observability",      "CAT2", _lbl("dashboard","scorecard","kpi","metric","reporting","quality report")),
+        ("Defect Tracking Integration",    "Observability",      "CAT2", _lbl("defect","bug","issue","jira","servicenow","ticket","remediation")),
+        ("SLA / SLO Defined",             "SLO Governance",     "CAT1", _lbl("sla","slo","service level","error budget","availability","uptime")),
+        ("SA-11 / NIST Compliance",        "Compliance",         "CAT1", _any("comp-","nist-") or _lbl("sa-11","nist","800-53","control","compliance","fedramp","rmf")),
+        ("TMMi / CMMI Process Level",      "Compliance",         "CAT2", _lbl("tmmi","cmmi","process level","maturity","capability")),
+        ("Audit Logging of Quality Ops",   "Compliance",         "CAT2", _lbl("audit","log quality","change log","quality trail","immutable")),
+        ("Remediation Tracking",           "Observability",      "CAT3", _any("rem-") or _lbl("remediat","fix","action item","corrective")),
+        ("Cross-Canvas Quality Targets",   "SLO Governance",     "CAT3", _lbl("cross-canvas","data mesh","target","contract","expected quality")),
+    ]
+
+    PILLARS = ["Quality Gates", "Test Coverage", "Data Quality", "Observability", "SLO Governance", "Compliance"]
+    WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+    MATURITY = [
+        (0,  "L1 — Initial",    "No formal quality processes defined."),
+        (30, "L2 — Developing", "Basic testing and quality gates present."),
+        (55, "L3 — Defined",    "Systematic quality with metrics and SLOs."),
+        (70, "L4 — Managed",    "Measured quality with automated enforcement."),
+        (85, "L5 — Optimised",  "Continuous improvement with predictive quality analytics."),
+    ]
+
+    check_results, total_w, passed_w = [], 0, 0
+    cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+    for title, pillar, sev, passed in CHECKS:
+        w = WEIGHTS[sev]; total_w += w
+        status = "pass" if passed else "fail"
+        if passed: passed_w += w
+        cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+        cats[pillar]["total"] += 1
+        if passed: cats[pillar]["passed"] += 1
+        check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                               "status": status, "weight": w, "detail": ""})
+    for c in cats.values():
+        c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+    score = round(passed_w / total_w * 100) if total_w else 0
+    grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+    mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+    mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+    recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+            for c in check_results if c["status"] == "fail"]
+    recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+    return {
+        "score": score, "grade": grade,
+        "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+        "checks": check_results, "categories": cats, "recommendations": recs,
+        "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+        "assessed_at": _utcnow(),
+    }
+
+
+@qdc_bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+def qdc_api_governance(design_id):
+    """Run quality governance framework check."""
+    conn = _get_conn()
+    row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id=?", (design_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Not found"}), 404
+    try:
+        graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+    except (json.JSONDecodeError, TypeError):
+        conn.close()
+        return jsonify({"error": "Invalid graph data"}), 400
+
+    result = _compute_qdc_governance(graph_data)
+
+    assess_id = _gen_id()
+    conn.execute(
+        "INSERT INTO qdc_assessments "
+        "(id, design_id, assessment_type, findings_json, score, uqs_score, "
+        "uqs_breakdown, sa11_mapping, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        (assess_id, design_id, "governance",
+         json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                     for c in result["checks"]]),
+         result["score"], 0.0, json.dumps(result["categories"]), "{}", _utcnow()),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify(result)

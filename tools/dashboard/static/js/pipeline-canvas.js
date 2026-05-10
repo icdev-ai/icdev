@@ -1239,6 +1239,7 @@ function runAnalysis(type) {
       else if (type === 'cost') html = _renderCost(r);
       else if (type === 'execution_time') html = _renderExecTime(r);
       else if (type === 'antipatterns') html = _renderAntipatterns(r);
+      else if (type === 'governance') html = _renderPDCGovernance(r);
       else html = '<pre style="font-size:11px;white-space:pre-wrap;">' + JSON.stringify(r, null, 2) + '</pre>';
       const titles = {
         security_coverage: 'OWASP Top 10 Coverage',
@@ -1247,6 +1248,7 @@ function runAnalysis(type) {
         cost: 'Cost Estimate',
         execution_time: 'Execution Time',
         antipatterns: 'Anti-Pattern Detection',
+        governance: 'Pipeline Governance',
       };
       openRightPanel(titles[type] || type, html);
       updateStatus('Analysis complete');
@@ -1502,6 +1504,39 @@ function _renderAntipatterns(r) {
       html += '</div>';
     });
   });
+  return html;
+}
+
+function _renderPDCGovernance(r) {
+  const score = r.score || 0;
+  const grade = r.grade || '?';
+  const maturity = r.maturity || {};
+  const cats = r.categories || {};
+  const recs = r.recommendations || [];
+  const sColor = score >= 80 ? '#27ae60' : score >= 60 ? '#f39c12' : '#e74c3c';
+
+  let html = `<div style="background:#0f2040;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center;">
+    <div style="font-size:38px;font-weight:700;color:${sColor};">${score}</div>
+    <div style="font-size:11px;color:#7a8cb0;">Pipeline Governance Score / 100 · Grade <strong style="color:${sColor};">${grade}</strong></div>
+  </div>`;
+  html += _bar(score, sColor);
+  html += `<div style="background:#16213e;border:1px solid #9b59b644;border-radius:6px;padding:8px 12px;margin-bottom:12px;">
+    <div style="font-size:12px;font-weight:700;color:#9b59b6;">Level ${maturity.level||1} — ${maturity.label||''}</div>
+    <div style="font-size:10px;color:#5a6e8c;">${maturity.description||''}</div>
+  </div>`;
+  html += `<div style="font-size:11px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Pillars (${r.passed_checks}/${r.total_checks} passed)</div>`;
+  Object.entries(cats).forEach(([pillar, c]) => {
+    const pct = c.pct || 0;
+    const pColor = pct >= 80 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+    html += `<div style="margin-bottom:7px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span style="color:#eaeaea;">${pillar}</span><span style="color:${pColor};font-weight:600;">${pct}% (${c.passed}/${c.total})</span></div>${_bar(pct, pColor)}</div>`;
+  });
+  if (recs.length) {
+    html += `<div style="font-size:11px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px;">Top Recommendations</div>`;
+    recs.slice(0, 6).forEach(rec => {
+      const bColor = rec.priority === 'CAT1' ? '#e74c3c' : rec.priority === 'CAT2' ? '#f39c12' : '#7a8cb0';
+      html += `<div style="padding:5px 8px;border-left:3px solid ${bColor};background:#0d1b2a;border-radius:0 4px 4px 0;margin-bottom:4px;font-size:11px;color:#eaeaea;">${rec.title}</div>`;
+    });
+  }
   return html;
 }
 
