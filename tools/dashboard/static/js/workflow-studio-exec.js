@@ -692,6 +692,107 @@
     if (modal) modal.style.display = '';
   };
 
+  // ── Template Library ─────────────────────────────────────
+  let _templatesLoaded = false;
+
+  function _categoryColor(cat) {
+    const map = {
+      compliance: 'studio-badge--success',
+      security:   'studio-badge--error',
+      devops:     'studio-badge--info',
+      research:   'studio-badge--accent',
+      data:       'studio-badge--warning',
+      ai:         'studio-badge--accent',
+      monitoring: 'studio-badge--info',
+    };
+    return map[(cat || '').toLowerCase()] || 'studio-badge--neutral';
+  }
+
+  StudioWF.loadTemplates = async function() {
+    const grid = $('wf-template-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div class="studio-spinner studio-spinner--lg" style="margin:48px auto;grid-column:1/-1;"></div>';
+    try {
+      const resp = await fetch('/api/studio/workflows/templates');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const templates = data.templates || [];
+
+      const builtinEl  = $('tpl-builtin-count');
+      const communityEl = $('tpl-community-count');
+      const categoryEl  = $('tpl-category-count');
+      if (builtinEl)   builtinEl.textContent  = data.builtin   ?? templates.filter(t => t.author === 'builtin').length;
+      if (communityEl) communityEl.textContent = data.community ?? 0;
+      if (categoryEl)  categoryEl.textContent  = Object.keys(data.categories || {}).length;
+
+      if (!templates.length) {
+        grid.innerHTML = `<div class="studio-empty" style="grid-column:1/-1;">
+          <div class="studio-empty__icon">&#128196;</div>
+          <div class="studio-empty__title">No templates found</div>
+          <div class="studio-empty__description">Add YAML files to context/workflow_templates/</div>
+        </div>`;
+        return;
+      }
+
+      StudioWF._templateCache = {};
+      templates.forEach(t => { StudioWF._templateCache[t.id] = t; });
+
+      grid.innerHTML = templates.map(t => {
+        const badgeCls = _categoryColor(t.category);
+        const tags = (t.tags || []).slice(0, 3).map(tag =>
+          `<span style="display:inline-block;padding:1px 6px;border-radius:3px;
+                  font-size:0.68rem;background:rgba(99,102,241,0.15);
+                  color:var(--studio-accent,#6366f1);margin-right:3px;">${_esc(tag)}</span>`
+        ).join('');
+        return `<div class="studio-card studio-card--interactive">
+          <div class="studio-card__header">
+            <span class="studio-badge ${badgeCls}">${_esc(t.category || 'general')}</span>
+            <span style="font-size:0.75rem;color:var(--studio-text-muted,#94a3b8);">${t.steps_count || 0} step${(t.steps_count || 0) !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="studio-card__body" style="padding:12px 16px;">
+            <div style="font-weight:600;font-size:0.95rem;margin-bottom:4px;">${_esc(t.name)}</div>
+            <div style="font-size:0.8rem;color:var(--studio-text-muted,#94a3b8);min-height:32px;margin-bottom:8px;">${_esc(t.description || '')}</div>
+            <div>${tags}</div>
+          </div>
+          <div class="studio-card__footer" style="padding:8px 16px;">
+            <button class="studio-btn studio-btn--primary studio-btn--sm"
+                    data-tpl-id="${_esc(t.id)}"
+                    onclick="StudioWF._installTemplateById(this)">&#128229; Load</button>
+          </div>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      grid.innerHTML = `<div class="studio-empty" style="grid-column:1/-1;color:#ef4444;">Failed to load templates: ${_esc(e.message)}</div>`;
+    }
+  };
+
+  StudioWF._installTemplateById = function(btn) {
+    const id = btn.dataset.tplId;
+    const t = (StudioWF._templateCache || {})[id];
+    if (!t) { StudioWF._toast('Template data not found', 'error'); return; }
+    StudioWF.installTemplate(t);
+  };
+
+  StudioWF.installTemplate = function(t) {
+    const inp = $('wf-yaml-input');
+    if (inp) inp.value = t.yaml || '';
+    if (StudioWF.doImportYAML) StudioWF.doImportYAML(t.yaml);
+
+    const nameEl = $('wf-name');
+    if (nameEl) nameEl.value = t.name || 'Untitled Workflow';
+
+    const editorTab = document.querySelector('[data-tab="editor"]');
+    if (editorTab) StudioWF.switchTab && StudioWF.switchTab(editorTab);
+
+    _currentWorkflowId = null;
+    const runBtn = $('wf-run-btn');
+    const codeBtn = $('wf-gen-code-btn');
+    if (runBtn) runBtn.style.display = 'none';
+    if (codeBtn) codeBtn.style.display = 'none';
+
+    StudioWF._toast(`Template "${t.name}" loaded — edit and save to run.`, 'success');
+  };
+
   // ── Hook into switchTab for auto-load per tab ────────────
   const _origSwitchTab = StudioWF.switchTab;
   StudioWF.switchTab = function(el) {
@@ -699,6 +800,10 @@
     if (el && el.dataset) {
       if (el.dataset.tab === 'runs')  StudioWF.loadRunHistory();
       if (el.dataset.tab === 'saved') StudioWF.loadSavedWorkflows();
+      if (el.dataset.tab === 'templates' && !_templatesLoaded) {
+        _templatesLoaded = true;
+        StudioWF.loadTemplates();
+      }
     }
   };
 
