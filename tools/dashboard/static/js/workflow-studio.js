@@ -108,7 +108,7 @@ const StudioWF = (() => {
       deploy: '&#9729;', devsecops: '&#128737;&#128274;', requirements: '&#128203;',
       mbse: '&#128208;', modernization: '&#128260;', maintenance: '&#128295;',
       monitoring: '&#128200;', analysis: '&#128161;', knowledge: '&#128218;',
-      govcon: '&#128188;', test: '&#9888;'
+      govcon: '&#128188;', telecom: '&#128225;', test: '&#9888;'
     };
     return icons[color] || '&#9632;';
   }

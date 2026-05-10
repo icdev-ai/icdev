@@ -3310,6 +3310,43 @@ projects:
     title: Navigation, Redirect, V&V
     priority: high
 
+- key: wex
+  name: Workflow Execution — Run Engine, Code Gen, Canvas Integration, Chat-to-Workflow
+  description: >
+    Closes the Studio Workflows execution gap. Phase 1: per-run SSE execution engine
+    (workflow_runner.py wraps workflow_composer.execute_workflow step-by-step, emits events
+    to a per-run queue, live node coloring in UI). Phase 2: standalone Python script
+    code generation. Phase 3: canvas integration (12 canvases). Phase 4: chat-to-workflow
+    (Ollama/Qwen3 generates YAML from natural language, embedded chat panel in Studio).
+  task_prefix: wex-
+  default_open: true
+  briefs:
+  - 'ep1: studio_workflow_runs + studio_workflow_run_steps tables in studio/init_db.py'
+  - 'ep2: tools/studio/workflow_runner.py — per-run queue, SSE stream, DB persistence'
+  - 'ep3: API routes — POST /run, GET /runs/{id}/stream, GET /runs, GET /runs/{id}/steps, POST /generate-code'
+  - 'ep4: tools/studio/workflow_chat.py — LLMRouter + tool catalog system prompt → YAML generation'
+  - 'ep5: API route — POST /api/studio/chat/generate-workflow'
+  - 'ep6: UI — Run btn, Export as Script, chat panel, progress bar, node status colors, output drawer, run history'
+  epics:
+  - key: ep1
+    title: DB — studio_workflow_runs + studio_workflow_run_steps tables
+    priority: critical
+  - key: ep2
+    title: Engine — workflow_runner.py (per-run SSE + DB)
+    priority: critical
+  - key: ep3
+    title: API — run + stream + history + generate-code endpoints
+    priority: critical
+  - key: ep4
+    title: Chat Engine — workflow_chat.py (Ollama YAML generation)
+    priority: critical
+  - key: ep5
+    title: Chat API — POST /api/studio/chat/generate-workflow
+    priority: high
+  - key: ep6
+    title: UI — Run button + SSE client + chat panel + node status + output drawer
+    priority: critical
+
 - key: ai-trace
   name: AI Traceability, Observability & Visibility — Canvas-Wide Gap Remediation
   description: >
