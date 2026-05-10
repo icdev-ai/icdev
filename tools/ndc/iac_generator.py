@@ -311,87 +311,89 @@ az_secondary     = "us-gov-west-1b"
 # db_password and dw_password injected via CI/CD TFVARS_DEFAULTS
 '''
 
-_ANSIBLE_PLAYBOOK = '''\
----
-# Ansible Playbook — NDC Network Device Configuration
-# Generated: {ts}
-# Run after: terraform apply
-
-- name: NDC Network Post-Provisioning Configuration
-  hosts: network_devices
-  become: true
-  gather_facts: true
-
-  vars:
-    ntp_servers:
-      - 169.254.169.123  # AWS Time Sync Service (GovCloud)
-    syslog_server: "{{ syslog_endpoint | default('localhost') }}"
-
-  tasks:
-    - name: Configure NTP servers
-      ansible.builtin.copy:
-        dest: /etc/chrony.conf
-        content: |
-          {% for ntp in ntp_servers %}
-          server {{ ntp }} iburst
-          {% endfor %}
-          driftfile /var/lib/chrony/drift
-          makestep 1.0 3
-          rtcsync
-          logdir /var/log/chrony
-        mode: "0644"
-      notify: restart chronyd
-
-    - name: Configure rsyslog for centralized logging
-      ansible.builtin.copy:
-        dest: /etc/rsyslog.d/50-remote.conf
-        content: |
-          *.* @{{ syslog_server }}:514
-          $ActionQueueType LinkedList
-          $ActionQueueMaxDiskSpace 1g
-          $ActionQueueSaveOnShutdown on
-          $ActionResumeRetryCount -1
-        mode: "0644"
-      notify: restart rsyslog
-
-    - name: Apply network kernel hardening parameters
-      ansible.posix.sysctl:
-        name: "{{ item.name }}"
-        value: "{{ item.value }}"
-        sysctl_set: true
-        state: present
-        reload: true
-      loop:
-        - {{ name: "net.ipv4.conf.all.rp_filter", value: "1" }}
-        - {{ name: "net.ipv4.conf.default.rp_filter", value: "1" }}
-        - {{ name: "net.ipv4.conf.all.accept_redirects", value: "0" }}
-        - {{ name: "net.ipv4.conf.default.accept_redirects", value: "0" }}
-        - {{ name: "net.ipv4.conf.all.secure_redirects", value: "0" }}
-        - {{ name: "net.ipv4.conf.default.secure_redirects", value: "0" }}
-        - {{ name: "net.ipv4.icmp_echo_ignore_broadcasts", value: "1" }}
-
-    - name: Verify VPC ID stored in SSM
-      ansible.builtin.command:
-        cmd: aws ssm get-parameter --name "/icdev/{{ lookup('env','ENVIRONMENT') | default('dev') }}/network/vpc_id"
-      register: vpc_ssm_check
-      changed_when: false
-      ignore_errors: true
-
-    - name: Report SSM VPC ID status
-      ansible.builtin.debug:
-        msg: "SSM VPC ID parameter: {{ 'OK' if vpc_ssm_check.rc == 0 else 'MISSING' }}"
-
-  handlers:
-    - name: restart chronyd
-      ansible.builtin.systemd:
-        name: chronyd
-        state: restarted
-
-    - name: restart rsyslog
-      ansible.builtin.systemd:
-        name: rsyslog
-        state: restarted
-'''
+def _build_ansible_playbook_ndc(ts: str) -> str:
+    # Written as a function to avoid .format() conflicts with Jinja2 {{ }} syntax
+    return (
+        "---\n"
+        "# Ansible Playbook — NDC Network Device Configuration\n"
+        "# Generated: " + ts + "\n"
+        "# Run after: terraform apply\n"
+        "\n"
+        "- name: NDC Network Post-Provisioning Configuration\n"
+        "  hosts: network_devices\n"
+        "  become: true\n"
+        "  gather_facts: true\n"
+        "\n"
+        "  vars:\n"
+        "    ntp_servers:\n"
+        "      - 169.254.169.123  # AWS Time Sync Service (GovCloud)\n"
+        "    syslog_server: \"{{ syslog_endpoint | default('localhost') }}\"\n"
+        "\n"
+        "  tasks:\n"
+        "    - name: Configure NTP servers\n"
+        "      ansible.builtin.copy:\n"
+        "        dest: /etc/chrony.conf\n"
+        "        content: |\n"
+        "          {% for ntp in ntp_servers %}\n"
+        "          server {{ ntp }} iburst\n"
+        "          {% endfor %}\n"
+        "          driftfile /var/lib/chrony/drift\n"
+        "          makestep 1.0 3\n"
+        "          rtcsync\n"
+        "          logdir /var/log/chrony\n"
+        "        mode: \"0644\"\n"
+        "      notify: restart chronyd\n"
+        "\n"
+        "    - name: Configure rsyslog for centralized logging\n"
+        "      ansible.builtin.copy:\n"
+        "        dest: /etc/rsyslog.d/50-remote.conf\n"
+        "        content: |\n"
+        "          *.* @{{ syslog_server }}:514\n"
+        "          $ActionQueueType LinkedList\n"
+        "          $ActionQueueMaxDiskSpace 1g\n"
+        "          $ActionQueueSaveOnShutdown on\n"
+        "          $ActionResumeRetryCount -1\n"
+        "        mode: \"0644\"\n"
+        "      notify: restart rsyslog\n"
+        "\n"
+        "    - name: Apply network kernel hardening parameters\n"
+        "      ansible.posix.sysctl:\n"
+        "        name: \"{{ item.name }}\"\n"
+        "        value: \"{{ item.value }}\"\n"
+        "        sysctl_set: true\n"
+        "        state: present\n"
+        "        reload: true\n"
+        "      loop:\n"
+        "        - { name: \"net.ipv4.conf.all.rp_filter\", value: \"1\" }\n"
+        "        - { name: \"net.ipv4.conf.default.rp_filter\", value: \"1\" }\n"
+        "        - { name: \"net.ipv4.conf.all.accept_redirects\", value: \"0\" }\n"
+        "        - { name: \"net.ipv4.conf.default.accept_redirects\", value: \"0\" }\n"
+        "        - { name: \"net.ipv4.conf.all.secure_redirects\", value: \"0\" }\n"
+        "        - { name: \"net.ipv4.conf.default.secure_redirects\", value: \"0\" }\n"
+        "        - { name: \"net.ipv4.icmp_echo_ignore_broadcasts\", value: \"1\" }\n"
+        "\n"
+        "    - name: Verify VPC ID stored in SSM\n"
+        "      ansible.builtin.command:\n"
+        "        cmd: aws ssm get-parameter --name \"/icdev/{{ lookup('env','ENVIRONMENT') | default('dev') }}/network/vpc_id\"\n"
+        "      register: vpc_ssm_check\n"
+        "      changed_when: false\n"
+        "      ignore_errors: true\n"
+        "\n"
+        "    - name: Report SSM VPC ID status\n"
+        "      ansible.builtin.debug:\n"
+        "        msg: \"SSM VPC ID parameter: {{ 'OK' if vpc_ssm_check.rc == 0 else 'MISSING' }}\"\n"
+        "\n"
+        "  handlers:\n"
+        "    - name: restart chronyd\n"
+        "      ansible.builtin.systemd:\n"
+        "        name: chronyd\n"
+        "        state: restarted\n"
+        "\n"
+        "    - name: restart rsyslog\n"
+        "      ansible.builtin.systemd:\n"
+        "        name: rsyslog\n"
+        "        state: restarted\n"
+    )
 
 _VALIDATION_SCRIPT = '''\
 #!/usr/bin/env python3
@@ -591,7 +593,7 @@ def main():
         tf_main_path.write_text(_TF_MAIN.format(ts=ts), encoding="utf-8")
         tf_vars_path.write_text(_TF_VARIABLES, encoding="utf-8")
         tf_tfvars_path.write_text(_TFVARS_EXAMPLE, encoding="utf-8")
-        ansible_path.write_text(_ANSIBLE_PLAYBOOK.format(ts=ts), encoding="utf-8")
+        ansible_path.write_text(_build_ansible_playbook_ndc(ts), encoding="utf-8")
         validate_path.write_text(_VALIDATION_SCRIPT.format(ts=ts, uid=uid), encoding="utf-8")
         report_path.write_text(_IAC_REPORT.format(
             ts=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),

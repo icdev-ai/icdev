@@ -542,11 +542,11 @@ def main():
     try:
         cp = session.client("codepipeline")
         pipeline = cp.get_pipeline(name=args.pipeline_name)
-        ok = check(f"CodePipeline ({args.pipeline_name})", bool(pipeline.get("pipeline")))
+        ok = check("CodePipeline (" + args.pipeline_name + ")", bool(pipeline.get("pipeline")))
         passed += ok
         failed += not ok
     except Exception as e:
-        ok = check(f"CodePipeline ({args.pipeline_name})", False, str(e))
+        ok = check("CodePipeline (" + args.pipeline_name + ")", False, str(e))
         passed += ok
         failed += not ok
 
@@ -555,7 +555,7 @@ def main():
         cb = session.client("codebuild")
         projects = cb.list_projects()["projects"]
         build_found = any(args.pipeline_name in p for p in projects)
-        ok = check("CodeBuild projects", build_found, f"{len(projects)} total projects")
+        ok = check("CodeBuild projects", build_found, str(len(projects)) + " total projects")
         passed += ok
         failed += not ok
     except Exception as e:
@@ -567,11 +567,11 @@ def main():
     try:
         ecr = session.client("ecr")
         repos = ecr.describe_repositories(repositoryNames=[args.ecr_repo])["repositories"]
-        ok = check(f"ECR repository ({args.ecr_repo})", bool(repos))
+        ok = check("ECR repository (" + args.ecr_repo + ")", bool(repos))
         passed += ok
         failed += not ok
     except Exception as e:
-        ok = check(f"ECR repository ({args.ecr_repo})", False, str(e))
+        ok = check("ECR repository (" + args.ecr_repo + ")", False, str(e))
         passed += ok
         failed += not ok
 
@@ -581,9 +581,9 @@ def main():
         import boto3
         sts = session.client("sts")
         account_id = sts.get_caller_identity()["Account"]
-        bucket = f"{args.pipeline_name}-artifacts-{account_id}"
+        bucket = args.pipeline_name + "-artifacts-" + account_id
         s3.head_bucket(Bucket=bucket)
-        ok = check(f"S3 artifact bucket ({bucket})", True)
+        ok = check("S3 artifact bucket (" + bucket + ")", True)
         passed += ok
         failed += not ok
     except Exception as e:
