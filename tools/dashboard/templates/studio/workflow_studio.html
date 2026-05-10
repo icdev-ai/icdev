@@ -45,160 +45,148 @@
   <!-- Tab: Editor -->
   <div class="studio-tab-panel" id="panel-editor">
     <div class="wf-studio" id="wf-studio-layout">
-      <!-- Toolbar -->
+
+      <!-- Toolbar (grid col 1/-1, row 1) — two sub-rows: button bar + run bar -->
       <div class="wf-studio__toolbar">
-        <input type="text" class="studio-input" id="wf-name"
-               placeholder="Workflow name..." value="Untitled Workflow"
-               style="max-width:260px; font-weight:600;">
-        <div class="studio-toolbar__separator"></div>
-        <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
-                data-tooltip="Undo" onclick="StudioWF.undo()">&#8630;</button>
-        <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
-                data-tooltip="Redo" onclick="StudioWF.redo()">&#8631;</button>
-        <div class="studio-toolbar__separator"></div>
-        <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
-                data-tooltip="Zoom In" onclick="StudioWF.zoomIn()">&#43;</button>
-        <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
-                data-tooltip="Zoom Out" onclick="StudioWF.zoomOut()">&#8722;</button>
-        <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
-                data-tooltip="Fit View" onclick="StudioWF.fitView()">&#9634;</button>
-        <div class="studio-toolbar__spacer"></div>
-        <span class="studio-badge studio-badge--neutral" id="wf-node-count">0 steps</span>
-        <button class="studio-btn studio-btn--secondary" onclick="StudioWF.validate()">
-          &#10003; Validate
-        </button>
-        <button class="studio-btn studio-btn--secondary" onclick="StudioWF.exportYAML()">
-          &#128190; Export YAML
-        </button>
-        <button class="studio-btn studio-btn--secondary" id="wf-gen-code-btn"
-                onclick="StudioWF.generateCode()" title="Download standalone Python script"
-                style="display:none;">
-          &#128196; Script
-        </button>
-        <button class="studio-btn studio-btn--secondary" onclick="window.print()" title="Print workflow diagram">
-          &#128438; Print
-        </button>
-        <!-- Chat toggle -->
-        <button class="studio-btn studio-btn--secondary" id="wf-chat-toggle-btn"
-                onclick="StudioWF.toggleChat()" title="AI Workflow Builder Chat"
-                style="border-color:var(--studio-accent,#6366f1);color:var(--studio-accent,#6366f1);">
-          &#129504; AI Chat
-        </button>
-        <button class="studio-btn studio-btn--primary" onclick="StudioWF.save()">
-          Save Workflow
-        </button>
-        <!-- Run button — shown after first save -->
-        <button class="studio-btn studio-btn--success" id="wf-run-btn"
-                onclick="StudioWF.run()" title="Run workflow"
-                style="display:none; background:#22c55e; border-color:#22c55e; color:#fff; font-weight:700;">
-          &#9654; Run
-        </button>
+        <div class="wf-studio__toolbar-row">
+          <input type="text" class="studio-input" id="wf-name"
+                 placeholder="Workflow name..." value="Untitled Workflow"
+                 style="max-width:260px; font-weight:600;">
+          <div class="studio-toolbar__separator"></div>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+                  data-tooltip="Undo" onclick="StudioWF.undo()">&#8630;</button>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+                  data-tooltip="Redo" onclick="StudioWF.redo()">&#8631;</button>
+          <div class="studio-toolbar__separator"></div>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+                  data-tooltip="Zoom In" onclick="StudioWF.zoomIn()">&#43;</button>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+                  data-tooltip="Zoom Out" onclick="StudioWF.zoomOut()">&#8722;</button>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+                  data-tooltip="Fit View" onclick="StudioWF.fitView()">&#9634;</button>
+          <div class="studio-toolbar__spacer"></div>
+          <span class="studio-badge studio-badge--neutral" id="wf-node-count">0 steps</span>
+          <button class="studio-btn studio-btn--secondary" onclick="StudioWF.validate()">
+            &#10003; Validate
+          </button>
+          <button class="studio-btn studio-btn--secondary" onclick="StudioWF.exportYAML()">
+            &#128190; Export YAML
+          </button>
+          <button class="studio-btn studio-btn--secondary" id="wf-gen-code-btn"
+                  onclick="StudioWF.generateCode()" title="Download standalone Python script"
+                  style="display:none;">
+            &#128196; Script
+          </button>
+          <button class="studio-btn studio-btn--secondary" onclick="window.print()" title="Print workflow diagram">
+            &#128438; Print
+          </button>
+          <button class="studio-btn studio-btn--secondary" id="wf-chat-toggle-btn"
+                  onclick="StudioWF.toggleChat()" title="AI Workflow Builder Chat"
+                  style="border-color:var(--studio-accent,#6366f1);color:var(--studio-accent,#6366f1);">
+            &#129504; AI Chat
+          </button>
+          <button class="studio-btn studio-btn--primary" onclick="StudioWF.save()">
+            Save Workflow
+          </button>
+          <button class="studio-btn studio-btn--success" id="wf-run-btn"
+                  onclick="StudioWF.run()" title="Run workflow"
+                  style="display:none; background:#22c55e; border-color:#22c55e; color:#fff; font-weight:700;">
+            &#9654; Run
+          </button>
+        </div><!-- end toolbar-row -->
+
+        <!-- Run progress bar — hidden until a run is active -->
+        <div id="wf-run-bar">
+          <span id="wf-run-label" style="font-size:0.8rem; color:var(--studio-text-muted,#94a3b8); min-width:160px;"></span>
+          <div style="flex:1; height:6px; background:var(--studio-border,#2d3047); border-radius:3px; overflow:hidden;">
+            <div id="wf-run-progress" style="height:100%; width:0%; background:#6366f1;
+                 border-radius:3px; transition:width 0.3s ease;"></div>
+          </div>
+          <span id="wf-run-fraction" style="font-size:0.75rem; color:var(--studio-text-muted,#94a3b8);"></span>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm" id="wf-run-stop-btn"
+                  onclick="StudioWF.stopRun()" style="padding:2px 8px; font-size:0.75rem;">&#9632; Stop</button>
+        </div>
+      </div><!-- end toolbar -->
+
+      <!-- Tool Palette (grid col 1, row 2) -->
+      <div class="wf-studio__palette" id="wf-palette">
+        <div class="wf-studio__palette-header">
+          <span class="wf-palette-title">Tool Palette</span>
+          <button id="wf-palette-toggle" class="wf-palette-toggle-btn"
+                  onclick="StudioWF.togglePalette()" title="Toggle palette">«</button>
+        </div>
+        <div class="wf-studio__palette-search">
+          <input type="text" class="studio-input"
+                 placeholder="Search tools..." id="wf-tool-search"
+                 oninput="StudioWF.filterTools(this.value)">
+        </div>
+        <div id="wf-palette-groups">
+          <div class="studio-empty" style="padding:32px 16px;">
+            <div class="studio-spinner"></div>
+            <div class="studio-text-muted studio-mt-4" style="font-size:0.75rem;">Loading tools...</div>
+          </div>
+        </div>
       </div>
 
-      <!-- Run Progress Bar (hidden until run starts) -->
-      <div id="wf-run-bar" style="display:none; padding:6px 16px; background:var(--studio-bg-elevated,#1e2030);
-           border-bottom:1px solid var(--studio-border,#2d3047); display:none; align-items:center; gap:12px;">
-        <span id="wf-run-label" style="font-size:0.8rem; color:var(--studio-text-muted,#94a3b8); min-width:160px;"></span>
-        <div style="flex:1; height:6px; background:var(--studio-border,#2d3047); border-radius:3px; overflow:hidden;">
-          <div id="wf-run-progress" style="height:100%; width:0%; background:#6366f1;
-               border-radius:3px; transition:width 0.3s ease;"></div>
+      <!-- Canvas (grid col 2, row 2) -->
+      <div class="wf-canvas" id="wf-canvas"
+           ondragover="event.preventDefault()"
+           ondrop="StudioWF.handleDrop(event)">
+        <svg class="wf-canvas__svg" id="wf-edges"></svg>
+        <div id="wf-nodes"></div>
+        <div class="studio-empty" id="wf-empty-state">
+          <div class="studio-empty__icon">&#128640;</div>
+          <div class="studio-empty__title">Start Building</div>
+          <div class="studio-empty__description">
+            Drag tools from the palette, start from a template,<br>
+            or use <strong>AI Chat</strong> to describe your workflow.
+          </div>
+          <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
+            <button class="studio-btn studio-btn--primary" onclick="StudioWF.loadTemplate()">
+              Browse Templates
+            </button>
+            <button class="studio-btn studio-btn--secondary"
+                    onclick="StudioWF.toggleChat()"
+                    style="border-color:var(--studio-accent,#6366f1);color:var(--studio-accent,#6366f1);">
+              &#129504; AI Chat
+            </button>
+          </div>
         </div>
-        <span id="wf-run-fraction" style="font-size:0.75rem; color:var(--studio-text-muted,#94a3b8);"></span>
-        <button class="studio-btn studio-btn--ghost studio-btn--sm" id="wf-run-stop-btn"
-                onclick="StudioWF.stopRun()" style="padding:2px 8px; font-size:0.75rem;">&#9632; Stop</button>
       </div>
 
-      <!-- Main layout: palette + canvas + chat panel -->
-      <div style="display:flex; flex:1; overflow:hidden; position:relative;">
-
-        <!-- Tool Palette -->
-        <div class="wf-studio__palette" id="wf-palette">
-          <div class="wf-studio__palette-header">
-            <span class="wf-palette-title">Tool Palette</span>
-            <button id="wf-palette-toggle" class="wf-palette-toggle-btn"
-                    onclick="StudioWF.togglePalette()" title="Toggle palette">«</button>
-          </div>
-          <div class="wf-studio__palette-search">
-            <input type="text" class="studio-input studio-input"
-                   placeholder="Search tools..." id="wf-tool-search"
-                   oninput="StudioWF.filterTools(this.value)">
-          </div>
-          <div id="wf-palette-groups">
-            <div class="studio-empty" style="padding:32px 16px;">
-              <div class="studio-spinner"></div>
-              <div class="studio-text-muted studio-mt-4" style="font-size:0.75rem;">Loading tools...</div>
-            </div>
+      <!-- Chat Panel (grid col 3, row 2) — shown via .wf-studio--chat-open on parent -->
+      <div id="wf-chat-panel">
+        <div style="padding:12px 16px; border-bottom:1px solid var(--studio-border,#2d3047);
+             display:flex; align-items:center; justify-content:space-between;">
+          <div style="font-weight:600; font-size:0.9rem;">&#129504; AI Workflow Builder</div>
+          <button class="studio-btn studio-btn--ghost studio-btn--sm"
+                  onclick="StudioWF.toggleChat()">&#10005;</button>
+        </div>
+        <div id="wf-chat-messages" style="flex:1; overflow-y:auto; padding:12px 16px; display:flex;
+             flex-direction:column; gap:10px; font-size:0.82rem; min-height:0;">
+          <div class="wf-chat-msg wf-chat-msg--assistant" style="
+              background:rgba(99,102,241,0.08); border-radius:8px; padding:10px 12px;
+              border:1px solid rgba(99,102,241,0.15);">
+            Describe the workflow you want to build and I'll generate it for you.<br><br>
+            <em style="color:var(--studio-text-muted,#94a3b8); font-size:0.78rem;">
+              Example: "ATO pipeline — FIPS categorization, multi-framework assessment, ISSO approval, then SSP and SBOM generation"
+            </em>
           </div>
         </div>
-
-        <!-- Canvas -->
-        <div class="wf-canvas" id="wf-canvas"
-             ondragover="event.preventDefault()"
-             ondrop="StudioWF.handleDrop(event)">
-          <svg class="wf-canvas__svg" id="wf-edges"></svg>
-          <div id="wf-nodes">
-            <!-- Nodes rendered by JS -->
-          </div>
-          <!-- Empty state -->
-          <div class="studio-empty" id="wf-empty-state">
-            <div class="studio-empty__icon">&#128640;</div>
-            <div class="studio-empty__title">Start Building</div>
-            <div class="studio-empty__description">
-              Drag tools from the palette, start from a template,<br>
-              or use <strong>AI Chat</strong> to describe your workflow.
-            </div>
-            <div style="display:flex; gap:8px; justify-content:center; margin-top:12px;">
-              <button class="studio-btn studio-btn--primary" onclick="StudioWF.loadTemplate()">
-                Browse Templates
-              </button>
-              <button class="studio-btn studio-btn--secondary"
-                      onclick="StudioWF.toggleChat()"
-                      style="border-color:var(--studio-accent,#6366f1);color:var(--studio-accent,#6366f1);">
-                &#129504; AI Chat
-              </button>
-            </div>
+        <div style="padding:10px 12px; border-top:1px solid var(--studio-border,#2d3047);">
+          <textarea id="wf-chat-input" class="studio-input studio-textarea"
+                    rows="3" placeholder="Describe your workflow..."
+                    style="font-size:0.82rem; resize:none; margin-bottom:8px;"
+                    onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){StudioWF.sendChatMessage();}"></textarea>
+          <div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
+            <span id="wf-chat-status" style="font-size:0.75rem; color:var(--studio-text-muted,#94a3b8);"></span>
+            <button class="studio-btn studio-btn--primary studio-btn--sm"
+                    onclick="StudioWF.sendChatMessage()" id="wf-chat-send">
+              Send
+            </button>
           </div>
         </div>
-
-        <!-- Chat Panel (right drawer) -->
-        <div id="wf-chat-panel" style="
-            width:0; overflow:hidden; transition:width 0.25s ease;
-            background:var(--studio-bg-elevated,#1e2030);
-            border-left:1px solid var(--studio-border,#2d3047);
-            display:flex; flex-direction:column; flex-shrink:0;">
-          <div style="padding:12px 16px; border-bottom:1px solid var(--studio-border,#2d3047);
-               display:flex; align-items:center; justify-content:space-between;">
-            <div style="font-weight:600; font-size:0.9rem;">&#129504; AI Workflow Builder</div>
-            <button class="studio-btn studio-btn--ghost studio-btn--sm"
-                    onclick="StudioWF.toggleChat()">&#10005;</button>
-          </div>
-          <div id="wf-chat-messages" style="flex:1; overflow-y:auto; padding:12px 16px; display:flex;
-               flex-direction:column; gap:10px; font-size:0.82rem; min-height:0;">
-            <div class="wf-chat-msg wf-chat-msg--assistant" style="
-                background:rgba(99,102,241,0.08); border-radius:8px; padding:10px 12px;
-                border:1px solid rgba(99,102,241,0.15);">
-              Describe the workflow you want to build and I'll generate it for you.<br><br>
-              <em style="color:var(--studio-text-muted,#94a3b8); font-size:0.78rem;">
-                Example: "ATO pipeline — FIPS categorization, multi-framework assessment, ISSO approval, then SSP and SBOM generation"
-              </em>
-            </div>
-          </div>
-          <div style="padding:10px 12px; border-top:1px solid var(--studio-border,#2d3047);">
-            <textarea id="wf-chat-input" class="studio-input studio-textarea"
-                      rows="3" placeholder="Describe your workflow..."
-                      style="font-size:0.82rem; resize:none; margin-bottom:8px;"
-                      onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){StudioWF.sendChatMessage();}"></textarea>
-            <div style="display:flex; gap:6px; justify-content:flex-end; align-items:center;">
-              <span id="wf-chat-status" style="font-size:0.75rem; color:var(--studio-text-muted,#94a3b8);"></span>
-              <button class="studio-btn studio-btn--primary studio-btn--sm"
-                      onclick="StudioWF.sendChatMessage()" id="wf-chat-send">
-                Send
-              </button>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- end main layout -->
+      </div><!-- end chat panel -->
 
     </div><!-- end wf-studio -->
 

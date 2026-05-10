@@ -256,6 +256,70 @@ DATA_OBJECTS = {
             "desc": "Integrates with external data catalogs (Collibra/Alation pattern) — bridges catalog metadata into ICDEV lineage graph",
         },
     ],
+    "data_science": [
+        {
+            "type": "ent-feature-store",
+            "label": "Feature Store",
+            "icon": "FS",
+            "desc": "Online/offline feature store for ML models (Feast/Tecton/SageMaker Feature Store)",
+        },
+        {
+            "type": "ent-model-registry",
+            "label": "Model Registry",
+            "icon": "MR",
+            "desc": "ML model artifact store with versioning, lineage, and lifecycle stages (MLflow/SageMaker/Vertex AI)",
+        },
+        {
+            "type": "ent-dataset",
+            "label": "Training Dataset",
+            "icon": "DST",
+            "desc": "Labeled dataset for supervised/unsupervised learning — train/val/test splits with provenance tracking",
+        },
+        {
+            "type": "ent-experiment",
+            "label": "Experiment Run",
+            "icon": "EXP",
+            "desc": "ML experiment with hyperparameters, metrics, and artifact tracking (MLflow/Weights & Biases)",
+        },
+        {
+            "type": "ent-ml-pipeline",
+            "label": "ML Pipeline",
+            "icon": "MLP",
+            "desc": "Orchestrated ML workflow (Kubeflow Pipelines/SageMaker Pipelines/Vertex AI Pipelines)",
+        },
+    ],
+    "data_mesh": [
+        {
+            "type": "ent-data-product",
+            "label": "Data Product",
+            "icon": "DP",
+            "desc": "Self-contained, self-describing data mesh product with input/output ports and SLA guarantees",
+        },
+        {
+            "type": "ent-domain",
+            "label": "Data Domain",
+            "icon": "DOM",
+            "desc": "Organizational data domain with ownership, stewardship, and bounded context definition",
+        },
+        {
+            "type": "ent-contract",
+            "label": "Data Contract",
+            "icon": "DCT",
+            "desc": "ODCS/bitol-io data contract — schema, SLA, quality rules, and ownership terms",
+        },
+        {
+            "type": "ent-input-port",
+            "label": "Input Port",
+            "icon": "INP",
+            "desc": "Data product input port — CDC, API, or batch ingest interface with schema enforcement",
+        },
+        {
+            "type": "ent-output-port",
+            "label": "Output Port",
+            "icon": "OTP",
+            "desc": "Data product output port — REST API, export file, or streaming interface with SLA tracking",
+        },
+    ],
 }
 
 # Classification levels for data objects
