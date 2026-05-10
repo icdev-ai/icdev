@@ -1919,7 +1919,8 @@
         .then(function (r) { return r.json(); })
         .then(function (data) {
             if (data.error) {
-                appendMessage({ role: 'system', content: 'Error creating intake session: ' + data.error });
+                console.error('[ICDEV] Intake session error:', data.error);
+                appendMessage({ role: 'system', content: 'Could not start your session. Please refresh the page or create a new conversation. If this keeps happening, contact your administrator.' });
                 return;
             }
             var intakeSessionId = data.session_id;
@@ -1935,7 +1936,8 @@
                 system_prompt: 'RICOAS intake session: ' + intakeSessionId
             }).then(function (ctx) {
                 if (ctx.error) {
-                    appendMessage({ role: 'system', content: 'Error creating chat context: ' + ctx.error });
+                    console.error('[ICDEV] Chat context creation error:', ctx.error);
+                    appendMessage({ role: 'system', content: 'Could not start your session. Please refresh the page or create a new conversation. If this keeps happening, contact your administrator.' });
                     return;
                 }
                 // Step 3: Store mapping locally
@@ -1959,7 +1961,8 @@
             });
         })
         .catch(function (err) {
-            appendMessage({ role: 'system', content: 'Connection error: ' + err.message });
+            console.error('[ICDEV] Intake session connection error:', err);
+            appendMessage({ role: 'system', content: 'Could not start your session. Please refresh the page or create a new conversation. If this keeps happening, contact your administrator.' });
         });
     }
 

@@ -1720,4 +1720,105 @@ def create_observability_blueprint():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    def _compute_odc_governance(graph_data: dict) -> dict:
+        """Observability governance check — DORA / SRE / OpenTelemetry aligned."""
+        nodes = graph_data.get("nodes", [])
+        types = [n.get("type", "").lower() for n in nodes]
+        labels = [str(n.get("label", "")).lower() for n in nodes]
+
+        def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in types)
+        def _lbl(*kws): return any(kw in l for l in labels for kw in kws)
+
+        CHECKS = [
+            ("Metrics Collection",            "Metrics Coverage",   "CAT1", _any("plt-prom","plt-datadog","plt-otel","src-") or _lbl("prometheus","metrics","statsd","telegraf","otel")),
+            ("Time-Series Database",          "Metrics Coverage",   "CAT2", _any("plt-influx","plt-victoria","plt-thanos") or _lbl("influxdb","victoria","thanos","timescale","tsdb")),
+            ("Dashboard / Visualization",     "Metrics Coverage",   "CAT2", _any("plt-grafana","plt-kibana","plt-dd") or _lbl("grafana","kibana","dashboard","panel","visualization")),
+            ("Log Aggregation",               "Log Management",     "CAT1", _any("plt-elk","plt-loki","plt-splunk","plt-cwl") or _lbl("logstash","loki","splunk","fluentd","fluentbit","log aggr")),
+            ("Structured Logging",            "Log Management",     "CAT2", _lbl("structured log","json log","log format","log schema")),
+            ("Log Retention Policy",          "Log Management",     "CAT2", _lbl("retention","log lifecycle","archive","cold storage","s3 log")),
+            ("Distributed Tracing",           "Tracing & APM",      "CAT1", _any("plt-jaeger","plt-zipkin","plt-tempo","plt-otel") or _lbl("jaeger","zipkin","tempo","tracing","trace id","span")),
+            ("APM / Profiling",               "Tracing & APM",      "CAT2", _any("plt-newrelic","plt-dynatrace","plt-appdyn") or _lbl("apm","profil","newrelic","dynatrace","appdynamics")),
+            ("SLO / SLA Definitions",         "SLO Governance",     "CAT1", _lbl("slo","sla","objective","error budget","burn rate")),
+            ("SLI Instrumentation",           "SLO Governance",     "CAT2", _lbl("sli","indicator","latency","throughput","availability","error rate")),
+            ("On-Call / Alerting",            "Alerting & Response","CAT1", _any("auto-pg","auto-og","auto-pagerduty") or _lbl("pagerduty","opsgenie","alert","on-call","incident")),
+            ("Alert Deduplication / Routing", "Alerting & Response","CAT2", _lbl("alertmanager","dedup","route","silence","inhibit")),
+            ("Anomaly Detection",             "Alerting & Response","CAT2", _lbl("anomaly","ml detect","outlier","forecast","trend")),
+            ("Synthetic Monitoring",          "Alerting & Response","CAT3", _lbl("synthetic","canary","blackbox","heartbeat","probe","uptime")),
+            ("Runbook Automation",            "SLO Governance",     "CAT3", _lbl("runbook","automation","remediat","self-heal","auto-remediat")),
+            ("Cost & Resource Observability", "Metrics Coverage",   "CAT3", _lbl("cost","finops","resource usage","cloud spend","rightsiz")),
+            ("Security Event Monitoring",     "Log Management",     "CAT2", _lbl("siem","security event","threat","intrusion","guard","defender")),
+            ("Audit Trail Coverage",          "SLO Governance",     "CAT2", _lbl("audit","compliance log","change log","immutable log")),
+        ]
+
+        PILLARS = ["Metrics Coverage", "Log Management", "Tracing & APM", "Alerting & Response", "SLO Governance"]
+        WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+        MATURITY = [
+            (0,  "L1 — Initial",    "No formal observability strategy."),
+            (30, "L2 — Developing", "Basic metrics and logs, no tracing."),
+            (55, "L3 — Defined",    "Unified signals with SLO definitions."),
+            (70, "L4 — Managed",    "Automated alerting with error budgets."),
+            (85, "L5 — Optimised",  "Full-stack observability with ML-assisted detection."),
+        ]
+
+        check_results, total_w, passed_w = [], 0, 0
+        cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+        for title, pillar, sev, passed in CHECKS:
+            w = WEIGHTS[sev]; total_w += w
+            status = "pass" if passed else "fail"
+            if passed: passed_w += w
+            cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+            cats[pillar]["total"] += 1
+            if passed: cats[pillar]["passed"] += 1
+            check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                                   "status": status, "weight": w, "detail": ""})
+        for c in cats.values():
+            c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+        score = round(passed_w / total_w * 100) if total_w else 0
+        grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+        mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+        mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+        recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+                for c in check_results if c["status"] == "fail"]
+        recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+        return {
+            "score": score, "grade": grade,
+            "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+            "checks": check_results, "categories": cats, "recommendations": recs,
+            "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+            "assessed_at": _now(),
+        }
+
+    @bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+    @oc_login_required
+    def odc_api_governance(design_id):
+        """Run observability governance framework check."""
+        import uuid as _uuid_mod
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            conn.close()
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        result = _compute_odc_governance(graph_data)
+
+        assess_id = str(_uuid_mod.uuid4())
+        conn.execute(
+            "INSERT INTO od_assessments (id, design_id, assessment_type, findings_json, score, grade, created_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (assess_id, design_id, "governance",
+             json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                         for c in result["checks"]]),
+             result["score"], result["grade"], _now()),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify(result)
+
     return bp

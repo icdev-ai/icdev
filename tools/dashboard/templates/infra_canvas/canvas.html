@@ -12,8 +12,17 @@
   .dc-palette-item { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 5px 8px; margin-bottom: 3px; cursor: grab; font-size: 11px; display: flex; align-items: center; gap: 6px; }
   .dc-palette-item:hover { border-color: #00bcd4; }
   .dc-palette-item .icon { background: #0f3460; color: #00bcd4; font-size: 9px; font-weight: 700; padding: 2px 4px; border-radius: 3px; min-width: 24px; text-align: center; }
-  .dc-main { flex: 1; position: relative; background: #0d1b2a; }
+  .dc-main { flex: 1; position: relative; background: #ffffff; }
   .dc-toolbar { position: absolute; top: 0; left: 0; right: 0; height: 40px; background: #16213e; border-bottom: 1px solid #1e3a6e; display: flex; align-items: center; padding: 0 12px; gap: 8px; z-index: 10; }
+  /* ── Sidebar auto-hide ── */
+  .dc-sidebar { transition: width 0.22s ease; overflow: hidden; }
+  .dc-sidebar-toggle { width: 100%; background: transparent; border: none; border-bottom: 1px solid #1e3a6e; color: #5a6e8c; padding: 7px 0; cursor: pointer; font-size: 15px; text-align: center; flex-shrink: 0; display: block; }
+  .dc-sidebar-toggle:hover { color: #00bcd4; background: #0f1e36; }
+  .dc-sidebar.collapsed { width: 34px; }
+  .dc-sidebar.collapsed .dc-tabs { display: none; }
+  .dc-sidebar.collapsed .dc-tab-content { display: none !important; }
+  /* ── Zoom label ── */
+  #dc-zoom-label { font-size: 10px; color: #5a6e8c; min-width: 34px; text-align: center; user-select: none; }
   .dc-toolbar input { background: #0a1628; border: 1px solid #1e3a6e; color: #eaeaea; padding: 4px 10px; border-radius: 4px; font-size: 13px; width: 250px; }
   .dc-toolbar button { background: #00bcd4; border: none; color: #fff; padding: 4px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 2px; }
   .dc-toolbar button.secondary { background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; }
@@ -72,7 +81,8 @@
 
 <div class="dc-wrap">
   <!-- Sidebar with Palette + Snippets tabs -->
-  <div class="dc-sidebar">
+  <div class="dc-sidebar" id="dc-sidebar">
+    <button class="dc-sidebar-toggle" id="dc-sidebar-toggle" onclick="toggleSidebar()" title="Collapse palette">&#9776;</button>
     <div class="dc-tabs">
       <div class="dc-tab active" onclick="switchTab(this, 'palette-tab')">Palette</div>
       <div class="dc-tab" onclick="switchTab(this, 'snippet-tab')">Snippets</div>
@@ -120,6 +130,7 @@
       <button class="secondary" onclick="canvasZoomIn()" title="Zoom In">+</button>
       <button class="secondary" onclick="canvasZoomOut()" title="Zoom Out">&minus;</button>
       <button class="secondary" onclick="canvasZoomFit()" title="Fit">Fit</button>
+      <span id="dc-zoom-label">100%</span>
       <!-- Export -->
       <div class="dc-export-group" style="position:relative;display:inline-block;">
         <button class="secondary" onclick="toggleExportMenu()">Export &#9662;</button>
@@ -132,6 +143,7 @@
         </div>
       </div>
       <!-- Analysis -->
+      <button class="secondary analysis" onclick="canvasGovernance()" title="Infrastructure Governance Check" style="color:#9b59b6;">Governance</button>
       <button class="secondary analysis" onclick="canvasAssess()" title="Compliance Assessment">Assess</button>
       <button class="secondary analysis" onclick="canvasScorecard()" title="Scorecard">Scorecard</button>
       <button class="secondary analysis" onclick="canvasGaps()" title="Gap Analysis">Gaps</button>
@@ -240,6 +252,13 @@ function switchTab(tabEl, contentId) {
   document.querySelectorAll('.dc-tab-content').forEach(c => c.classList.remove('active'));
   tabEl.classList.add('active');
   document.getElementById(contentId).classList.add('active');
+}
+function toggleSidebar() {
+  const sb = document.getElementById('dc-sidebar');
+  const btn = document.getElementById('dc-sidebar-toggle');
+  const collapsed = sb.classList.toggle('collapsed');
+  btn.innerHTML = collapsed ? '&#9654;' : '&#9776;';
+  btn.title = collapsed ? 'Expand palette' : 'Collapse palette';
 }
 document.addEventListener('keydown', function(e) {
   if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); canvasSave(); }

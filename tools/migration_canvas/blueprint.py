@@ -3564,4 +3564,107 @@ def create_migration_blueprint():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    def _compute_migration_governance(graph_data: dict) -> dict:
+        """Migration governance check — AWS MAP / Azure MAP / DoD DECC aligned."""
+        nodes = graph_data.get("nodes", [])
+        types = [n.get("type", "").lower() for n in nodes]
+        labels = [str(n.get("label", "")).lower() for n in nodes]
+
+        def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in types)
+        def _lbl(*kws): return any(kw in l for l in labels for kw in kws)
+
+        CHECKS = [
+            ("Source Environment Mapped",        "Readiness Assessment", "CAT1", _any("src-","on-prem-","legacy-") or _lbl("source","on-prem","legacy","current state","as-is")),
+            ("Target Environment Defined",        "Readiness Assessment", "CAT1", _any("tgt-","cloud-","aws-","az-","gcp-","oci-") or _lbl("target","destination","to-be","future state","cloud")),
+            ("Migration Waves Defined",           "Readiness Assessment", "CAT2", _lbl("wave","phase","batch","sprint","migration group")),
+            ("Dependency Mapping Complete",       "Data Mapping",         "CAT1", _lbl("depend","upstream","downstream","coupling","service map","cmdb")),
+            ("Data Classification & Inventory",  "Data Mapping",         "CAT1", _lbl("data map","inventory","catalog","schema","table","dataset","pii","classified")),
+            ("Network Connectivity Validated",    "Readiness Assessment", "CAT2", _lbl("network","vpn","direct connect","expressroute","connectivity","bandwidth")),
+            ("IAM / Access Rights Mapped",        "Data Mapping",         "CAT2", _lbl("iam","role","permission","access right","service account","identity")),
+            ("Data Validation Gates Defined",     "Testing Gates",        "CAT1", _lbl("validation","checksum","reconcil","data integrity","row count","hash")),
+            ("Smoke / Integration Tests Defined", "Testing Gates",        "CAT1", _lbl("smoke test","integration test","regression","test plan","qa gate","uat")),
+            ("Performance / Load Testing",        "Testing Gates",        "CAT2", _lbl("load test","performance test","stress test","benchmark","throughput","latency")),
+            ("Rollback Plan Documented",          "Risk Management",      "CAT1", _lbl("rollback","fallback","revert","back-out","contingency","undo")),
+            ("Cutover Plan & Runbook",            "Cutover Planning",     "CAT1", _lbl("cutover","go-live","cutover plan","runbook","maintenance window","freeze")),
+            ("Business Continuity / DR",          "Risk Management",      "CAT2", _lbl("bcp","dr","business continuity","rto","rpo","failover","disaster")),
+            ("Change Freeze Window Defined",      "Cutover Planning",     "CAT2", _lbl("change freeze","maintenance window","change window","blackout")),
+            ("Stakeholder Sign-off Gates",        "Cutover Planning",     "CAT3", _lbl("sign-off","approval","stakeholder","go/no-go","decision gate")),
+            ("Compliance / ATO Mapping",          "Risk Management",      "CAT2", _lbl("ato","fedramp","cmmc","rmf","compliance","accreditation","stig")),
+            ("Monitoring Post-Migration",         "Risk Management",      "CAT2", _lbl("monitor","alert","post-migration","hyper care","observ","dashboard")),
+            ("Cost Estimation & Tracking",        "Readiness Assessment", "CAT3", _lbl("cost","budget","tco","roi","finops","spend estimate")),
+        ]
+
+        PILLARS = ["Readiness Assessment", "Data Mapping", "Testing Gates", "Cutover Planning", "Risk Management"]
+        WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+        MATURITY = [
+            (0,  "L1 — Initial",    "Ad-hoc migration with no formal governance."),
+            (30, "L2 — Developing", "Basic inventory and dependencies mapped."),
+            (55, "L3 — Defined",    "Structured plan with documented gates."),
+            (70, "L4 — Managed",    "Tested rollback and compliance validated."),
+            (85, "L5 — Optimised",  "Automated validation with continuous monitoring."),
+        ]
+
+        check_results, total_w, passed_w = [], 0, 0
+        cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+        for title, pillar, sev, passed in CHECKS:
+            w = WEIGHTS[sev]; total_w += w
+            status = "pass" if passed else "fail"
+            if passed: passed_w += w
+            cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+            cats[pillar]["total"] += 1
+            if passed: cats[pillar]["passed"] += 1
+            check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                                   "status": status, "weight": w, "detail": ""})
+        for c in cats.values():
+            c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+        score = round(passed_w / total_w * 100) if total_w else 0
+        grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+        mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+        mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+        recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+                for c in check_results if c["status"] == "fail"]
+        recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+        return {
+            "score": score, "grade": grade,
+            "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+            "checks": check_results, "categories": cats, "recommendations": recs,
+            "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+            "assessed_at": now_isoformat(),
+        }
+
+    @bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+    @mdc_login_required
+    def mdc_api_governance(design_id):
+        """Run migration governance framework check."""
+        import uuid as _uuid_mod
+        with get_connection() as conn:
+            row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
+            if not row:
+                return jsonify({"error": "Not found"}), 404
+            try:
+                graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+            except (json.JSONDecodeError, TypeError):
+                return jsonify({"error": "Invalid graph data"}), 400
+
+            result = _compute_migration_governance(graph_data)
+
+            assess_id = str(_uuid_mod.uuid4())
+            conn.execute(
+                "INSERT INTO mc_assessments "
+                "(id, design_id, assessment_type, findings_json, score, grade, "
+                "cat1_findings, cat2_findings, cat3_findings, readiness_score, created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (assess_id, design_id, "governance",
+                 json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                             for c in result["checks"]]),
+                 result["score"], result["grade"],
+                 sum(1 for c in result["checks"] if c["severity"] == "CAT1" and c["status"] == "fail"),
+                 sum(1 for c in result["checks"] if c["severity"] == "CAT2" and c["status"] == "fail"),
+                 sum(1 for c in result["checks"] if c["severity"] == "CAT3" and c["status"] == "fail"),
+                 result["score"], now_isoformat()),
+            )
+        return jsonify(result)
+
     return bp

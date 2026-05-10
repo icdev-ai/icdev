@@ -730,6 +730,8 @@ def create_pipeline_blueprint():
                 result["total"] = len(result["findings"])
             except Exception as exc:
                 result = {"findings": [], "total": 0, "error": str(exc)}
+        elif analysis_type == "governance":
+            result = _compute_pdc_governance({"nodes": nodes, "edges": edges})
         else:
             return jsonify({"error": f"Unknown analysis type: {analysis_type}"}), 400
 
@@ -1200,6 +1202,78 @@ def create_pipeline_blueprint():
 
     def _run_compliance_check(nodes, edges):
         return run_compliance_check(nodes, edges)
+
+    def _compute_pdc_governance(graph_data):
+        """DevSecOps pipeline governance — SLSA / NIST SSDF / DoD DEVSECOPS aligned."""
+        _nodes = graph_data.get("nodes", [])
+        _edges = graph_data.get("edges", [])
+        _types = [n.get("type", "").lower() for n in _nodes]
+        _labels = [str(n.get("label", "")).lower() for n in _nodes]
+
+        def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in _types)
+        def _lbl(*kws): return any(kw in l for l in _labels for kw in kws)
+
+        CHECKS = [
+            ("Source Control Defined",           "Source Control",   "CAT1", _any("src-","git-","vcs-") or _lbl("git","gitlab","github","bitbucket","svn","vcs","source control")),
+            ("Automated Build Stage",            "CI/CD Pipeline",   "CAT1", _any("bld-","build-","ci-") or _lbl("build","compile","make","gradle","maven","npm build","docker build")),
+            ("Automated Test Stage",             "CI/CD Pipeline",   "CAT1", _any("tst-","test-") or _lbl("test","pytest","jest","junit","mocha","rspec","automated test")),
+            ("SAST Integration",                 "Security",         "CAT1", _any("sast-","sec-") or _lbl("sast","sonar","semgrep","bandit","snyk","veracode","checkmarx")),
+            ("Container Image Scanning",         "Security",         "CAT1", _lbl("trivy","snyk","aqua","anchore","image scan","clair","container scan")),
+            ("SCA / Dependency Scanning",        "Security",         "CAT2", _lbl("sca","dependency","sbom","cyclonedx","dependency-check","owasp dependency")),
+            ("Secrets Detection",                "Security",         "CAT1", _lbl("secret detect","truffleH","detect-secrets","gitleaks","credscan")),
+            ("Artifact Registry Defined",        "CI/CD Pipeline",   "CAT2", _any("reg-","art-") or _lbl("registry","nexus","artifactory","ecr","acr","gcr","harbor")),
+            ("Deployment Stage",                 "CI/CD Pipeline",   "CAT1", _any("dep-","deploy-","cd-") or _lbl("deploy","release","rollout","helm","argocd","flux","eks deploy")),
+            ("Environment Promotion Gates",      "CI/CD Pipeline",   "CAT2", _lbl("staging","prod","promote","env gate","approval","manual gate","dev→staging")),
+            ("SLSA L2 or Higher",                "Supply Chain",     "CAT2", _lbl("slsa","provenance","build attestation","sigstore","cosign","rekor")),
+            ("SBOM Generation",                  "Supply Chain",     "CAT2", _lbl("sbom","cyclonedx","spdx","bill of materials","bom")),
+            ("IaC Scanning / Policy",            "Security",         "CAT2", _lbl("terrascan","checkov","tflint","opa","sentinel","policy as code","iac scan")),
+            ("Pipeline Execution Monitoring",    "Observability",    "CAT2", _lbl("monitor","pipeline log","metrics","duration","observ","grafana","datadog pipeline")),
+            ("Failure Alerting",                 "Observability",    "CAT2", _lbl("alert","notify","pagerduty","slack notify","webhook","on failure")),
+            ("Rollback / Blue-Green / Canary",   "Resilience",       "CAT2", _lbl("rollback","blue-green","canary","progressive","feature flag")),
+            ("Compliance Gate (FedRAMP/CMMC)",   "Compliance",       "CAT1", _lbl("fedramp","cmmc","stig","il4","il5","rmf","ato","compliance gate")),
+            ("DoD DevSecOps Ref Arch Aligned",   "Compliance",       "CAT2", _lbl("devsecops","dod","enterprise devsecops","p-ato","continuous ato","c-ato")),
+        ]
+
+        PILLARS = ["Source Control", "CI/CD Pipeline", "Security", "Supply Chain", "Observability", "Resilience", "Compliance"]
+        WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+        MATURITY = [
+            (0,  "L1 — Initial",    "Ad-hoc pipelines with no security gates."),
+            (30, "L2 — Developing", "Basic CI with some SAST/test automation."),
+            (55, "L3 — Defined",    "Full CI/CD with security integrated throughout."),
+            (70, "L4 — Managed",    "SLSA L2+, SBOM, compliance gates automated."),
+            (85, "L5 — Optimised",  "Continuous ATO with supply chain integrity and full observability."),
+        ]
+
+        check_results, total_w, passed_w = [], 0, 0
+        cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+        for title, pillar, sev, passed in CHECKS:
+            w = WEIGHTS[sev]; total_w += w
+            status = "pass" if passed else "fail"
+            if passed: passed_w += w
+            cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+            cats[pillar]["total"] += 1
+            if passed: cats[pillar]["passed"] += 1
+            check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                                   "status": status, "weight": w, "detail": ""})
+        for c in cats.values():
+            c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+        score = round(passed_w / total_w * 100) if total_w else 0
+        grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+        mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+        mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+        recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+                for c in check_results if c["status"] == "fail"]
+        recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+        from datetime import datetime, timezone as _tz
+        return {
+            "score": score, "grade": grade,
+            "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+            "checks": check_results, "categories": cats, "recommendations": recs,
+            "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+            "assessed_at": datetime.now(_tz.utc).isoformat(),
+        }
 
     # Heatmap color helpers
     def _time_color(minutes):

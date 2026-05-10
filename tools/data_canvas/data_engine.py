@@ -1131,7 +1131,10 @@ def compute_data_governance(graph_data: dict) -> dict:
     """
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", [])
+<<<<<<< Updated upstream
     graph_data.get("boundaries", [])  # reserved for future boundary analysis
+=======
+>>>>>>> Stashed changes
 
     node_types: set[str] = {n.get("type", "") for n in nodes}
     node_map: dict[str, dict] = {n["id"]: n for n in nodes}

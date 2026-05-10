@@ -180,8 +180,8 @@ document.addEventListener('DOMContentLoaded', () => {
     width: '100%',
     height: '100%',
     gridSize: 10,
-    drawGrid: { name: 'mesh', args: { color: '#1e3a6e', thickness: 0.5 } },
-    background: { color: '#0d1b2a' },
+    drawGrid: { name: 'mesh', args: { color: '#dde3ec', thickness: 0.5 } },
+    background: { color: '#ffffff' },
     interactive: true,
     defaultLink: () => new joint.shapes.standard.Link({
       attrs: {
@@ -387,6 +387,32 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  function _findFreePosition(x, y, w, h) {
+    const PAD = 12;
+    const occupied = graph.getElements().map(el => {
+      const p = el.position(), s = el.size();
+      return { x: p.x - PAD, y: p.y - PAD, x2: p.x + s.width + PAD, y2: p.y + s.height + PAD };
+    });
+    const overlaps = (cx, cy) => occupied.some(b => cx < b.x2 && cx + w > b.x && cy < b.y2 && cy + h > b.y);
+    if (!overlaps(x, y)) return { x, y };
+    const STEP = Math.max(w, h) + PAD;
+    for (let ring = 1; ring <= 10; ring++) {
+      const candidates = [];
+      for (let i = -ring; i <= ring; i++) {
+        candidates.push({ x: x + i * STEP, y: y - ring * STEP });
+        candidates.push({ x: x + i * STEP, y: y + ring * STEP });
+      }
+      for (let j = -ring + 1; j < ring; j++) {
+        candidates.push({ x: x - ring * STEP, y: y + j * STEP });
+        candidates.push({ x: x + ring * STEP, y: y + j * STEP });
+      }
+      for (const c of candidates) {
+        if (!overlaps(c.x, c.y)) return c;
+      }
+    }
+    return { x: x + Math.random() * 30, y: y + Math.random() * 30 };
+  }
+
   container.addEventListener('dragover', (evt) => { evt.preventDefault(); });
   container.addEventListener('drop', (evt) => {
     evt.preventDefault();
@@ -394,8 +420,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = JSON.parse(evt.dataTransfer.getData('text/plain'));
       const rect = container.getBoundingClientRect();
       const { tx, ty } = paper.translate();
-      const x = (evt.clientX - rect.left - tx) / currentScale;
-      const y = (evt.clientY - rect.top  - ty) / currentScale;
+      let x = (evt.clientX - rect.left - tx) / currentScale;
+      let y = (evt.clientY - rect.top  - ty) / currentScale;
+      const pos = _findFreePosition(x, y, 130, 50);
+      x = pos.x; y = pos.y;
       const nodeId = 'n-' + Math.random().toString(36).substr(2, 8);
       const cell = createNode({ id: nodeId, type: data.type, label: data.label, x, y });
       graph.addCell(cell);

@@ -1823,4 +1823,112 @@ def create_boundary_blueprint():
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    def _compute_boundary_governance(graph_data: dict) -> dict:
+        """Boundary governance check — Zero Trust / NIST 800-207 / FIPS 140-3 aligned."""
+        from datetime import datetime, timezone as _tz
+        nodes = graph_data.get("nodes", [])
+        types = [n.get("type", "").lower() for n in nodes]
+        labels = [str(n.get("label", "")).lower() for n in nodes]
+
+        def _any(*pfx): return any(any(t.startswith(p) for p in pfx) for t in types)
+        def _lbl(*kws): return any(kw in l for l in labels for kw in kws)
+
+        CHECKS = [
+            ("Zero Trust Architecture Defined",    "Zero Trust",        "CAT1", _any("sys-","isa-") or _lbl("zero trust","zt","zta")),
+            ("Encryption Zones Defined",            "Encryption Zones",  "CAT1", _any("bnd-enc","bnd-fips") or _lbl("encrypt zone","fips","tls zone","cipher")),
+            ("FIPS 140-2/3 Encryption",             "Encryption Zones",  "CAT1", _lbl("fips","nss","cryptographic module")),
+            ("Access Control Boundaries",           "Access Boundaries", "CAT1", _any("bnd-","sys-iam") or _lbl("access boundary","acl","rbac","least privilege")),
+            ("Network Segmentation Boundaries",     "Access Boundaries", "CAT2", _lbl("dmz","segment","perimeter","trust boundary","isolat")),
+            ("API Gateway / Service Mesh Control",  "Access Boundaries", "CAT2", _any("sys-apigw","sys-mesh") or _lbl("api gateway","service mesh","istio","kong","apigee")),
+            ("Mutual TLS (mTLS) Enforcement",       "Encryption Zones",  "CAT2", _lbl("mtls","mutual tls","client cert","bilateral tls")),
+            ("PKI / Certificate Management",        "Encryption Zones",  "CAT2", _lbl("pki","certificate authority","ca","x.509","cert manager")),
+            ("Identity Federation",                 "Zero Trust",        "CAT2", _lbl("saml","oidc","oauth","federation","sso","identity provider")),
+            ("Continuous Verification",             "Zero Trust",        "CAT2", _lbl("continuous verif","posture","mfa","adaptive auth","risk-based")),
+            ("Audit Logging Boundary",              "Audit & Logging",   "CAT1", _any("sys-log","sys-siem") or _lbl("audit log","siem","log boundary","cloud trail")),
+            ("Real-time Threat Detection",          "Audit & Logging",   "CAT2", _lbl("threat detect","ids","ips","intrusion","guard duty","defender","sentinel")),
+            ("ISA / System Interconnect Docs",      "Compliance",        "CAT2", _any("isa-") or _lbl("isa","ato","interconnect agreement","mou","system boundary")),
+            ("DoD IL / FedRAMP Boundary Marked",    "Compliance",        "CAT1", _lbl("fedramp","dod","il4","il5","il6","cmmc","stig")),
+            ("Data Classification Labels",          "Compliance",        "CAT2", _lbl("cui","secret","classified","marking","classification")),
+            ("Supply Chain Risk Controls",          "Compliance",        "CAT3", _lbl("supply chain","sbom","third party","vendor risk","scrm")),
+            ("Boundary Monitoring & Alerting",      "Audit & Logging",   "CAT2", _lbl("alert","monitor","soc","noc","watchdog","heartbeat")),
+            ("Microsegmentation",                   "Access Boundaries", "CAT3", _lbl("microsegment","workload isolation","pod security","namespace")),
+        ]
+
+        PILLARS = ["Zero Trust", "Encryption Zones", "Access Boundaries", "Audit & Logging", "Compliance"]
+        WEIGHTS = {"CAT1": 3, "CAT2": 2, "CAT3": 1}
+        MATURITY = [
+            (0,  "L1 — Initial",    "Ad-hoc boundaries, no formal controls."),
+            (30, "L2 — Developing", "Some boundary controls but inconsistent."),
+            (55, "L3 — Defined",    "Structured boundaries with documented controls."),
+            (70, "L4 — Managed",    "Monitored boundaries with automated enforcement."),
+            (85, "L5 — Optimised",  "Continuous verification and adaptive trust."),
+        ]
+
+        check_results, total_w, passed_w = [], 0, 0
+        cats = {p: {"passed": 0, "total": 0, "pct": 0} for p in PILLARS}
+        for title, pillar, sev, passed in CHECKS:
+            w = WEIGHTS[sev]; total_w += w
+            status = "pass" if passed else "fail"
+            if passed: passed_w += w
+            cats.setdefault(pillar, {"passed": 0, "total": 0, "pct": 0})
+            cats[pillar]["total"] += 1
+            if passed: cats[pillar]["passed"] += 1
+            check_results.append({"title": title, "pillar": pillar, "severity": sev,
+                                   "status": status, "weight": w, "detail": ""})
+        for c in cats.values():
+            c["pct"] = round(c["passed"] / c["total"] * 100) if c["total"] else 0
+
+        score = round(passed_w / total_w * 100) if total_w else 0
+        grade = "A" if score >= 90 else "B" if score >= 80 else "C" if score >= 70 else "D" if score >= 60 else "F"
+        mat_level = sum(1 for t, *_ in MATURITY if score >= t)
+        mat_label, mat_desc = MATURITY[mat_level - 1][1], MATURITY[mat_level - 1][2]
+
+        recs = [{"title": c["title"], "pillar": c["pillar"], "priority": c["severity"]}
+                for c in check_results if c["status"] == "fail"]
+        recs.sort(key=lambda r: {"CAT1": 0, "CAT2": 1, "CAT3": 2}[r["priority"]])
+        return {
+            "score": score, "grade": grade,
+            "maturity": {"level": mat_level, "label": mat_label.split(" — ")[1], "description": mat_desc},
+            "checks": check_results, "categories": cats, "recommendations": recs,
+            "total_checks": len(CHECKS), "passed_checks": sum(1 for c in check_results if c["status"] == "pass"),
+            "assessed_at": datetime.now(_tz.utc).isoformat(),
+        }
+
+    @bp.route("/api/designs/<design_id>/governance", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_governance(design_id):
+        """Run boundary governance framework check."""
+        import uuid as _uuid_mod
+        conn = get_connection()
+        row = conn.execute("SELECT graph_json FROM boundary_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"error": "Not found"}), 404
+        try:
+            graph_data = json.loads(row["graph_json"]) if isinstance(row["graph_json"], str) else row["graph_json"]
+        except (json.JSONDecodeError, TypeError):
+            conn.close()
+            return jsonify({"error": "Invalid graph data"}), 400
+
+        result = _compute_boundary_governance(graph_data)
+
+        assess_id = str(_uuid_mod.uuid4())
+        conn.execute(
+            "INSERT INTO bd_assessments "
+            "(id, design_id, assessment_type, findings_json, score, grade, "
+            "cat1_findings, cat2_findings, cat3_findings, nist_coverage_json, created_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (assess_id, design_id, "governance",
+             json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
+                         for c in result["checks"]]),
+             result["score"], result["grade"],
+             sum(1 for c in result["checks"] if c["severity"] == "CAT1" and c["status"] == "fail"),
+             sum(1 for c in result["checks"] if c["severity"] == "CAT2" and c["status"] == "fail"),
+             sum(1 for c in result["checks"] if c["severity"] == "CAT3" and c["status"] == "fail"),
+             "{}", now_isoformat()),
+        )
+        conn.commit()
+        conn.close()
+        return jsonify(result)
+
     return bp
