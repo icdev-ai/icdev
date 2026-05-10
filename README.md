@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
-  <img src="https://img.shields.io/badge/canvases-7-00acc1" alt="Design Canvases">
+  <img src="https://img.shields.io/badge/canvases-10-00acc1" alt="Design Canvases">
   <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
 </p>
 
@@ -34,190 +34,100 @@ One developer built this. Imagine what your team could do with it.
 
 ## What's New in 1.2.21
 
-- **Ask any canvas** — natural-language Q&A over the knowledge graph of each of the 7 design canvases: NDC (Network), SDC (Security), PDC (Pipeline), BDC (Boundary), DDC (Data), ODC (Observability), IDC (Infrastructure). Every canvas has a `/<canvas>/ask` page and `/<canvas>/api/ask` POST endpoint. See [Ask Any Canvas](#ask-any-canvas).
+- **Ask any canvas** — natural-language Q&A over the knowledge graph of each design canvas. Every canvas has a `/<canvas>/ask` page and `/<canvas>/api/ask` POST endpoint. See [Ask Any Canvas](#ask-any-canvas).
 - **Instant KG freshness** — save-hooks on every canvas design `POST`/`PUT` re-index the KG in <1s, so `/ask` never lags real work. A 6-hour `canvas_indexer` Genesis reflex acts as a safety net.
 - **Backend-aware indexer** — `tools/knowledge_graph/canvas_indexer.py` speaks SQLite *or* PostgreSQL per-canvas (respects `<CANVAS>_STORAGE_BACKEND`), so the same pipeline works on a laptop and in air-gapped IL4/IL5 deployments.
 - **Scheduler worktree-before-rebase fix** — 52-branch preserved-branch pile (caused by worktree-locked rebases) cleared; new reflex detaches worktree before merge so the pile can't regrow.
 - **Single license** — commercial tier removed. ICDEV™ is Apache-2.0, full stop.
 - **Failure Triage auto-fix loop** (1.2.17–1.2.19) — Genesis daemon runs `failure_triage` on a 30-min cadence. Two-tier LLM routing: Claude diagnoses, Ollama generates patches. Conservative defaults: `ICDEV_AUTOFIX_ENABLED=false`, confidence threshold 0.85, 5-apply/hour rate cap, task-type whitelist. Patches land as `status='suggested'` Oracle cards for human review. Opt-in `ICDEV_AUTOFIX_AUTOMERGE` fast-forward merges verified clean patches. Includes full worktree isolation — each fix runs in `.tmp/autofix/<task>/` and rolls back on failure.
-- **IQE v0.1 — ICDEV Query Engine** — declarative `foreach / where / select` DSL for compliance and network-health checks across all 7 design-canvas databases. Ships with recursive-descent parser, typed AST, SQL-injection-safe executor, and a 5-query NDC seed library (vendor inventory, BGP peer asymmetry, CAT I STIG open findings, capacity threshold).
+- **IQE v0.1 — ICDEV Query Engine** — declarative `foreach / where / select` DSL for compliance and network-health checks across all design-canvas databases. Ships with recursive-descent parser, typed AST, SQL-injection-safe executor, and a 5-query NDC seed library (vendor inventory, BGP peer asymmetry, CAT I STIG open findings, capacity threshold).
 - **FathomDesk Phase 7+** — complex options (13 strategies including multi-expiry calendar butterfly), crypto spot (10 pairs), tax-lots (FIFO/LIFO/specific-ID with wash-sale flag), and day-trader hot-keys with 5-second polling.
 
 ---
 
-## A System That Builds Systems
+## What ICDEV™ Builds
 
-Most developer tools help you write code faster. ICDEV™ does something fundamentally different: it **generates entire applications** — each with its own multi-agent architecture, compliance automation, testing pipeline, memory system, and CI/CD integration. The generated application isn't a starter kit. It's an autonomous engineering platform that can build its own features using the same methodology that built it.
+ICDEV™ generates complete, autonomous applications through the FORGE framework and ANVIL workflow. Every generated application inherits a full 6-layer FORGE framework, multi-agent architecture, memory system, compliance automation, 9-step test pipeline, and CI/CD integration. It isn't a starter kit — it's an independently deployable platform that can build its own features using the same methodology that built it.
 
-**GovProposal** is the proof. ICDEV™ generated GovProposal — a complete government proposal lifecycle management platform with a 14-step section workflow, color team review cycle, compliance matrix, timeline tracking, and assignment management. Then ICDEV™ connected it to a **GovCon Intelligence pipeline** that automatically discovers government opportunities, extracts requirements, maps capabilities, and drafts proposal responses.
+| Application | Route | What It Is |
+|-------------|-------|-----------|
+| **GovLift** | `/govlift` | DoD IL4 cloud migration tracker — workload inventory, wave planner, STIG compliance, audit trail |
+| **Autonomous Coder** | `/autonomous-coder/` | Multi-agent code generation pipeline: Planner → Schema Enforcer → Coder → Validator → Audit Logger |
+| **FORGE Academy** | `/forge-academy/` | Gamified AI training platform — 12 roles, 75 missions, 165 steps across 3 tiers |
+| **AI GameDay** | `/gameday` | Competitive tabletop exercise engine with AI-scored injects and live leaderboard |
+| **Strategos** | `/strategos/` | Multi-domain operations COP — ORBAT, wargaming, I&W analysis, intelligence products |
+| **GeoSIGINT** | `/geosigint/` | Geographic intelligence — A2/AD threat rings, amphibious analysis, strait crossing, island chain defense |
+| **FathomDesk** | `/fathomdesk` | Multi-agent trading intelligence — options, crypto spot, tax-lots, 232 tickers, 18 industries |
+| **Innovation Engine** | `/innovation/` | Idea lifecycle pipeline — Spark → Assess → Score → Pilot → Measure → Scale → Archive |
 
-Together, they form a self-reinforcing flywheel:
+Generate your own:
 
+```bash
+# Assess fitness for agentic architecture
+python tools/builder/agentic_fitness.py --spec "Mission planning tool for IL5 with CUI markings" --json
+
+# Generate blueprint from scorecard
+python tools/builder/app_blueprint.py --fitness-scorecard scorecard.json \
+  --user-decisions '{}' --app-name "mission-planner" --json
+
+# Generate the full application (12 steps, 300+ files)
+python tools/builder/child_app_generator.py --blueprint blueprint.json \
+  --project-path ./output --name "mission-planner" --json
 ```
-SAM.gov RFPs → Mine requirement patterns → Map to ICDEV™ capabilities → Identify gaps →
-Build enhancements → Draft proposals via GovProposal → Win → Deliver ICDEV™ on-prem → Repeat
-```
-
-### How ICDEV™ Built GovProposal
-
-ICDEV™ generated GovProposal the same way it generates any application — through the FORGE framework and ANVIL workflow. GovProposal inherited:
-
-| What It Got | How It Works |
-|-------------|--------------|
-| **6-layer FORGE framework** | Frameworks, Orchestration, Routines, Guidance, Evidence — separating deterministic logic from AI |
-| **Multi-agent architecture** | 5 core agents (Orchestrator, Architect, Builder, Knowledge, Monitor) + 2 ATO agents |
-| **588-table database** | Append-only audit trail (NIST AU compliant), proposal lifecycle tables, compliance matrices |
-| **42 compliance frameworks** | Dual-hub crosswalk engine — implement a control once, map to FedRAMP, CMMC, CJIS, HIPAA, and 38 more |
-| **9-step testing pipeline** | Syntax → lint → unit → BDD → SAST → E2E → vision → acceptance → security gates |
-| **CI/CD integration** | GitHub + GitLab dual-platform, webhook-triggered workflows |
-| **Memory system** | Long-term facts, daily logs, semantic search — learns from every proposal cycle |
-
-But GovProposal isn't just a child app. ICDEV™ then layered on the **GovCon Intelligence pipeline** — 11 specialized tools that automate the entire government contracting capture process:
-
-### The ICDEV™ → GovProposal Workflow
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ICDEV™ — GovCon Intelligence                         │
-│                                                                             │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
-│  │   DISCOVER   │───▶│   EXTRACT    │───▶│     MAP      │───▶│   DRAFT   │ │
-│  │              │    │              │    │              │    │           │ │
-│  │ SAM.gov API  │    │ "Shall/must/ │    │ Match reqs   │    │ qwen3     │ │
-│  │ scan opps +  │    │  will" regex │    │ to ICDEV™     │    │ drafts →  │ │
-│  │ track awards │    │ extraction   │    │ capability   │    │ Claude    │ │
-│  │              │    │ + domain     │    │ catalog      │    │ reviews   │ │
-│  │ 8 NAICS      │    │   classify   │    │ (30 entries) │    │           │ │
-│  │ codes        │    │ + cluster    │    │ L/M/N grade  │    │ HITL gate │ │
-│  └──────────────┘    └──────────────┘    └──────────────┘    └───────────┘ │
-│         │                   │                    │                  │       │
-│         │                   │                    │                  │       │
-│         ▼                   ▼                    ▼                  ▼       │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                   GovCon API Bridge (20+ endpoints)                  │   │
-│  │  /sam/import → /auto-compliance → /auto-draft → /drafts/approve     │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                       │
-└────────────────────────────────────┼───────────────────────────────────────┘
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    GovProposal — Proposal Lifecycle Platform                 │
-│                                                                             │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐   │
-│  │   OPPORTUNITIES  │  │    SECTIONS      │  │    COMPLIANCE MATRIX     │   │
-│  │                  │  │                  │  │                          │   │
-│  │ proposal_        │  │ 14-step pipeline:│  │ L → compliant            │   │
-│  │ opportunities    │  │ not_started →    │  │ M → partial              │   │
-│  │ (imported from   │  │ outlining →      │  │ N → non_compliant        │   │
-│  │  SAM.gov scan)   │  │ drafting →       │  │                          │   │
-│  │                  │  │ reviewing →      │  │ Auto-populated from      │   │
-│  │ licensing_model: │  │ final →          │  │ capability mapping       │   │
-│  │ on_prem_free |   │  │ submitted        │  │ scores                   │   │
-│  │ saas_paid |      │  │                  │  │                          │   │
-│  │ negotiated       │  │ AI drafts →      │  │ Covers all "shall"       │   │
-│  │                  │  │ human approves → │  │ statements extracted     │   │
-│  │                  │  │ section content   │  │ from RFP                 │   │
-│  └─────────────────┘  └──────────────────┘  └──────────────────────────┘   │
-│                                                                             │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌──────────────────────────┐   │
-│  │   COLOR TEAM    │  │    TIMELINE      │  │    ASSIGNMENT MATRIX     │   │
-│  │   REVIEWS       │  │                  │  │                          │   │
-│  │                  │  │ Gantt chart      │  │ Who writes what          │   │
-│  │ Pink → Red →    │  │ milestones,      │  │ per-section role         │   │
-│  │ Gold → White →  │  │ deadlines,       │  │ tracking, workload       │   │
-│  │ Final           │  │ countdown        │  │ balancing                │   │
-│  └─────────────────┘  └──────────────────┘  └──────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-                                     │
-                                     ▼
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                          CROSS-ENGINE INTELLIGENCE                          │
-│                                                                             │
-│  ┌────────────────────────┐           ┌────────────────────────────────┐   │
-│  │    Innovation Engine    │           │       Creative Engine          │   │
-│  │                         │           │                                │   │
-│  │  SAM.gov requirement    │           │  Award leaderboard data →     │   │
-│  │  patterns registered    │           │  competitive gap analysis     │   │
-│  │  as innovation signals  │           │  against government           │   │
-│  │                         │           │  contractors                   │   │
-│  │  Enables: "Is cATO      │           │                                │   │
-│  │  appearing more in      │           │  Enables: identify where      │   │
-│  │  RFPs this quarter?"    │           │  competitors are winning      │   │
-│  └────────────────────────┘           └────────────────────────────────┘   │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
-
-**Step by step:**
-
-1. **DISCOVER** — ICDEV™ scans SAM.gov's Opportunities API for solicitations, pre-solicitations, and RFIs across 8 NAICS codes. Award notices feed competitive intelligence.
-
-2. **EXTRACT** — Deterministic regex extracts every "shall", "must", and "will" statement from RFP descriptions. Each is domain-classified (DevSecOps, AI/ML, ATO/RMF, Cloud, Security, Compliance, Agile, Data, Management) and clustered into patterns using keyword fingerprinting.
-
-3. **MAP** — Extracted requirements are matched against ICDEV™'s declarative capability catalog (~30 entries covering 42 compliance frameworks, 15 agents, and 500+ tools). Each requirement gets an **L/M/N grade**:
-   - **L** (≥ 80% coverage) — ICDEV™ fully meets this requirement
-   - **M** (40–79%) — partial capability, enhancement recommended
-   - **N** (< 40%) — gap identified, cross-registered to Innovation Engine for prioritized development
-
-4. **DRAFT** — Two-tier LLM pipeline: qwen3 generates a compact draft incorporating capability evidence, tool references, and compliance controls. Claude reviews and polishes. The draft is stored with `status='draft'` — a human must approve before it enters the proposal.
-
-5. **BRIDGE** — The GovCon API (20+ REST endpoints) moves data from ICDEV™'s intelligence tools into GovProposal's lifecycle tables:
-   - SAM.gov opportunities → `proposal_opportunities` (with licensing model tracking)
-   - "Shall" statements → `proposal_compliance_matrix` (L/M/N auto-populated)
-   - AI drafts → `proposal_section_drafts` → human approves → `proposal_sections`
-
-6. **LIFECYCLE** — GovProposal manages the rest: 14-step section workflow, color team reviews (Pink → Red → Gold → White → Final), timeline tracking with countdown to submission, assignment matrix, and compliance matrix with donut/bar charts.
-
-### The Flywheel Effect
-
-This isn't a linear pipeline — it's a compounding cycle:
-
-- **Win** a contract → customer gets ICDEV™ deployed on-prem (free for winners)
-- **Deliver** → ICDEV™'s capabilities proven in production = stronger past performance evidence
-- **Learn** → requirement patterns from real contracts improve capability mapping
-- **Build** → gaps identified by the MAP stage drive ICDEV™ development priorities
-- **Repeat** → next proposal has better evidence, higher L/M/N scores, stronger drafts
-
-Every proposal ICDEV™ writes makes the next one better. The product IS the proposal evidence.
 
 ---
 
-## Why ICDEV™
+## 10 Design Canvases
 
-### For Government Contractors
+ICDEV™ ships 10 interactive design canvases — each a standalone visual builder with its own database, knowledge graph, natural-language `/ask` endpoint, IQE query interface, and compliance baseline. Drag and drop. Import from real topologies, configs, or SBOMs. Query in plain English.
 
-| Challenge | How ICDEV™ Solves It | Benefit |
-|-----------|---------------------|---------|
-| Monitoring SAM.gov is manual and error-prone | Automated scanning of 8 NAICS codes with deduplication and caching | Never miss an opportunity. Surface patterns across hundreds of RFPs. |
-| Compliance matrices take weeks to populate | L/M/N auto-grading from capability catalog with keyword-overlap scoring | Compliance matrix populated in seconds, not weeks. Fully auditable. |
-| Proposal writing is expensive ($50K–$500K per response) | Two-tier LLM drafting with reusable knowledge base and HITL approval | Draft responses in hours with evidence baked in. Human reviews, not writes from scratch. |
-| No visibility into competitive landscape | Award tracker + competitor profiler from SAM.gov award data | Know who wins what, at what value, in which NAICS codes. |
-| Past performance is hard to articulate | ICDEV™'s own capability catalog IS the evidence | "We have 42 compliance frameworks" isn't marketing — it's `SELECT COUNT(*)` from the same DB. |
+| # | Canvas | Route | Purpose |
+|---|--------|-------|---------|
+| **1** | **NDC** — Network Design | `/network` | Topology builder, cloud architecture diagrams, ACAS/Nessus overlay, STIG audit, NL queries |
+| **2** | **SDC** — Security Design | `/security` | STRIDE threat modeling, MITRE ATT&CK mapping, attack path finding, SSP/SAR/POAM artifacts, IR runbooks |
+| **3** | **PDC** — Pipeline Design | `/devops` | Visual CI/CD pipeline builder, SLSA assessment, multi-format export (GitLab/GitHub/Jenkins/Tekton/Azure) |
+| **4** | **BDC** — Boundary Design | `/boundary` | ATO boundary definition, ISA lifecycle, PPS matrix auto-generation, 14 compliance rules |
+| **5** | **DDC** — Data Design | `/data` | Data classification zones, column-level lineage, PII/PHI/CUI tracking, 12 compliance rules |
+| **6** | **ODC** — Observability Design | `/observability` | Detection coverage mapping, Sigma rules, MITRE ATT&CK detection, 14 source types |
+| **7** | **IDC** — Infrastructure Design | `/infra` | IaC resource design, 6 CSP support, 17 service categories, 13 compliance checks |
+| **8** | **AADC** — Agentic AI Design | `/agentic-ai/` | 7 solution packs, 40+ node types, risk register, ATLAS scenarios, quick-start wizard |
+| **9** | **QDC** — Quality Design | `/qdc` | Code quality gates, test coverage visualization, smell detection, maintainability scoring |
+| **10** | **MDC** — Migration Design | `/migration` | 7R assessment, legacy migration tracking, strangler fig mapping, ATO compliance bridge |
 
-### For Government Agencies (Evaluators)
+Every canvas answers natural-language questions grounded in actual design data — see [Ask Any Canvas](#ask-any-canvas).
 
-| Challenge | How ICDEV™ Helps | Benefit |
-|-----------|-----------------|---------|
-| Proposals claim capabilities they can't deliver | ICDEV™'s proposals reference actual tools, actual test results, actual compliance mappings | Every claim is verifiable against the delivered platform. |
-| ATO takes 12–18 months after award | ICDEV™ generates ATO artifacts (SSP, POAM, STIG, SBOM, OSCAL) automatically | ATO acceleration from day one of delivery. cATO-ready. |
-| Vendor lock-in | ICDEV™ is open source (Apache 2.0), runs on 6 cloud providers or fully air-gapped | No proprietary dependencies. Full source code. Deploy anywhere. |
-| Difficulty evaluating technical depth | L/M/N grading is deterministic and reproducible | Same input always produces same compliance grade. Auditable. |
+---
 
-### What No Other Tool Does
+## FORGE Academy
 
-1. **The product writes its own proposals.** ICDEV™ generates the application AND writes the proposal to sell it. The capability evidence in the proposal comes from the same codebase that gets delivered. No other GovCon tool is simultaneously the proposal platform and the delivered product.
+Gamified AI training that works for every role in the organization — not just engineers.
 
-2. **Deterministic compliance grading.** Every "shall" statement in an RFP gets a machine-scored coverage grade (L/M/N) against a declarative capability catalog. This isn't LLM-generated opinion — it's keyword-overlap scoring that produces identical results every time. Air-gap safe.
+| What | Detail |
+|------|--------|
+| **12 roles** | Technical (DevOps, SecOps, DataOps, SWE/Architect, NetOps, SRE) + Guided (ISSO, ISSM, CISO, PM, Analyst, Leadership) |
+| **75 missions / 165 steps** | Seeded across 3 tiers: Tier 1 (LLM basics, RAG, agents, MCP, multi-agent) → Tier 2 (role-specific tracks) → Tier 3 (capstone app) |
+| **Two lab modes** | Coding lab (hands-on terminal) for technical roles; Guided lab (no code) for non-technical roles |
+| **Rank system** | Recruit (0 pts) → Operative (500) → Specialist (2,000) → Architect (5,000) → Sensei (10,000) |
+| **Route** | `/forge-academy/` |
 
-3. **Cross-engine intelligence.** SAM.gov data doesn't just feed proposals. Requirement patterns flow into the Innovation Engine for trend detection ("is cATO appearing more in RFPs?"). Award data flows into the Creative Engine for competitive positioning. Three engines sharing intelligence, each getting smarter.
+Every employee who completes FORGE Academy can deploy an AI solution for their own problem — using the same ICDEV™ tools that built the platform itself.
 
-4. **42 compliance frameworks, one implementation.** Implement a NIST 800-53 control once. The dual-hub crosswalk engine automatically maps it to FedRAMP, CMMC, CJIS, HIPAA, PCI DSS, ISO 27001, and 35+ more. This works for proposals too — the compliance matrix covers every framework the RFP requires.
+---
 
-5. **Self-reinforcing economics.** Winners get ICDEV™ deployed free on-prem. This means every win creates a production reference, every production deployment generates telemetry that improves the next proposal, and every gap identified during delivery becomes a development priority. Commercial competitors charge for both the proposal tool AND the delivered platform. ICDEV™ is both.
+## AI GameDay
 
-6. **Air-gap native.** Every tool works without internet access. Regex-based requirement extraction (not LLM). Keyword-overlap scoring (not embeddings). SQLite database (not cloud). Ollama for local LLM inference. Designed for SIPR/JWICS from day one.
+A competitive tabletop exercise (TTX) platform that makes passive paper-driven exercises obsolete. Instead of reading scenario cards, teams use AI tools to respond to live injects — and get scored on it.
+
+| What | Detail |
+|------|--------|
+| **Generic TTX Engine** | `tools/ttx/` — new exercises need only a YAML scenario pack, zero code |
+| **AI-scored responses** | LLM rubric scoring per inject; instant feedback to teams |
+| **Live leaderboard** | Real-time point tracking with ribbons for speed, accuracy, and creativity |
+| **After Action Review** | Auto-generated AAR report summarizing team performance and lessons learned |
+| **Scenario Pack #1** | AI GameDay — 5 injects, 4 roles, 3 rubric dimensions (DRP, COOP, IR, Red/Blue) |
+| **Route** | `/gameday` |
+
+Build a new exercise: define a YAML pack with injects and rubrics, drop it in `scenarios/`, and the engine handles the rest.
 
 ---
 
@@ -417,7 +327,7 @@ The **dual-hub crosswalk engine** eliminates duplicate assessments:
 
 ## Ask Any Canvas
 
-Every one of ICDEV™'s seven design canvases answers natural-language questions over its own knowledge graph. No chatbot wrapper — the answers are grounded in actual design data (nodes, edges, relationships) that users dragged onto the canvas or imported from real topologies, pipelines, and SBOMs.
+Every one of ICDEV™'s ten design canvases answers natural-language questions over its own knowledge graph. No chatbot wrapper — the answers are grounded in actual design data (nodes, edges, relationships) that users dragged onto the canvas or imported from real topologies, pipelines, and SBOMs.
 
 | Canvas | Route | KG scope | Example queries |
 |---|---|---|---|
@@ -428,6 +338,9 @@ Every one of ICDEV™'s seven design canvases answers natural-language questions
 | **DDC** (Data) | `/data/ask` | column-level lineage | `lineage`, `table`, `PII`, `classification` |
 | **ODC** (Observability) | `/observability/ask` | detection coverage | `detection`, `sigma`, `MITRE`, `log source` |
 | **IDC** (Infrastructure) | `/infra/ask` | IaC resources | `terraform`, `compute`, `KMS`, `region` |
+| **AADC** (Agentic AI) | `/agentic-ai/ask` | agent nodes + edges | `orchestrator`, `circuit-breaker`, `HITL`, `schema-enforcer` |
+| **QDC** (Quality) | `/qdc/ask` | code metrics + smells | `complexity`, `coverage`, `smell`, `maintainability` |
+| **MDC** (Migration) | `/migration/ask` | migration assessments | `7R`, `strangler-fig`, `refactor`, `rehost` |
 
 **How it works:**
 
@@ -557,21 +470,6 @@ icdev-setup --show-profiles
 # Profile-based installer (advanced)
 python tools/installer/installer.py --profile dod_team --compliance fedramp_high,cmmc
 python tools/installer/installer.py --profile healthcare --compliance hipaa,hitrust
-```
-
-### Generate your first application:
-
-```bash
-# Assess fitness for agentic architecture
-python tools/builder/agentic_fitness.py --spec "Mission planning tool for IL5 with CUI markings" --json
-
-# Generate blueprint from scorecard
-python tools/builder/app_blueprint.py --fitness-scorecard scorecard.json \
-  --user-decisions '{}' --app-name "mission-planner" --json
-
-# Generate the full application (12 steps, 300+ files)
-python tools/builder/child_app_generator.py --blueprint blueprint.json \
-  --project-path ./output --name "mission-planner" --json
 ```
 
 ### Or use Claude Code:
@@ -748,13 +646,6 @@ python tools/dashboard/app.py
 | `/ai-accountability` | AI Accountability: oversight plans, CAIO registry, appeals, incidents, ethics reviews, reassessment |
 | `/code-quality` | Code Quality Intelligence: AST metrics, smell detection, maintainability trend, runtime feedback |
 | `/orchestration` | Real-time orchestration: agent grid, workflow DAG, SSE mailbox feed, prompt chains, ANVIL critiques |
-| `/cpmp` | Contract Performance Management: EVM, CPARS prediction, deliverables, subcontractors, portfolio health |
-| `/cpmp/cor` | COR portal: government read-only contract oversight (deliverables, EVM, CPARS) |
-| `/proposals` | GovProposal lifecycle: opportunities, sections, compliance matrix, timeline, reviews |
-| `/govcon` | GovCon Intelligence: SAM.gov scanning, pipeline status, domain distribution |
-| `/govcon/requirements` | Requirement pattern analysis: frequency, domain heatmap, trend detection |
-| `/govcon/capabilities` | ICDEV™ capability coverage: L/M/N grading, gaps, enhancement recommendations |
-| `/proposal-genesis` | Proposal Genesis daemon: autonomous capture pipeline, R1–R20 reflexes, CRM module |
 | `/genesis` | Genesis v2: autonomous research lab with 14 reflexes and Trust Kernel |
 | `/pulse` | AI Blog Engine: deterministic article generation, WriteGuard quality scoring |
 | `/finetune` | Fine-Tuning Dashboard: datasets, labeling, training jobs, model registry, evaluation |
@@ -765,7 +656,6 @@ python tools/dashboard/app.py
 | `/fathomdesk` | FathomDesk: multi-agent trading intelligence with options, crypto, and technical analysis |
 | `/news` | News feed: category-tab layout with show-on-chart links |
 | `/simulation` | Digital Program Twin: 6-dimension what-if simulation, Monte Carlo COA comparison |
-| `/migration` | Application modernization: 7R assessment, legacy migration tracking |
 | `/translations` | Cross-language code translation: 30 pairs, pass@k candidates, auto-repair |
 | `/compliance` | Multi-framework compliance dashboard with crosswalk deduplication |
 | `/ato-package` | ATO package: SSP, POAM, STIG, SBOM, OSCAL artifact management |
@@ -773,6 +663,8 @@ python tools/dashboard/app.py
 | `/lineage` | Data lineage: column-level traceability, PII classification |
 | `/agentic-ai/` | Agentic AI Design Canvas: 7 design templates + 7 solution packs + quick-start wizard + compliance baseline gallery |
 | `/autonomous-coder/` | Autonomous Coder: live agentic AI app — Planner→Coder→Validator pipeline, 3 LLM backends, circuit breaker, audit log |
+| `/forge-academy/` | FORGE Academy: gamified AI training — 12 roles, 75 missions, rank progression |
+| `/gameday` | AI GameDay: competitive tabletop exercise platform with AI scoring and live leaderboard |
 | `/studio/workflows` | ICDEV Studio: low-code workflow canvas |
 | `/studio/marketplace` | ICDEV Studio: marketplace integration |
 | `/network/canvas` | Network Design Canvas: topology builder, drag-and-drop, cloud architecture diagrams |
@@ -788,6 +680,9 @@ python tools/dashboard/app.py
 | `/data/ask` | **Ask DDC** — Q&A over column-level data lineage |
 | `/observability/ask` | **Ask ODC** — Q&A over detection coverage + Sigma rules |
 | `/infra/ask` | **Ask IDC** — Q&A over IaC designs (Terraform/Pulumi/CloudFormation resources) |
+| `/agentic-ai/ask` | **Ask AADC** — Q&A over agentic AI designs + solution pack graphs |
+| `/qdc/ask` | **Ask QDC** — Q&A over code quality metrics and smell detections |
+| `/migration/ask` | **Ask MDC** — Q&A over migration assessments and 7R scoring |
 
 Auth: per-user API keys (SHA-256 hashed), 6 RBAC roles (admin, pm, developer, isso, co, cor). Optional BYOK (bring-your-own LLM keys) with AES-256 encryption.
 
@@ -891,15 +786,23 @@ icdev/
 │   ├── observability/    # Tracing, provenance, AgentSHAP, XAI
 │   ├── innovation/       # Autonomous self-improvement engine
 │   ├── creative/         # Customer-centric feature discovery
-│   ├── govcon/           # GovCon Intelligence — SAM.gov capture pipeline
 │   ├── network/          # Network Design Canvas — topology, ACAS/Nessus overlay, NL queries, cloud arch
 │   ├── infra/            # IaC generators — Terraform for AWS, Azure, GCP, OCI, IBM Cloud
 │   ├── sre/              # SRE Operations — runbooks, incident tracking, toil budgets, SLO monitoring
 │   ├── pipeline/         # Pipeline Canvas — visual CI/CD pipeline design
 │   ├── trading/          # FathomDesk — multi-agent trading intelligence, TA, options, crypto, tax-lots
 │   ├── iqe/              # ICDEV Query Engine — foreach/where/select DSL over canvas databases
+│   ├── ttx/              # TTX Engine — generic tabletop exercise runner (YAML scenario packs)
 │   ├── workflow/         # Failure triage, auto-fix loop, coherence checker, worktree isolation
 │   └── ...               # 30+ more specialized categories
+├── apps/                 # Generated and sample applications
+│   ├── forge_academy/    # FORGE Academy — gamified AI training platform
+│   ├── ai_gameday/       # AI GameDay — competitive TTX platform
+│   ├── govlift/          # GovLift — DoD IL4 cloud migration tracker
+│   ├── autonomous_coder/ # Autonomous Coder — multi-agent code generation
+│   ├── strategos/        # Strategos — multi-domain operations COP
+│   ├── geosigint/        # GeoSIGINT — geographic intelligence dashboard
+│   └── alphadesk/        # FathomDesk — multi-agent trading intelligence
 ├── args/                 # 30+ YAML/JSON configuration files
 ├── context/              # 42 compliance catalogs, language profiles
 ├── hardprompts/          # Reusable LLM instruction templates
