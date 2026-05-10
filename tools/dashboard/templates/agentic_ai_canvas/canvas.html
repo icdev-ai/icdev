@@ -1358,6 +1358,8 @@ let _menuHideTimer = null;
 (function() {
   const wrap = document.querySelector('.aadc-menu-wrap');
   const menu = document.getElementById('aadc-menu');
+  // Portal to <body>: escapes GPU compositing layers from canvas-wrapper / palette sidebar
+  document.body.appendChild(menu);
   function _keep()  { clearTimeout(_menuHideTimer); }
   function _sched() { _menuHideTimer = setTimeout(() => { menu.style.display = 'none'; }, 150); }
   wrap.addEventListener('mouseenter', () => { _keep(); _menuPos(); menu.style.display = 'block'; });
