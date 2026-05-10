@@ -148,7 +148,7 @@
             tenant_id: options.tenant_id || '',
             title: options.title || '',
             project_id: options.project_id || '',
-            agent_model: options.agent_model || 'sonnet',
+            agent_model: options.agent_model || (window._CHAT_CONFIG && window._CHAT_CONFIG.defaultModel) || '',
             system_prompt: options.system_prompt || ''
         }).then(function (ctx) {
             if (ctx.error) {
@@ -1930,7 +1930,7 @@
                 tenant_id: '',
                 title: title,
                 project_id: '',
-                agent_model: options.agent_model || 'sonnet',
+                agent_model: options.agent_model || (window._CHAT_CONFIG && window._CHAT_CONFIG.defaultModel) || '',
                 system_prompt: 'RICOAS intake session: ' + intakeSessionId
             }).then(function (ctx) {
                 if (ctx.error) {
@@ -1995,7 +1995,7 @@
                 tenant_id: '',
                 title: 'Intake: ' + sessionId.substring(0, 8),
                 project_id: '',
-                agent_model: 'sonnet',
+                agent_model: (window._CHAT_CONFIG && window._CHAT_CONFIG.defaultModel) || '',
                 system_prompt: 'RICOAS intake session: ' + sessionId
             }).then(function (ctx) {
                 if (ctx.error) return;

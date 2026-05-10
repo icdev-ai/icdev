@@ -355,9 +355,11 @@
         <div class="chat-modal__field">
             <label class="chat-modal__label">Agent Model</label>
             <select id="new-ctx-model" class="chat-modal__select">
-                <option value="sonnet">Sonnet (Default)</option>
-                <option value="opus">Opus</option>
-                <option value="haiku">Haiku</option>
+                {% for m in llm_models %}
+                <option value="{{ m.value }}"{% if m.value == llm_default_model %} selected{% endif %}>{{ m.label }}</option>
+                {% else %}
+                <option value="default" selected>Default</option>
+                {% endfor %}
             </select>
         </div>
 
@@ -458,7 +460,8 @@
         wizardFrameworks: {{ (wizard_frameworks or '')|tojson if wizard_frameworks is defined else '""' }},
         customRoleName: {{ (wizard_custom_role_name or '')|tojson if wizard_custom_role_name is defined else '""' }},
         customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }},
-        wizardCanvas: {{ (wizard_canvas or '')|tojson if wizard_canvas is defined else '""' }}
+        wizardCanvas: {{ (wizard_canvas or '')|tojson if wizard_canvas is defined else '""' }},
+        defaultModel: {{ llm_default_model|tojson if llm_default_model is defined else '"default"' }}
     };
 </script>
 {% endblock %}

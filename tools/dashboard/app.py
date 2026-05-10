@@ -995,6 +995,74 @@ def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
     return enriched
 
 
+def _get_chat_models() -> tuple[list[dict], str]:
+    """Read available chat models from args/llm_config.yaml.
+
+    Returns (models_list, default_model_key) where models_list is
+    [{value, label, provider}] and default_model_key is the first entry
+    in the chat_response routing chain.
+    """
+    import yaml
+    from pathlib import Path
+
+    config_path = Path("args/llm_config.yaml")
+    try:
+        with open(config_path, encoding="utf-8") as _f:
+            cfg = yaml.safe_load(_f)
+    except Exception:
+        return [{"value": "default", "label": "Default", "provider": ""}], "default"
+
+    _PROVIDER_LABELS = {
+        "ollama": "Local (Ollama)",
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "gemini": "Google Gemini",
+        "bedrock": "AWS Bedrock",
+        "azure_openai": "Azure OpenAI",
+        "ibm_watsonx": "IBM watsonx",
+        "mistral": "Mistral",
+        "mistral_vllm": "Mistral (vLLM)",
+        "vllm": "vLLM",
+    }
+
+    # Collect embedding model IDs so we can skip them
+    embed_ids: set[str] = set()
+    try:
+        for _v in cfg.get("embedding", {}).get("models", {}).values():
+            if isinstance(_v, dict):
+                embed_ids.add(_v.get("model_id", ""))
+    except Exception:
+        pass
+
+    result: list[dict] = []
+    for key, mcfg in (cfg.get("models") or {}).items():
+        if not isinstance(mcfg, dict):
+            continue
+        if key.startswith("agent_"):
+            continue
+        provider = mcfg.get("provider", "")
+        model_id = mcfg.get("model_id", key)
+        if model_id in embed_ids:
+            continue
+        provider_label = _PROVIDER_LABELS.get(provider, provider.replace("_", " ").title())
+        result.append({
+            "value": key,
+            "label": f"{key}  [{provider_label}]",
+            "provider": provider,
+        })
+
+    # Determine default from chat_response routing chain
+    default_model = result[0]["value"] if result else "default"
+    try:
+        chain = cfg.get("routing", {}).get("chat_response", {}).get("chain", [])
+        if chain:
+            default_model = chain[0]
+    except Exception:
+        pass
+
+    return result, default_model
+
+
 def create_app() -> Flask:
     app = Flask(
         __name__,
@@ -2472,6 +2540,7 @@ def create_app() -> Flask:
         canvas = flask_request.args.get("canvas", "") or flask_request.args.get("canvas_type", "")
         _allowed = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
         wizard_canvas = canvas if canvas in _allowed else ""
+        llm_models, llm_default_model = _get_chat_models()
         return render_template(
             "chat.html",
             session_id=None,
@@ -2483,6 +2552,8 @@ def create_app() -> Flask:
             wizard_custom_role_name=custom_role_name,
             wizard_custom_role_desc=custom_role_desc,
             wizard_canvas=wizard_canvas,
+            llm_models=llm_models,
+            llm_default_model=llm_default_model,
         )
 
     @app.route("/chat/<session_id>")
@@ -2521,6 +2592,7 @@ def create_app() -> Flask:
                 ctx = _json.loads(session_dict.get("context_summary") or "{}")
             except (ValueError, TypeError):
                 pass
+            llm_models, llm_default_model = _get_chat_models()
             return render_template(
                 "chat.html",
                 session_id=session_id,
@@ -2534,6 +2606,8 @@ def create_app() -> Flask:
                 wizard_custom_role_name="",
                 wizard_custom_role_desc="",
                 session_context=ctx,
+                llm_models=llm_models,
+                llm_default_model=llm_default_model,
             )
         finally:
             conn.close()
