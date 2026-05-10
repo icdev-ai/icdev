@@ -70,8 +70,14 @@ a:hover { color: #f06292; }
 
 /* ── Canvas Area ─────────────────────────────────────────────────── */
 
-.pc-canvas-area { flex: 1; overflow: auto; position: relative; background: var(--pc-bg); }
+.pc-canvas-area { flex: 1; overflow: auto; position: relative; background: var(--pc-bg); cursor: grab; }
+.pc-canvas-area.is-panning { cursor: grabbing !important; user-select: none; }
+/* Keep default cursor over nodes so they stay interactive */
+.pc-canvas-area .joint-cell { cursor: default; }
 #pc-canvas-container { width: 5000px; height: 5000px; background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px); background-size: 10px 10px; }
+
+/* Zoom label in toolbar */
+#pc-zoom-label { font-size: 11px; color: var(--pc-text-dim); min-width: 36px; text-align: center; padding: 0 4px; }
 
 /* ── Config Panel (Right) ────────────────────────────────────────── */
 

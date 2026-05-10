@@ -35,10 +35,11 @@
     <button class="tb-btn" onclick="toggleSnippets()">⊞ Snippets</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="zoomIn()">+ Zoom</button>
-    <button class="tb-btn" onclick="zoomOut()">- Zoom</button>
-    <button class="tb-btn" onclick="zoomFit()">⊞ Fit</button>
-    <button class="tb-btn" onclick="zoomReset()">1:1</button>
+    <button class="tb-btn" onclick="zoomIn()" title="Zoom in (+)">+ Zoom</button>
+    <button class="tb-btn" onclick="zoomOut()" title="Zoom out (-)">- Zoom</button>
+    <button class="tb-btn" onclick="zoomFit()" title="Fit all nodes (F)">⊞ Fit</button>
+    <button class="tb-btn" onclick="zoomReset()" title="Reset to 100% (0)">1:1</button>
+    <span id="pc-zoom-label">100%</span>
   </div>
   <div class="tb-group">
     <button class="tb-btn" onclick="exportAs('gitlab_ci')">🔧 GitLab CI</button>
@@ -159,6 +160,7 @@ if (typeof TOOL_INFO !== 'undefined') {
       loadGraph(graphJson);
       zoomFit();
     }
+    _updateZoomLabel();
 
     // Load templates for modal
     fetch('/devops/api/templates')
