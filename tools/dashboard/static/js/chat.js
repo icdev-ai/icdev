@@ -188,6 +188,8 @@
                 if (closeBtn) closeBtn.style.display = 'none';
                 var stream = document.getElementById('message-stream');
                 if (stream) stream.innerHTML = '';
+                var wb = document.getElementById('chat-welcome-banner');
+                if (wb) { stream.appendChild(wb); wb.style.display = ''; }
             }
             refreshContextList();
         });
@@ -397,6 +399,9 @@
             stopPolling();
             stopRicoasTimers();
             hideRicoasSidebar();
+            var stream = document.getElementById('message-stream');
+            var wb = document.getElementById('chat-welcome-banner');
+            if (wb && stream) { stream.appendChild(wb); wb.style.display = ''; }
         });
     }
 
@@ -1005,6 +1010,16 @@
 
         if (data.total_requirements !== undefined) setText('stat-requirements', data.total_requirements);
         else if (data.requirement_count !== undefined) setText('stat-requirements', data.requirement_count);
+
+        var score = data.readiness_score || overall;
+        var gauge = document.getElementById('readiness-gauge');
+        var dimsEl = document.getElementById('readiness-dimensions');
+        var placeholder = document.getElementById('readiness-placeholder');
+        if (score > 0) {
+            if (gauge) gauge.style.display = '';
+            if (dimsEl) dimsEl.style.display = '';
+            if (placeholder) placeholder.style.display = 'none';
+        }
 
         var planBtn = document.getElementById('generate-plan-btn');
         var exportBtn = document.getElementById('export-btn');
@@ -1768,6 +1783,8 @@
         for (var i = 0; i < messages.length; i++) html += renderMessageHtml(messages[i]);
         stream.innerHTML = html;
         stream.scrollTop = stream.scrollHeight;
+        var wb = document.getElementById('chat-welcome-banner');
+        if (wb) wb.style.display = (messages && messages.length > 0) ? 'none' : '';
         // Show Q&A widget on the last assistant message (if it has multiple questions)
         var last = messages[messages.length - 1];
         if (last && last.role === 'assistant') _injectQAWidget(stream, last.content || '');
@@ -2605,6 +2622,19 @@
     };
 
     window.ICDEV = ns;
+
+    // Prompt chip click handler
+    document.addEventListener('click', function(e) {
+        if (!e.target.classList.contains('chat-welcome__prompt-chip')) return;
+        var prompt = e.target.getAttribute('data-prompt');
+        if (!prompt || !_activeContextId) return;
+        var inp = document.getElementById('message-input');
+        if (inp && !inp.disabled) {
+            inp.value = prompt;
+            inp.dispatchEvent(new Event('input'));
+            sendMessage();
+        }
+    });
 
     // Init on DOM ready
     if (document.readyState === 'loading') {
