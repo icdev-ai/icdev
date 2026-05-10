@@ -171,6 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const accent = cfg.accentColor || '#00bcd4';
+  let currentScale = 1;
 
   graph = new joint.dia.Graph();
   paper = new joint.dia.Paper({
@@ -208,15 +209,62 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Enable element selection
+  // Default cursor
+  container.style.cursor = 'grab';
+
+  // Zoom + pan state
+  let panState = null;
+
+  function updateZoomLabel() {
+    const lbl = document.getElementById('dc-zoom-label');
+    if (lbl) lbl.textContent = Math.round(currentScale * 100) + '%';
+  }
+
+  // Wheel zoom-to-cursor
+  container.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newScale = Math.min(4, Math.max(0.2, currentScale * factor));
+    if (newScale === currentScale) return;
+    const rect = container.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const { tx, ty } = paper.translate();
+    const mx = (cx - tx) / currentScale;
+    const my = (cy - ty) / currentScale;
+    currentScale = newScale;
+    paper.scale(newScale, newScale);
+    paper.translate(cx - mx * newScale, cy - my * newScale);
+    updateZoomLabel();
+  }, { passive: false });
+
+  // Click-drag panning on blank canvas
+  paper.on('blank:pointerdown', (evt) => {
+    const e = evt.originalEvent || evt;
+    panState = { startX: e.clientX, startY: e.clientY, tx: paper.translate().tx, ty: paper.translate().ty };
+    container.style.cursor = 'grabbing';
+    selectedCell = null;
+    closeRightPanel();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!panState) return;
+    paper.translate(panState.tx + e.clientX - panState.startX, panState.ty + e.clientY - panState.startY);
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (panState) { panState = null; container.style.cursor = 'grab'; }
+  });
+
+  // Enable element selection — open properties panel
   paper.on('element:pointerdown', (cellView) => {
-    selectedCell = cellView.model;
+    showNodeProperties(cellView);
   });
   paper.on('link:pointerdown', (linkView) => {
-    selectedCell = linkView.model;
+    showLinkProperties(linkView);
   });
   paper.on('blank:pointerdown', () => {
-    selectedCell = null;
+    // handled above (pan + close panel)
   });
 
   // Load graph data (pause undo tracking during initial load)
@@ -345,8 +393,9 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const data = JSON.parse(evt.dataTransfer.getData('text/plain'));
       const rect = container.getBoundingClientRect();
-      const x = evt.clientX - rect.left;
-      const y = evt.clientY - rect.top;
+      const { tx, ty } = paper.translate();
+      const x = (evt.clientX - rect.left - tx) / currentScale;
+      const y = (evt.clientY - rect.top  - ty) / currentScale;
       const nodeId = 'n-' + Math.random().toString(36).substr(2, 8);
       const cell = createNode({ id: nodeId, type: data.type, label: data.label, x, y });
       graph.addCell(cell);
@@ -633,24 +682,38 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Zoom ───────────────────────────────────────────────────────────────
-  let currentScale = 1;
   window.canvasZoomIn = function() {
+    const rect = container.getBoundingClientRect();
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const { tx, ty } = paper.translate();
+    const mx = (cx - tx) / currentScale, my = (cy - ty) / currentScale;
     currentScale = Math.min(currentScale * 1.2, 4);
     paper.scale(currentScale, currentScale);
+    paper.translate(cx - mx * currentScale, cy - my * currentScale);
+    updateZoomLabel();
   };
   window.canvasZoomOut = function() {
+    const rect = container.getBoundingClientRect();
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const { tx, ty } = paper.translate();
+    const mx = (cx - tx) / currentScale, my = (cy - ty) / currentScale;
     currentScale = Math.max(currentScale * 0.8, 0.2);
     paper.scale(currentScale, currentScale);
+    paper.translate(cx - mx * currentScale, cy - my * currentScale);
+    updateZoomLabel();
   };
   window.canvasZoomFit = function() {
     try {
       paper.scaleContentToFit({ padding: 40, maxScale: 2, minScale: 0.2 });
       currentScale = paper.scale().sx;
+      updateZoomLabel();
     } catch (e) { /* ignore */ }
   };
   window.canvasZoomReset = function() {
     currentScale = 1;
     paper.scale(1, 1);
+    paper.translate(0, 0);
+    updateZoomLabel();
   };
 
   // ── Export (SVG / DrawIO / JSON) ───────────────────────────────────────
@@ -1080,6 +1143,235 @@ document.addEventListener('DOMContentLoaded', () => {
 
     openRightPanel('Deploy IaC Bundle', html);
     showStatus('✓ IaC bundle generated');
+  };
+
+  // ── Node / Edge Properties Panel ──────────────────────────────────────
+  const CATEGORY_LABELS = {
+    'ent': 'Entity / Store', 'col': 'Column / Field', 'flow': 'Data Flow',
+    'ctrl': 'Control / Policy', 'bnd': 'Boundary / Zone', 'twin': 'Digital Twin',
+    'aws': 'AWS Service', 'az': 'Azure Service', 'gcp': 'GCP Service',
+    'oci': 'OCI Service', 'ibm': 'IBM Cloud', 'op': 'On-Premises', 'iac': 'IaC Tool',
+    'sys': 'System', 'isa': 'Interconnection (ISA)', 'doc': 'Documentation',
+    'src': 'Log / Telemetry Source', 'plt': 'Platform', 'auto': 'Automation', 'cmp': 'Compliance',
+  };
+
+  const ENTITY_INFO = {
+    'ent-table':        { icon: '📋', name: 'Relational Table',   notes: 'SQL table with primary key' },
+    'ent-view':         { icon: '👁',  name: 'Database View',      notes: 'Virtual table from query' },
+    'ent-schema':       { icon: '🗂',  name: 'Schema',             notes: 'Namespace grouping tables' },
+    'ent-collection':   { icon: '📦', name: 'NoSQL Collection',   notes: 'Document store collection' },
+    'ent-stream':       { icon: '🌊', name: 'Event Stream',       notes: 'Kafka topic / message stream' },
+    'ent-bucket':       { icon: '🪣', name: 'Object Store',       notes: 'S3-compatible blob storage' },
+    'ent-queue':        { icon: '📨', name: 'Message Queue',      notes: 'FIFO message queue' },
+    'ent-cache':        { icon: '⚡', name: 'Cache Store',        notes: 'Redis / Memcached' },
+    'ent-graph':        { icon: '🕸',  name: 'Graph Database',     notes: 'Property graph (node/edge)' },
+    'ent-warehouse':    { icon: '🏭', name: 'Data Warehouse',     notes: 'Analytical OLAP store' },
+    'ent-lakehouse':    { icon: '🏞',  name: 'Lakehouse',          notes: 'Delta / Iceberg open table format' },
+    'ent-feature-store':{ icon: '🧪', name: 'Feature Store',      notes: 'ML feature online/offline store' },
+    'ent-model-registry':{ icon: '🤖', name: 'Model Registry',    notes: 'ML model artifact versioning' },
+    'ent-dataset':      { icon: '📊', name: 'Training Dataset',   notes: 'Labeled ML training data' },
+    'ent-experiment':   { icon: '🔬', name: 'Experiment Run',     notes: 'ML experiment tracking' },
+    'ent-ml-pipeline':  { icon: '🔁', name: 'ML Pipeline',        notes: 'Orchestrated ML workflow' },
+    'ent-data-product': { icon: '📦', name: 'Data Product',       notes: 'Data mesh product with ports' },
+    'ent-domain':       { icon: '🏛',  name: 'Data Domain',        notes: 'Organizational data domain' },
+    'ent-contract':     { icon: '📜', name: 'Data Contract',      notes: 'ODCS / bitol-io schema contract' },
+    'ent-input-port':   { icon: '↙',  name: 'Input Port',         notes: 'Data product input interface' },
+    'ent-output-port':  { icon: '↗',  name: 'Output Port',        notes: 'Data product output interface' },
+  };
+
+  const FLOW_INFO = {
+    'flow-etl':         { icon: '🔄', name: 'ETL Pipeline',        notes: 'Extract, Transform, Load batch job' },
+    'flow-api':         { icon: '🔗', name: 'REST / GraphQL API',  notes: 'Synchronous API call' },
+    'flow-cdc':         { icon: '📡', name: 'Change Data Capture', notes: 'Real-time event capture (Debezium)' },
+    'flow-stream':      { icon: '🌊', name: 'Stream Processing',   notes: 'Kafka Streams / Flink pipeline' },
+    'flow-replication': { icon: '🪞', name: 'DB Replication',      notes: 'Logical / physical replication' },
+    'flow-sync':        { icon: '🔁', name: 'Data Sync',           notes: 'Bidirectional data synchronization' },
+    'flow-webhook':     { icon: '🪝', name: 'Webhook',             notes: 'Push-based event notification' },
+    'flow-export':      { icon: '📤', name: 'Export / Bulk Load',  notes: 'Bulk data export job' },
+  };
+
+  function showNodeProperties(cellView) {
+    const cell = cellView.model;
+    if (!cell.isElement()) return;
+    selectedCell = cell;
+
+    const nodeType  = cell.get('nodeType') || '';
+    const nodeLabel = cell.get('nodeLabel') || cell.id;
+    const pos       = cell.position();
+    const size      = cell.size();
+    const colors    = getNodeColor(nodeType);
+    const desc      = (window.NODE_DESCS || {})[nodeType] || '';
+    const prefix    = nodeType.split('-')[0] || 'unknown';
+    const catLabel  = CATEGORY_LABELS[prefix] || prefix.toUpperCase();
+
+    const allLinks  = graph.getConnectedLinks(cell);
+    const incoming  = allLinks.filter(l => l.get('target') && l.get('target').id === cell.id);
+    const outgoing  = allLinks.filter(l => l.get('source') && l.get('source').id === cell.id);
+
+    let html = '';
+
+    // Color-coded header card
+    html += `<div style="background:${colors.fill};border:2px solid ${colors.stroke};border-radius:8px;padding:10px 12px;margin-bottom:10px;">`;
+    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">`;
+    html += `<div style="width:10px;height:10px;border-radius:50%;background:${colors.stroke};flex-shrink:0;"></div>`;
+    html += `<div style="font-size:13px;font-weight:700;color:#eaeaea;">${nodeLabel}</div>`;
+    html += `</div>`;
+    html += `<div style="font-size:10px;color:${colors.stroke};font-family:monospace;">${nodeType}</div>`;
+    html += `<div style="font-size:10px;color:#5a6e8c;margin-top:2px;">${catLabel}</div>`;
+    html += `</div>`;
+
+    // Description
+    if (desc) {
+      html += `<div style="background:#16213e;border-left:3px solid ${colors.stroke};border-radius:0 6px 6px 0;padding:8px 10px;margin-bottom:10px;font-size:11px;color:#8ea8c3;line-height:1.5;">${desc}</div>`;
+    }
+
+    // Identity
+    html += _section('Identity');
+    html += _metric('Label', nodeLabel);
+    html += _metric('Type', `<span style="font-family:monospace;font-size:10px;color:#ff9800;">${nodeType}</span>`);
+    html += _metric('Category', catLabel);
+    html += _metric('ID', `<span style="font-family:monospace;font-size:9px;color:#5a6e8c;">${cell.id}</span>`);
+
+    // Geometry
+    html += _section('Geometry');
+    html += _metric('Position', `(${Math.round(pos.x)}, ${Math.round(pos.y)})`);
+    if (size.width !== 130 || size.height !== 50) {
+      html += _metric('Size', `${Math.round(size.width)} × ${Math.round(size.height)}`);
+    }
+
+    // Connections
+    html += _section(`Connections (${allLinks.length})`);
+    if (allLinks.length === 0) {
+      html += `<div style="color:#5a6e8c;font-size:11px;font-style:italic;">No connections yet.</div>`;
+    } else {
+      html += _metric('Incoming', incoming.length);
+      html += _metric('Outgoing', outgoing.length);
+      if (incoming.length) {
+        html += `<div style="margin-top:5px;"><div style="font-size:10px;color:#3498db;font-weight:600;margin-bottom:3px;">▲ From</div>`;
+        incoming.forEach(l => {
+          const src = graph.getCell(l.get('source')?.id);
+          const lbl = src ? (src.get('nodeLabel') || src.id) : '?';
+          const el  = (l.labels()?.[0]?.attrs?.text?.text) || '';
+          html += `<div style="padding:2px 8px;background:#0f1e36;border-radius:3px;font-size:10px;color:#3498db;margin-bottom:2px;display:flex;justify-content:space-between;"><span>← ${lbl}</span>${el ? `<span style="color:#5a6e8c;font-style:italic;">${el}</span>` : ''}</div>`;
+        });
+        html += `</div>`;
+      }
+      if (outgoing.length) {
+        html += `<div style="margin-top:5px;"><div style="font-size:10px;color:#27ae60;font-weight:600;margin-bottom:3px;">▼ To</div>`;
+        outgoing.forEach(l => {
+          const tgt = graph.getCell(l.get('target')?.id);
+          const lbl = tgt ? (tgt.get('nodeLabel') || tgt.id) : '?';
+          const el  = (l.labels()?.[0]?.attrs?.text?.text) || '';
+          html += `<div style="padding:2px 8px;background:#0f1e36;border-radius:3px;font-size:10px;color:#27ae60;margin-bottom:2px;display:flex;justify-content:space-between;"><span>→ ${lbl}</span>${el ? `<span style="color:#5a6e8c;font-style:italic;">${el}</span>` : ''}</div>`;
+        });
+        html += `</div>`;
+      }
+    }
+
+    // Type-specific detail card
+    const einfo = ENTITY_INFO[nodeType];
+    const finfo = FLOW_INFO[nodeType];
+    if (einfo || finfo) {
+      const info = einfo || finfo;
+      html += _section('Type Detail');
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:8px;background:#16213e;border-radius:6px;">`;
+      html += `<div style="font-size:22px;">${info.icon}</div>`;
+      html += `<div><div style="font-size:12px;font-weight:600;color:#eaeaea;">${info.name}</div><div style="font-size:10px;color:#5a6e8c;margin-top:2px;">${info.notes}</div></div>`;
+      html += `</div>`;
+    }
+
+    // Compliance hints by prefix
+    if (prefix === 'ctrl') {
+      html += _section('Control Guidance');
+      html += `<div style="font-size:10px;color:#7a8cb0;line-height:1.5;">Controls enforce access, encryption, and audit policies. Connect to entity nodes they protect.</div>`;
+    }
+    if (prefix === 'bnd') {
+      html += _section('Boundary Guidance');
+      html += `<div style="font-size:10px;color:#7a8cb0;line-height:1.5;">Boundaries define trust zones. Drag to resize. All nodes inside share this classification scope.</div>`;
+    }
+
+    // Actions
+    html += _section('Actions');
+    html += `<div style="display:flex;flex-direction:column;gap:5px;margin-top:4px;">`;
+    html += `<button onclick="canvasRenameSelected()" style="background:#1e3a6e;border:1px solid #2a4070;color:#eaeaea;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;text-align:left;">✏️ Rename</button>`;
+    html += `<button onclick="canvasDuplicateSelected()" style="background:#1e3a6e;border:1px solid #2a4070;color:#eaeaea;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;text-align:left;">📋 Duplicate</button>`;
+    html += `<button onclick="canvasDeleteSelected();closeRightPanel();" style="background:#2b1a1a;border:1px solid #c0392b44;color:#e74c3c;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;text-align:left;">🗑 Delete</button>`;
+    html += `</div>`;
+
+    openRightPanel('Properties', html);
+  }
+
+  function showLinkProperties(linkView) {
+    const cell = linkView.model;
+    selectedCell = cell;
+
+    const src  = graph.getCell(cell.get('source')?.id);
+    const tgt  = graph.getCell(cell.get('target')?.id);
+    const srcLabel = src ? (src.get('nodeLabel') || src.id) : '(unconnected)';
+    const tgtLabel = tgt ? (tgt.get('nodeLabel') || tgt.id) : '(unconnected)';
+    const edgeLabel = (cell.labels()?.[0]?.attrs?.text?.text) || '';
+
+    let html = '';
+    html += `<div style="background:#16213e;border:2px solid #5a6e8c;border-radius:8px;padding:10px 12px;margin-bottom:10px;">`;
+    html += `<div style="font-size:13px;font-weight:700;color:#eaeaea;">Edge</div>`;
+    html += `<div style="font-size:10px;color:#5a6e8c;margin-top:2px;font-family:monospace;">${cell.id}</div>`;
+    html += `</div>`;
+
+    html += _section('Connection');
+    html += _metric('From', `<span style="color:#3498db;">${srcLabel}</span>`);
+    html += _metric('To',   `<span style="color:#27ae60;">${tgtLabel}</span>`);
+    if (edgeLabel) html += _metric('Label', edgeLabel);
+
+    html += _section('Actions');
+    html += `<div style="display:flex;flex-direction:column;gap:5px;margin-top:4px;">`;
+    html += `<button onclick="canvasRelabelEdge()" style="background:#1e3a6e;border:1px solid #2a4070;color:#eaeaea;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;text-align:left;">✏️ Add / Edit Label</button>`;
+    html += `<button onclick="canvasDeleteSelected();closeRightPanel();" style="background:#2b1a1a;border:1px solid #c0392b44;color:#e74c3c;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:11px;text-align:left;">🗑 Delete Edge</button>`;
+    html += `</div>`;
+
+    openRightPanel('Edge Properties', html);
+  }
+
+  window.canvasRenameSelected = function() {
+    if (!selectedCell || !selectedCell.isElement()) return;
+    const current = selectedCell.get('nodeLabel') || '';
+    const newLabel = prompt('Rename node:', current);
+    if (newLabel !== null && newLabel.trim()) {
+      selectedCell.attr('label/text', newLabel.trim());
+      selectedCell.set('nodeLabel', newLabel.trim());
+      isDirty = true;
+      const cv = paper.findViewByModel(selectedCell);
+      if (cv) showNodeProperties(cv);
+    }
+  };
+
+  window.canvasDuplicateSelected = function() {
+    if (!selectedCell || !selectedCell.isElement()) return;
+    const pos = selectedCell.position();
+    const newId = 'n-' + Math.random().toString(36).substr(2, 8);
+    const clone = createNode({
+      id: newId,
+      type: selectedCell.get('nodeType'),
+      label: (selectedCell.get('nodeLabel') || '') + ' (copy)',
+      x: pos.x + 20,
+      y: pos.y + 20,
+    });
+    graph.addCell(clone);
+    isDirty = true;
+  };
+
+  window.canvasRelabelEdge = function() {
+    if (!selectedCell || !selectedCell.isLink()) return;
+    const current = (selectedCell.labels()?.[0]?.attrs?.text?.text) || '';
+    const newLabel = prompt('Edge label (blank to remove):', current);
+    if (newLabel === null) return;
+    if (newLabel.trim()) {
+      selectedCell.labels([{ position: 0.5, attrs: { text: { text: newLabel.trim(), fill: '#7a8cb0', fontSize: 9 }, rect: { fill: '#0d1b2a', stroke: 'none' } } }]);
+    } else {
+      selectedCell.labels([]);
+    }
+    isDirty = true;
+    const lv = paper.findViewByModel(selectedCell);
+    if (lv) showLinkProperties(lv);
   };
 
   // ── PII Lineage Panel ──────────────────────────────────────────────────
