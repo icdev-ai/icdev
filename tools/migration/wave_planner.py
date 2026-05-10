@@ -177,8 +177,8 @@ def run(project_id: str = "default") -> dict:
                 f"Terraform vars and YAML execution plan written."
             ),
             "artifacts": [
-                {"name": "Wave Plan (YAML)", "path": str(wave_yaml_path.relative_to(_ROOT)), "type": "yaml"},
-                {"name": "Terraform Variables", "path": str(tfvars_path.relative_to(_ROOT)), "type": "terraform"},
+                {"name": "Wave Plan (YAML)", "path": wave_yaml_path.relative_to(_ROOT).as_posix(), "type": "yaml"},
+                {"name": "Terraform Variables", "path": tfvars_path.relative_to(_ROOT).as_posix(), "type": "terraform"},
             ],
         }
     finally:

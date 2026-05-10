@@ -457,7 +457,7 @@
             let stepArts = [];
             try { stepArts = JSON.parse(s.stdout || '{}').artifacts || []; } catch {}
             const artLinks = stepArts.map(a => {
-              const viewUrl = `/api/studio/artifacts/${encodeURIComponent(a.path || '')}`;
+              const viewUrl = `/api/studio/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
               return `<a href="${viewUrl}" target="_blank" style="color:#60a5fa;font-size:10px;margin-right:4px;">${_esc(a.name)}</a>`;
             }).join('');
             return `<tr>
@@ -488,7 +488,7 @@
       const ext = (a.path || a.name || '').split('.').pop().toLowerCase();
       const icon = _EXT_ICONS[ext] || '📎';
       const name = a.name || a.path || 'Artifact';
-      const viewUrl  = `/api/studio/artifacts/${encodeURIComponent(a.path || '')}`;
+      const viewUrl  = `/api/studio/artifacts/${(a.path || '').split('/').map(encodeURIComponent).join('/')}`;
       const dlUrl    = `${viewUrl}?download=1`;
       return `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1e3a6e;">
         <span style="font-size:16px;">${icon}</span>

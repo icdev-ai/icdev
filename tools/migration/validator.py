@@ -286,8 +286,8 @@ def run(project_id: str = "default") -> dict:
                 f"Checklist and validation script generated."
             ),
             "artifacts": [
-                {"name": "Validation Checklist", "path": str(checklist_path.relative_to(_ROOT)), "type": "markdown"},
-                {"name": "Validation Script", "path": str(script_path.relative_to(_ROOT)), "type": "python"},
+                {"name": "Validation Checklist", "path": checklist_path.relative_to(_ROOT).as_posix(), "type": "markdown"},
+                {"name": "Validation Script", "path": script_path.relative_to(_ROOT).as_posix(), "type": "python"},
             ],
         }
     finally:
