@@ -342,12 +342,16 @@
 
 <!-- New Context Modal -->
 <div id="new-context-modal" class="chat-modal-overlay">
-    <div class="chat-modal">
+    <div class="chat-modal chat-modal--scrollable">
         <h3 class="chat-modal__title">New Chat Context</h3>
+
+        <!-- Title -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Title</label>
             <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title...">
         </div>
+
+        <!-- Agent Model -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Agent Model</label>
             <select id="new-ctx-model" class="chat-modal__select">
@@ -356,6 +360,8 @@
                 <option value="haiku">Haiku</option>
             </select>
         </div>
+
+        <!-- Canvas Mode -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Canvas Mode</label>
             <select id="new-ctx-canvas" class="chat-modal__select">
@@ -370,26 +376,70 @@
                 <option value="idc">Infrastructure Design (IDC)</option>
             </select>
         </div>
-        <div class="chat-modal__field" id="intake-classification-row">
-            <label class="chat-modal__label">Compliance Context</label>
-            <select id="new-ctx-classification" class="chat-modal__select">
-                <option value="">None / Commercial</option>
-                <option value="il2">IL2 — Public / FedRAMP Low</option>
-                <option value="il4">IL4 — CUI / GovCloud</option>
-                <option value="il5">IL5 — CUI / Dedicated DoD</option>
-                <option value="il6">IL6 — SECRET / SIPR</option>
-            </select>
+
+        <!-- Persona / system prompt presets (change with canvas) -->
+        <div class="chat-modal__field" id="ctx-preset-row">
+            <label class="chat-modal__label">Persona <span class="chat-modal__label-sub">— click to pre-fill system prompt</span></label>
+            <div class="ctx-preset-chips" id="ctx-preset-chips"></div>
         </div>
+
+        <!-- Compliance context -->
+        <div class="chat-modal__field">
+            <label class="chat-modal__label">Compliance Context</label>
+            <div class="ctx-env-radios">
+                <label class="ctx-env-radio ctx-env-radio--selected" id="ctx-env-commercial-label">
+                    <input type="radio" name="ctx-env" value="commercial" id="ctx-env-commercial" checked>
+                    <span>Commercial</span>
+                </label>
+                <label class="ctx-env-radio" id="ctx-env-gov-label">
+                    <input type="radio" name="ctx-env" value="gov" id="ctx-env-gov">
+                    <span>Government / DoD</span>
+                </label>
+            </div>
+            <!-- Gov sub-options (hidden by default) -->
+            <div id="ctx-gov-rows" style="display:none; margin-top:10px;">
+                <div style="margin-bottom:8px;">
+                    <div class="chat-modal__label" style="margin-bottom:6px;">Impact Level</div>
+                    <div class="ctx-il-chips">
+                        <label class="ctx-il-chip"><input type="radio" name="ctx-il" value="il2"><span>IL2</span></label>
+                        <label class="ctx-il-chip ctx-il-chip--selected"><input type="radio" name="ctx-il" value="il4" checked><span>IL4</span></label>
+                        <label class="ctx-il-chip"><input type="radio" name="ctx-il" value="il5"><span>IL5</span></label>
+                        <label class="ctx-il-chip"><input type="radio" name="ctx-il" value="il6"><span>IL6</span></label>
+                    </div>
+                </div>
+                <div>
+                    <div class="chat-modal__label" style="margin-bottom:6px;">Compliance Regimes <span class="chat-modal__label-sub">— select all that apply</span></div>
+                    <div class="ctx-regime-grid">
+                        <label class="ctx-regime-chip"><input type="checkbox" value="fedramp-low"><span>FedRAMP Low</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="fedramp-mod"><span>FedRAMP Moderate</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="fedramp-high"><span>FedRAMP High</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="cmmc1"><span>CMMC 1</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="cmmc2"><span>CMMC 2</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="cmmc3"><span>CMMC 3</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="nist-800-53"><span>NIST 800-53</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="stig"><span>DoD STIG</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="rmf"><span>RMF</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="stateramp"><span>StateRAMP</span></label>
+                        <label class="ctx-regime-chip"><input type="checkbox" value="itar"><span>ITAR</span></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Intake RICOAS checkbox (intake canvas only) -->
         <div class="chat-modal__field" id="intake-checkbox-row">
             <label class="chat-modal__label chat-modal__label--inline">
                 <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox" checked>
                 Link to Requirements Intake (RICOAS)
             </label>
         </div>
+
+        <!-- System Prompt textarea -->
         <div class="chat-modal__field">
-            <label class="chat-modal__label">System Prompt (optional)</label>
+            <label class="chat-modal__label">System Prompt <span class="chat-modal__label-sub">— optional, presets above auto-fill</span></label>
             <textarea id="new-ctx-prompt" class="chat-modal__textarea" placeholder="Custom system prompt..." rows="3"></textarea>
         </div>
+
         <div class="chat-modal__actions">
             <button id="btn-cancel-modal" class="chat-modal__btn chat-modal__btn--cancel">Cancel</button>
             <button id="btn-create-context" class="chat-modal__btn chat-modal__btn--create">Create</button>

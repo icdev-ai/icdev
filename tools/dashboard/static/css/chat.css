@@ -1122,6 +1122,34 @@
 .chat-modal__btn:hover { opacity: 0.85; }
 .chat-modal__btn--cancel { background: var(--bg-primary); color: var(--text-primary); border: 1px solid var(--border-color); }
 .chat-modal__btn--create { background: var(--accent-blue); color: #fff; }
+.chat-modal__label-sub { font-weight: 400; opacity: 0.55; font-size: 0.78rem; }
+
+/* Modal scrollable variant (taller modals) */
+.chat-modal--scrollable { max-height: 82vh; overflow-y: auto; width: 520px; }
+
+/* Persona preset chips */
+.ctx-preset-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.ctx-preset-chip { background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; padding: 4px 12px; font-size: 0.79rem; color: var(--text-secondary); cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; white-space: nowrap; }
+.ctx-preset-chip:hover { border-color: var(--accent-blue); color: var(--text-primary); }
+.ctx-preset-chip--active { border-color: var(--accent-blue); background: rgba(74,144,217,0.12); color: var(--accent-blue); font-weight: 600; }
+
+/* Compliance env radios */
+.ctx-env-radios { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.ctx-env-radio { display: flex; align-items: center; gap: 6px; padding: 5px 14px; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 0.82rem; color: var(--text-secondary); transition: border-color 0.15s, color 0.15s; }
+.ctx-env-radio input[type=radio] { accent-color: var(--accent-blue); }
+.ctx-env-radio--selected, .ctx-env-radio:has(input:checked) { border-color: var(--accent-blue); color: var(--text-primary); background: rgba(74,144,217,0.07); }
+
+/* Impact level radio chips */
+.ctx-il-chips { display: flex; gap: 6px; }
+.ctx-il-chip { display: flex; align-items: center; gap: 5px; padding: 4px 12px; border: 1px solid var(--border-color); border-radius: 6px; cursor: pointer; font-size: 0.8rem; color: var(--text-secondary); transition: border-color 0.15s, color 0.15s; }
+.ctx-il-chip input[type=radio] { accent-color: var(--accent-blue); }
+.ctx-il-chip--selected, .ctx-il-chip:has(input:checked) { border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(74,144,217,0.08); }
+
+/* Compliance regime checkbox grid */
+.ctx-regime-grid { display: flex; flex-wrap: wrap; gap: 5px; }
+.ctx-regime-chip { display: flex; align-items: center; gap: 4px; padding: 3px 10px; border: 1px solid var(--border-color); border-radius: 5px; cursor: pointer; font-size: 0.76rem; color: var(--text-muted); transition: border-color 0.12s, color 0.12s, background 0.12s; }
+.ctx-regime-chip input[type=checkbox] { accent-color: var(--accent-blue); width: 11px; height: 11px; }
+.ctx-regime-chip:has(input:checked) { border-color: var(--accent-blue); color: var(--accent-blue); background: rgba(74,144,217,0.07); }
 
 /* ===================================================================
    Agent avatar (typing indicator compat)
