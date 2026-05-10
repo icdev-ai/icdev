@@ -66,12 +66,12 @@ CANVAS_WORKFLOW_MAP: dict[str, dict] = {
         ],
     },
     "ddc": {
-        "description": "Data lineage audit and schema migration",
-        "category": "general",
+        "description": "Data infrastructure IaC generation — schema validation, Terraform output, DBA gate",
+        "category": "deploy",
         "steps": [
             {"id": "step_1", "name": "Lineage Scan", "tool": "tools/data/lineage_scanner.py", "node_type": "tool", "depends_on": [], "timeout": 300, "required": True},
             {"id": "step_2", "name": "Schema Check", "tool": "tools/data/schema_checker.py", "node_type": "tool", "depends_on": ["step_1"], "timeout": 300, "required": True},
-            {"id": "step_3", "name": "Migration Plan", "tool": "tools/data/migration_planner.py", "node_type": "tool", "depends_on": ["step_2"], "timeout": 300, "required": True},
+            {"id": "step_3", "name": "Generate IaC", "tool": "tools/data/iac_generator.py", "node_type": "tool", "depends_on": ["step_2"], "timeout": 300, "required": True},
             {"id": "step_4", "name": "DBA Approval", "tool": "", "node_type": "human", "role": "approver", "depends_on": ["step_3"], "timeout": 300, "required": True},
         ],
     },

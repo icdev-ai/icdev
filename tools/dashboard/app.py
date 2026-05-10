@@ -1436,6 +1436,24 @@ def create_app() -> Flask:
         return _sf(safe, mimetype=mime or "text/plain", as_attachment=as_attachment,
                    download_name=safe.name)
 
+    # ---- Studio Run History Delete — standalone routes (blueprint legacy drops DELETE) ----
+    @app.route("/api/studio/workflows/runs/<run_id>", methods=["DELETE"])
+    def studio_delete_run(run_id: str):
+        from tools.studio.workflow_runner import delete_run as _delete_run
+        from flask import jsonify as _jf
+        deleted = _delete_run(run_id)
+        if not deleted:
+            return _jf({"error": "Run not found"}), 404
+        return _jf({"status": "deleted", "run_id": run_id})
+
+    @app.route("/api/studio/workflows/runs", methods=["DELETE"])
+    def studio_delete_all_runs():
+        from tools.studio.workflow_runner import delete_all_runs as _delete_all_runs
+        from flask import jsonify as _jf, request as _req
+        workflow_id = _req.args.get("workflow_id")
+        count = _delete_all_runs(workflow_id=workflow_id or None)
+        return _jf({"status": "deleted", "count": count})
+
     # ---- Register API blueprints (P1.1: centralized via register_api_blueprints) ----
     # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
     # See tools/dashboard/api/__init__.py for the full registration sequence.
