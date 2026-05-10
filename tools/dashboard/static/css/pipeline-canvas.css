@@ -2,17 +2,17 @@
 /* Mirrors network-canvas.css dark theme with pipeline stage colors */
 
 :root {
-  --pc-bg: #ffffff;
-  --pc-bg2: #f4f6f9;
-  --pc-bg3: #e8ecf1;
-  --pc-accent: #dce8fb;
-  --pc-red: #c0392b;
-  --pc-text: #1a1a2e;
-  --pc-text-dim: #4a5568;
-  --pc-border: #c9d3e0;
-  --pc-success: #1e8449;
-  --pc-warning: #b7770d;
-  --pc-danger: #c0392b;
+  --pc-bg:       #1a1a2e;
+  --pc-bg2:      #16213e;
+  --pc-bg3:      #0f2040;
+  --pc-accent:   #0f3460;
+  --pc-red:      #e94560;
+  --pc-text:     #eaeaea;
+  --pc-text-dim: #7a8cb0;
+  --pc-border:   #1e3a6e;
+  --pc-success:  #27ae60;
+  --pc-warning:  #f39c12;
+  --pc-danger:   #e74c3c;
   --pc-font: 'Segoe UI', system-ui, sans-serif;
   --pc-mono: 'Cascadia Code', 'Consolas', monospace;
 
@@ -73,7 +73,7 @@ a:hover { color: #a93226; }
 .pc-canvas-area.is-panning { cursor: grabbing !important; user-select: none; }
 /* Keep default cursor over nodes so they stay interactive */
 .pc-canvas-area .joint-cell { cursor: default; }
-#pc-canvas-container { width: 100%; height: 100%; background-image: radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1px); background-size: 10px 10px; }
+#pc-canvas-container { width: 100%; height: 100%; background-image: radial-gradient(circle, rgba(255,255,255,0.08) 1px, transparent 1px); background-size: 10px 10px; }
 
 /* Zoom label in toolbar */
 #pc-zoom-label { font-size: 11px; color: var(--pc-text-dim); min-width: 36px; text-align: center; padding: 0 4px; }

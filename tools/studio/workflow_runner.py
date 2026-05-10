@@ -36,6 +36,13 @@ from tools.db.storage import get_connection  # noqa: E402
 _run_queues: dict[str, queue.Queue] = {}
 _run_queues_lock = threading.Lock()
 
+# ── HITL approval state ────────────────────────────────────
+# step_run_id → threading.Event (set when approved or rejected)
+_approval_lock = threading.Lock()
+_approval_events: dict[str, threading.Event] = {}
+_approval_results: dict[str, str] = {}   # "approved" | "rejected"
+_approval_reasons: dict[str, str] = {}   # free-text reason from approver
+
 
 # ── DAG helpers ────────────────────────────────────────────
 
@@ -81,8 +88,8 @@ def _exec_step(step: dict, project_id: str) -> dict:
 
     node_type = step.get("node_type", "tool")
     if node_type in ("human", "approval"):
-        result["status"] = "skipped"
-        result["stderr"] = f"Human/approval gate — skipped in automated run"
+        result["status"] = "awaiting_approval"
+        result["stderr"] = "Awaiting human approval — use the workflow Details modal to approve or reject"
         return result
 
     cmd = _build_command(step, project_id)
@@ -204,6 +211,52 @@ def _update_step_record(step_run_id: str, result: dict) -> None:
         conn.close()
 
 
+# ── HITL helpers ───────────────────────────────────────────
+
+def _notify_approval_gate(run_id: str, step_run_id: str, step_name: str, role: str) -> None:
+    try:
+        from tools.notifications.adapters.telegram import send  # noqa: PLC0415
+        send(
+            "Approval Required",
+            f"Workflow run `{run_id}` is paused at **{step_name}** ({role})\n"
+            f"Step ID: `{step_run_id}`\n"
+            f"Open Workflow Studio → Run History → Details to approve or reject.",
+            severity="warning",
+        )
+    except Exception:
+        pass
+
+
+def approve_step(step_run_id: str, actor: str = "approver") -> bool:
+    """Signal approval for a paused HITL step. Returns False if no pending gate."""
+    with _approval_lock:
+        ev = _approval_events.get(step_run_id)
+        if not ev:
+            return False
+        _approval_results[step_run_id] = "approved"
+        _approval_reasons[step_run_id] = f"Approved by {actor}"
+    ev.set()
+    return True
+
+
+def reject_step(step_run_id: str, reason: str = "", actor: str = "approver") -> bool:
+    """Signal rejection for a paused HITL step. Returns False if no pending gate."""
+    with _approval_lock:
+        ev = _approval_events.get(step_run_id)
+        if not ev:
+            return False
+        _approval_results[step_run_id] = "rejected"
+        _approval_reasons[step_run_id] = reason or f"Rejected by {actor}"
+    ev.set()
+    return True
+
+
+def get_pending_approvals() -> list[str]:
+    """Return list of step_run_ids currently awaiting approval."""
+    with _approval_lock:
+        return list(_approval_events.keys())
+
+
 # ── Worker thread ──────────────────────────────────────────
 
 def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue: queue.Queue) -> None:
@@ -256,11 +309,63 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
                 run_id, step["id"], step.get("name", step["id"]), step.get("tool", "")
             )
             result = _exec_step(step, project_id)
-            _update_step_record(step_run_id, result)
+
+            if result["status"] == "awaiting_approval":
+                # Persist the gate state and pause the run
+                _update_step_record(step_run_id, result)
+                _update_run_status(run_id, "awaiting_approval")
+                _push(run_queue, {
+                    "type": "step_awaiting_approval",
+                    "run_id": run_id,
+                    "step_id": step["id"],
+                    "step_name": step.get("name", step["id"]),
+                    "step_run_id": step_run_id,
+                    "role": step.get("role", "approver"),
+                })
+                _notify_approval_gate(run_id, step_run_id, step.get("name", step["id"]), step.get("role", "approver"))
+
+                ev = threading.Event()
+                with _approval_lock:
+                    _approval_events[step_run_id] = ev
+
+                signaled = ev.wait(timeout=86400)  # wait up to 24 hours
+
+                with _approval_lock:
+                    decision = _approval_results.pop(step_run_id, None)
+                    reason = _approval_reasons.pop(step_run_id, "")
+                    _approval_events.pop(step_run_id, None)
+
+                if signaled and decision == "approved":
+                    result["status"] = "approved"
+                    result["stderr"] = reason or "Approved"
+                    _update_step_record(step_run_id, result)
+                    _update_run_status(run_id, "running")
+                else:
+                    result["status"] = "rejected" if (signaled and decision == "rejected") else "timeout"
+                    result["stderr"] = reason or ("Rejected" if decision == "rejected" else "Approval timed out after 24h")
+                    overall_ok = False
+                    _update_step_record(step_run_id, result)
+            else:
+                _update_step_record(step_run_id, result)
+
             results.append(result)
 
-            if result["status"] in ("failed", "timeout") and step.get("required", True):
+            if result["status"] in ("failed", "timeout", "rejected") and step.get("required", True):
                 overall_ok = False
+            if result["status"] in ("rejected", "timeout") and step.get("node_type") in ("human", "approval"):
+                # Stop processing further steps after a rejected/timed-out approval
+                _push(run_queue, {
+                    "type": "step_done",
+                    "run_id": run_id,
+                    "step_id": step["id"],
+                    "step_name": step.get("name", step["id"]),
+                    "status": result["status"],
+                    "duration_ms": result.get("duration_ms", 0),
+                    "artifacts": [],
+                    "index": i,
+                    "total": len(ordered_steps),
+                })
+                break
 
             # Extract artifacts list from stdout JSON if present
             artifacts = []
@@ -288,9 +393,9 @@ def _worker(run_id: str, workflow_id: str, wf: dict, project_id: str, run_queue:
 
         summary = {
             "total": len(results),
-            "success": sum(1 for r in results if r["status"] == "success"),
-            "failed": sum(1 for r in results if r["status"] in ("failed", "timeout")),
-            "skipped": sum(1 for r in results if r["status"] in ("skipped",)),
+            "success": sum(1 for r in results if r["status"] in ("success", "approved")),
+            "failed": sum(1 for r in results if r["status"] in ("failed", "timeout", "rejected")),
+            "skipped": sum(1 for r in results if r["status"] == "skipped"),
         }
         if not overall_ok:
             overall = "failed"
