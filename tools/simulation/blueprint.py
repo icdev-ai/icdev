@@ -57,19 +57,17 @@ def create_simulation_blueprint() -> Blueprint:
 
     @bp.route("/simulate/chat")
     def simulate_chat_page():
-        """TFW Simulation Chat — conversational Digital Program Twin for NDC/SDC/EDA/DDC."""
-        canvas_type = (
+        """Permanent redirect — /simulate/chat is now /chat (unified intent-routing hub)."""
+        from flask import redirect
+        canvas = (
             request.args.get("canvas_type")
             or request.args.get("canvas")
-            or "ndc"
+            or ""
         )
-        if canvas_type not in _ALLOWED_CANVAS_TYPES:
-            canvas_type = "ndc"
-        # Pass extra context for cam canvas (migration intelligence mode)
-        extra = {}
-        if canvas_type == "cam":
-            extra["page_title"] = "Migration Intelligence Chat"
-        return render_template("simulate_chat.html", canvas_type=canvas_type, **extra)
+        target = "/chat"
+        if canvas and canvas in _ALLOWED_CANVAS_TYPES:
+            target = "/chat?canvas=" + canvas
+        return redirect(target, code=301)
 
     @bp.route("/api/simulate/session", methods=["POST"])
     def api_simulate_session():

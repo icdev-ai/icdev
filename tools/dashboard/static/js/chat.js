@@ -26,6 +26,16 @@
     // Active intake session for current context
     var _activeIntakeSessionId = null;
 
+    // Canvas mode mappings: context_id -> canvas_type (persisted across page loads)
+    var _canvasMap = {};
+    try { _canvasMap = JSON.parse(localStorage.getItem('icdev_canvas_map') || '{}'); } catch (e) {}
+
+    // Simulate session IDs: context_id -> simulate session_id (in-memory, resets on page load)
+    var _simSessionMap = {};
+
+    // Active canvas type for current context
+    var _activeCanvasType = 'intake';
+
     // RICOAS timers and state
     var _readinessTimer = null;
     var _coaTimer = null;
@@ -95,6 +105,26 @@
 
     function saveIntakeMappings() {
         try { localStorage.setItem('icdev_intake_map', JSON.stringify(_intakeMap)); } catch (e) {}
+    }
+
+    function saveCanvasMappings() {
+        try { localStorage.setItem('icdev_canvas_map', JSON.stringify(_canvasMap)); } catch (e) {}
+    }
+
+    function setContextCanvasType(ctxId, canvasType) {
+        _canvasMap[ctxId] = canvasType || 'intake';
+        saveCanvasMappings();
+        if (ctxId === _activeContextId) {
+            _activeCanvasType = _canvasMap[ctxId];
+            updateModeChip(_activeCanvasType);
+            updateSlashBar(_activeCanvasType);
+        }
+        // Persist to server
+        fetch(CHAT_API + '/' + ctxId + '/mode', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ canvas_type: canvasType || 'intake' })
+        }).catch(function () {});
     }
 
     function isIntakeContext(ctxId) {
@@ -173,13 +203,61 @@
             items[i].classList.toggle('active', items[i].dataset.ctxId === ctxId);
         }
 
-        // Check if this is an intake context
+        // Restore canvas type and intake session for this context
         _activeIntakeSessionId = _intakeMap[ctxId] || null;
+        _activeCanvasType = _canvasMap[ctxId] || 'intake';
+        updateModeChip(_activeCanvasType);
+        updateSlashBar(_activeCanvasType);
 
-        if (_activeIntakeSessionId) {
+        // Canvas mode takes priority; intake is secondary; regular is fallback
+        if (_activeCanvasType && _activeCanvasType !== 'intake') {
+            switchToCanvasContext(ctxId, _activeCanvasType);
+        } else if (_activeIntakeSessionId) {
             switchToIntakeContext(ctxId, _activeIntakeSessionId);
         } else {
             switchToRegularContext(ctxId);
+        }
+    }
+
+    function switchToCanvasContext(ctxId, canvasType) {
+        hideRicoasSidebar();
+        stopRicoasTimers();
+
+        var canvasLabels = {
+            cam: 'Migration (CAM)', ndc: 'Network Design (NDC)', sdc: 'Security Design (SDC)',
+            eda: 'Data Architecture (EDA)', ddc: 'Database Design (DDC)', pdc: 'Process Design (PDC)',
+            bdc: 'Business Design (BDC)', odc: 'Observability (ODC)', idc: 'Infrastructure (IDC)'
+        };
+
+        chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
+            if (ctx.error) return;
+            var label = canvasLabels[canvasType] || canvasType.toUpperCase();
+            setText('chat-title', ctx.title || label);
+            var statusEl = document.getElementById('chat-status');
+            if (statusEl) { statusEl.textContent = label; statusEl.className = 'badge badge-success'; }
+            var inp = document.getElementById('message-input');
+            var btn = document.getElementById('btn-send');
+            var closeBtn = document.getElementById('btn-close-context');
+            var uploadBtn = document.getElementById('chat-upload-btn');
+            if (inp) { inp.disabled = false; inp.placeholder = canvasType === 'cam' ? '/coa oracle  |  /deprecated elasticsearch  |  ask about migration' : '/explain  |  /audit  |  describe your design'; }
+            if (btn) btn.disabled = false;
+            if (closeBtn) closeBtn.style.display = 'inline-block';
+            if (uploadBtn) uploadBtn.style.display = 'inline-block';
+            renderMessages(ctx.messages || []);
+            updateInterventionBar(false);
+            startPolling(ctxId);
+            loadContextTasks(ctxId);
+        });
+
+        // Ensure a simulate session exists for this context
+        if (!_simSessionMap[ctxId]) {
+            fetch('/api/simulate/session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ canvas_type: canvasType })
+            }).then(function (r) { return r.json(); }).then(function (d) {
+                _simSessionMap[ctxId] = d.session_id || d.id || '';
+            }).catch(function () {});
         }
     }
 
@@ -190,6 +268,16 @@
 
         chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
             if (ctx.error) return;
+            // Sync canvas_type from server in case it was set externally
+            if (ctx.canvas_type && ctx.canvas_type !== 'intake' && (_canvasMap[ctxId] || 'intake') === 'intake') {
+                _canvasMap[ctxId] = ctx.canvas_type;
+                saveCanvasMappings();
+                _activeCanvasType = ctx.canvas_type;
+                updateModeChip(_activeCanvasType);
+                updateSlashBar(_activeCanvasType);
+                switchToCanvasContext(ctxId, ctx.canvas_type);
+                return;
+            }
             setText('chat-title', ctx.title || ctxId);
             var statusEl = document.getElementById('chat-status');
             statusEl.textContent = ctx.status;
@@ -309,12 +397,42 @@
         var content = inp ? inp.value.trim() : '';
         if (!content || !_activeContextId) return;
 
-        if (_activeIntakeSessionId) {
-            sendIntakeMessage(content);
+        if (_activeCanvasType && _activeCanvasType !== 'intake') {
+            sendCanvasMessage(_activeContextId, content, _activeCanvasType);
+        } else if (_activeIntakeSessionId) {
+            // Auto-detect intent on first few messages
+            var ctx = _contextVersions[_activeContextId];
+            var msgCount = ctx ? (ctx.message_count || 0) : 0;
+            if (msgCount <= 2) {
+                detectAndMaybeSwitch(_activeContextId, content, function () {
+                    sendIntakeMessage(content);
+                });
+            } else {
+                sendIntakeMessage(content);
+            }
         } else {
             sendChatMessage(_activeContextId, content);
         }
         inp.value = '';
+    }
+
+    function detectAndMaybeSwitch(ctxId, content, fallback) {
+        fetch(CHAT_API + '/route-intent', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: content, context_id: ctxId })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            if (d.mode && d.mode !== 'intake' && d.confidence >= 0.70) {
+                // Switch context to canvas mode
+                setContextCanvasType(ctxId, d.mode);
+                _activeCanvasType = d.mode;
+                appendMessage({ role: 'system', content: 'Switched to ' + d.mode.toUpperCase() + ' canvas mode. ' + (d.reason || '') });
+                // Re-send as canvas message now that mode is set
+                sendCanvasMessage(ctxId, content, d.mode);
+            } else {
+                fallback();
+            }
+        }).catch(function () { fallback(); });
     }
 
     function sendChatMessage(ctxId, content) {
@@ -379,6 +497,104 @@
             if (typing) typing.remove();
             appendMessage({ role: 'system', content: 'Connection error: ' + err.message });
         });
+    }
+
+    // ===================================================================
+    // Canvas message dispatch + rich response rendering
+    // ===================================================================
+
+    function sendCanvasMessage(ctxId, content, canvasType) {
+        appendMessage({ role: 'user', content: content });
+
+        var typingId = 'typing-' + Date.now();
+        var stream = document.getElementById('message-stream');
+        if (stream) {
+            stream.innerHTML += '<div id="' + typingId + '" class="msg-bubble msg-bubble--system"><div class="agent-name">' + canvasType.toUpperCase() + ' Agent</div><div style="opacity:0.6;font-size:0.85rem;">Thinking...</div></div>';
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        var simSessionId = _simSessionMap[ctxId] || '';
+
+        fetch('/api/simulate/message', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_id: simSessionId, content: content, canvas_type: canvasType })
+        }).then(function (r) { return r.json(); }).then(function (d) {
+            var typing = document.getElementById(typingId);
+            if (typing) typing.remove();
+
+            var reply = d.reply || d.content || d.message || '';
+            appendMessage({ role: 'assistant', content: reply });
+
+            // Render rich canvas extras
+            var extras = '';
+            if (d.deprecation && d.deprecation.status && d.deprecation.status !== 'unknown' && d.deprecation.status !== 'active') {
+                extras += _renderDepWarning(d.deprecation);
+            }
+            if (d.coa_cards && d.coa_cards.length) {
+                extras += _renderCOACards(d.coa_cards, d.tech || '');
+            }
+            if (extras) {
+                if (stream) { stream.innerHTML += extras; stream.scrollTop = stream.scrollHeight; }
+            }
+
+            // Render Mermaid diagram if in reply
+            var mermaidMatch = reply.match(/```mermaid\n([\s\S]*?)```/);
+            if (mermaidMatch && stream) {
+                var mDiv = document.createElement('div');
+                mDiv.className = 'msg-bubble msg-bubble--system';
+                mDiv.innerHTML = '<div class="mermaid">' + mermaidMatch[1] + '</div>';
+                stream.appendChild(mDiv);
+                if (window.mermaid) { try { mermaid.init(undefined, mDiv.querySelectorAll('.mermaid')); } catch (e) {} }
+                stream.scrollTop = stream.scrollHeight;
+            }
+        }).catch(function (e) {
+            var typing = document.getElementById(typingId);
+            if (typing) typing.remove();
+            appendMessage({ role: 'system', content: 'Canvas error: ' + e.message });
+        });
+    }
+
+    function _esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    function _renderDepWarning(dep) {
+        var isCrit = dep.severity === 'critical' || dep.severity === 'high';
+        return '<div style="background:rgba(' + (isCrit ? '198,40,40' : '230,81,0') + ',0.15);border-left:4px solid ' + (isCrit ? '#f87171' : '#fb923c') + ';border-radius:6px;padding:0.65rem 1rem;margin:0.5rem 0;font-size:0.88rem;">'
+            + (isCrit ? '🔴' : '🟡') + ' <strong>' + _esc(dep.tech) + (dep.eol_date ? ' (EOL: ' + _esc(dep.eol_date) + ')' : ' AT RISK') + '</strong>'
+            + (dep.successor ? ' — Successor: <strong>' + _esc(dep.successor) + '</strong>' : '')
+            + '</div>';
+    }
+
+    function _renderCOACards(coas, techName) {
+        var html = '<div style="margin-top:0.5rem;">';
+        for (var i = 0; i < coas.length; i++) {
+            var coa = coas[i];
+            var isRec = coa.recommended;
+            var effortColors = { low: '#4ade80', medium: '#fb923c', high: '#f87171' };
+            html += '<div style="border:1px solid var(--border-color,#2a2a40);border-radius:10px;padding:1rem;margin-bottom:0.85rem;background:var(--bg-card,#16213e);' + (isRec ? 'border-color:#4a90d9;' : '') + '">';
+            if (isRec) html += '<span style="background:#1976d2;color:#fff;border-radius:12px;padding:0.15rem 0.55rem;font-size:0.72rem;font-weight:700;text-transform:uppercase;margin-right:0.35rem;">Recommended</span>';
+            html += '<div style="font-weight:700;font-size:1rem;margin:0.4rem 0;color:var(--text-primary,#e0e0e0);">' + _esc(coa.title || '') + '</div>';
+            html += '<div style="font-size:0.82rem;margin-bottom:0.5rem;">';
+            html += '<span style="background:rgba(40,167,69,0.2);color:#4ade80;border-radius:12px;padding:0.15rem 0.55rem;font-size:0.72rem;font-weight:700;margin-right:0.3rem;">' + _esc(coa.strategy_label || coa.strategy || '') + '</span>';
+            if (coa.effort_days) html += '<span style="color:' + (effortColors[coa.effort] || '#aaa') + ';font-size:0.78rem;margin-right:0.3rem;">' + _esc(coa.effort_days) + 'd</span>';
+            if (coa.timeline_weeks) html += '<span style="font-size:0.78rem;color:var(--text-muted);">~' + _esc(coa.timeline_weeks) + ' weeks</span>';
+            html += '</div>';
+            if (isRec && coa.recommended_reason) html += '<div style="font-size:0.83rem;color:#60a5fa;margin-bottom:0.5rem;font-style:italic;">' + _esc(coa.recommended_reason) + '</div>';
+            var pros = coa.pros || [], cons = coa.cons || [];
+            if (pros.length || cons.length) {
+                html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin:0.5rem 0;">';
+                html += '<div><div style="font-weight:700;font-size:0.78rem;text-transform:uppercase;color:#4ade80;margin-bottom:0.25rem;">Pros</div><ul style="margin:0;padding-left:1.1rem;font-size:0.85rem;">';
+                for (var p = 0; p < Math.min(pros.length, 5); p++) html += '<li>' + _esc(pros[p]) + '</li>';
+                html += '</ul></div>';
+                html += '<div><div style="font-weight:700;font-size:0.78rem;text-transform:uppercase;color:#f87171;margin-bottom:0.25rem;">Cons</div><ul style="margin:0;padding-left:1.1rem;font-size:0.85rem;">';
+                for (var c = 0; c < Math.min(cons.length, 5); c++) html += '<li>' + _esc(cons[c]) + '</li>';
+                html += '</ul></div>';
+                html += '</div>';
+            }
+            html += '</div>';
+        }
+        html += '</div>';
+        return html;
     }
 
     function intervene(ctxId, message) {
@@ -1627,13 +1843,30 @@
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
         });
+        // Hide intake checkbox when canvas mode is non-intake
+        var canvasSelect = document.getElementById('new-ctx-canvas');
+        var intakeRow = document.getElementById('intake-checkbox-row');
+        if (canvasSelect && intakeRow) {
+            canvasSelect.addEventListener('change', function () {
+                intakeRow.style.display = this.value === 'intake' ? '' : 'none';
+            });
+        }
+
         if (btnCreate) btnCreate.addEventListener('click', function () {
             var title = document.getElementById('new-ctx-title').value.trim();
             var model = document.getElementById('new-ctx-model').value;
             var prompt = document.getElementById('new-ctx-prompt').value.trim();
-            var isIntake = document.getElementById('new-ctx-intake').checked;
+            var canvasMode = (document.getElementById('new-ctx-canvas') || {}).value || 'intake';
+            var isIntake = canvasMode === 'intake' && document.getElementById('new-ctx-intake').checked;
 
-            if (isIntake) {
+            if (canvasMode !== 'intake') {
+                // Create a regular context then set its canvas type
+                createContext({ title: title || (canvasMode.toUpperCase() + ' Chat'), agent_model: model, system_prompt: prompt }).then(function (ctx) {
+                    if (ctx && ctx.context_id) {
+                        setContextCanvasType(ctx.context_id, canvasMode);
+                    }
+                });
+            } else if (isIntake) {
                 createIntakeContext({ title: title, agent_model: model });
             } else {
                 createContext({ title: title, agent_model: model, system_prompt: prompt });
@@ -1642,6 +1875,8 @@
             document.getElementById('new-ctx-title').value = '';
             document.getElementById('new-ctx-prompt').value = '';
             document.getElementById('new-ctx-intake').checked = true;
+            if (canvasSelect) canvasSelect.value = 'intake';
+            if (intakeRow) intakeRow.style.display = '';
         });
 
         // Send message
@@ -1874,6 +2109,116 @@
             });
         }
     });
+
+    // ===================================================================
+    // Mode chip + slash bar
+    // ===================================================================
+
+    var _CANVAS_LABELS = {
+        intake: null,  // no chip for default intake
+        cam: { label: 'Migration', color: '#3949ab' },
+        ndc: { label: 'Network', color: '#1976d2' },
+        sdc: { label: 'Security', color: '#c62828' },
+        eda: { label: 'Data Arch', color: '#388e3c' },
+        ddc: { label: 'Database', color: '#f57c00' },
+        pdc: { label: 'Process', color: '#7b1fa2' },
+        bdc: { label: 'Business', color: '#0097a7' },
+        odc: { label: 'Observability', color: '#5c6bc0' },
+        idc: { label: 'Infrastructure', color: '#455a64' }
+    };
+    var _canvasCmdsCache = {};
+
+    function updateModeChip(canvasType) {
+        var chip = document.getElementById('chat-mode-chip');
+        if (!chip) return;
+        var info = _CANVAS_LABELS[canvasType];
+        if (!info) {
+            chip.style.display = 'none';
+            return;
+        }
+        chip.textContent = info.label;
+        chip.style.display = 'inline-block';
+        chip.style.background = info.color;
+        chip.style.color = '#fff';
+        chip.title = 'Canvas mode: ' + canvasType.toUpperCase() + ' — click to switch';
+    }
+
+    function updateSlashBar(canvasType) {
+        var bar = document.getElementById('chat-slash-bar');
+        var hint = document.getElementById('chat-slash-hint');
+        if (!bar || !hint) return;
+        if (!canvasType || canvasType === 'intake') {
+            bar.style.display = 'none';
+            return;
+        }
+        bar.style.display = 'block';
+        if (_canvasCmdsCache[canvasType]) {
+            _renderSlashHint(canvasType, _canvasCmdsCache[canvasType]);
+        } else {
+            fetch('/api/simulate/slash-commands?canvas_type=' + canvasType)
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    _canvasCmdsCache[canvasType] = d.commands || [];
+                    _renderSlashHint(canvasType, _canvasCmdsCache[canvasType]);
+                })
+                .catch(function () {});
+        }
+    }
+
+    function _renderSlashHint(ct, cmds) {
+        var hint = document.getElementById('chat-slash-hint');
+        if (!hint) return;
+        var parts = ['<strong>' + ct.toUpperCase() + ' commands:</strong>'];
+        for (var i = 0; i < cmds.length; i++) {
+            parts.push('<span style="color:var(--accent-blue-light,#6db3f8);text-decoration:underline dotted;font-family:monospace;cursor:pointer;" onclick="(function(c){var inp=document.getElementById(\'message-input\');if(inp){inp.value=c+\' \';inp.focus();}})(\''+cmds[i]+'\')">' + cmds[i] + '</span>');
+        }
+        hint.innerHTML = parts.join(' &bull; ');
+    }
+
+    // Wire slash autocomplete to textarea
+    (function() {
+        document.addEventListener('DOMContentLoaded', function() {
+            var inp = document.getElementById('message-input');
+            var dropdown = document.getElementById('chat-slash-dropdown');
+            if (!inp || !dropdown) return;
+            inp.addEventListener('input', function() {
+                var val = inp.value.trim();
+                if (!val.startsWith('/') || !_activeCanvasType || _activeCanvasType === 'intake') {
+                    dropdown.style.display = 'none'; return;
+                }
+                var cmds = _canvasCmdsCache[_activeCanvasType] || [];
+                var matches = cmds.filter(function(c) { return c.startsWith(val.toLowerCase()); });
+                if (!matches.length) { dropdown.style.display = 'none'; return; }
+                dropdown.innerHTML = matches.map(function(c) {
+                    return '<div style="padding:0.4rem 1rem;cursor:pointer;font-size:0.85rem;color:var(--text-primary);" onmouseover="this.style.background=\'rgba(74,144,217,0.2)\'" onmouseout="this.style.background=\'\'" onclick="(function(){var i=document.getElementById(\'message-input\');if(i){i.value=\''+c+' \';i.focus();}document.getElementById(\'chat-slash-dropdown\').style.display=\'none\';})()">' + '<code>' + c + '</code></div>';
+                }).join('');
+                dropdown.style.display = 'block';
+            });
+            inp.addEventListener('blur', function() { setTimeout(function() { dropdown.style.display = 'none'; }, 150); });
+        });
+    })();
+
+    // Mode chip click — open canvas switcher dropdown
+    (function() {
+        document.addEventListener('DOMContentLoaded', function() {
+            var chip = document.getElementById('chat-mode-chip');
+            if (!chip) return;
+            chip.addEventListener('click', function() {
+                if (!_activeContextId) return;
+                var modes = ['intake','cam','ndc','sdc','eda','ddc','pdc','odc','idc'];
+                var labels = { intake:'Requirements Intake', cam:'Migration (CAM)', ndc:'Network (NDC)', sdc:'Security (SDC)', eda:'Data Arch (EDA)', ddc:'Database (DDC)', pdc:'Process (PDC)', odc:'Observability (ODC)', idc:'Infrastructure (IDC)' };
+                var choice = prompt('Switch canvas mode:\n' + modes.map(function(m,i){ return (i+1)+'. '+labels[m]; }).join('\n') + '\n\nEnter number or canvas code:');
+                if (!choice) return;
+                var idx = parseInt(choice) - 1;
+                var mode = (idx >= 0 && idx < modes.length) ? modes[idx] : choice.toLowerCase().trim();
+                if (modes.indexOf(mode) >= 0) {
+                    setContextCanvasType(_activeContextId, mode);
+                    if (mode !== 'intake') switchToCanvasContext(_activeContextId, mode);
+                    else switchToRegularContext(_activeContextId);
+                }
+            });
+        });
+    })();
 
     // Multi-stream API
     ns.chatStreams = {
