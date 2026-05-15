@@ -27,18 +27,20 @@ _ONTO_BASE = "https://icdev.dev/ontology"
 
 # ── Canvas-specific ontology namespaces ───────────────────────────────────────
 _CANVAS_NS: dict[str, str] = {
-    "odc": f"{_ONTO_BASE}/observability#",
-    "idc": f"{_ONTO_BASE}/infrastructure#",
-    "aadc": f"{_ONTO_BASE}/ai#",
-    "mdc": f"{_ONTO_BASE}/migration#",
-    "ndc": f"{_ONTO_BASE}/network#",
-    "ohc": f"{_ONTO_BASE}/observability#",
-    "aisg": f"{_ONTO_BASE}/ai-ethics#",
-    "bdc": f"{_ONTO_BASE}/boundary#",
-    "sdc": f"{_ONTO_BASE}/security#",
-    "ddc": f"{_ONTO_BASE}/data#",
-    "pdc": f"{_ONTO_BASE}/pipeline#",
-    "qdc": f"{_ONTO_BASE}/quality#",
+    "odc":     f"{_ONTO_BASE}/observability#",
+    "idc":     f"{_ONTO_BASE}/infrastructure#",
+    "aadc":    f"{_ONTO_BASE}/ai#",
+    "mdc":     f"{_ONTO_BASE}/migration#",
+    "ndc":     f"{_ONTO_BASE}/network#",
+    "ohc":     f"{_ONTO_BASE}/observability#",
+    "aisg":    f"{_ONTO_BASE}/ai-ethics#",
+    "bdc":     f"{_ONTO_BASE}/boundary#",
+    "sdc":     f"{_ONTO_BASE}/security#",
+    "ddc":     f"{_ONTO_BASE}/data#",
+    "pdc":     f"{_ONTO_BASE}/pipeline#",
+    "qdc":     f"{_ONTO_BASE}/quality#",
+    "aiml":    f"{_ONTO_BASE}/aiml#",
+    "mission": f"{_ONTO_BASE}/mission#",
 }
 
 # ── Lazy import registry ─────────────────────────────────────────────────────
@@ -87,6 +89,41 @@ def _aisg_map() -> dict[str, str]:
     return AISG_ONTOLOGY_MAP
 
 
+def _bdc_map() -> dict[str, str]:
+    from tools.boundary_canvas.constants import BOUNDARY_ONTOLOGY_MAP
+    return BOUNDARY_ONTOLOGY_MAP
+
+
+def _sdc_map() -> dict[str, str]:
+    from tools.security_canvas.constants import SECURITY_ONTOLOGY_MAP
+    return SECURITY_ONTOLOGY_MAP
+
+
+def _ddc_map() -> dict[str, str]:
+    from tools.data_canvas.constants import DATA_ONTOLOGY_MAP
+    return DATA_ONTOLOGY_MAP
+
+
+def _pdc_map() -> dict[str, str]:
+    from tools.pipeline.constants import PIPELINE_ONTOLOGY_MAP
+    return PIPELINE_ONTOLOGY_MAP
+
+
+def _qdc_map() -> dict[str, str]:
+    from tools.qdc_canvas.constants import QDC_ONTOLOGY_MAP
+    return QDC_ONTOLOGY_MAP
+
+
+def _aiml_map() -> dict[str, str]:
+    from tools.aiml_canvas.constants import AIML_ONTOLOGY_MAP
+    return AIML_ONTOLOGY_MAP
+
+
+def _mission_map() -> dict[str, str]:
+    from tools.mission_canvas.constants import MISSION_ONTOLOGY_MAP
+    return MISSION_ONTOLOGY_MAP
+
+
 _register("idc", _idc_map)
 _register("odc", _odc_map)
 _register("aadc", _aadc_map)
@@ -94,6 +131,13 @@ _register("mdc", _mdc_map)
 _register("ndc", _ndc_map)
 _register("ohc", _ohc_map)
 _register("aisg", _aisg_map)
+_register("bdc", _bdc_map)
+_register("sdc", _sdc_map)
+_register("ddc", _ddc_map)
+_register("pdc", _pdc_map)
+_register("qdc", _qdc_map)
+_register("aiml", _aiml_map)
+_register("mission", _mission_map)
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 

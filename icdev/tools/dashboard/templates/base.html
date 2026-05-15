@@ -107,6 +107,30 @@
         background: var(--accent-blue-light, #8ab4ff);
         color: #0a0a1a;
     }
+    /* sec-cvs-08: per-design classification banner color coding */
+    .design-classification-banner {
+        display: flex; align-items: center; gap: 8px;
+        padding: 3px 12px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.04em; border-bottom: 1px solid transparent;
+    }
+    .design-classification-banner .readonly-badge {
+        margin-left: auto; font-size: 10px; opacity: 0.8;
+        border: 1px solid currentColor; border-radius: 3px; padding: 0 4px;
+    }
+    .design-classification-banner .compartment-badge { opacity: 0.85; }
+    .cls-PUBLIC        { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-UNCLASSIFIED  { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-CUI           { background:#0d2b4e; color:#4fc3f7; border-color:#1565c0; }
+    .cls-SECRET        { background:#3e1a00; color:#ff9800; border-color:#e65100; }
+    .cls-TOP-SECRET    { background:#3b0a0a; color:#ef5350; border-color:#b71c1c; }
+    .cls-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; border-color:#6a1b9a; }
+    /* list-view classification badges */
+    .badge-PUBLIC, .badge-UNCLASSIFIED { background:#0d3b1e; color:#4caf50; }
+    .badge-CUI         { background:#0d2b4e; color:#4fc3f7; }
+    .badge-SECRET      { background:#3e1a00; color:#ff9800; }
+    .badge-TOP-SECRET  { background:#3b0a0a; color:#ef5350; }
+    .badge-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; }
+    .badge-compartment { font-size: 9px; opacity: 0.8; margin-left: 4px; }
     </style>
 </head>
 <body data-auto-refresh="true">
@@ -114,14 +138,17 @@
     <a href="#main-content" class="skip-link">Skip to main content</a>
 
     <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    {% block global_banner %}
     {% if cui_banner_enabled %}
     <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
     {% endif %}
+    {% endblock %}
 
     <!-- Navigation -->
     <nav class="navbar" role="navigation" aria-label="Main navigation">
         <a class="navbar-brand" href="/">ICDEV™</a>
-        <ul class="navbar-nav">
+        <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
+        <ul class="navbar-nav" id="navbar-nav">
 
             <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
 
@@ -142,6 +169,7 @@
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/batch">Batch</a></li>
                     <li><a href="/simulate/chat">Simulate Chat</a></li>
+                    <li><a href="/simulate/chat?canvas=cam" title="AI migration path advisor — COAs, deprecated code detection, refactor dispatch">Migration Chat</a></li>
                 </ul>
             </li>
 
@@ -206,6 +234,8 @@
                     <li><a href="/migration-canvas/">Design Canvas</a></li>
                     <li><a href="/migration-canvas/network-migration/">Network Migration</a></li>
                     <li><a href="/migration-canvas/server-migration/">Server Migration</a></li>
+                    <li><a href="/migration-canvas/projects">Cloud App Projects</a></li>
+                    <li><a href="/simulate/chat?canvas=cam">Migration Chat</a></li>
                     <li><a href="/migration-intel/">Intelligence Engine</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
@@ -229,16 +259,35 @@
                     <li><a href="/agentic-ai/impact-graph">Impact Graph</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
-                    {% if mission_canvas_enabled %}
-                    <li class="nav-section-label">Mission Control</li>
-                    <li><a href="/mission-canvas/" style="color:#00bcd4;">Dashboard</a></li>
-                    <li class="nav-dropdown-divider"></li>
-                    {% endif %}
                     {% if aimc_enabled %}
                     <li class="nav-section-label">AI/ML</li>
                     <li><a href="/ai-ml/" style="color:#818cf8;">Dashboard</a></li>
                     <li><a href="/ai-ml/canvas/new">New Design</a></li>
                     <li><a href="/ai-ml/model-catalog">Model Catalog</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if ohc_enabled %}
+                    <li class="nav-section-label">Operations</li>
+                    <li><a href="/ops" style="color:#7dd3fc;">Ops Hub</a></li>
+                    <li><a href="/ops/llm">LLMOps</a></li>
+                    <li><a href="/ops/models">MLOps</a></li>
+                    <li><a href="/ops/slos">SLOs</a></li>
+                    <li><a href="/ops/incidents">Incidents</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if govlift_enabled %}
+                    <li class="nav-section-label">Cloud Migration</li>
+                    <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
+                    <li><a href="/govlift/workloads">Workloads</a></li>
+                    <li><a href="/govlift/waves">Waves</a></li>
+                    <li><a href="/govlift/executor">Executor</a></li>
+                    <li><a href="/govlift/stig">STIG</a></li>
+                    <li><a href="/govlift/audit">Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if mission_canvas_enabled %}
+                    <li class="nav-section-label">Mission Control</li>
+                    <li><a href="/mission-canvas/" style="color:#00bcd4;">Dashboard</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     <li class="nav-section-label">Cross-Canvas</li>
@@ -249,12 +298,13 @@
 
             <!-- ── Intelligence ──────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub'] %}active{% endif %}">Intelligence ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub','/ai-observatory'] %}active{% endif %}">Intelligence ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Awareness</li>
                     <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
                     <li><a href="/components-map">Component Map</a></li>
                     <li><a href="/ask-icdev">Ask ICDEV</a></li>
+                    <li><a href="/ai-observatory" style="color:#a78bfa;">AI Observatory</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Research</li>
                     {% if not airgap_mode %}
@@ -359,11 +409,12 @@
 
             <!-- ── Platforms ─────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon'] or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path %}active{% endif %}">Platforms ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon'] or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or '/info-ops' in request.path %}active{% endif %}">Platforms ▾</a>
                 <ul class="nav-dropdown-menu">
                     {% if not airgap_mode %}
                     <li class="nav-section-label">Market &amp; AI</li>
                     <li><a href="/fathomdesk" style="color:#8ab4ff;">FathomDesk</a></li>
+                    <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
                     <li><a href="/genesis">Genesis</a></li>
                     <li><a href="/oracle">Oracle</a></li>
                     <li class="nav-dropdown-divider"></li>
@@ -376,6 +427,12 @@
                     <li><a href="/geosigint/amphibious">Amphibious Assessment</a></li>
                     <li><a href="/geosigint/militia">Militia Classifier</a></li>
                     <li><a href="/geosigint/semiconductor">Semiconductor Chain</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Info Ops</li>
+                    <li><a href="/info-ops/" style="color:#a78bfa;">Info Ops Platform</a></li>
+                    <li><a href="/info-ops/dashboard">Dashboard</a></li>
+                    <li><a href="/info-ops/analysis">Analysis</a></li>
+                    <li><a href="/info-ops/osint">OSINT</a></li>
                     {% if govcon_enabled %}
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">GovCon</li>
@@ -435,6 +492,12 @@
 
         </ul>
         <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            {% if g.get('tenant_name') and g.tenant_name != 'System' %}
+            <span class="nav-tenant-badge" title="Active tenant: {{ g.tenant_name }}"
+                  style="background:var(--accent-color,#2563eb);color:#fff;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:600;letter-spacing:0.02em;white-space:nowrap;">
+                {{ g.tenant_name }}
+            </span>
+            {% endif %}
             {% if current_user %}
             <a href="/profile" class="user-badge" title="{{ current_user.email }}">
                 <span class="user-badge-name">{{ current_user.display_name }}</span>
@@ -497,6 +560,17 @@
     <script>
     // Theme toggle (FDE E1)
     window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleMobileNav = function() {
+        var nav = document.getElementById('navbar-nav');
+        var btn = document.getElementById('nav-hamburger');
+        if (!nav) return;
+        var isOpen = nav.classList.contains('mobile-open');
+        nav.classList.toggle('mobile-open', !isOpen);
+        if (btn) {
+            btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+            btn.textContent = !isOpen ? '✕' : '☰';
+        }
+    };
     ICDEV.toggleTheme = function() {
         var html = document.documentElement;
         var cur = html.getAttribute('data-theme') || 'dark';
@@ -532,20 +606,25 @@
                 if (!isOpen) li.classList.add('open');
             });
         });
-        // Close when clicking outside nav
+        // Close dropdowns when clicking outside nav
         document.addEventListener('click', function(e) {
-            if (!e.target.closest('.navbar-nav')) {
+            if (!e.target.closest('.navbar')) {
                 document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
                     el.classList.remove('open');
                 });
             }
         });
-        // Close when a sub-item link is clicked
+        // Close sub-item nav link: collapse dropdowns AND close mobile drawer
         document.querySelectorAll('.nav-dropdown-menu a').forEach(function(a) {
             a.addEventListener('click', function() {
                 document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
                     el.classList.remove('open');
                 });
+                // Also close mobile drawer on link click
+                var nav = document.getElementById('navbar-nav');
+                var btn = document.getElementById('nav-hamburger');
+                if (nav) nav.classList.remove('mobile-open');
+                if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.textContent = '☰'; }
             });
         });
     });
@@ -651,6 +730,178 @@
         }
         refreshBriefsBadge();
         setInterval(refreshBriefsBadge, 120000);
+    })();
+    </script>
+
+    <!-- IQE Global Mini-bar (Ctrl+Shift+Q) -->
+    <div id="iqe-minibar" style="
+        position:fixed; bottom:0; left:0; right:0; z-index:9000;
+        background:var(--bg-secondary,#1a1d27); border-top:2px solid var(--accent,#4f8ef7);
+        box-shadow:0 -4px 24px rgba(0,0,0,0.35); font-family:inherit;
+        transform:translateY(100%); transition:transform 0.22s cubic-bezier(.4,0,.2,1);
+    " aria-label="IQE Global Query Bar" role="complementary">
+      <div style="max-width:1100px; margin:0 auto; padding:0.7rem 1rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
+          <span style="font-size:0.72rem; font-weight:700; letter-spacing:.05em;
+              color:var(--accent,#4f8ef7); text-transform:uppercase; white-space:nowrap;">IQE</span>
+          <span id="iqe-mb-canvas-badge" style="font-size:0.68rem; padding:1px 7px; border-radius:999px;
+              background:var(--bg-tertiary,#252836); color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);">
+            global
+          </span>
+          <input id="iqe-mb-input" type="text" placeholder="Ask anything… (Ctrl+Shift+Q to toggle)"
+              autocomplete="off" spellcheck="false"
+              style="flex:1; background:var(--bg-input,#13151f); border:1px solid var(--border,#2e3347);
+                  border-radius:6px; padding:0.35rem 0.7rem; color:var(--text-primary,#e2e8f0);
+                  font-size:0.85rem; outline:none; min-width:0;"
+          />
+          <button onclick="icdevMBRun()" style="
+              background:var(--accent,#4f8ef7); color:#fff; border:none; border-radius:6px;
+              padding:0.35rem 1rem; font-size:0.82rem; font-weight:600; cursor:pointer; white-space:nowrap;">
+            Run
+          </button>
+          <button onclick="icdevMBClose()" style="
+              background:transparent; color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);
+              border-radius:6px; padding:0.3rem 0.55rem; font-size:0.82rem; cursor:pointer;" title="Close (Esc)">
+            ✕
+          </button>
+        </div>
+        <div id="iqe-mb-iqe-preview" style="display:none; font-size:0.75rem; font-family:monospace;
+            padding:0.25rem 0.6rem; background:var(--bg-tertiary,#252836); border-radius:4px;
+            color:var(--text-secondary,#a0aec0); margin-bottom:0.3rem; overflow-x:auto;"></div>
+        <div id="iqe-mb-status" style="font-size:0.75rem; color:var(--text-dim,#8892a4); min-height:1rem;"></div>
+        <div id="iqe-mb-results" style="display:none; margin-top:0.4rem; max-height:220px; overflow-y:auto; border-radius:6px;"></div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+        if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
+            var _mb = document.getElementById('iqe-minibar');
+            if (_mb) _mb.style.display = 'none';
+        }
+        var bar = document.getElementById('iqe-minibar');
+        var input = document.getElementById('iqe-mb-input');
+        var badge = document.getElementById('iqe-mb-canvas-badge');
+        var status = document.getElementById('iqe-mb-status');
+        var preview = document.getElementById('iqe-mb-iqe-preview');
+        var results = document.getElementById('iqe-mb-results');
+        var _open = false;
+
+        var PATH_CANVAS = [
+            [/^\/network|^\/twin/, 'ndc'],
+            [/^\/security/, 'sdc'],
+            [/^\/devops/, 'pdc'],
+            [/^\/data/, 'ddc'],
+            [/^\/infra/, 'idc'],
+            [/^\/observability/, 'odc'],
+            [/^\/boundary/, 'bdc'],
+            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
+            [/^\/migration-canvas\/projects/, 'cam'],
+            [/^\/migration-canvas/, 'mc'],
+            [/^\/agentic-ai/, 'aadc'],
+            [/^\/ai-ml/, 'aimc'],
+            [/^\/ops/, 'ohc'],
+            [/^\/govlift/, 'govlift'],
+            [/^\/kanban/, 'kanban'],
+            [/^\/compliance/, 'compliance'],
+            [/^\/agents/, 'agents'],
+            [/^\/projects/, 'projects'],
+            [/^\/ai-observatory/, 'ai_observatory'],
+        ];
+
+        function detectCanvas() {
+            var p = window.location.pathname;
+            for (var i = 0; i < PATH_CANVAS.length; i++) {
+                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+            }
+            return 'ndc';
+        }
+
+        function open() {
+            _open = true;
+            bar.style.transform = 'translateY(0)';
+            var canvas = detectCanvas();
+            badge.textContent = canvas;
+            setTimeout(function() { input.focus(); }, 60);
+        }
+
+        window.icdevMBClose = function() {
+            _open = false;
+            bar.style.transform = 'translateY(100%)';
+            status.textContent = '';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+        };
+
+        window.icdevMBRun = function() {
+            var question = input.value.trim();
+            if (!question) return;
+            var canvas = detectCanvas();
+            status.textContent = 'Translating…';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+            fetch('/api/iqe/dispatch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: question, canvas: canvas})
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d.iqe) {
+                    preview.textContent = d.iqe;
+                    preview.style.display = 'block';
+                }
+                if (!d.ok) {
+                    status.textContent = '✗ ' + (d.error || 'Error');
+                    status.style.color = '#f56565';
+                    return;
+                }
+                status.textContent = '✓ ' + d.row_count + ' row' + (d.row_count !== 1 ? 's' : '');
+                status.style.color = 'var(--success, #68d391)';
+                if (d.results && d.results.length > 0) {
+                    var cols = Object.keys(d.results[0]);
+                    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.75rem;">'
+                        + '<thead><tr>' + cols.map(function(c) {
+                            return '<th style="padding:3px 8px;text-align:left;background:var(--bg-tertiary,#252836);'
+                                + 'color:var(--text-dim,#8892a4);border-bottom:1px solid var(--border,#2e3347);">'
+                                + c + '</th>';
+                        }).join('') + '</tr></thead><tbody>';
+                    var show = Math.min(d.results.length, 100);
+                    for (var i = 0; i < show; i++) {
+                        html += '<tr>' + cols.map(function(c) {
+                            var v = d.results[i][c];
+                            return '<td style="padding:3px 8px;border-bottom:1px solid var(--border,#2e3347);'
+                                + 'color:var(--text-secondary,#a0aec0);max-width:200px;overflow:hidden;text-overflow:ellipsis;">'
+                                + (v === null || v === undefined ? '—' : String(v)) + '</td>';
+                        }).join('') + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    if (d.results.length > 100) {
+                        html += '<div style="font-size:0.7rem;color:var(--text-dim,#8892a4);padding:4px 8px;">showing 100 of ' + d.results.length + '</div>';
+                    }
+                    results.innerHTML = html;
+                    results.style.display = 'block';
+                } else {
+                    results.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim,#8892a4);padding:4px 8px;">No results</div>';
+                    results.style.display = 'block';
+                }
+            }).catch(function(e) {
+                status.textContent = '✗ ' + e.message;
+                status.style.color = '#f56565';
+            });
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
+                e.preventDefault();
+                if (_open) icdevMBClose(); else open();
+            }
+            if (e.key === 'Escape' && _open) icdevMBClose();
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') icdevMBRun();
+        });
     })();
     </script>
 </body>

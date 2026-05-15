@@ -107,6 +107,30 @@
         background: var(--accent-blue-light, #8ab4ff);
         color: #0a0a1a;
     }
+    /* sec-cvs-08: per-design classification banner color coding */
+    .design-classification-banner {
+        display: flex; align-items: center; gap: 8px;
+        padding: 3px 12px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.04em; border-bottom: 1px solid transparent;
+    }
+    .design-classification-banner .readonly-badge {
+        margin-left: auto; font-size: 10px; opacity: 0.8;
+        border: 1px solid currentColor; border-radius: 3px; padding: 0 4px;
+    }
+    .design-classification-banner .compartment-badge { opacity: 0.85; }
+    .cls-PUBLIC        { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-UNCLASSIFIED  { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-CUI           { background:#0d2b4e; color:#4fc3f7; border-color:#1565c0; }
+    .cls-SECRET        { background:#3e1a00; color:#ff9800; border-color:#e65100; }
+    .cls-TOP-SECRET    { background:#3b0a0a; color:#ef5350; border-color:#b71c1c; }
+    .cls-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; border-color:#6a1b9a; }
+    /* list-view classification badges */
+    .badge-PUBLIC, .badge-UNCLASSIFIED { background:#0d3b1e; color:#4caf50; }
+    .badge-CUI         { background:#0d2b4e; color:#4fc3f7; }
+    .badge-SECRET      { background:#3e1a00; color:#ff9800; }
+    .badge-TOP-SECRET  { background:#3b0a0a; color:#ef5350; }
+    .badge-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; }
+    .badge-compartment { font-size: 9px; opacity: 0.8; margin-left: 4px; }
     </style>
 </head>
 <body data-auto-refresh="true">

@@ -19,8 +19,24 @@ from pathlib import Path
 from typing import Any
 
 ONTOLOGY_SOURCES = [
+    # Standalone ontology modules
     Path("tools/ai_game_engine/ontology.py"),
     Path("apps/forge_academy/ontology.py"),
+    # Canvas ONTOLOGY_MAP constants — one per canvas
+    Path("tools/infra_canvas/constants.py"),
+    Path("tools/network/constants.py"),
+    Path("tools/observability_canvas/constants.py"),
+    Path("tools/agentic_ai_canvas/constants.py"),
+    Path("tools/migration_canvas/constants.py"),
+    Path("tools/ops_hub/constants.py"),
+    Path("tools/aisg/constants.py"),
+    Path("tools/boundary_canvas/constants.py"),
+    Path("tools/security_canvas/constants.py"),
+    Path("tools/data_canvas/constants.py"),
+    Path("tools/pipeline/constants.py"),
+    Path("tools/qdc_canvas/constants.py"),
+    Path("tools/aiml_canvas/constants.py"),
+    Path("tools/mission_canvas/constants.py"),
 ]
 
 

@@ -1409,3 +1409,65 @@ NIST_AI_RMF_FUNCTIONS = {
         "MANAGE 4.1 — Post-deployment AI risks and benefits monitored",
     ],
 }
+
+_ML = "https://icdev.dev/ontology/aiml#"
+
+AIML_ONTOLOGY_MAP: dict[str, str] = {
+    # Model types
+    "model-llm":              f"{_ML}AIModel.LLM",
+    "model-vlm":              f"{_ML}AIModel.VLM",
+    "model-embedding":        f"{_ML}AIModel.Embedding",
+    "model-reranker":         f"{_ML}AIModel.Reranker",
+    "model-classifier":       f"{_ML}AIModel.Classifier",
+    "model-code":             f"{_ML}AIModel.Code",
+    "model-judge":            f"{_ML}AIModel.Judge",
+    # Adaptation techniques
+    "adapt-prompt":           f"{_ML}Adaptation.Prompt",
+    "adapt-rag":              f"{_ML}Adaptation.RAG",
+    "adapt-finetune":         f"{_ML}Adaptation.FineTune",
+    "adapt-hybrid":           f"{_ML}Adaptation.Hybrid",
+    "adapt-fewshot":          f"{_ML}Adaptation.FewShot",
+    "adapt-bedrock-ft":       f"{_ML}Adaptation.BedrockFineTune",
+    "adapt-azure-openai-ft":  f"{_ML}Adaptation.AzureOpenAIFineTune",
+    "adapt-vertex-ft":        f"{_ML}Adaptation.VertexFineTune",
+    "adapt-oci-ft":           f"{_ML}Adaptation.OCIFineTune",
+    "adapt-watsonx-ft":       f"{_ML}Adaptation.WatsonxFineTune",
+    # Data sources
+    "data-corpus":            f"{_ML}AIData.Corpus",
+    "data-vector-store":      f"{_ML}AIData.VectorStore",
+    "data-dataset":           f"{_ML}AIData.Dataset",
+    "data-eval-set":          f"{_ML}AIData.EvalSet",
+    "data-knowledge-base":    f"{_ML}AIData.KnowledgeBase",
+    "data-opensearch":        f"{_ML}AIData.OpenSearch",
+    "data-pinecone":          f"{_ML}AIData.Pinecone",
+    "data-weaviate":          f"{_ML}AIData.Weaviate",
+    "data-chroma":            f"{_ML}AIData.Chroma",
+    "data-azure-ai-search":   f"{_ML}AIData.AzureAISearch",
+    # Safety components
+    "safety-guardrail":       f"{_ML}AISafety.Guardrail",
+    "safety-output-validator":f"{_ML}AISafety.OutputValidator",
+    "safety-content-filter":  f"{_ML}AISafety.ContentFilter",
+    "safety-pii-scrubber":    f"{_ML}AISafety.PIIScrubber",
+    # Evaluation
+    "eval-benchmark":         f"{_ML}AIEval.Benchmark",
+    "eval-rubric":            f"{_ML}AIEval.Rubric",
+    "eval-red-team":          f"{_ML}AIEval.RedTeam",
+    "eval-ab-test":           f"{_ML}AIEval.ABTest",
+    "eval-agentic-red-team":  f"{_ML}AIEval.AgenticRedTeam",
+    # Deployment targets
+    "deploy-ollama":          f"{_ML}AIDeployment.Ollama",
+    "deploy-vllm":            f"{_ML}AIDeployment.vLLM",
+    "deploy-bedrock":         f"{_ML}AIDeployment.Bedrock",
+    "deploy-tgi":             f"{_ML}AIDeployment.TGI",
+    "deploy-triton":          f"{_ML}AIDeployment.Triton",
+    "deploy-azure-ml":        f"{_ML}AIDeployment.AzureML",
+    "deploy-sagemaker":       f"{_ML}AIDeployment.SageMaker",
+    "deploy-vertex-ai":       f"{_ML}AIDeployment.VertexAI",
+    "deploy-oci-genai":       f"{_ML}AIDeployment.OCIGenAI",
+    "deploy-watsonx-ai":      f"{_ML}AIDeployment.WatsonxAI",
+    "deploy-kserve":          f"{_ML}AIDeployment.KServe",
+    # Governance artifacts
+    "gov-model-card":         f"{_ML}AIGovernance.ModelCard",
+    "gov-system-card":        f"{_ML}AIGovernance.SystemCard",
+    "gov-ai-bom":             f"{_ML}AIGovernance.AIBOM",
+}

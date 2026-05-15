@@ -428,3 +428,58 @@ BOUNDARY_NIST_CONTROLS = {
     "AU-6": "Audit Record Review, Analysis, and Reporting",
     "CM-7": "Least Functionality",
 }
+
+_B = "https://icdev.dev/ontology/boundary#"
+
+BOUNDARY_ONTOLOGY_MAP: dict[str, str] = {
+    # Systems
+    "sys-internal":            f"{_B}SystemBoundary.Internal",
+    "sys-external":            f"{_B}SystemBoundary.External",
+    "sys-cloud":               f"{_B}SystemBoundary.Cloud",
+    "sys-saas":                f"{_B}SystemBoundary.SaaS",
+    "sys-legacy":              f"{_B}SystemBoundary.Legacy",
+    "sys-mobile":              f"{_B}SystemBoundary.Mobile",
+    "sys-iot":                 f"{_B}SystemBoundary.IoT",
+    "sys-enclave":             f"{_B}SystemBoundary.Enclave",
+    # Authorization boundaries
+    "bnd-ato":                 f"{_B}AuthorizationBoundary.ATO",
+    "bnd-fedramp":             f"{_B}AuthorizationBoundary.FedRAMP",
+    "bnd-enclave":             f"{_B}AuthorizationBoundary.Enclave",
+    "bnd-dmz":                 f"{_B}AuthorizationBoundary.DMZ",
+    "bnd-classification":      f"{_B}AuthorizationBoundary.Classification",
+    "bnd-pci":                 f"{_B}AuthorizationBoundary.PCI",
+    "bnd-hipaa":               f"{_B}AuthorizationBoundary.HIPAA",
+    "bnd-scif":                f"{_B}AuthorizationBoundary.SCIF",
+    # Interconnections (ISA)
+    "isa-vpn":                 f"{_B}Interconnection.VPN",
+    "isa-dedicated":           f"{_B}Interconnection.Dedicated",
+    "isa-api":                 f"{_B}Interconnection.API",
+    "isa-file":                f"{_B}Interconnection.File",
+    "isa-cross-domain":        f"{_B}Interconnection.CrossDomain",
+    "isa-federation":          f"{_B}Interconnection.Federation",
+    "isa-email":               f"{_B}Interconnection.Email",
+    # Boundary controls
+    "ctrl-bcap":               f"{_B}BoundaryControl.BCAP",
+    "ctrl-cap":                f"{_B}BoundaryControl.CAP",
+    "ctrl-proxy":              f"{_B}BoundaryControl.Proxy",
+    "ctrl-ids-ips":            f"{_B}BoundaryControl.IDSIPS",
+    "ctrl-dlp":                f"{_B}BoundaryControl.DLP",
+    "ctrl-firewall":           f"{_B}BoundaryControl.Firewall",
+    "ctrl-siem":               f"{_B}BoundaryControl.SIEM",
+    "ctrl-pps":                f"{_B}BoundaryControl.PPS",
+    "ctrl-mfa":                f"{_B}BoundaryControl.MFA",
+    "ctrl-certificate":        f"{_B}BoundaryControl.Certificate",
+    # Documents
+    "doc-isa":                 f"{_B}Document.ISA",
+    "doc-mou":                 f"{_B}Document.MOU",
+    "doc-ato-letter":          f"{_B}Document.ATOLetter",
+    "doc-pps-matrix":          f"{_B}Document.PPSMatrix",
+    "doc-dfd":                 f"{_B}Document.DFD",
+    "doc-conops":              f"{_B}Document.ConOps",
+    # Digital twins
+    "twin-cato":               f"{_B}DigitalTwin.cATO",
+    "twin-compliance-snapshot":f"{_B}DigitalTwin.ComplianceSnapshot",
+    "twin-crosswalk-drift":    f"{_B}DigitalTwin.CrosswalkDrift",
+    "twin-oscal-exporter":     f"{_B}DigitalTwin.OSCALExporter",
+    "twin-readiness-scorer":   f"{_B}DigitalTwin.ReadinessScorer",
+}
