@@ -185,7 +185,39 @@ def save_artifact(
          content, tokens_used, model_used, latency_ms, _now()),
     ).fetchone()
     conn.commit()
-    return dict(row)
+    artifact = dict(row)
+
+    # Register blockchain provenance
+    try:
+        import hashlib
+        import json
+        from tools.provenance.registry import register_citation
+        from tools.blockchain.chain_anchor import ChainAnchor
+
+        payload = {
+            "artifact_id": artifact["id"],
+            "round_id": round_id,
+            "team_key": team_key,
+            "artifact_type": artifact_type,
+            "model_used": model_used,
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
+        }
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        source_hash = hashlib.sha256(payload_json.encode()).hexdigest()
+        reg_id = register_citation(
+            citation_type="canvas_ai",
+            source_table="gd_ai_artifacts",
+            source_record_id=str(artifact["id"]),
+            source_hash=source_hash,
+            source_doc=f"gameday-artifact-{artifact_type}",
+        )
+        if reg_id:
+            ChainAnchor().anchor_provenance([reg_id])
+            log.info("[Artifact] Provenance registered: %s", reg_id)
+    except Exception as exc:
+        log.debug("[Artifact] Provenance registration skipped: %s", exc)
+
+    return artifact
 
 
 def get_round_artifacts(round_id: int, team_key: str | None = None) -> list[dict]:

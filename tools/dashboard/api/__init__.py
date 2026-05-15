@@ -155,6 +155,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     _mount(provenance_api, v1_prefix="/api/v1/provenance")
     _mount(xai_api, v1_prefix="/api/v1/xai")
 
+    # Blockchain provenance verification API (orphaned, now registered)
+    try:
+        from tools.dashboard.pages.provenance import provenance_api as blockchain_provenance_api
+        _mount_inline(blockchain_provenance_api)
+        logger.info("blockchain_provenance_api registered at /api/provenance/*")
+    except Exception as exc:
+        logger.warning("blockchain_provenance_api skipped: %s", exc)
+
     from tools.dashboard.api.oscal import oscal_api
     _mount(oscal_api, v1_prefix="/api/v1/oscal")
 

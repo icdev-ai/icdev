@@ -592,6 +592,18 @@ def save_design(design_id):
     except Exception:
         pass
 
+    # Blockchain provenance
+    try:
+        from tools.canvas.provenance import register_canvas_provenance
+        register_canvas_provenance(
+            canvas_key="idc",
+            design_id=design_id,
+            graph_json=data.get("graph", {}),
+            project_id=data.get("project_id", ""),
+        )
+    except Exception:
+        pass
+
     return jsonify({"status": "saved", "id": design_id})
 
 
@@ -1581,6 +1593,19 @@ def idc_api_governance(design_id):
     )
     conn.commit()
     conn.close()
+
+    # Blockchain provenance for assessment
+    try:
+        from tools.canvas.provenance import register_canvas_provenance
+        register_canvas_provenance(
+            canvas_key="idc",
+            design_id=design_id,
+            assessment_data=result,
+            project_id="",
+        )
+    except Exception:
+        pass
+
     return jsonify(result)
 
 

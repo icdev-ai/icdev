@@ -301,7 +301,7 @@
 
             <!-- ── Compliance ────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost'] or request.path.startswith('/security') %}active{% endif %}">Compliance ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') %}active{% endif %}">Compliance ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Risk &amp; ATO</li>
                     <li><a href="/poam">POA&amp;M Findings</a></li>
@@ -325,6 +325,11 @@
                     <li><a href="/control-inheritance">Control Inheritance</a></li>
                     <li><a href="/compliance-debt">Compliance Debt</a></li>
                     <li><a href="/prod-audit">Production Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/traces">Traces</a></li>
+                    <li><a href="/provenance">Provenance</a></li>
+                    <li><a href="/xai">XAI</a></li>
                 </ul>
             </li>
 
