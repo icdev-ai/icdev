@@ -2271,6 +2271,17 @@ python tools/data_canvas/sync/openmetadata_sync.py --all --gate --json
 ```
 
 
+---
+
+## Showcase Commands
+```bash
+python tools/showcase/generate_app.py --slug <name> --category <cat>
+python tools/showcase/osint_engine.py --source cve --fetch --json
+python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
+python tools/showcase/validator.py --app <slug> --json
+```
+
+
 ## System Graph Commands
 ```bash
 # Federated graph API (6 sources — 3500+ nodes, 1600+ edges)

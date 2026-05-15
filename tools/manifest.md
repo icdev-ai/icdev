@@ -30,6 +30,7 @@
 - [eMASS Integration](manifest/emass-integration.md)
 - [Builder (TDD)](manifest/builder.md)
 - [Security Scanning](manifest/security-scanning.md)
+- [Showcase](manifest/showcase.md)
 - [Deploy](manifest/deploy.md)
 - [Infrastructure](manifest/infrastructure.md)
 - [Knowledge & Self-Healing](manifest/knowledge-self-healing.md)
@@ -484,3 +485,49 @@
 | Url Analyzer | tools\chat_router\url_analyzer.py | Auto-registered: chat_router/url_analyzer.py | --json | JSON |
 | Seed Wex Kanban | tools\studio\seed_wex_kanban.py | Auto-registered: studio/seed_wex_kanban.py | --json | JSON |
 | Seed Wex Pg | tools\studio\seed_wex_pg.py | Auto-registered: studio/seed_wex_pg.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Compliance Checker | tools\aadc\compliance_checker.py | Auto-registered: aadc/compliance_checker.py | --json | JSON |
+| Governance Scanner | tools\aadc\governance_scanner.py | Auto-registered: aadc/governance_scanner.py | --json | JSON |
+| Deployment Checker | tools\aimc\deployment_checker.py | Auto-registered: aimc/deployment_checker.py | --json | JSON |
+| Model Scanner | tools\aimc\model_scanner.py | Auto-registered: aimc/model_scanner.py | --json | JSON |
+| Boundary Scanner | tools\bdc\boundary_scanner.py | Auto-registered: bdc/boundary_scanner.py | --json | JSON |
+| Isa Checker | tools\bdc\isa_checker.py | Auto-registered: bdc/isa_checker.py | --json | JSON |
+| Ansible Executor | tools\data\ansible_executor.py | Auto-registered: data/ansible_executor.py | --json | JSON |
+| Aws Config Executor | tools\data\aws_config_executor.py | Auto-registered: data/aws_config_executor.py | --json | JSON |
+| Canvas Reader | tools\data\canvas_reader.py | Auto-registered: data/canvas_reader.py | --json | JSON |
+| Lineage Scanner | tools\data\lineage_scanner.py | Auto-registered: data/lineage_scanner.py | --json | JSON |
+| Migration Reporter | tools\data\migration_reporter.py | Auto-registered: data/migration_reporter.py | --json | JSON |
+| Schema Checker | tools\data\schema_checker.py | Auto-registered: data/schema_checker.py | --json | JSON |
+| Terraform Apply | tools\data\terraform_apply.py | Auto-registered: data/terraform_apply.py | --json | JSON |
+| Terraform Destroy | tools\data\terraform_destroy.py | Auto-registered: data/terraform_destroy.py | --json | JSON |
+| Terraform Executor | tools\data\terraform_executor.py | Auto-registered: data/terraform_executor.py | --json | JSON |
+| Validation Runner | tools\data\validation_runner.py | Auto-registered: data/validation_runner.py | --json | JSON |
+| Hardening Checker | tools\idc\hardening_checker.py | Auto-registered: idc/hardening_checker.py | --json | JSON |
+| Infra Scanner | tools\idc\infra_scanner.py | Auto-registered: idc/infra_scanner.py | --json | JSON |
+| Readiness Checker | tools\mdc\readiness_checker.py | Auto-registered: mdc/readiness_checker.py | --json | JSON |
+| Discovery Scanner | tools\migration\discovery_scanner.py | Auto-registered: migration/discovery_scanner.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Checker | tools\ndc\config_checker.py | Auto-registered: ndc/config_checker.py | --json | JSON |
+| Gns3 Topology Builder | tools\ndc\gns3_topology_builder.py | Auto-registered: ndc/gns3_topology_builder.py | --json | JSON |
+| Gns3 Topology Probe | tools\ndc\gns3_topology_probe.py | Auto-registered: ndc/gns3_topology_probe.py | --json | JSON |
+| Topology Scanner | tools\ndc\topology_scanner.py | Auto-registered: ndc/topology_scanner.py | --json | JSON |
+| Ztp Config Generator | tools\ndc\ztp_config_generator.py | Auto-registered: ndc/ztp_config_generator.py | --json | JSON |
+| Ztp Console Push | tools\ndc\ztp_console_push.py | Auto-registered: ndc/ztp_console_push.py | --json | JSON |
+| Gns3 Image Downloader | tools\network\gns3_image_downloader.py | Auto-registered: network/gns3_image_downloader.py | --json | JSON |
+| Coverage Scanner | tools\odc\coverage_scanner.py | Auto-registered: odc/coverage_scanner.py | --json | JSON |
+| Gap Checker | tools\odc\gap_checker.py | Auto-registered: odc/gap_checker.py | --json | JSON |
+| Ops Scanner | tools\ohc\ops_scanner.py | Auto-registered: ohc/ops_scanner.py | --json | JSON |
+| Runbook Checker | tools\ohc\runbook_checker.py | Auto-registered: ohc/runbook_checker.py | --json | JSON |
+| Antipattern Checker | tools\pdc\antipattern_checker.py | Auto-registered: pdc/antipattern_checker.py | --json | JSON |
+| Pipeline Scanner | tools\pdc\pipeline_scanner.py | Auto-registered: pdc/pipeline_scanner.py | --json | JSON |
+| Gate Checker | tools\qdc\gate_checker.py | Auto-registered: qdc/gate_checker.py | --json | JSON |
+| Quality Scanner | tools\qdc\quality_scanner.py | Auto-registered: qdc/quality_scanner.py | --json | JSON |
+| Threat Scanner | tools\sdc\threat_scanner.py | Auto-registered: sdc/threat_scanner.py | --json | JSON |
