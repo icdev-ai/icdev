@@ -42,6 +42,12 @@ python tools/dx/companion.py --sync --write --json
 # Coherence check
 python tools/workflow/coherence_checker.py --all --fix --gate
 
+# Showcase
+python tools/showcase/generate_app.py --slug <name> --category <cat>
+python tools/showcase/osint_engine.py --source cve --fetch --json
+python tools/showcase/synthetic_data_engine.py --domain cyber --records 1000
+python tools/showcase/validator.py --app <slug> --json
+
 # Internal Awareness Engine (Phase 1-6, D-AWARE)
 python tools/awareness/component_indexer.py --scan --json        # Refresh kg-icdev-self-awareness nodes
 python tools/awareness/health_prober.py --run-all --json         # Probe routes, imports, coherence
