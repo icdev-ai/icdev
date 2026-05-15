@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-05-ai-workforce:step:2
+step_class: icdev:Lesson
+---
+
 # Map Your Workforce AI Readiness
 
 A workforce AI readiness assessment does not require an HR system or a formal survey. It requires honest answers to four structured questions.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-03-data-poisoning:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # RAG Corpus Integrity — Threat Model

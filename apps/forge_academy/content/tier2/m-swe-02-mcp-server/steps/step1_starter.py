@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 """
 Tier 2 SWE/Architect Mission 2: MCP Server Design

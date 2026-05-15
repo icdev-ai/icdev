@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-02-market-signal-rag:step:1
+step_class: icdev:Lesson
+---
+
 # RAG for Structured and Unstructured Intelligence
 
 RAG — Retrieval-Augmented Generation — is the technology that lets you ask questions of your own document library in plain English, without needing a developer to write a database query for every question you have.

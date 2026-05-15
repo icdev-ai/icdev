@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-06-pm-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # PM Capstone — Full Capture Cycle: Opportunity to Proposal Draft
 
 You've seen ICDEV scan opportunities, decompose requirements, predict schedule risk, and generate reports. Now watch the full capture cycle execute end-to-end — from SAM.gov opportunity discovery to a competitive proposal draft in 4 hours.

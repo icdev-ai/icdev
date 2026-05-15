@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-exec-primer-01:step:1
+step_class: icdev:Lesson
+---
+
 # What Is an LLM?
 
 A large language model is a very well-read analyst who has processed an enormous amount of text — books, articles, reports, websites — and can respond to almost any question with a fluent, confident-sounding answer. The critical difference from a human analyst: this analyst cannot verify facts in real time, cannot check whether the world has changed since training ended, and has no awareness of classified or proprietary information your organization holds.

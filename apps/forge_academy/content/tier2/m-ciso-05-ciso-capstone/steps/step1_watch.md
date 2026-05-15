@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-05-ciso-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # CISO Capstone — Configure Full AI Governance Posture Dashboard
 
 You've inventoried AI systems, scored risks, aggregated portfolio posture, and mapped multi-regime compliance. Now you deploy the full AI governance posture dashboard — a live, continuously updated view of your organization's AI risk across all systems, regulations, and stakeholders.

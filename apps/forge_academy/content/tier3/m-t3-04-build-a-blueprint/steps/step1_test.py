@@ -1,3 +1,4 @@
+
 # Auto-grader for T3 M4 Step 1: Build a Blueprint
 
 # ── Setup mock filesystem ─────────────────────────────────────────────────────

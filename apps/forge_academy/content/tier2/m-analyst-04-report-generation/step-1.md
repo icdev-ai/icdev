@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-04-report-generation:step:1
+step_class: icdev:Lesson
+---
+
 # AI-Assisted Report Generation with Citation Grounding
 
 Every analyst writes the same types of reports repeatedly. A weekly SITREP. A quarterly trend assessment. An ad hoc brief on an emerging development. AI-assisted generation does not write the report for you — it drafts the structure and populates it from your data, leaving judgment and review to the human.

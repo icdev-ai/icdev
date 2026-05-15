@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aadc-08-safety-redundancy:step:1
+step_class: icdev:Lesson
+---
+
 # Safety Redundancy Design — Defense in Depth for Agentic Systems
 
 ## Safety Node Coverage Requirements

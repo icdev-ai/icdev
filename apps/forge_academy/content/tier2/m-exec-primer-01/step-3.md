@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-exec-primer-01:step:3
+step_class: icdev:Lesson
+---
+
 # AI Risks — The 5 You Must Own
 
 AI capability comes with AI risk. As an executive, you do not need to understand the technical mechanics of each risk — but you must be able to name them, describe their organizational impact, and brief your mitigation posture. These are the five risks Congress asks about.

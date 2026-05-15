@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-07-tier3-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # Tier 3 Capstone — Ship a Real Child App
 
 You've traced goal executions, written tools, authored goals, built blueprints, selected canvases, and scaffolded manifests. Now you ship something real. In this capstone you'll integrate all 7 Tier 3 skills into a complete `CapstoneApp` — a mini ICDEV extension that wires the whole stack together.

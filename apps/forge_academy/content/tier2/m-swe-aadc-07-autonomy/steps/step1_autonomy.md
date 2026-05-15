@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aadc-07-autonomy:step:1
+step_class: icdev:Lesson
+---
+
 # Autonomy Level Design — L0 to L5 Safe Deployment
 
 ## Autonomy Spectrum

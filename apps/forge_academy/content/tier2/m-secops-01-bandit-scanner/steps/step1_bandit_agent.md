@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-01-bandit-scanner:step:1
+step_class: icdev:Lesson
+---
+
 # Build a Static Analysis Security Agent
 
 Bandit is Python's standard SAST tool — but raw Bandit output is noisy: hundreds of findings, mixed severities, no prioritization. In this mission you'll wrap Bandit in an agent that triages findings, maps them to CWE/OWASP categories, and generates fix recommendations.

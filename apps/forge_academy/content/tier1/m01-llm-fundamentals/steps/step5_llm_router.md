@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m01-llm-fundamentals:step:5
+step_class: icdev:Lesson
+---
+
 # ICDEV LLM Router
 
 Every LLM call in ICDEV goes through `tools/llm/router.py`. The router abstracts provider selection, fallback logic, cost optimization, and air-gap compatibility into a single interface. You never hardcode a model name — you declare an **intent** and the router picks the best available provider.

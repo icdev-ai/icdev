@@ -1,3 +1,4 @@
+
 # Auto-grader for M02 Step 4: Structured Output Enforcement
 
 import sys

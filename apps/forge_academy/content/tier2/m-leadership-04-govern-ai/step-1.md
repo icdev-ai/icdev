@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-04-govern-ai:step:1
+step_class: icdev:Lesson
+---
+
 # AI Governance — Policy, Structure, and OMB M-25-21
 
 AI governance is not compliance theater. It is the institutional architecture that allows your organization to move fast on AI without creating unacceptable legal, ethical, or operational exposure.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-02-stig-parser:step:1
+step_class: icdev:Lesson
+---
+
 # STIG Parser — Extract Controls from XCCDF Benchmarks
 
 STIG benchmarks are distributed as XCCDF XML files — machine-readable but dense. Before you can scan for compliance, you need to parse these benchmarks into structured control objects. In this mission you'll build a STIG parser that extracts control metadata from XCCDF content.

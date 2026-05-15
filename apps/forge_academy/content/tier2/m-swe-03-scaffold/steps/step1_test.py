@@ -1,3 +1,4 @@
+
 # Auto-grader for SWE/Arch M3: System Scaffold Generator
 
 # ── Test: render_template_str ─────────────────────────────────────────────────

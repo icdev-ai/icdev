@@ -1,0 +1,809 @@
+# CUI // SP-CTI
+# FORGE Academy Content Ontology
+# Maps curriculum content to ICDEV ontology classes for KG integration.
+
+# ---------------------------------------------------------------------------
+# Content-type ontology (what a file *is*)
+# ---------------------------------------------------------------------------
+content_types:
+  icdev:Lesson:
+    description: "Instructional markdown content — explains a concept or technique."
+    applies_to: ["step*.md", "step-*.md"]
+  icdev:Lab:
+    description: "Hands-on starter code / scaffold file."
+    applies_to: ["*_starter.py"]
+  icdev:Assessment:
+    description: "Automated test / validation script."
+    applies_to: ["*_test.py"]
+
+# ---------------------------------------------------------------------------
+# Domain ontology (what a mission *teaches*)
+# ---------------------------------------------------------------------------
+domain_classes:
+  # Network
+  network:AWSVPC:
+    label: "AWS VPC Fundamentals"
+    match_topics: ["vpc", "aws networking", "subnet", "peering"]
+  network:Subnet:
+    label: "Subnet Design"
+    match_topics: ["subnet", "cidr", "network segmentation"]
+  network:VPCPeering:
+    label: "VPC Peering"
+    match_topics: ["peering", "vpc interconnect"]
+  network:Topology:
+    label: "Network Topology"
+    match_topics: ["topology", "network diagram", "gns3"]
+  network:AnomalyDetection:
+    label: "Network Anomaly Detection"
+    match_topics: ["anomaly", "network monitoring"]
+
+  # Security
+  security:STIGRule:
+    label: "STIG Compliance"
+    match_topics: ["stig", "disa", "rhel", "security baseline"]
+  security:POAM:
+    label: "Plan of Action & Milestones"
+    match_topics: ["poam", "remediation plan", "milestone"]
+  security:AuditTrail:
+    label: "Audit Trail"
+    match_topics: ["audit", "log integrity", "evidence"]
+  security:RMF:
+    label: "Risk Management Framework"
+    match_topics: ["rmf", "nist 800-53", "risk assessment"]
+  security:BanditScanner:
+    label: "SAST / Bandit"
+    match_topics: ["bandit", "sast", "python security"]
+  security:EvidencePipeline:
+    label: "Evidence Pipeline"
+    match_topics: ["evidence", "artifact collection", "compliance pipeline"]
+  security:ThreatModel:
+    label: "Threat Modeling"
+    match_topics: ["threat model", "stride", "attack tree"]
+  security:PromptInjection:
+    label: "Prompt Injection Defense"
+    match_topics: ["prompt injection", "adversarial prompt"]
+  security:AdversarialRobustness:
+    label: "Adversarial Robustness"
+    match_topics: ["adversarial", "robustness", "red team"]
+  security:DataPoisoning:
+    label: "Data Poisoning"
+    match_topics: ["data poisoning", "training data attack"]
+
+  # AI / ML
+  ai:LLM:
+    label: "Large Language Models"
+    match_topics: ["llm", "large language model", "transformer"]
+  ai:PromptEngineering:
+    label: "Prompt Engineering"
+    match_topics: ["prompt", "few-shot", "chain-of-thought"]
+  ai:RAG:
+    label: "Retrieval-Augmented Generation"
+    match_topics: ["rag", "retrieval", "vector store"]
+  ai:Agent:
+    label: "AI Agents"
+    match_topics: ["agent", "agent loop", "tool use"]
+  ai:MCP:
+    label: "Model Context Protocol"
+    match_topics: ["mcp", "model context protocol", "fastmcp"]
+  ai:MultiAgent:
+    label: "Multi-Agent Systems"
+    match_topics: ["multi-agent", "swarm", "orchestration"]
+  ai:Strands:
+    label: "Amazon Strands"
+    match_topics: ["strands", "amazon strands"]
+  ai:LangChain:
+    label: "LangChain / LCEL"
+    match_topics: ["langchain", "lcel", "chain"]
+  ai:FineTuning:
+    label: "Fine-Tuning"
+    match_topics: ["fine-tuning", "peft", "lora", "qlora"]
+  ai:Multimodal:
+    label: "Multimodal AI"
+    match_topics: ["multimodal", "vision", "audio"]
+  ai:AIMLFoundations:
+    label: "AI/ML Foundations"
+    match_topics: ["aiml", "machine learning", "foundation model"]
+  ai:Adaptation:
+    label: "Model Adaptation"
+    match_topics: ["adaptation", "domain adaptation", "transfer learning"]
+  ai:SafetyEval:
+    label: "AI Safety Evaluation"
+    match_topics: ["safety eval", "red teaming", "harm evaluation"]
+
+  # DevOps / Platform
+  devops:Pipeline:
+    label: "CI/CD Pipeline"
+    match_topics: ["pipeline", "ci/cd", "gitlab"]
+  devops:IaC:
+    label: "Infrastructure as Code"
+    match_topics: ["iac", "terraform", "ansible", "cloudformation"]
+  devops:GitOps:
+    label: "GitOps"
+    match_topics: ["gitops", "argo", "flux"]
+  devops:Deploy:
+    label: "AI Deployment"
+    match_topics: ["deploy", "inference", "serving"]
+  devops:SDK:
+    label: "Language SDK"
+    match_topics: ["sdk", "dotnet", "go", "java", "typescript"]
+
+  # SRE
+  sre:SLO:
+    label: "SLO Engineering"
+    match_topics: ["slo", "sla", "error budget"]
+  sre:IncidentResponse:
+    label: "Incident Response"
+    match_topics: ["incident", "on-call", "runbook"]
+  sre:Chaos:
+    label: "Chaos Engineering"
+    match_topics: ["chaos", "game day", "failure injection"]
+  sre:LLMObservability:
+    label: "LLM Observability"
+    match_topics: ["observability", "llm tracing", "monitoring"]
+  sre:DriftDetection:
+    label: "Drift Detection"
+    match_topics: ["drift", "data drift", "concept drift"]
+  sre:CostOptimization:
+    label: "Cost Optimization"
+    match_topics: ["cost", "token budget", "inference cost"]
+
+  # Governance / Compliance
+  governance:AADC:
+    label: "AI Architecture Design Canvas"
+    match_topics: ["aadc", "design canvas", "architecture"]
+  governance:ATO:
+    label: "Authority to Operate"
+    match_topics: ["ato", "authorization", "cato"]
+  governance:AIInventory:
+    label: "AI Inventory"
+    match_topics: ["inventory", "ai system catalog", "omb m-25-21"]
+  governance:RiskPosture:
+    label: "AI Risk Posture"
+    match_topics: ["risk posture", "risk register", "ai risk"]
+  governance:PortfolioIntel:
+    label: "Portfolio Intelligence"
+    match_topics: ["portfolio", "program intel"]
+  governance:MultiRegime:
+    label: "Multi-Regime Compliance"
+    match_topics: ["multi-regime", "fedramp", "cmmc", "crosswalk"]
+  governance:Crosswalk:
+    label: "Compliance Crosswalk"
+    match_topics: ["crosswalk", "nist 800-53", "control mapping"]
+  governance:CATO:
+    label: "Continuous ATO"
+    match_topics: ["cato", "continuous monitoring", "conmon"]
+
+  # Strategy / Leadership
+  strategy:WarCouncilBrief:
+    label: "War Council Briefing"
+    match_topics: ["war council", "executive briefing", "board"]
+  strategy:AIROI:
+    label: "AI ROI"
+    match_topics: ["roi", "value measurement", "business case"]
+  strategy:BuildVsBuy:
+    label: "Build vs Buy"
+    match_topics: ["build vs buy", "vendor selection", "make or buy"]
+  strategy:RiskCommunication:
+    label: "AI Risk Communication"
+    match_topics: ["risk communication", "stakeholder", "briefing"]
+  strategy:GovernAI:
+    label: "Govern AI"
+    match_topics: ["governance", "ai policy", "oversight"]
+  strategy:AIWorkforce:
+    label: "AI Workforce"
+    match_topics: ["workforce", "training", "talent"]
+
+  # PM / GovCon
+  pm:CompetitiveIntel:
+    label: "Competitive Intelligence"
+    match_topics: ["competitive intel", "capture", "competitive analysis"]
+  pm:ProposalAI:
+    label: "Proposal AI"
+    match_topics: ["proposal", "win theme", "capture plan"]
+  pm:RequirementsIntake:
+    label: "Requirements Intake"
+    match_topics: ["requirements", "intake", "user story"]
+  pm:ScheduleCost:
+    label: "Schedule & Cost"
+    match_topics: ["schedule", "cost", "earned value", "evm"]
+  pm:StakeholderReporting:
+    label: "Stakeholder Reporting"
+    match_topics: ["stakeholder", "status report", "dashboard"]
+
+  # Analyst
+  analyst:CompetitiveIntel:
+    label: "Analyst Competitive Intel"
+    match_topics: ["competitive intel agent", "market intel"]
+  analyst:MarketSignal:
+    label: "Market Signal RAG"
+    match_topics: ["market signal", "financial rag", "sentiment"]
+  analyst:PatternDetection:
+    label: "Pattern Detection"
+    match_topics: ["pattern", "anomaly detection", "trend"]
+  analyst:ReportGeneration:
+    label: "Report Generation"
+    match_topics: ["report", "narrative generation", "briefing"]
+
+  # SWE / Architecture
+  swe:MultiAgentDAG:
+    label: "Multi-Agent DAG"
+    match_topics: ["dag", "multi-agent workflow", "directed graph"]
+  swe:MCPServer:
+    label: "MCP Server"
+    match_topics: ["mcp server", "server builder"]
+  swe:Scaffold:
+    label: "Project Scaffold"
+    match_topics: ["scaffold", "project template", "cookiecutter"]
+  swe:Autonomy:
+    label: "Agent Autonomy"
+    match_topics: ["autonomy", "self-directed", "planning"]
+  swe:SafetyRedundancy:
+    label: "Safety & Redundancy"
+    match_topics: ["safety", "redundancy", "fail-safe"]
+  swe:OpsConfig:
+    label: "Ops Configuration"
+    match_topics: ["ops", "config management", "runtime"]
+  swe:FORGEDeep:
+    label: "FORGE Framework Deep Dive"
+    match_topics: ["forge", "framework", "6-layer"]
+  swe:ToolAuthor:
+    label: "Tool Authoring"
+    match_topics: ["tool", "author", "deterministic"]
+  swe:GoalWorkflow:
+    label: "Goal Workflow"
+    match_topics: ["goal", "workflow", "manifest"]
+  swe:Blueprint:
+    label: "Blueprint Builder"
+    match_topics: ["blueprint", "flask route", "template"]
+  swe:ChildApp:
+    label: "Child App Creation"
+    match_topics: ["child app", "app generator", "forge validator"]
+
+  # ICDEV Core
+  icdev:Lesson:
+    label: "FORGE Academy Lesson"
+    match_topics: []
+  icdev:Lab:
+    label: "FORGE Academy Lab"
+    match_topics: []
+  icdev:Assessment:
+    label: "FORGE Academy Assessment"
+    match_topics: []
+  icdev:FundamentalCompetency:
+    label: "Fundamental Competency"
+    description: "Tier 1 curriculum level"
+  icdev:PractitionerCompetency:
+    label: "Practitioner Competency"
+    description: "Tier 2 curriculum level"
+  icdev:ExpertCompetency:
+    label: "Expert Competency"
+    description: "Tier 3 curriculum level"
+
+# ---------------------------------------------------------------------------
+# Mission → domain ontology mapping (derived from directory names)
+# ---------------------------------------------------------------------------
+mission_ontology_map:
+  # Tier 1
+  m01-llm-fundamentals:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:LLM"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: []
+  m02-prompt-engineering:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:PromptEngineering"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:LLM"]
+  m03-rag-basics:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:RAG"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:PromptEngineering"]
+  m04-first-agent:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:Agent"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:RAG"]
+  m05-mcp-protocol:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:MCP"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:Agent"]
+  m06-fastmcp:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["ai:MCP"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:MCP"]
+  m07-multi-agent:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:MultiAgent"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:MCP"]
+  m08-strands-agents:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:Strands"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:MultiAgent"]
+  m09-langchain:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:LangChain"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:Strands"]
+  m10-tier1-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["ai:LLM", "ai:PromptEngineering", "ai:RAG", "ai:Agent", "ai:MCP", "ai:MultiAgent", "ai:LangChain"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:LangChain"]
+  m11-multimodal:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:Multimodal"]
+    competency: "icdev:FundamentalCompetency"
+    prerequisites: ["ai:LangChain"]
+
+  # Tier 2 — DevOps
+  m-devops-01-pipeline-agent:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:Pipeline"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-devops-02-iac-generation:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:IaC"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-devops-03-gitops:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:GitOps"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["devops:Pipeline"]
+  m-devops-04-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["devops:Pipeline", "devops:IaC", "devops:GitOps"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["devops:GitOps"]
+  m-devops-aiml-05-deploy:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:Deploy", "ai:AIMLFoundations"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain", "devops:Pipeline"]
+
+  # Tier 2 — SecOps
+  m-secops-01-bandit-scanner:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:BanditScanner"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-secops-02-stig-parser:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:STIGRule"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-secops-03-evidence-pipeline:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:EvidencePipeline"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["security:STIGRule"]
+  m-secops-04-secops-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["security:BanditScanner", "security:STIGRule", "security:EvidencePipeline"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["security:EvidencePipeline"]
+  m-secops-05-aadc-threat-model:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["security:ThreatModel", "governance:AADC"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:MultiAgent"]
+  m-secops-ai-01-prompt-injection:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:PromptInjection"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+  m-secops-ai-02-adversarial-robustness:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:AdversarialRobustness"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+  m-secops-ai-03-data-poisoning:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:DataPoisoning"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+
+  # Tier 2 — ISSO
+  m-isso-01-stig-triage:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:STIGRule"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-isso-02-poam:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:POAM"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["security:STIGRule"]
+  m-isso-04-audit-trail:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:AuditTrail"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["security:POAM"]
+  m-isso-05-rmf-workflow:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["security:RMF"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["security:AuditTrail"]
+  m-isso-06-isso-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["security:STIGRule", "security:POAM", "security:AuditTrail", "security:RMF"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["security:RMF"]
+
+  # Tier 2 — ISSM
+  m-issm-01-ato-acceleration:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:ATO"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-issm-02-aadc-ato-design:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["governance:AADC", "governance:ATO"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:ATO"]
+  m-issm-03-risk-dashboard:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:RiskPosture"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:ATO"]
+  m-issm-04-cato-monitoring:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:CATO"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:ATO"]
+  m-issm-05-crosswalk:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:Crosswalk"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:ATO"]
+  m-issm-06-issm-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["governance:ATO", "governance:AADC", "governance:Crosswalk"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:Crosswalk"]
+
+  # Tier 2 — CISO
+  m-ciso-01-ai-inventory:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:AIInventory"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-ciso-02-aadc-governance:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["governance:AADC"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AIInventory"]
+  m-ciso-02-ai-risk-posture:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:RiskPosture"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AIInventory"]
+  m-ciso-03-portfolio-intel:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:PortfolioIntel"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AIInventory"]
+  m-ciso-04-multi-regime:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["governance:MultiRegime"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:RiskPosture"]
+  m-ciso-05-ciso-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["governance:AIInventory", "governance:AADC", "governance:MultiRegime"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:MultiRegime"]
+  m-ciso-aiml-04-governance:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["governance:GovernAI", "ai:AIMLFoundations"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AIInventory"]
+
+  # Tier 2 — DataOps
+  m-dataops-01-advanced-rag:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["ai:RAG"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:RAG"]
+  m-dataops-02-chromadb-rag:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["ai:RAG"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:RAG"]
+  m-dataops-03-corrective-rag:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["ai:RAG"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:RAG"]
+  m-dataops-04-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["ai:RAG"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:RAG"]
+  m-dataops-05-fine-tuning:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["ai:FineTuning"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:RAG"]
+
+  # Tier 2 — NetOps
+  m-netops-01-topology:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["network:Topology"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-netops-02-anomaly:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["network:AnomalyDetection"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["network:Topology"]
+  m-netops-03-remediation:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["network:Topology"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["network:AnomalyDetection"]
+  m-netops-04-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["network:Topology", "network:AnomalyDetection"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["network:Topology"]
+
+  # Tier 2 — SRE
+  m-sre-01-slo-agent:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:SLO"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-sre-02-incident-agent:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:IncidentResponse"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["sre:SLO"]
+  m-sre-03-chaos:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:Chaos"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["sre:IncidentResponse"]
+  m-sre-04-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["sre:SLO", "sre:IncidentResponse", "sre:Chaos"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["sre:Chaos"]
+  m-sre-ai-01-llm-observability:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:LLMObservability"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+  m-sre-ai-02-drift-detection:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:DriftDetection"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+  m-sre-ai-03-cost-optimization:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:CostOptimization"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+  m-sre-ai-04-incident-response:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["sre:IncidentResponse"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:Agent"]
+
+  # Tier 2 — SWE
+  m-swe-01-multi-agent-dag:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:MultiAgentDAG"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-swe-02-mcp-server:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:MCPServer"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:MCP"]
+  m-swe-03-scaffold:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:Scaffold"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-swe-04-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["swe:MultiAgentDAG", "swe:MCPServer", "swe:Scaffold"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["swe:Scaffold"]
+  m-swe-aadc-06-fundamentals:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["governance:AADC"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:MultiAgent"]
+  m-swe-aadc-07-autonomy:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["swe:Autonomy"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AADC"]
+  m-swe-aadc-08-safety-redundancy:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["swe:SafetyRedundancy"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AADC"]
+  m-swe-aadc-09-ops-config:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["swe:OpsConfig"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["governance:AADC"]
+  m-swe-aiml-01-foundations:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:AIMLFoundations"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-swe-aiml-02-adaptation:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:Adaptation"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:AIMLFoundations"]
+  m-swe-aiml-03-safety-eval:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["ai:SafetyEval"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:AIMLFoundations"]
+  m-swe-sdk-dotnet:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:SDK"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-swe-sdk-go:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:SDK"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-swe-sdk-java:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:SDK"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-swe-sdk-typescript:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["devops:SDK"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+
+  # Tier 2 — PM
+  m-pm-01-govcon-intel:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["pm:CompetitiveIntel"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-pm-02-proposal-ai:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["pm:ProposalAI"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["pm:CompetitiveIntel"]
+  m-pm-03-requirements-intake:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["pm:RequirementsIntake"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["pm:CompetitiveIntel"]
+  m-pm-04-schedule-cost:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["pm:ScheduleCost"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["pm:CompetitiveIntel"]
+  m-pm-05-stakeholder-reporting:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["pm:StakeholderReporting"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["pm:CompetitiveIntel"]
+  m-pm-06-pm-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["pm:CompetitiveIntel", "pm:ProposalAI", "pm:RequirementsIntake"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["pm:StakeholderReporting"]
+
+  # Tier 2 — Analyst
+  m-analyst-01-competitive-intel-agent:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["analyst:CompetitiveIntel"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-analyst-02-market-signal-rag:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["analyst:MarketSignal"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["analyst:CompetitiveIntel"]
+  m-analyst-03-pattern-detection:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["analyst:PatternDetection"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["analyst:MarketSignal"]
+  m-analyst-04-report-generation:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["analyst:ReportGeneration"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["analyst:PatternDetection"]
+  m-analyst-05-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["analyst:CompetitiveIntel", "analyst:MarketSignal", "analyst:PatternDetection", "analyst:ReportGeneration"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["analyst:ReportGeneration"]
+
+  # Tier 2 — Leadership
+  m-leadership-01-ai-roi:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["strategy:AIROI"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-leadership-02-build-vs-buy:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["strategy:BuildVsBuy"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-leadership-03-ai-risk-comm:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["strategy:RiskCommunication"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-leadership-04-govern-ai:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["strategy:GovernAI"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-leadership-05-ai-workforce:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["strategy:AIWorkforce"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["ai:LangChain"]
+  m-leadership-06-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["strategy:AIROI", "strategy:GovernAI", "strategy:AIWorkforce"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: ["strategy:AIWorkforce"]
+
+  # Tier 2 — Exec Primer
+  m-exec-primer-01:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["strategy:WarCouncilBrief"]
+    competency: "icdev:PractitionerCompetency"
+    prerequisites: []
+
+  # Tier 3
+  m-t3-01-forge-deep-dive:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["swe:FORGEDeep"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:Scaffold"]
+  m-t3-02-write-your-first-tool:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:ToolAuthor"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:FORGEDeep"]
+  m-t3-03-write-a-goal-workflow:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:GoalWorkflow"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:ToolAuthor"]
+  m-t3-04-build-a-blueprint:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:Blueprint"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:GoalWorkflow"]
+  m-t3-05-canvas-selection:
+    ontology_id: "icdev:Lesson"
+    domain_classes: ["governance:AADC"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:Blueprint"]
+  m-t3-06-child-app-creation:
+    ontology_id: "icdev:Lab"
+    domain_classes: ["swe:ChildApp"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:Blueprint"]
+  m-t3-07-tier3-capstone:
+    ontology_id: "icdev:Assessment"
+    domain_classes: ["swe:FORGEDeep", "swe:ToolAuthor", "swe:GoalWorkflow", "swe:Blueprint", "swe:ChildApp"]
+    competency: "icdev:ExpertCompetency"
+    prerequisites: ["swe:ChildApp"]

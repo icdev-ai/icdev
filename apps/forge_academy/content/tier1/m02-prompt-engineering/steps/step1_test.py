@@ -1,3 +1,4 @@
+
 # Auto-grader for M02 Step 1: Prompt Anatomy
 
 import sys

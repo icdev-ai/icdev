@@ -5,11 +5,29 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
 CONTENT_ROOT = Path(__file__).parent / "content"
+
+
+def _parse_frontmatter(raw: str) -> tuple[dict, str]:
+    """Extract YAML frontmatter and return (metadata dict, remaining markdown)."""
+    if not raw.startswith("---\n"):
+        return {}, raw
+    parts = raw.split("---\n", 2)
+    if len(parts) < 3:
+        return {}, raw
+    fm_text = parts[1].strip()
+    body = parts[2]
+    meta: dict = {}
+    for line in fm_text.splitlines():
+        if ":" in line:
+            key, val = line.split(":", 1)
+            meta[key.strip()] = val.strip()
+    return meta, body
 
 # ---------------------------------------------------------------------------
 # Seed the mission catalog (called by migrate() once on first run)
@@ -1206,19 +1224,23 @@ def _md_to_html(text: str) -> str:
         return f"<pre>{html.escape(text)}</pre>"
 
 
-def load_step_content(content_path: str) -> str:
-    """Load and render markdown content for a step from the content directory."""
+def load_step_content(content_path: str) -> dict:
+    """Load and render markdown content for a step from the content directory.
+
+    Returns dict with keys: html (str), frontmatter (dict).
+    """
     if not content_path:
-        return ""
+        return {"html": "", "frontmatter": {}}
     full = CONTENT_ROOT / content_path
     try:
         raw = full.read_text(encoding="utf-8")
-        return _md_to_html(raw)
+        fm, body = _parse_frontmatter(raw)
+        return {"html": _md_to_html(body), "frontmatter": fm}
     except FileNotFoundError:
-        return f"<p><em>Content file not found: <code>{content_path}</code></em></p>"
+        return {"html": f"<p><em>Content file not found: <code>{content_path}</code></em></p>", "frontmatter": {}}
     except Exception as e:
         _log.warning("load_step_content %s: %s", content_path, e)
-        return ""
+        return {"html": "", "frontmatter": {}}
 
 
 def load_starter_code(path: str) -> str:
@@ -1244,12 +1266,26 @@ def load_test_code(path: str) -> str:
 def get_mission_with_steps(slug: str) -> dict | None:
     """Return mission dict with steps and content loaded."""
     from .db import get_mission, get_mission_steps
+    from .ontology import build_mission_ontology_id
     mission = get_mission(slug)
     if not mission:
         return None
+    # Attach ontology metadata
+    mission_onto = build_mission_ontology_id(
+        slug=mission["slug"],
+        mission_type=mission.get("mission_type", "coding"),
+        topic=mission.get("topic", ""),
+        title=mission.get("title", ""),
+        tier=mission.get("tier", 1),
+    )
+    mission["ontology"] = mission_onto
     steps = get_mission_steps(mission["id"])
     for step in steps:
-        step["content_md"] = load_step_content(step.get("content_path", ""))
+        content = load_step_content(step.get("content_path", ""))
+        step["content_md"] = content["html"]
+        step["content_frontmatter"] = content["frontmatter"]
+        step["ontology_id"] = content["frontmatter"].get("ontology_id", "")
+        step["step_class"] = content["frontmatter"].get("step_class", "")
         step["starter_code"] = load_starter_code(step.get("starter_code_path", ""))
         step["test_code"] = load_test_code(step.get("test_code_path", ""))
         try:

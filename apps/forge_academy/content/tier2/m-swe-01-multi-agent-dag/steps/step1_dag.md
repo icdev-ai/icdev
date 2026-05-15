@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-01-multi-agent-dag:step:1
+step_class: icdev:Lesson
+---
+
 # Multi-Agent DAG — Directed Acyclic Graph Orchestration
 
 Real multi-agent systems don't run agents in a flat list — they run them in a dependency graph. Task B can only start after Task A completes. Task C depends on both A and B. This is a **DAG** (Directed Acyclic Graph).

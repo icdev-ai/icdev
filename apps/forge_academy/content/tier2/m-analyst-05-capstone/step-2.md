@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-05-capstone:step:2
+step_class: icdev:Lesson
+---
+
 # Wire Your End-to-End Pipeline
 
 An end-to-end pipeline is only as strong as its handoffs. In this step, you define not just what each stage does, but how it passes information to the next stage.

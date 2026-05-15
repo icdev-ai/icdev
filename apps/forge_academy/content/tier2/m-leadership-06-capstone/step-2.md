@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-06-capstone:step:2
+step_class: icdev:Lesson
+---
+
 # Draft Your AI Transformation Roadmap
 
 A 4-quarter roadmap covers the period from "starting" to "demonstrable capability" — long enough to show progress, short enough to stay credible.

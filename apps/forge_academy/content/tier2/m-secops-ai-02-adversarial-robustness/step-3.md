@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-02-adversarial-robustness:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Remediation Plan

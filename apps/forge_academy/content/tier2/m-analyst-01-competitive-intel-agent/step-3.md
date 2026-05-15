@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-01-competitive-intel-agent:step:3
+step_class: icdev:Assessment
+---
+
 # Your Intelligence Product
 
 An intelligence agent that produces no actionable output is a data collector, not an intelligence capability. The final step in any agent design is defining the intelligence product it delivers and who consumes it.

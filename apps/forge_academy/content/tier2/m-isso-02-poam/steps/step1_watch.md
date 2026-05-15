@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-02-poam:step:1
+step_class: icdev:Lesson
+---
+
 # POA&M Intelligence — Watch It Run
 
 The POA&M (Plan of Action and Milestones) is the single most audited artifact in your ATO package. Manual POA&M management typically consumes 4–8 hours per week. Watch ICDEV automate it.

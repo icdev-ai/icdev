@@ -19,6 +19,8 @@ from .db import (
     get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
+    record_user_competency, get_user_competencies,
+    seed_mission_ontology_mappings,
 )
 from .content_loader import get_mission_with_steps, seed_mission_catalog
 from .gamification import (
@@ -383,6 +385,19 @@ def api_step_submit():
             "mission_xp": mission_xp_event,
             "mission_achievements": mission_ach,
         }
+        # Record competency ontology edges
+        try:
+            mission = get_mission(data.get("mission_slug", "")) if data.get("mission_slug") else None
+            if mission:
+                from .ontology import get_tier_competency
+                record_user_competency(
+                    user_id=fa_user["id"],
+                    competency_class=get_tier_competency(mission.get("tier", 1)),
+                    source_mission_id=mission_id,
+                    evidence={"mission_slug": mission["slug"], "score": data.get("score", 100)},
+                )
+        except Exception:
+            pass
 
     return jsonify({"ok": True, "xp_event": xp_event, **mission_complete_data})
 

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-java:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Spring Boot + Claude API — Architecture

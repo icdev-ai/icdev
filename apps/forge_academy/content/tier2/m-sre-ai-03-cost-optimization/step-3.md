@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-03-cost-optimization:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Cost Optimization Findings

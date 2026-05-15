@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-05-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # Full Intelligence Cycle: Collect → Detect → Report → Predict
 
 The intelligence cycle is the foundational framework for all analytical tradecraft. AI does not replace the cycle — it compresses each phase and increases throughput at every stage.

@@ -1,3 +1,4 @@
+
 # Auto-grader for T3 M5 Step 1: Canvas Selection
 
 # ── Test: score_canvas ────────────────────────────────────────────────────────

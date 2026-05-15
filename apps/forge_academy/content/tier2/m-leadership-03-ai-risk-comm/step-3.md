@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-03-ai-risk-comm:step:3
+step_class: icdev:Assessment
+---
+
 # Your AI Incident Communications Plan
 
 The question is not whether your AI system will produce a wrong output. It will. The question is whether you will be ready when it happens.

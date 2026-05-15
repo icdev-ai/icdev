@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-03-chaos:step:1
+step_class: icdev:Lesson
+---
+
 # SRE M03 — Chaos Engineering Agent
 
 ## Mission Brief

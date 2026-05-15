@@ -1,3 +1,4 @@
+
 # Auto-grader for DevOps M3: GitOps Automation Agent
 
 # ── Test: detect_drift ────────────────────────────────────────────────────────

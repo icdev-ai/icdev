@@ -3,11 +3,14 @@ from __future__ import annotations
 """FORGE Academy DB layer — all fa_* tables via get_connection()."""
 
 import json
+import logging
 import secrets
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
 from .constants import ACHIEVEMENTS, SKILL_NODES, xp_to_level
+
+_log = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +263,58 @@ CREATE TABLE IF NOT EXISTS fa_certificates (
 
 CREATE INDEX IF NOT EXISTS idx_fa_certs_token ON fa_certificates(token);
 CREATE INDEX IF NOT EXISTS idx_fa_certs_user ON fa_certificates(user_id);
+
+CREATE TABLE IF NOT EXISTS fa_mission_ontology (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    mission_id INTEGER NOT NULL REFERENCES fa_missions(id),
+    ontology_id TEXT NOT NULL,
+    mission_class TEXT,
+    topic_class TEXT,
+    competency_class TEXT,
+    prereq_ontology_paths_json TEXT DEFAULT '[]',
+    UNIQUE(mission_id)
+);
+
+CREATE TABLE IF NOT EXISTS fa_step_ontology (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    step_id INTEGER NOT NULL REFERENCES fa_mission_steps(id),
+    ontology_id TEXT NOT NULL,
+    step_class TEXT,
+    UNIQUE(step_id)
+);
+
+CREATE TABLE IF NOT EXISTS fa_user_competencies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES fa_users(id),
+    competency_class TEXT NOT NULL,
+    source_mission_id INTEGER REFERENCES fa_missions(id),
+    source_step_id INTEGER REFERENCES fa_mission_steps(id),
+    demonstrated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    evidence_json TEXT DEFAULT '{}',
+    UNIQUE(user_id, competency_class, source_mission_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fa_user_competencies_user ON fa_user_competencies(user_id);
+CREATE INDEX IF NOT EXISTS idx_fa_user_competencies_class ON fa_user_competencies(competency_class);
+
+CREATE TABLE IF NOT EXISTS kg_nodes (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL,
+    label TEXT,
+    entity_type TEXT,
+    properties TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS kg_edges (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL,
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    label TEXT,
+    properties TEXT,
+    created_at TEXT
+);
 """
 
 
@@ -283,6 +338,7 @@ def migrate():
             pass  # Column already exists
     _seed_achievements(conn)
     _seed_skill_nodes(conn)
+    seed_mission_ontology_mappings()
 
 
 def _seed_achievements(conn):
@@ -923,3 +979,162 @@ def verify_certificate_token(token: str) -> dict | None:
         (token,),
     ).fetchone()
     return dict(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# Ontology mapping
+# ---------------------------------------------------------------------------
+
+def upsert_mission_ontology(mission_id: int, ontology_id: str, mission_class: str,
+                             topic_class: str, competency_class: str,
+                             prereq_paths: list[str] | None = None) -> None:
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO fa_mission_ontology
+           (mission_id, ontology_id, mission_class, topic_class, competency_class, prereq_ontology_paths_json)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(mission_id) DO UPDATE SET
+             ontology_id=excluded.ontology_id,
+             mission_class=excluded.mission_class,
+             topic_class=excluded.topic_class,
+             competency_class=excluded.competency_class,
+             prereq_ontology_paths_json=excluded.prereq_ontology_paths_json""",
+        (mission_id, ontology_id, mission_class, topic_class, competency_class,
+         json.dumps(prereq_paths or [])),
+    )
+    conn.commit()
+
+
+def upsert_step_ontology(step_id: int, ontology_id: str, step_class: str) -> None:
+    conn = get_connection()
+    conn.execute(
+        """INSERT INTO fa_step_ontology
+           (step_id, ontology_id, step_class)
+           VALUES (?, ?, ?)
+           ON CONFLICT(step_id) DO UPDATE SET
+             ontology_id=excluded.ontology_id,
+             step_class=excluded.step_class""",
+        (step_id, ontology_id, step_class),
+    )
+    conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Competency tracking + KG edges
+# ---------------------------------------------------------------------------
+
+def record_user_competency(user_id: int, competency_class: str,
+                            source_mission_id: int | None = None,
+                            source_step_id: int | None = None,
+                            evidence: dict | None = None) -> dict:
+    """Record a demonstrated competency and create a KG edge."""
+    conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """INSERT OR IGNORE INTO fa_user_competencies
+           (user_id, competency_class, source_mission_id, source_step_id, demonstrated_at, evidence_json)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (user_id, competency_class, source_mission_id, source_step_id, now,
+         json.dumps(evidence or {})),
+    )
+    conn.commit()
+
+    # Create KG edge: user -> demonstrates -> competency_class
+    try:
+        _create_kg_competency_edge(conn, user_id, competency_class, source_mission_id, now)
+    except Exception:
+        pass
+
+    row = conn.execute(
+        "SELECT * FROM fa_user_competencies WHERE user_id=? AND competency_class=? AND source_mission_id=?",
+        (user_id, competency_class, source_mission_id),
+    ).fetchone()
+    return dict(row) if row else {"user_id": user_id, "competency_class": competency_class}
+
+
+def _create_kg_competency_edge(conn, user_id: int, competency_class: str,
+                                source_mission_id: int | None, demonstrated_at: str) -> None:
+    """Insert a KG edge linking the user to the ontology competency class."""
+    user = conn.execute("SELECT username FROM fa_users WHERE id=?", (user_id,)).fetchone()
+    user_label = user["username"] if user else f"user_{user_id}"
+    source_node = f"fa_user:{user_id}"
+    target_node = f"ontology:{competency_class}"
+    edge_id = f"{source_node}--demonstrates--{target_node}--{source_mission_id or 0}"
+
+    conn.execute(
+        """INSERT OR REPLACE INTO kg_nodes
+           (id, graph_id, label, entity_type, properties, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (source_node, "icdev-core-ontology", user_label, "fa_user",
+         json.dumps({"user_id": user_id}), demonstrated_at),
+    )
+    conn.execute(
+        """INSERT OR REPLACE INTO kg_nodes
+           (id, graph_id, label, entity_type, properties, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (target_node, "icdev-core-ontology", competency_class, "ontology_class",
+         json.dumps({"canonical_id": competency_class}), demonstrated_at),
+    )
+    conn.execute(
+        """INSERT OR REPLACE INTO kg_edges
+           (id, graph_id, source_id, target_id, label, properties, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (edge_id, "icdev-core-ontology", source_node, target_node, "demonstrates",
+         json.dumps({"source_mission_id": source_mission_id, "user_id": user_id}), demonstrated_at),
+    )
+    conn.commit()
+
+
+def get_user_competencies(user_id: int) -> list[dict]:
+    rows = get_connection().execute(
+        """SELECT uc.*, m.slug as mission_slug, m.title as mission_title
+           FROM fa_user_competencies uc
+           LEFT JOIN fa_missions m ON m.id = uc.source_mission_id
+           WHERE uc.user_id = ?
+           ORDER BY uc.demonstrated_at DESC""",
+        (user_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def seed_mission_ontology_mappings() -> None:
+    """Seed ontology mappings for all builtin missions."""
+    from .ontology import build_mission_ontology_id, build_step_ontology_id
+    from .content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS
+    conn = get_connection()
+    for m in BUILTIN_MISSIONS:
+        row = conn.execute("SELECT id FROM fa_missions WHERE slug=?", (m["slug"],)).fetchone()
+        if not row:
+            continue
+        mission_id = row["id"]
+        onto = build_mission_ontology_id(
+            slug=m["slug"],
+            mission_type=m.get("mission_type", "coding"),
+            topic=m.get("topic", ""),
+            title=m.get("title", ""),
+            tier=m.get("tier", 1),
+        )
+        upsert_mission_ontology(
+            mission_id=mission_id,
+            ontology_id=onto["ontology_id"],
+            mission_class=onto["mission_class"],
+            topic_class=onto["topic_class"],
+            competency_class=onto["competency_class"],
+            prereq_paths=onto["prereq_ontology_paths"],
+        )
+        # Seed step ontologies
+        steps = BUILTIN_STEPS.get(m["slug"], [])
+        for step in steps:
+            step_row = conn.execute(
+                "SELECT id FROM fa_mission_steps WHERE mission_id=? AND step_num=?",
+                (mission_id, step["step_num"]),
+            ).fetchone()
+            if not step_row:
+                continue
+            step_onto = build_step_ontology_id(m["slug"], step["step_num"], step.get("step_type", "configure"))
+            upsert_step_ontology(
+                step_id=step_row["id"],
+                ontology_id=step_onto["ontology_id"],
+                step_class=step_onto["step_class"],
+            )
+    _log.info("FORGE Academy: seeded ontology mappings")

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-04-build-a-blueprint:step:1
+step_class: icdev:Lesson
+---
+
 # Build a Blueprint
 
 Every ICDEV child app is a Flask Blueprint. A blueprint packages its routes, templates, and DB logic into a self-contained module that registers into the main dashboard with zero coupling. In this mission you'll implement the core pieces of a blueprint module.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-01-competitive-intel-agent:step:1
+step_class: icdev:Lesson
+---
+
 # Competitive Intelligence Agents
 
 A competitive intelligence agent is an automated system that continuously monitors open-source data streams, surfaces relevant signals, and delivers actionable intelligence products — without requiring an analyst to manually search every source every day.

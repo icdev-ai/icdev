@@ -1,3 +1,4 @@
+
 """
 Tier 2 SWE/Architect Capstone: Multi-Agent System Designer
 Goal: Wire ScaffoldGenerator + MCPToolRegistry into a complete

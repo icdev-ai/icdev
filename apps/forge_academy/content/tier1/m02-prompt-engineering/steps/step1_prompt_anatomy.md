@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m02-prompt-engineering:step:1
+step_class: icdev:Lesson
+---
+
 # Prompt Anatomy
 
 A prompt is not just text — it's a structured instruction that shapes every aspect of an LLM's output. Understanding prompt anatomy is the difference between an AI that almost works and one that ships to production.

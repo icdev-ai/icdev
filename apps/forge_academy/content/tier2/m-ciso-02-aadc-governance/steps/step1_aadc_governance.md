@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-02-aadc-governance:step:1
+step_class: icdev:Lesson
+---
+
 # Design an AI Governance Architecture
 
 You've inventoried your AI systems. Now you need to govern them.

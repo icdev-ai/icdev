@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-02-drift-detection:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Drift Response Protocol

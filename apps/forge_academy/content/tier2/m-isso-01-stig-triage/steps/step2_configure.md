@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-01-stig-triage:step:2
+step_class: icdev:Lesson
+---
+
 # Configure Your STIG Triage Agent
 
 You're going to configure the STIG Triage Agent for your system. Fill out the form below to target a specific STIG finding.

@@ -1,3 +1,4 @@
+
 # Auto-grader for M05 Step 1: MCP Protocol
 
 import sys

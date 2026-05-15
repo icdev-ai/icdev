@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-04-report-generation:step:3
+step_class: icdev:Assessment
+---
+
 # Your Intelligence Product
 
 This step is about capacity, not just automation. The goal of AI-assisted report generation is not to eliminate analyst judgment — it is to redirect analyst time from assembly to analysis.

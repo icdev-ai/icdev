@@ -1,3 +1,4 @@
+
 # Auto-grader for M10 Step 1: Tier 1 Capstone — Wire the Stack
 
 import sys

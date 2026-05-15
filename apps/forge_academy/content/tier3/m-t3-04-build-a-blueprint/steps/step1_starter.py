@@ -1,3 +1,4 @@
+
 """
 Tier 3 Mission 4: Build a Blueprint
 Goal: Implement a BlueprintSpec validator that checks a blueprint module

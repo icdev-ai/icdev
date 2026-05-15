@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-01-govcon-intel:step:2
+step_class: icdev:Lesson
+---
+
 # Configure GovCon Opportunity Scanner
 
 Set up the SAM.gov scanner for your company's pursuit priorities.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-02-mcp-server:step:1
+step_class: icdev:Lesson
+---
+
 # MCP Server Design — Build a Model Context Protocol Tool Registry
 
 The Model Context Protocol (MCP) gives AI agents a standardized way to call tools. An MCP server exposes tools with typed schemas, handles calls, and returns structured responses. In this mission you'll build the core of an MCP tool registry — the layer that registers tools and dispatches calls.

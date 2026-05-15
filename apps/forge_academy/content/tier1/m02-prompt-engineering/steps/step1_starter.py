@@ -1,3 +1,4 @@
+
 """
 Step 1: Prompt Anatomy
 Goal: Build a structured prompt from its components and call simulate_llm_call().

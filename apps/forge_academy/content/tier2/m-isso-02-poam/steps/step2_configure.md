@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-02-poam:step:2
+step_class: icdev:Lesson
+---
+
 # Configure POA&M Intelligence
 
 Enter your system details to generate a POA&M package.

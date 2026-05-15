@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-01-ai-roi:step:1
+step_class: icdev:Lesson
+---
+
 # AI ROI Framework
 
 Every dollar spent on AI must be justified with the same rigor as any capital investment. The difference is that AI returns are often indirect — speed, judgment quality, analyst capacity — which makes the business case harder to build and easier to dismiss.
