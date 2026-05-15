@@ -451,13 +451,13 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
                 closure_rows.append((sub, sup, dist))
 
         conn.executemany(
-            "INSERT OR REPLACE INTO ontology_subclass_closure (subclass, superclass, distance) VALUES (?, ?, ?)",
+            "INSERT INTO ontology_subclass_closure (subclass, superclass, distance) VALUES (?, ?, ?)",
             closure_rows,
         )
 
         # 7. Update metadata
         conn.execute(
-            "INSERT OR REPLACE INTO ontology_federation_meta (key, value, updated_at) VALUES (?, ?, ?)",
+            "INSERT INTO ontology_federation_meta (key, value, updated_at) VALUES (?, ?, ?)",
             ("last_build", _now(), _now()),
         )
         conn.commit()
@@ -883,10 +883,10 @@ def integrate_with_kg_federation(db_path: Optional[str] = None) -> Dict[str, Any
             ))
 
         conn.execute(
-            "DELETE FROM kg_nodes WHERE graph_id = ?", (unified_graph_id,)
+            "DELETE FROM kg_nodes WHERE id LIKE 'ontology:%'",
         )
         conn.executemany(
-            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             node_rows,
         )
 

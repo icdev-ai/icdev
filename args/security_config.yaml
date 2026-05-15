@@ -57,3 +57,162 @@ frameworks:
   cmmc: true
   owasp_llm_top_10: true
   atlas: true
+
+# ---------------------------------------------------------------------------
+# ABAC Policies — XACML-style subject/resource/action/environment rules
+# ---------------------------------------------------------------------------
+abac_policies:
+  - name: tenant_admin_full
+    subject:
+      role: tenant_admin
+    resource:
+      type: "*"
+    action:
+      - "*"
+    decision: Permit
+
+  - name: developer_readwrite_own
+    subject:
+      role: developer
+    resource:
+      type: project
+      owner_id: "${subject.user_id}"
+    action:
+      - GET
+      - POST
+      - PUT
+      - PATCH
+    decision: Permit
+
+  - name: compliance_officer_read_all
+    subject:
+      role: compliance_officer
+    resource:
+      type: "*"
+    action:
+      - GET
+    decision: Permit
+
+  - name: auditor_readonly
+    subject:
+      role: auditor
+    resource:
+      type: "*"
+    action:
+      - GET
+    decision: Permit
+
+  - name: viewer_readonly
+    subject:
+      role: viewer
+    resource:
+      type: "*"
+    action:
+      - GET
+    decision: Permit
+
+  - name: deny_non_admin_delete
+    subject:
+      role:
+        operator: not_in
+        values:
+          - tenant_admin
+          - admin
+    resource:
+      type: tenant
+    action:
+      - DELETE
+    decision: Deny
+
+  - name: il6_secret_only
+    subject:
+      clearance_level:
+        operator: "<"
+        value: 2
+    resource:
+      classification: SECRET
+    action:
+      - GET
+      - POST
+      - PUT
+    decision: Deny
+
+# ---------------------------------------------------------------------------
+# Column-Level Security — per-role, per-table column masking
+# ---------------------------------------------------------------------------
+column_policies:
+  - table: dashboard_users
+    role: viewer
+    columns:
+      email: redact
+      api_key_hash: "null"
+      password_hash: "null"
+  - table: dashboard_users
+    role: auditor
+    columns:
+      api_key_hash: "null"
+      password_hash: "null"
+  - table: fa_users
+    role: viewer
+    columns:
+      email: redact
+      progress_json: "null"
+  - table: tenants
+    role: viewer
+    columns:
+      billing_info: "null"
+      stripe_customer_id: "null"
+
+# ---------------------------------------------------------------------------
+# Field-Level Security — API response field filtering
+# ---------------------------------------------------------------------------
+field_policies:
+  - schema: user_profile
+    role: viewer
+    fields:
+      email: redact
+      api_keys: "null"
+      phone: redact
+      ssn: "null"
+      salary: "null"
+  - schema: user_profile
+    role: auditor
+    fields:
+      api_keys: "null"
+      ssn: hash
+  - schema: tenant
+    role: viewer
+    fields:
+      billing_info: "null"
+      stripe_customer_id: "null"
+      admin_notes: "null"
+
+# ---------------------------------------------------------------------------
+# Clearance Matrix — numeric ordering for Bell-LaPadula
+# ---------------------------------------------------------------------------
+clearance_matrix:
+  PUBLIC: 0
+  CUI: 1
+  SECRET: 2
+  TOP SECRET: 3
+  TOP SECRET//SCI: 4
+
+# ---------------------------------------------------------------------------
+# Compartment Registry — COI, LAC, ECI
+# ---------------------------------------------------------------------------
+compartments:
+  - COI_FINANCE
+  - COI_ENGINEERING
+  - COI_HR
+  - COI_OPERATIONS
+  - COI_LEGAL
+  - LAC_DC_EAST
+  - LAC_DC_WEST
+  - LAC_DC_CENTRAL
+  - LAC_CLOUD_GOV
+  - LAC_CLOUD_COM
+  - ECI_CONTRACTOR_A
+  - ECI_CONTRACTOR_B
+  - ECI_CONTRACTOR_C
+  - ECI_PARTNER_X
+  - ECI_PARTNER_Y

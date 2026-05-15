@@ -549,6 +549,7 @@ class StorageCursor:
         self._backend = backend
 
     def execute(self, sql: str, params=None):
+        sql, params = self._inject_rls(sql, params)
         sql = translate_sql(sql, self._backend)
         if sql.strip() == "SELECT 1" and params:
             params = None  # PRAGMA no-op doesn't need params
@@ -603,6 +604,42 @@ class StorageCursor:
 
     def __iter__(self):
         return iter(self.fetchall())
+
+    # -----------------------------------------------------------------------
+    # Security context integration (Row-Level Security)
+    # -----------------------------------------------------------------------
+    def set_security_context(self, ctx) -> None:
+        """Attach a SecurityContext for auto predicate injection.
+
+        Used by row_security.py to inject tenant/classification filters.
+        """
+        self._security_context = ctx
+
+    def _inject_rls(self, sql: str, params) -> tuple[str, Any]:
+        """Auto-inject row predicates when a security context is set."""
+        ctx = getattr(self, "_security_context", None)
+        if not ctx:
+            return sql, params
+        try:
+            from tools.security.row_security import inject_row_predicate
+            tenant_id = getattr(ctx, "tenant_id", None)
+            classification = getattr(ctx, "classification", None)
+            new_sql, extra = inject_row_predicate(
+                sql,
+                tenant_id=tenant_id,
+                classification=classification,
+            )
+            if extra:
+                # Prepend extra params to existing params
+                if params is None:
+                    params = extra
+                elif isinstance(params, (list, tuple)):
+                    params = tuple(extra) + tuple(params)
+                else:
+                    params = tuple(extra) + (params,)
+            return new_sql, params
+        except Exception:
+            return sql, params
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +715,18 @@ class StorageConnection:
         if self._backend == "postgresql":
             return StorageCursor(self._conn.cursor(), self._backend)
         return self._conn.cursor()
+
+    def set_security_context(self, ctx) -> None:
+        """Attach a SecurityContext for RLS predicate injection and PG session vars."""
+        self._security_context = ctx
+        if self._backend == "postgresql" and ctx:
+            try:
+                from tools.security.row_security import set_pg_session_vars
+                tenant_id = getattr(ctx, "tenant_id", None)
+                classification = getattr(ctx, "classification", None)
+                set_pg_session_vars(self._conn, tenant_id, classification)
+            except Exception:
+                pass
 
     @property
     def row_factory(self):
