@@ -13,9 +13,8 @@
   <script src="{{ url_for('static', filename='js/vendor/dagre.min.js') }}"></script>
 </head>
 <body style="margin:0;">
-{% if classification_banner %}
-<div class="pc-cui-banner">{{ classification_banner }}</div>
-{% endif %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 
 <!-- ══════ Toolbar ══════ -->
 <div class="pc-toolbar">

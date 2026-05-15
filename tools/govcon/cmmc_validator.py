@@ -693,6 +693,9 @@ def main():
         if not args.opportunity_id or not args.name or not args.role or not args.required_level:
             print("Error: --opportunity-id, --name, --role, and --required-level required", file=sys.stderr)
             sys.exit(1)
+        if args.sprs_score is not None and not -203 <= args.sprs_score <= 110:
+            print("Error: --sprs-score must be between -203 and 110", file=sys.stderr)
+            sys.exit(1)
         result = add_team_member(
             opportunity_id=args.opportunity_id,
             name=args.name,

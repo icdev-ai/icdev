@@ -5,8 +5,6 @@ Tier 3 Mission 1: FORGE Framework Deep Dive
 Goal: Build a GoalTracer that reads ICDEV source files and extracts the execution graph.
 """
 
-import os
-import re
 from pathlib import Path
 
 # ── ICDEV Project Root Detection ──────────────────────────────────────────────

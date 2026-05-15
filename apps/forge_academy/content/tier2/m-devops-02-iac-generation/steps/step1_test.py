@@ -5,7 +5,7 @@
 
 vpc = generate_vpc_block("main", "10.0.0.0/16")
 assert vpc is not None, "generate_vpc_block() returned None"
-assert isinstance(vpc, str), f"generate_vpc_block() must return str"
+assert isinstance(vpc, str), "generate_vpc_block() must return str"
 assert 'resource "aws_vpc" "main"' in vpc, "VPC block must have correct resource header"
 assert "10.0.0.0/16" in vpc, "VPC block must include cidr_block"
 assert "main" in vpc, "VPC block must include name tag"

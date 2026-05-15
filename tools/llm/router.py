@@ -26,6 +26,12 @@ except ImportError:
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
 
+try:
+    from tools.llm.response_cache import LLMResponseCache, canonical_key
+except ImportError:
+    LLMResponseCache = None
+    canonical_key = None
+
 logger = logging.getLogger("icdev.llm.router")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -84,6 +90,9 @@ class LLMRouter:
 
     # RL router singleton (shared across all LLMRouter instances in process)
     _rl_router_instance = None
+
+    # Response cache singleton (D-CACHE-1)
+    _response_cache_instance: Optional["LLMResponseCache"] = None
 
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
@@ -1051,6 +1060,118 @@ class LLMRouter:
             )
             return None
 
+    # -------------------------------------------------------------------
+    # Response cache helpers (D-CACHE-1)
+    # -------------------------------------------------------------------
+
+    def _get_response_cache(self) -> Optional["LLMResponseCache"]:
+        """Return the singleton LLMResponseCache (lazy-init)."""
+        if LLMResponseCache is None:
+            return None
+        if self._response_cache_instance is None:
+            try:
+                self._response_cache_instance = LLMResponseCache()
+            except Exception as exc:
+                logger.warning("Response cache unavailable: %s", exc)
+                return None
+        return self._response_cache_instance
+
+    def _cache_lookup(self, function: str, request: LLMRequest, model_id: str) -> Optional[LLMResponse]:
+        """Check response cache before invoking a provider.
+
+        Returns cached LLMResponse on hit, None on miss.
+        Skips cache for excluded functions or when cache is disabled.
+        """
+        cache = self._get_response_cache()
+        if cache is None:
+            return None
+
+        rcfg = self._config.get("response_cache", {})
+        if not rcfg.get("enabled", False):
+            return None
+
+        excluded = rcfg.get("excluded_functions", [])
+        if function in excluded:
+            return None
+
+        try:
+            key = canonical_key(function, model_id, request)
+        except Exception as exc:
+            logger.debug("Cache key computation failed: %s", exc)
+            return None
+
+        try:
+            hit = cache.get(key)
+            if hit is not None:
+                logger.debug("Cache hit for %s/%s (key=%s...)", function, model_id, key[:16])
+            return hit
+        except Exception as exc:
+            logger.debug("Cache lookup failed (non-blocking): %s", exc)
+            return None
+
+    def _cache_store(
+        self,
+        function: str,
+        request: LLMRequest,
+        response: LLMResponse,
+        model_id: str,
+    ) -> None:
+        """Store a successful response in the cache.
+
+        Skips if function is excluded, cache disabled, or response indicates error.
+        Respects per-function and per-canvas TTL overrides.
+        """
+        cache = self._get_response_cache()
+        if cache is None:
+            return
+
+        rcfg = self._config.get("response_cache", {})
+        if not rcfg.get("enabled", False):
+            return
+
+        excluded = rcfg.get("excluded_functions", [])
+        if function in excluded:
+            return
+
+        if response.stop_reason and response.stop_reason.lower() in ("error", "tool_use"):
+            return
+
+        ttl = rcfg.get("ttl_seconds", 3600)
+        per_fn = rcfg.get("per_function", {}).get(function, {})
+        if per_fn:
+            ttl = per_fn.get("ttl_seconds", ttl)
+
+        canvas_prefix = function.split("_")[0] if "_" in function else ""
+        per_canvas = rcfg.get("per_canvas", {}).get(canvas_prefix, {})
+        if per_canvas:
+            ttl = per_canvas.get("ttl_seconds", ttl)
+
+        try:
+            key = canonical_key(function, model_id, request)
+            cache.set(key, response, ttl_seconds=ttl, function=function)
+            logger.debug("Cache store for %s/%s (ttl=%ds)", function, model_id, ttl)
+        except Exception as exc:
+            logger.debug("Cache store failed (non-blocking): %s", exc)
+
+    def _apply_context_cache(self, function: str, request: LLMRequest) -> None:
+        """Set request.cache_control for functions/canvases configured for context caching.
+
+        Context caching (provider-level KV prefix reuse) is additive to response caching.
+        """
+        rcfg = self._config.get("response_cache", {})
+        if not rcfg.get("enabled", False):
+            return
+
+        canvas_prefix = function.split("_")[0] if "_" in function else ""
+        per_canvas = rcfg.get("per_canvas", {}).get(canvas_prefix, {})
+        if per_canvas.get("context_cache", False):
+            request.cache_control = "ephemeral"
+            return
+
+        per_fn = rcfg.get("per_function", {}).get(function, {})
+        if per_fn.get("context_cache", False):
+            request.cache_control = "ephemeral"
+
     def _maybe_invoke_two_tier(self, function: str, request: LLMRequest) -> Optional[LLMResponse]:
         """Apply two-tier routing if function is configured for it.
 
@@ -1213,14 +1334,35 @@ class LLMRouter:
         # Applies to ALL modules. Skips for local-only routing if configured.
         _redaction_session = self._pre_invoke_redaction(function, request)
 
+        # D-CACHE-2: Apply context cache hints before routing
+        self._apply_context_cache(function, request)
+
         # Apply configured effort if not set on request
         if not request.effort or request.effort == "medium":
             request.effort = self.get_effort(function)
 
+        # D-CACHE-3: Response cache lookup (before provider selection)
+        chain = self._get_chain_for_function(function)
+        if chain:
+            first_model = chain[0]
+            model_cfg_for_key = self._get_model_config(first_model) or {}
+            model_id_for_key = model_cfg_for_key.get("model_id", first_model)
+            cached = self._cache_lookup(function, request, model_id_for_key)
+            if cached is not None:
+                return cached
+
         # Two-tier routing: qwen3 worker → Claude planner/reviewer
         two_tier_result = self._maybe_invoke_two_tier(function, request)
         if two_tier_result is not None:
+            # D-CACHE-4: Store two-tier results too
+            self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
             return two_tier_result
+
+        # Chain of Thought / Chain of Debate mode switch
+        if request.chain_mode == "cot":
+            return self.invoke_chain_of_thought(function, request)
+        if request.chain_mode == "cod":
+            return self.invoke_chain_of_debate(function, request)
 
         chain = self._get_chain_for_function(function)
         # RL routing: reorder chain by learned Q-values (epsilon-greedy)
@@ -1293,6 +1435,9 @@ class LLMRouter:
                 except Exception:
                     pass  # Best-effort — never block on telemetry
 
+                # D-CACHE-5: Store successful response in cache
+                self._cache_store(function, request, response, model_id)
+
                 # D-RDT-2: Post-invoke de-anonymization — restore originals
                 response = self._post_invoke_deanonymize(response, _redaction_session)
 
@@ -1332,6 +1477,103 @@ class LLMRouter:
             chain=chain,
             no_llm_mode=False,
         )
+
+    def invoke_chain_of_thought(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke Chain of Thought via ChainOrchestrator.
+
+        Reads chain_orchestration.cot config and delegates to the orchestrator.
+        Returns an LLMResponse with aggregated metadata.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_chain_of_thought(function, request)
+
+        # Aggregate into LLMResponse
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        # Attach chain metadata for downstream consumers
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        # Log aggregated telemetry
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
+
+    def invoke_chain_of_debate(self, function: str, request: LLMRequest) -> LLMResponse:
+        """Invoke Chain of Debate via ChainOrchestrator.
+
+        Reads chain_orchestration.cod config and delegates to the orchestrator.
+        Returns an LLMResponse with aggregated metadata.
+        """
+        try:
+            from tools.llm.chain_orchestrator import ChainOrchestrator
+        except ImportError as exc:
+            raise LLMUnavailableError(
+                f"ChainOrchestrator not available: {exc}",
+                function=function,
+                no_llm_mode=False,
+            ) from exc
+
+        orchestrator = ChainOrchestrator(router=self)
+        result = orchestrator.invoke_chain_of_debate(function, request)
+
+        response = LLMResponse(
+            content=result.content,
+            model_id=",".join(result.models_used),
+            provider="chain_orchestrator",
+            input_tokens=result.total_input_tokens,
+            output_tokens=result.total_output_tokens,
+            duration_ms=result.total_duration_ms,
+            stop_reason=result.stop_reason,
+            classification=request.classification,
+        )
+        response.chain_trace_id = result.trace_id  # type: ignore[attr-defined]
+        response.chain_mode = result.chain_mode  # type: ignore[attr-defined]
+        response.chain_rounds = result.rounds  # type: ignore[attr-defined]
+        response.chain_confidence = result.confidence  # type: ignore[attr-defined]
+
+        try:
+            self._log_telemetry(
+                function=function,
+                request=request,
+                response=response,
+                model_id=",".join(result.models_used),
+                provider_name="chain_orchestrator",
+                latency_ms=result.total_duration_ms,
+            )
+        except Exception:
+            pass
+
+        return response
 
     def invoke_streaming(self, function: str, request: LLMRequest):
         """Resolve provider and invoke with streaming + fallback."""

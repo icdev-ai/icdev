@@ -9,8 +9,6 @@ This capstone integrates everything from DataOps-01, 02, and 03:
   - RAGEvaluator (quality scoring and reporting)
 """
 
-import math
-from datetime import date
 
 # ── Provided Stubs (simplified versions of prior missions) ────────────────────
 

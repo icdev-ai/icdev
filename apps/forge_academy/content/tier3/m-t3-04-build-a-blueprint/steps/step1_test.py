@@ -42,7 +42,7 @@ assert "icdev" in spec_full.icdev_mirror, "icdev_mirror path must contain 'icdev
 
 components = spec_full.check_components()
 assert components is not None, "check_components() returned None"
-assert isinstance(components, dict), f"check_components() must return dict"
+assert isinstance(components, dict), "check_components() must return dict"
 for name in COMPONENT_NAMES:
     assert name in components, f"components must have '{name}' key"
     assert isinstance(components[name], bool), f"components['{name}'] must be bool"
@@ -59,7 +59,7 @@ assert components["icdev_mirror"] is True, "icdev_mirror should exist in full ap
 
 result_full = spec_full.validate()
 assert result_full is not None, "validate() returned None"
-assert isinstance(result_full, dict), f"validate() must return dict"
+assert isinstance(result_full, dict), "validate() must return dict"
 assert "score" in result_full, "Result must have 'score'"
 assert "valid" in result_full, "Result must have 'valid'"
 assert "components" in result_full, "Result must have 'components'"
@@ -96,7 +96,7 @@ def detail(id): pass
 
 routes = extract_routes(bp_code)
 assert routes is not None, "extract_routes() returned None"
-assert isinstance(routes, list), f"extract_routes() must return list"
+assert isinstance(routes, list), "extract_routes() must return list"
 assert len(routes) == 3, f"Should find 3 routes, got {len(routes)}: {routes}"
 assert "/" in routes, "'/' should be in routes"
 assert "/api/records" in routes, "'/api/records' should be in routes"
@@ -111,11 +111,11 @@ assert len(no_routes) == 0, f"No @bp.route lines → [], got {no_routes}"
 good_sql = "CREATE TABLE IF NOT EXISTS statusboard_items (id INTEGER PRIMARY KEY, name TEXT, created_at TEXT);"
 check_good = check_migration_sql(good_sql)
 assert check_good is not None, "check_migration_sql() returned None"
-assert isinstance(check_good, dict), f"check_migration_sql() must return dict"
-assert check_good["if_not_exists"] is True, f"Good SQL has IF NOT EXISTS"
-assert check_good["has_id"] is True, f"Good SQL has 'id' column"
-assert check_good["has_created_at"] is True, f"Good SQL has created_at"
-assert check_good["valid"] is True, f"Good SQL should be valid"
+assert isinstance(check_good, dict), "check_migration_sql() must return dict"
+assert check_good["if_not_exists"] is True, "Good SQL has IF NOT EXISTS"
+assert check_good["has_id"] is True, "Good SQL has 'id' column"
+assert check_good["has_created_at"] is True, "Good SQL has created_at"
+assert check_good["valid"] is True, "Good SQL should be valid"
 
 # Missing IF NOT EXISTS
 bad_sql1 = "CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, created_at TEXT);"

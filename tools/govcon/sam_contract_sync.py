@@ -247,12 +247,12 @@ def main():
     group.add_argument("--search", action="store_true", help="Search awards")
     group.add_argument("--link", action="store_true", help="Link award to contract")
 
-    parser.add_argument("--sam-award-id")
-    parser.add_argument("--contract-id")
-    parser.add_argument("--query")
-    parser.add_argument("--lookback-days", type=int)
-    parser.add_argument("--linked-only", action="store_true")
-    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--sam-award-id", help="SAM.gov award ID to link")
+    parser.add_argument("--contract-id", help="Internal contract ID to link the award to")
+    parser.add_argument("--query", help="Search query string for --search")
+    parser.add_argument("--lookback-days", type=int, help="Number of days to look back for sync")
+    parser.add_argument("--linked-only", action="store_true", help="Only show awards already linked to a contract")
+    parser.add_argument("--json", action="store_true", help="Output JSON instead of human-readable text")
 
     args = parser.parse_args()
 

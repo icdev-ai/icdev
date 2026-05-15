@@ -11,9 +11,7 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
-import os
 import pathlib
 import sys
 import urllib.request

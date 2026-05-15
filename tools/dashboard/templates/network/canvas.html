@@ -1,6 +1,6 @@
 {% extends "network/base.html" %}
 {% block title %}{{ topology_name }} — Canvas Editor{% endblock %}
-
+{% block global_banner %}{% endblock %}
 {% block head %}
 <!-- JointJS + dependencies -->
 <!-- Vendored locally for air-gap / IL5-IL6 environments -->
@@ -17,6 +17,8 @@
 {% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <!-- Project Context Bar -->
 {% if topo_projects %}
 <div class="project-context-bar">

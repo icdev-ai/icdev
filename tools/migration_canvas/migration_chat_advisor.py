@@ -694,7 +694,7 @@ def _get_active_project_id(session_id: str = "") -> str | None:
         return None
 
 
-def _call_llm_with_migration_context(content: str, session_id: str = "") -> str | None:
+def _call_llm_with_migration_context(content: str, session_id: str = "", chain_mode: str = "") -> str | None:
     """Call LLM with migration system context injected. Returns None if LLM unavailable."""
     try:
         from tools.llm.router import LLMRouter
@@ -716,6 +716,7 @@ def _call_llm_with_migration_context(content: str, session_id: str = "") -> str 
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": content},
             ],
+            chain_mode=chain_mode,
         )
         resp = router.invoke("chat_response", req)
         return resp.content if resp and resp.content else None

@@ -454,6 +454,8 @@ def create_boundary_blueprint():
     def bdc_api_assess(design_id):
         """Run a full boundary compliance assessment on a design."""
         data = request.get_json(force=True, silent=True) or {}
+        use_cod = data.get("use_cod", False)
+        chain_mode = "cod" if use_cod else ""
         with get_connection() as conn:
             row = conn.execute(
                 "SELECT graph_json FROM boundary_designs WHERE id=?",
@@ -516,6 +518,7 @@ def create_boundary_blueprint():
         gaps = detect_boundary_gaps(result)
         result["assessment_id"] = assess_id
         result["gap_analysis"] = gaps
+        result["chain_mode"] = chain_mode
         return jsonify(result)
 
     # ====================================================================
@@ -1721,6 +1724,21 @@ def create_boundary_blueprint():
             baseline_snap_id=data.get("baseline_snap_id"),
         )
         _audit(design_id, "twin_simulate", f"verdict={result.get('rating')}")
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<design_id>/simulate-cod", methods=["POST"])
+    @bdc_login_required
+    def bdc_api_twin_simulate_cod(design_id):
+        from tools.boundary_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta=data.get("delta", []),
+            framework_id=data.get("framework_id", "FedRAMP Moderate"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+            use_cod=True,
+        )
+        _audit(design_id, "twin_simulate_cod", f"verdict={result.get('rating')}")
         return jsonify(result), 200
 
     @bp.route("/api/twin/<design_id>/crosswalk-drift", methods=["GET"])

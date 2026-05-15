@@ -10,7 +10,6 @@ FORGE Goal Contract:
   - Tool paths follow: tools/category/name.py format
 """
 
-import re
 
 # ── Sample Goal Content ───────────────────────────────────────────────────────
 

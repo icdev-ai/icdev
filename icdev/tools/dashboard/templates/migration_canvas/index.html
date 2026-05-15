@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Migration Design Canvas — ICDEV{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .mdc-hero { padding: 20px 30px; }
   .mdc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -29,6 +30,7 @@
   <p>Visual migration planning — 7Rs strategy mapping, wave sequencing, compliance gates, and target architecture design.</p>
   <a href="/migration-canvas/canvas/new" class="mdc-new-btn">+ New App Migration</a>
   <a href="/migration-canvas/network-migration/new" class="mdc-new-btn" style="background:#0f3460;border:1px solid #27ae60">+ Network Device Migration</a>
+  <a href="/migration-canvas/projects" class="mdc-new-btn" style="background:#0a1628;border:1px solid #3d6bce">☁ Cloud Migration Projects</a>
   <div class="mdc-stats">
     <div class="mdc-stat"><div class="val">{{ designs | length }}</div><div class="lbl">App Designs</div></div>
     <div class="mdc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>
@@ -59,7 +61,7 @@
     <h3>{{ d.name }}</h3>
     <p>{{ d.description or 'No description' }}</p>
     <div class="meta">
-      <span class="tag">{{ d.classification or 'CUI' }}</span>
+      {{ design_classification_badge(d) }}
       {% if d.migration_type %}<span class="tag tag-type">{{ d.migration_type }}</span>{% endif %}
     </div>
   </div>
@@ -95,6 +97,19 @@
   </table>
 </div>
 {% endif %}
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "migration" %}
+{% set iqe_api_route = "/migration-canvas/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Migration Canvas" %}
+{% set iqe_examples = [
+  {"label": "All designs", "query": "foreach d in mc.designs select d.name, d.migration_type, d.classification"},
+  {"label": "High-risk waves", "query": "foreach w in mc.waves where w.risk_score > 7 select w.design_name, w.wave_number, w.strategy, w.risk_score"},
+  {"label": "Planned waves", "query": "foreach w in mc.waves where w.status == \"planned\" select w.design_name, w.wave_number, w.name, w.start_date"},
+  {"label": "Low readiness scores", "query": "foreach a in mc.assessments where a.readiness_score < 50 select a.design_name, a.grade, a.readiness_score"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

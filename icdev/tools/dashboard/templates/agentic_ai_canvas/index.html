@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Agentic AI Canvas — ICDEV™{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
@@ -73,7 +74,7 @@
       <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">{{ d.domain }}</span>
       {% endif %}
       <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">L{{ d.autonomy_max }} autonomy</span>
-      <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">{{ d.classification }}</span>
+      {{ design_classification_badge(d) }}
     </div>
 
     {% if d.score is not none %}
@@ -383,4 +384,17 @@ function renderCompareResult(d) {
     <div id="compare-result" style="padding:16px;overflow-y:auto;flex:1;"></div>
   </div>
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "aadc" %}
+{% set iqe_api_route = "/agentic-ai/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Agentic AI Canvas" %}
+{% set iqe_examples = [
+  {"label": "All designs", "query": "foreach d in aadc.designs select d.name, d.domain, d.classification, d.autonomy_max"},
+  {"label": "HITL-required designs", "query": "foreach d in aadc.designs where d.hitl_required == 1 select d.name, d.domain, d.safety_impacting"},
+  {"label": "Low-scoring assessments", "query": "foreach a in aadc.assessments where a.score < 60 select a.design_name, a.score, a.omb_compliant"},
+  {"label": "ATO artifacts", "query": "foreach a in aadc.artifacts where a.artifact_type == \"ato\" select a.design_id, a.title, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}

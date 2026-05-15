@@ -5,7 +5,7 @@
 
 rules = extract_rules(SAMPLE_XCCDF)
 assert rules is not None, "extract_rules() returned None"
-assert isinstance(rules, list), f"extract_rules() must return list"
+assert isinstance(rules, list), "extract_rules() must return list"
 assert len(rules) == 4, f"SAMPLE_XCCDF has 4 rules, got {len(rules)}"
 assert all("<Rule" in r for r in rules), "Each extracted block should contain <Rule"
 assert all("</Rule>" in r for r in rules), "Each extracted block should contain </Rule>"
@@ -34,7 +34,7 @@ sample_rule = '''<Rule id="V-257777" severity="high">
 
 parsed = parse_rule(sample_rule)
 assert parsed is not None, "parse_rule() returned None for valid rule"
-assert isinstance(parsed, dict), f"parse_rule() must return dict"
+assert isinstance(parsed, dict), "parse_rule() must return dict"
 assert parsed.get("rule_id") == "V-257777", \
     f"rule_id should be 'V-257777', got '{parsed.get('rule_id')}'"
 assert parsed.get("severity") == "high", \
@@ -65,7 +65,7 @@ parser = STIGParser()
 result = parser.parse(SAMPLE_XCCDF)
 
 assert result is not None, "parse() returned None"
-assert isinstance(result, dict), f"parse() must return dict"
+assert isinstance(result, dict), "parse() must return dict"
 assert "benchmark_title" in result, "Result must have 'benchmark_title'"
 assert "controls" in result, "Result must have 'controls'"
 assert "count" in result, "Result must have 'count'"

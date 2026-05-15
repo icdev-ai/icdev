@@ -1,7 +1,7 @@
 # CUI // SP-CTI
 """GovLift DoD IL4 Cloud Migration Tool — Constants.
 
-All CHECK constraint values are derived from these constants.
+All SQL CHECK constraint values reference these constants.
 Never hardcode status/type strings in SQL; always reference these lists.
 """
 
@@ -41,6 +41,15 @@ MIGRATION_STATUSES = [
     "rolled_back",
 ]
 
+# Rollback event lifecycle
+ROLLBACK_STATUSES = [
+    "initiated",
+    "in_progress",
+    "completed",
+    "failed",
+    "cancelled",
+]
+
 # STIG finding severity categories (DoD CAT I/II/III)
 STIG_SEVERITIES = ["cat1", "cat2", "cat3"]
 
@@ -67,6 +76,9 @@ INTEGRATION_SYSTEMS = [
     "emass",
 ]
 
+# Rollback SLA
+ROLLBACK_SLA_HOURS = 4
+
 # Classification and compliance metadata
 CLASSIFICATION = "CUI // SP-CTI"
 IMPACT_LEVEL = "IL4"
@@ -81,6 +93,7 @@ _sc = "', '".join(STIG_CHECK_STATUSES)
 _wv = "', '".join(WAVE_STATUSES)
 _rl = "', '".join(RISK_LEVELS)
 _is = "', '".join(INTEGRATION_SYSTEMS)
+_rs = "', '".join(ROLLBACK_STATUSES)
 
 CHECK_WORKLOAD_STATUS   = f"migration_status IN ('{_ws}')"
 CHECK_WORKLOAD_TYPE     = f"workload_type IN ('{_wt}')"
@@ -90,3 +103,4 @@ CHECK_STIG_STATUS       = f"status IN ('{_sc}')"
 CHECK_WAVE_STATUS       = f"status IN ('{_wv}')"
 CHECK_RISK_LEVEL        = f"risk_level IN ('{_rl}')"
 CHECK_INTEGRATION_SYS   = f"system_name IN ('{_is}')"
+CHECK_ROLLBACK_STATUS   = f"status IN ('{_rs}')"

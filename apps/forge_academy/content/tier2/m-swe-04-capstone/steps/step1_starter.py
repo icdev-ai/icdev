@@ -9,7 +9,6 @@ This capstone integrates everything from SWE-01, 02, and 03:
   - SystemDesigner (integration report + readiness check)
 """
 
-import re
 import inspect
 from dataclasses import dataclass, field
 

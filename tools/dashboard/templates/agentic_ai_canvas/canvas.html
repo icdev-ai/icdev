@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}AADC Canvas — {{ design.name }}{% endblock %}
+{% block global_banner %}{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="/static/css/agentic-canvas.css">
 <style>
@@ -154,6 +155,8 @@ body { overflow: hidden; height: 100vh; }
 </style>
 {% endblock extra_css %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;">CUI // SP-CTI</div>
 
 <!-- ── Toolbar ── -->

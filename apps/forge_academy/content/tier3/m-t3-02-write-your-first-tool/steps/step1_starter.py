@@ -10,7 +10,6 @@ ICDEV Tool Contract:
   - Deterministic
 """
 
-from datetime import date
 
 # ── Evidence Database (simulated) ─────────────────────────────────────────────
 
@@ -135,18 +134,18 @@ if __name__ == "__main__":
 
     # Single evidence collection
     result = collect_evidence("ICDEV-Prod", "IA-2")
-    print(f"ICDEV-Prod / IA-2:")
+    print("ICDEV-Prod / IA-2:")
     print(f"  Status: {result['status']}")
     print(f"  Compliance: {result['data']['compliance_status']}")
     print(f"  Evidence items: {result['data']['evidence_count']}")
 
     result2 = collect_evidence("ICDEV-Dev", "IA-2")
-    print(f"\nICDEV-Dev / IA-2:")
+    print("\nICDEV-Dev / IA-2:")
     print(f"  Status: {result2['status']}")
     print(f"  Compliance: {result2['data']['compliance_status']}")
 
     result3 = collect_evidence("ICDEV-Unknown", "AC-3")
-    print(f"\nICDEV-Unknown / AC-3:")
+    print("\nICDEV-Unknown / AC-3:")
     print(f"  Status: {result3['status']}")
 
     # Batch run
@@ -155,7 +154,7 @@ if __name__ == "__main__":
         {"system": "ICDEV-Dev",   "control": "IA-2"},
         {"system": "ICDEV-Test",  "control": "IA-2"},
     ])
-    print(f"\nBatch results:")
+    print("\nBatch results:")
     print(f"  Total: {batch['summary']['total']}")
     print(f"  Compliant: {batch['summary']['compliant']}")
     print(f"  Non-compliant: {batch['summary']['non_compliant']}")

@@ -392,6 +392,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "canvas_events",
         # ODC MITRE ATT&CK technique catalog (migration cvo-odc-01, append-only NIST AU)
         "odc_mitre_techniques",
+        # Security Framework (Phase 74 — sec-fnd)
+        "security_policies",
+        "user_compartments",
         # FathomDesk Market Breadth (migration 047 — periodic breadth snapshots, NIST AU)
         "ad_breadth_snapshots",
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)

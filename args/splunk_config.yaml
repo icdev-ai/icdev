@@ -1,0 +1,63 @@
+# CUI // SP-CTI
+# Splunk HTTP Event Collector (HEC) configuration for ICDEV™ audit forwarding.
+# All audit_trail and hook_events entries are forwarded with tamper-evident
+# HMAC-SHA256 chain hashes. Set SPLUNK_HEC_TOKEN and SPLUNK_HMAC_SECRET in .env.
+
+hec:
+  # Base URL of the Splunk HEC endpoint (no trailing slash).
+  # Override via env var SPLUNK_HEC_URL.
+  url: "https://splunk.govcloud.local:8088"
+
+  # Splunk index to write ICDEV audit events into.
+  # Override via env var SPLUNK_INDEX.
+  index: "icdev-audit"
+
+  # Source type tag applied to every HEC event.
+  sourcetype: "icdev:audit"
+
+  # Source label (identifies this ICDEV deployment in Splunk).
+  source: "icdev"
+
+  # TLS: verify server certificate. Set false only in test environments.
+  verify_tls: true
+
+  # Optional: path to CA bundle for GovCloud private CA.
+  # ca_bundle: "/etc/pki/tls/certs/ca-bundle.crt"
+
+  # HEC token — MUST be set via environment variable, never hardcoded.
+  # Set SPLUNK_HEC_TOKEN in .env or CI/CD secrets.
+  token_env: "SPLUNK_HEC_TOKEN"
+
+tamper_evidence:
+  # HMAC-SHA256 secret for chain-hash signatures.
+  # Set SPLUNK_HMAC_SECRET in .env or CI/CD secrets.
+  secret_env: "SPLUNK_HMAC_SECRET"
+
+  # Hash algorithm for the chain. Only sha256 is supported.
+  algorithm: "sha256"
+
+  # Genesis hash (hex string) anchoring the chain's first entry.
+  # Change this to re-anchor a new chain (invalidates prior chain proofs).
+  genesis_hash: "0000000000000000000000000000000000000000000000000000000000000000"
+
+forwarding:
+  # Number of audit entries sent per HEC batch request.
+  batch_size: 50
+
+  # Tables to forward. Entries are read in ascending created_at order.
+  sources:
+    - table: "audit_trail"
+      id_col: "id"
+      time_col: "created_at"
+    - table: "hook_events"
+      id_col: "id"
+      time_col: "created_at"
+
+  # Seconds between polling cycles when run as a daemon.
+  poll_interval_seconds: 60
+
+  # Maximum number of retry attempts on HEC failure before giving up.
+  max_retries: 3
+
+  # Back-off delay in seconds between retries.
+  retry_delay_seconds: 5

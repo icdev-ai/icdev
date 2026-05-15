@@ -590,7 +590,6 @@ def _build_validation_script(design_id: str, nodes: list, uid: str) -> str:
 
 
 def _build_wave_plan(design_id: str, nodes: list, ts: str) -> str:
-    import re
     """YAML deployment plan — DDC equivalent of MDC Wave Plan."""
     db_nodes = [n for n in nodes if any(k in (n.get("type") or "") for k in ("ent-", "ent"))]
     ctrl_nodes = [n for n in nodes if (n.get("type") or "").startswith("ctrl-")]
@@ -1035,7 +1034,6 @@ def _build_validation_checklist(design_id: str, nodes: list, ts: str) -> str:
     return "\n".join(lines)
 
 
-import re as _re
 
 
 def _slug(label: str) -> str:

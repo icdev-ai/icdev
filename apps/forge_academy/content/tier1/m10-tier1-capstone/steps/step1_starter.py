@@ -4,7 +4,6 @@ Tier 1 Capstone: Wire RAG + Agent + MCP into one system.
 Goal: Build a compliance_qa MCP tool backed by a RAG retriever and agent loop.
 """
 
-import json
 
 
 # ── Compliance Document Corpus ────────────────────────────────────────────────

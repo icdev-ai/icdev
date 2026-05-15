@@ -1,0 +1,1 @@
+foreach e in mission.evidence where e.session_id == "demo-mission-01" select e.artifact_id, e.artifact_type, e.source, e.actor, e.created_at

@@ -450,3 +450,51 @@ DEPENDENCY_TYPES = {
     'auth':        {'label': 'Auth/Identity', 'color': '#fd7e14', 'icon': '🔑'},
     'storage':     {'label': 'Storage',       'color': '#20c997', 'icon': '💾'},
 }
+
+# ── Ontology Mapping (migration -> ICDEV migration ontology) ────────────────
+MIGRATION_ONTOLOGY_MAP: dict[str, str] = {
+    # Sources
+    "src-legacy":       "https://icdev.dev/ontology/migration#Source.LegacyApplication",
+    "src-monolith":     "https://icdev.dev/ontology/migration#Source.Monolith",
+    "src-database":     "https://icdev.dev/ontology/migration#Source.LegacyDatabase",
+    "src-datacenter":   "https://icdev.dev/ontology/migration#Source.DataCenter",
+    "src-mainframe":    "https://icdev.dev/ontology/migration#Source.Mainframe",
+    "src-network":      "https://icdev.dev/ontology/migration#Source.LegacyNetwork",
+    "src-storage":      "https://icdev.dev/ontology/migration#Source.OnPremStorage",
+    "src-middleware":   "https://icdev.dev/ontology/migration#Source.Middleware",
+    # Targets
+    "tgt-govcloud":     "https://icdev.dev/ontology/migration#Target.GovCloud",
+    "tgt-cloud":        "https://icdev.dev/ontology/migration#Target.CommercialCloud",
+    "tgt-vm":           "https://icdev.dev/ontology/migration#Target.CloudVM",
+    "tgt-container":    "https://icdev.dev/ontology/migration#Target.Container",
+    "tgt-serverless":   "https://icdev.dev/ontology/migration#Target.Serverless",
+    "tgt-microservice": "https://icdev.dev/ontology/migration#Target.Microservice",
+    "tgt-managed-db":   "https://icdev.dev/ontology/migration#Target.ManagedDatabase",
+    "tgt-saas":         "https://icdev.dev/ontology/migration#Target.SaaS",
+    # Patterns
+    "pat-rehost":       "https://icdev.dev/ontology/migration#Pattern.Rehost",
+    "pat-replatform":   "https://icdev.dev/ontology/migration#Pattern.Replatform",
+    "pat-refactor":     "https://icdev.dev/ontology/migration#Pattern.Refactor",
+    "pat-rearchitect":  "https://icdev.dev/ontology/migration#Pattern.Rearchitect",
+    "pat-repurchase":   "https://icdev.dev/ontology/migration#Pattern.Repurchase",
+    "pat-retire":       "https://icdev.dev/ontology/migration#Pattern.Retire",
+    "pat-retain":       "https://icdev.dev/ontology/migration#Pattern.Retain",
+    "pat-strangler":    "https://icdev.dev/ontology/migration#Pattern.StranglerFig",
+    # Middleware
+    "mid-proxy":        "https://icdev.dev/ontology/migration#Middleware.APIGateway",
+    "mid-acl":          "https://icdev.dev/ontology/migration#Middleware.AntiCorruptionLayer",
+    "mid-etl":          "https://icdev.dev/ontology/migration#Middleware.ETLPipeline",
+    "mid-queue":        "https://icdev.dev/ontology/migration#Middleware.MessageQueue",
+    "mid-sync":         "https://icdev.dev/ontology/migration#Middleware.DataSync",
+    # Controls
+    "ctl-ato-gate":     "https://icdev.dev/ontology/migration#Control.ATOGate",
+    "ctl-compliance-bridge": "https://icdev.dev/ontology/migration#Control.ComplianceBridge",
+    "ctl-compliance-gate":   "https://icdev.dev/ontology/migration#Control.ComplianceGate",
+    "ctl-security-scan":     "https://icdev.dev/ontology/migration#Control.SecurityScan",
+    "ctl-test-gate":    "https://icdev.dev/ontology/migration#Control.TestGate",
+    "ctl-rollback":     "https://icdev.dev/ontology/migration#Control.RollbackPoint",
+    # Planning
+    "wave-group":       "https://icdev.dev/ontology/migration#Planning.MigrationWave",
+    "plan-milestone":   "https://icdev.dev/ontology/migration#Planning.Milestone",
+    "plan-dependency":  "https://icdev.dev/ontology/migration#Planning.Dependency",
+}

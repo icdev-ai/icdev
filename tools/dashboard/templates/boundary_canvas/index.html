@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Boundary Design Canvas — ICDEV{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .bdc-hero { padding: 20px 30px; }
   .bdc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -60,7 +61,7 @@
     <h3>{{ d.name }}</h3>
     <p>{{ d.description or 'No description' }}</p>
     <div class="meta">
-      <span class="tag">{{ d.classification or 'CUI' }}</span>
+      {{ design_classification_badge(d) }}
     </div>
     <a href="/boundary/twin/{{ d.id }}" class="bdc-twin-link" onclick="event.stopPropagation()" title="cATO Digital Twin">DT</a>
   </div>

@@ -209,6 +209,8 @@ def create_data_canvas_blueprint():
             design_id=design["id"],
             design_name=design["name"],
             graph_json=design["graph_json"],
+            classification=design.get("classification", "CUI"),
+            design=design,
             objects=DATA_OBJECTS,
             classification_levels=DATA_CLASSIFICATION_LEVELS,
         )
@@ -438,6 +440,9 @@ def create_data_canvas_blueprint():
     @dc_login_required
     def dc_api_assess(design_id):
         """Run compliance assessment on a data design."""
+        data = request.get_json(force=True, silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         conn = get_connection()
         row = conn.execute("SELECT graph_json FROM data_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
@@ -494,6 +499,7 @@ def create_data_canvas_blueprint():
                 "nist_coverage": nist_cov,
                 "gaps": gaps,
                 "pii_scan": pii_scan,
+                "chain_mode": chain_mode,
             }
         )
 

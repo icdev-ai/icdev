@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Quality Design Canvas - ICDEV Dashboard{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="container">
   <!-- CUI Banner -->
   <div style="background:#1a1a2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 12px;margin-bottom:1rem;color:#7a8cb0;font-size:0.8rem;text-align:center;">
@@ -60,7 +61,7 @@
           {% for d in designs %}
           <tr style="border-bottom:1px solid #1e3a6e;">
             <td style="padding:0.5rem;color:#eaeaea;">{{ d.name }}</td>
-            <td style="padding:0.5rem;color:#7a8cb0;">{{ d.classification or 'CUI' }}</td>
+            <td style="padding:0.5rem;color:#7a8cb0;">{{ design_classification_badge(d) }}</td>
             <td style="padding:0.5rem;text-align:center;">
               {% set uqs = d.get('uqs_score', None) if d.get is defined else None %}
               {% if uqs is not none and uqs %}

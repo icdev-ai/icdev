@@ -213,8 +213,13 @@ _DIAGNOSIS_SCHEMA_HINT = """Return a JSON object with these keys only:
 No prose outside the JSON. No markdown fences."""
 
 
-def diagnose(snap: Dict[str, Any]) -> Dict[str, Any]:
-    """LLM RCA; falls back to heuristic when no LLM is available."""
+def diagnose(snap: Dict[str, Any], chain_mode: str = "") -> Dict[str, Any]:
+    """LLM RCA; falls back to heuristic when no LLM is available.
+
+    Args:
+        snap: Failure snapshot dict.
+        chain_mode: Optional chain mode — "cot" for step-by-step reasoning.
+    """
     try:
         from tools.llm.router import LLMRouter, LLMUnavailableError
         from tools.llm.provider import LLMRequest
@@ -238,6 +243,7 @@ def diagnose(snap: Dict[str, Any]) -> Dict[str, Any]:
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=800, temperature=0.2, effort="medium",
                 skip_injection_scan=True,
+                chain_mode=chain_mode,
             ),
         )
         text = resp.content.strip()

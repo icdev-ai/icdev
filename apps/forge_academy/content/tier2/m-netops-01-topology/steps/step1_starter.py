@@ -3,7 +3,6 @@
 Goal: Parse raw device configs, build adjacency graph, flag unknown nodes.
 """
 
-import re
 
 SAMPLE_CONFIGS = [
     """\

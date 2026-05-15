@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Pipeline Design Canvas — ICDEV™{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .pdc-hero { padding: 20px 30px; }
   .pdc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -53,7 +54,7 @@
       <p>{{ p.description or 'No description' }}</p>
       <div class="meta">
         {{ p.target_csp or 'generic' }} &middot;
-        {{ p.classification or 'public' }} &middot;
+        {{ design_classification_badge(p) }} &middot;
         {{ p.updated_at[:10] if p.updated_at else '' }}
       </div>
     </div>

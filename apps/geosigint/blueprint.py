@@ -13,6 +13,23 @@ from flask import Blueprint, jsonify, render_template, request
 
 _HERE = Path(__file__).parent
 
+# Ontology IDs for cross-domain alignment (Strategos + GeoSIGINT)
+GEOSIGINT_ONTOLOGY_MAP: dict[str, str] = {
+    "A2ADZone": "geospatial:A2ADZone",
+    "LandingZone": "geospatial:LandingZone",
+    "WeaponSystem": "geospatial:WeaponSystem",
+    "MaritimeMilitiaVessel": "geospatial:MaritimeMilitiaVessel",
+    "AmphibiousOperation": "strategy:AmphibiousOperation",
+    "SecurityBoundary": "security:SecurityBoundary",
+    "GeoEntity": "geospatial:GeoEntity",
+}
+
+
+def _inject_ontology(obj: dict, entity_type: str) -> dict:
+    """Inject ontology_id into a dict response."""
+    obj["ontology_id"] = GEOSIGINT_ONTOLOGY_MAP.get(entity_type)
+    return obj
+
 
 def create_geosigint_blueprint() -> Blueprint:
     bp = Blueprint(
@@ -63,26 +80,31 @@ def create_geosigint_api_blueprint() -> Blueprint:
     @api.route("/api/geosigint/a2ad/zones")
     def api_a2ad_zones():
         from apps.geosigint.a2ad_mapper import WEAPON_SYSTEMS, get_zones
-        return jsonify({"systems": list(WEAPON_SYSTEMS.values()), "zones": get_zones()})
+        systems = [_inject_ontology(dict(s), "WeaponSystem") for s in WEAPON_SYSTEMS.values()]
+        zones = [_inject_ontology(dict(z), "A2ADZone") for z in get_zones()]
+        return jsonify({"systems": systems, "zones": zones})
 
     # ── Amphibious ────────────────────────────────────────────────────────────
 
     @api.route("/api/geosigint/amphibious/summary")
     def api_amphibious_summary():
         from apps.geosigint.amphibious_analyzer import get_summary as _s
-        return jsonify(_s())
+        result = _s()
+        result.setdefault("ontology_id", GEOSIGINT_ONTOLOGY_MAP.get("AmphibiousOperation"))
+        return jsonify(result)
 
     @api.route("/api/geosigint/amphibious/zones")
     def api_amphibious_zones():
         from apps.geosigint.amphibious_analyzer import LANDING_ZONES, slope_viability, slope_color
-        zones = [{**z, "viability": slope_viability(z["slope_deg"]), "color": slope_color(z["slope_deg"])} for z in LANDING_ZONES]
+        zones = [_inject_ontology({**z, "viability": slope_viability(z["slope_deg"]), "color": slope_color(z["slope_deg"])}, "LandingZone") for z in LANDING_ZONES]
         return jsonify({"zones": zones})
 
     @api.route("/api/geosigint/amphibious/lift")
     def api_amphibious_lift():
         from apps.geosigint.amphibious_analyzer import calc_lift_capacity, AMPHIBIOUS_FLEET
         result = calc_lift_capacity()
-        result["fleet"] = AMPHIBIOUS_FLEET
+        result["fleet"] = [_inject_ontology(dict(f), "AmphibiousOperation") for f in AMPHIBIOUS_FLEET]
+        result["ontology_id"] = GEOSIGINT_ONTOLOGY_MAP.get("AmphibiousOperation")
         return jsonify(result)
 
     @api.route("/api/geosigint/amphibious/weather")
@@ -105,7 +127,9 @@ def create_geosigint_api_blueprint() -> Blueprint:
     @api.route("/api/geosigint/strait-crossing/summary")
     def api_strait_summary():
         from apps.geosigint.strait_crossing import get_summary as _s
-        return jsonify(_s())
+        result = _s()
+        result.setdefault("ontology_id", GEOSIGINT_ONTOLOGY_MAP.get("GeoEntity"))
+        return jsonify(result)
 
     @api.route("/api/geosigint/strait-crossing/speed-matrix")
     def api_strait_speed_matrix():
@@ -133,7 +157,9 @@ def create_geosigint_api_blueprint() -> Blueprint:
     @api.route("/api/geosigint/island-chain/summary")
     def api_island_summary():
         from apps.geosigint.island_chain_defense import get_summary as _s
-        return jsonify(_s())
+        result = _s()
+        result.setdefault("ontology_id", GEOSIGINT_ONTOLOGY_MAP.get("SecurityBoundary"))
+        return jsonify(result)
 
     @api.route("/api/geosigint/island-chain/bases")
     def api_island_bases():
@@ -155,7 +181,9 @@ def create_geosigint_api_blueprint() -> Blueprint:
     @api.route("/api/geosigint/militia/summary")
     def api_militia_summary():
         from apps.geosigint.militia_classifier import get_summary as _s
-        return jsonify(_s())
+        result = _s()
+        result["ontology_id"] = GEOSIGINT_ONTOLOGY_MAP.get("MaritimeMilitiaVessel")
+        return jsonify(result)
 
     @api.route("/api/geosigint/militia/classify", methods=["POST"])
     def api_militia_classify():
@@ -164,19 +192,28 @@ def create_geosigint_api_blueprint() -> Blueprint:
         vessels = payload.get("vessels", [])
         if not vessels:
             return jsonify({"error": "vessels array required"}), 400
-        return jsonify({"results": classify_fleet(vessels)})
+        results = classify_fleet(vessels)
+        for r in results:
+            r.setdefault("ontology_id", GEOSIGINT_ONTOLOGY_MAP.get("MaritimeMilitiaVessel"))
+        return jsonify({"results": results})
 
     @api.route("/api/geosigint/militia/swarms", methods=["POST"])
     def api_militia_swarms():
         from apps.geosigint.militia_classifier import detect_swarm_events
         payload = request.get_json(force=True, silent=True) or {}
         vessels = payload.get("vessels", [])
-        return jsonify({"swarms": detect_swarm_events(vessels)})
+        swarms = detect_swarm_events(vessels)
+        for s in swarms:
+            s.setdefault("ontology_id", GEOSIGINT_ONTOLOGY_MAP.get("MaritimeMilitiaVessel"))
+        return jsonify({"swarms": swarms})
 
     @api.route("/api/geosigint/militia/zones")
     def api_militia_zones():
         from apps.geosigint.militia_classifier import DISPUTED_ZONES, ARTIFICIAL_ISLANDS
-        return jsonify({"disputed_zones": DISPUTED_ZONES, "artificial_islands": ARTIFICIAL_ISLANDS})
+        return jsonify({
+            "disputed_zones": [_inject_ontology(dict(z), "GeoEntity") for z in DISPUTED_ZONES],
+            "artificial_islands": [_inject_ontology(dict(a), "GeoEntity") for a in ARTIFICIAL_ISLANDS],
+        })
 
     # ── Semiconductor Chain ───────────────────────────────────────────────────
 

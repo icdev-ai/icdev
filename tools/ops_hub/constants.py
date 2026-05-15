@@ -207,3 +207,45 @@ OHC_NIST_CONTROLS = [
     "CA-7",   # Continuous monitoring — SLO burn rate
     "SA-11",  # Developer security testing — model eval
 ]
+
+
+# ── Ontology Mapping (OHC -> ICDEV observability ontology) ───────────────────
+OHC_ONTOLOGY_MAP: dict[str, str] = {
+    "latency_p50_ms": "https://icdev.dev/ontology/observability#Metric.latency.p50.ms",
+    "latency_p95_ms": "https://icdev.dev/ontology/observability#Metric.latency.p95.ms",
+    "latency_p99_ms": "https://icdev.dev/ontology/observability#Metric.latency.p99.ms",
+    "token_throughput_tps": "https://icdev.dev/ontology/observability#Metric.token.throughput.tps",
+    "error_rate_pct": "https://icdev.dev/ontology/observability#Metric.error.rate.pct",
+    "cost_usd": "https://icdev.dev/ontology/observability#Metric.cost.usd",
+    "quality_score": "https://icdev.dev/ontology/observability#Metric.quality.score",
+    "drift_score": "https://icdev.dev/ontology/observability#Metric.drift.score",
+    "availability_pct": "https://icdev.dev/ontology/observability#Metric.availability.pct",
+    "slo_burn_rate": "https://icdev.dev/ontology/observability#Metric.slo.burn.rate",
+    "mlflow": "https://icdev.dev/ontology/observability#OpsTool.Mlflow",
+    "evidently": "https://icdev.dev/ontology/observability#OpsTool.Evidently",
+    "langfuse": "https://icdev.dev/ontology/observability#OpsTool.Langfuse",
+    "prometheus": "https://icdev.dev/ontology/observability#OpsTool.Prometheus",
+    "onnx": "https://icdev.dev/ontology/observability#OpsTool.Onnx",
+    "dvc": "https://icdev.dev/ontology/observability#OpsTool.Dvc",
+    "sagemaker": "https://icdev.dev/ontology/observability#CSPService.Sagemaker",
+    "azureml": "https://icdev.dev/ontology/observability#CSPService.Azureml",
+    "vertexai": "https://icdev.dev/ontology/observability#CSPService.Vertexai",
+    "bedrock_guardrails": "https://icdev.dev/ontology/observability#CSPService.Bedrock.Guardrails",
+    "cloudwatch": "https://icdev.dev/ontology/observability#CSPService.Cloudwatch",
+    "sev1": "https://icdev.dev/ontology/observability#Severity.SEV1",
+    "sev2": "https://icdev.dev/ontology/observability#Severity.SEV2",
+    "sev3": "https://icdev.dev/ontology/observability#Severity.SEV3",
+    "sev4": "https://icdev.dev/ontology/observability#Severity.SEV4",
+    "running": "https://icdev.dev/ontology/observability#ExperimentState.Running",
+    "completed": "https://icdev.dev/ontology/observability#ExperimentState.Completed",
+    "failed": "https://icdev.dev/ontology/observability#ExperimentState.Failed",
+    "killed": "https://icdev.dev/ontology/observability#ExperimentState.Killed",
+    "scheduled": "https://icdev.dev/ontology/observability#ExperimentState.Scheduled",
+    "none": "https://icdev.dev/ontology/observability#ModelStage.None",
+    "staging": "https://icdev.dev/ontology/observability#ModelStage.Staging",
+    "production": "https://icdev.dev/ontology/observability#ModelStage.Production",
+    "archived": "https://icdev.dev/ontology/observability#ModelStage.Archived",
+    "healthy": "https://icdev.dev/ontology/observability#HealthState.Healthy",
+    "degraded": "https://icdev.dev/ontology/observability#HealthState.Degraded",
+    "unavailable": "https://icdev.dev/ontology/observability#HealthState.Unavailable",
+}

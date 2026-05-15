@@ -435,6 +435,9 @@ def create_migration_blueprint():
     @mdc_login_required
     def mc_api_assess(design_id):
         """Run compliance assessment on a migration design."""
+        data = request.get_json(force=True, silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         with get_connection() as conn:
             row = conn.execute("SELECT graph_json FROM migration_designs WHERE id=?", (design_id,)).fetchone()
         if not row:
@@ -480,6 +483,7 @@ def create_migration_blueprint():
             "assessment_id": assessment_id,
             **result,
             "readiness": readiness,
+            "chain_mode": chain_mode,
         })
 
     @bp.route("/api/designs/<design_id>/gaps", methods=["GET"])

@@ -32,7 +32,7 @@ sample_content = """
 """
 parsed = parse_goal_file(sample_content)
 assert parsed is not None, "parse_goal_file() returned None"
-assert isinstance(parsed, dict), f"parse_goal_file() must return dict"
+assert isinstance(parsed, dict), "parse_goal_file() must return dict"
 assert "tools" in parsed, "parsed must have 'tools'"
 assert "args_file" in parsed, "parsed must have 'args_file'"
 assert "output_type" in parsed, "parsed must have 'output_type'"
@@ -55,7 +55,7 @@ from pathlib import Path
 test_tools = ["tools/compliance/scanner.py", "tools/nonexistent_tool_xyz.py"]
 resolved = resolve_tools(test_tools, Path("tools"))
 assert resolved is not None, "resolve_tools() returned None"
-assert isinstance(resolved, list), f"resolve_tools() must return list"
+assert isinstance(resolved, list), "resolve_tools() must return list"
 assert len(resolved) == len(test_tools), f"Must resolve all {len(test_tools)} tools"
 for r in resolved:
     assert "path" in r and "exists" in r and "name" in r, \
@@ -67,7 +67,7 @@ assert nonexistent[0]["exists"] is False, "nonexistent tool should have exists=F
 
 # GoalTracer.trace tests
 assert result1 is not None, "trace('compliance_scan') returned None"
-assert result1.get("goal") == "compliance_scan", f"goal field should be 'compliance_scan'"
+assert result1.get("goal") == "compliance_scan", "goal field should be 'compliance_scan'"
 assert "tools" in result1, "trace result must have 'tools'"
 assert "tool_count" in result1, "trace result must have 'tool_count'"
 assert "output_type" in result1, "trace result must have 'output_type'"

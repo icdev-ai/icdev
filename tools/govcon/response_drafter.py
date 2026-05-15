@@ -157,8 +157,8 @@ def _try_llm_draft(shall_text, capabilities, knowledge_blocks, domain):
         if response and response.content:
             return response.content, "two_tier_llm"
 
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"Warning: LLM draft failed: {exc}", file=sys.stderr)
 
     return None, None
 

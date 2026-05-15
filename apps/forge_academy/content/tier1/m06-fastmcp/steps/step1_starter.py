@@ -5,8 +5,6 @@ Goal: Implement a FastMCP-style server using decorator pattern.
 We rebuild the core mechanics without the external dependency.
 """
 
-import json
-import inspect
 from typing import Callable, Any
 
 

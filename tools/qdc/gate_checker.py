@@ -132,7 +132,6 @@ def build_report(result: dict) -> str:
 
     fails = [f for f in findings if f["severity"] == "fail"]
     warns = [f for f in findings if f["severity"] == "warn"]
-    overall_gate = "PASS" if not fails else "FAIL"
 
     lines = [
         "# Quality Gate Report — QDC",

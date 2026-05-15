@@ -28,6 +28,7 @@ from tools.govlift.constants import (
     CHECK_WAVE_STATUS,
     CHECK_RISK_LEVEL,
     CHECK_INTEGRATION_SYS,
+    CHECK_ROLLBACK_STATUS,
 )
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,7 @@ _SCHEMA_STATEMENTS = [
         executor_log        TEXT DEFAULT '',
         pre_check_passed    INTEGER,
         post_check_passed   INTEGER,
+        rollback_deadline   TEXT,
         created_at          TEXT DEFAULT (datetime('now'))
     )""",
 
@@ -156,6 +158,27 @@ _SCHEMA_STATEMENTS = [
     )""",
 
     "CREATE INDEX IF NOT EXISTS idx_govlift_integrations_sys ON govlift_integrations(system_name)",
+
+    # ── Rollback Events ──────────────────────────────────────────────────────
+    f"""CREATE TABLE IF NOT EXISTS govlift_rollback_events (
+        id              TEXT PRIMARY KEY,
+        migration_id    TEXT NOT NULL
+                            REFERENCES govlift_migrations(id),
+        workload_id     TEXT NOT NULL
+                            REFERENCES govlift_workloads(id),
+        status          TEXT DEFAULT 'initiated'
+                            CHECK ({CHECK_ROLLBACK_STATUS}),
+        initiated_at    TEXT NOT NULL,
+        deadline_at     TEXT NOT NULL,
+        completed_at    TEXT,
+        reason          TEXT DEFAULT '',
+        steps_log       TEXT DEFAULT '[]',
+        sla_met         INTEGER,
+        created_at      TEXT DEFAULT (datetime('now'))
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rollback_mig ON govlift_rollback_events(migration_id)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rollback_status ON govlift_rollback_events(status)",
 ]
 
 

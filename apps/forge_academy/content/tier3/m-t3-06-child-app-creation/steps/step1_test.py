@@ -16,7 +16,7 @@ m_valid = AppManifest(
 result = m_valid.validate()
 assert result is not None, "validate() returned None"
 assert isinstance(result, tuple), f"validate() must return tuple, got {type(result)}"
-assert len(result) == 2, f"validate() must return (bool, list)"
+assert len(result) == 2, "validate() must return (bool, list)"
 valid, issues = result
 assert valid is True, f"Valid manifest should pass, got valid=False, issues={issues}"
 assert isinstance(issues, list), f"issues must be list, got {type(issues)}"
@@ -83,7 +83,7 @@ assert any("table" in i.lower() for i in iss_nt), \
 
 d = m_valid.to_dict()
 assert d is not None, "to_dict() returned None"
-assert isinstance(d, dict), f"to_dict() must return dict"
+assert isinstance(d, dict), "to_dict() must return dict"
 for key in ["app_name", "app_slug", "canvas", "description", "routes", "db_tables", "author"]:
     assert key in d, f"to_dict() must have '{key}' key"
 assert d["app_slug"] == "statusboard", f"app_slug mismatch: {d['app_slug']}"
@@ -95,7 +95,7 @@ assert isinstance(d["db_tables"], list), "db_tables must be list"
 
 tree = generate_file_tree("statusboard")
 assert tree is not None, "generate_file_tree() returned None"
-assert isinstance(tree, list), f"generate_file_tree() must return list"
+assert isinstance(tree, list), "generate_file_tree() must return list"
 assert len(tree) == 7, f"File tree must have 7 entries, got {len(tree)}: {tree}"
 
 expected_paths = [
@@ -114,7 +114,7 @@ for path in expected_paths:
 
 c_full = check_completeness(m_valid)
 assert c_full is not None, "check_completeness() returned None"
-assert isinstance(c_full, dict), f"check_completeness() must return dict"
+assert isinstance(c_full, dict), "check_completeness() must return dict"
 assert "score" in c_full, "Result must have 'score'"
 assert "max_score" in c_full, "Result must have 'max_score'"
 assert "complete" in c_full, "Result must have 'complete'"

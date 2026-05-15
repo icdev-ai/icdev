@@ -133,12 +133,22 @@ def get_hint(
     context: str = "",
     mission_slug: str = "",
     design_id: str = "",
+    chain_mode: str = "",
 ) -> str:
-    """Get a FORGE Sensei hint via the LLM router (Ollama preferred for air-gap)."""
+    """Get a FORGE Sensei hint via the LLM router (Ollama preferred for air-gap).
+
+    Args:
+        chain_mode: "" for standard routing, "cot" for Chain of Thought,
+                    "cod" for Chain of Debate (multiplayer AI-vs-AI).
+    """
     is_aadc = any(mission_slug.startswith(p) for p in _AADC_PREFIXES) or design_id
     is_guided = any(mission_slug.startswith(p) for p in _GUIDED_PREFIXES)
     is_executive = any(mission_slug.startswith(p) for p in _EXECUTIVE_PREFIXES)
     is_analyst = any(mission_slug.startswith(p) for p in _ANALYST_PREFIXES)
+
+    # Auto-enable CoT for complex concept explanations
+    if not chain_mode and _is_complex_concept(question, mission_slug):
+        chain_mode = "cot"
 
     # Build AADC-enriched context: inject live failing checks into the prompt
     aadc_context = ""
@@ -196,6 +206,15 @@ def get_hint(
             temperature=0.5,
             skip_injection_scan=True,
         )
+
+        # Chain of Debate mode: run multiplayer AI-vs-AI and return transcript
+        if chain_mode == "cod":
+            return _run_debate_mode(router, req, prompt, mission_slug)
+
+        # Chain of Thought mode (including auto-detected complex concepts)
+        if chain_mode == "cot":
+            req.chain_mode = "cot"
+
         resp = provider.invoke(req, model_id, cfg)
         txt = (resp.content or "").strip()
         if len(txt) < 10:
@@ -204,6 +223,54 @@ def get_hint(
     except Exception as exc:
         _log.info("FORGE Sensei LLM unavailable (%s); using fallback hint", exc)
         return _fallback_hint(mission_slug, is_guided, is_aadc, is_executive, is_analyst)
+
+
+def _is_complex_concept(question: str, mission_slug: str) -> bool:
+    """Heuristic: enable CoT for capstone, multi-agent, AADC, and long questions."""
+    complex_slugs = ("capstone", "multi", "aadc", "strands", "mcp", "agentic")
+    if any(fragment in mission_slug for fragment in complex_slugs):
+        return True
+    if len(question) > 120:
+        return True
+    complex_keywords = ("why", "how does", "explain", "compare", "evaluate", "architect")
+    q_lower = question.lower()
+    if any(kw in q_lower for kw in complex_keywords):
+        return True
+    return False
+
+
+def _run_debate_mode(router, req, prompt: str, mission_slug: str) -> str:
+    """Run Chain of Debate and return a formatted judgment + transcript."""
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        orchestrator = ChainOrchestrator(router=router)
+        result = orchestrator.invoke_chain_of_debate("academy_coach", req)
+
+        lines = [
+            "**FORGE Sensei — Debate Mode**",
+            "",
+            f"**Judgment:** {result.content}",
+            "",
+            "---",
+            "**Debate Transcript**",
+            "",
+        ]
+        for rnd in result.rounds:
+            step = rnd.get("step", "")
+            model = rnd.get("model_id", "")
+            if step.startswith("debater_"):
+                debater_num = step.replace("debater_", "")
+                lines.append(f"> **Debater {debater_num}** ({model})")
+            elif step == "judge":
+                lines.append(f"> **Judge** ({model})")
+            else:
+                lines.append(f"> **{step.title()}** ({model})")
+            lines.append("")
+        lines.append(f"_Confidence: {result.confidence:.2f} | Models: {', '.join(result.models_used)}_")
+        return "\n".join(lines)
+    except Exception as exc:
+        _log.warning("Debate mode failed (%s); falling back to standard hint", exc)
+        return _fallback_hint(mission_slug, False, False, False, False)
 
 
 _FALLBACK_AADC: dict[str, str] = {

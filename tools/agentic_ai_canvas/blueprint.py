@@ -449,9 +449,15 @@ def run_assessment(design_id: str):
     finally:
         conn.close()
 
+    data = request.get_json(force=True, silent=True) or {}
+    use_cot = data.get("use_cot", False)
+    use_cod = data.get("use_cod", False)
+    chain_mode = "cot" if use_cot else "cod" if use_cod else ""
+
     meta = {"domain": d.get("domain", ""), "classification": d.get("classification", "CUI"),
-            "has_prior_assessment": True}
+            "has_prior_assessment": True, "chain_mode": chain_mode}
     result = assess_design(design_id, d["graph_json"], meta)
+    result["chain_mode"] = chain_mode
 
     conn = _conn()
     try:

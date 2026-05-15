@@ -1369,6 +1369,45 @@ ai_trace:
     any canvas blueprint has been accessed (evidence that traceability hooks are not firing).
     Check canvas blueprint wiring in tools/network/blueprint.py and peers.
 
+# Security Framework Gates (Phase 74 — sec-fnd)
+security_framework:
+  description: "Multi-layer security framework gates — context, ABAC, MAC, RLS, column, field, encryption, mTLS"
+  blocking:
+    - missing_security_context
+    - abac_policy_violation_unresolved
+    - classification_violation
+    - missing_rls_on_classification_table
+    - mtls_not_enforced_for_il5_plus
+    - encryption_not_configured_for_secret
+  warning:
+    - security_context_incomplete
+    - compartment_bypass_attempt
+    - pdp_cache_stale
+    - field_filtering_disabled
+  thresholds:
+    require_security_context: true
+    require_abac_for_il4_plus: true
+    require_rls_for_classified_tables: true
+    require_mtls_for_il5: true
+    require_encryption_for_secret: true
+    pdp_cache_ttl_seconds: 60
+
+# Ontology Validation Gate
+ontology:
+  description: "Validates ontology federation integrity — ensures class alignment, property consistency, and subclass closure freshness"
+  blocking:
+    - ontology_build_failed
+    - ontology_alignment_conflict
+    - ontology_property_range_violation
+  warning:
+    - ontology_class_count_below_threshold
+    - ontology_closure_stale_over_7_days
+    - ontology_external_mapping_outdated
+  thresholds:
+    min_classes: 10
+    closure_max_age_days: 7
+    require_external_mappings_current: true
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
   - id: AI-TRACE-001

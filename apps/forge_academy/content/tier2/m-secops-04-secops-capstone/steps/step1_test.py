@@ -70,7 +70,7 @@ assert isinstance(result, dict), "run() must return dict"
 for key in ["run_date", "total_findings", "open_findings", "closed_findings", "plans", "summary"]:
     assert key in result, f"Result missing '{key}'"
 
-assert result["run_date"] == str(date.today()), f"run_date should be today"
+assert result["run_date"] == str(date.today()), "run_date should be today"
 assert result["total_findings"] == 3, f"total_findings should be 3, got {result['total_findings']}"
 assert result["open_findings"] == 2, f"open_findings should be 2, got {result['open_findings']}"
 assert result["closed_findings"] == 1, f"closed_findings should be 1, got {result['closed_findings']}"

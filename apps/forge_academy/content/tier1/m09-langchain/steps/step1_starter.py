@@ -102,7 +102,8 @@ class JsonOutputParser(Runnable):
     """Parses JSON from LLM output string."""
 
     def invoke(self, llm_output: str) -> dict:
-        import json, re
+        import json
+        import re
         match = re.search(r'\{[^{}]+\}', llm_output, re.DOTALL)
         if match:
             try:

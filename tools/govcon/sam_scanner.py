@@ -826,38 +826,42 @@ def main():
     parser.add_argument("--days", type=int, default=30, help="History lookback days")
     parser.add_argument("--limit", type=int, default=100, help="Max results for list")
     parser.add_argument(
-        "--cross-register", action="store_true", default=True, help="Cross-register to Innovation/Creative engines"
+        "--cross-register", action="store_true", default=False, help="Cross-register to Innovation/Creative engines"
     )
     parser.add_argument("--json", action="store_true", help="JSON output")
     parser.add_argument("--human", action="store_true", help="Human-readable output")
 
     args = parser.parse_args()
 
-    if args.scan:
-        result = scan_sam_gov(naics_filter=args.naics, notice_type_filter=args.notice_type)
-        if args.cross_register and result.get("opportunities"):
-            inno = cross_register_to_innovation(result["opportunities"])
-            creative = cross_register_to_creative(result["opportunities"])
-            result["cross_registration"] = {
-                "innovation_signals": inno.get("registered_count", 0),
-                "creative_signals": creative.get("registered_count", 0),
+    try:
+        if args.scan:
+            result = scan_sam_gov(naics_filter=args.naics, notice_type_filter=args.notice_type)
+            if args.cross_register and result.get("opportunities"):
+                inno = cross_register_to_innovation(result["opportunities"])
+                creative = cross_register_to_creative(result["opportunities"])
+                result["cross_registration"] = {
+                    "innovation_signals": inno.get("registered_count", 0),
+                    "creative_signals": creative.get("registered_count", 0),
+                }
+            # Auto-backfill URL-only descriptions after scan
+            bf = backfill_descriptions(limit=50, delay=0.3)
+            result["backfill"] = {
+                "updated": bf.get("updated_count", 0),
+                "checked": bf.get("total_checked", 0),
             }
-        # Auto-backfill URL-only descriptions after scan
-        bf = backfill_descriptions(limit=50, delay=0.3)
-        result["backfill"] = {
-            "updated": bf.get("updated_count", 0),
-            "checked": bf.get("total_checked", 0),
-        }
-    elif args.backfill:
-        result = backfill_descriptions(limit=args.limit, delay=0.3)
-    elif args.list_cached:
-        result = list_cached(naics_filter=args.naics, notice_type_filter=args.notice_type, limit=args.limit)
-    elif args.history:
-        result = get_history(days=args.days)
-    elif args.stats:
-        result = get_stats()
-    else:
-        result = {"error": "No action specified"}
+        elif args.backfill:
+            result = backfill_descriptions(limit=args.limit, delay=0.3)
+        elif args.list_cached:
+            result = list_cached(naics_filter=args.naics, notice_type_filter=args.notice_type, limit=args.limit)
+        elif args.history:
+            result = get_history(days=args.days)
+        elif args.stats:
+            result = get_stats()
+        else:
+            result = {"error": "No action specified"}
+    except FileNotFoundError as exc:
+        print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
+        sys.exit(1)
 
     if args.json or not args.human:
         print(json.dumps(result, indent=2, default=str))

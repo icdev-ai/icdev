@@ -379,6 +379,8 @@ def create_pipeline_blueprint():
             pipeline_id=pipe["id"],
             pipeline_name=pipe["name"],
             graph_json=pipe["graph_json"],
+            classification=pipe.get("classification", "public"),
+            design=pipe,
             stages=PIPELINE_STAGES,
             objects=PIPELINE_OBJECTS,
         )

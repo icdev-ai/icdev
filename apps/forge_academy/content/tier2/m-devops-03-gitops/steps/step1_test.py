@@ -5,7 +5,7 @@
 
 drift = detect_drift(DESIRED_STATE, ACTUAL_STATE)
 assert drift is not None, "detect_drift() returned None"
-assert isinstance(drift, list), f"detect_drift() must return list"
+assert isinstance(drift, list), "detect_drift() must return list"
 assert len(drift) >= 3, f"Should detect ≥3 drift items (image, replicas, missing), got {len(drift)}: {drift}"
 
 drift_types = {d["type"] for d in drift}

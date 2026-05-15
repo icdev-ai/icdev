@@ -302,8 +302,13 @@ def should_auto_apply(task: Dict[str, Any], diag: Dict[str, Any]) -> Tuple[bool,
 # Diagnose wrapper — reuses self_debug.snapshot + LLM routing 'failure_triage_diagnose'
 # ---------------------------------------------------------------------------
 
-def diagnose_task(task: Dict[str, Any]) -> Dict[str, Any]:
-    """Run thinking-tier LLM diagnosis. Falls back to self_debug heuristic."""
+def diagnose_task(task: Dict[str, Any], chain_mode: str = "") -> Dict[str, Any]:
+    """Run thinking-tier LLM diagnosis. Falls back to self_debug heuristic.
+
+    Args:
+        task: Kanban task dict.
+        chain_mode: Optional chain mode — "cot" for step-by-step reasoning.
+    """
     from tools.workflow import self_debug
 
     reason = task.get("last_failure_reason") or ""
@@ -319,7 +324,7 @@ def diagnose_task(task: Dict[str, Any]) -> Dict[str, Any]:
         from tools.llm.router import LLMRouter, LLMUnavailableError
     except Exception as exc:
         logger.info("failure_triage: llm imports failed (%s); using self_debug.diagnose", exc)
-        return self_debug.diagnose(snap)
+        return self_debug.diagnose(snap, chain_mode=chain_mode)
 
     prompt = (
         "A kanban task has failed verification. Diagnose the STRUCTURAL root "
@@ -337,6 +342,7 @@ def diagnose_task(task: Dict[str, Any]) -> Dict[str, Any]:
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=800, temperature=0.2, effort="high",
                 skip_injection_scan=True,
+                chain_mode=chain_mode,
             ),
         )
         text = resp.content.strip()
@@ -353,10 +359,10 @@ def diagnose_task(task: Dict[str, Any]) -> Dict[str, Any]:
         return diag
     except LLMUnavailableError:
         logger.info("failure_triage: LLM unavailable; using self_debug fallback")
-        return self_debug.diagnose(snap)
+        return self_debug.diagnose(snap, chain_mode=chain_mode)
     except Exception as exc:
         logger.warning("failure_triage: diagnose LLM failed (%s); fallback", exc)
-        return self_debug.diagnose(snap)
+        return self_debug.diagnose(snap, chain_mode=chain_mode)
 
 
 # ---------------------------------------------------------------------------

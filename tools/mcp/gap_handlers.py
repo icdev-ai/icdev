@@ -1560,3 +1560,74 @@ def handle_system_graph_stats(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_system_graph_stats: %s", exc)
         return {"error": str(exc)}
+
+
+# ===========================================================================
+# Category: chain_orchestration (CoT / CoD)
+# ===========================================================================
+
+
+def handle_cot_invoke(args: dict) -> dict:
+    """Invoke Chain of Thought via ChainOrchestrator."""
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        orchestrator = ChainOrchestrator()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": args.get("prompt", "")}],
+            system_prompt=args.get("system_prompt", ""),
+        )
+        result = orchestrator.invoke_chain_of_thought(
+            args.get("function", "default"),
+            request,
+        )
+        return {
+            "content": result.content,
+            "chain_mode": result.chain_mode,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "trace_id": result.trace_id,
+            "confidence": result.confidence,
+            "rounds": result.rounds,
+        }
+    except Exception as exc:
+        logger.warning("handle_cot_invoke: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_cod_invoke(args: dict) -> dict:
+    """Invoke Chain of Debate via ChainOrchestrator."""
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        orchestrator = ChainOrchestrator()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": args.get("prompt", "")}],
+            system_prompt=args.get("system_prompt", ""),
+        )
+        result = orchestrator.invoke_chain_of_debate(
+            args.get("function", "default"),
+            request,
+        )
+        return {
+            "content": result.content,
+            "chain_mode": result.chain_mode,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "trace_id": result.trace_id,
+            "confidence": result.confidence,
+            "rounds": result.rounds,
+        }
+    except Exception as exc:
+        logger.warning("handle_cod_invoke: %s", exc)
+        return {"error": str(exc)}

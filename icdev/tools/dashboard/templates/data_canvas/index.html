@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Data Design Canvas — ICDEV{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .ddc-hero { padding: 20px 30px; }
   .ddc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -59,7 +60,7 @@
     <h3>{{ d.name }}</h3>
     <p>{{ d.description or 'No description' }}</p>
     <div class="meta">
-      <span class="tag">{{ d.classification or 'CUI' }}</span>
+      {{ design_classification_badge(d) }}
       Updated: {{ (d.updated_at[:10] if d.updated_at is string else d.updated_at.strftime('%Y-%m-%d')) if d.updated_at else '—' }}
     </div>
     <a href="/data/twin/{{ d.id }}" class="ddc-twin-link" onclick="event.stopPropagation()" title="Data Lineage Digital Twin">DT</a>
@@ -81,6 +82,19 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Data Lineage & Classifications" %}
+{% set iqe_examples = [
+  {"label": "All lineage edges", "query": "foreach e in data.lineage.edges select e.source_node_id, e.target_node_id, e.classification"},
+  {"label": "PII lineage edges", "query": "foreach e in data.lineage.edges where e.classification contains \"PII\" select e.source_node_id, e.target_node_id, e.classification"},
+  {"label": "CUI designs", "query": "foreach d in data.classifications where d.classification contains \"CUI\" select d.name, d.classification"},
+  {"label": "Cross-region paths", "query": "foreach e in data.lineage.edges where e.lineage_type == \"cross-region\" select *"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

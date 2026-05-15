@@ -107,6 +107,7 @@
 - [LLM Provider SDK](manifest/llm-provider-sdk.md)
 - [Playground](manifest/playground.md)
 - [Proposal Genesis CRM](manifest/proposal-genesis-crm.md)
+- [Mission Canvas — Program Command Center](manifest/mission-canvas.md)
 - [RAG Subsystem (Additional)](manifest/rag-subsystem.md)
 - [Codebase Assistant (Phase 69)](manifest/codebase-assistant.md)
 - [Requirements (Additional)](manifest/requirements.md)

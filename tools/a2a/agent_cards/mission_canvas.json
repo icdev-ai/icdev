@@ -1,0 +1,106 @@
+{
+  "name": "ICDEV™ Mission Canvas",
+  "description": "Program Command Center Canvas agent. Unifies all 13 operational capabilities — agent orchestration, real-time correlation, digital twin, evidence tracking, discovery, conflict resolution, portfolio optimization, security posture, AI trust, narrative generation, and CI/CD integration — into a single mission-aware interface.",
+  "url": "https://localhost:8459",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["mutual_tls", "api_key"]
+  },
+  "skills": [
+    {
+      "id": "orchestrate-mission-team",
+      "name": "Orchestrate Mission Team",
+      "description": "Dispatch an AI agent team for a mission-specific objective using the TeamOrchestrator.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "correlate-events",
+      "name": "Correlate Events",
+      "description": "Run temporal correlation and anomaly detection across mission event streams.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "take-mission-twin",
+      "name": "Take Mission Twin",
+      "description": "Capture a unified digital twin snapshot combining data lineage and pipeline state.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "record-evidence",
+      "name": "Record Evidence",
+      "description": "Write a provenance record linking a mission artifact to its source.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "discover-components",
+      "name": "Discover Components",
+      "description": "Auto-discover and index mission-relevant components with health status.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "detect-conflicts",
+      "name": "Detect Conflicts",
+      "description": "Detect and surface conflicts across mission data sources and policy documents.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "optimize-portfolio",
+      "name": "Optimize Portfolio",
+      "description": "Run portfolio scaling simulation and generate capacity recommendations.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get-security-posture",
+      "name": "Get Security Posture",
+      "description": "Return ZTA maturity and FedRAMP posture scores for the mission environment.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "assess-ai-trust",
+      "name": "Assess AI Trust",
+      "description": "Run AI trust assessment including confabulation risk and governance posture.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "generate-narrative",
+      "name": "Generate Narrative",
+      "description": "Produce a plain-English mission-ready narrative from structured sources.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "get-cicd-status",
+      "name": "Get CI/CD Status",
+      "description": "Return current CI/CD pipeline health and deployment catalog.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "simulate-delta",
+      "name": "Simulate Delta",
+      "description": "Simulate downstream impact of proposed environment changes on the mission twin.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    },
+    {
+      "id": "detect-drift",
+      "name": "Detect Drift",
+      "description": "Detect drift in mission environment versus a defined baseline.",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"]
+    }
+  ]
+}

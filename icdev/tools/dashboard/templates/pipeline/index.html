@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Pipeline Design Canvas — ICDEV™{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .pdc-hero { padding: 20px 30px; }
   .pdc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -32,9 +33,6 @@
   <p>Visual DevSecOps pipeline designer — cloud-agnostic, multi-cloud, on-premises. Drag-and-drop 100+ tools across 13 categories.</p>
   <a href="/devops/canvas/new" class="pdc-new-btn">+ New Pipeline</a>
   <a href="/sre" class="pdc-new-btn" style="background:#00bcd4;">SRE Dashboard</a>
-  {% set wf_canvas_id = 'pdc' %}
-  {% set wf_context_label = '' %}
-  {% include 'includes/workflow_trigger_btn.html' %}
   <div class="pdc-stats">
     <div class="pdc-stat"><div class="val">{{ pipelines | length }}</div><div class="lbl">Pipelines</div></div>
     <div class="pdc-stat"><div class="val">{{ templates | length }}</div><div class="lbl">Templates</div></div>
@@ -56,7 +54,7 @@
       <p>{{ p.description or 'No description' }}</p>
       <div class="meta">
         {{ p.target_csp or 'generic' }} &middot;
-        {{ p.classification or 'public' }} &middot;
+        {{ design_classification_badge(p) }} &middot;
         {{ p.updated_at[:10] if p.updated_at else '' }}
       </div>
     </div>
@@ -96,6 +94,18 @@
   </div>
   {% endfor %}
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "pipeline" %}
+{% set iqe_api_route = "/devops/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Pipeline Canvas" %}
+{% set iqe_examples = [
+  {"label": "All snapshots", "query": "foreach s in pipeline.snapshots select s.pipeline_id, s.snapshot_type, s.created_at"},
+  {"label": "Build runner nodes", "query": "foreach n in pipeline.nodes where n.node_type == \"build-runner\" select n.pipeline_id, n.node_type"},
+  {"label": "All pipeline edges", "query": "foreach e in pipeline.edges select e.pipeline_id, e.source, e.target"},
+  {"label": "SLSA signed nodes", "query": "foreach n in pipeline.nodes where n.signed == true select n.pipeline_id, n.node_type, n.id"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 
 <script>
 function loadTemplate(tplId) {

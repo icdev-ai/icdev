@@ -711,26 +711,30 @@ def main():
 
     args = parser.parse_args()
 
-    if args.extract_all:
-        result = extract_and_store()
-        # Auto-cluster after extraction
-        cluster_result = cluster_patterns()
-        result["clustering"] = cluster_result
-    elif args.extract:
-        if not args.opp_id:
-            result = {"error": "--extract requires --opp-id"}
+    try:
+        if args.extract_all:
+            result = extract_and_store()
+            # Auto-cluster after extraction
+            cluster_result = cluster_patterns()
+            result["clustering"] = cluster_result
+        elif args.extract:
+            if not args.opp_id:
+                result = {"error": "--extract requires --opp-id"}
+            else:
+                result = extract_and_store(opp_id=args.opp_id)
+        elif args.cluster:
+            result = cluster_patterns()
+        elif args.patterns:
+            result = get_patterns(
+                domain=args.domain, min_frequency=args.min_frequency, status=args.status, limit=args.limit
+            )
+        elif args.trends:
+            result = get_trends()
         else:
-            result = extract_and_store(opp_id=args.opp_id)
-    elif args.cluster:
-        result = cluster_patterns()
-    elif args.patterns:
-        result = get_patterns(
-            domain=args.domain, min_frequency=args.min_frequency, status=args.status, limit=args.limit
-        )
-    elif args.trends:
-        result = get_trends()
-    else:
-        result = {"error": "No action specified"}
+            result = {"error": "No action specified"}
+    except FileNotFoundError as exc:
+        print(json.dumps({"status": "error", "message": str(exc)}), file=sys.stderr)
+        sys.exit(1)
 
     if args.json or not args.human:
         print(json.dumps(result, indent=2, default=str))

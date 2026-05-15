@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{% if design %}{{ design.name }}{% else %}New AI/ML Design{% endif %} — AIMC{% endblock %}
+{% block global_banner %}{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="/static/css/agentic-canvas.css">
 <style>
@@ -257,6 +258,8 @@ body { overflow: hidden; height: 100vh; }
 {% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 {% set design_id = design.id if design else '' %}
 
 <!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->

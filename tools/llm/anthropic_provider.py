@@ -90,7 +90,18 @@ class AnthropicLLMProvider(LLMProvider):
         # system text as a top-level parameter.
         system_parts = [s for s in (request.system_prompt, extracted_system) if s]
         if system_parts:
-            kwargs["system"] = "\n\n".join(system_parts)
+            system_text = "\n\n".join(system_parts)
+            # D-CACHE-6: Anthropic prompt caching — system prompt as blocks with cache_control
+            if request.cache_control == "ephemeral" and HAS_ANTHROPIC:
+                kwargs["system"] = [
+                    {
+                        "type": "text",
+                        "text": system_text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                kwargs["system"] = system_text
 
         if request.temperature is not None:
             kwargs["temperature"] = request.temperature
@@ -100,6 +111,17 @@ class AnthropicLLMProvider(LLMProvider):
 
         if request.tools:
             kwargs["tools"] = tools_to_anthropic(request.tools)
+
+        # D-CACHE-7: Mark last user message with cache_control for Anthropic
+        if request.cache_control == "ephemeral" and messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", [])
+                    if isinstance(content, list) and content:
+                        last_block = content[-1]
+                        if isinstance(last_block, dict) and last_block.get("type") == "text":
+                            last_block["cache_control"] = {"type": "ephemeral"}
+                    break
 
         # Thinking support — skip if route config sets disable_thinking: true
         route_config = getattr(request, "_route_config", {}) or {}

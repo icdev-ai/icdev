@@ -1,7 +1,6 @@
 
 # Auto-grader for DataOps M2: ChromaDB-Style Vector Store
 
-import math
 
 # ── Test: cosine_similarity ───────────────────────────────────────────────────
 
@@ -57,7 +56,7 @@ col.add(ids=["doc1"], documents=["MFA required for privileged access"], embeddin
 
 results = col.query([[0.9, 0.1, 0.2]], n_results=2)
 assert results is not None, "query() returned None"
-assert isinstance(results, dict), f"query() must return dict"
+assert isinstance(results, dict), "query() must return dict"
 assert "ids" in results, "Result must have 'ids'"
 assert "documents" in results, "Result must have 'documents'"
 assert "distances" in results, "Result must have 'distances'"

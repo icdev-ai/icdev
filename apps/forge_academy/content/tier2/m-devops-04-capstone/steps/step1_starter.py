@@ -58,7 +58,7 @@ def plan_infrastructure(env: str, services: list[str]) -> dict:
         "total_resources": 1 + len(services) * 2,  # vpc + bucket + versioning per service
     }
     """
-    gen = TerraformGenerator()
+    TerraformGenerator()
     # YOUR CODE HERE
     pass
 

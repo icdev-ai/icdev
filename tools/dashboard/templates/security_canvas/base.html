@@ -10,9 +10,11 @@
 {% block head %}{% endblock %}
 </head>
 <body style="display:flex;flex-direction:column;min-height:100vh;margin:0;">
+{% block global_banner %}
 {% if config.get('CLASSIFICATION_BANNER') %}
 <div style="background:#e74c3c;color:#fff;text-align:center;padding:2px;font-size:11px;font-weight:700;letter-spacing:2px;">{{ config.get('CLASSIFICATION_BANNER') }}</div>
 {% endif %}
+{% endblock %}
 <nav class="navbar">
   <div class="nav-brand">
     <span class="nav-icon" style="color:#e94560;">&#x1f6e1;</span>

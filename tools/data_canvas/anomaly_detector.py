@@ -167,6 +167,7 @@ def detect_anomalies(
     profile_dict: dict,
     conn_params: dict | None = None,
     classification: str = "CUI",
+    chain_mode: str = "",
 ) -> dict:
     """Detect anomalies in column-level profile statistics.
 
@@ -175,6 +176,8 @@ def detect_anomalies(
             null_pct, distinct_count, min, max, top_values, inferred_type.
         conn_params: Unused (reserved for future DB-backed enrichment).
         classification: ATO classification marking applied to the result.
+        chain_mode: Optional chain mode — "cot" for step-by-step reasoning,
+            "cod" for debate-based evaluation.
 
     Returns:
         {
@@ -202,6 +205,7 @@ def detect_anomalies(
                 max_tokens=1024,
                 classification=classification,
                 skip_injection_scan=True,
+                chain_mode=chain_mode,
             )
 
             def _invoke():

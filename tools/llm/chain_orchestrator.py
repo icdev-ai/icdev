@@ -1,0 +1,859 @@
+# [TEMPLATE: CUI // SP-CTI]
+"""Chain of Thought / Chain of Debate multi-LLM orchestration engine.
+
+Core design:
+  - CoT: reason → critic → synthesize (up to max_rounds)
+  - CoD: parallel debate turns (num_debaters × debate_rounds) → judge synthesis
+  - Self-consistency: run CoT N times in parallel, majority vote
+  - Cost cap ($0.50 default), token cap (32K), timeout (120s)
+  - Each step flows through full router pipeline (redaction, RAG, cache, gateway, telemetry)
+  - ThreadPoolExecutor for parallel steps
+
+Air-gap safe: uses local models when cloud unavailable. Respects per-function
+config from args/llm_config.yaml.
+"""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import json
+import logging
+import sys
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+# Resolve imports relative to this file
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection
+from tools.llm.chain_prompts import ChainPrompts
+from tools.llm.provider import LLMRequest, LLMResponse
+from tools.llm.router import LLMRouter
+
+logger = logging.getLogger("icdev.llm.chain_orchestrator")
+
+DEFAULT_COST_CAP_USD = 0.50
+DEFAULT_TOKEN_CAP = 32000
+DEFAULT_TIMEOUT_SECONDS = 120
+
+
+@dataclass
+class ChainStepResult:
+    """Result of a single step in a chain."""
+
+    step_name: str
+    model_id: str
+    content: str
+    input_tokens: int
+    output_tokens: int
+    cost_usd: float
+    duration_ms: int
+    stop_reason: str = ""
+
+
+@dataclass
+class ChainResult:
+    """Aggregated result of a full CoT/CoD chain."""
+
+    content: str
+    chain_mode: str
+    models_used: List[str]
+    rounds: List[Dict[str, Any]]
+    total_input_tokens: int
+    total_output_tokens: int
+    total_cost_usd: float
+    total_duration_ms: int
+    stop_reason: str
+    trace_id: str
+    confidence: float = 0.0
+
+
+class BudgetExceededError(RuntimeError):
+    """Raised when cost or token budget is exceeded mid-chain."""
+
+
+class ChainOrchestrator:
+    """Multi-LLM orchestration engine for CoT and CoD."""
+
+    def __init__(self, router: Optional[LLMRouter] = None, config_path: Optional[Path] = None):
+        self.router = router or LLMRouter()
+        self._config = self._load_chain_config(config_path)
+        self._session_id = str(uuid.uuid4())
+
+    def _load_chain_config(self, config_path: Optional[Path] = None) -> dict:
+        """Load chain_orchestration config from llm_config.yaml."""
+        cfg = getattr(self.router, "_config", {})
+        return cfg.get("chain_orchestration", {})
+
+    def _get_function_config(self, function: str, mode: str) -> dict:
+        """Resolve per-function chain config with defaults."""
+        mode_cfg = self._config.get(mode, {})
+        per_fn = mode_cfg.get("per_function", {}).get(function, {})
+
+        defaults = {
+            "cost_cap_usd": self._config.get("cost_cap_usd", DEFAULT_COST_CAP_USD),
+            "token_cap": self._config.get("token_cap", DEFAULT_TOKEN_CAP),
+            "timeout_seconds": self._config.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS),
+        }
+
+        if mode == "cot":
+            defaults.update({
+                "enabled": mode_cfg.get("enabled", True),
+                "max_rounds": mode_cfg.get("max_rounds", 3),
+                "self_consistency_runs": mode_cfg.get("self_consistency_runs", 1),
+                "reasoner_model": mode_cfg.get("reasoner_model", "qwen3-local"),
+                "critic_model": mode_cfg.get("critic_model", "claude-sonnet"),
+                "synthesizer_model": mode_cfg.get("synthesizer_model", "claude-sonnet"),
+                "excluded_functions": mode_cfg.get("excluded_functions", []),
+            })
+        elif mode == "cod":
+            defaults.update({
+                "enabled": mode_cfg.get("enabled", True),
+                "num_debaters": mode_cfg.get("num_debaters", 3),
+                "debate_rounds": mode_cfg.get("debate_rounds", 2),
+                "judge_model": mode_cfg.get("judge_model", "claude-sonnet"),
+                "debater_models": mode_cfg.get("debater_models", ["qwen3-local", "claude-sonnet", "openai-gpt4o"]),
+                "excluded_functions": mode_cfg.get("excluded_functions", []),
+            })
+
+        # Per-function overrides take highest priority
+        result = copy.deepcopy(defaults)
+        result.update({k: v for k, v in per_fn.items() if v is not None})
+        return result
+
+    def _is_excluded(self, function: str, mode: str) -> bool:
+        """Check if function is in the exclusion list for this mode."""
+        mode_cfg = self._config.get(mode, {})
+        excluded = mode_cfg.get("excluded_functions", [])
+        return function in excluded
+
+    def _compute_cost(self, model_id: str, input_tokens: int, output_tokens: int) -> float:
+        """Compute USD cost for a model invocation."""
+        pricing = self.router.get_model_pricing(model_id)
+        if not pricing:
+            return 0.0
+        inp_rate = pricing.get("input_per_1k", 0.0)
+        out_rate = pricing.get("output_per_1k", 0.0)
+        return (input_tokens / 1000.0) * inp_rate + (output_tokens / 1000.0) * out_rate
+
+    def _invoke_model(
+        self,
+        model_name: str,
+        request: LLMRequest,
+        function: str,
+        timeout: float,
+    ) -> Tuple[LLMResponse, float]:
+        """Invoke a specific model via the router, with timeout.
+
+        Returns (response, elapsed_seconds).
+        """
+        start = time.time()
+        response = self.router._invoke_model_direct(model_name, request)
+        elapsed = time.time() - start
+        if elapsed > timeout:
+            raise TimeoutError(f"Model {model_name} exceeded {timeout}s timeout")
+        if response is None:
+            raise RuntimeError(f"Model {model_name} returned None")
+        return response, elapsed
+
+    def _build_request(
+        self,
+        original: LLMRequest,
+        system_prompt: str,
+        user_prompt: str,
+    ) -> LLMRequest:
+        """Build a new LLMRequest from original with updated prompts."""
+        req = copy.deepcopy(original)
+        req.system_prompt = system_prompt
+        # Replace user message content
+        if req.messages and isinstance(req.messages[0], dict):
+            req.messages[0]["content"] = user_prompt
+        else:
+            req.messages = [{"role": "user", "content": user_prompt}]
+        return req
+
+    def _check_budget(
+        self,
+        spent_cost: float,
+        spent_tokens: int,
+        cfg: dict,
+    ) -> None:
+        """Abort chain if cost or token cap exceeded."""
+        if spent_cost >= cfg["cost_cap_usd"]:
+            raise BudgetExceededError(
+                f"Cost cap exceeded: ${spent_cost:.4f} >= ${cfg['cost_cap_usd']:.2f}"
+            )
+        if spent_tokens >= cfg["token_cap"]:
+            raise BudgetExceededError(
+                f"Token cap exceeded: {spent_tokens} >= {cfg['token_cap']}"
+            )
+
+    def _record_canvas_decision(
+        self,
+        decision_type: str,
+        decision: str,
+        rationale: str,
+        model_used: str,
+        confidence: float,
+        alternatives: Optional[List[Any]] = None,
+    ) -> None:
+        """Best-effort record to canvas_ai_decisions and audit_trail."""
+        try:
+            from tools.canvas.ai_trace_mixin import record_canvas_decision
+
+            record_canvas_decision(
+                canvas_type="llm",
+                decision_type=decision_type,
+                decision=decision[:4000],
+                rationale=rationale[:4000],
+                model_used=model_used,
+                confidence=confidence,
+                alternatives=alternatives or [],
+                actor="chain_orchestrator",
+            )
+        except Exception as exc:
+            logger.debug("Canvas decision recording failed (non-blocking): %s", exc)
+
+    def _write_chain_telemetry(self, result: ChainResult, function: str) -> None:
+        """Write per-round detail rows to llm_chain_telemetry table."""
+        try:
+            conn = get_connection()
+            for rnd in result.rounds:
+                conn.execute(
+                    """
+                    INSERT INTO llm_chain_telemetry
+                        (session_id, function, chain_mode, models_used, rounds,
+                         input_tokens, output_tokens, cost_usd, duration_ms,
+                         final_model_id, stop_reason, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        result.trace_id,
+                        function,
+                        result.chain_mode,
+                        json.dumps(result.models_used),
+                        json.dumps(rnd),
+                        rnd.get("input_tokens", 0),
+                        rnd.get("output_tokens", 0),
+                        rnd.get("cost_usd", 0.0),
+                        rnd.get("duration_ms", 0),
+                        rnd.get("model_id", ""),
+                        result.stop_reason,
+                        datetime.now(timezone.utc).isoformat(),
+                    ),
+                )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.debug("Chain telemetry write failed (non-blocking): %s", exc)
+
+    def invoke_chain_of_thought(
+        self,
+        function: str,
+        request: LLMRequest,
+    ) -> ChainResult:
+        """Run Chain of Thought: reason → critic → synthesize.
+
+        Args:
+            function: ICDEV™ function name.
+            request: Original LLM request.
+
+        Returns:
+            ChainResult with final synthesized response.
+        """
+        cfg = self._get_function_config(function, "cot")
+        trace_id = self._session_id
+        start_time = time.time()
+
+        if not cfg["enabled"]:
+            raise RuntimeError("Chain of Thought is disabled in config")
+
+        if self._is_excluded(function, "cot"):
+            raise RuntimeError(f"Function '{function}' is excluded from CoT")
+
+        # Self-consistency: run CoT N times in parallel
+        runs = cfg.get("self_consistency_runs", 1)
+        if runs > 1:
+            return self._cot_self_consistency(function, request, cfg, trace_id, start_time)
+
+        return self._cot_single(function, request, cfg, trace_id, start_time)
+
+    def _cot_single(
+        self,
+        function: str,
+        request: LLMRequest,
+        cfg: dict,
+        trace_id: str,
+        start_time: float,
+    ) -> ChainResult:
+        """Run a single CoT chain (reason → critic → synthesize)."""
+        rounds: List[Dict[str, Any]] = []
+        models_used: set = set()
+        total_cost = 0.0
+        total_tokens = 0
+        max_rounds = cfg["max_rounds"]
+        timeout = cfg["timeout_seconds"]
+        deadline = time.time() + timeout
+
+        user_prompt = ""
+        if request.messages and isinstance(request.messages[0], dict):
+            user_prompt = str(request.messages[0].get("content", ""))
+
+        reasoning = ""
+        final_content = ""
+        stop_reason = "completed"
+
+        for round_num in range(1, max_rounds + 1):
+            if time.time() > deadline:
+                stop_reason = "timeout"
+                break
+
+            self._check_budget(total_cost, total_tokens, cfg)
+
+            # ---- REASONER ----
+            sys_prompt, usr_prompt = ChainPrompts.reasoner(
+                user_prompt,
+                system_prompt=request.system_prompt or "",
+                output_schema=request.output_schema,
+                tools=request.tools,
+            )
+            reasoner_req = self._build_request(request, sys_prompt, usr_prompt)
+
+            try:
+                resp, elapsed = self._invoke_model(
+                    cfg["reasoner_model"], reasoner_req, function, deadline - time.time()
+                )
+            except Exception as exc:
+                logger.warning("CoT reasoner failed: %s", exc)
+                stop_reason = f"reasoner_error: {exc}"
+                break
+
+            reasoning = resp.content or ""
+            cost = self._compute_cost(resp.model_id or cfg["reasoner_model"], resp.input_tokens, resp.output_tokens)
+            total_cost += cost
+            total_tokens += resp.input_tokens + resp.output_tokens
+            models_used.add(resp.model_id or cfg["reasoner_model"])
+
+            rounds.append({
+                "round": round_num,
+                "step": "reason",
+                "model_id": resp.model_id or cfg["reasoner_model"],
+                "input_tokens": resp.input_tokens,
+                "output_tokens": resp.output_tokens,
+                "cost_usd": round(cost, 6),
+                "duration_ms": int(elapsed * 1000),
+            })
+
+            self._record_canvas_decision(
+                decision_type="chain_of_thought",
+                decision=f"Round {round_num} reasoning",
+                rationale=reasoning[:2000],
+                model_used=resp.model_id or cfg["reasoner_model"],
+                confidence=0.0,
+            )
+
+            # ---- CRITIC (skip on final round) ----
+            if round_num < max_rounds:
+                if time.time() > deadline:
+                    stop_reason = "timeout"
+                    break
+                self._check_budget(total_cost, total_tokens, cfg)
+
+                sys_prompt, usr_prompt = ChainPrompts.critic(
+                    user_prompt,
+                    reasoning,
+                    system_prompt=request.system_prompt or "",
+                    output_schema=request.output_schema,
+                )
+                critic_req = self._build_request(request, sys_prompt, usr_prompt)
+
+                try:
+                    resp, elapsed = self._invoke_model(
+                        cfg["critic_model"], critic_req, function, deadline - time.time()
+                    )
+                except Exception as exc:
+                    logger.warning("CoT critic failed: %s", exc)
+                    stop_reason = f"critic_error: {exc}"
+                    break
+
+                critique = resp.content or ""
+                cost = self._compute_cost(resp.model_id or cfg["critic_model"], resp.input_tokens, resp.output_tokens)
+                total_cost += cost
+                total_tokens += resp.input_tokens + resp.output_tokens
+                models_used.add(resp.model_id or cfg["critic_model"])
+
+                rounds.append({
+                    "round": round_num,
+                    "step": "critic",
+                    "model_id": resp.model_id or cfg["critic_model"],
+                    "input_tokens": resp.input_tokens,
+                    "output_tokens": resp.output_tokens,
+                    "cost_usd": round(cost, 6),
+                    "duration_ms": int(elapsed * 1000),
+                })
+
+                # Update reasoning for next round with critique incorporated
+                reasoning = f"{reasoning}\n\n[CRITIQUE APPLIED]\n{critique}"
+            else:
+                # Final round: synthesize
+                if time.time() > deadline:
+                    stop_reason = "timeout"
+                    break
+                self._check_budget(total_cost, total_tokens, cfg)
+
+                sys_prompt, usr_prompt = ChainPrompts.synthesizer(
+                    user_prompt,
+                    reasoning,
+                    "",  # No separate critique on final round
+                    system_prompt=request.system_prompt or "",
+                    output_schema=request.output_schema,
+                )
+                synth_req = self._build_request(request, sys_prompt, usr_prompt)
+
+                try:
+                    resp, elapsed = self._invoke_model(
+                        cfg["synthesizer_model"], synth_req, function, deadline - time.time()
+                    )
+                except Exception as exc:
+                    logger.warning("CoT synthesizer failed: %s", exc)
+                    stop_reason = f"synthesizer_error: {exc}"
+                    break
+
+                final_content = resp.content or ""
+                cost = self._compute_cost(resp.model_id or cfg["synthesizer_model"], resp.input_tokens, resp.output_tokens)
+                total_cost += cost
+                total_tokens += resp.input_tokens + resp.output_tokens
+                models_used.add(resp.model_id or cfg["synthesizer_model"])
+
+                rounds.append({
+                    "round": round_num,
+                    "step": "synthesize",
+                    "model_id": resp.model_id or cfg["synthesizer_model"],
+                    "input_tokens": resp.input_tokens,
+                    "output_tokens": resp.output_tokens,
+                    "cost_usd": round(cost, 6),
+                    "duration_ms": int(elapsed * 1000),
+                })
+
+        total_duration_ms = int((time.time() - start_time) * 1000)
+
+        result = ChainResult(
+            content=final_content or reasoning,
+            chain_mode="cot",
+            models_used=sorted(models_used),
+            rounds=rounds,
+            total_input_tokens=sum(r["input_tokens"] for r in rounds),
+            total_output_tokens=sum(r["output_tokens"] for r in rounds),
+            total_cost_usd=round(total_cost, 6),
+            total_duration_ms=total_duration_ms,
+            stop_reason=stop_reason,
+            trace_id=trace_id,
+            confidence=0.0,
+        )
+        self._write_chain_telemetry(result, function)
+        return result
+
+    def _cot_self_consistency(
+        self,
+        function: str,
+        request: LLMRequest,
+        cfg: dict,
+        trace_id: str,
+        start_time: float,
+    ) -> ChainResult:
+        """Run CoT multiple times in parallel and take majority vote."""
+        runs = cfg.get("self_consistency_runs", 1)
+        # Temporarily disable self-consistency to avoid infinite recursion
+        single_cfg = copy.deepcopy(cfg)
+        single_cfg["self_consistency_runs"] = 1
+
+        answers: List[str] = []
+        all_rounds: List[Dict[str, Any]] = []
+        models_used: set = set()
+        total_cost = 0.0
+        total_tokens = 0
+
+        with ThreadPoolExecutor(max_workers=min(runs, 5)) as executor:
+            futures = {
+                executor.submit(
+                    self._cot_single, function, request, single_cfg, f"{trace_id}-{i}", start_time
+                ): i
+                for i in range(runs)
+            }
+            for future in as_completed(futures):
+                i = futures[future]
+                try:
+                    res = future.result(timeout=cfg["timeout_seconds"])
+                    answers.append(res.content)
+                    all_rounds.extend([{**r, "run": i} for r in res.rounds])
+                    models_used.update(res.models_used)
+                    total_cost += res.total_cost_usd
+                    total_tokens += res.total_input_tokens + res.total_output_tokens
+                except Exception as exc:
+                    logger.warning("CoT self-consistency run %d failed: %s", i, exc)
+
+        if not answers:
+            raise RuntimeError("All self-consistency runs failed")
+
+        # Majority vote: use synthesizer to pick the best answer
+        sys_prompt, usr_prompt = ChainPrompts.self_consistency_voter(
+            answers,
+            system_prompt=request.system_prompt or "",
+        )
+        vote_req = self._build_request(request, sys_prompt, usr_prompt)
+
+        try:
+            vote_resp, _ = self._invoke_model(
+                cfg["synthesizer_model"], vote_req, function, cfg["timeout_seconds"]
+            )
+            final_content = vote_resp.content or answers[0]
+            cost = self._compute_cost(
+                vote_resp.model_id or cfg["synthesizer_model"],
+                vote_resp.input_tokens,
+                vote_resp.output_tokens,
+            )
+            total_cost += cost
+            total_tokens += vote_resp.input_tokens + vote_resp.output_tokens
+            models_used.add(vote_resp.model_id or cfg["synthesizer_model"])
+            all_rounds.append({
+                "step": "majority_vote",
+                "model_id": vote_resp.model_id or cfg["synthesizer_model"],
+                "input_tokens": vote_resp.input_tokens,
+                "output_tokens": vote_resp.output_tokens,
+                "cost_usd": round(cost, 6),
+            })
+        except Exception as exc:
+            logger.warning("Majority vote failed, using first answer: %s", exc)
+            final_content = answers[0]
+
+        total_duration_ms = int((time.time() - start_time) * 1000)
+
+        result = ChainResult(
+            content=final_content,
+            chain_mode="cot_self_consistency",
+            models_used=sorted(models_used),
+            rounds=all_rounds,
+            total_input_tokens=sum(r.get("input_tokens", 0) for r in all_rounds),
+            total_output_tokens=sum(r.get("output_tokens", 0) for r in all_rounds),
+            total_cost_usd=round(total_cost, 6),
+            total_duration_ms=total_duration_ms,
+            stop_reason="completed",
+            trace_id=trace_id,
+            confidence=0.0,
+        )
+        self._write_chain_telemetry(result, function)
+        return result
+
+    def invoke_chain_of_debate(
+        self,
+        function: str,
+        request: LLMRequest,
+    ) -> ChainResult:
+        """Run Chain of Debate: parallel debate turns → judge synthesis.
+
+        Args:
+            function: ICDEV™ function name.
+            request: Original LLM request.
+
+        Returns:
+            ChainResult with final judged response.
+        """
+        cfg = self._get_function_config(function, "cod")
+        trace_id = self._session_id
+        start_time = time.time()
+
+        if not cfg["enabled"]:
+            raise RuntimeError("Chain of Debate is disabled in config")
+
+        if self._is_excluded(function, "cod"):
+            raise RuntimeError(f"Function '{function}' is excluded from CoD")
+
+        num_debaters = cfg["num_debaters"]
+        debate_rounds = cfg["debate_rounds"]
+        debater_models = cfg["debater_models"]
+        judge_model = cfg["judge_model"]
+        timeout = cfg["timeout_seconds"]
+        deadline = time.time() + timeout
+
+        user_prompt = ""
+        if request.messages and isinstance(request.messages[0], dict):
+            user_prompt = str(request.messages[0].get("content", ""))
+
+        rounds: List[Dict[str, Any]] = []
+        models_used: set = set()
+        total_cost = 0.0
+        total_tokens = 0
+
+        # Generate diverse positions for debaters
+        positions = self._generate_positions(user_prompt, num_debaters)
+
+        # Debate rounds
+        debate_history: List[Dict[str, Any]] = []
+        for debate_round in range(1, debate_rounds + 1):
+            if time.time() > deadline:
+                break
+            self._check_budget(total_cost, total_tokens, cfg)
+
+            round_args: List[Dict[str, Any]] = []
+
+            with ThreadPoolExecutor(max_workers=num_debaters) as executor:
+                futures = {}
+                for i in range(num_debaters):
+                    model_name = debater_models[i % len(debater_models)]
+                    prior = [a["argument"] for a in debate_history if a["debater"] != i + 1]
+                    sys_prompt, usr_prompt = ChainPrompts.debater(
+                        user_prompt,
+                        debater_number=i + 1,
+                        position=positions[i],
+                        prior_arguments=prior if debate_round > 1 else None,
+                        system_prompt=request.system_prompt or "",
+                        output_schema=request.output_schema,
+                    )
+                    debater_req = self._build_request(request, sys_prompt, usr_prompt)
+                    fut = executor.submit(
+                        self._invoke_model, model_name, debater_req, function, deadline - time.time()
+                    )
+                    futures[fut] = i
+
+                for future in as_completed(futures):
+                    i = futures[future]
+                    model_name = debater_models[i % len(debater_models)]
+                    try:
+                        resp, elapsed = future.result(timeout=deadline - time.time())
+                        argument = resp.content or ""
+                        cost = self._compute_cost(resp.model_id or model_name, resp.input_tokens, resp.output_tokens)
+                        total_cost += cost
+                        total_tokens += resp.input_tokens + resp.output_tokens
+                        models_used.add(resp.model_id or model_name)
+
+                        debate_history.append({
+                            "round": debate_round,
+                            "debater": i + 1,
+                            "position": positions[i],
+                            "argument": argument,
+                            "model_id": resp.model_id or model_name,
+                        })
+                        round_args.append({
+                            "debater": i + 1,
+                            "position": positions[i],
+                            "argument": argument,
+                        })
+                        rounds.append({
+                            "round": debate_round,
+                            "step": f"debater_{i + 1}",
+                            "model_id": resp.model_id or model_name,
+                            "input_tokens": resp.input_tokens,
+                            "output_tokens": resp.output_tokens,
+                            "cost_usd": round(cost, 6),
+                            "duration_ms": int(elapsed * 1000),
+                        })
+                    except Exception as exc:
+                        logger.warning("CoD debater %d failed: %s", i + 1, exc)
+
+            self._record_canvas_decision(
+                decision_type="chain_of_debate",
+                decision=f"Debate round {debate_round}",
+                rationale=json.dumps(round_args)[:2000],
+                model_used=",".join(sorted(models_used)),
+                confidence=0.0,
+                alternatives=[a["argument"][:500] for a in round_args],
+            )
+
+        # ---- JUDGE ----
+        if time.time() > deadline:
+            stop_reason = "timeout"
+            final_content = debate_history[-1]["argument"] if debate_history else ""
+        else:
+            self._check_budget(total_cost, total_tokens, cfg)
+            args_for_judge = [
+                {
+                    "debater": d["debater"],
+                    "position": d["position"],
+                    "argument": d["argument"],
+                }
+                for d in debate_history
+            ]
+            sys_prompt, usr_prompt = ChainPrompts.judge(
+                user_prompt,
+                args_for_judge,
+                system_prompt=request.system_prompt or "",
+                output_schema=request.output_schema,
+            )
+            judge_req = self._build_request(request, sys_prompt, usr_prompt)
+
+            try:
+                resp, elapsed = self._invoke_model(
+                    judge_model, judge_req, function, deadline - time.time()
+                )
+                final_content = resp.content or ""
+                cost = self._compute_cost(resp.model_id or judge_model, resp.input_tokens, resp.output_tokens)
+                total_cost += cost
+                total_tokens += resp.input_tokens + resp.output_tokens
+                models_used.add(resp.model_id or judge_model)
+
+                rounds.append({
+                    "step": "judge",
+                    "model_id": resp.model_id or judge_model,
+                    "input_tokens": resp.input_tokens,
+                    "output_tokens": resp.output_tokens,
+                    "cost_usd": round(cost, 6),
+                    "duration_ms": int(elapsed * 1000),
+                })
+                stop_reason = "completed"
+
+                # Extract confidence from judge response
+                confidence = self._extract_confidence(final_content)
+            except Exception as exc:
+                logger.warning("CoD judge failed: %s", exc)
+                final_content = debate_history[-1]["argument"] if debate_history else ""
+                stop_reason = f"judge_error: {exc}"
+                confidence = 0.0
+
+        total_duration_ms = int((time.time() - start_time) * 1000)
+
+        result = ChainResult(
+            content=final_content,
+            chain_mode="cod",
+            models_used=sorted(models_used),
+            rounds=rounds,
+            total_input_tokens=sum(r.get("input_tokens", 0) for r in rounds),
+            total_output_tokens=sum(r.get("output_tokens", 0) for r in rounds),
+            total_cost_usd=round(total_cost, 6),
+            total_duration_ms=total_duration_ms,
+            stop_reason=stop_reason,
+            trace_id=trace_id,
+            confidence=confidence if "confidence" in dir() else 0.0,
+        )
+        self._write_chain_telemetry(result, function)
+        return result
+
+    def _generate_positions(self, user_prompt: str, num_debaters: int) -> List[str]:
+        """Generate diverse positions for debaters.
+
+        For simplicity, uses heuristic positions. In production, this could
+        use the LLM to generate positions.
+        """
+        defaults = [
+            "Strongly in favor",
+            "Moderately in favor with caveats",
+            "Neutral / balanced view",
+            "Moderately against with reservations",
+            "Strongly against",
+        ]
+        return defaults[:num_debaters]
+
+    @staticmethod
+    def _extract_confidence(text: str) -> float:
+        """Extract a confidence score 0.0–1.0 from judge response text."""
+        import re
+
+        # Look for patterns like "confidence: 0.85" or "confidence score: 0.85"
+        patterns = [
+            r"confidence[:\s]+([0-9]*\.?[0-9]+)",
+            r"confidence score[:\s]+([0-9]*\.?[0-9]+)",
+            r"([0-9]*\.?[0-9]+)\s*\/\s*1\.0",
+            r"([0-9]*\.?[0-9]+)\s*%",
+        ]
+        for pat in patterns:
+            m = re.search(pat, text, re.IGNORECASE)
+            if m:
+                val = float(m.group(1))
+                if val > 1.0 and val <= 100.0:
+                    val = val / 100.0
+                return min(max(val, 0.0), 1.0)
+        return 0.0
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Chain of Thought / Chain of Debate CLI")
+    parser.add_argument("--cot", action="store_true", help="Run Chain of Thought")
+    parser.add_argument("--cod", action="store_true", help="Run Chain of Debate")
+    parser.add_argument("--self-consistency", type=int, default=1, help="Self-consistency runs for CoT")
+    parser.add_argument("--function", type=str, required=True, help="ICDEV function name")
+    parser.add_argument("--prompt", type=str, required=True, help="User prompt")
+    parser.add_argument("--system-prompt", type=str, default="", help="System prompt")
+    parser.add_argument("--json", action="store_true", help="Output JSON")
+    parser.add_argument("--stats", action="store_true", help="Show chain telemetry stats")
+    parser.add_argument("--show-config", action="store_true", help="Show chain config")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = _parse_args()
+
+    if args.show_config:
+        router = LLMRouter()
+        cfg = router._config.get("chain_orchestration", {})
+        print(json.dumps(cfg, indent=2))
+        return
+
+    if args.stats:
+        conn = get_connection()
+        rows = conn.execute(
+            """
+            SELECT chain_mode, COUNT(*) as count,
+                   AVG(cost_usd) as avg_cost,
+                   AVG(duration_ms) as avg_duration
+            FROM llm_chain_telemetry
+            GROUP BY chain_mode
+            """
+        ).fetchall()
+        conn.close()
+        result = [
+            {
+                "chain_mode": r[0],
+                "count": r[1],
+                "avg_cost_usd": round(r[2] or 0, 6),
+                "avg_duration_ms": round(r[3] or 0, 2),
+            }
+            for r in rows
+        ]
+        print(json.dumps(result, indent=2))
+        return
+
+    orchestrator = ChainOrchestrator()
+    request = LLMRequest(
+        messages=[{"role": "user", "content": args.prompt}],
+        system_prompt=args.system_prompt,
+    )
+
+    try:
+        if args.cod:
+            result = orchestrator.invoke_chain_of_debate(args.function, request)
+        else:
+            result = orchestrator.invoke_chain_of_thought(args.function, request)
+
+        if args.json:
+            print(json.dumps({
+                "content": result.content,
+                "chain_mode": result.chain_mode,
+                "models_used": result.models_used,
+                "total_cost_usd": result.total_cost_usd,
+                "total_input_tokens": result.total_input_tokens,
+                "total_output_tokens": result.total_output_tokens,
+                "total_duration_ms": result.total_duration_ms,
+                "stop_reason": result.stop_reason,
+                "trace_id": result.trace_id,
+                "confidence": result.confidence,
+                "rounds": result.rounds,
+            }, indent=2))
+        else:
+            print(result.content)
+    except Exception as exc:
+        if args.json:
+            print(json.dumps({"error": str(exc), "trace_id": orchestrator._session_id}))
+        else:
+            print(f"Error: {exc}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

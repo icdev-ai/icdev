@@ -416,6 +416,8 @@ def create_network_blueprint():
             "network/canvas.html",
             topology_id=topo_id,
             topology_name=topo["name"],
+            classification=topo.get("classification", "public"),
+            design=topo,
             topo_projects=topo_projects,
             all_projects=all_projects,
         )

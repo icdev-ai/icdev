@@ -33,7 +33,8 @@ Usage::
 canvas_type values: ndc, sdc, pdc, bdc, ddc, odc, idc, aadc, aimc, mc
 decision_type values: compliance_finding, threat_assessment, remediation,
                       narrative, classification, anomaly, risk_score,
-                      readiness_assessment, boundary_impact, confabulation_flag
+                      readiness_assessment, boundary_impact, confabulation_flag,
+                      chain_of_thought, chain_of_debate
 """
 from __future__ import annotations
 

@@ -4,6 +4,152 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: sec
+  name: Sec Project
+  description: Auto-registered project for tasks with prefix 'sec-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: sec-
+  default_open: true
+  briefs: []
+  epics:
+  - key: agd
+    title: AGD
+    priority: medium
+  - key: cfg
+    title: CFG
+    priority: medium
+  - key: chl
+    title: CHL
+    priority: medium
+  - key: cvs
+    title: CVS
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: eco
+    title: ECO
+    priority: medium
+  - key: fan
+    title: FAN
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: tst
+    title: TST
+    priority: medium
+- key: onto
+  name: Onto Project
+  description: Auto-registered project for tasks with prefix 'onto-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: onto-
+  default_open: true
+  briefs: []
+  epics:
+  - key: agd
+    title: AGD
+    priority: medium
+  - key: cfg
+    title: CFG
+    priority: medium
+  - key: cvs
+    title: CVS
+    priority: medium
+  - key: dom
+    title: DOM
+    priority: medium
+  - key: eco
+    title: ECO
+    priority: medium
+  - key: fan
+    title: FAN
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: tst
+    title: TST
+    priority: medium
+- key: cot
+  name: Cot Project
+  description: Auto-registered project for tasks with prefix 'cot-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: cot-
+  default_open: true
+  briefs: []
+  epics:
+  - key: acad
+    title: ACAD
+    priority: medium
+  - key: anvil
+    title: ANVIL
+    priority: medium
+  - key: canvas
+    title: CANVAS
+    priority: medium
+  - key: eco
+    title: ECO
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: forge
+    title: FORGE
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: reg
+    title: REG
+    priority: medium
+  - key: rt
+    title: RT
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wf
+    title: WF
+    priority: medium
+- key: cache
+  name: Cache Project
+  description: Auto-registered project for tasks with prefix 'cache-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: cache-
+  default_open: true
+  briefs: []
+  epics:
+  - key: anvil
+    title: ANVIL
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: forge
+    title: FORGE
+    priority: medium
+  - key: prov
+    title: PROV
+    priority: medium
+  - key: reg
+    title: REG
+    priority: medium
+  - key: rt
+    title: RT
+    priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: cam
   name: Cloud App Migration — Analytics Platform K8s→AWS + AI Modernization (Cross-Canvas)
   description: 'Cross-canvas project hub in Migration Canvas (/migration-canvas/projects):
@@ -143,6 +289,21 @@ projects:
   - key: vv
     title: V&V — companion sync + coherence + E2E smoke
     priority: high
+  - key: an
+    title: AN
+    priority: medium
+  - key: cli
+    title: CLI
+    priority: medium
+  - key: fr
+    title: FR
+    priority: medium
+  - key: mcp
+    title: MCP
+    priority: medium
+  - key: pii
+    title: PII
+    priority: medium
 - key: dds
   name: DDC Data Science — Explore, Query Sandbox, Quality Rules
   description: 'Three data-science tabs integrated into the Data Design Canvas (DDC)
@@ -278,6 +439,30 @@ projects:
   - key: sp4
     title: icdev Mirror + Registration + V&V Gate
     priority: high
+  - key: ais
+    title: AIS
+    priority: medium
+  - key: bbot
+    title: BBOT
+    priority: medium
+  - key: cve
+    title: CVE
+    priority: medium
+  - key: dw
+    title: DW
+    priority: medium
+  - key: geoint
+    title: GEOINT
+    priority: medium
+  - key: octi
+    title: OCTI
+    priority: medium
+  - key: sigint
+    title: SIGINT
+    priority: medium
+  - key: socmint
+    title: SOCMINT
+    priority: medium
 - key: add_a_cmmi
   name: Add A Cmmi Project
   description: Auto-registered project for tasks with prefix 'add-a-cmmi-'. Update
@@ -327,6 +512,33 @@ projects:
     priority: medium
   - key: vv
     title: VV
+    priority: medium
+  - key: bte
+    title: BTE
+    priority: medium
+  - key: decaudit
+    title: DECAUDIT
+    priority: medium
+  - key: defi
+    title: DEFI
+    priority: medium
+  - key: factor
+    title: FACTOR
+    priority: medium
+  - key: intltick
+    title: INTLTICK
+    priority: medium
+  - key: llmfac
+    title: LLMFAC
+    priority: medium
+  - key: magent
+    title: MAGENT
+    priority: medium
+  - key: newssig
+    title: NEWSSIG
+    priority: medium
+  - key: qfix
+    title: QFIX
     priority: medium
 - key: aisg
   name: AI Skills Gap — Zero-to-AI Enablement Platform
@@ -495,6 +707,9 @@ projects:
   - key: socmint
     title: SOCMINT
     priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
 - key: sgx
   name: Sgx Project
   description: Auto-registered project for tasks with prefix 'sgx-'. Update name and
@@ -565,6 +780,24 @@ projects:
   - key: gameday
     title: GameDay — Model Governance inject + ribbon + scoring tools
     priority: high
+  - key: dedup
+    title: DEDUP
+    priority: medium
+  - key: matchfn
+    title: MATCHFN
+    priority: medium
+  - key: parallel
+    title: PARALLEL
+    priority: medium
+  - key: relgraph
+    title: RELGRAPH
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wiki
+    title: WIKI
+    priority: medium
 - key: oracle
   name: Oracle Project
   description: Auto-registered project for tasks with prefix 'oracle-'. Update name
@@ -593,6 +826,9 @@ projects:
     priority: medium
   - key: wiki
     title: WIKI
+    priority: medium
+  - key: viz
+    title: VIZ
     priority: medium
 - key: ob1
   name: OB1 Memory Enhancements
@@ -631,6 +867,12 @@ projects:
   - key: viz
     title: VIZ
     priority: medium
+  - key: autoclose
+    title: AUTOCLOSE
+    priority: medium
+  - key: multidep
+    title: MULTIDEP
+    priority: medium
 - key: kv
   name: Kanban Task Visibility
   description: 'Surface in-progress task health on the Kanban board: attempt count
@@ -654,6 +896,18 @@ projects:
     priority: medium
   - key: multidep
     title: MULTIDEP
+    priority: medium
+  - key: e1
+    title: E1
+    priority: medium
+  - key: e2
+    title: E2
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wrap
+    title: WRAP
     priority: medium
 - key: km
   name: Kanban Maintenance
@@ -686,6 +940,18 @@ projects:
     priority: medium
   - key: wrap
     title: WRAP
+    priority: medium
+  - key: cost
+    title: COST
+    priority: medium
+  - key: floor
+    title: FLOOR
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: sync
+    title: SYNC
     priority: medium
 - key: fde
   name: FathomDesk — Epic E (Light Theme + Per-Page Voice Override)
@@ -726,6 +992,12 @@ projects:
     priority: medium
   - key: sync
     title: SYNC
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: infra
+    title: INFRA
     priority: medium
 - key: fd
   name: FathomDesk — Backtest Schema + Risk Floors + Cost Optimizer
@@ -949,6 +1221,9 @@ projects:
   - key: wizard
     title: WIZARD
     priority: medium
+  - key: infra
+    title: INFRA
+    priority: medium
 - key: nmi
   name: Network Migration Inventory — 3-Path Device Ingestion
   description: Adds 3 device ingestion paths to the Network Migration Canvas — CSV/JSON
@@ -1097,6 +1372,27 @@ projects:
   - key: ux
     title: UX
     priority: medium
+  - key: bdc
+    title: BDC
+    priority: medium
+  - key: bus
+    title: BUS
+    priority: medium
+  - key: compliance
+    title: COMPLIANCE
+    priority: medium
+  - key: ddc
+    title: DDC
+    priority: medium
+  - key: e2e
+    title: E2E
+    priority: medium
+  - key: odc
+    title: ODC
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: ndc
   name: Ndc Project
   description: Auto-registered project for tasks with prefix 'ndc-'. Update name and
@@ -1146,6 +1442,9 @@ projects:
     priority: medium
   - key: vv
     title: VV
+    priority: medium
+  - key: idc
+    title: IDC
     priority: medium
 - key: cvo
   name: Canvas Orchestration
@@ -1298,6 +1597,9 @@ projects:
   - key: vv01
     title: V&V — Syntax, Coherence, Companion, Live Endpoints
     priority: critical
+  - key: p2
+    title: P2
+    priority: medium
 - key: osv
   name: OSV Scanner Integration
   description: OSV-Scanner binary wrapper, integration into health_check.py and secure.py,
@@ -1359,6 +1661,12 @@ projects:
   - key: p2
     title: P2
     priority: medium
+  - key: impl
+    title: IMPL
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: zbx
   name: Zerobox Sandbox Coverage
   description: 'OPT-58 sandbox coverage audit: classify all user-input modules in
@@ -1404,6 +1712,12 @@ projects:
   - key: p2
     title: P2
     priority: medium
+  - key: test
+    title: TEST
+    priority: medium
+  - key: guard
+    title: GUARD
+    priority: medium
 - key: hmd
   name: Memory System Hippo Decay
   description: 'Hippo memory decay for the core memory system: decay_weight column
@@ -1441,6 +1755,33 @@ projects:
     priority: medium
   - key: test
     title: TEST
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: l0
+    title: L0 — Foundation
+    priority: medium
+  - key: l1
+    title: L1 — Parsers / Ingestion
+    priority: medium
+  - key: l2
+    title: L2 — Router / Dispatch
+    priority: medium
+  - key: l3
+    title: L3 — Core Agent / Engine
+    priority: medium
+  - key: l4
+    title: L4 — Artifacts / Output
+    priority: medium
+  - key: l5
+    title: L5 — Dashboard UI
+    priority: medium
+  - key: l6
+    title: L6 — Integrations
+    priority: medium
+  - key: l7
+    title: L7 — Validation / Gate
     priority: medium
 - key: pgt
   name: PostgreSQL Textsearch
@@ -1537,6 +1878,21 @@ projects:
     priority: medium
   - key: l7
     title: L7 — Validation / Gate
+    priority: medium
+  - key: bdc
+    title: BDC
+    priority: medium
+  - key: ce
+    title: CE
+    priority: medium
+  - key: iqe
+    title: IQE
+    priority: medium
+  - key: ndc
+    title: NDC
+    priority: medium
+  - key: tfw
+    title: TFW
     priority: medium
 - key: sim-chat
   name: TFW Simulation Chat Workbench
@@ -1830,6 +2186,9 @@ projects:
   - key: viz
     title: VIZ
     priority: medium
+  - key: p2
+    title: P2
+    priority: medium
 - key: fathomdesk-7-8
   name: FathomDesk 7.8 — Greeks Deep Dive + Quick Wins
   description: 'Three OptionStrat-inspired upgrades: (1) Black-Scholes pricer + time-T
@@ -1878,6 +2237,51 @@ projects:
     priority: medium
   - key: p2
     title: P2
+    priority: medium
+  - key: betf
+    title: BETF
+    priority: medium
+  - key: cimp
+    title: CIMP
+    priority: medium
+  - key: crd
+    title: CRD
+    priority: medium
+  - key: fisc
+    title: FISC
+    priority: medium
+  - key: int
+    title: INT
+    priority: medium
+  - key: qeqt
+    title: QEQT
+    priority: medium
+  - key: subsidy
+    title: SUBSIDY
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: xar
+    title: XAR
+    priority: medium
+  - key: api
+    title: API
+    priority: medium
+  - key: hook
+    title: HOOK
+    priority: medium
+  - key: ingester
+    title: INGESTER
+    priority: medium
+  - key: install
+    title: INSTALL
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: vv
+    title: VV
     priority: medium
 - key: opts-greeks
   name: FathomDesk — Options Greeks Engine
@@ -1944,6 +2348,18 @@ projects:
     priority: medium
   - key: int
     title: INT
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: registry
+    title: REGISTRY
+    priority: medium
+  - key: version
+    title: VERSION
+    priority: medium
+  - key: vv
+    title: VV
     priority: medium
 - key: fdm-macro
   name: FathomDesk — Macro Intelligence Expansion
@@ -2055,6 +2471,36 @@ projects:
   - key: version
     title: VERSION
     priority: medium
+  - key: buyback
+    title: BUYBACK
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: lens
+    title: LENS
+    priority: medium
+  - key: pcr
+    title: PCR
+    priority: medium
+  - key: pillar
+    title: PILLAR
+    priority: medium
+  - key: scorer
+    title: SCORER
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: vix
+    title: VIX
+    priority: medium
+  - key: chat
+    title: CHAT
+    priority: medium
+  - key: meta
+    title: META
+    priority: medium
 - key: pkgbuild
   name: pip install icdev — Full Package Audit & Fix
   description: Ensure pip install icdev ships the entire ICDEV framework (all 78+
@@ -2110,6 +2556,27 @@ projects:
     priority: medium
   - key: vix
     title: VIX
+    priority: medium
+  - key: des
+    title: DES
+    priority: medium
+  - key: rgp
+    title: RGP
+    priority: medium
+  - key: ttd
+    title: TTD
+    priority: medium
+  - key: api
+    title: API
+    priority: medium
+  - key: decomp
+    title: DECOMP
+    priority: medium
+  - key: schema
+    title: SCHEMA
+    priority: medium
+  - key: studio
+    title: STUDIO
     priority: medium
 - key: fdmm
   name: FathomDesk — Machine Momentum (CTA + Buyback + VIX)
@@ -2278,6 +2745,24 @@ projects:
   - key: studio
     title: STUDIO
     priority: medium
+  - key: regfore
+    title: REGFORE
+    priority: medium
+  - key: techrad
+    title: TECHRAD
+    priority: medium
+  - key: univ
+    title: UNIV
+    priority: medium
+  - key: usage
+    title: USAGE
+    priority: medium
+  - key: voc
+    title: VOC
+    priority: medium
+  - key: winloss
+    title: WINLOSS
+    priority: medium
 - key: wfs
   name: Workflow Studio — People, Tools & Process Integration
   task_prefix: wfs-
@@ -2397,6 +2882,24 @@ projects:
   - key: winloss
     title: WINLOSS
     priority: medium
+  - key: ai
+    title: AI
+    priority: medium
+  - key: exp
+    title: EXP
+    priority: medium
+  - key: mc
+    title: MC
+    priority: medium
+  - key: orbat
+    title: ORBAT
+    priority: medium
+  - key: sig
+    title: SIG
+    priority: medium
+  - key: te
+    title: TE
+    priority: medium
 - key: pint
   name: Product Intelligence — 5 New Engines + Universal Orchestrator
   description: 'Build five new product-discovery engines and one universal orchestrator
@@ -2444,6 +2947,36 @@ projects:
   - key: univ
     title: Universal Product Intelligence Orchestrator (all 8 engines)
     priority: critical
+  - key: api
+    title: API
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: rc
+    title: RC
+    priority: medium
+  - key: ui
+    title: UI
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: core
+    title: CORE
+    priority: medium
+  - key: js
+    title: JS
+    priority: medium
+  - key: nav
+    title: NAV
+    priority: medium
 - key: wf
   name: HITL Workflow Management
   task_prefix: wf-
@@ -2635,6 +3168,69 @@ projects:
     priority: medium
   - key: ui
     title: UI
+    priority: medium
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: t2
+    title: T2
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: viz
+    title: VIZ
     priority: medium
 - key: sgc
   name: Strategos Chat � Context-Aware Intelligence Assistant
@@ -3029,6 +3625,24 @@ projects:
   - key: viz
     title: VIZ
     priority: medium
+  - key: cg
+    title: CG
+    priority: medium
+  - key: dg
+    title: DG
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: inn
+    title: INN
+    priority: medium
+  - key: inv
+    title: INV
+    priority: medium
+  - key: wp
+    title: WP
+    priority: medium
 - key: smig
   name: Server Migration Canvas
   description: '8-step server wizard at /migration-canvas/server-migration/ supporting
@@ -3110,6 +3724,30 @@ projects:
     priority: medium
   - key: inn
     title: Innovation Follow-Through — Code Quality + CLI Harmonization
+    priority: medium
+  - key: blueprint
+    title: BLUEPRINT
+    priority: medium
+  - key: csp
+    title: CSP
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: oss
+    title: OSS
+    priority: medium
+  - key: templates
+    title: TEMPLATES
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wiring
+    title: WIRING
     priority: medium
 - key: dm
   name: Data Mesh Integration — Domains, Products, Contracts, Governance, CSP Bridges
@@ -3217,6 +3855,24 @@ projects:
   - key: vv
     title: V&V — coherence + E2E + companion + docs
     priority: high
+  - key: ep1
+    title: EP1
+    priority: medium
+  - key: ep2
+    title: EP2
+    priority: medium
+  - key: ep3
+    title: EP3
+    priority: medium
+  - key: ep4
+    title: EP4
+    priority: medium
+  - key: ep5
+    title: EP5
+    priority: medium
+  - key: ep6
+    title: EP6
+    priority: medium
 - key: cs
   name: Chat-Stream Integration — Claude CLI to Multi-Stream Chat API Bridge
   description: 'Connects Claude CLI workflows (requirements intake, decomposition,
@@ -3245,6 +3901,21 @@ projects:
   - key: ep3
     title: SAFe → Kanban Promoter
     priority: critical
+  - key: ep10
+    title: EP10
+    priority: medium
+  - key: ep11
+    title: EP11
+    priority: medium
+  - key: ep7
+    title: EP7
+    priority: medium
+  - key: ep8
+    title: EP8
+    priority: medium
+  - key: ep9
+    title: EP9
+    priority: medium
 - key: gv
   name: GovLift — DoD IL4 Cloud Migration Tool
   description: 'Full-stack cloud migration platform for DoD IL4 (CUI) workloads on
@@ -3431,6 +4102,30 @@ projects:
   - key: ep11
     title: Manifest + companion sync + Playwright E2E V&V
     priority: critical
+  - key: es
+    title: ES
+    priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
+  - key: input
+    title: INPUT
+    priority: medium
+  - key: labels
+    title: LABELS
+    priority: medium
+  - key: modal
+    title: MODAL
+    priority: medium
+  - key: sidebar
+    title: SIDEBAR
+    priority: medium
+  - key: stats
+    title: STATS
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: ai-trace
   name: AI Traceability, Observability & Visibility — Canvas-Wide Gap Remediation
   description: 'Closes the AI traceability gap across all 10 design canvases (NDC/SDC/PDC/BDC/DDC/ODC/IDC/AADC/AIMC/MC).

@@ -506,6 +506,9 @@ def api_delete_all_designs():
 @qdc_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
 def api_assess_design(design_id: str):
     """Run quality assessment on a design."""
+    data = request.get_json(silent=True) or {}
+    use_cod = data.get("use_cod", False)
+    chain_mode = "cod" if use_cod else ""
     conn = _get_conn()
     try:
         row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
@@ -605,6 +608,7 @@ def api_assess_design(design_id: str):
             "result": result,
             "uqs": uqs_result,
             "sa11_mapping": sa11_mapping,
+            "chain_mode": chain_mode,
         }
     )
 

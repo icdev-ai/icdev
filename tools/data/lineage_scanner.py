@@ -67,7 +67,6 @@ def build_report(designs: dict, project_id: str) -> str:
                 lines.append(f"| *(+{len(edges)-20} more)* | | |")
 
         issues = []
-        node_ids = {n["id"] for n in nodes}
         orphans = [n for n in nodes if not any(
             e["source"] == n["id"] or e["target"] == n["id"] for e in edges
         )]

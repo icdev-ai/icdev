@@ -146,6 +146,20 @@ EDGE_TYPE_META: dict[str, dict] = {
     },
 }
 
+# ── Ontology mappings for cross-domain alignment ──────────────────────────────
+
+WAR_ONTOLOGY_MAP: dict[str, str] = {
+    "MilitaryUnit": "war:MilitaryUnit",
+    "Equipment": "war:Equipment",
+    "ConflictEvent": "war:ConflictEvent",
+    "CyberOperation": "war:CyberOperation",
+    "Vessel": "war:Vessel",
+    "Infrastructure": "war:Infrastructure",
+    "LogisticsNode": "war:LogisticsNode",
+    "BehaviorProfile": "war:BehaviorProfile",
+    "WarReadinessEvent": "war:WarReadinessEvent",
+}
+
 # ── KG graph ID for war domain ────────────────────────────────────────────────
 
 WAR_GRAPH_ID = "strategos-war-kg"
@@ -207,7 +221,10 @@ def upsert_node(
         conn = sqlite3.connect(str(_get_db_path()))
 
     nid = node_id or str(uuid.uuid4())
-    props_json = json.dumps(properties)
+    # Inject ontology_id for cross-domain alignment
+    props = dict(properties)
+    props.setdefault("ontology_id", WAR_ONTOLOGY_MAP.get(entity_type))
+    props_json = json.dumps(props)
     now = datetime.now(timezone.utc).isoformat()
 
     try:

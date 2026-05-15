@@ -220,6 +220,7 @@ def create_observability_blueprint():
             design_id=design["id"],
             design_name=design["name"],
             graph_json=design["graph_json"],
+            design=design,
             objects=OBSERVABILITY_OBJECTS,
             rules=OBSERVABILITY_COMPLIANCE_RULES,
         )
@@ -468,6 +469,9 @@ def create_observability_blueprint():
     @oc_login_required
     def oc_api_assess(design_id):
         """Run observability compliance assessment on a design."""
+        data = request.get_json(force=True, silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         conn = get_connection()
         try:
             row = conn.execute("SELECT graph_json FROM observability_designs WHERE id=?", (design_id,)).fetchone()
@@ -527,6 +531,7 @@ def create_observability_blueprint():
                 "coverage": coverage,
                 "mitre_detection": mitre,
                 "gaps": gaps,
+                "chain_mode": chain_mode,
             }
         )
 

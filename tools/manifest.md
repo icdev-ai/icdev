@@ -76,6 +76,8 @@
 - [Remote Command Gateway (Phase 28 — D133-D140)](manifest/remote-command-gateway.md)
 - [Innovation Adaptation (Phase 44 — D257-D279)](manifest/innovation-adaptation.md)
 - [Observability, Traceability & Explainable AI (Phase 46)](manifest/observability-traceability-explainable-ai.md)
+- [Ontology](manifest/ontology.md)
+- [Provenance](manifest/provenance.md)
 - [Code Intelligence (Phase 52 — D331-D337)](manifest/code-intelligence.md)
 - [AI Governance Integration (Phase 50)](manifest/ai-governance-integration.md)
 - [FedRAMP 20x KSI + OWASP ASI (Phase 53)](manifest/fedramp-20x-ksi-owasp-asi.md)
@@ -490,14 +492,31 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Pytest Plugins | tools\pytest_plugins.py | Auto-registered: tools/pytest_plugins.py | --json | JSON |
 | Compliance Checker | tools\aadc\compliance_checker.py | Auto-registered: aadc/compliance_checker.py | --json | JSON |
 | Governance Scanner | tools\aadc\governance_scanner.py | Auto-registered: aadc/governance_scanner.py | --json | JSON |
 | Deployment Checker | tools\aimc\deployment_checker.py | Auto-registered: aimc/deployment_checker.py | --json | JSON |
 | Model Scanner | tools\aimc\model_scanner.py | Auto-registered: aimc/model_scanner.py | --json | JSON |
+| Game Pack | tools\ai_game_engine\game_pack.py | Auto-registered: ai_game_engine/game_pack.py | --json | JSON |
+| Game Session | tools\ai_game_engine\game_session.py | Auto-registered: ai_game_engine/game_session.py | --json | JSON |
+| Round Runner | tools\ai_game_engine\round_runner.py | Auto-registered: ai_game_engine/round_runner.py | --json | JSON |
 | Boundary Scanner | tools\bdc\boundary_scanner.py | Auto-registered: bdc/boundary_scanner.py | --json | JSON |
 | Isa Checker | tools\bdc\isa_checker.py | Auto-registered: bdc/isa_checker.py | --json | JSON |
+| Blockchain Config | tools\blockchain\blockchain_config.py | Auto-registered: blockchain/blockchain_config.py | --json | JSON |
+| Chain Anchor | tools\blockchain\chain_anchor.py | Auto-registered: blockchain/chain_anchor.py | --json | JSON |
+| Channel Manager | tools\blockchain\channel_manager.py | Auto-registered: blockchain/channel_manager.py | --json | JSON |
+| Provenance Verifier | tools\blockchain\provenance_verifier.py | Auto-registered: blockchain/provenance_verifier.py | --json | JSON |
+| Zk Prover | tools\blockchain\zk_prover.py | Auto-registered: blockchain/zk_prover.py | --json | JSON |
+| Attestation Signer | tools\crypto\attestation_signer.py | Auto-registered: crypto/attestation_signer.py | --json | JSON |
+| Key Manager | tools\crypto\key_manager.py | Auto-registered: crypto/key_manager.py | --json | JSON |
+| Merkle Tree | tools\crypto\merkle_tree.py | Auto-registered: crypto/merkle_tree.py | --json | JSON |
 | Ansible Executor | tools\data\ansible_executor.py | Auto-registered: data/ansible_executor.py | --json | JSON |
 | Aws Config Executor | tools\data\aws_config_executor.py | Auto-registered: data/aws_config_executor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
 | Canvas Reader | tools\data\canvas_reader.py | Auto-registered: data/canvas_reader.py | --json | JSON |
 | Lineage Scanner | tools\data\lineage_scanner.py | Auto-registered: data/lineage_scanner.py | --json | JSON |
 | Migration Reporter | tools\data\migration_reporter.py | Auto-registered: data/migration_reporter.py | --json | JSON |
@@ -531,3 +550,98 @@
 | Gate Checker | tools\qdc\gate_checker.py | Auto-registered: qdc/gate_checker.py | --json | JSON |
 | Quality Scanner | tools\qdc\quality_scanner.py | Auto-registered: qdc/quality_scanner.py | --json | JSON |
 | Threat Scanner | tools\sdc\threat_scanner.py | Auto-registered: sdc/threat_scanner.py | --json | JSON |
+| Feature Flags | tools\databridge\feature_flags.py | Auto-registered: databridge/feature_flags.py | --json | JSON |
+| Localstack Provisioner | tools\data_canvas\localstack_provisioner.py | Auto-registered: data_canvas/localstack_provisioner.py | --json | JSON |
+| Base Agent | tools\gameday\base_agent.py | Auto-registered: gameday/base_agent.py | --json | JSON |
+| Game Master | tools\gameday\game_master.py | Auto-registered: gameday/game_master.py | --json | JSON |
+| Judge Agent | tools\gameday\judge_agent.py | Auto-registered: gameday/judge_agent.py | --json | JSON |
+| Leaderboard Engine | tools\gameday\leaderboard_engine.py | Auto-registered: gameday/leaderboard_engine.py | --json | JSON |
+| Ops Bridge | tools\gameday\ops_bridge.py | Auto-registered: gameday/ops_bridge.py | --json | JSON |
+| Round Manager | tools\gameday\round_manager.py | Auto-registered: gameday/round_manager.py | --json | JSON |
+| Scenario Enhancer | tools\gameday\scenario_enhancer.py | Auto-registered: gameday/scenario_enhancer.py | --json | JSON |
+| Team Runner | tools\gameday\team_runner.py | Auto-registered: gameday/team_runner.py | --json | JSON |
+| Auto Wave Planner | tools\govlift\auto_wave_planner.py | Auto-registered: govlift/auto_wave_planner.py | --json | JSON |
+| Map Assessor | tools\govlift\map_assessor.py | Auto-registered: govlift/map_assessor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Scenario Registry | tools\ai_game_engine\scenario_registry.py | Auto-registered: ai_game_engine/scenario_registry.py | --json | JSON |
+| Ontology Bridge | tools\canvas\ontology_bridge.py | Auto-registered: canvas/ontology_bridge.py | --json | JSON |
+| Performance Benchmark | tools\govlift\performance_benchmark.py | Auto-registered: govlift/performance_benchmark.py | --json | JSON |
+| Rollback Engine | tools\govlift\rollback_engine.py | Auto-registered: govlift/rollback_engine.py | --json | JSON |
+| Dr Failover | tools\infra\dr_failover.py | Auto-registered: infra/dr_failover.py | --json | JSON |
+| Dr Generator | tools\infra\dr_generator.py | Auto-registered: infra/dr_generator.py | --json | JSON |
+| Seed Cot Cod | tools\kanban\seed_cot_cod.py | Auto-registered: kanban/seed_cot_cod.py | --json | JSON |
+| Seed Llm Cache | tools\kanban\seed_llm_cache.py | Auto-registered: kanban/seed_llm_cache.py | --json | JSON |
+| Seed Ontology | tools\kanban\seed_ontology.py | Auto-registered: kanban/seed_ontology.py | --json | JSON |
+| Seed Security Framework | tools\kanban\seed_security_framework.py | Auto-registered: kanban/seed_security_framework.py | --json | JSON |
+| Seed Showcase | tools\kanban\seed_showcase.py | Auto-registered: kanban/seed_showcase.py | --json | JSON |
+| Response Cache | tools\llm\response_cache.py | Auto-registered: llm/response_cache.py | --json | JSON |
+| Response Cache Test | tools\llm\response_cache_test.py | Auto-registered: llm/response_cache_test.py | --json | JSON |
+| Sla Enforcer | tools\migration_intelligence\sla_enforcer.py | Auto-registered: migration_intelligence/sla_enforcer.py | --json | JSON |
+| Agentic Netops | tools\ndc\agentic_netops.py | Auto-registered: ndc/agentic_netops.py | --json | JSON |
+| Dod Lab Api | tools\ndc\dod_lab_api.py | Auto-registered: ndc/dod_lab_api.py | --json | JSON |
+| Dod Lab Demo Runner | tools\ndc\dod_lab_demo_runner.py | Auto-registered: ndc/dod_lab_demo_runner.py | --json | JSON |
+| Dod Lab Synthetic Data | tools\ndc\dod_lab_synthetic_data.py | Auto-registered: ndc/dod_lab_synthetic_data.py | --json | JSON |
+| Gns3 Backup | tools\ndc\gns3_backup.py | Auto-registered: ndc/gns3_backup.py | --json | JSON |
+| Gns3 Dod Topology Builder | tools\ndc\gns3_dod_topology_builder.py | Auto-registered: ndc/gns3_dod_topology_builder.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ai Trust | tools\mission_canvas\ai_trust.py | Auto-registered: mission_canvas/ai_trust.py | --json | JSON |
+| Cicd Bridge | tools\mission_canvas\cicd_bridge.py | Auto-registered: mission_canvas/cicd_bridge.py | --json | JSON |
+| Security Posture | tools\mission_canvas\security_posture.py | Auto-registered: mission_canvas/security_posture.py | --json | JSON |
+| Gns3 Traffic Engine | tools\ndc\gns3_traffic_engine.py | Auto-registered: ndc/gns3_traffic_engine.py | --json | JSON |
+| Ztp Dod Config Generator | tools\ndc\ztp_dod_config_generator.py | Auto-registered: ndc/ztp_dod_config_generator.py | --json | JSON |
+| Enclave Scanner | tools\network\enclave_scanner.py | Auto-registered: network/enclave_scanner.py | --json | JSON |
+| Nipr Constraint Validator | tools\network\nipr_constraint_validator.py | Auto-registered: network/nipr_constraint_validator.py | --json | JSON |
+| Schema Extractor | tools\ontology\schema_extractor.py | Auto-registered: ontology/schema_extractor.py | --json | JSON |
+| Localstack Ecr | tools\pipeline\localstack_ecr.py | Auto-registered: pipeline/localstack_ecr.py | --json | JSON |
+| Timeline Loader | tools\project\timeline_loader.py | Auto-registered: project/timeline_loader.py | --json | JSON |
+| Backfill Registry | tools\provenance\backfill_registry.py | Auto-registered: provenance/backfill_registry.py | --json | JSON |
+| Budget Validator | tools\requirements\budget_validator.py | Auto-registered: requirements/budget_validator.py | --json | JSON |
+| Decompose Backlog | tools\scripts\decompose_backlog.py | Auto-registered: scripts/decompose_backlog.py | --json | JSON |
+| Cui Crypto | tools\security\cui_crypto.py | Auto-registered: security/cui_crypto.py | --json | JSON |
+| Gns3 Sim | tools\security_canvas\gns3_sim.py | Auto-registered: security_canvas/gns3_sim.py | --json | JSON |
+| E2E Migration Intel | tools\testing\e2e_migration_intel.py | Auto-registered: testing/e2e_migration_intel.py | --json | JSON |
+| Team Composition | tools\workforce\team_composition.py | Auto-registered: workforce/team_composition.py | --json | JSON |
+| Gns3 Sim | tools\studio\executors\gns3_sim.py | Auto-registered: executors/gns3_sim.py | --json | JSON |
+| Aadc Topology | tools\studio\sim\aadc_topology.py | Auto-registered: sim/aadc_topology.py | --json | JSON |
+| Aimc Topology | tools\studio\sim\aimc_topology.py | Auto-registered: sim/aimc_topology.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Base Topology | tools\studio\sim\base_topology.py | Auto-registered: sim/base_topology.py | --json | JSON |
+| Bdc Topology | tools\studio\sim\bdc_topology.py | Auto-registered: sim/bdc_topology.py | --json | JSON |
+| Canvas Traffic Engine | tools\studio\sim\canvas_traffic_engine.py | Auto-registered: sim/canvas_traffic_engine.py | --json | JSON |
+| Ddc Topology | tools\studio\sim\ddc_topology.py | Auto-registered: sim/ddc_topology.py | --json | JSON |
+| Idc Topology | tools\studio\sim\idc_topology.py | Auto-registered: sim/idc_topology.py | --json | JSON |
+| Mdc Topology | tools\studio\sim\mdc_topology.py | Auto-registered: sim/mdc_topology.py | --json | JSON |
+| Odc Topology | tools\studio\sim\odc_topology.py | Auto-registered: sim/odc_topology.py | --json | JSON |
+| Pdc Topology | tools\studio\sim\pdc_topology.py | Auto-registered: sim/pdc_topology.py | --json | JSON |
+| Qdc Topology | tools\studio\sim\qdc_topology.py | Auto-registered: sim/qdc_topology.py | --json | JSON |
+| Sdc Topology | tools\studio\sim\sdc_topology.py | Auto-registered: sim/sdc_topology.py | --json | JSON |
+| Sim Hub | tools\studio\sim\sim_hub.py | Auto-registered: sim/sim_hub.py | --json | JSON |
+| Training Exporter | tools\studio\sim\training_exporter.py | Auto-registered: sim/training_exporter.py | --json | JSON |
+| Studio Sim | tools\iqe\adapters\studio_sim.py | Auto-registered: adapters/studio_sim.py | --json | JSON |
+| Localstack Adapter | tools\infra_canvas\adapters\localstack_adapter.py | Auto-registered: adapters/localstack_adapter.py | --json | JSON |
+| Gameday Orchestrator | tools\genesis\reflexes\gameday_orchestrator.py | Auto-registered: reflexes/gameday_orchestrator.py | --json | JSON |
+| Sim Training Export | tools\genesis\reflexes\sim_training_export.py | Auto-registered: reflexes/sim_training_export.py | --json | JSON |
+| Aws Controltower Connector | tools\databridge\connectors\aws_controltower_connector.py | Auto-registered: connectors/aws_controltower_connector.py | --json | JSON |
+| Gns3 Connector | tools\databridge\connectors\gns3_connector.py | Auto-registered: connectors/gns3_connector.py | --json | JSON |
+| Localstack Connector | tools\databridge\connectors\localstack_connector.py | Auto-registered: connectors/localstack_connector.py | --json | JSON |
+| Servicenow Itsm Connector | tools\databridge\connectors\servicenow_itsm_connector.py | Auto-registered: connectors/servicenow_itsm_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Chain Orchestrator | tools\llm\chain_orchestrator.py | Auto-registered: llm/chain_orchestrator.py | --json | JSON |
+| Chain Prompts | tools\llm\chain_prompts.py | Auto-registered: llm/chain_prompts.py | --json | JSON |
+| Tenable Connector | tools\databridge\connectors\tenable_connector.py | Auto-registered: connectors/tenable_connector.py | --json | JSON |

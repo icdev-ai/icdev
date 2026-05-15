@@ -1303,23 +1303,27 @@ def update_finding_approval(finding_hash: str, target: dict, decision: str,
 
 
 def emit_audit(finding_hash: str, canvas: str, rule_id: str, decision: str,
-               diff: str, design_id: str, backup_path: str | None) -> None:
+               diff: str, design_id: str, backup_path: str | None,
+               cot_trace: dict | None = None) -> None:
     """Append one row to audit_trail (event_type=vulnerability_resolved)."""
     try:
         from tools.audit.audit_logger import log_event
+        details = {
+            "finding_hash": finding_hash,
+            "canvas": canvas,
+            "rule_id": rule_id,
+            "decision": decision,
+            "diff": diff,
+            "design_id": design_id,
+            "backup": backup_path,
+        }
+        if cot_trace:
+            details["cot_trace"] = cot_trace
         log_event(
             event_type="vulnerability_resolved" if decision == "remediated" else "decision_made",
             actor="auto_remediator",
             action=f"poam.auto_remediate.{decision}",
-            details=json.dumps({
-                "finding_hash": finding_hash,
-                "canvas": canvas,
-                "rule_id": rule_id,
-                "decision": decision,
-                "diff": diff,
-                "design_id": design_id,
-                "backup": backup_path,
-            }),
+            details=json.dumps(details),
             project_id="dashboard-poam",
         )
     except Exception as exc:  # pragma: no cover - audit must never break
@@ -1439,9 +1443,25 @@ def remediate_one(target: dict, dry_run: bool = False,
     if reassess_error:
         rationale += f" [reassess_error: {reassess_error}]"
 
+    # Build structured CoT trace for the remediation path
+    cot_trace = {
+        "handler": rule_id,
+        "canvas": canvas,
+        "design_id": design_id,
+        "diff": diff,
+        "verified_gone": verified_gone,
+        "reassess_error": reassess_error,
+        "reasoning": (
+            f"Selected handler {rule_id} for canvas {canvas}. "
+            f"Applied mutation: {diff}. "
+            f"Re-assessment {'confirmed fix' if verified_gone else 'found finding still present'}."
+        ),
+    }
+    rationale += f" | CoT: {json.dumps(cot_trace)}"
+
     update_finding_approval(finding_hash, target, decision, rationale,
                             conn=approval_conn)
-    emit_audit(finding_hash, canvas, rule_id, decision, diff, design_id, backup_path)
+    emit_audit(finding_hash, canvas, rule_id, decision, diff, design_id, backup_path, cot_trace=cot_trace)
 
     return {
         **base,

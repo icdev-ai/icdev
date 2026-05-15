@@ -232,6 +232,28 @@ CREATE INDEX IF NOT EXISTS idx_audit_action ON audit(action);
 CREATE INDEX IF NOT EXISTS idx_audit_created ON audit(created_at);
 
 -- ============================================================
+-- CHAIN ORCHESTRATION TELEMETRY (CoT / CoD)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS llm_chain_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    function TEXT NOT NULL,
+    chain_mode TEXT NOT NULL,
+    models_used TEXT NOT NULL DEFAULT '[]',
+    rounds TEXT NOT NULL DEFAULT '{}',
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0.0,
+    duration_ms INTEGER DEFAULT 0,
+    final_model_id TEXT,
+    stop_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_function ON llm_chain_telemetry (function);
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_created ON llm_chain_telemetry (created_at);
+
+-- ============================================================
 -- CONTINUOUS COMPLIANCE EVIDENCE CHAIN (D-CHAIN-1)
 -- Unified PDC/NDC/SDC audit trail snapshots aligned to OSCAL 1.1.2
 -- ============================================================
@@ -4140,7 +4162,10 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     content_hash TEXT,
     user_id TEXT,
     tenant_id TEXT,
-    source TEXT DEFAULT 'manual'
+    source TEXT DEFAULT 'manual',
+    decay_weight REAL DEFAULT 1.0,
+    classification TEXT DEFAULT 'CUI',
+    compartment TEXT DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
     ON memory_entries(content_hash, user_id);

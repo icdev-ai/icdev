@@ -9,7 +9,7 @@ assert isinstance(result, list), f"lookup_evidence() must return list, got {type
 assert len(result) == 3, f"ICDEV-Prod/IA-2 has 3 evidence items, got {len(result)}"
 for item in result:
     assert "type" in item, f"Each evidence item must have 'type' key, got: {item}"
-    assert "description" in item, f"Each evidence item must have 'description' key"
+    assert "description" in item, "Each evidence item must have 'description' key"
 
 # Unknown key → empty list (no raise)
 unknown = lookup_evidence("ICDEV-Unknown", "AC-3")
@@ -50,7 +50,7 @@ assert s_log == "compliant", f"Single log type → 'compliant', got '{s_log}'"
 
 r1 = collect_evidence("ICDEV-Prod", "IA-2")
 assert r1 is not None, "collect_evidence() returned None"
-assert isinstance(r1, dict), f"collect_evidence() must return dict"
+assert isinstance(r1, dict), "collect_evidence() must return dict"
 assert "status" in r1, "Result must have 'status' key"
 assert "data" in r1, "Result must have 'data' key"
 assert "error" in r1, "Result must have 'error' key"
@@ -61,7 +61,7 @@ assert r1["error"] is None, f"No error for found system, got: {r1['error']}"
 
 d1 = r1["data"]
 assert d1.get("control") == "IA-2", f"data.control should be 'IA-2', got '{d1.get('control')}'"
-assert d1.get("system") == "ICDEV-Prod", f"data.system should be 'ICDEV-Prod'"
+assert d1.get("system") == "ICDEV-Prod", "data.system should be 'ICDEV-Prod'"
 assert isinstance(d1.get("evidence"), list), "data.evidence must be a list"
 assert d1.get("evidence_count") == 3, f"evidence_count should be 3, got {d1.get('evidence_count')}"
 assert d1.get("compliance_status") == "compliant", \
@@ -77,7 +77,7 @@ assert r_test["status"] == "ok", \
 assert r_test["data"].get("compliance_status") == "partial", \
     f"Empty evidence list → compliance_status='partial', got '{r_test['data'].get('compliance_status')}'"
 assert r_test["data"].get("evidence_count") == 0, \
-    f"evidence_count should be 0 for empty evidence"
+    "evidence_count should be 0 for empty evidence"
 
 # ── Test: collect_evidence — non-compliant system ────────────────────────────
 
@@ -92,7 +92,7 @@ r3 = collect_evidence("ICDEV-Unknown", "AC-3")
 assert r3["status"] == "partial", \
     f"Unknown system/control → status='partial', got '{r3['status']}'"
 assert "message" in r3.get("data", {}), \
-    f"Unknown system should have data.message explaining the situation"
+    "Unknown system should have data.message explaining the situation"
 assert r3["error"] is None, "error key must be None for partial (not error) status"
 
 # ── Test: run_batch ───────────────────────────────────────────────────────────

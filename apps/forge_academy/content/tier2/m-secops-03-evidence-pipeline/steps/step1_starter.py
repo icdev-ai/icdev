@@ -8,7 +8,6 @@ This builds on the ICDEV tool contract you learned in T3-02 and the STIG parsing
 from SecOps-02. Now you wire them into a pipeline.
 """
 
-from datetime import date
 
 # ── Evidence Sources ──────────────────────────────────────────────────────────
 

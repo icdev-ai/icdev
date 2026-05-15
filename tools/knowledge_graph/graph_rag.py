@@ -3,19 +3,22 @@
 """GraphRAG retrieval module — scoring profiles, context compression.
 
 Retrieves relevant nodes/edges from the ICDEV™ Knowledge Graph using
-configurable scoring profiles (D-KARL-1) and optional scanner-tier
-LLM compression (D-KARL-2, zero Claude tokens).
+configurable scoring profiles (D-KARL-1), ontology-aware hierarchy
+boosting (D-ONTO-1), and optional scanner-tier LLM compression
+(D-KARL-2, zero Claude tokens).
 
 Scoring Profiles:
-    compliance  — edge_weight 0.4, centrality 0.3, recency 0.3
-    exploratory — edge_weight 0.2, centrality 0.5, recency 0.3
-    provenance  — edge_weight 0.5, centrality 0.2, recency 0.3
-    security    — edge_weight 0.3, centrality 0.4, recency 0.3
+    compliance  — edge_weight 0.4, centrality 0.3, recency 0.3, ontology 0.2
+    exploratory — edge_weight 0.2, centrality 0.5, recency 0.3, ontology 0.1
+    provenance  — edge_weight 0.5, centrality 0.2, recency 0.3, ontology 0.0
+    security    — edge_weight 0.3, centrality 0.4, recency 0.3, ontology 0.2
+    ontology    — edge_weight 0.2, centrality 0.2, recency 0.2, ontology 0.4
 
 Usage:
     python tools/knowledge_graph/graph_rag.py --query "zero trust" --project-id sparkpilot --json
     python tools/knowledge_graph/graph_rag.py --query "AC-2 compliance" --profile compliance --json
     python tools/knowledge_graph/graph_rag.py --query "explore gaps" --profile exploratory --no-compress --json
+    python tools/knowledge_graph/graph_rag.py --query "AWS ALB siblings" --profile ontology --json
 """
 
 from __future__ import annotations
@@ -50,26 +53,31 @@ SCORING_PROFILES: Dict[str, Dict[str, float]] = {
         "edge_weight": 0.4,
         "centrality": 0.3,
         "recency": 0.3,
+        "ontology_weight": 0.2,
     },
     "exploratory": {
         "edge_weight": 0.2,
         "centrality": 0.5,
         "recency": 0.3,
+        "ontology_weight": 0.1,
     },
     "provenance": {
         "edge_weight": 0.5,
         "centrality": 0.2,
         "recency": 0.3,
+        "ontology_weight": 0.0,
     },
     "security": {
         "edge_weight": 0.3,
         "centrality": 0.4,
         "recency": 0.3,
+        "ontology_weight": 0.2,
     },
     "network_infrastructure": {
         "edge_weight": 0.4,
         "centrality": 0.4,
         "recency": 0.2,
+        "ontology_weight": 0.2,
     },
     # Phase 4 (Internal Awareness Engine) — for Q&A over the
     # kg-icdev-self-awareness component graph. Edge weight matters
@@ -81,6 +89,15 @@ SCORING_PROFILES: Dict[str, Dict[str, float]] = {
         "edge_weight": 0.4,
         "centrality": 0.4,
         "recency": 0.2,
+        "ontology_weight": 0.0,
+    },
+    # Ontology-aware profile — prioritises class-hierarchy traversal
+    # (rdfs:subClassOf / sibling expansion) over recency.
+    "ontology": {
+        "edge_weight": 0.2,
+        "centrality": 0.2,
+        "recency": 0.2,
+        "ontology_weight": 0.4,
     },
 }
 
@@ -231,10 +248,187 @@ PROFILE_KEYWORDS: Dict[str, List[str]] = {
         "awareness",
         "enablement",
     ],
+    # Ontology-aware queries — class hierarchies, taxonomies, type families
+    "ontology": [
+        "ontology",
+        "class",
+        "subclass",
+        "superclass",
+        "hierarchy",
+        "type",
+        "category",
+        "family",
+        "related types",
+        "sibling",
+        "parent class",
+        "child class",
+        "rdfs",
+        "owl",
+        "taxonomy",
+        "taxonomy of",
+        "all types of",
+        "all kinds of",
+        "what are the",
+        "load balancer",
+        "load balancers",
+    ],
 }
 
 # Recency decay: 30-day half-life (consistent with D168 memory config pattern)
 RECENCY_HALF_LIFE_DAYS = 30.0
+
+# ---------------------------------------------------------------------------
+# Ontology Hierarchy Fallback (used until full ontology_catalog is deployed)
+# ---------------------------------------------------------------------------
+
+_ONTOLOGY_FALLBACK: Dict[str, List[Dict[str, Any]]] = {
+    # Load-balancer family — rdfs:subClassOf hierarchy
+    "load_balancer": [
+        {"type": "aws_alb", "predicate": "rdfs:subClassOf", "distance": 1},
+        {"type": "aws_nlb", "predicate": "rdfs:subClassOf", "distance": 1},
+        {"type": "azure_appgw", "predicate": "rdfs:subClassOf", "distance": 1},
+        {"type": "gcp_lb", "predicate": "rdfs:subClassOf", "distance": 1},
+    ],
+    "aws_alb": [
+        {"type": "load_balancer", "predicate": "rdfs:superClassOf", "distance": 1},
+        {"type": "aws_nlb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "azure_appgw", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "gcp_lb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "aws_family", "predicate": "hasProvider", "distance": 1},
+    ],
+    "aws_nlb": [
+        {"type": "load_balancer", "predicate": "rdfs:superClassOf", "distance": 1},
+        {"type": "aws_alb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "azure_appgw", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "gcp_lb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "aws_family", "predicate": "hasProvider", "distance": 1},
+    ],
+    "azure_appgw": [
+        {"type": "load_balancer", "predicate": "rdfs:superClassOf", "distance": 1},
+        {"type": "aws_alb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "aws_nlb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "gcp_lb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "azure_family", "predicate": "hasProvider", "distance": 1},
+    ],
+    "gcp_lb": [
+        {"type": "load_balancer", "predicate": "rdfs:superClassOf", "distance": 1},
+        {"type": "aws_alb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "aws_nlb", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "azure_appgw", "predicate": "rdfs:subClassOf", "distance": 2},
+        {"type": "gcp_family", "predicate": "hasProvider", "distance": 1},
+    ],
+    # Compliance — NISTControl satisfies frameworks
+    "nist_control": [
+        {"type": "compliance_framework", "predicate": "satisfiesFramework", "distance": 1},
+    ],
+    "fedramp_control": [
+        {"type": "compliance_framework", "predicate": "satisfiesFramework", "distance": 1},
+    ],
+    "cmmc_control": [
+        {"type": "compliance_framework", "predicate": "satisfiesFramework", "distance": 1},
+    ],
+    "control": [
+        {"type": "compliance_framework", "predicate": "satisfiesFramework", "distance": 1},
+    ],
+    # Security — threat-actor linkage
+    "threat_actor": [
+        {"type": "security_object", "predicate": "hasActor", "distance": 1},
+    ],
+    "cve": [
+        {"type": "security_object", "predicate": "hasActor", "distance": 2},
+    ],
+    "vulnerability": [
+        {"type": "security_object", "predicate": "hasActor", "distance": 2},
+    ],
+    # Provider families (network_infrastructure)
+    "aws_vpc": [{"type": "aws_family", "predicate": "hasProvider", "distance": 1}],
+    "azure_vnet": [{"type": "azure_family", "predicate": "hasProvider", "distance": 1}],
+    "gcp_vpc": [{"type": "gcp_family", "predicate": "hasProvider", "distance": 1}],
+}
+
+
+# ---------------------------------------------------------------------------
+# Config Loader (D-KARL-1 / D-ONTO-1)
+# ---------------------------------------------------------------------------
+
+
+def _load_config() -> Dict[str, Any]:
+    """Load knowledge graph config from args/knowledge_graph_config.yaml."""
+    config_path = BASE_DIR / "args" / "knowledge_graph_config.yaml"
+    try:
+        import yaml
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            return yaml.safe_load(f) or {}
+    except Exception:
+        return {}
+
+
+_CONFIG = _load_config()
+_GRAPH_RAG_CONFIG: Dict[str, Any] = _CONFIG.get("graph_rag", {})
+
+# Override hardcoded profiles with YAML config if present
+_config_profiles = _GRAPH_RAG_CONFIG.get("profiles", {})
+if isinstance(_config_profiles, dict):
+    for name, weights in _config_profiles.items():
+        if isinstance(weights, dict) and "edge_weight" in weights:
+            SCORING_PROFILES[name] = {
+                "edge_weight": float(weights.get("edge_weight", 0.2)),
+                "centrality": float(weights.get("centrality", 0.3)),
+                "recency": float(weights.get("recency", 0.3)),
+                "ontology_weight": float(weights.get("ontology_weight", 0.0)),
+            }
+
+ONTOLOGY_PATH_DISTANCE_DECAY = float(
+    _GRAPH_RAG_CONFIG.get("defaults", {}).get("ontology_path_distance_decay", 1.0)
+)
+
+# ---------------------------------------------------------------------------
+# Ontology Hierarchy Helpers (D-ONTO-1)
+# ---------------------------------------------------------------------------
+
+
+def _ontology_shortest_distance(
+    from_type: str,
+    to_type: str,
+    relations: Dict[str, List[Dict[str, Any]]],
+) -> Optional[int]:
+    """BFS shortest-path distance between two entity types in the ontology graph.
+
+    Traverses rdfs:subClassOf / rdfs:superClassOf as bidirectional edges,
+    and treats sibling relations as undirected.  Returns ``None`` if no
+    path exists.
+    """
+    from collections import deque
+
+    start = from_type.lower()
+    goal = to_type.lower()
+    if start == goal:
+        return 0
+
+    # Build adjacency list
+    adj: Dict[str, set] = {}
+    for subject, entries in relations.items():
+        s = subject.lower()
+        for e in entries:
+            t = e["type"].lower()
+            pred = e.get("predicate", "")
+            adj.setdefault(s, set()).add(t)
+            # Hierarchy and sibling predicates are traversable both ways
+            if "subClassOf" in pred or "superClassOf" in pred or pred in ("sibling",):
+                adj.setdefault(t, set()).add(s)
+
+    queue = deque([(start, 0)])
+    visited = {start}
+    while queue:
+        current, dist = queue.popleft()
+        for neighbor in adj.get(current, set()):
+            if neighbor == goal:
+                return dist + 1
+            if neighbor not in visited:
+                visited.add(neighbor)
+                queue.append((neighbor, dist + 1))
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +496,23 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS kg_ontology (
+            id TEXT PRIMARY KEY,
+            graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+            subject_type TEXT NOT NULL,
+            predicate TEXT NOT NULL,
+            object_type TEXT NOT NULL,
+            path_distance INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_kgo_subject ON kg_ontology(subject_type)
+    """)
+    conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_kgo_object ON kg_ontology(object_type)
+    """)
     conn.commit()
 
 
@@ -313,6 +524,156 @@ def _now() -> str:
 def _query_hash(query: str) -> str:
     """SHA-256 hash of query for dedup/logging."""
     return hashlib.sha256(query.strip().lower().encode("utf-8")).hexdigest()[:16]
+
+
+# ---------------------------------------------------------------------------
+# Ontology Helpers (D-ONTO-1)
+# ---------------------------------------------------------------------------
+
+
+def _load_ontology_relations(
+    conn: sqlite3.Connection,
+    graph_ids: List[str],
+    fallback: bool = True,
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Load ontology relations for the given graphs.
+
+    Queries ``kg_ontology`` and merges with the in-memory fallback hierarchy.
+    Returns a dict mapping ``subject_type`` → list of relation dicts.
+
+    Args:
+        conn: Database connection.
+        graph_ids: Graph IDs to scope the query.
+        fallback: Whether to merge hardcoded fallback mappings when the
+            DB table has no rows for a type.
+
+    Returns:
+        Dict of subject_type → [{"type": str, "predicate": str, "distance": int}, ...]
+    """
+    if not graph_ids:
+        return dict(_ONTOLOGY_FALLBACK) if fallback else {}
+
+    placeholders = ",".join("?" for _ in graph_ids)
+    rows = conn.execute(
+        f"SELECT subject_type, predicate, object_type, path_distance FROM kg_ontology WHERE graph_id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
+        list(graph_ids),
+    ).fetchall()
+
+    relations: Dict[str, List[Dict[str, Any]]] = {}
+    for r in rows:
+        st = r["subject_type"].lower()
+        entry: Dict[str, Any] = {
+            "type": r["object_type"].lower(),
+            "predicate": r["predicate"],
+            "distance": max(int(r["path_distance"] or 1), 1),
+        }
+        relations.setdefault(st, []).append(entry)
+
+    if fallback:
+        for st, entries in _ONTOLOGY_FALLBACK.items():
+            st_lower = st.lower()
+            existing = {(e["type"], e["predicate"]) for e in relations.get(st_lower, [])}
+            for e in entries:
+                key = (e["type"], e["predicate"])
+                if key not in existing:
+                    relations.setdefault(st_lower, []).append(dict(e))
+
+    return relations
+
+
+def _get_ontology_related_types(
+    entity_types: set,
+    relations: Dict[str, List[Dict[str, Any]]],
+) -> set:
+    """Return all entity types related to the given types via ontology.
+
+    Args:
+        entity_types: Set of entity type strings.
+        relations: Ontology relations dict from :func:`_load_ontology_relations`.
+
+    Returns:
+        Set of related entity type strings.
+    """
+    related: set = set()
+    for et in entity_types:
+        et_lower = et.lower()
+        for entry in relations.get(et_lower, []):
+            related.add(entry["type"])
+    return related
+
+
+def _compute_ontology_bonus(
+    node_entity_type: str,
+    query_entity_types: set,
+    relations: Dict[str, List[Dict[str, Any]]],
+    profile: str,
+) -> float:
+    """Compute ontology-based score bonus for a node using shortest-path distance.
+
+    Formula: sum over query entity types of
+        ``1.0 / (1.0 + decay * shortest_distance)``,
+    capped at 3.0, then scaled by the profile's ``ontology_weight``.
+
+    Profile-specific emphasis:
+        * compliance — extra +0.15 if node is linked to *nist_control*
+          via ``satisfiesFramework``.
+        * security — extra +0.15 if node is linked to *threat_actor*
+          via ``hasActor``.
+        * network_infrastructure — extra +0.15 if predicate is ``hasProvider``.
+
+    Args:
+        node_entity_type: The node's ``entity_type``.
+        query_entity_types: Set of entity types derived from the query.
+        relations: Ontology relations dict.
+        profile: Scoring profile name.
+
+    Returns:
+        Float bonus in ``[0, ontology_weight + 0.3]``.
+    """
+    net = node_entity_type.lower()
+    weights = SCORING_PROFILES.get(profile, SCORING_PROFILES["exploratory"])
+    ontology_weight = weights.get("ontology_weight", 0.0)
+
+    total_path_score = 0.0
+    profile_extra = 0.0
+
+    for qt in query_entity_types:
+        dist = _ontology_shortest_distance(qt, net, relations)
+        if dist is not None:
+            total_path_score += 1.0 / (1.0 + ONTOLOGY_PATH_DISTANCE_DECAY * dist)
+            # Profile-specific direct-relation boosts
+            for entry in relations.get(qt.lower(), []):
+                if entry["type"] == net:
+                    pred = entry.get("predicate", "")
+                    if profile == "compliance" and pred == "satisfiesFramework" and qt.lower() == "nist_control":
+                        profile_extra = max(profile_extra, 0.15)
+                    elif profile == "security" and pred == "hasActor" and qt.lower() == "threat_actor":
+                        profile_extra = max(profile_extra, 0.15)
+                    elif profile == "network_infrastructure" and pred == "hasProvider":
+                        profile_extra = max(profile_extra, 0.15)
+            # Reverse check
+            for entry in relations.get(net, []):
+                if entry["type"] == qt.lower():
+                    pred = entry.get("predicate", "")
+                    if profile == "compliance" and pred == "satisfiesFramework" and qt.lower() == "nist_control":
+                        profile_extra = max(profile_extra, 0.15)
+                    elif profile == "security" and pred == "hasActor" and qt.lower() == "threat_actor":
+                        profile_extra = max(profile_extra, 0.15)
+                    elif profile == "network_infrastructure" and pred == "hasProvider":
+                        profile_extra = max(profile_extra, 0.15)
+
+    # General profile bias for any node that carries the target predicate
+    for entry in relations.get(net, []):
+        pred = entry.get("predicate", "")
+        if profile == "compliance" and pred == "satisfiesFramework" and "nist" in entry["type"]:
+            profile_extra = max(profile_extra, 0.15)
+        elif profile == "security" and pred == "hasActor" and entry["type"] in ("threat_actor", "security_object"):
+            profile_extra = max(profile_extra, 0.15)
+        elif profile == "network_infrastructure" and pred == "hasProvider":
+            profile_extra = max(profile_extra, 0.15)
+
+    bonus = ontology_weight * min(total_path_score, 3.0) + profile_extra
+    return round(min(bonus, ontology_weight + 0.3), 6)
 
 
 # ---------------------------------------------------------------------------
@@ -347,8 +708,8 @@ def _auto_detect_profile(query: str) -> str:
     if max_score == 0:
         return "exploratory"
 
-    # Pick highest; on tie, prefer compliance > security > provenance > exploratory
-    priority = ["compliance", "security", "provenance", "exploratory"]
+    # Pick highest; on tie, prefer ontology > compliance > security > provenance > exploratory
+    priority = ["ontology", "compliance", "security", "provenance", "exploratory"]
     for p in priority:
         if scores.get(p, 0) == max_score:
             return p
@@ -464,8 +825,11 @@ def _score_nodes(
     profile: str,
     query_terms: List[str],
     neighbor_ids: Optional[set] = None,
+    ontology_relations: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+    query_entity_types: Optional[set] = None,
 ) -> List[Dict[str, Any]]:
-    """Score and rank nodes using profile weights, neighbor boosting, and RRF fusion.
+    """Score and rank nodes using profile weights, neighbor boosting, RRF fusion,
+    and ontology-aware hierarchy bonuses.
 
     Score formula:
         score = w_edge * avg_edge_weight
@@ -474,6 +838,7 @@ def _score_nodes(
               + relevance_bonus   (keyword hit, up to +0.3)
               + embedding_bonus   (semantic similarity, up to +0.2)
               + neighbor_boost    (+0.3 if node is a 1-hop neighbor of a matched node)
+              + ontology_bonus    (hierarchy proximity, profile-scaled)
 
     hybrid_rank is a Reciprocal Rank Fusion (RRF) of BM25 and semantic rankings,
     with the BM25 score pre-boosted by +0.3 for neighbor nodes.
@@ -487,10 +852,12 @@ def _score_nodes(
         neighbor_ids: Set of node IDs that are 1-hop neighbors of matched nodes
                       (not directly keyword/semantic matched). These receive a
                       +0.3 score boost and a pre-boosted BM25 rank for RRF.
+        ontology_relations: Ontology relations dict from :func:`_load_ontology_relations`.
+        query_entity_types: Set of entity types derived from the query.
 
     Returns:
         Nodes sorted by score descending, each augmented with 'score',
-        'hybrid_rank', and 'is_neighbor'.
+        'hybrid_rank', 'is_neighbor', and 'ontology_bonus'.
     """
     weights = SCORING_PROFILES.get(profile, SCORING_PROFILES["exploratory"])
     w_edge = weights["edge_weight"]
@@ -580,10 +947,27 @@ def _score_nodes(
         # Neighbor boost: +0.3 for nodes reachable via 1-hop from matched nodes
         neighbor_boost = 0.3 if nid in _neighbor_ids else 0.0
 
+        # Ontology bonus: boost nodes related via class hierarchy
+        ontology_bonus = 0.0
+        ontology_path_distance = None
+        if ontology_relations and query_entity_types:
+            ontology_bonus = _compute_ontology_bonus(
+                entity_type, query_entity_types, ontology_relations, profile
+            )
+            distances = [
+                d
+                for qt in query_entity_types
+                if (d := _ontology_shortest_distance(entity_type, qt, ontology_relations)) is not None
+            ]
+            if distances:
+                ontology_path_distance = min(distances)
+
         node_copy = dict(node)
-        node_copy["score"] = round(base_score + relevance_bonus + embedding_bonus + neighbor_boost, 6)
+        node_copy["score"] = round(base_score + relevance_bonus + embedding_bonus + neighbor_boost + ontology_bonus, 6)
         node_copy["hybrid_rank"] = round(rrf_scores.get(nid, 0.0), 6)
         node_copy["is_neighbor"] = nid in _neighbor_ids
+        node_copy["ontology_bonus"] = ontology_bonus
+        node_copy["ontology_path_distance"] = ontology_path_distance
         scored.append(node_copy)
 
     scored.sort(key=lambda n: n["score"], reverse=True)
@@ -988,6 +1372,37 @@ def retrieve(
                 "retrieval_ms": elapsed_ms,
             }
 
+        # Ontology-aware expansion: fetch sibling nodes for profiles with
+        # ontology_weight > 0.  This ensures "Find all load balancers"
+        # returns AWS ALB, Azure AppGW, GCP LB even when only the parent
+        # class or one sibling was keyword-matched.
+        query_entity_types = {n.get("entity_type", "").lower() for n in matched_nodes if n.get("entity_type")}
+        ontology_relations = _load_ontology_relations(conn, graph_ids)
+        selected_weights = SCORING_PROFILES.get(selected_profile, SCORING_PROFILES["exploratory"])
+        if selected_weights.get("ontology_weight", 0.0) > 0:
+            related_types = _get_ontology_related_types(query_entity_types, ontology_relations)
+            if related_types:
+                new_types = related_types - query_entity_types
+                if new_types:
+                    graph_ph = ",".join("?" for _ in graph_ids)
+                    type_ph = ",".join("?" for _ in new_types)
+                    type_sql = f"""
+                        SELECT id, graph_id, label, entity_type, properties,
+                               centrality, created_at
+                        FROM kg_nodes
+                        WHERE graph_id IN ({graph_ph})
+                          AND LOWER(entity_type) IN ({type_ph})
+                        LIMIT ?
+                    """  # nosec B608 -- table/column names are internal constants, not user input
+                    type_params = list(graph_ids) + list(new_types) + [top_k * 3]
+                    type_rows = conn.execute(type_sql, type_params).fetchall()
+                    existing_ids = {n["id"] for n in matched_nodes}
+                    for r in type_rows:
+                        node = dict(r)
+                        if node["id"] not in existing_ids:
+                            matched_nodes.append(node)
+                            existing_ids.add(node["id"])
+
         # Step 3: Expand to 1-hop neighborhood
         matched_ids = [n["id"] for n in matched_nodes]
         id_placeholders = ",".join("?" for _ in matched_ids)
@@ -1036,6 +1451,8 @@ def retrieve(
             selected_profile,
             query_terms,
             neighbor_ids=neighbor_ids,
+            ontology_relations=ontology_relations,
+            query_entity_types=query_entity_types,
         )
 
         # Step 5: Take top_k
@@ -1097,6 +1514,8 @@ def retrieve(
             "edges_returned": len(top_edges),
             "neighbor_count": len(neighbor_ids),
             "rrf_fusion": True,
+            "ontology_expansion": selected_weights.get("ontology_weight", 0.0) > 0,
+            "query_entity_types": sorted(query_entity_types),
             "nodes": serializable_nodes,
             "edges": serializable_edges,
             "compressed": compressed,

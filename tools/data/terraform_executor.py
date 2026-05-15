@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -242,7 +241,6 @@ def main():
     try:
         result = run_terraform(args.run_id, args.project_id)
         gate = result["gate"]
-        uid = Path(result["report_path"]).stem.split("_")[-1]
 
         output = {
             "status": "success" if gate == "PASS" else "failed",

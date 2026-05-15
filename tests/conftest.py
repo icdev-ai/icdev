@@ -1074,7 +1074,10 @@ CREATE TABLE IF NOT EXISTS memory_entries (
     content_hash TEXT,
     user_id TEXT,
     tenant_id TEXT,
-    source TEXT DEFAULT 'manual'
+    source TEXT DEFAULT 'manual',
+    decay_weight REAL DEFAULT 1.0,
+    classification TEXT DEFAULT 'CUI',
+    compartment TEXT DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_memory_content_hash_user
     ON memory_entries(content_hash, user_id);
@@ -1554,6 +1557,21 @@ CREATE TABLE IF NOT EXISTS des_execution_events (
 CREATE INDEX IF NOT EXISTS idx_des_task_id ON des_execution_events(task_id);
 CREATE INDEX IF NOT EXISTS idx_des_occurred_at ON des_execution_events(occurred_at);
 
+-- Security Framework (Phase 74 — sec-fnd)
+CREATE TABLE IF NOT EXISTS security_policies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    policy_json TEXT,
+    active INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_compartments (
+    user_id TEXT NOT NULL,
+    compartment_name TEXT NOT NULL,
+    PRIMARY KEY (user_id, compartment_name)
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, type, tags);
 
 CREATE TABLE IF NOT EXISTS des_execution_events (
@@ -1831,6 +1849,43 @@ CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
 CREATE INDEX IF NOT EXISTS idx_cad_canvas_type ON canvas_ai_decisions (canvas_type);
 CREATE INDEX IF NOT EXISTS idx_cad_record_id   ON canvas_ai_decisions (record_id);
 CREATE INDEX IF NOT EXISTS idx_cad_trace_id    ON canvas_ai_decisions (trace_id);
+
+-- Ontology federation tables (tools/ontology/federation.py)
+CREATE TABLE IF NOT EXISTS ontology_classes (
+    id TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    label TEXT NOT NULL,
+    superclasses TEXT DEFAULT '[]',
+    canonical_id TEXT,
+    merged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_properties (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    domain_class TEXT,
+    range_class TEXT,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_alignments (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    assertion TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_subclass_closure (
+    id TEXT PRIMARY KEY,
+    subclass TEXT NOT NULL,
+    superclass TEXT NOT NULL,
+    distance INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_federation_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -1937,6 +1992,17 @@ CREATE TABLE IF NOT EXISTS kg_retrieval_log (
     compressed INTEGER DEFAULT 0, duration_ms REAL DEFAULT 0.0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS kg_ontology (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+    subject_type TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object_type TEXT NOT NULL,
+    path_distance INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_kgo_subject ON kg_ontology(subject_type);
+CREATE INDEX IF NOT EXISTS idx_kgo_object ON kg_ontology(object_type);
 
 -- Fine-Tuning datasets and examples (D-FT-9)
 CREATE TABLE IF NOT EXISTS ft_datasets (
@@ -2363,6 +2429,21 @@ CREATE TABLE IF NOT EXISTS govlift_migrations (
     executor_log TEXT,
     pre_check_passed INTEGER,
     post_check_passed INTEGER,
+    rollback_deadline TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_rollback_events (
+    id TEXT PRIMARY KEY,
+    migration_id TEXT NOT NULL,
+    workload_id TEXT NOT NULL,
+    status TEXT DEFAULT 'initiated',
+    initiated_at TEXT NOT NULL,
+    deadline_at TEXT NOT NULL,
+    completed_at TEXT,
+    reason TEXT DEFAULT '',
+    steps_log TEXT DEFAULT '[]',
+    sla_met INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -2403,6 +2484,39 @@ CREATE TABLE IF NOT EXISTS govlift_integrations (
     error_message TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS govlift_rollback_events (
+    id TEXT PRIMARY KEY,
+    migration_id TEXT NOT NULL,
+    workload_id TEXT NOT NULL,
+    status TEXT DEFAULT 'initiated',
+    initiated_at TEXT NOT NULL,
+    deadline_at TEXT NOT NULL,
+    completed_at TEXT,
+    reason TEXT DEFAULT '',
+    steps_log TEXT DEFAULT '[]',
+    sla_met INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS llm_chain_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    function TEXT NOT NULL,
+    chain_mode TEXT NOT NULL,
+    models_used TEXT NOT NULL DEFAULT '[]',
+    rounds TEXT NOT NULL DEFAULT '{}',
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0.0,
+    duration_ms INTEGER DEFAULT 0,
+    final_model_id TEXT,
+    stop_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_function ON llm_chain_telemetry (function);
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_created ON llm_chain_telemetry (created_at);
 """
 
 # ---------------------------------------------------------------------------

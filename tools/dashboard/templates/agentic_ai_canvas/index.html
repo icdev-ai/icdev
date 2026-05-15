@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Agentic AI Canvas — ICDEV™{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
@@ -73,7 +74,7 @@
       <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">{{ d.domain }}</span>
       {% endif %}
       <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">L{{ d.autonomy_max }} autonomy</span>
-      <span style="background:#1e293b;color:#94a3b8;padding:2px 7px;border-radius:3px;font-size:10px;">{{ d.classification }}</span>
+      {{ design_classification_badge(d) }}
     </div>
 
     {% if d.score is not none %}
