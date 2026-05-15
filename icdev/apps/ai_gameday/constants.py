@@ -25,6 +25,26 @@ INJECT_TYPES = [
     {"id": "aadc_design_challenge", "label": "AADC Design Challenge", "icon": "🛡️"},
 ]
 
+# Ontology event types surfaced in the GameDay event stream
+EVENT_ONTOLOGY_TYPES = [
+    {"id": "intel",      "label": "Intel Assessment",      "icon": "🔍", "class": "strategy:IntelligenceAssessment"},
+    {"id": "coa",        "label": "COA Recommendation",   "icon": "🗺️", "class": "strategy:CourseOfAction"},
+    {"id": "ir",         "label": "Incident Response",    "icon": "🚨", "class": "security:IncidentResponse"},
+    {"id": "build",      "label": "AI Build Sprint",      "icon": "🤖", "class": "security:MLDevOps"},
+    {"id": "strategic",  "label": "Strategic Brief",        "icon": "📋", "class": "strategy:JointOperation"},
+    {"id": "aadc",       "label": "AADC Design Challenge",  "icon": "🛡️", "class": "security:ZeroTrust"},
+    {"id": "custom",     "label": "Custom Inject",        "icon": "⚙️", "class": "strategy:CustomEvent"},
+]
+
+# Scoreboard filter categories for ontology-based filtering
+SCOREBOARD_ONTOLOGY_FILTERS = [
+    {"id": "all",        "label": "All Events",     "filter": None},
+    {"id": "strategy",   "label": "Strategy",       "filter": "strategy"},
+    {"id": "security",   "label": "Security",       "filter": "security"},
+    {"id": "war",        "label": "Warfighting",    "filter": "war"},
+    {"id": "geospatial", "label": "Geospatial",     "filter": "geospatial"},
+]
+
 # ICDEV tool slugs surfaced to players in the "Link AI Tool" picker
 AI_TOOLS_CATALOG = [
     {"slug": "strategos.oracle",          "label": "Strategos Oracle",       "endpoint": "/api/strategos/oracle",           "icon": "🔮"},
