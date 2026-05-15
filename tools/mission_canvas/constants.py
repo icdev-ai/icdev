@@ -83,3 +83,18 @@ OBJECT_TYPES = {
         {"type": "status-blue", "label": "Standby", "color": "#3498db"},
     ],
 }
+
+_MC = "https://icdev.dev/ontology/mission#"
+
+MISSION_ONTOLOGY_MAP: dict[str, str] = {
+    # Operational zones
+    "zone-situation":   f"{_MC}Zone.Situation",
+    "zone-intelligence":f"{_MC}Zone.Intelligence",
+    "zone-execution":   f"{_MC}Zone.Execution",
+    "zone-security":    f"{_MC}Zone.Security",
+    # Status indicators
+    "status-green":     f"{_MC}Status.Nominal",
+    "status-amber":     f"{_MC}Status.Degraded",
+    "status-red":       f"{_MC}Status.Critical",
+    "status-blue":      f"{_MC}Status.Standby",
+}

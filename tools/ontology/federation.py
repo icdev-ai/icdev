@@ -48,12 +48,19 @@ from tools.db.storage import get_connection  # noqa: E402
 
 # Domain namespaces
 NAMESPACES: Dict[str, str] = {
-    "network": "https://icdev.dev/ns/network#",
-    "data": "https://icdev.dev/ns/data#",
-    "security": "https://icdev.dev/ns/security#",
-    "infra": "https://icdev.dev/ns/infra#",
+    "network":    "https://icdev.dev/ns/network#",
+    "data":       "https://icdev.dev/ns/data#",
+    "security":   "https://icdev.dev/ns/security#",
+    "infra":      "https://icdev.dev/ns/infra#",
     "compliance": "https://icdev.dev/ns/compliance#",
-    "core": "https://icdev.dev/ns/core#",
+    "core":       "https://icdev.dev/ns/core#",
+    "boundary":   "https://icdev.dev/ns/boundary#",
+    "pipeline":   "https://icdev.dev/ns/pipeline#",
+    "quality":    "https://icdev.dev/ns/quality#",
+    "aiml":       "https://icdev.dev/ns/aiml#",
+    "mission":    "https://icdev.dev/ns/mission#",
+    "icdev":      "https://icdev.dev/ns/icdev#",
+    "strategy":   "https://icdev.dev/ns/strategy#",
 }
 
 # Domain ontologies: domain -> list of classes with superclasses
@@ -112,6 +119,52 @@ DOMAIN_ONTOLOGIES: Dict[str, List[Dict[str, Any]]] = {
         {"id": "strategy:WarCouncilBrief", "label": "War Council Brief", "superclasses": ["core:Concept"]},
         {"id": "strategy:AIROIFramework", "label": "AI ROI Framework", "superclasses": ["core:Concept"]},
         {"id": "strategy:GovernancePosture", "label": "Governance Posture", "superclasses": ["core:Concept"]},
+    ],
+    "boundary": [
+        {"id": "boundary:SystemBoundary", "label": "System Boundary", "superclasses": ["core:Resource"]},
+        {"id": "boundary:AuthorizationBoundary", "label": "Authorization Boundary", "superclasses": ["boundary:SystemBoundary"]},
+        {"id": "boundary:Interconnection", "label": "Interconnection", "superclasses": ["core:Resource"]},
+        {"id": "boundary:BoundaryControl", "label": "Boundary Control", "superclasses": ["core:Concept"]},
+        {"id": "boundary:Document", "label": "Boundary Document", "superclasses": ["core:Concept"]},
+        {"id": "boundary:DigitalTwin", "label": "Boundary Digital Twin", "superclasses": ["core:Resource"]},
+    ],
+    "pipeline": [
+        {"id": "pipeline:CICDPlatform", "label": "CI/CD Platform", "superclasses": ["core:Resource"]},
+        {"id": "pipeline:GitOpsPlatform", "label": "GitOps Platform", "superclasses": ["pipeline:CICDPlatform"]},
+        {"id": "pipeline:SCM", "label": "Source Control", "superclasses": ["core:Resource"]},
+        {"id": "pipeline:BuildTool", "label": "Build Tool", "superclasses": ["core:Resource"]},
+        {"id": "pipeline:SecurityScan", "label": "Security Scan", "superclasses": ["core:Concept"]},
+        {"id": "pipeline:Registry", "label": "Artifact Registry", "superclasses": ["core:Resource"]},
+        {"id": "pipeline:Attestation", "label": "Supply Chain Attestation", "superclasses": ["core:Concept"]},
+        {"id": "pipeline:Policy", "label": "Pipeline Policy", "superclasses": ["core:Concept"]},
+        {"id": "pipeline:ApprovalGate", "label": "Approval Gate", "superclasses": ["core:Concept"]},
+        {"id": "pipeline:SecretsManager", "label": "Secrets Manager", "superclasses": ["core:Resource"]},
+        {"id": "pipeline:DeployStrategy", "label": "Deployment Strategy", "superclasses": ["core:Concept"]},
+    ],
+    "quality": [
+        {"id": "quality:QualityGate", "label": "Quality Gate", "superclasses": ["core:Concept"]},
+        {"id": "quality:QualityGate.SAST", "label": "SAST Gate", "superclasses": ["quality:QualityGate"]},
+        {"id": "quality:QualityGate.DAST", "label": "DAST Gate", "superclasses": ["quality:QualityGate"]},
+        {"id": "quality:QualityGate.SCA", "label": "SCA Gate", "superclasses": ["quality:QualityGate"]},
+        {"id": "quality:QualityGate.UnitTest", "label": "Unit Test Gate", "superclasses": ["quality:QualityGate"]},
+        {"id": "quality:QualityGate.E2E", "label": "E2E Test Gate", "superclasses": ["quality:QualityGate"]},
+    ],
+    "aiml": [
+        {"id": "aiml:AIModel", "label": "AI Model", "superclasses": ["core:Resource"]},
+        {"id": "aiml:Adaptation", "label": "Model Adaptation", "superclasses": ["core:Concept"]},
+        {"id": "aiml:AIData", "label": "AI Data Source", "superclasses": ["core:Resource"]},
+        {"id": "aiml:AISafety", "label": "AI Safety Component", "superclasses": ["core:Concept"]},
+        {"id": "aiml:AIEval", "label": "AI Evaluation", "superclasses": ["core:Concept"]},
+        {"id": "aiml:AIDeployment", "label": "AI Deployment Target", "superclasses": ["core:Resource"]},
+        {"id": "aiml:AIGovernance", "label": "AI Governance Artifact", "superclasses": ["core:Concept"]},
+    ],
+    "mission": [
+        {"id": "mission:Zone", "label": "Mission Zone", "superclasses": ["core:Resource"]},
+        {"id": "mission:Zone.Situation", "label": "Situation Zone", "superclasses": ["mission:Zone"]},
+        {"id": "mission:Zone.Intelligence", "label": "Intelligence Zone", "superclasses": ["mission:Zone"]},
+        {"id": "mission:Zone.Execution", "label": "Execution Zone", "superclasses": ["mission:Zone"]},
+        {"id": "mission:Zone.Security", "label": "Security Zone", "superclasses": ["mission:Zone"]},
+        {"id": "mission:Status", "label": "Mission Status", "superclasses": ["core:Concept"]},
     ],
 }
 
