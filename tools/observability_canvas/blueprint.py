@@ -426,6 +426,17 @@ def create_observability_blueprint():
             rebuild_canvas_kg("odc", design_id)
         except Exception:
             pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="odc",
+                design_id=design_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
+        except Exception:
+            pass
 
         return jsonify({"updated": True})
 
@@ -524,6 +535,17 @@ def create_observability_blueprint():
             model_used=None,
             confidence=None,
         )
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="odc",
+                design_id=design_id,
+                assessment_data=assessment,
+                project_id="",
+            )
+        except Exception:
+            pass
 
         return jsonify(
             {

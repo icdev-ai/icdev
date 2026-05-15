@@ -406,6 +406,17 @@ def create_security_blueprint():
             rebuild_canvas_kg("sdc", design_id)
         except Exception:
             pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="sdc",
+                design_id=design_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
+        except Exception:
+            pass
         return jsonify({"id": design_id, "updated_at": now})
 
     @bp.route("/api/clear-designs", methods=["DELETE", "POST"])
@@ -528,6 +539,17 @@ def create_security_blueprint():
         plan = generate_remediation_plan(result, graph)
         result["assessment_id"] = assess_id
         result["remediation_plan"] = plan
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="sdc",
+                design_id=design_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
         return jsonify(result)
 
     @bp.route("/api/designs/<design_id>/risk-score", methods=["GET"])

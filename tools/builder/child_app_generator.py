@@ -3055,7 +3055,6 @@ def step_12_audit_and_registration(child_root: Path, blueprint: dict, db_path: P
 
     # Register blockchain provenance for child app blueprint
     try:
-        import hashlib
         from tools.provenance.registry import register_citation
         from tools.blockchain.chain_anchor import ChainAnchor
 

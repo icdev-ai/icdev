@@ -510,6 +510,17 @@ def create_pipeline_blueprint():
             rebuild_canvas_kg("pdc", pipe_id)
         except Exception:
             pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="pdc",
+                design_id=pipe_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
+        except Exception:
+            pass
         resp = {"updated": True}
         if sdc_assessment is not None:
             resp["sdc_assessment"] = sdc_assessment
@@ -785,6 +796,17 @@ def create_pipeline_blueprint():
         conn.commit()
         conn.close()
         _audit("COMPLIANCE_AUDIT", "pipeline", pipe_id, f"passed={result['passed']}, failed={result['failed']}")
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="pdc",
+                design_id=pipe_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
         return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════

@@ -1623,6 +1623,17 @@ def create_network_blueprint():
             rebuild_canvas_kg("ndc", topo_id)
         except Exception:
             pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="ndc",
+                design_id=topo_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
+        except Exception:
+            pass
         resp = {"ok": True}
         if sdc_assessment is not None:
             resp["sdc_assessment"] = sdc_assessment
@@ -6594,15 +6605,25 @@ def create_network_blueprint():
         )
         conn.commit()
         conn.close()
-        return jsonify(
-            {
-                "check_id": check_id,
-                "passed": passed,
-                "failed": failed,
-                "score_pct": round(passed / max(passed + failed, 1) * 100, 1),
-                "findings": findings,
-            }
-        )
+        result = {
+            "check_id": check_id,
+            "passed": passed,
+            "failed": failed,
+            "score_pct": round(passed / max(passed + failed, 1) * 100, 1),
+            "findings": findings,
+        }
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="ndc",
+                design_id=topo_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
+        return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Full Compliance Audit Engine
