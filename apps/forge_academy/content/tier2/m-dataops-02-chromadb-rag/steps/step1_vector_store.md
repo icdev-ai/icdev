@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-dataops-02-chromadb-rag:step:1
+step_class: icdev:Lesson
+---
+
 # ChromaDB-Style Vector Store — Document Embedding and Retrieval
 
 Production RAG systems need persistent vector storage. In this mission you'll implement a lightweight in-memory vector store that mirrors ChromaDB's collection API — `add()`, `query()`, `get()`, `delete()` — backed by cosine similarity search.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-03-risk-dashboard:step:1
+step_class: icdev:Lesson
+---
+
 # Risk Management Dashboard — Watch It Run
 
 An ISSM's biggest challenge isn't finding risks — it's communicating them to people who don't speak STIG. Watch ICDEV's Risk Management Dashboard translate technical findings into business language that gets executive action.

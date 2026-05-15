@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-04-cato-monitoring:step:1
+step_class: icdev:Lesson
+---
+
 # cATO Monitoring — Continuous Authorization Setup
 
 Traditional ATOs expire. Continuous Authorization to Operate (cATO) never does — because your security posture is always visible and always evidenced. In this mission you'll see ICDEV configure a cATO monitoring posture for your system portfolio.

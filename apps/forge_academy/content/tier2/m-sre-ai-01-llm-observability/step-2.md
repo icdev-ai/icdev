@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-01-llm-observability:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Instrument Your Agent with token_tracker.py

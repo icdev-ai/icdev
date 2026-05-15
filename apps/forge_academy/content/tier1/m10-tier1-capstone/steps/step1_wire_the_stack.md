@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m10-tier1-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # Tier 1 Capstone — Wire the Stack
 
 You've built the individual components. Now you wire them into a complete AI system: a RAG-augmented agent that exposes its capabilities as an MCP server.

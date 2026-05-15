@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-06-capstone:step:3
+step_class: icdev:Assessment
+---
+
 # Your AI Briefing Summary
 
 You have completed the Leadership Track. You have built an ROI model, applied a build-vs-buy framework, constructed a risk communication structure, designed a governance architecture, mapped your workforce readiness, and drafted a transformation roadmap.

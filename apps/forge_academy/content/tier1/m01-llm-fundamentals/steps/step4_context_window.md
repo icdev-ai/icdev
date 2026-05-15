@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m01-llm-fundamentals:step:4
+step_class: icdev:Lesson
+---
+
 # Context Window Limits
 
 The context window is the working memory of an LLM. Everything the model knows during a single inference — system prompt, conversation history, retrieved documents, tool results — must fit inside it.

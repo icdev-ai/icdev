@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-exec-primer-01:step:4
+step_class: icdev:Assessment
+---
+
 # Your AI Briefing Card
 
 You have completed the AI Executive Primer. You now have a working understanding of what AI is, where it delivers value in government and DoD contexts, and what risks you are responsible for owning.

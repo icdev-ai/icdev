@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-01-ato-acceleration:step:2
+step_class: icdev:Lesson
+---
+
 # Configure ATO Acceleration
 
 Set up the ATO Acceleration agent for your system.

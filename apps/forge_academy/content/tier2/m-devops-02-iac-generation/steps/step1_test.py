@@ -1,3 +1,4 @@
+
 # Auto-grader for DevOps M2: IaC Generation Agent
 
 # ── Test: generate_vpc_block ──────────────────────────────────────────────────

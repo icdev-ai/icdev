@@ -1,3 +1,4 @@
+
 """
 Tier 2 SecOps-Eng Mission 2: STIG Parser
 Goal: Extract control metadata from XCCDF benchmark content using regex parsing.

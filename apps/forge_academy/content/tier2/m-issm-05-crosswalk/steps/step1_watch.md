@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-05-crosswalk:step:1
+step_class: icdev:Lesson
+---
+
 # Cross-Framework Crosswalk — FedRAMP + CMMC + RMF
 
 Your organization operates across multiple compliance regimes simultaneously. FedRAMP for cloud services. CMMC Level 2 for defense contracts. NIST RMF for federal systems. The control sets overlap — but no human can track the mapping manually. ICDEV's crosswalk engine does it automatically.

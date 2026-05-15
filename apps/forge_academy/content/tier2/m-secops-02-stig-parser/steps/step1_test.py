@@ -1,3 +1,4 @@
+
 # Auto-grader for SecOps-Eng M2: STIG Parser
 
 # ── Test: extract_rules ───────────────────────────────────────────────────────

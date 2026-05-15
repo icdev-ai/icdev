@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-dotnet:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # .NET / C# + Anthropic SDK — Dependency Injection Pattern

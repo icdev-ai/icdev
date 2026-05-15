@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-01-llm-observability:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Observability Runbook

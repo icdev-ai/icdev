@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m11-multimodal:step:1
+step_class: icdev:Lesson
+---
+
 # CUI // SP-CTI
 # Multimodal AI — Vision, Documents, Images
 

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-exec-primer-01:step:2
+step_class: icdev:Lesson
+---
+
 # AI in Your Organization — Opportunities
 
 AI capability is not science fiction and it is not a distant investment. Five categories of government and DoD AI use cases are delivering measurable value today — without requiring your organization to build anything from scratch.

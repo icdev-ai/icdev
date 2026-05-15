@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-dataops-05-fine-tuning:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Design Your Training Dataset

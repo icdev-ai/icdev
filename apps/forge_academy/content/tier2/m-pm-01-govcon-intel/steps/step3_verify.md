@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-01-govcon-intel:step:3
+step_class: icdev:Lesson
+---
+
 # Verify: Review Opportunity Results
 
 Review your first scan results before activating the daily cadence.

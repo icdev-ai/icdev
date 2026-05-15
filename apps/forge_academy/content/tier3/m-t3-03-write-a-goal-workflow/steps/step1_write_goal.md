@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-03-write-a-goal-workflow:step:1
+step_class: icdev:Lesson
+---
+
 # Write a Goal Workflow
 
 Goals are the process definitions of ICDEV. A goal file tells the FORGE framework what to achieve, which tools to call, in what order, and what the output looks like. In this mission you'll write a real goal workflow and validate it against the FORGE schema.

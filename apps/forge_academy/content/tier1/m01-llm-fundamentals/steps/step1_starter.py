@@ -1,3 +1,4 @@
+
 # Mission M01 — LLM Fundamentals
 # Step 1: Make your first LLM call
 # Goal: Understand the input/output structure of a language model

@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 """NetOps M04 — NetOps Capstone.
 Goal: Wire topology → anomaly → remediation into a unified NOC pipeline.

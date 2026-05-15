@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-dotnet:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Configure Your .NET Integration

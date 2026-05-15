@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-aiml-04-governance:step:1
+step_class: icdev:Lesson
+---
+
 # Model Governance — DoD RAI 5 Principles + OMB M-25-21
 
 ## Why Governance Matters

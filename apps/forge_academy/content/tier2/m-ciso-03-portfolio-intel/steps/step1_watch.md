@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-03-portfolio-intel:step:1
+step_class: icdev:Lesson
+---
+
 # Portfolio Intelligence — Aggregate Security Posture Across Systems
 
 A CISO doesn't manage one system — they manage a portfolio. 7 systems. 4 cloud environments. 3 compliance regimes. Without aggregation, your posture is invisible. ICDEV's portfolio intelligence layer gives you one number: your organizational security posture score.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m05-mcp-protocol:step:1
+step_class: icdev:Lesson
+---
+
 # What is MCP?
 
 MCP — the Model Context Protocol — is the **USB standard for AI**. Before MCP, every agent framework had its own tool format, its own transport, its own authentication scheme. Integrating one AI tool with ten different agents meant writing ten different adapters.

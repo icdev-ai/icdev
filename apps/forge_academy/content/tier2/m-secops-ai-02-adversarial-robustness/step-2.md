@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-02-adversarial-robustness:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Audit Your Agent Against OWASP LLM Top 10

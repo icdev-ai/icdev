@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-04-incident-response:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # AI Incident Types and Triage

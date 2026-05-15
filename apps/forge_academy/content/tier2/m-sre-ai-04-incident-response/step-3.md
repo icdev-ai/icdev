@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-04-incident-response:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Incident Retrospective

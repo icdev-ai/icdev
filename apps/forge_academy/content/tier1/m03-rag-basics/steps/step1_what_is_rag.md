@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m03-rag-basics:step:1
+step_class: icdev:Lesson
+---
+
 # What is RAG?
 
 RAG — Retrieval-Augmented Generation — is how you make an LLM smarter without retraining it. Instead of baking knowledge into model weights (expensive, slow, stale), you retrieve relevant documents at query time and inject them into the prompt.

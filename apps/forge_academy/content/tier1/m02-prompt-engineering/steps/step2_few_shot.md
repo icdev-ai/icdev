@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m02-prompt-engineering:step:2
+step_class: icdev:Lesson
+---
+
 # Few-Shot Prompting
 
 Zero-shot asks the model to figure out the pattern from instructions alone. Few-shot *shows* it the pattern. For classification, extraction, and formatting tasks, few-shot consistently outperforms zero-shot — sometimes by 30-40% accuracy.

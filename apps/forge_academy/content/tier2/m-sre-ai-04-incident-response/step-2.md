@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-04-incident-response:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Build Your AI Runbook with auto_resolver.py

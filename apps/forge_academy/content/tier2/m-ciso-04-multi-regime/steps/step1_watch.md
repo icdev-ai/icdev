@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-04-multi-regime:step:1
+step_class: icdev:Lesson
+---
+
 # Multi-Regime Compliance — FedRAMP + CMMC + RMF Strategic Dashboard
 
 Your organization simultaneously maintains FedRAMP authorization, CMMC Level 2 certification, and NIST RMF continuous monitoring. The compliance burden across three regimes is enormous — unless you're working from one unified control set. ICDEV's multi-regime dashboard does exactly that.

@@ -1,3 +1,4 @@
+
 """
 Step 3: Temperature & Sampling
 Goal: Call simulate_temperature() with temps 0.0, 0.5, and 1.0 and print results.

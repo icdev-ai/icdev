@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-01-llm-observability:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # LLM Observability — What to Measure

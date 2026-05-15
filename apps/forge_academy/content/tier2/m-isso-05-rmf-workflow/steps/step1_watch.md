@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-05-rmf-workflow:step:1
+step_class: icdev:Lesson
+---
+
 # RMF Workflow Setup
 
 The Risk Management Framework (RMF) isn't a one-time event — it's a continuous cycle. ICDEV automates the workflow handoffs, evidence collection triggers, and SSP section drafts so your team focuses on decisions, not document assembly.

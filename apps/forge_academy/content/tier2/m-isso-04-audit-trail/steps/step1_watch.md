@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-04-audit-trail:step:1
+step_class: icdev:Lesson
+---
+
 # Audit Trail Intelligence
 
 Your audit trail holds every privileged action, configuration change, and authentication event across your system boundary. Manually reviewing thousands of daily entries is impossible — ICDEV's NLQ engine lets you ask questions in plain English and get answers in seconds.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-dotnet:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # .NET Integration Review

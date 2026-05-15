@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-02-market-signal-rag:step:2
+step_class: icdev:Lesson
+---
+
 # Configure Your RAG Pipeline
 
 A RAG pipeline has four configuration decisions. Getting these right determines whether your system produces clean, citable answers or noisy, unreliable ones.

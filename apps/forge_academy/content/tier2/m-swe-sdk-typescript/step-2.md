@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-typescript:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Build the AI Feature

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-03-ai-risk-comm:step:2
+step_class: icdev:Lesson
+---
+
 # Build a Risk Communication Framework
 
 Risk communication is not a one-time event — it is a structured, repeatable process that keeps stakeholders appropriately informed without causing alarm or complacency.

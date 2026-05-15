@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-typescript:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # TypeScript AI Feature Review

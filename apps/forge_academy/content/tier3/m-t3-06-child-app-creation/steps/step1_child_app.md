@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-06-child-app-creation:step:1
+step_class: icdev:Lesson
+---
+
 # Child App Creation
 
 ICDEV child apps are self-contained Flask blueprints that extend the core platform. Every child app must pass the **forge_validator gate** before it ships. In this mission you'll implement the `AppManifest` builder — the structured spec that child_app_generator.py uses to scaffold a new app.

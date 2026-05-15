@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-04-govern-ai:step:3
+step_class: icdev:Assessment
+---
+
 # Your First AI Policy Decision
 
 Governance starts with one policy, one committee, one decision. Organizations that wait for a complete governance framework before taking action end up with neither.

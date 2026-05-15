@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-03-requirements-intake:step:1
+step_class: icdev:Lesson
+---
+
 # Requirements Intake — Conversational Requirements to Decomposed Tasks
 
 The hardest part of any GovCon project isn't the technical work — it's translating a contracting officer's vague performance work statement into specific, estimable engineering tasks. ICDEV's requirements intake engine does this in a structured conversation that takes 15 minutes instead of 3 weeks of workshops.

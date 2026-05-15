@@ -1,3 +1,4 @@
+
 # Auto-grader for SRE M01 Step 1: SLO Monitoring Agent
 
 import sys

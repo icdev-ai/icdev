@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-01-competitive-intel-agent:step:2
+step_class: icdev:Lesson
+---
+
 # Set Up Your Intel Agent
 
 Configuring an intelligence agent requires four decisions: who to watch, what data sources to pull from, what signals matter, and when to be alerted.

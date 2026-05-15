@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-netops-01-topology:step:1
+step_class: icdev:Lesson
+---
+
 # NetOps M01 — Network Topology Agent
 
 ## Mission Brief

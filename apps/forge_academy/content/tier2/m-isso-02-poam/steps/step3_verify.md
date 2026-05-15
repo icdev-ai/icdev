@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-02-poam:step:3
+step_class: icdev:Lesson
+---
+
 # Verify: Review Your POA&M Package
 
 Review the generated POA&M package below before approving it.

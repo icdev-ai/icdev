@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-01-govcon-intel:step:1
+step_class: icdev:Lesson
+---
+
 # GovCon Opportunity Intel — Watch It Run
 
 Finding relevant government contracts on SAM.gov manually means checking 2,000+ new opportunities per day, reading each synopsis, and deciding whether to bid. Watch ICDEV's opportunity scanner do that in 90 seconds.

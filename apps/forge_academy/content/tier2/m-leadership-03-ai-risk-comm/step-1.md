@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-03-ai-risk-comm:step:1
+step_class: icdev:Lesson
+---
+
 # Communicating AI Risk to Boards and Congress
 
 AI risk communication fails in one of two ways: it is so technical that decision-makers disengage, or it is so vague that no one takes action. Your job as an executive is to translate engineering reality into business consequence.

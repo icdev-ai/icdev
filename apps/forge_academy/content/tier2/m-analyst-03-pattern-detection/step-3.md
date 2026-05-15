@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-03-pattern-detection:step:3
+step_class: icdev:Assessment
+---
+
 # Earlier Detection — Your Reflection
 
 The value of pattern detection is not just speed — it is lead time. The analyst who detects a signal 30 days before their competitor acts on it has a structural advantage, regardless of how they use it.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m01-llm-fundamentals:step:1
+step_class: icdev:Lesson
+---
+
 # What Is a Large Language Model?
 
 A **Large Language Model (LLM)** is a neural network trained on massive text datasets to predict the next token in a sequence. That's it. Everything else — the chat interface, the code generation, the "reasoning" — emerges from that single objective.

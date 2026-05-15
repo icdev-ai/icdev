@@ -1,3 +1,4 @@
+
 # Auto-grader for SecOps M1 Step 1: Bandit Security Scanner Agent
 
 import sys

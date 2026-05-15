@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-06-issm-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # ISSM Capstone — Deploy a Complete ATO Evidence Collection Agent
 
 You've seen ICDEV accelerate every phase of the ATO lifecycle. Now you deploy the full pipeline as a continuously running agent — from evidence collection through SSP assembly to stakeholder reporting.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m07-multi-agent:step:1
+step_class: icdev:Lesson
+---
+
 # Multi-Agent Coordination
 
 A single agent hits the wall fast. Context limits. Latency. One skill set. Multi-agent systems break a complex task into parallel subproblems — each agent specializes, and an orchestrator synthesizes the results.

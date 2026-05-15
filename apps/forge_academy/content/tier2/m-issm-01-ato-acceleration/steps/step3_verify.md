@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-01-ato-acceleration:step:3
+step_class: icdev:Lesson
+---
+
 # Verify: ATO Timeline and Gap Analysis
 
 Review your system's ATO acceleration report.

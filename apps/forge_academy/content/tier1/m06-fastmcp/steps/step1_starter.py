@@ -1,3 +1,4 @@
+
 """
 Step 1: Build Your First MCP Server with FastMCP
 Goal: Implement a FastMCP-style server using decorator pattern.

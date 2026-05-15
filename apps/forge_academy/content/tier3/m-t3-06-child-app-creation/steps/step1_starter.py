@@ -1,3 +1,4 @@
+
 """
 Tier 3 Mission 6: Child App Creation
 Goal: Implement AppManifest — the structured spec that drives child app scaffolding.

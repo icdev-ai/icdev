@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-02-ai-risk-posture:step:1
+step_class: icdev:Lesson
+---
+
 # AI Risk Posture — Watch It Run
 
 Knowing what AI systems you have (M-CISO-01) is step one. Step two is understanding the risk they represent. Watch ICDEV's AI Risk Posture engine assess your agency's exposure.

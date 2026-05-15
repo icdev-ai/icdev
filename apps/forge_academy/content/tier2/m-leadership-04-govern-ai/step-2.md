@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-04-govern-ai:step:2
+step_class: icdev:Lesson
+---
+
 # Design Your AI Governance Structure
 
 Good governance does not require a new organization. In most cases, it means extending existing structures — your security committee, your data governance board, your risk council — to include AI explicitly.

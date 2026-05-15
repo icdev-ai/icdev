@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-01-stig-triage:step:3
+step_class: icdev:Lesson
+---
+
 # Verify: Review the Triage Results
 
 The STIG Triage Agent has processed your configuration. Review the output below.

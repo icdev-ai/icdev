@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-01-stig-triage:step:1
+step_class: icdev:Lesson
+---
+
 # STIG Triage Agent — Watch It Run
 
 Before you configure your own STIG triage agent, watch how ICDEV's AI handles a real STIG finding.

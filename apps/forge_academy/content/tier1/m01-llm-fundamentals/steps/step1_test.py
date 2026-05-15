@@ -1,3 +1,4 @@
+
 # Auto-grader for M01 Step 1
 
 def simulate_llm_call(system_prompt: str, user_message: str) -> dict:

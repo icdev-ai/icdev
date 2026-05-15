@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-03-data-poisoning:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Configure Corpus Validation with quality_feedback_loop.py
