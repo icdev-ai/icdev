@@ -3053,6 +3053,27 @@ def step_12_audit_and_registration(child_root: Path, blueprint: dict, db_path: P
     except Exception as e:
         logger.warning("Step 12: Failed to register in DB: %s", e)
 
+    # Register blockchain provenance for child app blueprint
+    try:
+        import hashlib
+        from tools.provenance.registry import register_citation
+        from tools.blockchain.chain_anchor import ChainAnchor
+
+        if blueprint_hash:
+            reg_id = register_citation(
+                citation_type="sbom",
+                source_table="child_app_registry",
+                source_record_id=f"child-app-{app_name}",
+                source_hash=blueprint_hash,
+                source_doc=f"Child app: {app_name}",
+                project_id=blueprint.get("fitness_scorecard", {}).get("project_id", ""),
+            )
+            if reg_id:
+                ChainAnchor().anchor_provenance([reg_id])
+                logger.info("Step 12: Child app provenance anchored: %s", reg_id)
+    except Exception as e:
+        logger.warning("Step 12: Provenance registration skipped: %s", e)
+
     # Phase 36 integration: write genome manifest to child directory
     genome_version = None
     try:

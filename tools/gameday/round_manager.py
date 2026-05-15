@@ -115,6 +115,9 @@ class RoundManager:
         # ── Close round ───────────────────────────────────────────────────────
         update_round(round_id, status="completed", completed_at=_now())
 
+        # ── Blockchain provenance ─────────────────────────────────────────────
+        self._register_round_provenance(round_id, round_num, scenario, judge_result)
+
         log.info(
             "[Round %d] Completed — winner: %s",
             round_num, judge_result.get("round_winner", "?")
@@ -141,6 +144,38 @@ class RoundManager:
     def _get_team_id(self, team_key: str) -> int:
         team = get_team(self.tournament_id, team_key)
         return team["id"] if team else 0
+
+    def _register_round_provenance(self, round_id: int, round_num: int, scenario: dict, judge_result: dict) -> None:
+        """Register round results in source_citation_registry and anchor via ChainAnchor."""
+        try:
+            import hashlib
+            import json
+            from tools.provenance.registry import register_citation
+            from tools.blockchain.chain_anchor import ChainAnchor
+
+            payload = {
+                "round_id": round_id,
+                "round_num": round_num,
+                "scenario": scenario.get("name", ""),
+                "winner": judge_result.get("round_winner", ""),
+                "tournament_id": self.tournament_id,
+            }
+            payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            source_hash = hashlib.sha256(payload_json.encode()).hexdigest()
+
+            reg_id = register_citation(
+                citation_type="canvas_ai",
+                source_table="gd_ai_rounds",
+                source_record_id=str(round_id),
+                source_hash=source_hash,
+                source_doc=f"gameday-round-{round_num}",
+                project_id=f"tournament-{self.tournament_id}",
+            )
+            if reg_id:
+                ChainAnchor().anchor_provenance([reg_id])
+                log.info("[Round %d] Provenance registered: %s", round_num, reg_id)
+        except Exception as exc:
+            log.debug("[Round %d] Provenance registration skipped: %s", round_num, exc)
 
     def _save_training_pairs(self, pairs: list[dict]) -> None:
         from .db import save_training_pair

@@ -70,6 +70,30 @@ def refresh_leaderboard(tournament_id: int) -> list[dict]:
             "avg_innovation_score":       float(row["avg_innovation"] or 0.0),
         })
 
+    # Register blockchain provenance for leaderboard snapshot
+    try:
+        import hashlib
+        import json
+        from tools.provenance.registry import register_citation
+        from tools.blockchain.chain_anchor import ChainAnchor
+
+        payload = {"tournament_id": tournament_id, "leaderboard": leaderboard}
+        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        source_hash = hashlib.sha256(payload_json.encode()).hexdigest()
+        reg_id = register_citation(
+            citation_type="canvas_ai",
+            source_table="gd_ai_leaderboard",
+            source_record_id=f"tournament-{tournament_id}",
+            source_hash=source_hash,
+            source_doc="gameday-leaderboard",
+            project_id=f"tournament-{tournament_id}",
+        )
+        if reg_id:
+            ChainAnchor().anchor_provenance([reg_id])
+            log.info("[Leaderboard] Provenance registered: %s", reg_id)
+    except Exception as exc:
+        log.debug("[Leaderboard] Provenance registration skipped: %s", exc)
+
     return leaderboard
 
 
