@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-05-ai-workforce:step:1
+step_class: icdev:Lesson
+---
+
 # AI Workforce Strategy — Upskilling vs. Hiring vs. Attrition
 
 "Will AI replace my team?" is the wrong question. The right question is: "Which roles will AI transform, and is my team positioned to lead that transformation or be left behind by it?"

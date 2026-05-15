@@ -1,3 +1,4 @@
+
 """NetOps M01 — Network Topology Agent.
 Goal: Parse raw device configs, build adjacency graph, flag unknown nodes.
 """

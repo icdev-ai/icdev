@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aiml-01-foundations:step:1
+step_class: icdev:Lesson
+---
+
 # Foundation Model Selection — AIMC Fundamentals
 
 ## What you'll learn

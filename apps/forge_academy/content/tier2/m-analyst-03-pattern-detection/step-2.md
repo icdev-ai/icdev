@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-03-pattern-detection:step:2
+step_class: icdev:Lesson
+---
+
 # Set Your Detection Parameters
 
 An anomaly detector with no parameters configured will alert on everything — or nothing. The configuration step forces you to make explicit decisions about sensitivity, tolerance, and response.

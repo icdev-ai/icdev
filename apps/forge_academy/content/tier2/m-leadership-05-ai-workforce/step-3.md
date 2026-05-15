@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-05-ai-workforce:step:3
+step_class: icdev:Assessment
+---
+
 # Your 90-Day Workforce Plan
 
 A workforce strategy that has no names, no dates, and no budget is a vision statement. A 90-day plan is a commitment.

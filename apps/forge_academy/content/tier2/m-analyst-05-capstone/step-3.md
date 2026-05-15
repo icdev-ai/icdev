@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-05-capstone:step:3
+step_class: icdev:Assessment
+---
+
 # Your Capstone Intelligence Brief
 
 You have completed the Analyst Track. You have configured a competitive intelligence agent, a RAG pipeline, an anomaly detector, and a report generator. This step connects all four into one intelligence product that reflects your domain, your consumers, and your decision support requirements.

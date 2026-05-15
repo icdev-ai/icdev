@@ -1,3 +1,4 @@
+
 # Auto-grader for SWE/Arch M2: MCP Server Design
 
 # ── Test: generate_schema ─────────────────────────────────────────────────────

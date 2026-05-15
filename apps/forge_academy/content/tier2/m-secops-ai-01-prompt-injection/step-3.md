@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-01-prompt-injection:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Red Team Your Detector

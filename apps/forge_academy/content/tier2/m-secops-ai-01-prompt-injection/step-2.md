@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-01-prompt-injection:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Build a Prompt Injection Detector

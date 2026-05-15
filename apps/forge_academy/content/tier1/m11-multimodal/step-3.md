@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m11-multimodal:step:3
+step_class: icdev:Lesson
+---
+
 # CUI // SP-CTI
 # Wiring the Classifier into a RAG Pipeline
 

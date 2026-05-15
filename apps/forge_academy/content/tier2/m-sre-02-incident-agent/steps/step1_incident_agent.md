@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-02-incident-agent:step:1
+step_class: icdev:Lesson
+---
+
 # SRE M02 — Incident Response Agent
 
 ## Mission Brief

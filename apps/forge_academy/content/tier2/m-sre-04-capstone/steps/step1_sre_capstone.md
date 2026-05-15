@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-04-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # SRE M04 — SRE Capstone
 
 ## Mission Brief

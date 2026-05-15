@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aadc-06-fundamentals:step:1
+step_class: icdev:Lesson
+---
+
 # Agent Topology Fundamentals — Single vs Multi-Agent Design
 
 ## AADC vs AIMC — Know the Difference

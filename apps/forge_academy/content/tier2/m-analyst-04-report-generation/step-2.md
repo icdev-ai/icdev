@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-04-report-generation:step:2
+step_class: icdev:Lesson
+---
+
 # Configure Your Report Generator
 
 A report generator is only as good as its configuration. The four decisions below determine what the system produces and whether it meets your quality bar.

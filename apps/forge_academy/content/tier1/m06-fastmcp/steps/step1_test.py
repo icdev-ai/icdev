@@ -1,3 +1,4 @@
+
 # Auto-grader for M06 Step 1: FastMCP Server
 
 import sys

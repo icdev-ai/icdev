@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 """
 Step 4: Structured Output Enforcement

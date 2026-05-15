@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-go:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Go + Claude API — Structured Output & Concurrency

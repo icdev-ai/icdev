@@ -1,3 +1,4 @@
+
 """SRE M01 — SLO Monitoring Agent.
 Goal: Compute error budget consumption and burn rate, recommend SRE action.
 """

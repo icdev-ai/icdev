@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-devops-02-iac-generation:step:1
+step_class: icdev:Lesson
+---
+
 # IaC Generation Agent
 
 Infrastructure as Code (IaC) is the foundation of repeatable, auditable deployments. Writing Terraform from scratch for every project is slow and error-prone. In this mission you'll build an IaC generation agent that produces valid Terraform configuration from a structured spec.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-05-canvas-selection:step:1
+step_class: icdev:Lesson
+---
+
 # Canvas Selection
 
 ICDEV organizes all AI capabilities into 7 design canvases. Before building a child app, you choose the canvas — each canvas determines what your app can do, what tables it gets, and how it integrates with ICDEV core. Choosing the wrong canvas is the single most expensive architectural mistake you can make at Tier 3.

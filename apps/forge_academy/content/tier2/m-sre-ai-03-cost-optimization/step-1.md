@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-03-cost-optimization:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # AI Cost Optimization — 5 Levers

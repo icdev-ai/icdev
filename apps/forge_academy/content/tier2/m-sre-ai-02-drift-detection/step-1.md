@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-ai-02-drift-detection:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # AI Drift — 4 Types You Must Monitor

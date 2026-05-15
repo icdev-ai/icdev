@@ -1,3 +1,4 @@
+
 # Auto-grader for SWE/Arch Capstone M4: Multi-Agent System Designer
 
 # ── Test: render_template_str ─────────────────────────────────────────────────

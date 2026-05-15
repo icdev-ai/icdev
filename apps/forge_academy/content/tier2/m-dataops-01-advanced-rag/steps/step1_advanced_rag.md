@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-dataops-01-advanced-rag:step:1
+step_class: icdev:Lesson
+---
+
 # Advanced RAG — Chunking, Embedding, and Reranking
 
 The basic RAG pipeline from M03 works — but it fails on long documents, technical jargon, and multi-hop questions. Production RAG requires three upgrades: better chunking, semantic similarity scoring, and a reranker that filters noise before the LLM sees anything.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-java:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Production Considerations for Claude in Spring Boot

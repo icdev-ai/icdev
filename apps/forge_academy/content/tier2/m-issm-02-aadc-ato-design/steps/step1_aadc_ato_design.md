@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-02-aadc-ato-design:step:1
+step_class: icdev:Lesson
+---
+
 # Design a Compliant Agentic System for ATO
 
 Your ATO package just got a new requirement: any AI system deployed must pass OWASP LLM Top 10.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aiml-02-adaptation:step:1
+step_class: icdev:Lesson
+---
+
 # Adaptation Strategy Design — When to Prompt, RAG, or Fine-Tune
 
 ## The Decision Framework

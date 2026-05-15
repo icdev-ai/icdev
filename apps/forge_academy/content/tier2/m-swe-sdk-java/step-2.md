@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-java:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Add Claude to Your Spring Boot Service

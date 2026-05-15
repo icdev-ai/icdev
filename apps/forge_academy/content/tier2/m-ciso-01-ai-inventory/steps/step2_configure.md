@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-01-ai-inventory:step:2
+step_class: icdev:Lesson
+---
+
 # Configure AI Governance Inventory
 
 Set up the AI Inventory scanner for your organization.

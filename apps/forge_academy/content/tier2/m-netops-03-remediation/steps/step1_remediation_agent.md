@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-netops-03-remediation:step:1
+step_class: icdev:Lesson
+---
+
 # NetOps M03 — Auto-Remediation Agent
 
 ## Mission Brief

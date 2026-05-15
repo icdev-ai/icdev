@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-06-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # Building Your AI Transformation Roadmap
 
 A roadmap is not a project plan — it is a strategic narrative that shows where you are going, in what order, and why. The best AI roadmaps sequence investments so that each phase makes the next one cheaper, faster, and lower risk.

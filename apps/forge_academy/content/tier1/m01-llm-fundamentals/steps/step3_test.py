@@ -1,3 +1,4 @@
+
 # Auto-grader for M01 Step 3: Temperature & Sampling
 
 import sys

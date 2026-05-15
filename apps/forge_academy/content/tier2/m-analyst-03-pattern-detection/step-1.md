@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-03-pattern-detection:step:1
+step_class: icdev:Lesson
+---
+
 # Anomaly and Trend Detection for Analysts
 
 Pattern detection is the intelligence analyst's core discipline. AI does not replace that discipline — it scales it. A human analyst can monitor dozens of indicators. An AI-assisted system can monitor thousands.

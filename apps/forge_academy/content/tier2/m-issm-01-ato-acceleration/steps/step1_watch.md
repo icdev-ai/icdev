@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-issm-01-ato-acceleration:step:1
+step_class: icdev:Lesson
+---
+
 # ATO Acceleration — Watch It Run
 
 An ATO (Authority to Operate) package for an IL4 system can run 300–600 pages. The evidence collection process alone takes 6–12 weeks manually. Watch ICDEV compress that to days.

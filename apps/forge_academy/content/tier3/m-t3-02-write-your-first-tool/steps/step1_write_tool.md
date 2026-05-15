@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-02-write-your-first-tool:step:1
+step_class: icdev:Lesson
+---
+
 # Write Your First ICDEV Tool
 
 Every ICDEV capability starts as a tool: a Python module in `tools/` that does exactly one job. In this mission you'll write a compliance evidence collector tool — a real addition to the ICDEV toolchain.

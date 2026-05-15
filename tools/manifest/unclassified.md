@@ -14,3 +14,4 @@
 | Auto-added frontline_importer.py | tools/frontline_importer.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added war_endurance.py | tools/simulation/war_endurance.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added seed_wex_kanban.py | tools/studio/seed_wex_kanban.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added schema_extractor.py | tools/ontology/schema_extractor.py | (auto-added by remediation; update description) | --json | stdout |

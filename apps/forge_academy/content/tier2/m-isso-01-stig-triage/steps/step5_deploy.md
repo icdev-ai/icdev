@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-01-stig-triage:step:5
+step_class: icdev:Lesson
+---
+
 # Deploy: Activate Your STIG Triage Agent
 
 You've configured and reviewed the STIG Triage Agent. Now deploy it as a live pattern in ICDEV.

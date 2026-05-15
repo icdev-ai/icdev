@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-02-adversarial-robustness:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # OWASP LLM Top 10 — Red Team Framework
