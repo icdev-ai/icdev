@@ -414,6 +414,17 @@ def create_boundary_blueprint():
             rebuild_canvas_kg("bdc", design_id)
         except Exception:
             pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="bdc",
+                design_id=design_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
+        except Exception:
+            pass
 
         return jsonify({"id": design_id, "updated_at": now})
 
@@ -519,6 +530,17 @@ def create_boundary_blueprint():
         result["assessment_id"] = assess_id
         result["gap_analysis"] = gaps
         result["chain_mode"] = chain_mode
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="bdc",
+                design_id=design_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
         return jsonify(result)
 
     # ====================================================================
