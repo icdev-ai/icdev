@@ -23,7 +23,7 @@ from tools.ai_game_engine.ontology import (
 )
 from tools.ai_game_engine.scenario_registry import load_scenario
 from tools.ttx.engine import TTXEngine
-from tools.ttx.scenario_loader import list_scenario_slugs, load_scenario
+from tools.ttx.scenario_loader import list_scenario_slugs
 from tools.ttx.session_manager import get_session, list_sessions, get_session_by_code
 from tools.ttx.team_manager import list_teams, get_team, get_team_by_code, list_members
 from tools.ttx.inject_dispatcher import (
