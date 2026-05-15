@@ -8,10 +8,20 @@ import json
 import uuid
 from datetime import datetime, timezone
 
+import yaml
+
 from flask import Blueprint, g, jsonify, render_template, request
 
-from .constants import APP_NAME, SCENARIO_SLUG, AI_TOOLS_CATALOG, INJECT_TYPES, LEVELS
+from .constants import (
+    APP_NAME, SCENARIO_SLUG, AI_TOOLS_CATALOG, INJECT_TYPES, LEVELS,
+    EVENT_ONTOLOGY_TYPES, SCOREBOARD_ONTOLOGY_FILTERS,
+)
 from .db import migrate
+from tools.ai_game_engine.ontology import (
+    resolve_scenario_ontology, resolve_role_ontology, filter_by_ontology_class,
+    ONTOLOGY_NAMESPACES, SCENARIO_ONTOLOGY, ROLE_ONTOLOGY, EVENT_ONTOLOGY,
+)
+from tools.ai_game_engine.scenario_registry import load_scenario
 from tools.ttx.engine import TTXEngine
 from tools.ttx.scenario_loader import list_scenario_slugs, load_scenario
 from tools.ttx.session_manager import get_session, list_sessions, get_session_by_code
@@ -70,6 +80,8 @@ def hub():
         pending_sessions=pending,
         past_sessions=ended,
         scenarios=scenarios,
+        ontology_filters=SCOREBOARD_ONTOLOGY_FILTERS,
+        ontology_namespaces=ONTOLOGY_NAMESPACES,
     )
 
 
@@ -83,6 +95,9 @@ def player_console(session_id: int):
     cfg = json.loads(session.get("config_json") or "{}")
     scenario = cfg.get("scenario", {})
     roles = scenario.get("roles", [])
+    # Enrich roles with ontology tags
+    for role in roles:
+        role["ontology"] = resolve_role_ontology(role.get("id", ""))
     return render_template(
         "ai_gameday/player.html",
         app_name=APP_NAME,
@@ -91,6 +106,7 @@ def player_console(session_id: int):
         roles=roles,
         ai_tools=AI_TOOLS_CATALOG,
         levels=LEVELS,
+        event_ontology_types=EVENT_ONTOLOGY_TYPES,
     )
 
 
@@ -107,6 +123,10 @@ def facilitator_console(session_id: int):
     for inj in injects:
         cfg = json.loads(inj.get("config_json") or "{}")
         inj["is_aadc"] = cfg.get("inject_type") == "aadc_design_challenge"
+    # Enrich injects with ontology tags
+    for inj in injects:
+        cfg = json.loads(inj.get("config_json") or "{}")
+        inj["ontology_tags_json"] = inj.get("ontology_tags_json", "{}")
     return render_template(
         "ai_gameday/facilitator.html",
         app_name=APP_NAME,
@@ -114,6 +134,8 @@ def facilitator_console(session_id: int):
         teams=teams,
         injects=injects,
         leaderboard=lb,
+        ontology_filters=SCOREBOARD_ONTOLOGY_FILTERS,
+        event_ontology_types=EVENT_ONTOLOGY_TYPES,
     )
 
 
@@ -133,6 +155,7 @@ def live_leaderboard(session_id: int):
         leaderboard=lb,
         ribbons=ribbons,
         ribbon_defs=RIBBON_DEFS,
+        ontology_filters=SCOREBOARD_ONTOLOGY_FILTERS,
     )
 
 
@@ -150,9 +173,10 @@ def scenario_manager():
                 "session_mode": s.get("session_mode", "live"),
                 "inject_count": len(s.get("injects", [])),
                 "duration_minutes": s.get("duration_minutes", 120),
+                "ontology": s.get("ontology", resolve_scenario_ontology(slug)),
             })
         except Exception:
-            scenario_list.append({"slug": slug, "name": slug, "error": True})
+            scenario_list.append({"slug": slug, "name": slug, "error": True, "ontology": resolve_scenario_ontology(slug)})
     # Also load DB-authored scenarios
     conn = get_connection()
     db_scenarios = conn.execute(
@@ -244,6 +268,8 @@ def session_results(session_id: int):
                 entry["aadc_score"] = row.get("judge_pts") or 0
             inject_scores[iid][row["team_id"]] = entry
 
+    # Enrich session with ontology
+    session["ontology_tags"] = resolve_scenario_ontology(session.get("scenario_slug", ""))
     return render_template(
         "ai_gameday/session_results.html",
         app_name=APP_NAME,
@@ -256,6 +282,8 @@ def session_results(session_id: int):
         ai_stats=ai_stats,
         teams={t["team_id"]: t for t in teams},
         inject_scores=inject_scores,
+        ontology_filters=SCOREBOARD_ONTOLOGY_FILTERS,
+        event_ontology_types=EVENT_ONTOLOGY_TYPES,
     )
 
 
@@ -272,6 +300,15 @@ def api_create_session():
     mode = data.get("session_mode")
     try:
         session = _engine.create_session(slug, facilitator, session_mode=mode, tenant_id=_gameday_tenant_id())
+        # Enrich session config with ontology tags
+        conn = get_connection()
+        scenario_ontology = resolve_scenario_ontology(slug)
+        conn.execute(
+            "UPDATE ttx_sessions SET ontology_tags_json = ? WHERE session_id = ?",
+            (json.dumps(scenario_ontology), session["session_id"]),
+        )
+        conn.commit()
+        session["ontology_tags"] = scenario_ontology
         return jsonify({"ok": True, "session": session}), 201
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 400
@@ -475,6 +512,31 @@ def api_session_responses(session_id: int):
 @bp.route("/api/gameday/session/<int:session_id>/leaderboard", methods=["GET"])
 def api_leaderboard(session_id: int):
     lb = compute_leaderboard(session_id)
+    ontology_class = request.args.get("ontology_class")
+    exclude_class = request.args.get("exclude_class")
+    if ontology_class or exclude_class:
+        # Fetch inject ontology tags for filtering
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT inject_id, ontology_tags_json FROM ttx_injects WHERE session_id = ?", (session_id,)
+        ).fetchall()
+        inject_tags = {r["inject_id"]: json.loads(r["ontology_tags_json"] or "{}") for r in rows}
+        # Filter leaderboard entries that have responses matching the ontology class
+        filtered = []
+        for entry in lb:
+            tid = entry.get("team_id")
+            resp_rows = conn.execute(
+                """SELECT r.inject_id FROM ttx_responses r
+                   WHERE r.team_id = ? AND r.inject_id IN (
+                       SELECT inject_id FROM ttx_injects WHERE session_id = ?
+                   )""", (tid, session_id)
+            ).fetchall()
+            tags = [{"inject_id": r["inject_id"], "ontology_tags": inject_tags.get(r["inject_id"], {})} for r in resp_rows]
+            matched = filter_by_ontology_class(tags, ontology_class=ontology_class, exclude_class=exclude_class, key="ontology_tags")
+            if matched:
+                entry["ontology_matches"] = len(matched)
+                filtered.append(entry)
+        lb = filtered
     return jsonify({"leaderboard": lb, "total": len(lb)})
 
 
@@ -482,6 +544,63 @@ def api_leaderboard(session_id: int):
 def api_ribbons(session_id: int):
     ribbons = award_ribbons(session_id)
     return jsonify({"ribbons": ribbons})
+
+
+@bp.route("/api/gameday/session/<int:session_id>/ontology", methods=["GET"])
+def api_session_ontology(session_id: int):
+    """Return ontology tags for the session's scenario, roles, and injects."""
+    _ensure_init()
+    session = get_session(session_id)
+    if not session:
+        return jsonify({"ok": False, "error": "not found"}), 404
+    cfg = json.loads(session.get("config_json") or "{}")
+    scenario_slug = session.get("scenario_slug", "")
+    scenario_ontology = resolve_scenario_ontology(scenario_slug)
+    # Role ontology
+    scenario = cfg.get("scenario", {})
+    roles = []
+    for role in scenario.get("roles", []):
+        roles.append({
+            "id": role.get("id"),
+            "label": role.get("label"),
+            "ontology": resolve_role_ontology(role.get("id", "")),
+        })
+    # Inject ontology from DB
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT inject_id, slug, title, ontology_tags_json FROM ttx_injects WHERE session_id = ?",
+        (session_id,),
+    ).fetchall()
+    injects = []
+    for r in rows:
+        tags = json.loads(r["ontology_tags_json"] or "{}")
+        injects.append({
+            "inject_id": r["inject_id"],
+            "slug": r["slug"],
+            "title": r["title"],
+            "ontology": tags,
+        })
+    return jsonify({
+        "ok": True,
+        "session_id": session_id,
+        "scenario_slug": scenario_slug,
+        "scenario_ontology": scenario_ontology,
+        "roles": roles,
+        "injects": injects,
+        "namespaces": ONTOLOGY_NAMESPACES,
+    })
+
+
+@bp.route("/api/gameday/ontology/concepts", methods=["GET"])
+def api_ontology_concepts():
+    """Return all ontology concepts for UI reference."""
+    from tools.ai_game_engine.ontology import get_all_ontology_concepts
+    return jsonify({
+        "concepts": get_all_ontology_concepts(),
+        "namespaces": ONTOLOGY_NAMESPACES,
+        "filters": SCOREBOARD_ONTOLOGY_FILTERS,
+        "event_types": EVENT_ONTOLOGY_TYPES,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -508,6 +627,19 @@ def api_save_scenario():
     created_by = data.get("created_by", "builder")
     if not name or not slug:
         return jsonify({"ok": False, "error": "name and slug required"}), 400
+    # Derive ontology tags from scenario content
+    try:
+        scenario_data = yaml.safe_load(yaml_content) or {}
+    except Exception:
+        scenario_data = {}
+    from tools.ai_game_engine.scenario_registry import OntologyScenarioRegistry
+    registry = OntologyScenarioRegistry()
+    ontology_tags = registry._resolve_inject_ontology({"ai_tools_allowed": scenario_data.get("ai_tools_allowed", [])})
+    # Also add scenario-level ontology
+    scenario_ontology = resolve_scenario_ontology(slug)
+    ontology_tags["scenario_classes"] = scenario_ontology.get("classes", [])
+    ontology_tags_json = json.dumps(ontology_tags)
+
     conn = get_connection()
     conn.execute(
         """INSERT INTO ttx_scenarios (slug, name, yaml_content, created_by, created_at)
@@ -519,7 +651,7 @@ def api_save_scenario():
         (slug, name, yaml_content, created_by, _now()),
     )
     conn.commit()
-    return jsonify({"ok": True, "slug": slug}), 201
+    return jsonify({"ok": True, "slug": slug, "ontology": ontology_tags}), 201
 
 
 @bp.route("/api/gameday/inject-templates", methods=["GET"])

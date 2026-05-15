@@ -29,6 +29,11 @@ body{background:#0d1117;}
 .ribbon-winner{font-size:.85rem;color:#e6edf3;font-weight:600;}
 .pulse-dot{display:inline-block;width:8px;height:8px;background:#3fb950;border-radius:50%;margin-right:.4rem;animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.3;}}
+.lb-filters{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:center;margin-bottom:1.2rem;}
+.lb-filter-btn{background:#161b22;border:1px solid #30363d;color:#8b949e;padding:.35rem .9rem;border-radius:6px;font-size:.78rem;cursor:pointer;transition:all .2s;}
+.lb-filter-btn:hover{border-color:#58a6ff;color:#58a6ff;}
+.lb-filter-btn.active{background:#1f6030;border-color:#3fb950;color:#3fb950;}
+.lb-filter-btn.exclude{background:#3c1f1f;border-color:#f85149;color:#f85149;}
 </style>
 {% endblock %}
 {% block content %}
@@ -39,6 +44,14 @@ body{background:#0d1117;}
       <span class="pulse-dot"></span>{{ session.scenario_slug.replace('_',' ').title() }} ·
       <span class="fc-badge state-{{ session.state }}" style="font-size:.72rem;padding:.2rem .6rem;border-radius:12px;background:#1f6030;color:#3fb950;">{{ session.state }}</span>
     </p>
+  </div>
+
+  <!-- Ontology Filters -->
+  <div class="lb-filters">
+    {% for f in ontology_filters %}
+    <button class="lb-filter-btn" data-filter="{{ f.ontology_class or '' }}" onclick="setFilter(this)">{{ f.label }}</button>
+    {% endfor %}
+    <button class="lb-filter-btn" data-exclude="cyber" onclick="toggleExclude(this)">Hide Cyber</button>
   </div>
 
   <!-- Ribbons -->
@@ -92,10 +105,33 @@ body{background:#0d1117;}
 
 <script>
 const SID={{ session.session_id }};
-setInterval(async()=>{
-  const r=await fetch('/api/gameday/session/'+SID+'/leaderboard');
+let activeFilter='';
+let excludeCyber=false;
+
+function setFilter(btn){
+  const val=btn.dataset.filter;
+  if(activeFilter===val){activeFilter='';btn.classList.remove('active');}
+  else{activeFilter=val;document.querySelectorAll('.lb-filter-btn[data-filter]').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
+  refreshLeaderboard();
+}
+function toggleExclude(btn){
+  excludeCyber=!excludeCyber;
+  btn.classList.toggle('exclude',excludeCyber);
+  refreshLeaderboard();
+}
+
+async function refreshLeaderboard(){
+  let url='/api/gameday/session/'+SID+'/leaderboard';
+  const params=[];
+  if(activeFilter)params.push('ontology_class='+encodeURIComponent(activeFilter));
+  if(excludeCyber)params.push('exclude_class=cyber');
+  if(params.length)url+='?'+params.join('&');
+  const r=await fetch(url);
   const d=await r.json();
-  if(!d.leaderboard||!d.leaderboard.length)return;
+  if(!d.leaderboard||!d.leaderboard.length){
+    document.getElementById('lb-list').innerHTML='<div style="text-align:center;color:#6e7681;padding:3rem;">No scores yet. Waiting for teams...</div>';
+    return;
+  }
   const maxScore=d.leaderboard[0].total_score||1;
   const colors={1:'linear-gradient(90deg,#FFB800,#FF6B35)',2:'linear-gradient(90deg,#c0c0c0,#8b8b8b)',3:'linear-gradient(90deg,#cd7f32,#b56b20)'};
   const rankMedals={1:'🥇',2:'🥈',3:'🥉'};
@@ -115,6 +151,8 @@ setInterval(async()=>{
       </div>
       <div class="score-val">${row.total_score}<span style="font-size:.8rem;color:#6e7681;font-weight:400;"> pts</span></div>
     </div>`).join('');
-},10000);
+}
+refreshLeaderboard();
+setInterval(refreshLeaderboard,10000);
 </script>
 {% endblock %}
