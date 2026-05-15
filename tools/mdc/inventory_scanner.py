@@ -54,7 +54,6 @@ def scan_inventory(project_id: str) -> dict:
         pass  # table may not exist — use defaults
 
     total_apps = inv.get("app_count", 0)
-    total_servers = inv.get("server_count", 0)
     total_dbs = inv.get("db_count", 0)
 
     rs_dist = {r: inv.get(f"rs_{r}", 0) for r in _7RS}

@@ -69,7 +69,7 @@ assert summary.get("action_required") is True, \
 runner2 = DAGRunner(COMPLIANCE_PIPELINE)
 order = runner2._build_order()
 assert order is not None, "_build_order() returned None"
-assert isinstance(order, list), f"_build_order() must return list of batches"
+assert isinstance(order, list), "_build_order() must return list of batches"
 assert len(order) >= 2, f"Pipeline has at least 3 dependency levels, got {len(order)} batches"
 
 # First batch must only contain stig_scan (no deps)

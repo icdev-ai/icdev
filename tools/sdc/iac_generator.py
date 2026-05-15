@@ -5,7 +5,6 @@ Outputs JSON with artifact paths to stdout.
 """
 import argparse
 import json
-import re
 import sys
 import uuid
 from datetime import datetime, timezone

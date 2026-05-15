@@ -95,7 +95,7 @@ assert result["valid"] is True, f"Valid spec -> valid=True, got issues: {result[
 assert result["ready"] is True, "Valid spec + files + tools -> ready=True"
 assert result["files_generated"] == 3, f"Should generate 3 files, got {result['files_generated']}"
 assert result["file_paths"] == sorted(result["file_paths"]), "file_paths must be sorted"
-assert len(result["tools_registered"]) == 2, f"Should register 2 tools"
+assert len(result["tools_registered"]) == 2, "Should register 2 tools"
 
 # ── Test: SystemDesigner.design — invalid spec ────────────────────────────────
 

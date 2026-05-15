@@ -156,6 +156,8 @@ _CANVAS_DEFS = [
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
     ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
     ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
+    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
+    ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -1381,6 +1383,8 @@ def create_app() -> Flask:
             "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
             "ohc_enabled": _CANVAS_FLAGS.get("ohc", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
+            "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
+            "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
             "academy_enabled": _APP_FLAGS.get("forge_academy", False),
@@ -1512,6 +1516,8 @@ def create_app() -> Flask:
         "mdc": "/migration-canvas",
         "aimc": "/ai-ml",
         "ohc": "",
+        "iop": "/info-ops",
+        "mission_canvas": "/mission-canvas",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:

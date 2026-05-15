@@ -9,8 +9,6 @@ This capstone integrates everything from SecOps-01, 02, and 03:
   - EvidencePipeline (evidence collection) → RemediationAgent (action plan)
 """
 
-import re
-from datetime import date
 
 # ── Provided Stubs (simplified versions of prior missions) ────────────────────
 
@@ -72,8 +70,6 @@ def plan_remediation(finding: dict) -> dict:
             CAT I → 30 days, CAT II → 180 days, CAT III → 365 days
     }
     """
-    from datetime import timedelta
-    days_map = {"CAT I": 30, "CAT II": 180, "CAT III": 365}
     # YOUR CODE HERE
     pass
 

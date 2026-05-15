@@ -20,7 +20,7 @@ assert len(plan["buckets"]) == len(services), \
     f"Should have {len(services)} buckets, got {len(plan['buckets'])}"
 for svc in services:
     assert svc in plan["buckets"], f"Bucket missing for service '{svc}'"
-    assert "staging" in plan["buckets"][svc], f"Bucket should reference env 'staging'"
+    assert "staging" in plan["buckets"][svc], "Bucket should reference env 'staging'"
     assert "versioning" in plan["buckets"][svc].lower() or "Enabled" in plan["buckets"][svc], \
         f"Bucket for '{svc}' should have versioning enabled"
 

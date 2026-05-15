@@ -4,8 +4,7 @@ Step 1: Amazon Strands Agents — Tool Decorator + Agent Pattern
 Goal: Implement the @tool decorator and StrandsAgent that uses registered tools.
 """
 
-import inspect
-from typing import Callable, Any
+from typing import Callable
 
 
 # ── @tool decorator (Strands pattern) ────────────────────────────────────────

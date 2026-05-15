@@ -1,5 +1,6 @@
 {% extends "network/base.html" %}
 {% block title %}Global Network Canvas — Network Design Canvas{% endblock %}
+{% block global_banner %}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
 <script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
@@ -26,6 +27,8 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <div id="global-canvas-toolbar">
   <button class="tb-btn" onclick="gcZoomIn()">+ Zoom</button>
   <button class="tb-btn" onclick="gcZoomOut()">- Zoom</button>

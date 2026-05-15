@@ -8,7 +8,7 @@ def sample_func(control_id: str, system: str = "ICDEV-Prod", limit: int = 10) ->
 
 schema = generate_schema(sample_func)
 assert schema is not None, "generate_schema() returned None"
-assert isinstance(schema, dict), f"generate_schema() must return dict"
+assert isinstance(schema, dict), "generate_schema() must return dict"
 assert "type" in schema and schema["type"] == "object", "Schema type must be 'object'"
 assert "properties" in schema, "Schema must have 'properties'"
 assert "required" in schema, "Schema must have 'required'"
@@ -56,7 +56,7 @@ def error_tool(msg: str) -> dict:
 
 tools = registry.list_tools()
 assert tools is not None, "list_tools() returned None"
-assert isinstance(tools, list), f"list_tools() must return list"
+assert isinstance(tools, list), "list_tools() must return list"
 assert len(tools) == 3, f"Should have 3 tools registered, got {len(tools)}"
 
 tool_names = [t["name"] for t in tools]
@@ -64,15 +64,15 @@ assert "get_compliance_status" in tool_names, "get_compliance_status should be r
 assert "list_findings" in tool_names, "list_findings should be registered"
 
 for t in tools:
-    assert "name" in t, f"Each tool must have 'name'"
-    assert "description" in t, f"Each tool must have 'description'"
-    assert "parameters" in t, f"Each tool must have 'parameters'"
+    assert "name" in t, "Each tool must have 'name'"
+    assert "description" in t, "Each tool must have 'description'"
+    assert "parameters" in t, "Each tool must have 'parameters'"
 
 # ── Test: call — successful call ──────────────────────────────────────────────
 
 result = registry.call("get_compliance_status", {"control_id": "IA-2"})
 assert result is not None, "call() returned None"
-assert isinstance(result, dict), f"call() must return dict"
+assert isinstance(result, dict), "call() must return dict"
 assert "result" in result, "Call result must have 'result'"
 assert "error" in result, "Call result must have 'error'"
 assert result["error"] is None, f"Successful call should have error=None, got '{result['error']}'"

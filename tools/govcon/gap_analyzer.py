@@ -26,6 +26,7 @@ Usage:
 import argparse
 import json
 import os
+import sys
 import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -371,8 +372,8 @@ def register_gaps_as_innovation_signals():
                 ),
             )
             registered += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"Warning: failed to register gap as innovation signal: {exc}", file=sys.stderr)
 
     if registered:
         _audit(conn, "register_innovation", f"Registered {registered} gaps as innovation signals")

@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ design.name or 'New Design' }} - Quality Design Canvas{% endblock %}
+{% block global_banner %}{% endblock %}
 {% block extra_css %}<style>
   body { overflow: hidden; height: 100vh; }
   .main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
 </style>{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <div class="dc-wrap" style="display:flex;flex:1;overflow:hidden;background:#0d1b2a;">
   <!-- Left Sidebar (220px) -->
   <div class="dc-sidebar" style="width:220px;min-width:220px;background:#0a1628;border-right:1px solid #1e3a6e;overflow-y:auto;">
@@ -128,6 +131,8 @@
             <a onclick="canvasExport('png')" style="display:block;padding:6px 12px;color:#eaeaea;font-size:12px;cursor:pointer;text-decoration:none;" onmouseenter="this.style.background='#1e3a6e'" onmouseleave="this.style.background='transparent'">Export PNG</a>
           </div>
         </div>
+        <button onclick="canvasGovernance()" title="Quality Governance Check (DAMA / ISO 25010 / SA-11)"
+                style="padding:4px 12px;background:#0f3460;color:#9b59b6;border:1px solid #9b59b644;border-radius:4px;font-size:12px;cursor:pointer;">Governance</button>
         <button onclick="canvasAssess()" title="Run SA-11 assessment"
                 style="padding:4px 12px;background:#0f3460;color:#2196f3;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;cursor:pointer;">Assess</button>
         <button onclick="canvasGaps()" title="Gap analysis"
@@ -136,6 +141,9 @@
                 style="padding:4px 12px;background:#0f3460;color:#4caf50;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;cursor:pointer;">UQS</button>
         <button onclick="showGates()" title="Security gates"
                 style="padding:4px 12px;background:#0f3460;color:#e94560;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;cursor:pointer;">Gates</button>
+        {% set wf_canvas_id = "qdc" %}
+        {% set wf_context_label = design.name if design else '' %}
+        {% include 'includes/workflow_trigger_btn.html' %}
         <a href="/quality/" title="Back to designs"
            style="padding:4px 12px;background:#16213e;color:#7a8cb0;border:1px solid #1e3a6e;border-radius:4px;font-size:12px;text-decoration:none;display:flex;align-items:center;">Back</a>
       </div>
@@ -321,6 +329,50 @@
       })
       .catch(function(e) {
         document.getElementById('dc-panel-body').innerHTML = '<p class="dc-result-fail">Error: ' + e.message + '</p>';
+        setStatus('Error');
+      });
+  };
+
+  window.canvasGovernance = function() {
+    if (!DESIGN_ID) { alert('Save the design first.'); return; }
+    openRightPanel('Governance');
+    document.getElementById('dc-panel-body').innerHTML = '<p style="color:#7a8cb0;font-size:11px;">Running quality governance check…</p>';
+    setStatus('Checking governance...');
+    fetch(API_BASE + '/designs/' + DESIGN_ID + '/governance', {method: 'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) { document.getElementById('dc-panel-body').innerHTML = '<p style="color:#e74c3c;">' + d.error + '</p>'; return; }
+        var score = d.score || 0;
+        var grade = d.grade || '?';
+        var maturity = d.maturity || {};
+        var cats = d.categories || {};
+        var recs = d.recommendations || [];
+        var sColor = score >= 80 ? '#27ae60' : score >= 60 ? '#f39c12' : '#e74c3c';
+        var html = '<div style="background:#0f1e36;border-radius:8px;padding:12px;margin-bottom:12px;text-align:center;">';
+        html += '<div style="font-size:38px;font-weight:700;color:' + sColor + ';">' + score + '</div>';
+        html += '<div style="font-size:11px;color:#7a8cb0;">Governance Score / 100 · Grade <strong style="color:' + sColor + ';">' + grade + '</strong></div></div>';
+        html += '<div style="background:#16213e;border:1px solid #9b59b644;border-radius:6px;padding:8px 12px;margin-bottom:12px;">';
+        html += '<div style="font-size:12px;font-weight:700;color:#9b59b6;">Level ' + (maturity.level||1) + ' — ' + (maturity.label||'') + '</div>';
+        html += '<div style="font-size:10px;color:#5a6e8c;">' + (maturity.description||'') + '</div></div>';
+        html += '<div style="font-size:11px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Pillars</div>';
+        Object.entries(cats).forEach(function(e) {
+          var p = e[0], c = e[1], pct = c.pct || 0;
+          var pColor = pct >= 80 ? '#27ae60' : pct >= 50 ? '#f39c12' : '#e74c3c';
+          html += '<div style="margin-bottom:6px;"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;"><span>' + p + '</span><span style="color:' + pColor + ';font-weight:600;">' + pct + '%</span></div>';
+          html += '<div style="height:6px;background:#1e3a6e;border-radius:3px;"><div style="width:' + Math.min(pct,100) + '%;height:100%;background:' + pColor + ';border-radius:3px;"></div></div></div>';
+        });
+        if (recs.length) {
+          html += '<div style="font-size:11px;font-weight:700;color:#7a8cb0;text-transform:uppercase;letter-spacing:.5px;margin:10px 0 6px;">Recommendations</div>';
+          recs.slice(0,5).forEach(function(r) {
+            var c = r.priority === 'CAT1' ? '#e74c3c' : r.priority === 'CAT2' ? '#f39c12' : '#7a8cb0';
+            html += '<div style="padding:5px 8px;border-left:3px solid ' + c + ';background:#1a1a2e;border-radius:0 4px 4px 0;margin-bottom:4px;font-size:11px;color:#eaeaea;">' + r.title + '</div>';
+          });
+        }
+        document.getElementById('dc-panel-body').innerHTML = html;
+        setStatus('Governance check complete');
+      })
+      .catch(function(e) {
+        document.getElementById('dc-panel-body').innerHTML = '<p style="color:#e74c3c;">Error: ' + e.message + '</p>';
         setStatus('Error');
       });
   };

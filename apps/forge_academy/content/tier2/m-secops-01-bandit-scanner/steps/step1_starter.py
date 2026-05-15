@@ -4,7 +4,6 @@ SecOps Mission 1: Build a Static Analysis Security Agent
 Goal: Wrap Bandit SAST output in a triage agent with CWE mapping and fix recommendations.
 """
 
-import re
 
 # ── CWE Mapping ───────────────────────────────────────────────────────────────
 
@@ -121,7 +120,7 @@ def generate_report(triaged: dict) -> str:
 if __name__ == "__main__":
     scanner = BanditScanner()
     findings = scanner.scan(VULNERABLE_CODE_SAMPLE)
-    print(f"=== Bandit Scan Results ===")
+    print("=== Bandit Scan Results ===")
     print(f"Findings: {len(findings)}")
 
     triaged = triage_findings(findings)
@@ -129,5 +128,5 @@ if __name__ == "__main__":
           f"MEDIUM={len(triaged['medium'])} LOW={len(triaged['low'])}")
 
     report = generate_report(triaged)
-    print(f"\n=== Security Report ===")
+    print("\n=== Security Report ===")
     print(report)

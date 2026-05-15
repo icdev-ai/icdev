@@ -125,6 +125,18 @@ python tools/security/sast_runner.py --project-dir "/path"
 python tools/security/dependency_auditor.py --project-dir "/path"
 python tools/security/secret_detector.py --project-dir "/path"
 python tools/security/container_scanner.py --image "sparkpilot:latest"
+
+# Security Framework (Phase 74 — sec-fnd)
+python tools/security/security_context.py --whoami --json
+python tools/security/abac_engine.py --review --json
+python tools/security/row_security.py --test --table <name> --json
+python tools/security/classification_enforcer.py --check --json
+python tools/security/column_security.py --mask --table <name> --json
+python tools/security/field_security.py --filter --schema <name> --json
+python tools/security/encryption_at_rest.py --rotate --classification TS --json
+python tools/security/mtls_integration.py --verify --json
+python tools/security/security_middleware.py --init-app --json
+python tools/security/audit_posture.py --json
 ```
 
 ---
@@ -283,6 +295,29 @@ python tools/knowledge_graph/temporal.py --evolution --graph-id <id> --interval 
 python tools/knowledge_graph/temporal.py --recent --days 7 --json
 python tools/knowledge_graph/temporal.py --stale --stale-days 90 --json
 python tools/knowledge_graph/temporal.py --diff --graph-id <id> --date-a 2026-03-01 --date-b 2026-03-15 --json
+```
+
+---
+
+## Ontology Commands
+```bash
+# Extract schema (dry-run)
+python tools/ontology/schema_extractor.py --dry-run --json
+
+# Validate ontology catalog
+python tools/ontology/ontology_catalog.py --validate --json
+
+# Build ontology federation
+python tools/ontology/federation.py --build --json
+
+# Query ontology
+python tools/ontology/ontology_catalog.py --query "AWS VPC" --json
+
+# Export external mappings
+python tools/ontology/external_mappings.py --to stix --json
+
+# Run RAG with ontology-aware code generation
+python tools/llm/router.py --ontology-aware --function code_generation --prompt "..." --json
 ```
 
 ---

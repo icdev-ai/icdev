@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MFA Setup — ICDEV™ Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
+</head>
+<body>
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+    {% endif %}
+
+    <div class="login-container" role="main">
+        <div class="login-card">
+            <h1 class="login-title">Multi-Factor Authentication Setup</h1>
+            <p class="login-subtitle">MFA is required for all users</p>
+
+            {% if success %}
+            <div class="alert alert-success" role="alert">
+                MFA enabled successfully! Save your backup codes below — they will not be shown again.
+            </div>
+            <div class="backup-codes">
+                <h3>Backup Codes</h3>
+                <ul class="code-list">
+                    {% for code in backup_codes %}
+                    <li><code>{{ code }}</code></li>
+                    {% endfor %}
+                </ul>
+                <p class="form-help">Store these in a secure location. Each code can be used once if you lose access to your authenticator app.</p>
+            </div>
+            <a href="{{ url_for('index') }}" class="btn btn-primary btn-block">Continue to Dashboard</a>
+            {% else %}
+
+            {% if error %}
+            <div class="alert alert-danger" role="alert">{{ error }}</div>
+            {% endif %}
+
+            <div class="mfa-instructions">
+                <p>1. Open your authenticator app (Google Authenticator, Microsoft Authenticator, Authy, etc.)</p>
+                <p>2. Add a new account by scanning the QR code or entering the secret manually</p>
+                <p>3. Enter the 6-digit code below to verify</p>
+            </div>
+
+            <div class="mfa-secret-block">
+                <label>Secret Key</label>
+                <div class="secret-display">
+                    <code id="totp-secret">{{ secret }}</code>
+                    <button type="button" class="btn btn-sm" onclick="copySecret()">Copy</button>
+                </div>
+            </div>
+
+            <div class="mfa-uri-block">
+                <label>Setup URI</label>
+                <div class="uri-display">
+                    <code>{{ uri }}</code>
+                </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('mfa_setup') }}">
+                <input type="hidden" name="secret" value="{{ secret }}">
+                <div class="form-group">
+                    <label for="code">Verification Code</label>
+                    <input type="text" id="code" name="code"
+                           class="form-control"
+                           placeholder="000000"
+                           inputmode="numeric"
+                           pattern="[0-9]{6}"
+                           maxlength="6"
+                           autocomplete="off"
+                           required autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Verify and Enable MFA</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if cui_banner_enabled %}
+    <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
+    {% endif %}
+
+    <script>
+    function copySecret() {
+        var secret = document.getElementById('totp-secret').innerText;
+        navigator.clipboard.writeText(secret).then(function() {
+            alert('Secret copied to clipboard');
+        });
+    }
+    </script>
+</body>
+</html>

@@ -25,6 +25,33 @@ def _utcnow():
     return datetime.now(timezone.utc).isoformat()
 
 
+def _notify_task_done(task_id: str, title: str):
+    """Mirror genesis scheduler notification for API-driven done transitions."""
+    try:
+        from tools.genesis.reflexes.kanban import _send_notification
+        _send_notification({"id": task_id, "title": title}, event="done")
+    except Exception:
+        # Fallback: dashboard-only notification if genesis module unavailable
+        try:
+            conn = get_connection()
+            conn.execute(
+                "INSERT INTO notifications (id, title, message, severity, source, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    f"notif-kanban-{task_id}-done-{_utcnow()[:19]}",
+                    f"Task done: {title}",
+                    f"Kanban task '{title}' is completed.",
+                    "success",
+                    "kanban_api",
+                    _utcnow(),
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+
 def _gen_id():
     return f"task-{uuid.uuid4().hex[:10]}"
 
@@ -948,7 +975,7 @@ def move_task(task_id):
     now = _utcnow()
     conn = get_connection()
     try:
-        existing = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+        existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
             return jsonify({"error": "Task not found"}), 404
 
@@ -1039,6 +1066,11 @@ def move_task(task_id):
 
         conn.execute(sql, tuple(vals))
         conn.commit()
+
+        # Notify on done transitions (matches genesis scheduler behavior)
+        if moving_to_done:
+            _notify_task_done(task_id, existing.get("title") or task_id)
+
         try:
             sse_manager.broadcast(
                 {

@@ -6485,6 +6485,65 @@ RESOURCE_REGISTRY = {
         },
     },
     # ============================================================
+    # ONTOLOGY (4 tools)
+    # ============================================================
+    "ontology_build": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_build",
+        "description": "Build the ontology federation — merge domain ontologies into ICDEV Core, resolve equivalent classes, and pre-compute subclass closure.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
+            },
+        },
+    },
+    "ontology_query": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_query",
+        "description": "Query the unified ontology graph with a SPARQL-like natural language query.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language SPARQL-like query"},
+                "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
+            },
+            "required": ["query"],
+        },
+    },
+    "ontology_list_domains": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_list_domains",
+        "description": "List all registered ontology domains and their class counts.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
+            },
+        },
+    },
+    "ontology_export_mappings": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_export_mappings",
+        "description": "Export ICDEV ontology mappings to external standards (STIX 2.1, OSCAL, GeoSPARQL, DCAT).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["stix", "oscal", "geosparql", "all"],
+                    "description": "External standard to export mappings to",
+                    "default": "stix",
+                },
+                "icdev_class": {"type": "string", "description": "Optional specific ICDEV class to filter mappings"},
+            },
+        },
+    },
+    # ============================================================
     # AI TRACEABILITY (migration 121 — canvas AI decision audit)
     # ============================================================
     "record_canvas_decision": {
@@ -6507,6 +6566,53 @@ RESOURCE_REGISTRY = {
                 "project_id": {"type": "string", "description": "Project ID"},
                 "classification": {"type": "string", "default": "CUI", "description": "Data classification"},
             },
+        },
+    },
+    # ============================================================
+    # CHAIN ORCHESTRATION (CoT / CoD)
+    # ============================================================
+    "cot_invoke": {
+        "category": "llmops",
+        "module": "tools.llm.chain_orchestrator",
+        "handler": "invoke_chain_of_thought",
+        "description": "Invoke Chain of Thought multi-LLM reasoning chain.",
+        "input_schema": {
+            "type": "object",
+            "required": ["function", "prompt"],
+            "properties": {
+                "function": {"type": "string", "description": "ICDEV function name"},
+                "prompt": {"type": "string", "description": "User prompt"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "max_rounds": {"type": "integer", "default": 3, "description": "Max reasoning rounds"},
+                "self_consistency_runs": {"type": "integer", "default": 1, "description": "Self-consistency runs"},
+            },
+        },
+    },
+    "cod_invoke": {
+        "category": "llmops",
+        "module": "tools.llm.chain_orchestrator",
+        "handler": "invoke_chain_of_debate",
+        "description": "Invoke Chain of Debate multi-LLM debate chain.",
+        "input_schema": {
+            "type": "object",
+            "required": ["function", "prompt"],
+            "properties": {
+                "function": {"type": "string", "description": "ICDEV function name"},
+                "prompt": {"type": "string", "description": "User prompt"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "num_debaters": {"type": "integer", "default": 3, "description": "Number of debaters"},
+                "debate_rounds": {"type": "integer", "default": 2, "description": "Debate rounds"},
+            },
+        },
+    },
+    "cot_stats": {
+        "category": "llmops",
+        "module": "tools.llm.chain_orchestrator",
+        "handler": "main",
+        "description": "Return chain telemetry stats aggregated by mode.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
         },
     },
 }

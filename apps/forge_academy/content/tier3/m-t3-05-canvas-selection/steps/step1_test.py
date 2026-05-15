@@ -34,7 +34,7 @@ assert empty_score == 0.0, f"Empty description → 0.0, got {empty_score}"
 for code in ["NDC", "SDC", "PDC", "BDC", "DDC", "ODC", "IDC"]:
     explanation = explain_canvas(code)
     assert explanation is not None, f"explain_canvas('{code}') returned None"
-    assert isinstance(explanation, str), f"explain_canvas() must return str"
+    assert isinstance(explanation, str), "explain_canvas() must return str"
     assert len(explanation) > 5, f"Explanation too short for {code}: '{explanation}'"
 
 # Unknown canvas
@@ -49,7 +49,7 @@ selector = CanvasSelector()
 # Network description → NDC
 r_ndc = selector.select("Monitor packet loss across DoD network segments and routing tables")
 assert r_ndc is not None, "select() returned None"
-assert isinstance(r_ndc, dict), f"select() must return dict"
+assert isinstance(r_ndc, dict), "select() must return dict"
 assert "canvas" in r_ndc, "Result must have 'canvas'"
 assert "name" in r_ndc, "Result must have 'name'"
 assert "confidence" in r_ndc, "Result must have 'confidence'"
@@ -60,7 +60,7 @@ assert r_ndc["canvas"] == "NDC", \
 assert isinstance(r_ndc["confidence"], float), "confidence must be float"
 assert 0.0 <= r_ndc["confidence"] <= 1.0, f"confidence out of range: {r_ndc['confidence']}"
 assert "all_scores" in r_ndc and len(r_ndc["all_scores"]) == 7, \
-    f"all_scores must have 7 entries (one per canvas)"
+    "all_scores must have 7 entries (one per canvas)"
 
 # Compliance/docs description → DDC
 r_ddc = selector.select("Build a RAG system over STIG documents and NIST 800-53 compliance controls")
@@ -83,12 +83,12 @@ assert r_default["confidence"] == 0.0, \
 
 ranked = selector.rank_canvases("Monitor packet loss across network segments and router interfaces")
 assert ranked is not None, "rank_canvases() returned None"
-assert isinstance(ranked, list), f"rank_canvases() must return list"
+assert isinstance(ranked, list), "rank_canvases() must return list"
 assert len(ranked) == 7, f"rank_canvases must return all 7 canvases, got {len(ranked)}"
 for item in ranked:
     assert "canvas" in item, f"Each ranked item must have 'canvas', got: {item}"
-    assert "name" in item, f"Each ranked item must have 'name'"
-    assert "score" in item, f"Each ranked item must have 'score'"
+    assert "name" in item, "Each ranked item must have 'name'"
+    assert "score" in item, "Each ranked item must have 'score'"
     assert isinstance(item["score"], float), "score must be float"
 
 # Scores should be descending

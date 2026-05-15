@@ -1,7 +1,10 @@
 <!-- CUI // SP-CTI — Observability Design Canvas Editor -->
 {% extends "base.html" %}
 {% block title %}{{ design_name }} — Observability Canvas — ICDEV{% endblock %}
+{% block global_banner %}{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <link rel="stylesheet" href="/static/js/vendor/joint.css">
 <style>
   body { overflow: hidden; height: 100vh; }

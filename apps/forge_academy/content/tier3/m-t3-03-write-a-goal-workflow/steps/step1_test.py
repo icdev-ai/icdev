@@ -89,7 +89,7 @@ assert any("scanner.py" in i for i in issues_bad), \
 validator = GoalValidator()
 r_valid = validator.validate(VALID_GOAL)
 assert r_valid is not None, "validate() returned None"
-assert isinstance(r_valid, dict), f"validate() must return dict"
+assert isinstance(r_valid, dict), "validate() must return dict"
 assert "valid" in r_valid, "Result must have 'valid' key"
 assert "issues" in r_valid, "Result must have 'issues' key"
 assert "parsed" in r_valid, "Result must have 'parsed' key"

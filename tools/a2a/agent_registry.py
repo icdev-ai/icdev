@@ -15,7 +15,7 @@ import argparse
 import json
 import sqlite3
 from tools.db.storage import get_connection
-from tools.common.helpers import row_to_dict_json
+from tools.common.helpers import row_to_dict
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -73,7 +73,7 @@ def register_agent(
 
         c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
         row = c.fetchone()
-        result = row_to_dict_json(row)
+        result = row_to_dict(row)
         print(f"Agent registered: {agent_id} ({name}) at {url}")
         return result
     finally:
@@ -116,7 +116,7 @@ def discover_agents(db_path: Path = None) -> List[dict]:
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE status = 'active' ORDER BY name")
         rows = c.fetchall()
-        return [row_to_dict_json(r) for r in rows]
+        return [row_to_dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -135,7 +135,7 @@ def get_agent(agent_id: str, db_path: Path = None) -> Optional[dict]:
         c = conn.cursor()
         c.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
         row = c.fetchone()
-        return row_to_dict_json(row)
+        return row_to_dict(row)
     finally:
         conn.close()
 
@@ -181,7 +181,7 @@ def find_agent_for_skill(skill_id: str, db_path: Path = None) -> Optional[dict]:
         rows = c.fetchall()
 
         for row in rows:
-            agent = row_to_dict_json(row)
+            agent = row_to_dict(row)
             caps = agent.get("capabilities")
             if isinstance(caps, dict):
                 skills = caps.get("skills", [])
@@ -237,7 +237,7 @@ def discover_agents_healthy(staleness_seconds: int = 120, db_path: Path = None) 
             (staleness_seconds,),
         )
         rows = c.fetchall()
-        return [row_to_dict_json(r) for r in rows]
+        return [row_to_dict(r) for r in rows]
     finally:
         conn.close()
 

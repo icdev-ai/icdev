@@ -22,8 +22,7 @@ import yaml as _yaml  # noqa: E402
 
 from tools.studio.executors._base import (  # noqa: E402
     artifacts_dir, resolve_canvas, get_iac_artifacts, find_artifact,
-    docker_available, pull_image, docker_run, docker_aws_flags,
-    aws_env, detect_mode,
+    docker_available, pull_image, docker_run,
 )
 
 _ANSIBLE_IMAGE = "cytopia/ansible:latest"
@@ -55,8 +54,6 @@ def run(run_id: str, project_id: str, canvas: str = "") -> dict:
     use_docker = docker_available()
     if use_docker and pull_image(_ANSIBLE_IMAGE):
         docker_used = True
-        env = aws_env()
-        mode = detect_mode(env)
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             shutil.copy2(playbook_path, tmp_path / "playbook.yml")

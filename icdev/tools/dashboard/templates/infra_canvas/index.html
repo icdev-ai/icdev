@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Infrastructure Design Canvas — ICDEV{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .idc-hero { padding: 20px 30px; }
   .idc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -28,7 +29,7 @@
   <a href="/infra/canvas/new" class="idc-new-btn">+ New Infrastructure Design</a>
   <a href="/infra/templates" class="idc-new-btn" style="background:#0f3460;">Templates</a>
   {% set wf_canvas_id = 'idc' %}
-  {% set wf_context_label = item.name|default('') %}
+  {% set wf_context_label = 'Infrastructure Canvas' %}
   {% include 'includes/workflow_trigger_btn.html' %}
 </div>
 
@@ -56,7 +57,7 @@
     <h3>{{ d.name }}</h3>
     <p>{{ d.description or 'No description' }}</p>
     <div class="meta">
-      <span class="tag">{{ d.classification or 'CUI' }}</span>
+      {{ design_classification_badge(d) }}
       Updated: {{ d.updated_at[:10] if d.updated_at else '—' }}
     </div>
   </div>
@@ -64,6 +65,19 @@
   <p style="color:#7a8cb0; padding: 0 30px;">No infrastructure designs yet. Click <b>+ New Infrastructure Design</b> to get started.</p>
   {% endfor %}
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "infra" %}
+{% set iqe_api_route = "/infra/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Infrastructure Resources" %}
+{% set iqe_examples = [
+  {"label": "All resources", "query": "foreach r in infra.resources select r.resource_name, r.csp, r.region, r.classification"},
+  {"label": "CUI resources over $500/mo", "query": "foreach r in infra.resources where r.classification == \"CUI\" where r.cost_per_month > 500 select r.resource_name, r.csp, r.cost_per_month"},
+  {"label": "AWS resources", "query": "foreach r in infra.resources where r.csp == \"aws\" select r.resource_name, r.region, r.resource_type"},
+  {"label": "All snapshots", "query": "foreach s in infra.snapshots select s.snapshot_id, s.csp, s.resource_count, s.taken_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

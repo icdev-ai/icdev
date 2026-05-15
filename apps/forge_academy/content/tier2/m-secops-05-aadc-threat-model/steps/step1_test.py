@@ -1,10 +1,8 @@
 
 """Tests for SecOps Mission 5: AADC Threat Modeling."""
 
-import pytest
 from step1_starter import (
     DESIGN_GRAPH,
-    ATLAS_THREAT_MAP,
     run_stride_analysis,
     map_atlas_techniques,
     generate_threat_report,

@@ -1,0 +1,1 @@
+foreach a in mission.alerts where a.severity == "critical" and a.acknowledged == 0 select a.session_id, a.alert_type, a.message, a.created_at

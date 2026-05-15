@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ design.name or 'New Design' }} - Quality Design Canvas{% endblock %}
+{% block global_banner %}{% endblock %}
 {% block extra_css %}<style>
   body { overflow: hidden; height: 100vh; }
   .main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
 </style>{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <div class="dc-wrap" style="display:flex;flex:1;overflow:hidden;background:#0d1b2a;">
   <!-- Left Sidebar (220px) -->
   <div class="dc-sidebar" style="width:220px;min-width:220px;background:#0a1628;border-right:1px solid #1e3a6e;overflow-y:auto;">

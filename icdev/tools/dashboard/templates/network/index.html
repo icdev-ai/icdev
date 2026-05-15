@@ -2,6 +2,7 @@
 {% block title %}Dashboard — Network Design Canvas{% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="page-header">
   <div>
     <h1 class="page-title">Network Design Canvas</h1>
@@ -11,9 +12,10 @@
     <button class="btn btn-primary" onclick="document.getElementById('import-wizard').style.display='flex'" style="font-size:14px;padding:8px 18px;">Import Diagram</button>
     <a href="/network/canvas/new" class="btn btn-secondary">+ Blank Canvas</a>
     <a href="/network/templates" class="btn btn-secondary">Templates</a>
+    <a href="/network/migration-hub" class="btn btn-secondary" title="Migration Hub — all projects, phases and documentation">Migration Hub</a>
     <a href="/simulate/chat?canvas_type=ndc" class="btn btn-secondary" title="Digital Program Twin — AI-assisted simulation chat">Simulate Chat</a>
     {% set wf_canvas_id = 'ndc' %}
-    {% set wf_context_label = item.name|default('') %}
+    {% set wf_context_label = '' %}
     {% include 'includes/workflow_trigger_btn.html' %}
   </div>
 </div>
@@ -84,7 +86,7 @@
             <a href="/network/canvas/{{ t.id }}" class="table-link">{{ t.name }}</a>
             {% if t.description %}<div class="table-sub">{{ t.description[:60] }}</div>{% endif %}
           </td>
-          <td><span class="badge badge-{{ t.classification }}">{{ t.classification }}</span></td>
+          <td>{{ design_classification_badge(t) }}</td>
           <td>{{ t.node_count or 0 }}</td>
           <td>{{ t.edge_count or 0 }}</td>
           <td class="ts">{{ t.updated_at[:16].replace('T',' ') if t.updated_at else '—' }}</td>
@@ -94,6 +96,7 @@
             <a href="/network/montecarlo/{{ t.id }}" class="action-btn" title="Monte Carlo simulation">MC</a>
             <a href="/network/compliance/{{ t.id }}" class="action-btn" title="Compliance audit" style="color:#f39c12;">C</a>
             <a href="/network/twin/{{ t.id }}" class="action-btn" title="Digital Twin — intent validation &amp; what-if" style="color:#00bcd4;">DT</a>
+            <a href="/network/migration-phases/{{ t.id }}" class="action-btn" title="Migration Phases — Current / Phase N / Final diagrams with info boxes &amp; exports" style="color:#8e44ad;">MP</a>
             <button class="action-btn" title="Quick simulate" onclick="simulateTopology('{{ t.id }}')">▶</button>
             <button class="action-btn" title="Export" onclick="exportTopology('{{ t.id }}')">⬇</button>
             <button class="action-btn danger" title="Delete" onclick="deleteTopology('{{ t.id }}','{{ t.name }}')">✕</button>

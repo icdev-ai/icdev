@@ -28,6 +28,11 @@ class LLMRequest:
     stop_sequences: Optional[List[str]] = None
     effort: str = "medium"  # low, medium, high, max
     skip_injection_scan: bool = False  # True for trusted internal pipeline calls
+    # Cache control
+    cache_control: str = ""  # "ephemeral" | "" — hints provider to KV-cache this prefix
+    # Chain orchestration fields
+    chain_mode: str = ""  # "cot" or "cod" or ""
+    chain_config: Dict[str, Any] = field(default_factory=dict)
     # Tracking metadata
     agent_id: str = ""
     project_id: str = ""

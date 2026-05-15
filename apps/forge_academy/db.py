@@ -342,7 +342,6 @@ def migrate():
 
 
 def _seed_achievements(conn):
-    from .constants import ACHIEVEMENTS
     for a in ACHIEVEMENTS:
         try:
             conn.execute(
@@ -358,7 +357,6 @@ def _seed_achievements(conn):
 
 
 def _seed_skill_nodes(conn):
-    from .constants import SKILL_NODES
     for n in SKILL_NODES:
         pos = n.get("pos", (0, 0))
         try:

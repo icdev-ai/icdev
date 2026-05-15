@@ -114,7 +114,18 @@ class BedrockLLMProvider(LLMProvider):
 
         system_parts = [s for s in (request.system_prompt, extracted_system) if s]
         if system_parts:
-            body["system"] = [{"type": "text", "text": "\n\n".join(system_parts)}]
+            system_text = "\n\n".join(system_parts)
+            # D-CACHE-8: Bedrock Anthropic prompt caching
+            if request.cache_control == "ephemeral":
+                body["system"] = [
+                    {
+                        "type": "text",
+                        "text": system_text,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ]
+            else:
+                body["system"] = [{"type": "text", "text": system_text}]
 
         if request.temperature is not None:
             body["temperature"] = request.temperature
@@ -129,6 +140,17 @@ class BedrockLLMProvider(LLMProvider):
                 "type": "enabled",
                 "budget_tokens": self._effort_to_budget(effort, effective_max),
             }
+
+        # D-CACHE-9: Mark last user message with cache_control for Bedrock Anthropic
+        if request.cache_control == "ephemeral" and messages:
+            for msg in reversed(messages):
+                if msg.get("role") == "user":
+                    content = msg.get("content", [])
+                    if isinstance(content, list) and content:
+                        last_block = content[-1]
+                        if isinstance(last_block, dict) and last_block.get("type") == "text":
+                            last_block["cache_control"] = {"type": "ephemeral"}
+                    break
 
         # Tools
         if request.tools:

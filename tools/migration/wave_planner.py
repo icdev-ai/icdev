@@ -18,7 +18,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 

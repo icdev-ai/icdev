@@ -52,6 +52,17 @@ from tools.db.storage import get_connection  # noqa: E402
 # =========================================================================
 
 
+# ── Ontology alignments (Strategos + GeoSIGINT cross-domain) ──────────────────
+ONTOLOGY_ALIGNMENTS: List[Dict[str, str]] = [
+    {"source": "war:MilitaryUnit", "target": "geospatial:GeoEntity", "relation": "hasLocation", "assertion": "owl:equivalentClass"},
+    {"source": "war:Equipment", "target": "geospatial:WeaponSystem", "relation": "subclassOf", "assertion": "owl:subClassOf"},
+    {"source": "strategy:CourseOfAction", "target": "war:MilitaryUnit", "relation": "uses", "assertion": "owl:equivalentClass"},
+    {"source": "geospatial:A2ADZone", "target": "security:SecurityBoundary", "relation": "subclassOf", "assertion": "owl:subClassOf"},
+    {"source": "geospatial:LandingZone", "target": "strategy:AmphibiousOperation", "relation": "hasLandingZone", "assertion": "owl:equivalentClass"},
+    {"source": "war:Vessel", "target": "geospatial:MaritimeMilitiaVessel", "relation": "subclassOf", "assertion": "owl:subClassOf"},
+]
+
+
 def _now() -> str:
     """ISO-8601 timestamp in UTC."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -751,6 +762,89 @@ def cross_project_coverage(
 
 
 # =========================================================================
+# 5. ONTOLOGY ASSERTIONS
+# =========================================================================
+
+
+def store_ontology_assertions(
+    graph_id: str,
+    assertions: Optional[List[Dict[str, str]]] = None,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Store OWL ontology alignment assertions in a graph's metadata.
+
+    Args:
+        graph_id: Target kg_graphs ID.
+        assertions: List of assertion dicts. Defaults to ONTOLOGY_ALIGNMENTS.
+        db_path: Optional database path override.
+
+    Returns:
+        Dict with status and stored assertions.
+    """
+    conn = _get_db(db_path)
+    try:
+        _ensure_tables(conn)
+        row = conn.execute(
+            "SELECT metadata FROM kg_graphs WHERE id = ?", (graph_id,)
+        ).fetchone()
+        if not row:
+            return {"status": "error", "message": f"Graph {graph_id} not found"}
+
+        meta: Dict[str, Any] = json.loads(row["metadata"] or "{}")
+        to_store = assertions if assertions is not None else ONTOLOGY_ALIGNMENTS
+        meta["ontology_assertions"] = to_store
+        meta["ontology_updated_at"] = _now()
+
+        conn.execute(
+            "UPDATE kg_graphs SET metadata = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(meta), _now(), graph_id),
+        )
+        conn.commit()
+        return {
+            "status": "ok",
+            "graph_id": graph_id,
+            "assertions_stored": len(to_store),
+            "assertions": to_store,
+        }
+    finally:
+        conn.close()
+
+
+def get_ontology_assertions(
+    graph_id: str,
+    db_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Retrieve stored ontology assertions for a graph.
+
+    Args:
+        graph_id: Target kg_graphs ID.
+        db_path: Optional database path override.
+
+    Returns:
+        Dict with status and assertions list.
+    """
+    conn = _get_db(db_path)
+    try:
+        _ensure_tables(conn)
+        row = conn.execute(
+            "SELECT metadata FROM kg_graphs WHERE id = ?", (graph_id,)
+        ).fetchone()
+        if not row:
+            return {"status": "error", "message": f"Graph {graph_id} not found"}
+
+        meta: Dict[str, Any] = json.loads(row["metadata"] or "{}")
+        assertions = meta.get("ontology_assertions", [])
+        return {
+            "status": "ok",
+            "graph_id": graph_id,
+            "assertions": assertions,
+            "count": len(assertions),
+        }
+    finally:
+        conn.close()
+
+
+# =========================================================================
 # CLI
 # =========================================================================
 
@@ -783,6 +877,16 @@ def main() -> None:
         "--coverage",
         metavar="FRAMEWORK",
         help="Cross-project compliance coverage (fedramp, cmmc, nist, ...)",
+    )
+    group.add_argument(
+        "--store-ontology",
+        metavar="GRAPH_ID",
+        help="Store ontology assertions in graph metadata",
+    )
+    group.add_argument(
+        "--get-ontology",
+        metavar="GRAPH_ID",
+        help="Retrieve ontology assertions for a graph",
     )
 
     parser.add_argument(
@@ -837,6 +941,10 @@ def main() -> None:
             framework=args.coverage,
             project_ids=project_ids,
         )
+    elif args.store_ontology:
+        result = store_ontology_assertions(graph_id=args.store_ontology)
+    elif args.get_ontology:
+        result = get_ontology_assertions(graph_id=args.get_ontology)
 
     if args.json:
         print(json.dumps(result, indent=2, default=str))
@@ -920,6 +1028,20 @@ def _print_human_readable(result: Dict[str, Any], args) -> None:
             for pid, ctrls in unique.items():
                 if ctrls:
                     print(f"    {pid}: {', '.join(ctrls[:10])}")
+
+    elif args.store_ontology:
+        print("\n=== Ontology Assertions Stored ===\n")
+        print(f"  Graph:      {result.get('graph_id', '?')}")
+        print(f"  Assertions: {result.get('assertions_stored', 0)}")
+        for a in result.get("assertions", [])[:10]:
+            print(f"    - {a['source']} {a['assertion']} {a['target']} ({a['relation']})")
+
+    elif args.get_ontology:
+        print("\n=== Ontology Assertions ===\n")
+        print(f"  Graph:   {result.get('graph_id', '?')}")
+        print(f"  Count:   {result.get('count', 0)}\n")
+        for a in result.get("assertions", []):
+            print(f"    - {a['source']} {a['assertion']} {a['target']} ({a['relation']})")
 
 
 if __name__ == "__main__":

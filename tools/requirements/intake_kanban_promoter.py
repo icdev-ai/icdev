@@ -7,7 +7,7 @@ maps each level (epic/capability/feature/story/enabler) to a kanban task_type,
 inserts kanban_tasks(status='suggested', scheduled_at=now()), and stamps
 safe_decomposition.status='committed' for idempotency.
 
-Priority is derived from WSJF score using thresholds in args/intake_promoter.yaml.
+Priority is computed from WSJF score using thresholds in args/intake_promoter.yaml.
 
 Pattern mirrors tools/innovation/kanban_promoter.py exactly.
 

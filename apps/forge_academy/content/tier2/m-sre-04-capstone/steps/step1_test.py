@@ -36,7 +36,7 @@ slo_cache = compute_slo_health(99.5, 24, 500000, 100)
 assert slo_cache.get("recommendation") in ("NO_ACTION", "MONITOR"), \
     f"cache-service is well within budget, got {slo_cache.get('recommendation')}"
 assert slo_cache.get("burn_rate_status") in ("healthy", "elevated"), \
-    f"cache-service should be healthy or elevated"
+    "cache-service should be healthy or elevated"
 
 # build_incident_brief tests
 incident = build_incident_brief("auth-service", SAMPLE_SERVICES[0]["metrics"])

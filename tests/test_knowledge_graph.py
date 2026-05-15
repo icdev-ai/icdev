@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS kg_retrieval_log (
     duration_ms REAL DEFAULT 0.0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS kg_ontology (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+    subject_type TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object_type TEXT NOT NULL,
+    path_distance INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
@@ -298,7 +307,13 @@ class TestGraphRAGProfiles:
         from tools.knowledge_graph.graph_rag import _auto_detect_profile
 
         profile = _auto_detect_profile("random text with no keywords")
-        assert profile in ("compliance", "exploratory", "provenance", "security")
+        assert profile in ("compliance", "exploratory", "provenance", "security", "ontology")
+
+    def test_ontology_profile_detection(self):
+        from tools.knowledge_graph.graph_rag import _auto_detect_profile
+
+        assert _auto_detect_profile("show me the class hierarchy") == "ontology"
+        assert _auto_detect_profile("find all load balancers") == "ontology"
 
 
 class TestGraphRAGScoring:
@@ -308,8 +323,8 @@ class TestGraphRAGScoring:
         from tools.knowledge_graph.graph_rag import SCORING_PROFILES
 
         profile = SCORING_PROFILES["compliance"]
-        # Verify weights sum to 1.0 (approximately)
-        total = sum(profile.values())
+        # Verify base weights sum to 1.0 (approximately)
+        total = profile["edge_weight"] + profile["centrality"] + profile["recency"]
         assert abs(total - 1.0) < 0.01
 
     def test_all_profiles_have_required_keys(self):
@@ -319,6 +334,7 @@ class TestGraphRAGScoring:
             assert "edge_weight" in weights, f"{name} missing edge_weight"
             assert "centrality" in weights, f"{name} missing centrality"
             assert "recency" in weights, f"{name} missing recency"
+            assert "ontology_weight" in weights, f"{name} missing ontology_weight"
 
 
 class TestGraphRAGRetrieve:
@@ -342,6 +358,111 @@ class TestGraphRAGRetrieve:
 
                 result = retrieve("", project_id="test-proj")
                 assert result.get("status") in ("ok", "error")
+
+
+class TestGraphRAGOntologyAwareness:
+    """Test ontology hierarchy traversal and distance-based scoring (D-ONTO-1)."""
+
+    def test_ontology_profile_boosts_siblings(self):
+        """Query for 'load_balancer' should score aws_alb, azure_appgw, gcp_lb high."""
+        from tools.knowledge_graph.graph_rag import _score_nodes, _ONTOLOGY_FALLBACK
+
+        nodes = [
+            {"id": "n1", "label": "AWS ALB", "entity_type": "aws_alb",
+             "centrality": 0.5, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+            {"id": "n2", "label": "Azure AppGW", "entity_type": "azure_appgw",
+             "centrality": 0.5, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+            {"id": "n3", "label": "GCP LB", "entity_type": "gcp_lb",
+             "centrality": 0.5, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+            {"id": "n4", "label": "AWS NLB", "entity_type": "aws_nlb",
+             "centrality": 0.5, "created_at": "2024-01-01 00:00:00", "properties": "{}"},
+        ]
+        edges = []
+
+        scored = _score_nodes(
+            nodes, edges, "ontology", ["load", "balancer"],
+            ontology_relations=dict(_ONTOLOGY_FALLBACK),
+            query_entity_types={"load_balancer"},
+        )
+
+        # All sibling types should receive a non-zero ontology bonus
+        for node in scored:
+            assert node["ontology_bonus"] > 0.0, f"{node['label']} should have ontology_bonus > 0"
+            assert node["ontology_path_distance"] is not None, f"{node['label']} should have ontology_path_distance"
+            assert node["ontology_path_distance"] <= 2, f"{node['label']} distance should be <= 2"
+
+    def test_compliance_nist_control_boost(self):
+        """Compliance profile should boost nodes linked to nist_control via satisfiesFramework."""
+        from tools.knowledge_graph.graph_rag import _compute_ontology_bonus
+
+        relations = {
+            "nist_control": [
+                {"type": "compliance_framework", "predicate": "satisfiesFramework", "distance": 1},
+            ],
+            "compliance_framework": [
+                {"type": "nist_control", "predicate": "satisfiesFramework", "distance": 1},
+            ],
+        }
+        bonus = _compute_ontology_bonus(
+            "compliance_framework", {"nist_control"}, relations, "compliance"
+        )
+        assert bonus >= 0.15, f"Expected compliance bonus >= 0.15, got {bonus}"
+
+    def test_security_threat_actor_boost(self):
+        """Security profile should boost nodes linked to threat_actor via hasActor."""
+        from tools.knowledge_graph.graph_rag import _compute_ontology_bonus
+
+        relations = {
+            "threat_actor": [
+                {"type": "security_object", "predicate": "hasActor", "distance": 1},
+            ],
+            "security_object": [
+                {"type": "threat_actor", "predicate": "hasActor", "distance": 1},
+            ],
+        }
+        bonus = _compute_ontology_bonus(
+            "security_object", {"threat_actor"}, relations, "security"
+        )
+        assert bonus >= 0.15, f"Expected security bonus >= 0.15, got {bonus}"
+
+    def test_network_has_provider_boost(self):
+        """network_infrastructure profile should boost nodes with hasProvider."""
+        from tools.knowledge_graph.graph_rag import _compute_ontology_bonus
+
+        relations = {
+            "aws_alb": [
+                {"type": "aws_family", "predicate": "hasProvider", "distance": 1},
+            ],
+        }
+        bonus = _compute_ontology_bonus(
+            "aws_alb", {"aws_alb"}, relations, "network_infrastructure"
+        )
+        assert bonus >= 0.15, f"Expected network bonus >= 0.15, got {bonus}"
+
+    def test_ontology_path_distance_closer_is_higher(self):
+        """Nodes closer in the hierarchy should receive a higher ontology bonus."""
+        from tools.knowledge_graph.graph_rag import _compute_ontology_bonus
+
+        relations = {
+            "load_balancer": [
+                {"type": "aws_alb", "predicate": "rdfs:subClassOf", "distance": 1},
+                {"type": "azure_appgw", "predicate": "rdfs:subClassOf", "distance": 1},
+            ],
+            "aws_alb": [
+                {"type": "load_balancer", "predicate": "rdfs:superClassOf", "distance": 1},
+            ],
+            "azure_appgw": [
+                {"type": "load_balancer", "predicate": "rdfs:superClassOf", "distance": 1},
+            ],
+        }
+        bonus_direct = _compute_ontology_bonus(
+            "aws_alb", {"load_balancer"}, relations, "ontology"
+        )
+        # A node unrelated to load_balancer should get 0 bonus
+        bonus_unrelated = _compute_ontology_bonus(
+            "unknown_type", {"load_balancer"}, relations, "ontology"
+        )
+        assert bonus_direct > bonus_unrelated
 
 
 # ===========================================================================

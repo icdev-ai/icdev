@@ -270,8 +270,6 @@ def run(run_id: str = "", project_id: str = "default", canvas: str = _CANVAS) ->
         }
 
     device_map = topo["device_map"]
-    nodes = topo["design"].get("nodes", [])
-    name_map = {n["label"]: n for n in nodes} if nodes else {}
 
     artifacts = []
     routers_meta = []

@@ -173,7 +173,6 @@ def scan_pipeline(project_id: str) -> dict:
 
     for did, d in designs.items():
         nodes = d["nodes"]
-        edges = d["edges"]
         node_types = {n.get("type") or "" for n in nodes}
         designs_scanned += 1
 

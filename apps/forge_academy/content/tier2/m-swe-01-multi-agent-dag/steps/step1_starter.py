@@ -4,7 +4,6 @@ SWE/Arch Mission 1: Multi-Agent DAG — Directed Acyclic Graph Orchestration
 Goal: Build a DAGRunner that executes agent tasks in dependency order.
 """
 
-from collections import deque
 
 # ── Compliance Pipeline Task Functions ───────────────────────────────────────
 

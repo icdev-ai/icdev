@@ -5,17 +5,16 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pipeline Design Canvas — ICDEV™</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/pipeline-canvas.css') }}?v=3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/pipeline-canvas.css') }}?v=5">
   <script src="{{ url_for('static', filename='js/vendor/jquery.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/lodash.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/backbone.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/joint.js') }}"></script>
   <script src="{{ url_for('static', filename='js/vendor/dagre.min.js') }}"></script>
 </head>
-<body style="margin:0; background:#1a1a2e;">
-{% if classification_banner %}
-<div class="pc-cui-banner">{{ classification_banner }}</div>
-{% endif %}
+<body style="margin:0;">
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 
 <!-- ══════ Toolbar ══════ -->
 <div class="pc-toolbar">
@@ -27,7 +26,7 @@
     <button class="tb-btn" onclick="redoAction()">↪ Redo</button>
     <button class="tb-btn" onclick="exportCanvasPDF()">📄 Export PDF</button>
     <input id="pc-pipeline-name" type="text" value="{{ pipeline_name }}"
-           style="background:#0f2040; border:1px solid #1e3a6e; color:#eaeaea; padding:2px 6px; border-radius:3px; width:180px; font-size:12px;"
+           style="padding:2px 6px; border-radius:3px; width:180px; font-size:12px;"
            onchange="markDirty()">
   </div>
   <div class="tb-group">
@@ -35,10 +34,11 @@
     <button class="tb-btn" onclick="toggleSnippets()">⊞ Snippets</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" onclick="zoomIn()">+ Zoom</button>
-    <button class="tb-btn" onclick="zoomOut()">- Zoom</button>
-    <button class="tb-btn" onclick="zoomFit()">⊞ Fit</button>
-    <button class="tb-btn" onclick="zoomReset()">1:1</button>
+    <button class="tb-btn" onclick="zoomIn()" title="Zoom in (+)">+ Zoom</button>
+    <button class="tb-btn" onclick="zoomOut()" title="Zoom out (-)">- Zoom</button>
+    <button class="tb-btn" onclick="zoomFit()" title="Fit all nodes (F)">⊞ Fit</button>
+    <button class="tb-btn" onclick="zoomReset()" title="Reset to 100% (0)">1:1</button>
+    <span id="pc-zoom-label">100%</span>
   </div>
   <div class="tb-group">
     <button class="tb-btn" onclick="exportAs('gitlab_ci')">🔧 GitLab CI</button>
@@ -54,8 +54,8 @@
     <button class="tb-btn" onclick="exportAs('runbook_manifest')" title="Runbook + chaos manifest">📋 Runbooks</button>
   </div>
   <div class="tb-group">
-    <button class="tb-btn" style="background:#0f3460;color:#27ae60;font-weight:700;" onclick="validateIaC()" title="Validate generated IaC (syntax, schema, policy)">✓ Validate IaC</button>
-    <button class="tb-btn" style="background:#0f3460;color:#3498db;font-weight:700;" onclick="deployBundle()" title="Generate IaC deployment bundle (Terraform + Helm + Ansible)">🚀 Deploy IaC</button>
+    <button class="tb-btn" style="background:#14532d;color:#4ade80;font-weight:700;border-color:#16a34a;" onclick="validateIaC()" title="Validate generated IaC (syntax, schema, policy)">✓ Validate IaC</button>
+    <button class="tb-btn" style="background:#1e3a5f;color:#60a5fa;font-weight:700;border-color:#2563eb;" onclick="deployBundle()" title="Generate IaC deployment bundle (Terraform + Helm + Ansible)">🚀 Deploy IaC</button>
   </div>
   <div class="tb-group">
     <button class="tb-btn" onclick="autoGroupByStage()" title="Auto-detect stages and draw boundary boxes">⬡ Auto Boundaries</button>
@@ -63,13 +63,18 @@
     <button class="tb-btn" onclick="toggleLegend()" title="Show/hide color legend">◧ Legend</button>
   </div>
   <div class="tb-group">
+    <button class="tb-btn" onclick="runAnalysis('governance')" style="color:#c084fc;">🏛 Governance</button>
     <button class="tb-btn" onclick="runScorecard()">📊 Scorecard</button>
     <button class="tb-btn" onclick="runAnalysis('security_coverage')">🛡 OWASP</button>
     <button class="tb-btn" onclick="runAnalysis('slsa')">🔗 SLSA</button>
     <button class="tb-btn" onclick="runAnalysis('compliance')">✓ Compliance</button>
     <button class="tb-btn" onclick="runAnalysis('cost')">💰 Cost</button>
     <button class="tb-btn" onclick="runAnalysis('antipatterns')">⚠ Anti-Patterns</button>
-    <a href="/sre" target="_blank" class="tb-btn" style="text-decoration:none;color:#00bcd4;" title="Open SRE Operations Dashboard">📈 SRE Dashboard</a>
+    <a href="/sre" target="_blank" class="tb-btn" style="text-decoration:none;color:#38bdf8;" title="Open SRE Operations Dashboard">📈 SRE Dashboard</a>
+    {% set wf_canvas_id = "pdc" %}
+    {% set wf_context_label = pipeline_name %}
+    {% set wf_design_id = pipeline_id %}
+    {% include 'includes/workflow_trigger_btn.html' %}
   </div>
   <div class="tb-status" id="pc-status">Ready</div>
 </div>
@@ -145,7 +150,7 @@ if (typeof TOOL_INFO !== 'undefined') {
   });
 }
 </script>
-<script src="{{ url_for('static', filename='js/pipeline-canvas.js') }}?v=3"></script>
+<script src="{{ url_for('static', filename='js/pipeline-canvas.js') }}?v=7"></script>
 <script>
   // Initialize
   document.addEventListener('DOMContentLoaded', () => {
@@ -156,7 +161,11 @@ if (typeof TOOL_INFO !== 'undefined') {
     const graphJson = {{ graph_json | safe }};
     if (graphJson && (graphJson.nodes?.length || graphJson.edges?.length)) {
       loadGraph(graphJson);
-      zoomFit();
+      // Defer fit: first RAF lets JointJS paint cells; setTimeout lets the
+      // browser compute flex layout so paper.scaleContentToFit has real dimensions.
+      requestAnimationFrame(() => setTimeout(() => { zoomFit(); _updateZoomLabel(); }, 100));
+    } else {
+      _updateZoomLabel();
     }
 
     // Load templates for modal

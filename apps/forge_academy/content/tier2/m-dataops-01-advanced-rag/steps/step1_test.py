@@ -57,7 +57,7 @@ for entry in index:
 
 # semantic_search tests
 assert results is not None, "semantic_search() returned None"
-assert isinstance(results, list), f"semantic_search() must return list"
+assert isinstance(results, list), "semantic_search() must return list"
 assert len(results) == 2, f"top_k=2 should return 2 results, got {len(results)}"
 assert "score" in results[0], "Each result must have a 'score' field"
 if len(results) >= 2:
@@ -66,7 +66,7 @@ if len(results) >= 2:
 
 # rerank tests
 assert reranked is not None, "rerank() returned None"
-assert isinstance(reranked, list), f"rerank() must return list"
+assert isinstance(reranked, list), "rerank() must return list"
 # All reranked items must have score
 for r in reranked:
     assert "score" in r, "Reranked items must retain 'score'"

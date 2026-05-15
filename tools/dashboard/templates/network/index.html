@@ -2,6 +2,7 @@
 {% block title %}Dashboard — Network Design Canvas{% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="page-header">
   <div>
     <h1 class="page-title">Network Design Canvas</h1>
@@ -85,7 +86,7 @@
             <a href="/network/canvas/{{ t.id }}" class="table-link">{{ t.name }}</a>
             {% if t.description %}<div class="table-sub">{{ t.description[:60] }}</div>{% endif %}
           </td>
-          <td><span class="badge badge-{{ t.classification }}">{{ t.classification }}</span></td>
+          <td>{{ design_classification_badge(t) }}</td>
           <td>{{ t.node_count or 0 }}</td>
           <td>{{ t.edge_count or 0 }}</td>
           <td class="ts">{{ t.updated_at[:16].replace('T',' ') if t.updated_at else '—' }}</td>

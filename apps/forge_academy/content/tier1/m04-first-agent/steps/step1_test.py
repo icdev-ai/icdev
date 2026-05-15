@@ -39,4 +39,4 @@ assert result2 is not None, "run_agent() returned None for risk calculation task
 risk_hit = any(kw in result2.lower() for kw in ["risk", "score", "critical", "high", "cat1", "medium"])
 assert risk_hit, f"Risk calculation result should reference risk level, got: {result2[:100]}"
 
-print(f"PASS: Agent loop working. Two tasks executed successfully. Multi-step reasoning verified.")
+print("PASS: Agent loop working. Two tasks executed successfully. Multi-step reasoning verified.")

@@ -1846,7 +1846,11 @@ def create_security_blueprint():
             graph = json.loads(row[0]) if isinstance(row[0], str) else row[0]
         except Exception:
             return jsonify({"error": "Bad graph data"}), 500
+        data = request.get_json(force=True, silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         result = llm_identify_threats(graph)
+        result["chain_mode"] = chain_mode
         if isinstance(result, dict) and result.get("threats"):
             _threats = result["threats"]
             _summary = f"{len(_threats)} LLM-identified threat(s)" if isinstance(_threats, list) else str(_threats)[:300]
@@ -1973,6 +1977,21 @@ def create_security_blueprint():
             entry_point=data.get("entry_point"),
             target_goal=data.get("target_goal"),
             baseline_snap_id=data.get("baseline_snap_id"),
+        )
+        return jsonify(result), 200
+
+    @bp.route("/api/twin/<design_id>/simulate-cot", methods=["POST"])
+    @sc_login_required
+    def sc_api_twin_simulate_cot(design_id):
+        from tools.security_canvas.twin import simulate_delta
+        data = request.get_json(silent=True) or {}
+        result = simulate_delta(
+            design_id,
+            delta_graph=data.get("delta_graph", {}),
+            entry_point=data.get("entry_point"),
+            target_goal=data.get("target_goal"),
+            baseline_snap_id=data.get("baseline_snap_id"),
+            use_cot=True,
         )
         return jsonify(result), 200
 

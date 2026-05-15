@@ -124,8 +124,6 @@ class ScaffoldGenerator:
 
         Return (True, []) if valid, (False, issues) otherwise.
         """
-        import re
-        VALID_CANVASES = {"NDC","SDC","PDC","BDC","DDC","ODC","IDC"}
         # YOUR CODE HERE
         pass
 
@@ -148,5 +146,5 @@ if __name__ == "__main__":
     for path, content in files.items():
         print(f"  {path} ({len(content)} chars)")
 
-    print(f"\n__init__.py preview:\n{files[f'apps/missiondash/__init__.py']}")
-    print(f"\nconstants.py preview:\n{files[f'apps/missiondash/constants.py']}")
+    print(f"\n__init__.py preview:\n{files['apps/missiondash/__init__.py']}")
+    print(f"\nconstants.py preview:\n{files['apps/missiondash/constants.py']}")

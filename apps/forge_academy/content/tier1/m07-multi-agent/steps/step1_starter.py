@@ -4,7 +4,6 @@ Step 1: Multi-Agent Coordination — Orchestrator-Worker Pattern
 Goal: Implement run_orchestrator() that dispatches to 3 workers and synthesizes results.
 """
 
-import json
 
 
 # ── Worker Agents ─────────────────────────────────────────────────────────────

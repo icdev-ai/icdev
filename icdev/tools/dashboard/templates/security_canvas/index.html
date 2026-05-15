@@ -1,6 +1,7 @@
 {% extends "security_canvas/base.html" %}
 {% block title %}Security Design Canvas — Dashboard{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="page-header">
   <div>
     <h1 class="page-title" style="color:#e94560;">&#x1f6e1; Security Design Canvas</h1>
@@ -54,7 +55,7 @@
   {% for d in designs %}
   <tr>
     <td><a href="/security/canvas/{{ d.id }}"><strong>{{ d.name }}</strong></a><br><span style="font-size:0.75rem;color:var(--text-dim);">{{ d.description[:80] if d.description else '' }}</span></td>
-    <td>{{ d.classification or 'CUI' }}</td>
+    <td>{{ design_classification_badge(d) }}</td>
     <td>{% if d.source_topology_id %}<a href="/network/canvas/{{ d.source_topology_id }}" style="font-size:0.8rem;">NDC Import</a>{% else %}Manual{% endif %}</td>
     <td>{{ d.updated_at[:16] if d.updated_at else '—' }}</td>
     <td>
@@ -70,6 +71,19 @@
   <p style="padding:1rem;color:var(--text-dim);">No security designs yet. <a href="/security/canvas/new">Create one</a> or import from Network Design Canvas.</p>
   {% endif %}
 </section>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "security" %}
+{% set iqe_api_route = "/security/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Attack Graph" %}
+{% set iqe_examples = [
+  {"label": "All attack nodes", "query": "foreach n in attack.nodes select *"},
+  {"label": "High-risk edges", "query": "foreach e in attack.edges where e.risk_score > 7 select e.source, e.target, e.risk_score"},
+  {"label": "Lateral movement", "query": "foreach e in attack.edges where e.technique_id contains \"T1021\" select e.source, e.target, e.technique_id"},
+  {"label": "All attack paths", "query": "foreach p in attack.paths select p.src, p.goal, p.hops"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

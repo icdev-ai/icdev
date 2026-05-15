@@ -176,7 +176,7 @@ _RE_SENTENCE_SPLIT = re.compile(r"(?<=[.!?;])\s+|\n{2,}")
 
 def _get_db():
     """Return a database connection."""
-    conn = get_connection()
+    conn = get_connection(db_path=str(DB_PATH))
     try:
         conn.execute("PRAGMA journal_mode=WAL")
     except Exception:

@@ -769,3 +769,119 @@ token_budgets:
       monthly_usd: 5.00           # mostly Ollama, minimal cloud
     proposal-genesis-daemon:
       monthly_usd: 5.00
+
+# -----------------------------------------------------------------------
+# Chain Orchestration (CoT / CoD)
+# -----------------------------------------------------------------------
+chain_orchestration:
+  enabled: true
+  default_mode: single
+  cost_cap_usd: 0.50
+  token_cap: 32000
+  timeout_seconds: 120
+  cot:
+    enabled: true
+    max_rounds: 3
+    self_consistency_runs: 1
+    reasoner_model: qwen3-local
+    critic_model: claude-sonnet
+    synthesizer_model: claude-sonnet
+    excluded_functions:
+      - pulse_generation
+      - news_oracle
+      - market_scan
+    per_function:
+      code_generation:
+        max_rounds: 5
+        self_consistency_runs: 3
+  cod:
+    enabled: true
+    num_debaters: 3
+    debate_rounds: 2
+    judge_model: claude-sonnet
+    debater_models:
+      - qwen3-local
+      - claude-sonnet
+      - openai-gpt4o
+    excluded_functions:
+      - pulse_generation
+    per_function:
+      architecture_review:
+        num_debaters: 5
+
+# -----------------------------------------------------------------------
+# Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
+# Two-level: response_cache = deterministic KV store for full responses
+# (PostgreSQL-native with SQLite fallback); context_cache = provider-level
+# KV prefix reuse (cache_control: ephemeral on system prompt + last user msg).
+# -----------------------------------------------------------------------
+response_cache:
+  enabled: true
+  backend: postgresql
+  ttl_seconds: 3600
+  max_entries: 100000
+  match_strategy: exact
+  excluded_functions:
+    - pulse_generation
+    - news_oracle
+    - market_scan
+    - fathomdesk_trap
+    - attachment_analysis
+    - screenshot_validation
+    - ui_analysis
+    - browser_automation
+  per_function:
+    code_generation:
+      ttl_seconds: 7200
+      context_cache: true
+    narrative_generation:
+      ttl_seconds: 1800
+    nlq_sql:
+      ttl_seconds: 600
+    tfw_narrative:
+      ttl_seconds: 3600
+      context_cache: true
+    network_diagram_extraction:
+      ttl_seconds: 3600
+      context_cache: true
+    chat_response:
+      ttl_seconds: 1800
+    recommendation:
+      ttl_seconds: 3600
+  per_canvas:
+    ndc:
+      ttl_seconds: 7200
+      context_cache: true
+    sdc:
+      ttl_seconds: 3600
+      context_cache: true
+    bdc:
+      ttl_seconds: 3600
+      context_cache: true
+    pdc:
+      ttl_seconds: 3600
+      context_cache: true
+    odc:
+      ttl_seconds: 3600
+      context_cache: true
+    idc:
+      ttl_seconds: 3600
+      context_cache: true
+    qdc:
+      ttl_seconds: 3600
+      context_cache: true
+    mdc:
+      ttl_seconds: 7200
+      context_cache: true
+    aadc:
+      ttl_seconds: 3600
+      context_cache: true
+    aimc:
+      ttl_seconds: 3600
+      context_cache: true
+    ohc:
+      ttl_seconds: 3600
+      context_cache: true
+    ddc:
+      ttl_seconds: 7200
+      context_cache: true

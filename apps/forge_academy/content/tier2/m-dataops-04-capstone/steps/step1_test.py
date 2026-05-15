@@ -111,8 +111,8 @@ assert isinstance(summary["avg_precision"], float), "avg_precision must be float
 assert isinstance(summary["avg_recall"], float), "avg_recall must be float"
 assert isinstance(summary["avg_f1"], float), "avg_f1 must be float"
 assert isinstance(summary["perfect_recall"], int), "perfect_recall must be int"
-assert 0.0 <= summary["avg_precision"] <= 1.0, f"avg_precision out of range"
-assert 0.0 <= summary["avg_recall"] <= 1.0, f"avg_recall out of range"
+assert 0.0 <= summary["avg_precision"] <= 1.0, "avg_precision out of range"
+assert 0.0 <= summary["avg_recall"] <= 1.0, "avg_recall out of range"
 assert 0 <= summary["perfect_recall"] <= len(TEST_QUERIES), "perfect_recall out of range"
 
 # Each result in report is a valid evaluate_query dict

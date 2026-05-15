@@ -479,10 +479,10 @@ def main():
     group.add_argument("--store-benchmark", action="store_true", help="Store a rate benchmark")
 
     parser.add_argument("--direct-rate", type=float, help="Direct labor hourly rate")
-    parser.add_argument("--fringe-pct", type=float)
-    parser.add_argument("--overhead-pct", type=float)
-    parser.add_argument("--ga-pct", type=float)
-    parser.add_argument("--fee-pct", type=float)
+    parser.add_argument("--fringe-pct", type=float, help="Fringe rate as decimal, e.g., 0.32")
+    parser.add_argument("--overhead-pct", type=float, help="Overhead rate as decimal, e.g., 0.55")
+    parser.add_argument("--ga-pct", type=float, help="General and administrative rate as decimal, e.g., 0.12")
+    parser.add_argument("--fee-pct", type=float, help="Fee/profit rate as decimal, e.g., 0.08")
     parser.add_argument("--labor-category", help="Labor category name")
     parser.add_argument("--soc-code", help="BLS SOC code")
     parser.add_argument("--source", help="Data source (calc_plus, fpds, manual)")
@@ -496,12 +496,12 @@ def main():
     result = {}
 
     if args.wrap_rates:
-        if not args.direct_rate:
-            result = {"status": "error", "message": "Provide --direct-rate"}
-        else:
-            result = calculate_wrap_rates(
-                args.direct_rate, args.fringe_pct, args.overhead_pct, args.ga_pct, args.fee_pct
-            )
+        if args.direct_rate is None:
+            print(json.dumps({"status": "error", "message": "Provide --direct-rate"}), file=sys.stderr)
+            sys.exit(1)
+        result = calculate_wrap_rates(
+            args.direct_rate, args.fringe_pct, args.overhead_pct, args.ga_pct, args.fee_pct
+        )
 
     elif args.benchmark:
         if not args.labor_category:

@@ -3,7 +3,7 @@
 
 def simulate_llm_call(system_prompt: str, user_message: str) -> dict:
     return {
-        "content": f"A token is a unit of text...",
+        "content": "A token is a unit of text...",
         "model": "ollama/mistral",
         "usage": {"input_tokens": len(system_prompt.split()) + len(user_message.split()), "output_tokens": 42}
     }

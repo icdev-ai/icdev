@@ -1,6 +1,7 @@
 {% extends "security_canvas/base.html" %}
 {% block title %}{{ design.name if design else 'New Security Design' }} — Security Design Canvas{% endblock %}
 
+{% block global_banner %}{% endblock %}
 {% block head %}
 <!-- JointJS + dependencies (vendored for air-gap) -->
 <link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
@@ -16,6 +17,8 @@
 {% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <div class="canvas-layout">
 
   <!-- Toolbar (matches NDC toolbar) -->

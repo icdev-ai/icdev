@@ -9,9 +9,11 @@
   {% block head %}{% endblock %}
 </head>
 <body style="display:flex;flex-direction:column;min-height:100vh;margin:0;">
+  {% block global_banner %}
   {% if classification_banner %}
   <div class="cui-banner">{{ classification_banner }}</div>
   {% endif %}
+  {% endblock %}
 
   <!-- Navbar -->
   <nav class="navbar">

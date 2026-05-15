@@ -3,24 +3,20 @@
 
 from __future__ import annotations
 
-import json
 import secrets
 
 from flask import Blueprint, g, jsonify, redirect, render_template, request, url_for
 
-from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_level, xp_to_next_level
+from .constants import ROLES, TECHNICAL_ROLES, LEVELS, xp_to_next_level
 from .db import (
-    migrate, get_or_create_user, get_user, update_user_role, get_user_by_username,
-    list_missions, get_mission, get_mission_steps, upsert_mission,
-    get_mission_progress, start_mission, complete_mission,
+    migrate, get_or_create_user, get_user, update_user_role, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
     create_guild, join_guild, get_guild_stats, get_leaderboard,
     get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
-    record_user_competency, get_user_competencies,
-    seed_mission_ontology_mappings,
+    record_user_competency,
 )
 from .content_loader import get_mission_with_steps, seed_mission_catalog
 from .gamification import (
@@ -28,7 +24,7 @@ from .gamification import (
     check_step_achievements, award_daily_login, get_user_stats,
 )
 from .integrations import (
-    record_skill_usage, advance_learning_track, deploy_pattern, list_patterns,
+    record_skill_usage, advance_learning_track, list_patterns,
     detect_role_from_answers, create_workflow,
 )
 
@@ -409,7 +405,7 @@ def api_step_design_assess():
         return jsonify({"error": "not configured"}), 400
     from .verifier import verify_step
     from .gamification import award_step_xp, check_step_achievements, check_mission_achievements, award_mission_xp
-    from .db import complete_step, complete_mission, user_progress_summary, update_user_xp, record_skill_usage, unlock_skill
+    from .db import complete_step, complete_mission, user_progress_summary, record_skill_usage, unlock_skill
     from .learning_track import advance_learning_track
 
     data = request.get_json(silent=True) or {}
@@ -483,11 +479,19 @@ def api_coach_hint():
     question = data.get("question", "")
     mission_slug = data.get("mission_slug", "")
     design_id = data.get("design_id", "")
-    hint = get_hint(question=question, context=context, mission_slug=mission_slug, design_id=design_id)
+    debate_mode = data.get("debate_mode", False)
+    chain_mode = "cod" if debate_mode else ""
+    hint = get_hint(
+        question=question,
+        context=context,
+        mission_slug=mission_slug,
+        design_id=design_id,
+        chain_mode=chain_mode,
+    )
     from .content_loader import _md_to_html
     hint_html = _md_to_html(hint)
     update_user_xp(fa_user["id"], -10)
-    return jsonify({"hint": hint_html, "xp_cost": 10})
+    return jsonify({"hint": hint_html, "xp_cost": 10, "chain_mode": chain_mode})
 
 
 @bp.route("/api/academy/guild/create", methods=["POST"])
@@ -761,7 +765,7 @@ def my_certificates():
     fa_user = _fa_user()
     if not fa_user:
         return redirect(url_for("forge_academy.profile"))
-    from .constants import CERT_BY_KEY, CERT_TIERS
+    from .constants import CERT_TIERS
     certs = get_user_certificates(fa_user["id"])
     cert_map = {c["cert_tier"]: c for c in certs}
     eligibility_map = {ct["key"]: check_cert_eligibility(fa_user["id"], ct["key"]) for ct in CERT_TIERS}

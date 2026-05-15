@@ -455,5 +455,60 @@ AUTOMATION_TYPES = {obj["type"] for obj in OBSERVABILITY_OBJECTS["automation"]}
 # ── Compliance types ─────────────────────────────────────────────────────────
 COMPLIANCE_TYPES = {obj["type"] for obj in OBSERVABILITY_OBJECTS["compliance"]}
 
+# ── Ontology Mapping (observability -> ICDEV observability ontology) ─────────
+OBSERVABILITY_ONTOLOGY_MAP: dict[str, str] = {
+    # Sources
+    "src-app-log":       "https://icdev.dev/ontology/observability#LogSource.Application",
+    "src-os-log":        "https://icdev.dev/ontology/observability#LogSource.OperatingSystem",
+    "src-network-log":   "https://icdev.dev/ontology/observability#LogSource.NetworkDevice",
+    "src-cloud-log":     "https://icdev.dev/ontology/observability#LogSource.CloudAudit",
+    "src-container-log": "https://icdev.dev/ontology/observability#LogSource.Container",
+    "src-db-audit":      "https://icdev.dev/ontology/observability#LogSource.DatabaseAudit",
+    "src-metric":        "https://icdev.dev/ontology/observability#MetricSource",
+    "src-trace":         "https://icdev.dev/ontology/observability#TraceSource",
+    "src-endpoint":      "https://icdev.dev/ontology/observability#EndpointTelemetry",
+    "src-iam":           "https://icdev.dev/ontology/observability#IdentityLogSource",
+    "src-vulnerability": "https://icdev.dev/ontology/observability#VulnerabilityScanner",
+    # Collectors
+    "col-fluentd":       "https://icdev.dev/ontology/observability#LogCollector.Fluentd",
+    "col-filebeat":      "https://icdev.dev/ontology/observability#LogCollector.Filebeat",
+    "col-otel":          "https://icdev.dev/ontology/observability#TelemetryCollector.OpenTelemetry",
+    "col-logstash":      "https://icdev.dev/ontology/observability#LogCollector.Logstash",
+    "col-syslog-ng":     "https://icdev.dev/ontology/observability#LogCollector.SyslogNG",
+    "col-cribl":         "https://icdev.dev/ontology/observability#LogCollector.Cribl",
+    "col-kafka":         "https://icdev.dev/ontology/observability#StreamingCollector.Kafka",
+    "col-s3":            "https://icdev.dev/ontology/observability#ArchiveCollector.S3",
+    # Platforms
+    "plt-splunk":        "https://icdev.dev/ontology/observability#SIEMPlatform.Splunk",
+    "plt-elastic":       "https://icdev.dev/ontology/observability#SIEMPlatform.Elastic",
+    "plt-sentinel":      "https://icdev.dev/ontology/observability#SIEMPlatform.Sentinel",
+    "plt-chronicle":     "https://icdev.dev/ontology/observability#SIEMPlatform.Chronicle",
+    "plt-qradar":        "https://icdev.dev/ontology/observability#SIEMPlatform.QRadar",
+    "plt-prometheus":    "https://icdev.dev/ontology/observability#MetricsPlatform.Prometheus",
+    "plt-grafana":       "https://icdev.dev/ontology/observability#VisualizationPlatform.Grafana",
+    "plt-datadog":       "https://icdev.dev/ontology/observability#ObservabilityPlatform.Datadog",
+    "plt-jaeger":        "https://icdev.dev/ontology/observability#TracingPlatform.Jaeger",
+    "plt-suricata":      "https://icdev.dev/ontology/observability#NetworkMonitoring.Suricata",
+    "plt-velociraptor":  "https://icdev.dev/ontology/observability#EndpointPlatform.Velociraptor",
+    "plt-thehive":       "https://icdev.dev/ontology/observability#IncidentPlatform.TheHive",
+    # Automation
+    "auto-soar":         "https://icdev.dev/ontology/observability#Automation.SOAR",
+    "auto-alert-rule":   "https://icdev.dev/ontology/observability#Automation.AlertRule",
+    "auto-enrichment":   "https://icdev.dev/ontology/observability#Automation.Enrichment",
+    "auto-ticket":       "https://icdev.dev/ontology/observability#Automation.Ticketing",
+    "auto-notification": "https://icdev.dev/ontology/observability#Automation.Notification",
+    "auto-runbook":      "https://icdev.dev/ontology/observability#Automation.Runbook",
+    # Compliance
+    "cmp-log-policy":    "https://icdev.dev/ontology/observability#Compliance.LogRetentionPolicy",
+    "cmp-audit-report":  "https://icdev.dev/ontology/observability#Compliance.AuditReport",
+    "cmp-baseline":      "https://icdev.dev/ontology/observability#Compliance.DetectionBaseline",
+    # Digital Twin
+    "twin-otel":         "https://icdev.dev/ontology/observability#DigitalTwin.OTelCollector",
+    "twin-coverage":     "https://icdev.dev/ontology/observability#DigitalTwin.InstrumentationCoverage",
+    "twin-alert-delta":  "https://icdev.dev/ontology/observability#DigitalTwin.AlertCoverageDelta",
+    "twin-slo-projector":"https://icdev.dev/ontology/observability#DigitalTwin.SLOProjector",
+    "twin-trace-analyzer":"https://icdev.dev/ontology/observability#DigitalTwin.TraceCoverage",
+}
+
 # ── Severity weights for scoring ─────────────────────────────────────────────
 SEVERITY_WEIGHTS = {"CAT1": 10, "CAT2": 5, "CAT3": 2}

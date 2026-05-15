@@ -848,6 +848,18 @@ def get_connection(db_path: str = None) -> StorageConnection:
     """
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
 
+    # When a specific db_path is given for a canvas/auxiliary DB, use SQLite
+    # directly regardless of the main backend setting.  Do NOT force SQLite for
+    # the primary icdev.db when PostgreSQL is configured.
+    _main_db = os.environ.get("ICDEV_DB_PATH", str(Path.cwd() / "data" / "icdev.db"))
+    if (
+        db_path
+        and str(db_path).endswith(".db")
+        and Path(db_path).resolve() != Path(_main_db).resolve()
+    ):
+        raw_conn = _get_sqlite_connection(db_path)
+        return StorageConnection(raw_conn, "sqlite")
+
     if backend == "postgresql":
         db_url = os.environ.get("ICDEV_DATABASE_URL")
         no_fallback = os.environ.get("ICDEV_PG_NO_FALLBACK", "").lower() in ("true", "1")

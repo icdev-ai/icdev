@@ -37,6 +37,7 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <div class="aimc-header">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
     <div>
@@ -91,7 +92,7 @@
     {% if d.description %}<p style="margin:4px 0 8px;font-size:.82rem;color:#94a3b8;">{{ d.description[:100] }}{% if d.description|length > 100 %}…{% endif %}</p>{% endif %}
     <div class="meta" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
       <span class="aimc-badge badge-{{ d.adaptation_strategy | lower }}">{{ d.adaptation_strategy }}</span>
-      <span style="color:#475569;">{{ d.classification }}</span>
+      {{ design_classification_badge(d) }}
       <span style="color:#475569;">{{ d.updated_at[:10] }}</span>
     </div>
     <div class="actions">
@@ -133,4 +134,17 @@ function deleteDesign(id, btn) {
     .then(() => location.reload());
 }
 </script>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "aimc" %}
+{% set iqe_api_route = "/ai-ml/api/iqe-query" %}
+{% set iqe_title = "IQE Query — AI/ML Model Canvas" %}
+{% set iqe_examples = [
+  {"label": "All designs", "query": "foreach d in aimc.designs select d.name, d.il_level, d.adaptation_strategy, d.classification"},
+  {"label": "Foundation model nodes", "query": "foreach n in aimc.nodes where n.node_type == \"foundation-model\" select n.design_id, n.label, n.classification"},
+  {"label": "Passing assessments", "query": "foreach a in aimc.assessments where a.passed == 1 select a.design_name, a.framework_name, a.score"},
+  {"label": "All artifacts", "query": "foreach a in aimc.artifacts select a.design_id, a.artifact_type, a.title, a.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}

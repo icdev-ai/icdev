@@ -35,8 +35,13 @@ def take_snapshot(design_id: str, label: str | None = None) -> dict:
 
 
 def simulate_delta(design_id: str, delta_graph: dict, entry_point: str | None = None,
-                   target_goal: str | None = None, baseline_snap_id: str | None = None) -> dict:
-    """Simulate proposed topology change and enumerate new attack paths."""
+                   target_goal: str | None = None, baseline_snap_id: str | None = None,
+                   use_cot: bool = False) -> dict:
+    """Simulate proposed topology change and enumerate new attack paths.
+
+    When *use_cot* is True, a reasoning trace is generated over STRIDE
+    coverage to explain why the safest delta was chosen.
+    """
     sim_id = str(uuid.uuid4())
     nodes = delta_graph.get("nodes", [])
     edges = delta_graph.get("edges", [])
@@ -56,6 +61,29 @@ def simulate_delta(design_id: str, delta_graph: dict, entry_point: str | None = 
         "dos": any(n.get("type") == "ctrl-ddos" for n in nodes),
         "elevation": False,
     }
+
+    # CoT reasoning over STRIDE coverage
+    cot_trace: dict | None = None
+    if use_cot:
+        covered = sum(1 for v in stride_coverage.values() if v)
+        reasoning = (
+            f"STRIDE coverage: {covered}/{len(stride_coverage)} categories addressed. "
+            f"Exposed high-risk nodes: {len(exposed)}. Edges: {len(edges)}. "
+        )
+        if covered >= 4:
+            reasoning += "Strong STRIDE coverage suggests lower risk."
+        elif covered >= 2:
+            reasoning += "Moderate STRIDE coverage; some attack vectors remain uncontrolled."
+        else:
+            reasoning += "Weak STRIDE coverage; multiple attack vectors are uncontrolled."
+        safest = "pass" if risk_score < 0.4 else ("warn" if risk_score < 0.7 else "fail")
+        cot_trace = {
+            "reasoning": reasoning,
+            "stride_coverage": stride_coverage,
+            "covered_count": covered,
+            "recommended_verdict": safest,
+        }
+
     verdict = "pass" if risk_score < 0.4 else ("warn" if risk_score < 0.7 else "fail")
     attack_paths = [
         {"path_id": f"path-{i+1}", "severity": "critical" if i < critical_paths else "high",
@@ -63,9 +91,12 @@ def simulate_delta(design_id: str, delta_graph: dict, entry_point: str | None = 
          "description": f"Attack path via {n.get('label', n.get('id', 'node'))}"}
         for i, n in enumerate(exposed[:5])
     ]
-    return {
+    result = {
         "simulation_id": sim_id, "design_id": design_id, "verdict": verdict,
         "total_paths": total_paths, "critical_paths": critical_paths,
         "baseline_path_count": 0, "risk_score": round(risk_score, 3),
         "stride_coverage": stride_coverage, "attack_paths": attack_paths,
     }
+    if cot_trace:
+        result["cot_trace"] = cot_trace
+    return result

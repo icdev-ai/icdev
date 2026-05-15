@@ -34,7 +34,7 @@ assert exp.get("description"), "description must be non-empty"
 exp_unknown = design_experiment("auth-service", "memory_leak")
 assert exp_unknown is not None, "Unknown failure mode must return fallback experiment"
 assert exp_unknown.get("experiment_id") == "exp-auth-service-memory_leak", \
-    f"experiment_id format must hold for unknown modes"
+    "experiment_id format must hold for unknown modes"
 
 # estimate_blast_radius tests
 blast = estimate_blast_radius(exp)

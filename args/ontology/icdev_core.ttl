@@ -1,0 +1,103 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix icdev: <https://icdev.dev/ontology/core#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+<https://icdev.dev/ontology/core>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV Core Ontology" ;
+    dcterms:description "Upper ontology for ICDEV ecosystem — projects, canvases, compliance, security, and artifacts." ;
+    dcterms:creator "ICDEV System" ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+# ── Core Classes ──
+icdev:Project rdf:type owl:Class ;
+    rdfs:label "Project" ;
+    rdfs:comment "An ICDEV project or child application." .
+
+icdev:CanvasDesign rdf:type owl:Class ;
+    rdfs:label "Canvas Design" ;
+    rdfs:comment "A visual canvas design (network, data, boundary, etc.)." .
+
+icdev:ComplianceControl rdf:type owl:Class ;
+    rdfs:label "Compliance Control" ;
+    rdfs:comment "A NIST 800-53 or FedRAMP compliance control." .
+
+icdev:SecurityPolicy rdf:type owl:Class ;
+    rdfs:label "Security Policy" ;
+    rdfs:comment "A security policy or classification rule." .
+
+icdev:Artifact rdf:type owl:Class ;
+    rdfs:label "Artifact" ;
+    rdfs:comment "A generated or managed artifact (code, doc, config)." .
+
+icdev:Requirement rdf:type owl:Class ;
+    rdfs:label "Requirement" ;
+    rdfs:comment "A system or stakeholder requirement." .
+
+icdev:Rule rdf:type owl:Class ;
+    rdfs:label "Rule" ;
+    rdfs:comment "A business, security, or design rule." .
+
+# ── Classification ──
+icdev:ClassificationLevel rdf:type owl:Class ;
+    rdfs:label "Classification Level" ;
+    rdfs:comment "Data classification level (PUBLIC, CUI, SECRET, etc.)." .
+
+icdev:PUBLIC rdf:type icdev:ClassificationLevel ;
+    rdfs:label "PUBLIC" ;
+    rdfs:comment "Unclassified, publicly releasable." .
+
+icdev:CUI rdf:type icdev:ClassificationLevel ;
+    rdfs:label "CUI" ;
+    rdfs:comment "Controlled Unclassified Information." .
+
+icdev:CUI_SP_CTI rdf:type icdev:ClassificationLevel ;
+    rdfs:label "CUI // SP-CTI" ;
+    rdfs:comment "CUI with Special Program — CTI category." .
+
+icdev:SECRET rdf:type icdev:ClassificationLevel ;
+    rdfs:label "SECRET" ;
+    rdfs:comment "SECRET classification level." .
+
+# ── Properties ──
+icdev:hasClassification rdf:type owl:ObjectProperty ;
+    rdfs:domain icdev:Project ;
+    rdfs:range icdev:ClassificationLevel ;
+    rdfs:label "has classification" ;
+    rdfs:comment "The classification level assigned to a project." .
+
+icdev:belongsToCanvas rdf:type owl:ObjectProperty ;
+    rdfs:domain icdev:Artifact ;
+    rdfs:range icdev:CanvasDesign ;
+    rdfs:label "belongs to canvas" ;
+    rdfs:comment "Links an artifact to its parent canvas." .
+
+icdev:hasTenant rdf:type owl:DatatypeProperty ;
+    rdfs:domain icdev:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "has tenant" ;
+    rdfs:comment "Tenant slug or identifier." .
+
+icdev:hasImpactLevel rdf:type owl:DatatypeProperty ;
+    rdfs:domain icdev:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "has impact level" ;
+    rdfs:comment "FIPS 199 impact level (IL2, IL4, IL5, IL6)." .
+
+icdev:hasDomain rdf:type owl:DatatypeProperty ;
+    rdfs:domain icdev:Project ;
+    rdfs:range xsd:string ;
+    rdfs:label "has domain" ;
+    rdfs:comment "Domain specialization (e.g. health, finance, defense)." .
+
+# ── Security Tag Inheritance ──
+icdev:inheritsSecurityTagsFrom rdf:type owl:ObjectProperty ;
+    rdfs:domain icdev:Project ;
+    rdfs:range icdev:Project ;
+    rdfs:label "inherits security tags from" ;
+    rdfs:comment "Declares that a child project inherits classification tags from a parent project ontology." .

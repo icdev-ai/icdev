@@ -303,6 +303,42 @@ class WorkflowEngine:
                     )
             except Exception:
                 pass
+            # CoT trace for auto-advance decision
+            reasoning_trace = (
+                f"Auto-advancing automated stage '{stage_config['name']}' "
+                f"for instance {instance_id} (canvas={canvas_type}). "
+                f"No human gate required per template."
+            )
+            try:
+                from tools.canvas.ai_trace_mixin import record_canvas_decision
+                trace_id = record_canvas_decision(
+                    canvas_type=canvas_type or "workflow",
+                    record_id=instance_id,
+                    decision_type="chain_of_thought",
+                    decision=f"Auto-advance {stage_config['name']}",
+                    rationale=reasoning_trace,
+                    actor="workflow_hitl",
+                )
+            except Exception:
+                trace_id = ""
+            # Ensure wf_approvals.cot_trace_id exists and store the trace
+            approval_id = f"wfa-{uuid.uuid4().hex[:12]}"
+            conn = get_connection()
+            try:
+                cols = conn.execute("PRAGMA table_info(wf_approvals)").fetchall()
+                if not any(c[1] == "cot_trace_id" for c in cols):
+                    conn.execute("ALTER TABLE wf_approvals ADD COLUMN cot_trace_id TEXT")
+                conn.execute(
+                    "INSERT INTO wf_approvals "
+                    "(id, instance_id, stage, team_id, assigned_to, status, cot_trace_id, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (approval_id, instance_id, stage_config["name"], None, None, "approved", trace_id, _now(), _now()),
+                )
+                conn.commit()
+            except Exception:
+                pass
+            finally:
+                conn.close()
             # Auto-advance past automated stages immediately
             self.advance_stage(instance_id)
             return

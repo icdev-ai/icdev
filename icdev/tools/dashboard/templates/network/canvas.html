@@ -1,6 +1,6 @@
 {% extends "network/base.html" %}
 {% block title %}{{ topology_name }} — Canvas Editor{% endblock %}
-
+{% block global_banner %}{% endblock %}
 {% block head %}
 <!-- JointJS + dependencies -->
 <!-- Vendored locally for air-gap / IL5-IL6 environments -->
@@ -17,6 +17,8 @@
 {% endblock %}
 
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
 <!-- Project Context Bar -->
 {% if topo_projects %}
 <div class="project-context-bar">
@@ -86,6 +88,7 @@
       <a class="tb-btn" id="tb-versions-link" href="#" title="Phase diagram / version history">Phases</a>
       <a class="tb-btn" id="tb-mc-link" href="#" title="Monte Carlo cascading simulation">Simulate MC</a>
       <a class="tb-btn" id="tb-compliance-link" href="#" title="Compliance audit (FISMA/STIG/ZTA)" style="color:#f39c12;">Compliance</a>
+      <a class="tb-btn" id="tb-migration-link" href="#" title="View migration phases and linked SOPs for this topology" style="color:#a29bfe;">Migration</a>
       <button class="tb-btn" id="tb-stig-import-btn" onclick="openStigImportDialog()" title="Import STIG Viewer .ckl or XCCDF results — match hostnames to canvas devices and color by compliance status" style="color:#e74c3c;">&#x1f6e1; STIG</button>
       <button class="tb-btn" id="tb-ato-btn" onclick="generateAtoPackage()" title="Generate ATO package (boundary diagram, data flow, PPS matrix, STIG checklist)" style="color:#e74c3c;">&#x1f4cb; ATO Package</button>
       <button class="tb-btn" id="tb-pps-btn" onclick="openPpsPanel()" title="PPS Matrix Generator — select enclave or device pair, auto-generate ports/protocols/services matrix" style="color:#00d4ff;">&#x1f4ca; PPS Matrix</button>
@@ -113,11 +116,19 @@
       <button class="tb-btn" onclick="exportCanvasPDF()" title="Export PDF — opens print-ready canvas in new tab for Print to PDF">&#x1f4c4; Export PDF</button>
       <button class="tb-btn tb-btn-fips" id="tb-fips-btn" onclick="toggleFipsOverlay()" title="FIPS 140 Encryption Coverage — toggle to highlight protected (green) vs unprotected (red dashed) links">🔒 FIPS <span id="fips-indicator" style="font-size:9px;opacity:0.6;">OFF</span></button>
       <button class="tb-btn" id="tb-fips-report-btn" onclick="exportFipsReport()" title="Export FIPS 140 Encryption Coverage Report for ISSM" style="color:#00d4ff;">📄 FIPS Report</button>
+      <button class="tb-btn" style="background:#d5f0e0;color:#1e7e34;border:1px solid #1e7e34;font-weight:600;" onclick="validateNetworkIaC()" title="Validate IaC — check generated Terraform for this topology">✓ Validate IaC</button>
+      <button class="tb-btn" style="background:#d6eaf8;color:#1a5276;border:1px solid #1a5276;font-weight:600;" onclick="deployNetworkIaC()" title="Generate Terraform deployment bundle for this network topology">🚀 Deploy IaC</button>
       <button class="tb-btn tb-btn-ai" onclick="ncChatToggle()" title="Network Assistant — chat to generate topologies">✦ Chat</button>
       <button class="tb-btn" onclick="toggleRackView()" title="Rack Elevation View — shows rack layout for selected device">&#x229e; Rack</button>
       <button class="tb-btn" id="tb-netbox-btn" onclick="netboxToggle()" title="NetBox IPAM — pull devices, IPs, VLANs, racks, circuits from NetBox source of truth" style="color:#9b59b6;">⬡ NetBox</button>
       <button class="tb-btn" id="tb-ai-review-btn" onclick="openAiReviewPanel()" title="AI Topology Reviewer — LLM analysis of SPOF, redundancy gaps, STIG violations, and suggestions" style="color:#00d4ff;">&#x1f50d; AI Review</button>
       <button class="tb-btn" id="tb-cr-btn" onclick="toggleCrMarkupMode()" title="Change Request Markup Mode — mark proposed adds (green), removes (red), and modifies (yellow) for CAB review" style="color:#8e44ad;">&#x270f; CR Markup</button>
+    </div>
+    <div class="tb-group">
+      {% set wf_canvas_id = "ndc" %}
+      {% set wf_context_label = topology_name %}
+      {% set wf_design_id = topology_id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
     </div>
     <div class="tb-group tb-banner-group">
       <input type="text" id="banner-text-input" class="tb-banner-input" placeholder="Classification banner..." oninput="onBannerTextChange()" title="Classification banner text (e.g., CUI // SP-CTI, SECRET // NOFORN)"/>
@@ -1764,6 +1775,9 @@
     document.getElementById('tb-versions-link').href = NC_BASE + '/versions/' + TOPOLOGY_ID;
     document.getElementById('tb-mc-link').href = NC_BASE + '/montecarlo/' + TOPOLOGY_ID;
     document.getElementById('tb-compliance-link').href = NC_BASE + '/compliance/' + TOPOLOGY_ID;
+    document.getElementById('tb-migration-link').href = NC_BASE + '/migration-phases/' + TOPOLOGY_ID;
+  } else {
+    document.getElementById('tb-migration-link').style.display = 'none';
   }
 
   function saveAsTopology() {
@@ -3096,14 +3110,14 @@ async function cfgDownloadAll() {
 
 // ── Load Cloud Networking palette from API ──────────────────────────────────
 (function(){
-  const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon'};
-  const CSP_LABELS = {aws:'AWS',azure:'Azure',gcp:'GCP',oci:'OCI',ibm:'IBM Cloud',multi_cloud:'Multi-Cloud'};
+  const CSP_ICONS = {aws:'aws-icon',azure:'azure-icon',gcp:'gcp-icon',oci:'oci-icon',ibm:'ibm-icon',multi_cloud:'multi-icon',dod:'dod-icon'};
+  const CSP_LABELS = {aws:'AWS',azure:'Azure',gcp:'GCP',oci:'OCI',ibm:'IBM Cloud',multi_cloud:'Multi-Cloud',dod:'DoD/SCCA'};
   fetch(NC_BASE + '/api/cloud-objects').then(r=>r.json()).then(data=>{
     const container = document.getElementById('cloud-palette-container');
     if(!container) return;
     for(const [csp, objects] of Object.entries(data)){
       const section = document.createElement('div');
-      section.className = 'palette-section cloud-section';
+      section.className = `palette-section cloud-section csp-${csp}`;
       const iconClass = CSP_ICONS[csp]||'cloud-icon';
       section.innerHTML = `<div class="palette-cat">${CSP_LABELS[csp]||csp}</div><div class="palette-items">${
         objects.map(o=>`<div class="palette-item" draggable="true" data-type="${o.type}" ondragstart="onDragStart(event)" title="${o.desc}"><div class="pi-icon ${iconClass}">${o.icon}</div><span>${o.label}</span></div>`).join('')

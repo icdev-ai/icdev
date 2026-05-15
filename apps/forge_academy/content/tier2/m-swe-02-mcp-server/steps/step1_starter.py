@@ -5,8 +5,7 @@ Tier 2 SWE/Architect Mission 2: MCP Server Design
 Goal: Build an MCPToolRegistry that registers tools and dispatches calls.
 """
 
-import inspect
-from typing import Callable, Any
+from typing import Callable
 
 
 # ── Step 1: Schema Generator ──────────────────────────────────────────────────

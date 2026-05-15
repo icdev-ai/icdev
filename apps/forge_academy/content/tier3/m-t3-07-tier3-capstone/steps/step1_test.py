@@ -72,8 +72,8 @@ for comp_name in ["manifest", "goal", "blueprint", "tool", "completeness"]:
         f"components must have '{comp_name}' key"
     comp = report["components"][comp_name]
     assert "score" in comp, f"components['{comp_name}'] must have 'score'"
-    assert isinstance(comp["score"], (int, float)), f"score must be numeric"
-    assert comp["score"] >= 0, f"score must be ≥ 0"
+    assert isinstance(comp["score"], (int, float)), "score must be numeric"
+    assert comp["score"] >= 0, "score must be ≥ 0"
     assert comp["score"] == 2, \
         f"Perfect app: components['{comp_name}']['score'] should be 2, got {comp['score']}"
 
@@ -110,7 +110,7 @@ report_bad_goal = app_bad_goal.ship()
 assert report_bad_goal["components"]["goal"]["score"] == 0, \
     f"Invalid goal → goal score=0, got {report_bad_goal['components']['goal']['score']}"
 assert "goal" in report_bad_goal["blockers"], \
-    f"Invalid goal → 'goal' in blockers"
+    "Invalid goal → 'goal' in blockers"
 
 # ── Test: ship() — unknown system → tool score deducted ──────────────────────
 

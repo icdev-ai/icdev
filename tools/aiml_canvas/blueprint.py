@@ -214,8 +214,12 @@ def create_aiml_blueprint() -> Blueprint | None:
 
     @bp.route("/api/designs/<design_id>/assess", methods=["POST"])
     def api_assess(design_id: str):
+        data = request.get_json(silent=True) or {}
+        use_cot = data.get("use_cot", False)
+        chain_mode = "cot" if use_cot else ""
         try:
             result = eng.run_assessment(design_id)
+            result["chain_mode"] = chain_mode
             _record_decision(
                 canvas_type="aimc",
                 record_id=design_id,

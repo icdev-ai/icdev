@@ -631,6 +631,9 @@ def delete_all_designs():
 @infra_bp.route("/api/designs/<design_id>/assess", methods=["POST"])
 def run_assessment(design_id):
     """Run compliance assessment on a design."""
+    data = request.get_json(force=True, silent=True) or {}
+    use_cot = data.get("use_cot", False)
+    chain_mode = "cot" if use_cot else ""
     conn = _get_conn()
     try:
         row = conn.execute("SELECT graph_json FROM infra_designs WHERE id = ?", (design_id,)).fetchone()
@@ -666,6 +669,7 @@ def run_assessment(design_id):
             rationale=f"CSP coverage: {csp_info}",
             model_used=None,
         )
+        result["chain_mode"] = chain_mode
         return jsonify(result)
     finally:
         conn.close()

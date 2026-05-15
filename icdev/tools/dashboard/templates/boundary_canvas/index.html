@@ -2,6 +2,7 @@
 {% extends "base.html" %}
 {% block title %}Boundary Design Canvas — ICDEV{% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_badge %}
 <style>
   .bdc-hero { padding: 20px 30px; }
   .bdc-hero h1 { font-size: 22px; margin: 0 0 4px; }
@@ -60,7 +61,7 @@
     <h3>{{ d.name }}</h3>
     <p>{{ d.description or 'No description' }}</p>
     <div class="meta">
-      <span class="tag">{{ d.classification or 'CUI' }}</span>
+      {{ design_classification_badge(d) }}
     </div>
     <a href="/boundary/twin/{{ d.id }}" class="bdc-twin-link" onclick="event.stopPropagation()" title="cATO Digital Twin">DT</a>
   </div>
@@ -68,6 +69,19 @@
   <p style="color:#7a8cb0; padding: 0 30px;">No boundary designs yet. Start from a template above or click <b>+ New Boundary Design</b>.</p>
   {% endfor %}
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "boundary" %}
+{% set iqe_api_route = "/boundary/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Boundary & ISA Tracker" %}
+{% set iqe_examples = [
+  {"label": "All designs", "query": "foreach d in bdc.designs select d.name, d.classification, d.updated_at"},
+  {"label": "Open ISAs", "query": "foreach i in bdc.isas where i.status == \"active\" select i.interconnection_id, i.owner, i.expiry_date"},
+  {"label": "Critical findings", "query": "foreach a in bdc.assessments where a.cat1_findings > 0 select a.design_name, a.cat1_findings, a.grade"},
+  {"label": "Unacknowledged alerts", "query": "foreach al in bdc.alerts where al.acknowledged == 0 select al.alert_type, al.severity, al.message"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

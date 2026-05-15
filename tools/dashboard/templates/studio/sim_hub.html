@@ -1,0 +1,347 @@
+{# CUI // SP-CTI #}
+{% extends "studio/base_studio.html" %}
+
+{% block extra_css %}
+{{ super() }}
+<style>
+/* ── Simulation Hub ─────────────────────────────────────── */
+.simhub-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1.5rem; gap: 1rem; flex-wrap: wrap;
+}
+.simhub-title { font-size: 1.35rem; font-weight: 700; color: #e2e8f0; }
+.simhub-subtitle { font-size: .8rem; color: #64748b; margin-top: .15rem; }
+.simhub-actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+
+.simhub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+/* ── Canvas card ─────────────────────────────────────────── */
+.simcard {
+  background: #1e293b; border: 1px solid #334155; border-radius: .6rem;
+  padding: 1rem; display: flex; flex-direction: column; gap: .6rem;
+  transition: border-color .15s;
+}
+.simcard:hover { border-color: #475569; }
+.simcard--pass  { border-left: 3px solid #34d399; }
+.simcard--warn  { border-left: 3px solid #fbbf24; }
+.simcard--fail  { border-left: 3px solid #f87171; }
+.simcard--never { border-left: 3px solid #334155; }
+
+.simcard-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem;
+}
+.simcard-name { font-size: .95rem; font-weight: 600; color: #e2e8f0; }
+.simcard-ts   { font-size: .72rem; color: #64748b; }
+
+.simcard-gate {
+  font-size: .72rem; font-weight: 700; padding: .2rem .55rem;
+  border-radius: .3rem; text-transform: uppercase; letter-spacing: .04em;
+}
+.gate-pass  { background: rgba(52,211,153,.15); color: #34d399; }
+.gate-warn  { background: rgba(251,191,36,.15);  color: #fbbf24; }
+.gate-fail  { background: rgba(248,113,113,.15); color: #f87171; }
+.gate-never { background: rgba(100,116,139,.12); color: #64748b; }
+
+.simcard-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: .4rem;
+}
+.simstat { text-align: center; }
+.simstat-val { font-size: 1.05rem; font-weight: 700; color: #94a3b8; }
+.simstat-lbl { font-size: .66rem; color: #475569; text-transform: uppercase; }
+
+.simcard-traffic {
+  font-size: .75rem; color: #94a3b8; background: #0f172a;
+  border-radius: .35rem; padding: .35rem .6rem;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.simcard-traffic-label { color: #64748b; }
+.simcard-traffic-val { font-weight: 600; }
+
+.simcard-footer {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  margin-top: .2rem;
+}
+.simcard-train {
+  font-size: .72rem; color: #64748b;
+}
+.simcard-train b { color: #94a3b8; }
+
+.sim-run-btn {
+  font-size: .75rem; font-weight: 600; padding: .3rem .75rem;
+  border-radius: .35rem; border: 1px solid #3b82f6; background: transparent;
+  color: #3b82f6; cursor: pointer; transition: all .15s;
+}
+.sim-run-btn:hover { background: rgba(59,130,246,.15); }
+.sim-run-btn:disabled { opacity: .4; cursor: not-allowed; border-color: #334155; color: #64748b; }
+.sim-run-btn--running { border-color: #fbbf24; color: #fbbf24; }
+
+/* ── Bulk controls ───────────────────────────────────────── */
+.studio-btn {
+  font-size: .8rem; font-weight: 600; padding: .45rem 1rem;
+  border-radius: .4rem; cursor: pointer; border: none; transition: all .15s;
+}
+.studio-btn--primary { background: #2563eb; color: #fff; }
+.studio-btn--primary:hover { background: #1d4ed8; }
+.studio-btn--secondary { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+.studio-btn--secondary:hover { background: #273548; }
+.studio-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ── Status bar ──────────────────────────────────────────── */
+.simhub-status-bar {
+  background: #0f172a; border: 1px solid #1e293b; border-radius: .4rem;
+  padding: .5rem 1rem; font-size: .75rem; color: #64748b;
+  display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.simhub-status-bar b { color: #94a3b8; }
+.simhub-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.simhub-dot--pass  { background: #34d399; }
+.simhub-dot--warn  { background: #fbbf24; }
+.simhub-dot--fail  { background: #f87171; }
+.simhub-dot--never { background: #334155; }
+
+/* ── Run log drawer ──────────────────────────────────────── */
+.simhub-log {
+  display: none; background: #0f172a; border: 1px solid #1e293b;
+  border-radius: .4rem; padding: .75rem 1rem; font-size: .75rem;
+  font-family: monospace; color: #94a3b8; max-height: 200px; overflow-y: auto;
+  margin-top: .75rem;
+}
+.simhub-log.active { display: block; }
+</style>
+{% endblock %}
+
+{% block studio_content %}
+{# CUI // SP-CTI #}
+<div style="max-width:1280px;margin:0 auto;padding:1.5rem 1rem;">
+
+  <div class="simhub-header">
+    <div>
+      <div class="simhub-title">⬡ Studio Simulation Hub</div>
+      <div class="simhub-subtitle">GNS3 topology simulation status across all 12 design canvases — CUI // SP-CTI</div>
+    </div>
+    <div class="simhub-actions">
+      <button class="studio-btn studio-btn--secondary" onclick="SimHub.refresh()">↺ Refresh</button>
+      <button class="studio-btn studio-btn--primary"   id="run-all-btn" onclick="SimHub.runAll()">▶ Run All</button>
+    </div>
+  </div>
+
+  {# ── Summary bar ──────────────────────────────────────── #}
+  <div class="simhub-status-bar" id="status-bar">
+    {% set pass_count  = statuses | selectattr('gate','equalto','PASS')  | list | length %}
+    {% set warn_count  = statuses | selectattr('gate','equalto','WARN')  | list | length %}
+    {% set fail_count  = statuses | selectattr('gate','equalto','FAIL')  | list | length %}
+    {% set never_count = statuses | selectattr('gate','equalto','NEVER') | list | length %}
+    <span><div class="simhub-dot simhub-dot--pass" style="display:inline-block;"></div>&nbsp;<b>{{ pass_count }}</b> Pass</span>
+    <span><div class="simhub-dot simhub-dot--warn" style="display:inline-block;"></div>&nbsp;<b>{{ warn_count }}</b> Warn</span>
+    <span><div class="simhub-dot simhub-dot--fail" style="display:inline-block;"></div>&nbsp;<b>{{ fail_count }}</b> Fail</span>
+    <span><div class="simhub-dot simhub-dot--never" style="display:inline-block;"></div>&nbsp;<b>{{ never_count }}</b> Never run</span>
+    <span style="margin-left:auto;color:#475569" id="last-refresh-ts">Last refresh: {{ now_ts }}</span>
+  </div>
+
+  {# ── Canvas grid ──────────────────────────────────────── #}
+  <div class="simhub-grid" id="canvas-grid">
+    {% for s in statuses %}
+    {% set gate_cls = s.gate | lower %}
+    <div class="simcard simcard--{{ gate_cls }}" id="card-{{ s.canvas }}" data-canvas="{{ s.canvas }}">
+
+      <div class="simcard-top">
+        <div>
+          <div class="simcard-name">{{ s.label }}</div>
+          <div class="simcard-ts">{{ s.last_run or 'Never run' }}</div>
+        </div>
+        <span class="simcard-gate gate-{{ gate_cls }}">
+          {% if s.gate == 'PASS' %}✓{% elif s.gate == 'WARN' %}⚠{% elif s.gate == 'FAIL' %}✗{% else %}—{% endif %}
+          {{ s.gate }}
+        </span>
+      </div>
+
+      <div class="simcard-stats">
+        <div class="simstat">
+          <div class="simstat-val">{{ s.nodes_deployed or '—' }}</div>
+          <div class="simstat-lbl">Nodes</div>
+        </div>
+        <div class="simstat">
+          <div class="simstat-val">{{ s.links_deployed or '—' }}</div>
+          <div class="simstat-lbl">Links</div>
+        </div>
+        <div class="simstat">
+          <div class="simstat-val">{{ s.probes_passed }}/{{ s.probes_total }}</div>
+          <div class="simstat-lbl">Probes</div>
+        </div>
+        <div class="simstat">
+          <div class="simstat-val">{{ s.mode[:4] | upper if s.mode else '—' }}</div>
+          <div class="simstat-lbl">Mode</div>
+        </div>
+      </div>
+
+      <div class="simcard-traffic">
+        <span class="simcard-traffic-label">Traffic flows</span>
+        <span class="simcard-traffic-val">
+          {{ s.traffic_flows_reachable }}/{{ s.traffic_flows_tested }}
+          {% if s.traffic_flows_tested > 0 %}
+          ({{ (s.traffic_flows_reachable / s.traffic_flows_tested * 100) | round(0) | int }}%)
+          {% endif %}
+          reachable
+        </span>
+      </div>
+
+      <div class="simcard-footer">
+        <div class="simcard-train">
+          Training: <b>{{ s.training_examples }}</b> pair{{ 's' if s.training_examples != 1 else '' }}
+          {% if s.ft_examples is defined and s.ft_examples %}&nbsp;/ <b>{{ s.ft_examples }}</b> in FT DB{% endif %}
+        </div>
+        <button class="sim-run-btn" id="run-btn-{{ s.canvas }}" onclick="SimHub.runCanvas('{{ s.canvas }}')">
+          ▶ Run
+        </button>
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+
+  {# ── Run log ──────────────────────────────────────────── #}
+  <div class="simhub-log" id="run-log"></div>
+
+  {# ── IQE widget ───────────────────────────────────────── #}
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+
+</div>
+
+<script>
+const SimHub = (() => {
+  let _polling = null;
+
+  function _ts() {
+    return new Date().toLocaleTimeString();
+  }
+
+  function _log(msg) {
+    const el = document.getElementById('run-log');
+    el.classList.add('active');
+    el.textContent += `[${_ts()}] ${msg}\n`;
+    el.scrollTop = el.scrollHeight;
+  }
+
+  async function _postRun(canvas) {
+    const btn = document.getElementById(`run-btn-${canvas}`);
+    if (btn) { btn.disabled = true; btn.classList.add('sim-run-btn--running'); btn.textContent = '⟳ Running'; }
+    _log(`Launching simulation for canvas: ${canvas} …`);
+    try {
+      const r = await fetch(`/api/studio/sim/${canvas}/run`, { method: 'POST' });
+      const data = await r.json();
+      if (data.error) {
+        _log(`  ✗ ${data.error}`);
+      } else {
+        _log(`  ✓ Started (PID ${data.pid || '?'})`);
+        setTimeout(() => refresh(), 8000);
+      }
+    } catch(e) {
+      _log(`  ✗ Network error: ${e}`);
+    }
+  }
+
+  async function refresh() {
+    try {
+      const r = await fetch('/api/studio/sim/status');
+      if (!r.ok) return;
+      const statuses = await r.json();
+      statuses.forEach(s => _updateCard(s));
+      const ts = document.getElementById('last-refresh-ts');
+      if (ts) ts.textContent = `Last refresh: ${_ts()}`;
+    } catch(_) {}
+  }
+
+  function _updateCard(s) {
+    const card = document.getElementById(`card-${s.canvas}`);
+    if (!card) return;
+    const gateCls = (s.gate || 'never').toLowerCase();
+    card.className = `simcard simcard--${gateCls}`;
+
+    const top = card.querySelector('.simcard-top');
+    if (top) {
+      const nameEl = top.querySelector('.simcard-name');
+      if (nameEl) nameEl.textContent = s.label || s.canvas.toUpperCase();
+      const tsEl = top.querySelector('.simcard-ts');
+      if (tsEl) tsEl.textContent = s.last_run || 'Never run';
+      const gateEl = top.querySelector('.simcard-gate');
+      if (gateEl) {
+        const icon = s.gate === 'PASS' ? '✓' : s.gate === 'WARN' ? '⚠' : s.gate === 'FAIL' ? '✗' : '—';
+        gateEl.textContent = `${icon} ${s.gate}`;
+        gateEl.className = `simcard-gate gate-${gateCls}`;
+      }
+    }
+
+    const stats = card.querySelectorAll('.simstat-val');
+    if (stats.length === 4) {
+      stats[0].textContent = s.nodes_deployed || '—';
+      stats[1].textContent = s.links_deployed || '—';
+      stats[2].textContent = `${s.probes_passed}/${s.probes_total}`;
+      stats[3].textContent = s.mode ? s.mode.slice(0,4).toUpperCase() : '—';
+    }
+
+    const traf = card.querySelector('.simcard-traffic-val');
+    if (traf) {
+      let pct = '';
+      if (s.traffic_flows_tested > 0)
+        pct = ` (${Math.round(s.traffic_flows_reachable / s.traffic_flows_tested * 100)}%)`;
+      traf.textContent = `${s.traffic_flows_reachable}/${s.traffic_flows_tested}${pct} reachable`;
+    }
+
+    const train = card.querySelector('.simcard-train');
+    if (train) {
+      const n = s.training_examples;
+      train.innerHTML = `Training: <b>${n}</b> pair${n !== 1 ? 's' : ''}`;
+    }
+
+    const btn = document.getElementById(`run-btn-${s.canvas}`);
+    if (btn && btn.textContent !== '⟳ Running') {
+      btn.disabled = false;
+      btn.classList.remove('sim-run-btn--running');
+      btn.textContent = '▶ Run';
+    }
+  }
+
+  function runCanvas(canvas) {
+    _postRun(canvas);
+  }
+
+  async function runAll() {
+    const btn = document.getElementById('run-all-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⟳ Running all…'; }
+    _log('Launching simulations for all 12 canvases…');
+    try {
+      const r = await fetch('/api/studio/sim/run-all', { method: 'POST' });
+      const data = await r.json();
+      _log(`  Launched: ${(data.launched || []).join(', ') || '—'}`);
+      if (data.errors && data.errors.length)
+        _log(`  Errors: ${data.errors.join(', ')}`);
+      setTimeout(() => {
+        if (btn) { btn.disabled = false; btn.textContent = '▶ Run All'; }
+      }, 3000);
+      _startPolling();
+    } catch(e) {
+      _log(`  ✗ ${e}`);
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Run All'; }
+    }
+  }
+
+  function _startPolling() {
+    if (_polling) clearInterval(_polling);
+    _polling = setInterval(refresh, 10000);
+  }
+
+  // auto-refresh every 10 s
+  document.addEventListener('DOMContentLoaded', () => {
+    _startPolling();
+  });
+
+  return { runCanvas, runAll, refresh };
+})();
+</script>
+{% endblock %}
+{# CUI // SP-CTI #}
