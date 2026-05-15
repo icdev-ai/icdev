@@ -1,3 +1,4 @@
+
 # Auto-grader for T3 M7 Step 1: Tier 3 Capstone
 
 # ── Setup: perfect capstone app ───────────────────────────────────────────────

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aadc-09-ops-config:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Generate a Config for Your Design

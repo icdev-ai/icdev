@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-01-ai-roi:step:2
+step_class: icdev:Lesson
+---
+
 # Build Your ROI Model
 
 An ROI model does not need to be precise to be useful. It needs to be structured enough to expose the key assumptions and surface the conversation worth having.

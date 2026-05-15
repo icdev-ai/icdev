@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m09-langchain:step:1
+step_class: icdev:Lesson
+---
+
 # LangChain Essentials — LCEL Chains
 
 LangChain Expression Language (LCEL) is LangChain's composition interface — a declarative way to build LLM pipelines using the `|` operator. An LCEL chain is a sequence of transforms, each taking the output of the last as its input.

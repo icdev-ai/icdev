@@ -1,3 +1,4 @@
+
 # Auto-grader for T3 M6 Step 1: Child App Creation
 
 # ── Test: AppManifest.validate() — valid manifest ────────────────────────────

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-go:step:2
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Design Your Go Integration

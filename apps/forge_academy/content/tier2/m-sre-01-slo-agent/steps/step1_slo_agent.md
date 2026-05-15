@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-sre-01-slo-agent:step:1
+step_class: icdev:Lesson
+---
+
 # SRE M01 — SLO Monitoring Agent
 
 ## Mission Brief

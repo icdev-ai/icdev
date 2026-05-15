@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-dataops-05-fine-tuning:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Fine-Tuning Pipeline Overview

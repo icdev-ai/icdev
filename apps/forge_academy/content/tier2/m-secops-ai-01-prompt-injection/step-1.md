@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-ai-01-prompt-injection:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Prompt Injection — The OWASP LLM01 Threat

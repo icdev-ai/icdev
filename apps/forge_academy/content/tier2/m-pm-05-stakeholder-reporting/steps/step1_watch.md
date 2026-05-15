@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-05-stakeholder-reporting:step:1
+step_class: icdev:Lesson
+---
+
 # Stakeholder Reporting Agent — Configure Automated Status Reports
 
 PMs spend 30-40% of their time writing status reports. ICDEV's stakeholder reporting agent collects data from your project management tools, EVM system, and risk register, then generates tailored briefs for each audience — weekly, automatically.

@@ -1,3 +1,4 @@
+
 """
 Step 1: What is RAG?
 Goal: Implement simple_rag() that retrieves relevant docs and generates an answer.

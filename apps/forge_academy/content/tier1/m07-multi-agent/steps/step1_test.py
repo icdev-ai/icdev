@@ -1,3 +1,4 @@
+
 # Auto-grader for M07 Step 1: Multi-Agent Coordination
 
 import sys

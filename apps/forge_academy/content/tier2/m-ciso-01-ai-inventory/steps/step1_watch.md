@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-01-ai-inventory:step:1
+step_class: icdev:Lesson
+---
+
 # AI Governance Inventory — Watch It Run
 
 OMB Memorandum M-25-21 ("Advancing Responsible Use of AI in the Federal Government") requires agencies to maintain a complete inventory of all AI systems used in mission-critical operations. Most agencies have no idea how many AI systems they're actually running. Watch ICDEV find out.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-go:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Go Service Production Notes

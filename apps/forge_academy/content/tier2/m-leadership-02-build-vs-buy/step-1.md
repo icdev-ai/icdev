@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-02-build-vs-buy:step:1
+step_class: icdev:Lesson
+---
+
 # Build vs. Buy vs. Partner
 
 Choosing how to acquire AI capability is one of the most consequential decisions a program manager or CTO makes. Get it wrong and you are locked in, exposed, or three years behind schedule.

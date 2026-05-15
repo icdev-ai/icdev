@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m06-fastmcp:step:1
+step_class: icdev:Lesson
+---
+
 # Build Your First MCP Server with FastMCP
 
 FastMCP is a Python framework that removes all the boilerplate from building MCP servers. Where vanilla MCP requires writing JSON-RPC handlers, schema dicts, and transport logic, FastMCP reduces it to a decorator and a function signature.

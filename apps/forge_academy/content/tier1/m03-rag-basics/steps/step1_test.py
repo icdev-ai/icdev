@@ -1,3 +1,4 @@
+
 # Auto-grader for M03 Step 1: What is RAG?
 
 import sys

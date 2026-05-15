@@ -1,3 +1,4 @@
+
 """
 Step 2: Few-Shot Prompting
 Goal: Build a few-shot prompt that classifies STIG findings by severity.

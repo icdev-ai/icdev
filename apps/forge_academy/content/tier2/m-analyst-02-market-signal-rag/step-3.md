@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-analyst-02-market-signal-rag:step:3
+step_class: icdev:Assessment
+---
+
 # RAG Quality Check
 
 A RAG system is only as valuable as the questions it can answer well. The quality check step forces you to define what "well" means for your specific use case — before you deploy.

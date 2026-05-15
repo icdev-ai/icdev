@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-ciso-01-ai-inventory:step:3
+step_class: icdev:Lesson
+---
+
 # Verify: Review Your AI Inventory
 
 Review the discovered AI systems before finalizing your inventory submission.

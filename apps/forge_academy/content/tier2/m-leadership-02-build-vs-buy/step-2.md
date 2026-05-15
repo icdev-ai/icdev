@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-02-build-vs-buy:step:2
+step_class: icdev:Lesson
+---
+
 # Decision Matrix: Score Your AI Initiative
 
 A decision matrix makes trade-offs visible and auditable. It forces explicit prioritization rather than gut-feel conclusions that collapse under scrutiny.

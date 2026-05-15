@@ -1,3 +1,4 @@
+
 """
 Step 1: Amazon Strands Agents — Tool Decorator + Agent Pattern
 Goal: Implement the @tool decorator and StrandsAgent that uses registered tools.

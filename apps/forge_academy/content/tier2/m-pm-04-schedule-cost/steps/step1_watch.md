@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-04-schedule-cost:step:1
+step_class: icdev:Lesson
+---
+
 # Schedule & Cost Intelligence — EVM with AI Prediction
 
 Earned Value Management tells you where you were. AI-augmented EVM tells you where you're going — and flags problems 6 weeks before they appear in your next CDRL. ICDEV's schedule and cost intelligence engine integrates with your existing EVM data to add predictive analytics.

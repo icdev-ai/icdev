@@ -1,3 +1,4 @@
+
 """SRE M02 — Incident Response Agent.
 Goal: Classify incoming alerts by severity, select runbook, return incident brief.
 """

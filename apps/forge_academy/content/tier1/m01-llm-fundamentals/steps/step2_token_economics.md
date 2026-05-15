@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m01-llm-fundamentals:step:2
+step_class: icdev:Lesson
+---
+
 # Token Economics
 
 Every character you send costs something. Every response you receive costs something. In production AI systems, tokens are currency — and understanding how they're counted is the difference between a $10/month tool and a $10,000/month infrastructure bill.

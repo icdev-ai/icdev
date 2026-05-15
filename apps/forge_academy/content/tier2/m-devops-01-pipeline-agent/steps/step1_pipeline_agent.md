@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-devops-01-pipeline-agent:step:1
+step_class: icdev:Lesson
+---
+
 # Build a CI/CD Pipeline Agent
 
 In this mission you'll build an agent that monitors a CI/CD pipeline, detects failures, diagnoses root causes, and generates remediation recommendations.

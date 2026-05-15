@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-netops-04-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # NetOps M04 — NetOps Capstone
 
 ## Mission Brief

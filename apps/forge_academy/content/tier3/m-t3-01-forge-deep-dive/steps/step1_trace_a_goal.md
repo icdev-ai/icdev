@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-t3-01-forge-deep-dive:step:1
+step_class: icdev:Lesson
+---
+
 # FORGE Framework Deep Dive — Trace a Live Tool Call
 
 You've used ICDEV. Now you'll understand it. In this mission you'll trace a real goal execution from trigger to output — reading actual ICDEV source files and identifying where each layer hands off to the next.

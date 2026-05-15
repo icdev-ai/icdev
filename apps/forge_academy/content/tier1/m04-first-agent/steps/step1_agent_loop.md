@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m04-first-agent:step:1
+step_class: icdev:Lesson
+---
+
 # The Agent Loop
 
 An agent is not a prompt. An agent is a **control loop** — a process that runs continuously, observes its environment, decides what to do, takes actions via tools, and uses the results to decide what to do next.

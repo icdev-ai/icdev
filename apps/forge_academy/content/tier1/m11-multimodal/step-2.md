@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m11-multimodal:step:2
+step_class: icdev:Lesson
+---
+
 # CUI // SP-CTI
 # Build a Document Classifier with Multimodal AI
 

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m08-strands-agents:step:1
+step_class: icdev:Lesson
+---
+
 # Amazon Strands Agents
 
 Amazon Strands is AWS's open-source agentic AI SDK — purpose-built for production deployment on AWS GovCloud. Where frameworks like LangChain focus on composing LLM chains, Strands focuses on the full agent execution loop: tool selection, multi-step reasoning, streaming, and AWS service integration out of the box.

@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aadc-09-ops-config:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Design → Runtime: The Ops Config Generator

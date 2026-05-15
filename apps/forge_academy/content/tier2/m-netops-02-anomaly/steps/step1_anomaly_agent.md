@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-netops-02-anomaly:step:1
+step_class: icdev:Lesson
+---
+
 # NetOps M02 — Anomaly Detection Agent
 
 ## Mission Brief

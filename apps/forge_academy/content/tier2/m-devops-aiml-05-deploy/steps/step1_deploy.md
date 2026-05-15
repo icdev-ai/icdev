@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-devops-aiml-05-deploy:step:1
+step_class: icdev:Lesson
+---
+
 # Deployment Planning — CSP Selection + Inference Server Strategy
 
 ## Inference Server Selection Matrix

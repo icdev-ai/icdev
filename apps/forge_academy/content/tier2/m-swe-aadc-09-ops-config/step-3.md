@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-aadc-09-ops-config:step:3
+step_class: icdev:Assessment
+---
+
 <!-- CUI // SP-CTI -->
 
 # Ops Config Review

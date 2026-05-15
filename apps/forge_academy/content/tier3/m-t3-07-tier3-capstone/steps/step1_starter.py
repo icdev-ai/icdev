@@ -1,3 +1,4 @@
+
 """
 Tier 3 Mission 7: Capstone — Ship a Real Child App
 Goal: Wire AppManifest + GoalValidator + BlueprintSpec + compliance tool

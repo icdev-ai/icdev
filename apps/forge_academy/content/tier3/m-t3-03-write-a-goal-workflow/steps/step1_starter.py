@@ -1,3 +1,4 @@
+
 """
 Tier 3 Mission 3: Write a Goal Workflow
 Goal: Build a GoalValidator that parses and validates ICDEV goal files.

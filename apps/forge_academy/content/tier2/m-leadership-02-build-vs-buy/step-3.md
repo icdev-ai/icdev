@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-leadership-02-build-vs-buy:step:3
+step_class: icdev:Assessment
+---
+
 # Your Decision Memo
 
 A decision memo is not a report — it is a recommendation with supporting rationale. It should be readable in under 3 minutes and defensible in a program review.

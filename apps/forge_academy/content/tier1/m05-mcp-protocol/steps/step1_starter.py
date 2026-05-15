@@ -1,3 +1,4 @@
+
 """
 Step 1: What is MCP?
 Goal: Implement a minimal MCP-style server and client using Python dicts.

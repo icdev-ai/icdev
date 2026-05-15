@@ -1,3 +1,4 @@
+
 """
 SecOps Mission 5 — AADC Threat Modeling
 Goal: Run a STRIDE + MITRE ATLAS threat model against an agentic pipeline design graph.

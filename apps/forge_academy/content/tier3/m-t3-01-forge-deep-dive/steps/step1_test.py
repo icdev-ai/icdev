@@ -1,3 +1,4 @@
+
 # Auto-grader for T3 M1 Step 1: FORGE Goal Tracer
 
 import sys

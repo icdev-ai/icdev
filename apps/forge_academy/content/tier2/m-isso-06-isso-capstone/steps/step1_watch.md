@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-isso-06-isso-capstone:step:1
+step_class: icdev:Lesson
+---
+
 # ISSO Capstone — Deploy a Complete STIG Remediation Workflow
 
 You've configured individual ICDEV capabilities. Now you'll chain them into a complete, repeating workflow — from STIG scan to remediation to evidence to SSP update. This is your operational ISSO toolkit.

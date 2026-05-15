@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-secops-05-aadc-threat-model:step:1
+step_class: icdev:Lesson
+---
+
 # Threat Model an Agentic AI Pipeline
 
 Attackers don't target your code — they target your AI's behavior. In this mission you'll run a

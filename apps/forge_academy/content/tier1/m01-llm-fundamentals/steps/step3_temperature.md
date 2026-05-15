@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m01-llm-fundamentals:step:3
+step_class: icdev:Lesson
+---
+
 # Temperature & Sampling
 
 Temperature is the single dial that controls how predictable or creative your LLM is. Get it wrong and your production agent either hallucinates freely or repeats the same answer forever.

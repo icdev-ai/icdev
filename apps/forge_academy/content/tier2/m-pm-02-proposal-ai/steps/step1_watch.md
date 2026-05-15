@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-pm-02-proposal-ai:step:1
+step_class: icdev:Lesson
+---
+
 # Proposal AI Assistant — Watch It Run
 
 Government proposals are won or lost in the technical approach section. Watch ICDEV's Proposal AI map your past performance to a solicitation's requirements in under 3 minutes — work that normally takes a BD team half a day.

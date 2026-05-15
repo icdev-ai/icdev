@@ -1,3 +1,8 @@
+---
+ontology_id: icdev:mission:m-swe-sdk-typescript:step:1
+step_class: icdev:Lesson
+---
+
 <!-- CUI // SP-CTI -->
 
 # Next.js + Claude SDK — Streaming Architecture
