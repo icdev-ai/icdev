@@ -33,11 +33,11 @@ def handle_ontology_build(arguments: Dict[str, Any]) -> Dict[str, Any]:
         return {
             "classification": "CUI // SP-CTI",
             "success": True,
-            "class_count": result.get("class_count", 0),
-            "property_count": result.get("property_count", 0),
-            "alignment_count": result.get("alignment_count", 0),
-            "closure_count": result.get("closure_count", 0),
-            "duplicates": result.get("duplicates", []),
+            "class_count": result.get("classes_total", 0),
+            "property_count": result.get("properties_total", 0),
+            "alignment_count": result.get("alignments_total", 0),
+            "closure_count": result.get("closure_pairs", 0),
+            "canonical_groups": result.get("canonical_groups", 0),
         }
     except ImportError as e:
         return {"error": f"Ontology federation not available: {e}", "success": False}
@@ -55,11 +55,13 @@ def handle_ontology_query(arguments: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from tools.ontology.federation import query_federation
 
-        results = query_federation(query=query, db_path=db_path)
+        results = query_federation(query_text=query, db_path=db_path)
         return {
             "classification": "CUI // SP-CTI",
             "query": query,
-            "results": results,
+            "results": results.get("results", []),
+            "results_count": results.get("results_count", 0),
+            "patterns_detected": results.get("patterns_detected", {}),
         }
     except ImportError as e:
         return {"error": f"Ontology federation not available: {e}", "results": []}
@@ -73,10 +75,10 @@ def handle_ontology_list_domains(arguments: Dict[str, Any]) -> Dict[str, Any]:
     try:
         from tools.ontology.federation import list_domains
 
-        domains = list_domains(db_path=db_path)
+        result = list_domains(db_path=db_path)
         return {
             "classification": "CUI // SP-CTI",
-            "domains": domains,
+            "domains": result.get("domains", []),
         }
     except ImportError as e:
         return {"error": f"Ontology federation not available: {e}", "domains": []}
