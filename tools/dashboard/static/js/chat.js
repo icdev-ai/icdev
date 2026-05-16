@@ -2135,6 +2135,24 @@
                 refreshContextList();
                 switchContext(ctx.context_id);
 
+                // Apply panel mode selected in the new context modal
+                // Use setTimeout to let switchContext (async) complete the RICOAS sidebar first
+                if (options.panelEnabled && options.panelPersonas && options.panelPersonas.length) {
+                    var _pendingPersonas = options.panelPersonas;
+                    setTimeout(function () {
+                        // Sync sidebar chips BEFORE chatTogglePanel reads them via _syncPanelPersonas
+                        var sidebarChips = document.querySelectorAll('#panel-persona-chips input[type="checkbox"]');
+                        for (var sci = 0; sci < sidebarChips.length; sci++) {
+                            sidebarChips[sci].checked = _pendingPersonas.indexOf(sidebarChips[sci].value) !== -1;
+                            var chipLabel = sidebarChips[sci].parentElement;
+                            if (chipLabel) chipLabel.classList.toggle('panel-chip--active', sidebarChips[sci].checked);
+                        }
+                        var toggleEl = document.getElementById('panel-mode-toggle');
+                        if (toggleEl) toggleEl.checked = true;
+                        chatTogglePanel(true);
+                    }, 400);
+                }
+
                 // Show welcome message from intake
                 if (data.message) {
                     var stream = document.getElementById('message-stream');
@@ -2334,6 +2352,9 @@
             }
             // Show/hide intake checkbox
             if (intakeRow) intakeRow.style.display = canvas === 'intake' ? '' : 'none';
+            // Show/hide expert panel section
+            var panelModeRow = document.getElementById('panel-mode-row');
+            if (panelModeRow) panelModeRow.style.display = canvas === 'intake' ? '' : 'none';
         }
 
         // Wire compliance env radio toggle
@@ -2364,6 +2385,25 @@
 
         // Init presets for default canvas (intake)
         _updateModalForCanvas('intake');
+
+        // Wire expert panel toggle in modal
+        var modalPanelEnabled = document.getElementById('modal-panel-enabled');
+        var modalPanelPersonas = document.getElementById('modal-panel-personas');
+        if (modalPanelEnabled) {
+            modalPanelEnabled.addEventListener('change', function () {
+                if (modalPanelPersonas) modalPanelPersonas.style.display = this.checked ? 'flex' : 'none';
+            });
+        }
+        // Wire persona chip active class in modal (since chip inputs are visually hidden)
+        if (modalPanelPersonas) {
+            var mpChipInputs = modalPanelPersonas.querySelectorAll('input[type="checkbox"]');
+            mpChipInputs.forEach(function (cb) {
+                cb.addEventListener('change', function () {
+                    var chip = cb.closest('.panel-chip');
+                    if (chip) chip.classList.toggle('panel-chip--active', cb.checked);
+                });
+            });
+        }
 
         function _readCompliance() {
             var envEl = document.querySelector('input[name="ctx-env"]:checked');
@@ -2398,6 +2438,13 @@
             }
             var regimeChecks = document.querySelectorAll('.ctx-regime-chip input');
             for (var ri = 0; ri < regimeChecks.length; ri++) regimeChecks[ri].checked = false;
+            // Reset expert panel
+            var mpEnabled = document.getElementById('modal-panel-enabled');
+            var mpPersonas = document.getElementById('modal-panel-personas');
+            if (mpEnabled) mpEnabled.checked = false;
+            if (mpPersonas) mpPersonas.style.display = 'none';
+            var mpChips = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]');
+            for (var pi = 0; pi < mpChips.length; pi++) mpChips[pi].checked = mpChips[pi].value === 'developer' || mpChips[pi].value === 'analyst';
             _updateModalForCanvas('intake');
         }
 
@@ -2417,7 +2464,15 @@
                     if (ctx && ctx.context_id) setContextCanvasType(ctx.context_id, canvasMode);
                 });
             } else if (isIntake) {
-                createIntakeContext({ title: title, agent_model: model, classification: comp.il });
+                var mpEl = document.getElementById('modal-panel-enabled');
+                var panelEnabled = mpEl ? mpEl.checked : false;
+                var panelPersonas = [];
+                if (panelEnabled) {
+                    var panelChecks = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:checked');
+                    for (var pci = 0; pci < panelChecks.length; pci++) panelPersonas.push(panelChecks[pci].value);
+                    if (!panelPersonas.length) panelPersonas = ['developer', 'analyst'];
+                }
+                createIntakeContext({ title: title, agent_model: model, classification: comp.il, panelEnabled: panelEnabled, panelPersonas: panelPersonas });
             } else {
                 var compBlurbR = _buildComplianceBlurb(comp.il, comp.regimes);
                 createContext({ title: title, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
