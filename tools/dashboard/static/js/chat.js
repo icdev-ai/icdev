@@ -273,8 +273,14 @@
 
         chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
             if (ctx.error) return;
-            // Sync canvas_type from server in case it was set externally
-            if (ctx.canvas_type && ctx.canvas_type !== 'intake' && (_canvasMap[ctxId] || 'intake') === 'intake') {
+            // If context has an intake session, repair any stale canvas_type in local map
+            if (ctx.intake_session_id && _canvasMap[ctxId] && _canvasMap[ctxId] !== 'intake') {
+                _canvasMap[ctxId] = 'intake';
+                saveCanvasMappings();
+                setContextCanvasType(ctxId, 'intake');
+            }
+            // Sync canvas_type from server only for non-intake contexts
+            if (ctx.canvas_type && ctx.canvas_type !== 'intake' && !ctx.intake_session_id && (_canvasMap[ctxId] || 'intake') === 'intake') {
                 _canvasMap[ctxId] = ctx.canvas_type;
                 saveCanvasMappings();
                 _activeCanvasType = ctx.canvas_type;
@@ -472,16 +478,8 @@
         if (_activeCanvasType && _activeCanvasType !== 'intake') {
             sendCanvasMessage(_activeContextId, content, _activeCanvasType);
         } else if (_activeIntakeSessionId) {
-            // Auto-detect intent on first few messages
-            var ctx = _contextVersions[_activeContextId];
-            var msgCount = ctx ? (ctx.message_count || 0) : 0;
-            if (msgCount <= 2) {
-                detectAndMaybeSwitch(_activeContextId, content, function () {
-                    sendIntakeMessage(content);
-                });
-            } else {
-                sendIntakeMessage(content);
-            }
+            // Intake sessions always stay in intake mode — never auto-switch to canvas
+            sendIntakeMessage(content);
         } else {
             sendChatMessage(_activeContextId, content);
         }
@@ -1260,27 +1258,20 @@
             refreshReadiness();
             setText('stat-requirements', (data.requirements || []).length + added);
 
-            // Show the requirements inline as pills
+            // Render requirements with HITL review cards (reuse panel-turn flow)
             if (data.requirements && data.requirements.length > 0) {
-                var stream = document.getElementById('message-stream');
-                if (stream) {
-                    var html = '<div class="panel-response"><div class="panel-persona-bubble" style="--panel-color:#7c3aed">';
-                    html += '<div class="panel-persona-bubble__label">AI Boost — Gap Fill</div>';
-                    html += '<div class="panel-persona-bubble__body" style="font-size:0.8rem;color:var(--text-muted);">Generated requirements for missing types:</div>';
-                    html += '<div class="panel-persona-bubble__reqs">';
-                    data.requirements.forEach(function (r) {
-                        html += '<span class="panel-req-pill" title="' + escHtml(r.type) + ': ' + escHtml(r.criteria || '') + '">[' + escHtml(r.type) + '] ' + escHtml(r.text) + '</span>';
-                    });
-                    html += '</div></div>';
-                    if (newPct !== null && newPct >= 70) {
-                        html += '<div class="panel-next-step panel-next-step--ready">Requirements ready — use <strong>Generate Plan</strong> or <strong>Export</strong> in the sidebar.</div>';
-                    } else if (newPct !== null) {
-                        html += '<div class="panel-next-step"><span class="panel-next-step__score">Score: <strong>' + newPct + '%</strong> / 70%</span><span class="panel-next-step__hint">Keep adding requirements or try Boost again if gaps remain.</span></div>';
-                    }
-                    html += '</div>';
-                    stream.innerHTML += html;
-                    stream.scrollTop = stream.scrollHeight;
-                }
+                _renderPanelResponse({
+                    panel_responses: [{
+                        display_name: 'AI Boost — Gap Fill',
+                        color: '#7c3aed',
+                        response: msg,
+                    }],
+                    merged_requirements: data.requirements.map(function (r) {
+                        return { id: r.id, type: r.type, text: r.text, priority: 'medium' };
+                    }),
+                    session_id: _activeIntakeSessionId,
+                    panel_question: null,
+                });
             }
         })
         .catch(function (err) {

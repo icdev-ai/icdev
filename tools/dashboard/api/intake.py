@@ -610,8 +610,8 @@ Generate only the requirements block. No preamble, no explanations."""
             conn.execute(
                 """INSERT INTO intake_requirements
                    (id, session_id, source_turn, requirement_type, raw_text,
-                    acceptance_criteria, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                    acceptance_criteria, classification, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)""",
                 (req_id, session_id, turn_number, req_type, req_text,
                  criteria, classification, now),
             )
