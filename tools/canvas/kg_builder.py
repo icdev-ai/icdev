@@ -186,6 +186,15 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
                 for k, v in node.items()
                 if k not in ("id", "type", "node_type", "label", "name")
             }
+
+            # reasoning_step nodes carry CoT/CoD trace fields — promote to metadata
+            if node_type == "reasoning_step":
+                metadata.setdefault("step_name", node.get("step_name", ""))
+                metadata.setdefault("model_id", node.get("model_id", ""))
+                metadata.setdefault("chain_mode", node.get("chain_mode", ""))
+                metadata.setdefault("trace_id", node.get("trace_id", ""))
+                metadata.setdefault("round_num", node.get("round_num", 0))
+
             ontology_id = None
             if _get_onto_id and node_type:
                 try:

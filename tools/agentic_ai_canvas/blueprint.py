@@ -507,6 +507,117 @@ def launch_design(design_id: str):
     return jsonify(result)
 
 
+@aadc_bp.route("/api/designs/<design_id>/simulate-cot", methods=["POST"])
+def simulate_cot(design_id: str):
+    """Run Chain of Thought reasoning over the design and return the trace."""
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        d = dict(row)
+    finally:
+        conn.close()
+
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = data.get("prompt") or (
+        f"Analyze this agentic AI design '{d.get('name', '')}' "
+        f"for risks, compliance gaps, and improvement opportunities. "
+        f"Domain: {d.get('domain', 'general')}. "
+        f"Classification: {d.get('classification', 'CUI')}."
+    )
+
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+        orchestrator = ChainOrchestrator()
+        req = LLMRequest(
+            function="aadc_design_analysis",
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are an expert in agentic AI system design, NIST RMF, and OWASP LLM security.",
+        )
+        result = orchestrator.invoke_chain_of_thought("aadc_design_analysis", req)
+        _record_decision(
+            canvas_type="aadc",
+            record_id=design_id,
+            decision_type="chain_of_thought",
+            decision=result.content[:2000],
+            rationale=f"CoT trace_id={result.trace_id}, rounds={len(result.rounds)}",
+            model_used=result.models_used[-1] if result.models_used else None,
+            confidence=result.confidence,
+        )
+        return jsonify({
+            "design_id": design_id,
+            "chain_mode": result.chain_mode,
+            "trace_id": result.trace_id,
+            "content": result.content,
+            "rounds": result.rounds,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "confidence": result.confidence,
+        })
+    except Exception as exc:
+        logger.warning("AADC simulate-cot failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@aadc_bp.route("/api/designs/<design_id>/simulate-cod", methods=["POST"])
+def simulate_cod(design_id: str):
+    """Run Chain of Debate over the design and return the debate transcript."""
+    conn = _conn()
+    try:
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        d = dict(row)
+    finally:
+        conn.close()
+
+    data = request.get_json(force=True, silent=True) or {}
+    prompt = data.get("prompt") or (
+        f"Debate the risks and benefits of deploying this agentic AI design: '{d.get('name', '')}'. "
+        f"Domain: {d.get('domain', 'general')}. "
+        f"Classification: {d.get('classification', 'CUI')}."
+    )
+
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+        orchestrator = ChainOrchestrator()
+        req = LLMRequest(
+            function="aadc_design_debate",
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are an expert panel evaluating agentic AI system designs for safety and compliance.",
+        )
+        result = orchestrator.invoke_chain_of_debate("aadc_design_debate", req)
+        _record_decision(
+            canvas_type="aadc",
+            record_id=design_id,
+            decision_type="chain_of_debate",
+            decision=result.content[:2000],
+            rationale=f"CoD trace_id={result.trace_id}, rounds={len(result.rounds)}",
+            model_used=result.models_used[-1] if result.models_used else None,
+            confidence=result.confidence,
+        )
+        return jsonify({
+            "design_id": design_id,
+            "chain_mode": result.chain_mode,
+            "trace_id": result.trace_id,
+            "content": result.content,
+            "rounds": result.rounds,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "confidence": result.confidence,
+        })
+    except Exception as exc:
+        logger.warning("AADC simulate-cod failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Template API
 # ---------------------------------------------------------------------------

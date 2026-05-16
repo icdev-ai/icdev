@@ -254,6 +254,29 @@ class ChainOrchestrator:
             conn.close()
         except Exception as exc:
             logger.debug("Chain telemetry write failed (non-blocking): %s", exc)
+        self._publish_reasoning_event(result, function)
+
+    def _publish_reasoning_event(self, result: ChainResult, function: str) -> None:
+        """Publish cot_reasoning_completed event to the canvas event bus."""
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish(
+                "llm",
+                "cot_reasoning_completed",
+                {
+                    "trace_id": result.trace_id,
+                    "function": function,
+                    "chain_mode": result.chain_mode,
+                    "models_used": result.models_used,
+                    "total_cost_usd": result.total_cost_usd,
+                    "total_duration_ms": result.total_duration_ms,
+                    "stop_reason": result.stop_reason,
+                    "rounds": len(result.rounds),
+                    "confidence": result.confidence,
+                },
+            )
+        except Exception as exc:
+            logger.debug("Event bus publish failed (non-blocking): %s", exc)
 
     def invoke_chain_of_thought(
         self,
