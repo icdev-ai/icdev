@@ -2713,6 +2713,26 @@ CREATE INDEX IF NOT EXISTS idx_indicator_baselines_name
     ON indicator_baselines(indicator_name, is_active);
 CREATE INDEX IF NOT EXISTS idx_indicator_baselines_operator
     ON indicator_baselines(operator_id, created_at);
+
+CREATE TABLE IF NOT EXISTS sg_pir_requirements (
+    id                  TEXT PRIMARY KEY,
+    pir_type            TEXT NOT NULL DEFAULT 'PIR'
+                            CHECK(pir_type IN ('PIR','CCIR','EEI')),
+    topic               TEXT NOT NULL,
+    description         TEXT,
+    collection_priority INTEGER NOT NULL DEFAULT 3
+                            CHECK(collection_priority BETWEEN 1 AND 5),
+    status              TEXT NOT NULL DEFAULT 'active'
+                            CHECK(status IN ('active','satisfied','cancelled')),
+    tasked_to           TEXT,
+    due_by              TEXT,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_type     ON sg_pir_requirements(pir_type);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_status   ON sg_pir_requirements(status);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_priority ON sg_pir_requirements(collection_priority);
+CREATE INDEX IF NOT EXISTS idx_sg_pir_created  ON sg_pir_requirements(created_at);
 """
 
 # ---------------------------------------------------------------------------
