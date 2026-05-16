@@ -183,3 +183,15 @@ nmce:
     - mc_net_parallel_timelines
     - ni_devices
     - ni_device_configs
+
+# --------------------------------------------------------------------------
+# GovChain periodic anchor reflex (govchain_anchor.py)
+# --------------------------------------------------------------------------
+# Runs chain_anchor --periodic on a 30-minute cadence. Set enabled: false
+# to suppress the reflex entirely (e.g., for environments without a Fabric
+# peer). In air-gap mode the reflex still queues to govchain_pending_operations.
+govchain:
+  enabled: true
+  interval_minutes: 30       # How often the anchor reflex fires
+  max_batch_size: 100        # Passed to ChainAnchor.anchor_audit_batch limit
+  alert_on_pending_above: 500  # Log a warning when queue depth exceeds this
