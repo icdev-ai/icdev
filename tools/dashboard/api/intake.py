@@ -525,7 +525,7 @@ Generate only the requirements block. No preamble, no explanations."""
             req_id = f"req-boost-{session_id[:8]}-{len(added)}"
             conn.execute(
                 """INSERT INTO intake_requirements
-                   (id, session_id, turn_number, requirement_type, raw_text,
+                   (id, session_id, source_turn, requirement_type, raw_text,
                     acceptance_criteria, classification, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (req_id, session_id, turn_number, req_type, req_text,
