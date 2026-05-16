@@ -210,7 +210,18 @@ models:
     provider: ollama
     model_id: "qwen3.5:latest"
     max_output_tokens: 32768
-    supports_thinking: true
+    supports_thinking: false
+    disable_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # kimi-k2.6 via Ollama cloud (OLLAMA_API_KEY) — primary inference model
+  kimi-cloud:
+    provider: ollama_cloud
+    model_id: "kimi-k2.6:cloud"
+    max_output_tokens: 32768
+    supports_thinking: false
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
@@ -380,7 +391,7 @@ routing:
     effort: high
 
   agent_requirements_analyst:
-    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o]
     effort: high
 
   agent_supply_chain:
@@ -400,7 +411,7 @@ routing:
     effort: high
 
   task_decomposition:
-    chain: [qwen3-local, gpt-oss-cloud, kimi-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
+    chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
   collaboration:
@@ -464,7 +475,7 @@ routing:
     effort: low
 
   intake_persona_response:
-    chain: [qwen3-local, gpt-oss-cloud, kimi-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
     effort: medium
 
   bdd_preview:
@@ -537,7 +548,7 @@ routing:
     effort: medium
 
   requirement_extraction:
-    chain: [qwen3-local, gpt-oss-cloud, kimi-local]
+    chain: [kimi-cloud, qwen3-local]
     effort: medium
 
   bid_scoring:
@@ -685,7 +696,7 @@ redaction:
 
 two_tier:
   enabled: true
-  tier1_model: qwen3-local    # Worker — research, draft, scan (free/local)
+  tier1_model: gpt-oss-cloud   # Worker — cloud Ollama first; qwen3-local as fallback via chain
   tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
 
   # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
