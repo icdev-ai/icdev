@@ -114,10 +114,10 @@ class TestGenerateSpec:
         assert "OAuthBearer" in schemes
         assert "CACAuth" in schemes
 
-    def test_spec_has_all_32_endpoint_paths(self):
-        """Generated spec paths must cover all 32 documented endpoints."""
-        # ENDPOINT_DOCS has 32 (method, path) tuples
-        assert len(ENDPOINT_DOCS) == 32
+    def test_spec_has_all_33_endpoint_paths(self):
+        """Generated spec paths must cover all 33 documented endpoints."""
+        # ENDPOINT_DOCS has 33 (method, path) tuples
+        assert len(ENDPOINT_DOCS) == 33
         # All paths should be present in the spec
         for _method, path in ENDPOINT_DOCS:
             assert path in self.spec["paths"], f"Path '{path}' missing from generated spec"
@@ -141,6 +141,11 @@ class TestGenerateSpec:
         """GET /health endpoint must exist in the spec."""
         assert "/health" in self.spec["paths"]
         assert "get" in self.spec["paths"]["/health"]
+
+    def test_get_jise_portal_data_exists(self):
+        """GET /jise/portal-data endpoint must exist in the spec."""
+        assert "/jise/portal-data" in self.spec["paths"]
+        assert "get" in self.spec["paths"]["/jise/portal-data"]
 
     def test_tags_list_populated(self):
         """The spec tags list must contain at least one tag."""

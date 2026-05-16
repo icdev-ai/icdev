@@ -121,6 +121,13 @@ OPENAPI_BASE = {
             "name": "Health",
             "description": "Gateway and service health checks.",
         },
+        {
+            "name": "JISE",
+            "description": (
+                "Joint Intelligence Support Element (JISE) portal data retrieval.  "
+                "Returns structured intelligence records with classification and source filtering."
+            ),
+        },
     ],
     "components": {
         "securitySchemes": {
@@ -609,6 +616,70 @@ SCHEMAS = {
                     "platform_db": {"status": "ok", "tenant_count": 5},
                     "mcp": {"status": "ok"},
                 },
+            },
+        },
+    },
+    "JisePortalRecord": {
+        "type": "object",
+        "properties": {
+            "id": {
+                "type": "string",
+                "description": "Unique record identifier.",
+                "example": "jise-rec-0001",
+            },
+            "source": {
+                "type": "string",
+                "enum": ["SIGINT", "HUMINT", "OSINT", "GEOINT", "IMINT", "FININT"],
+                "description": "Intelligence collection source.",
+                "example": "SIGINT",
+            },
+            "classification": {
+                "type": "string",
+                "enum": ["CUI", "FOUO", "UNCLASSIFIED", "SECRET"],
+                "description": "Classification level of the record.",
+                "example": "CUI",
+            },
+            "summary": {
+                "type": "string",
+                "description": "Human-readable intelligence summary.",
+                "example": "Intercept corroborating previously reported activity in AO-7.",
+            },
+            "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO-8601 timestamp of the record.",
+                "example": "2026-05-16T00:00:00+00:00",
+            },
+            "confidence": {
+                "type": "string",
+                "enum": ["HIGH", "MEDIUM", "LOW"],
+                "description": "Analytic confidence level.",
+                "example": "HIGH",
+            },
+            "region": {
+                "type": "string",
+                "description": "Geographic combatant command region.",
+                "example": "CENTCOM",
+            },
+        },
+    },
+    "JisePortalDataResponse": {
+        "type": "object",
+        "properties": {
+            "data": {
+                "type": "array",
+                "items": {"$ref": "#/components/schemas/JisePortalRecord"},
+                "description": "Intelligence records matching the query filters.",
+            },
+            "count": {
+                "type": "integer",
+                "description": "Total number of records returned.",
+                "example": 5,
+            },
+            "timestamp": {
+                "type": "string",
+                "format": "date-time",
+                "description": "ISO-8601 response generation timestamp.",
             },
         },
     },
@@ -1524,6 +1595,48 @@ ENDPOINT_DOCS = {
                 "Gateway health status.",
             ),
             **_error_responses(500),
+        },
+    },
+    # ------------------------------------------------------------------
+    # JISE
+    # ------------------------------------------------------------------
+    ("get", "/jise/portal-data"): {
+        "summary": "Get JISE portal data",
+        "description": (
+            "Returns structured intelligence records consumable by the "
+            "Joint Intelligence Support Element (JISE) portal.  Supports "
+            "filtering by classification level and collection source."
+        ),
+        "tags": ["JISE"],
+        "parameters": [
+            {
+                "name": "classification",
+                "in": "query",
+                "required": False,
+                "description": "Filter by classification level (CUI, FOUO, UNCLASSIFIED, SECRET).",
+                "schema": {"type": "string", "enum": ["CUI", "FOUO", "UNCLASSIFIED", "SECRET"]},
+            },
+            {
+                "name": "source",
+                "in": "query",
+                "required": False,
+                "description": "Filter by collection source (SIGINT, HUMINT, OSINT, GEOINT, IMINT, FININT).",
+                "schema": {"type": "string", "enum": ["SIGINT", "HUMINT", "OSINT", "GEOINT", "IMINT", "FININT"]},
+            },
+            {
+                "name": "limit",
+                "in": "query",
+                "required": False,
+                "description": "Maximum number of records to return (default 200, max 1000).",
+                "schema": {"type": "integer", "default": 200, "minimum": 1, "maximum": 1000},
+            },
+        ],
+        "responses": {
+            **_json_response(
+                _ref("JisePortalDataResponse"),
+                "JISE portal data retrieved successfully.",
+            ),
+            **_error_responses(400, 401, 500),
         },
     },
 }
