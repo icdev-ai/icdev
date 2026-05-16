@@ -78,6 +78,13 @@ except ImportError:
     _HAS_COA = False
 
 try:
+    from tools.devsecops.profile_manager import create_profile as _create_devsecops_profile
+
+    _HAS_DEVSECOPS = True
+except ImportError:
+    _HAS_DEVSECOPS = False
+
+try:
     from tools.requirements.prd_generator import generate_prd as _generate_prd
 
     _HAS_PRD = True
@@ -548,6 +555,7 @@ EXISTING REQUIREMENTS:
 INSTRUCTIONS:
 - Generate requirements that are SPECIFIC to what the customer described — not generic boilerplate.
 - Each requirement must include clear acceptance criteria.
+- At least one requirement must explicitly mention timeline, budget, or team size to ensure feasibility scoring.
 - {chr(10).join(feasibility_hints) if feasibility_hints else ''}
 - Format each requirement EXACTLY like this (one blank line between):
 
@@ -999,6 +1007,13 @@ def generate_session_coas(session_id):
                 (project_id, session_id),
             )
             conn.commit()
+
+            # Auto-create DevSecOps profile for new project
+            if _HAS_DEVSECOPS:
+                try:
+                    _create_devsecops_profile(project_id, maturity_level="level_2_managed")
+                except Exception:
+                    pass
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -1259,6 +1274,13 @@ def _run_build_pipeline(session_id):
                     (project_id, session_id),
                 )
                 conn.commit()
+
+                # Auto-create DevSecOps profile for new project
+                if _HAS_DEVSECOPS:
+                    try:
+                        _create_devsecops_profile(project_id, maturity_level="level_2_managed")
+                    except Exception:
+                        pass
         except Exception as exc:
             _update_phase("scaffold", "error", f"Project setup failed: {exc}")
             _set_overall("error", str(exc))

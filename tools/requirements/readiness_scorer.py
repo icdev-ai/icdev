@@ -145,8 +145,8 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     # Each user turn after the first resolves ambiguity somewhat
     resolved_credit = min(len(flagged), max(0, turn_count - 1)) if flagged else 0
     unresolved = max(0, len(flagged) - resolved_credit)
-    # Start at 50%, penalized by unresolved ambiguities, boosted by conversation depth
-    clarity_base = 0.50
+    # Start at 70%, penalized by unresolved ambiguities, boosted by conversation depth
+    clarity_base = 0.70
     penalty = min(0.40, unresolved * 0.15)
     depth_bonus = min(0.50, turn_count * 0.05)
     clarity = min(1.0, max(0.0, clarity_base - penalty + depth_bonus))
@@ -193,10 +193,11 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     # --- DevSecOps Readiness (D119 — configured but previously unscored) ---
     devsecops_readiness = 0.0
+    project_id = session_data.get("project_id", "")
     try:
         devsecops_profile = conn.execute(
             "SELECT maturity_level FROM devsecops_profiles WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
-            (session_data.get("project_id", ""),),
+            (project_id,),
         ).fetchone()
         if devsecops_profile:
             level_map = {
@@ -207,6 +208,17 @@ def score_readiness(session_id: str, db_path=None) -> dict:
                 "level_5_optimizing": 1.0,
             }
             devsecops_readiness = level_map.get(devsecops_profile["maturity_level"], 0.0)
+        elif project_id:
+            # Auto-create a baseline profile so the dimension contributes score
+            profile_id = f"dsp-{uuid.uuid4().hex[:12]}"
+            now = datetime.now(timezone.utc).isoformat()
+            conn.execute(
+                """INSERT INTO devsecops_profiles
+                   (id, project_id, maturity_level, active_stages, stage_configs, detected_at, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (profile_id, project_id, "level_2_managed", json.dumps(["sast", "sca"]), json.dumps({}), now, now, now),
+            )
+            devsecops_readiness = 0.4
     except Exception:
         try:
             conn.rollback()
