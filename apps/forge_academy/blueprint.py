@@ -16,7 +16,12 @@ from .db import (
     get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,
+<<<<<<< HEAD
     record_user_competency,
+=======
+    record_user_competency, get_user_competencies,
+    seed_mission_ontology_mappings,
+>>>>>>> 2b5fb9d97be87c13ccf07b72285c2429c0e29407
 )
 from .content_loader import get_mission_with_steps, seed_mission_catalog
 from .gamification import (
