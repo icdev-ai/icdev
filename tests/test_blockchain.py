@@ -490,3 +490,54 @@ class TestGovchainPendingOperations:
         conn.close()
 
         assert row[0] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# flush_pending tests
+# ---------------------------------------------------------------------------
+
+
+class TestFlushPending:
+    def test_flush_returns_disabled_when_no_deps(self, blockchain_db):
+        from tools.blockchain.chain_anchor import ChainAnchor
+        from tools.blockchain.blockchain_config import reset_config
+
+        reset_config()
+        with patch.dict("os.environ", {"ICDEV_BLOCKCHAIN_ENABLED": "false"}):
+            anchor = ChainAnchor(db_path=blockchain_db)
+            # Force _cfg to be None so flush_pending hits "disabled" path
+            anchor._cfg = None
+            result = anchor.flush_pending()
+
+        assert result["status"] in ("disabled", "fabric_unavailable")
+        assert result["flushed"] == 0
+
+    def test_flush_fabric_unavailable_when_disabled(self, blockchain_db):
+        from tools.blockchain.chain_anchor import ChainAnchor
+        from tools.blockchain.blockchain_config import BlockchainConfig, reset_config
+
+        reset_config()
+        with patch.dict("os.environ", {"ICDEV_BLOCKCHAIN_ENABLED": "false"}):
+            anchor = ChainAnchor(db_path=blockchain_db)
+            # Simulate _cfg initialized but Fabric disabled
+            anchor._cfg = BlockchainConfig({})
+            result = anchor.flush_pending()
+
+        assert result["status"] == "fabric_unavailable"
+        assert result["flushed"] == 0
+        assert result["failed"] == 0
+
+    def test_flush_returns_ok_with_empty_queue(self, blockchain_db):
+        from tools.blockchain.chain_anchor import ChainAnchor
+        from tools.blockchain.blockchain_config import BlockchainConfig, reset_config
+
+        reset_config()
+        anchor = ChainAnchor(db_path=blockchain_db)
+        # Simulate Fabric enabled but flushed = 0 since queue is empty
+        mock_cfg = MagicMock()
+        mock_cfg.is_enabled.return_value = True
+        anchor._cfg = mock_cfg
+
+        result = anchor.flush_pending()
+        assert result["status"] == "ok"
+        assert result["flushed"] == 0

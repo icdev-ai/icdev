@@ -60,6 +60,9 @@ class ChainAnchor:
         if self._cfg is None and HAS_DEPS:
             self._cfg = get_config()
             self._client = self._cfg.get_fabric_client()
+            # Auto-flush pending ops when Fabric is now reachable
+            if self._cfg.is_enabled():
+                self.flush_pending()
 
     def _get_db(self):
         return get_connection(db_path=str(self.db_path))
@@ -239,11 +242,75 @@ class ChainAnchor:
         return summary
 
 
+    def flush_pending(self) -> dict:
+        """Flush queued pending operations to Fabric when peer becomes reachable.
+
+        Reads all rows in govchain_pending_operations WHERE status='pending',
+        re-submits each as a Merkle root anchor, and marks them 'flushed' or 'failed'.
+        Safe to call repeatedly — idempotent on already-flushed rows.
+
+        Returns:
+            dict with flushed, failed, and skipped counts.
+        """
+        if not HAS_DEPS:
+            return {"status": "disabled", "flushed": 0, "failed": 0, "skipped": 0}
+
+        if not self._cfg or not self._cfg.is_enabled():
+            return {"status": "fabric_unavailable", "flushed": 0, "failed": 0, "skipped": 0}
+
+        summary = {"status": "ok", "flushed": 0, "failed": 0, "skipped": 0}
+        conn = self._get_db()
+        try:
+            rows = conn.execute(
+                "SELECT id, operation_type, payload_hash FROM govchain_pending_operations WHERE status='pending' ORDER BY id LIMIT 200"
+            ).fetchall()
+
+            if not rows:
+                return summary
+
+            logger.info(f"[FLUSH] {len(rows)} pending ops to submit")
+
+            for row in rows:
+                op_id = row["id"]
+                payload_hash = row["payload_hash"]
+
+                # operation_type may encode metadata as "op_name:{json}"
+                op_type = row["operation_type"].split(":{")[0]
+                metadata = {"source": "flush", "original_operation": row["operation_type"][:200]}
+
+                try:
+                    result = self.anchor_merkle_root(payload_hash, metadata)
+                    new_status = "flushed" if result.get("status") in ("anchored", "queued") else "failed"
+                except Exception as e:
+                    logger.warning(f"[FLUSH] op {op_id} failed: {e}")
+                    new_status = "failed"
+
+                try:
+                    conn.execute(
+                        "UPDATE govchain_pending_operations SET status=?, updated_at=? WHERE id=?",
+                        (new_status, __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(), op_id),
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+
+                if new_status == "flushed":
+                    summary["flushed"] += 1
+                elif new_status == "failed":
+                    summary["failed"] += 1
+
+            logger.info(f"[FLUSH] done: {summary}")
+            return summary
+        finally:
+            conn.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chain Anchor Service")
     parser.add_argument("--anchor-audit", nargs="+", type=int, help="Anchor specific audit IDs")
     parser.add_argument("--anchor-provenance", nargs="+", help="Anchor specific registry IDs")
     parser.add_argument("--periodic", action="store_true", help="Run periodic anchor scan")
+    parser.add_argument("--flush-pending", action="store_true", help="Flush queued pending ops to Fabric")
     parser.add_argument("--json", action="store_true", help="JSON output")
     args = parser.parse_args()
 
@@ -261,6 +328,11 @@ def main():
 
     if args.periodic:
         result = anchor.periodic_anchor()
+        print(json.dumps(result, indent=2) if args.json else result)
+        return
+
+    if getattr(args, "flush_pending", False):
+        result = anchor.flush_pending()
         print(json.dumps(result, indent=2) if args.json else result)
         return
 
