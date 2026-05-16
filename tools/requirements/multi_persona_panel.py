@@ -20,6 +20,7 @@ Usage:
 """
 
 import json
+import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -27,6 +28,15 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from tools.db.storage import get_connection
+
+# Matches "REQ:" anywhere on a line — handles bullets (- * 1.), bold (**REQ:**), indented
+_RE_REQ_MARKER = re.compile(r'(?:[-*\d.)>\s]|\*{1,2})*\s*REQ\s*:+\s*(.+)', re.IGNORECASE)
+# Matches imperative requirement statements without a REQ: prefix
+_RE_IMPERATIVE = re.compile(
+    r'(?:The (?:system|platform|tool|service|solution) (?:shall|must|will)\b|'
+    r'(?:Users?|Administrators?|Operators?) (?:must|shall)\b).{15,}',
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------------------
 # Panel system prompt — injected on top of each persona's system_prompt
@@ -47,11 +57,14 @@ Other experts will cover their domains. Focus on yours.
 """
 
 _PANEL_EXTRACTION_SYSTEM = """\
-Extract requirements from this panel expert response.
-Return a JSON array. Each item: {"text": "<requirement>", "type": "<functional|non_functional|security|compliance|data|integration|performance>", "priority": "<high|medium|low>"}.
-Only extract explicit REQ: lines or clear imperative statements.
-If none, return [].
-Respond with JSON only, no markdown.
+Extract all system requirements from this expert panel response.
+Return a JSON array. Each element: {"text": "<requirement>", "type": "<functional|non_functional|security|compliance|data|integration|performance>", "priority": "<high|medium|low>"}.
+Look for:
+- Lines prefixed with REQ: (with or without bullets/numbers/markdown)
+- Imperative statements: "The system shall...", "The system must...", "Users must...", "The platform shall..."
+- Any concrete capability, constraint, or behaviour the system is expected to have.
+If nothing is found, return [].
+Respond with raw JSON only — no markdown fences.
 """
 
 # Color tokens per persona key (used by UI)
@@ -292,25 +305,43 @@ def _build_panel_system_prompt(persona: Dict, session_data: Dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
-    """Extract REQ: lines first; fall back to LLM extraction."""
-    results = []
-    seen = set()
+    """Extract requirements from a persona response.
 
-    # Fast path: parse explicit REQ: markers written by the persona
+    Priority order:
+    1. Lines containing REQ: (handles bullets, numbers, bold markdown wrappers)
+    2. Bare imperative statements ("The system shall ...", "Users must ...")
+    3. LLM slow-path extraction for freeform prose that matches neither above
+    """
+    results: List[Dict] = []
+    seen: set = set()
+
+    def _add(req_text: str) -> None:
+        req_text = re.sub(r'[\*_`]+$', '', req_text).strip().rstrip(".")
+        if not req_text or len(req_text) < 10:
+            return
+        key = req_text.lower()[:60]
+        if key not in seen:
+            seen.add(key)
+            results.append({"text": req_text, "type": _infer_type(req_text), "priority": "medium"})
+
+    # Pass 1 — lines with explicit REQ: marker (any position on line)
     for line in text.splitlines():
-        stripped = line.strip()
-        if stripped.upper().startswith("REQ:"):
-            req_text = stripped[4:].strip()
-            key = req_text.lower()[:60]
-            if req_text and key not in seen:
-                seen.add(key)
-                req_type = _infer_type(req_text)
-                results.append({"text": req_text, "type": req_type, "priority": "medium"})
+        m = _RE_REQ_MARKER.search(line)
+        if m:
+            _add(m.group(1).strip())
+
+    # Pass 2 — imperative statements that survived without a REQ: marker
+    if not results:
+        for line in text.splitlines():
+            m = _RE_IMPERATIVE.search(line)
+            if m:
+                # Grab from the match start to end of line
+                _add(line[m.start():].strip())
 
     if results:
         return results
 
-    # Slow path: ask LLM to extract from freeform text
+    # Pass 3 (slow) — LLM extraction for fully freeform prose
     try:
         from tools.llm import get_router
         from tools.llm.provider import LLMRequest
@@ -326,16 +357,20 @@ def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
         resp = router.invoke("requirement_extraction", req)
         if not resp or not resp.content:
             return []
-        content = resp.content.strip().lstrip("```json").rstrip("```").strip()
-        parsed = json.loads(content)
+        raw = resp.content.strip()
+        # Strip optional markdown fences
+        raw = re.sub(r'^```(?:json)?\s*', '', raw, flags=re.MULTILINE)
+        raw = re.sub(r'\s*```$', '', raw, flags=re.MULTILINE)
+        parsed = json.loads(raw.strip())
         if isinstance(parsed, list):
             for item in parsed:
                 if isinstance(item, dict) and item.get("text", "").strip():
-                    key = item["text"].lower()[:60]
+                    req_text = item["text"].strip()
+                    key = req_text.lower()[:60]
                     if key not in seen:
                         seen.add(key)
                         results.append({
-                            "text": item["text"].strip(),
+                            "text": req_text,
                             "type": item.get("type", "functional"),
                             "priority": item.get("priority", "medium"),
                         })
