@@ -589,7 +589,7 @@ TEAM_TEMPLATES: list[dict] = [
 
 def _upsert_workflow_template(conn, t: dict) -> None:
     existing = conn.execute(
-        "SELECT id FROM wf_templates WHERE id=?", (t["id"],)
+        "SELECT id FROM wf_templates WHERE id=%s", (t["id"],)
     ).fetchone()
     if existing:
         print(f"  [skip] workflow template '{t['name']}' already exists")
@@ -608,7 +608,7 @@ def _upsert_workflow_template(conn, t: dict) -> None:
         """INSERT INTO wf_templates
            (id, name, canvas_type, stages_json, roles_json, approval_policy,
             kickback_limit, is_default, is_system, created_by, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,1,'system',?,?)""",
+           VALUES (%s,?,?,?,?,?,?,?,1,'system',?,%s)""",
         (t["id"], t["name"], t.get("canvas_type"), stages, roles,
          t["approval_policy"], t["kickback_limit"], t.get("is_default", 0), now, now),
     )
@@ -617,7 +617,7 @@ def _upsert_workflow_template(conn, t: dict) -> None:
 
 def _upsert_doc_template(conn, d: dict) -> None:
     existing = conn.execute(
-        "SELECT id FROM wf_document_templates WHERE id=?", (d["id"],)
+        "SELECT id FROM wf_document_templates WHERE id=%s", (d["id"],)
     ).fetchone()
     if existing:
         print(f"  [skip] doc template '{d['name']}' already exists")
@@ -630,7 +630,7 @@ def _upsert_doc_template(conn, d: dict) -> None:
            (id, name, doc_type, canvas_type, stage_scope,
             schema_json, is_ai_reference, is_human_required, is_system,
             created_by, created_at)
-           VALUES (?,?,?,?,?,?,?,?,1,'system',?)""",
+           VALUES (%s,?,?,?,?,?,?,?,1,'system',%s)""",
         (d["id"], d["name"], d["doc_type"], d.get("canvas_type"),
          d.get("stage_scope"), schema,
          1 if d.get("is_ai_reference") else 0,
@@ -642,7 +642,7 @@ def _upsert_doc_template(conn, d: dict) -> None:
 
 def _upsert_team(conn, t: dict) -> None:
     existing = conn.execute(
-        "SELECT id FROM wf_teams WHERE id=?", (t["id"],)
+        "SELECT id FROM wf_teams WHERE id=%s", (t["id"],)
     ).fetchone()
     if existing:
         print(f"  [skip] team '{t['name']}' already exists")
@@ -652,7 +652,7 @@ def _upsert_team(conn, t: dict) -> None:
     conn.execute(
         """INSERT INTO wf_teams
            (id, name, description, canvas_type, created_by, created_at)
-           VALUES (?,?,?,?,?,?)""",
+           VALUES (%s,?,?,?,?,%s)""",
         (t["id"], t["name"], t.get("description"), t.get("canvas_type"), "system", now),
     )
     # Add suggested roles as placeholder members (user_id = role placeholder)
@@ -660,7 +660,7 @@ def _upsert_team(conn, t: dict) -> None:
         conn.execute(
             """INSERT OR IGNORE INTO wf_team_members
                (id, team_id, user_id, role_label, created_at)
-               VALUES (?,?,?,?,?)""",
+               VALUES (%s,?,?,?,%s)""",
             (_id("wtm"), t["id"], f"<{sr['role_label']}>", sr["role_label"], now),
         )
     print(f"  [+] team '{t['name']}' ({len(t.get('suggested_roles', []))} roles)")

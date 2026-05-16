@@ -19,7 +19,7 @@ def get_template(doc_template_id: str) -> dict | None:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM wf_document_templates WHERE id=?", (doc_template_id,)
+            "SELECT * FROM wf_document_templates WHERE id=%s", (doc_template_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -34,10 +34,10 @@ def list_templates(
     try:
         clauses, params = [], []
         if canvas_type:
-            clauses.append("(canvas_type=? OR canvas_type IS NULL)")
+            clauses.append("(canvas_type=%s OR canvas_type IS NULL)")
             params.append(canvas_type)
         if doc_type:
-            clauses.append("doc_type=?")
+            clauses.append("doc_type=%s")
             params.append(doc_type)
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = conn.execute(
@@ -68,7 +68,7 @@ def create_template(
             """INSERT INTO wf_document_templates
                (id, name, doc_type, schema_json, canvas_type, stage_scope,
                 is_ai_reference, is_human_required, version, is_system, created_by, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,0,?,?)""",
+               VALUES (%s,?,?,?,?,?,?,?,?,0,?,%s)""",
             (doc_id, name, doc_type, schema, canvas_type, stage_scope,
              int(is_ai_reference), int(is_human_required), version, created_by, _now()),
         )
@@ -98,7 +98,7 @@ def submit_document(
         conn.execute(
             """INSERT INTO wf_document_submissions
                (id, approval_id, instance_id, doc_template_id, stage, submitted_by, submission_json, submitted_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (%s,?,?,?,?,?,?,%s)""",
             (sub_id, approval_id, instance_id, doc_template_id, stage, submitted_by, data, _now()),
         )
         try:
@@ -119,7 +119,7 @@ def all_required_submitted(approval_id: str, stage_config: dict) -> bool:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT doc_template_id FROM wf_document_submissions WHERE approval_id=?",
+            "SELECT doc_template_id FROM wf_document_submissions WHERE approval_id=%s",
             (approval_id,),
         ).fetchall()
         submitted_ids = {r[0] for r in rows}
@@ -137,7 +137,7 @@ def get_missing_docs(approval_id: str, stage_config: dict) -> list[str]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT doc_template_id FROM wf_document_submissions WHERE approval_id=?",
+            "SELECT doc_template_id FROM wf_document_submissions WHERE approval_id=%s",
             (approval_id,),
         ).fetchall()
         submitted_ids = {r[0] for r in rows}
@@ -150,7 +150,7 @@ def get_submissions(approval_id: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_document_submissions WHERE approval_id=? ORDER BY submitted_at",
+            "SELECT * FROM wf_document_submissions WHERE approval_id=%s ORDER BY submitted_at",
             (approval_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -174,7 +174,7 @@ def get_applicable_standards(
         clauses = ["is_ai_reference=1", "doc_type='standard'"]
         params: list = []
         if canvas_type:
-            clauses.append("(canvas_type=? OR canvas_type IS NULL)")
+            clauses.append("(canvas_type=%s OR canvas_type IS NULL)")
             params.append(canvas_type)
         else:
             clauses.append("canvas_type IS NULL")

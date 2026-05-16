@@ -62,7 +62,7 @@ class WorkflowEngine:
                 """INSERT INTO wf_instances
                    (id, template_id, task_id, project_id, canvas_type,
                     current_stage, kickback_count, status, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,0,?,?,?)""",
+                   VALUES (%s,?,?,?,?,?,0,?,?,%s)""",
                 (instance_id, tmpl["id"], task_id, project_id, canvas_type,
                  stages[0]["name"] if stages else "build", WfStatus.ACTIVE, now, now),
             )
@@ -70,7 +70,7 @@ class WorkflowEngine:
             if task_id:
                 try:
                     conn.execute(
-                        "UPDATE kanban_tasks SET hitl_stage=? WHERE id=?",
+                        "UPDATE kanban_tasks SET hitl_stage=%s WHERE id=%s",
                         (stages[0]["name"] if stages else "build", task_id),
                     )
                 except Exception:
@@ -90,31 +90,31 @@ class WorkflowEngine:
     def get_status(self, instance_id: str) -> dict | None:
         conn = get_connection()
         try:
-            inst = conn.execute("SELECT * FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+            inst = conn.execute("SELECT * FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
             if not inst:
                 return None
             result = dict(inst)
             result["approvals"] = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM wf_approvals WHERE instance_id=? ORDER BY created_at",
+                    "SELECT * FROM wf_approvals WHERE instance_id=%s ORDER BY created_at",
                     (instance_id,),
                 ).fetchall()
             ]
             result["feedback"] = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM wf_feedback WHERE instance_id=? ORDER BY submitted_at",
+                    "SELECT * FROM wf_feedback WHERE instance_id=%s ORDER BY submitted_at",
                     (instance_id,),
                 ).fetchall()
             ]
             result["external_steps"] = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM wf_external_steps WHERE instance_id=? ORDER BY created_at",
+                    "SELECT * FROM wf_external_steps WHERE instance_id=%s ORDER BY created_at",
                     (instance_id,),
                 ).fetchall()
             ]
             result["citations"] = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM wf_citations WHERE instance_id=? ORDER BY stage, created_at",
+                    "SELECT * FROM wf_citations WHERE instance_id=%s ORDER BY stage, created_at",
                     (instance_id,),
                 ).fetchall()
             ]
@@ -133,7 +133,7 @@ class WorkflowEngine:
 
         conn = get_connection()
         try:
-            inst = conn.execute("SELECT * FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+            inst = conn.execute("SELECT * FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
             if not inst:
                 raise ValueError(f"Instance {instance_id!r} not found")
             inst = dict(inst)
@@ -151,7 +151,7 @@ class WorkflowEngine:
             # Check document gate for current stage
             current_stage_config = stages[current_idx] if current_idx >= 0 else {}
             pending_approval = conn.execute(
-                "SELECT * FROM wf_approvals WHERE instance_id=? AND stage=? AND status='pending' LIMIT 1",
+                "SELECT * FROM wf_approvals WHERE instance_id=%s AND stage=%s AND status='pending' LIMIT 1",
                 (instance_id, inst["current_stage"]),
             ).fetchone()
 
@@ -178,13 +178,13 @@ class WorkflowEngine:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE wf_instances SET current_stage=?, updated_at=? WHERE id=?",
+                "UPDATE wf_instances SET current_stage=%s, updated_at=%s WHERE id=%s",
                 (next_stage["name"], now, instance_id),
             )
             if inst.get("task_id"):
                 try:
                     conn.execute(
-                        "UPDATE kanban_tasks SET hitl_stage=? WHERE id=?",
+                        "UPDATE kanban_tasks SET hitl_stage=%s WHERE id=%s",
                         (next_stage["name"], inst["task_id"]),
                     )
                 except Exception:
@@ -204,7 +204,7 @@ class WorkflowEngine:
         """Kickback instance to build stage, increment kickback_count."""
         conn = get_connection()
         try:
-            inst = conn.execute("SELECT * FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+            inst = conn.execute("SELECT * FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
             if not inst:
                 raise ValueError(f"Instance {instance_id!r} not found")
             inst = dict(inst)
@@ -220,18 +220,18 @@ class WorkflowEngine:
 
             now = _now()
             conn.execute(
-                "UPDATE wf_instances SET current_stage='build', kickback_count=?, updated_at=? WHERE id=?",
+                "UPDATE wf_instances SET current_stage='build', kickback_count=%s, updated_at=%s WHERE id=%s",
                 (new_count, now, instance_id),
             )
             # Mark pending approval as kicked back
             conn.execute(
-                "UPDATE wf_approvals SET status='kickback', updated_at=? WHERE instance_id=? AND status='pending'",
+                "UPDATE wf_approvals SET status='kickback', updated_at=%s WHERE instance_id=%s AND status='pending'",
                 (now, instance_id),
             )
             if inst.get("task_id"):
                 try:
                     conn.execute(
-                        "UPDATE kanban_tasks SET hitl_stage='build' WHERE id=?",
+                        "UPDATE kanban_tasks SET hitl_stage='build' WHERE id=%s",
                         (inst["task_id"],),
                     )
                 except Exception:
@@ -259,7 +259,7 @@ class WorkflowEngine:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE wf_approvals SET status='escalated', updated_at=? WHERE instance_id=? AND status='pending'",
+                "UPDATE wf_approvals SET status='escalated', updated_at=%s WHERE instance_id=%s AND status='pending'",
                 (_now(), instance_id),
             )
             try:
@@ -288,7 +288,7 @@ class WorkflowEngine:
             # AI-automated: look up applicable standards for context
             conn = get_connection()
             try:
-                inst = conn.execute("SELECT canvas_type FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+                inst = conn.execute("SELECT canvas_type FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
                 canvas_type = inst[0] if inst else None
             finally:
                 conn.close()
@@ -331,7 +331,7 @@ class WorkflowEngine:
                 conn.execute(
                     "INSERT INTO wf_approvals "
                     "(id, instance_id, stage, team_id, assigned_to, status, cot_trace_id, created_at, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (approval_id, instance_id, stage_config["name"], None, None, "approved", trace_id, _now(), _now()),
                 )
                 conn.commit()
@@ -349,7 +349,7 @@ class WorkflowEngine:
 
         conn = get_connection()
         try:
-            inst = conn.execute("SELECT task_id FROM wf_instances WHERE id=?", (instance_id,)).fetchone()
+            inst = conn.execute("SELECT task_id FROM wf_instances WHERE id=%s", (instance_id,)).fetchone()
             task_id = inst[0] if inst else None
         finally:
             conn.close()
@@ -368,7 +368,7 @@ class WorkflowEngine:
             conn.execute(
                 """INSERT INTO wf_approvals
                    (id, instance_id, stage, team_id, assigned_to, status, created_at, updated_at)
-                   VALUES (?,?,?,?,NULL,'pending',?,?)""",
+                   VALUES (%s,?,?,?,NULL,'pending',?,%s)""",
                 (approval_id, instance_id, stage_config["name"], team_id, now, now),
             )
             try:
@@ -400,7 +400,7 @@ class WorkflowEngine:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE wf_instances SET status=?, updated_at=? WHERE id=?",
+                "UPDATE wf_instances SET status=%s, updated_at=%s WHERE id=%s",
                 (status, _now(), instance_id),
             )
             try:
@@ -414,7 +414,7 @@ class WorkflowEngine:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE kanban_tasks SET hitl_stage=NULL WHERE id=?", (task_id,)
+                "UPDATE kanban_tasks SET hitl_stage=NULL WHERE id=%s", (task_id,)
             )
             try:
                 conn.commit()

@@ -1,0 +1,38 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix core: <https://icdev.dev/ns/core#> .
+@prefix data: <https://icdev.dev/ns/data#> .
+
+<https://icdev.dev/ontology/data>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV DATA Domain Ontology" ;
+    dcterms:description "Class hierarchy for the data canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+data:RelationalTable rdf:type owl:Class ;
+    rdfs:label "Relational Table" ;
+    rdfs:subClassOf data:DataStore .
+
+data:DataStore rdf:type owl:Class ;
+    rdfs:label "Data Store" ;
+    rdfs:subClassOf data:DataResource .
+
+data:DataResource rdf:type owl:Class ;
+    rdfs:label "Data Resource" ;
+    rdfs:subClassOf core:Resource .
+
+data:DataLake rdf:type owl:Class ;
+    rdfs:label "Data Lake" ;
+    rdfs:subClassOf data:DataStore .
+
+data:DataPipeline rdf:type owl:Class ;
+    rdfs:label "Data Pipeline" ;
+    rdfs:subClassOf data:DataResource .
+
+data:CloudTable rdf:type owl:Class ;
+    rdfs:label "Cloud Table" ;
+    rdfs:subClassOf data:RelationalTable .

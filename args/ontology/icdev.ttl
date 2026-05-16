@@ -1,0 +1,42 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix core: <https://icdev.dev/ns/core#> .
+@prefix icdev: <https://icdev.dev/ns/icdev#> .
+
+<https://icdev.dev/ontology/icdev>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV ICDEV Domain Ontology" ;
+    dcterms:description "Class hierarchy for the icdev canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+icdev:Lesson rdf:type owl:Class ;
+    rdfs:label "Lesson" ;
+    rdfs:subClassOf core:Entity .
+
+icdev:Lab rdf:type owl:Class ;
+    rdfs:label "Lab" ;
+    rdfs:subClassOf core:Entity .
+
+icdev:Assessment rdf:type owl:Class ;
+    rdfs:label "Assessment" ;
+    rdfs:subClassOf core:Entity .
+
+icdev:FundamentalCompetency rdf:type owl:Class ;
+    rdfs:label "Fundamental Competency" ;
+    rdfs:subClassOf core:Concept .
+
+icdev:IntermediateCompetency rdf:type owl:Class ;
+    rdfs:label "Intermediate Competency" ;
+    rdfs:subClassOf core:Concept .
+
+icdev:ExpertCompetency rdf:type owl:Class ;
+    rdfs:label "Expert Competency" ;
+    rdfs:subClassOf core:Concept .
+
+icdev:Prerequisite rdf:type owl:Class ;
+    rdfs:label "Prerequisite" ;
+    rdfs:subClassOf core:Concept .
