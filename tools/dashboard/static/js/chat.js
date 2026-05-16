@@ -1400,9 +1400,12 @@
 
         var responses = data.panel_responses || [];
         var merged = data.merged_requirements || [];
+        var sessionId = data.session_id || _activeIntakeSessionId;
+        var hitlId = 'hitl-' + Date.now();
 
-        var html = '<div class="panel-response">';
+        var html = '<div class="panel-response" id="' + hitlId + '">';
 
+        // Per-persona bubbles (analysis text only, no req pills here)
         responses.forEach(function (r) {
             var color = r.color || '#4a90d9';
             html += '<div class="panel-persona-bubble" style="--panel-color:' + escHtml(color) + '">';
@@ -1410,71 +1413,180 @@
             if (r.error) {
                 html += '<div class="panel-persona-bubble__body" style="color:#f87171;font-size:0.8rem;">Error: ' + escHtml(r.error) + '</div>';
             } else {
-                // Strip REQ: lines from body — show them separately as pills
                 var bodyText = (r.response || '').replace(/^REQ:.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
                 html += '<div class="panel-persona-bubble__body">' + escHtml(bodyText) + '</div>';
-                if (r.requirements && r.requirements.length > 0) {
-                    html += '<div class="panel-persona-bubble__reqs">';
-                    r.requirements.forEach(function (req) {
-                        html += '<span class="panel-req-pill" title="' + escHtml(req.type || '') + '">' + escHtml(req.text) + '</span>';
-                    });
-                    html += '</div>';
-                }
             }
             html += '</div>';
         });
 
-        // Consensus footer
-        html += '<div class="panel-consensus">';
+        // HITL review section
         if (merged.length > 0) {
-            html += '<strong>' + merged.length + ' requirement' + (merged.length !== 1 ? 's' : '') + ' captured</strong>';
-        } else {
-            html += 'No new requirements extracted this turn.';
-        }
-        if (data.panel_question) {
-            html += ' &mdash; <em>' + escHtml(data.panel_question) + '</em>';
-        }
-        html += '</div>';
-
-        // Next-step guidance bar (shown when no follow-up question and score is below threshold)
-        var _curScore = typeof _lastReadinessScore === 'number' ? _lastReadinessScore : 0;
-        if (!data.panel_question) {
-            var _pct = Math.round(_curScore * 100);
-            var _needed = 70 - _pct;
-            if (_curScore < 0.7) {
-                html += '<div class="panel-next-step">';
-                html += '<span class="panel-next-step__score">Score: <strong>' + _pct + '%</strong> / 70% needed</span>';
-                html += '<span class="panel-next-step__hint">';
-                if (_pct < 20) {
-                    html += 'Keep describing your requirements — add functional, security, and data requirements.';
-                } else if (_pct < 40) {
-                    html += 'Good start! Add acceptance criteria, timeline, and compliance details to raise your score.';
-                } else {
-                    html += 'Almost there! ' + _needed + '% more — mention budget, team size, or add testability criteria.';
-                }
-                html += '</span></div>';
-            } else {
-                html += '<div class="panel-next-step panel-next-step--ready">';
-                html += 'Requirements ready — use <strong>Generate Plan</strong> or <strong>Export</strong> in the sidebar.';
+            html += '<div class="panel-hitl-section">';
+            html += '<div class="panel-hitl-header">';
+            html += '<span class="panel-hitl-title">&#x270F;&#xFE0F; Review AI-Generated Requirements</span>';
+            html += '<span class="panel-hitl-subtitle">Approve, edit, or remove each requirement before it counts toward your score.</span>';
+            html += '</div>';
+            html += '<div class="panel-hitl-cards" id="' + hitlId + '-cards">';
+            merged.forEach(function (req, idx) {
+                var cardId = hitlId + '-card-' + idx;
+                var reqId = req.id || '';
+                html += '<div class="panel-hitl-card panel-hitl-card--pending" id="' + cardId + '" data-req-id="' + escHtml(reqId) + '" data-state="pending">';
+                html += '<div class="panel-hitl-card__meta">';
+                html += '<span class="panel-req-type-badge panel-req-type-badge--' + escHtml(req.type || 'functional') + '">' + escHtml(req.type || 'functional') + '</span>';
+                html += '<span class="panel-req-priority-badge">' + escHtml(req.priority || 'medium') + '</span>';
                 html += '</div>';
-            }
+                html += '<div class="panel-hitl-card__text" contenteditable="true" spellcheck="true" data-orig="' + escHtml(req.text) + '">' + escHtml(req.text) + '</div>';
+                html += '<div class="panel-hitl-card__actions">';
+                html += '<button class="panel-hitl-btn panel-hitl-btn--approve" onclick="_hitlApprove(\'' + hitlId + '\',\'' + cardId + '\')" title="Approve">&#x2713; Approve</button>';
+                html += '<button class="panel-hitl-btn panel-hitl-btn--reject" onclick="_hitlReject(\'' + hitlId + '\',\'' + cardId + '\')" title="Remove">&#x2715; Remove</button>';
+                html += '</div>';
+                html += '</div>';
+            });
+            html += '</div>';
+
+            // Human-authored input
+            html += '<div class="panel-hitl-custom">';
+            html += '<label class="panel-hitl-custom__label">Add your own requirement:</label>';
+            html += '<div class="panel-hitl-custom__row">';
+            html += '<input type="text" class="panel-hitl-custom__input" id="' + hitlId + '-custom" placeholder="The system shall …" />';
+            html += '<button class="panel-hitl-btn panel-hitl-btn--add" onclick="_hitlAddCustom(\'' + hitlId + '\')">+ Add</button>';
+            html += '</div>';
+            html += '</div>';
+
+            // Confirm button
+            html += '<div class="panel-hitl-footer">';
+            html += '<button class="panel-hitl-btn panel-hitl-btn--confirm" id="' + hitlId + '-confirm" onclick="_hitlConfirm(\'' + hitlId + '\',\'' + escHtml(sessionId) + '\')">&#x2713; Confirm Selection</button>';
+            html += '<span class="panel-hitl-status" id="' + hitlId + '-status"></span>';
+            html += '</div>';
+            html += '</div>'; // panel-hitl-section
+        } else {
+            html += '<div class="panel-consensus">No new requirements extracted this turn.</div>';
         }
-        html += '</div>';
+
+        if (data.panel_question) {
+            html += '<div class="panel-consensus"><em>' + escHtml(data.panel_question) + '</em></div>';
+        }
+        html += '</div>'; // panel-response
 
         stream.innerHTML += html;
         stream.scrollTop = stream.scrollHeight;
 
-        // Inject inline QA widget for the panel question
         if (data.panel_question) {
             _injectQAWidget(stream, data.panel_question);
         }
 
-        // Re-focus message input so the user can keep typing
         var _inp = document.getElementById('message-input');
         if (_inp && !_inp.disabled) {
             _inp.placeholder = 'Add more requirements, describe use cases, mention constraints…';
-            _inp.focus();
         }
+    }
+
+    // HITL card interactions
+    function _hitlApprove(hitlId, cardId) {
+        var card = document.getElementById(cardId);
+        if (!card) return;
+        card.dataset.state = 'approved';
+        card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--rejected');
+        card.classList.add('panel-hitl-card--approved');
+        // Update text from contenteditable back to data attr
+        var textEl = card.querySelector('.panel-hitl-card__text');
+        if (textEl) card.dataset.text = textEl.innerText.trim();
+    }
+
+    function _hitlReject(hitlId, cardId) {
+        var card = document.getElementById(cardId);
+        if (!card) return;
+        card.dataset.state = 'rejected';
+        card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--approved');
+        card.classList.add('panel-hitl-card--rejected');
+    }
+
+    function _hitlAddCustom(hitlId) {
+        var input = document.getElementById(hitlId + '-custom');
+        if (!input) return;
+        var text = (input.value || '').trim();
+        if (!text) return;
+        var cardsEl = document.getElementById(hitlId + '-cards');
+        if (!cardsEl) return;
+        var cardId = hitlId + '-custom-' + Date.now();
+        var div = document.createElement('div');
+        div.className = 'panel-hitl-card panel-hitl-card--approved panel-hitl-card--custom';
+        div.id = cardId;
+        div.dataset.reqId = '';
+        div.dataset.state = 'custom';
+        div.dataset.text = text;
+        div.innerHTML = (
+            '<div class="panel-hitl-card__meta"><span class="panel-req-type-badge panel-req-type-badge--functional">functional</span><span class="panel-req-priority-badge">medium</span></div>' +
+            '<div class="panel-hitl-card__text" contenteditable="true">' + escHtml(text) + '</div>' +
+            '<div class="panel-hitl-card__actions">' +
+            '<button class="panel-hitl-btn panel-hitl-btn--reject" onclick="_hitlReject(\'' + hitlId + '\',\'' + cardId + '\')">&#x2715; Remove</button>' +
+            '</div>'
+        );
+        cardsEl.appendChild(div);
+        input.value = '';
+        input.focus();
+    }
+
+    function _hitlConfirm(hitlId, sessionId) {
+        var container = document.getElementById(hitlId);
+        if (!container) return;
+        var confirmBtn = document.getElementById(hitlId + '-confirm');
+        var statusEl = document.getElementById(hitlId + '-status');
+        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
+
+        var approved = [], deleted = [], custom = [];
+        var cards = container.querySelectorAll('.panel-hitl-card');
+        cards.forEach(function (card) {
+            var state = card.dataset.state;
+            var reqId = card.dataset.reqId;
+            var textEl = card.querySelector('.panel-hitl-card__text');
+            var text = (textEl ? textEl.innerText : card.dataset.text || '').trim();
+            if (state === 'approved' && reqId) {
+                approved.push(reqId);
+            } else if (state === 'rejected' && reqId) {
+                deleted.push(reqId);
+            } else if (state === 'custom' && text) {
+                custom.push({ text: text, type: 'functional', priority: 'medium' });
+            }
+            // pending cards (not yet acted on) are treated as approved
+            if (state === 'pending' && reqId) {
+                approved.push(reqId);
+            }
+        });
+
+        fetch(INTAKE_API + '/hitl-confirm/' + sessionId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ approved: approved, deleted: deleted, custom: custom }),
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (result) {
+            if (result.error) {
+                if (statusEl) statusEl.textContent = 'Error: ' + result.error;
+                if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✓ Confirm Selection'; }
+                return;
+            }
+            // Lock the section
+            var hitlSection = container.querySelector('.panel-hitl-section');
+            if (hitlSection) {
+                hitlSection.innerHTML = (
+                    '<div class="panel-hitl-confirmed">' +
+                    '&#x2713; Confirmed: ' + result.approved + ' approved, ' +
+                    result.deleted + ' removed' +
+                    (result.custom_added ? ', ' + result.custom_added + ' added by you' : '') +
+                    '.</div>'
+                );
+            }
+            refreshReadiness();
+            if (result.new_score !== null && result.new_score !== undefined) {
+                var pct = Math.round(result.new_score * 100);
+                appendMessage({ role: 'system', content: '✓ HITL confirmed. Readiness score: ' + pct + '%.' });
+            }
+        })
+        .catch(function (err) {
+            if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+            if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✓ Confirm Selection'; }
+        });
     }
 
     function chatExport() {
