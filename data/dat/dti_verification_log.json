@@ -1,0 +1,82 @@
+{
+  "verification": {
+    "task_id": "task-07b5fecc70-d4",
+    "task_title": "Verify DTI Score Generation Cycle",
+    "verified_at": "2026-05-16T07:48:07.443086+00:00",
+    "status": "PASSED",
+    "acceptance_criterion": "A log entry confirms the DTI score was calculated and stored successfully after the simulated data load."
+  },
+  "pipeline_run": {
+    "started_at": "2026-05-16T07:48:06.370241+00:00",
+    "finished_at": "2026-05-16T07:48:07.470157+00:00",
+    "elapsed_seconds": 1.1,
+    "within_time_limit": true
+  },
+  "ingestion_phase": {
+    "status": "ok",
+    "total_records": 46,
+    "sources": {
+      "state_dept_cables": {
+        "files_read": 2,
+        "record_count": 20,
+        "status": "ok"
+      },
+      "unsc_schedule": {
+        "files_read": 2,
+        "record_count": 18,
+        "status": "ok"
+      },
+      "backchannel_logs": {
+        "files_read": 1,
+        "record_count": 8,
+        "status": "ok"
+      }
+    }
+  },
+  "dti_calculation": {
+    "snapshot_id": "abd85f52-4873-410f-93c5-386bdc31e5be",
+    "theater_id": "global",
+    "dti_score": 47.49,
+    "component_scores": {
+      "cable_score": 57.72,
+      "unsc_score": 31.33,
+      "backchannel_score": 50.0
+    },
+    "weights": {
+      "cable": 0.40,
+      "unsc": 0.30,
+      "backchannel": 0.30
+    },
+    "signal_counts": {
+      "cable_count": 8,
+      "unsc_count": 6,
+      "backchannel_count": 6
+    },
+    "detail": {
+      "cable_detail": {
+        "score": 57.71645406194781,
+        "count": 8,
+        "critical_cables": 2,
+        "high_cables": 2
+      },
+      "unsc_detail": {
+        "score": 31.333333333333332,
+        "count": 6,
+        "emergency_sessions": 4,
+        "vetoes": 2,
+        "walkouts": 2
+      },
+      "backchannel_detail": {
+        "score": 49.99999999999999,
+        "count": 6,
+        "escalations": 4,
+        "breakdowns": 2,
+        "negative_frequency": 2
+      }
+    },
+    "computed_at": "2026-05-16T07:48:07.443086+00:00",
+    "stored_in_db": true,
+    "table": "sg_dat_dti_snapshots"
+  },
+  "log_message": "DTI score 47.49 calculated and stored successfully for theater=global after loading 46 mock data records (20 cables, 18 UNSC events, 8 backchannel logs). Snapshot ID abd85f52-4873-410f-93c5-386bdc31e5be persisted to sg_dat_dti_snapshots at 2026-05-16T07:48:07.443086+00:00."
+}

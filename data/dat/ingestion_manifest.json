@@ -1,12 +1,12 @@
 {
-  "manifest_id": "19d2bd8c-ed49-41f8-8ab6-b8ac3d9626c9",
-  "run_at": "2026-05-16T07:26:56.929658+00:00",
-  "config_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d3\\args\\dat_config.yaml",
+  "manifest_id": "3eea5c12-3a3e-4b10-b762-17580dc5f6ed",
+  "run_at": "2026-05-16T07:48:06.523240+00:00",
+  "config_path": "C:\\AI\\ICDev\\args\\dat_config.yaml",
   "classification": "CUI",
   "sources": {
     "state_dept_cables": {
       "source": "state_dept_cables",
-      "source_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d3\\data\\dat\\state_dept_cables",
+      "source_path": "C:\\AI\\ICDev\\data\\dat\\state_dept_cables",
       "status": "ok",
       "record_count": 20,
       "files_read": 2,
@@ -14,7 +14,7 @@
     },
     "unsc_schedule": {
       "source": "unsc_schedule",
-      "source_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d3\\data\\dat\\unsc_schedule",
+      "source_path": "C:\\AI\\ICDev\\data\\dat\\unsc_schedule",
       "status": "ok",
       "record_count": 18,
       "files_read": 2,
@@ -22,16 +22,14 @@
     },
     "backchannel_logs": {
       "source": "backchannel_logs",
-      "source_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d3\\data\\dat\\backchannel_logs",
-      "status": "path_not_found",
-      "record_count": 0,
-      "files_read": 0,
-      "errors": [
-        "Path not found: C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d3\\data\\dat\\backchannel_logs"
-      ]
+      "source_path": "C:\\AI\\ICDev\\data\\dat\\backchannel_logs",
+      "status": "ok",
+      "record_count": 8,
+      "files_read": 1,
+      "errors": []
     }
   },
-  "total_records": 38,
+  "total_records": 46,
   "status": "ok",
-  "manifest_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d3\\data\\dat\\ingestion_manifest.json"
+  "manifest_path": "C:\\AI\\ICDev\\data\\dat\\ingestion_manifest.json"
 }
