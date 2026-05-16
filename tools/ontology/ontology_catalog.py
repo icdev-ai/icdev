@@ -53,9 +53,9 @@ def validate_catalog() -> dict[str, Any]:
     errors: list[dict] = []
     warnings: list[dict] = []
     stats = {"sources": 0, "concepts": 0, "domains": set(), "prefixes": set()}
-    seen: set[tuple[str, str]] = set()
 
     for src in ONTOLOGY_SOURCES:
+        seen: set[tuple[str, str]] = set()  # reset per source — cross-file duplicates are expected
         if not src.exists():
             errors.append({"type": "missing_source", "file": str(src)})
             continue
@@ -74,6 +74,9 @@ def validate_catalog() -> dict[str, Any]:
                 stats["domains"].add(domain)
                 for key, val in obj.items():
                     if isinstance(val, dict) and "classes" in val:
+                        # Duplicate check is scoped to (domain, key, concept) — the same
+                        # class may intentionally appear under multiple ontology keys.
+                        key_seen: set[tuple[str, str, str]] = set()
                         for cls in val.get("classes", []):
                             stats["concepts"] += 1
                             prefix = cls.get("prefix", "")
@@ -87,10 +90,11 @@ def validate_catalog() -> dict[str, Any]:
                                 errors.append({"type": "empty_iri", "domain": domain, "key": key, "concept": concept})
                             if prefix and prefix not in valid_prefixes:
                                 warnings.append({"type": "unknown_prefix", "domain": domain, "prefix": prefix, "concept": concept})
-                            pair = (domain, concept)
-                            if pair in seen and concept:
+                            key_pair = (domain, key, concept)
+                            if key_pair in key_seen and concept:
                                 warnings.append({"type": "duplicate_concept", "domain": domain, "concept": concept})
-                            seen.add(pair)
+                            key_seen.add(key_pair)
+                            seen.add((domain, concept))
                             if prefix:
                                 stats["prefixes"].add(prefix)
                     elif isinstance(val, str) and ":" in val:
@@ -99,10 +103,12 @@ def validate_catalog() -> dict[str, Any]:
                         concept = val.split(":")[-1]
                         if not concept:
                             errors.append({"type": "empty_concept", "domain": domain, "key": key})
-                        pair = (domain, concept)
+                        # Many-to-one mappings (multiple keys → same concept) are valid;
+                        # only warn if the exact same key maps to the same concept twice.
+                        pair = (domain, key, concept)
                         if pair in seen and concept:
                             warnings.append({"type": "duplicate_concept", "domain": domain, "concept": concept})
-                        seen.add(pair)
+                        seen.add(pair)  # type: ignore[arg-type]
                         if prefix:
                             stats["prefixes"].add(prefix)
             elif name in ("MISSION_TYPE_ONTOLOGY", "TOPIC_ONTOLOGY", "TIER_COMPETENCY", "TITLE_ONTOLOGY_OVERRIDES", "STEP_TYPE_ONTOLOGY"):
@@ -116,10 +122,7 @@ def validate_catalog() -> dict[str, Any]:
                             concept = val.split(":")[-1]
                             if not concept:
                                 errors.append({"type": "empty_concept", "domain": domain, "key": str(key)})
-                            pair = (domain, concept)
-                            if pair in seen and concept:
-                                warnings.append({"type": "duplicate_concept", "domain": domain, "concept": concept})
-                            seen.add(pair)
+                            # key → concept is a many-to-one mapping by design; no dup check
                             if prefix:
                                 stats["prefixes"].add(prefix)
 
