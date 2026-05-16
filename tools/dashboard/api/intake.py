@@ -569,20 +569,30 @@ def ai_boost(session_id):
         session_data = dict(session)
         classification = session_data.get("classification", "")
 
-        # --- Load context ---
+        # --- Load context (with caching) ---
         existing_reqs = conn.execute(
             "SELECT requirement_type, raw_text, acceptance_criteria FROM intake_requirements WHERE session_id = ?",
             (session_id,),
         ).fetchall()
         existing_reqs = [dict(r) for r in existing_reqs]
-
-        conversation = conn.execute(
-            "SELECT role, content FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
-            (session_id,),
-        ).fetchall()
-        conversation_text = "\n".join(
-            f"{r['role'].upper()}: {r['content']}" for r in conversation
-        )[:4000]
+        import time as _time
+        reqs_hash = hash(tuple(sorted((r['requirement_type'], r['raw_text']) for r in existing_reqs)))
+        cached = _AI_CONTEXT_CACHE.get(session_id)
+        if cached and cached.get('reqs_hash') == reqs_hash and (_time.time() - cached.get('timestamp', 0)) < _AI_CACHE_TTL_SECONDS:
+            conversation_text = cached['conversation_text']
+        else:
+            conversation = conn.execute(
+                "SELECT role, content FROM intake_conversation WHERE session_id = ? ORDER BY turn_number DESC LIMIT 20",
+                (session_id,),
+            ).fetchall()
+            conversation_text = "\n".join(
+                f"{r['role'].upper()}: {r['content']}" for r in reversed(conversation)
+            )[:2000]
+            _AI_CONTEXT_CACHE[session_id] = {
+                'conversation_text': conversation_text,
+                'reqs_hash': reqs_hash,
+                'timestamp': _time.time(),
+            }
 
         existing_types = {r["requirement_type"] for r in existing_reqs}
         existing_summary = "\n".join(
@@ -1458,12 +1468,17 @@ def _run_build_pipeline(session_id):
 
 @intake_api.route("/api/intake/build/<session_id>/start", methods=["POST"])
 def start_build_pipeline(session_id):
-    """Start the build pipeline for an intake session (background thread)."""
+    """Start the build pipeline for an intake session (background thread).
+
+    Pass ``?dry_run=1`` to preview phases without executing.
+    """
+    dry_run = request.args.get("dry_run", "") in ("1", "true", "yes")
+
     with _BUILD_LOCK:
         existing = _BUILD_JOBS.get(session_id)
-        if existing and existing["status"] == "running":
+        if existing and existing["status"] == "running" and not dry_run:
             return jsonify({"error": "Build already in progress"}), 409
-        if existing and existing["status"] == "done":
+        if existing and existing["status"] == "done" and not dry_run:
             return jsonify(existing)
 
     conn = _get_db()
@@ -1497,6 +1512,14 @@ def start_build_pipeline(session_id):
     with _BUILD_LOCK:
         _BUILD_JOBS[session_id] = job
 
+    if dry_run:
+        # Mark all phases as preview without running
+        for p in job["phases"]:
+            p["status"] = "preview"
+            p["detail"] = "Dry-run — not executed"
+        job["status"] = "preview"
+        return jsonify({"status": "preview", "session_id": session_id, "phases": job["phases"]})
+
     # Launch background thread
     t = threading.Thread(target=_run_build_pipeline, args=(session_id,), daemon=True)
     t.start()
@@ -1523,7 +1546,15 @@ def get_build_project(session_id):
         if not row:
             return jsonify({"error": "Session not found"}), 404
         project_id = row["project_id"] or ""
-        return jsonify({"session_id": session_id, "project_id": project_id})
+        # Check if any build items exist
+        has_activity = False
+        if project_id:
+            activity_row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM build_items WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            has_activity = activity_row is not None and activity_row["cnt"] > 0
+        return jsonify({"session_id": session_id, "project_id": project_id, "has_activity": has_activity})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

@@ -442,9 +442,11 @@
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
                 <h4 class="chat-sidebar-heading">What's next?</h4>
-                <button class="btn btn-primary" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
-                <button class="btn btn-warning" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
-                <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-primary" id="trigger-build-btn" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
+                <button class="btn btn-outline-primary" id="preview-build-btn" onclick="ICDEV.chatPreviewBuild()">&#x1F441; Preview Build</button>
+                <button class="btn btn-warning" id="send-kanban-btn" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
+                <button class="btn btn-outline-warning" id="preview-kanban-btn" onclick="ICDEV.chatPreviewKanban()">&#x1F441; Preview Kanban</button>
+                <button class="btn btn-secondary" id="run-simulation-btn" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>

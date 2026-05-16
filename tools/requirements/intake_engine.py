@@ -42,6 +42,11 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
+# In-memory LRU cache for conversation history per session (TTL 30s)
+import time as _time
+_CONVERSATION_CACHE: dict = {}
+_CONVERSATION_CACHE_TTL = 30
+
 # Graceful import of audit logger
 try:
     from tools.audit.audit_logger import log_event
@@ -176,6 +181,12 @@ except ImportError:
 
 def _build_conversation_history(session_id, conn, current_message):
     """Return conversation_messages list for the LLM (last 10 turns + current)."""
+    cached = _CONVERSATION_CACHE.get(session_id)
+    if cached and (_time.time() - cached.get('timestamp', 0)) < _CONVERSATION_CACHE_TTL:
+        messages = list(cached['messages'])
+        messages.append({"role": "user", "content": current_message})
+        return messages
+
     history_rows = conn.execute(
         """SELECT turn_number, role, content
            FROM intake_conversation
@@ -190,6 +201,10 @@ def _build_conversation_history(session_id, conn, current_message):
             continue
         msg_role = "assistant" if r["role"] == "analyst" else "user"
         messages.append({"role": msg_role, "content": r["content"]})
+    _CONVERSATION_CACHE[session_id] = {
+        'messages': list(messages),
+        'timestamp': _time.time(),
+    }
     messages.append({"role": "user", "content": current_message})
     return messages
 
