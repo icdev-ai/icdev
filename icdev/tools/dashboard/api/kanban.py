@@ -944,17 +944,18 @@ def move_task(task_id):
         moving_to_done = new_status == "done" and existing["status"] != "done"
         if moving_to_done:
             dep_row = conn.execute(
-                "SELECT t.depends_on_task_id, p.status AS parent_status "
-                "FROM kanban_tasks t "
-                "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.id = ?",
+                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
-            if dep_row:
-                dep_row = dict(dep_row)
-                parent_id = dep_row.get("depends_on_task_id")
-                parent_status = dep_row.get("parent_status")
-                if parent_id and parent_status not in ("done", "decomposed", None):
+            parent_id = (dep_row or {}).get("depends_on_task_id")
+            parent_status = None
+            if parent_id:
+                parent_row = conn.execute(
+                    "SELECT status FROM kanban_tasks WHERE id = ?",
+                    (parent_id,),
+                ).fetchone()
+                parent_status = (parent_row or {}).get("status")
+            if parent_id and parent_status not in ("done", "decomposed", None):
                     return jsonify({
                         "error": "dependency_not_done",
                         "detail": (
