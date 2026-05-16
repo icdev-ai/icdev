@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
-"""Auto-intake hook: detect requirements in chat messages → decompose → HITL review → Kanban.
+"""Auto-intake hook: detect requirements in chat messages -> decompose -> HITL review -> Kanban.
 
 Called from chat_manager.send_message() in a daemon thread after every user message.
 Flow:
-  1. Fast regex pre-filter — skip casual messages immediately
+  1. Fast regex pre-filter -- skip casual messages immediately
   2. Get or create an intake session linked to this chat context
-  3. process_turn() — extracts requirements from the message (deterministic)
-  4. decompose_requirements() — SAFe Epic>Feature>Story breakdown
+  3. process_turn() -- extracts requirements from the message (deterministic)
+  4. decompose_requirements() -- SAFe Epic>Feature>Story breakdown
   5. Create a HITL review instance (human must approve before Kanban promotion)
-  6. On HITL approval → intake_promote_handler.maybe_promote() → kanban_tasks
+  6. On HITL approval -> intake_promote_handler.maybe_promote() -> kanban_tasks
 
 Programmatic:
     from tools.chat.requirement_intake_hook import process_message_for_intake
@@ -17,20 +17,19 @@ Programmatic:
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
-import sqlite3
+import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
+
+from tools.db.storage import get_connection
 
 logger = logging.getLogger("icdev.chat.intake_hook")
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-DB_PATH = BASE_DIR / "data" / "icdev.db"
-
 # ---------------------------------------------------------------------------
-# Requirement signal patterns — fast pre-filter, no LLM
+# Requirement signal patterns -- fast pre-filter, no LLM
 # ---------------------------------------------------------------------------
 
 _REQ_PATTERNS = [
@@ -57,52 +56,65 @@ def _is_requirement_bearing(text: str) -> bool:
     return bool(_REQ_RE.search(text))
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 # ---------------------------------------------------------------------------
-# Mapping tables
+# Mapping tables -- created once per DB via ensure_mapping_tables()
 # ---------------------------------------------------------------------------
 
-def _ensure_tables(conn: sqlite3.Connection) -> None:
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS chat_intake_sessions (
-            context_id  TEXT PRIMARY KEY,
-            session_id  TEXT NOT NULL,
-            created_at  TEXT NOT NULL
-        )"""
-    )
-    conn.execute(
-        """CREATE TABLE IF NOT EXISTS hitl_intake_pending (
-            instance_id TEXT PRIMARY KEY,
-            session_id  TEXT NOT NULL,
-            context_id  TEXT,
-            created_at  TEXT NOT NULL
-        )"""
-    )
-    conn.commit()
+def ensure_mapping_tables() -> None:
+    """Idempotent: create chat_intake_sessions and hitl_intake_pending if absent."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS chat_intake_sessions (
+                context_id  TEXT PRIMARY KEY,
+                session_id  TEXT NOT NULL,
+                created_at  TEXT NOT NULL
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS hitl_intake_pending (
+                instance_id TEXT PRIMARY KEY,
+                session_id  TEXT NOT NULL,
+                context_id  TEXT,
+                created_at  TEXT NOT NULL
+            )"""
+        )
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
 # Intake session management
 # ---------------------------------------------------------------------------
 
-def _get_or_create_session(context_id: str, conn: sqlite3.Connection) -> str:
+def _get_or_create_session(context_id: str) -> str:
     """Return the intake session_id linked to this chat context, creating one if needed."""
-    row = conn.execute(
-        "SELECT session_id FROM chat_intake_sessions WHERE context_id = ?",
-        (context_id,),
-    ).fetchone()
-    if row:
-        return row[0]
-
-    import sys
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT session_id FROM chat_intake_sessions WHERE context_id = %s",
+            (context_id,),
+        ).fetchone()
+        if row:
+            return row[0]
+    finally:
+        conn.close()
 
     from tools.requirements.intake_engine import create_session
     result = create_session(
-        project_id="chat-auto",
+        project_id=None,
         customer_name="Chat User",
-        customer_org="ICDEV™",
+        customer_org="ICDEV",
         impact_level="IL5",
+        classification="CUI",
         created_by=f"chat:{context_id}",
         role="developer",
         goal="build",
@@ -111,68 +123,76 @@ def _get_or_create_session(context_id: str, conn: sqlite3.Connection) -> str:
     if not session_id:
         raise ValueError(f"create_session returned no ID: {result}")
 
-    now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
-        "INSERT INTO chat_intake_sessions (context_id, session_id, created_at) VALUES (?,?,?)",
-        (context_id, session_id, now),
-    )
-    conn.commit()
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO chat_intake_sessions (context_id, session_id, created_at) VALUES (%s, %s, %s)",
+            (context_id, session_id, _now()),
+        )
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
+
     logger.info("Created intake session %s for chat context %s", session_id, context_id)
     return session_id
 
 
-def _req_count(session_id: str, conn: sqlite3.Connection) -> int:
+def _req_count(session_id: str) -> int:
+    conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM intake_requirements WHERE session_id = ?",
+            "SELECT COUNT(*) FROM intake_requirements WHERE session_id = %s",
             (session_id,),
         ).fetchone()
         return row[0] if row else 0
-    except sqlite3.OperationalError:
+    except Exception:
         return 0
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
 # HITL instance creation
 # ---------------------------------------------------------------------------
 
-def _create_hitl_review(
-    session_id: str,
-    context_id: str,
-    req_count: int,
-    db_path: Path,
-) -> str:
+def _create_hitl_review(session_id: str, context_id: str, req_count: int) -> str:
     """Create a gatekeeper kanban task + HITL review instance. Returns instance_id."""
-    import sys
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
-
-    from tools.db.storage import get_connection
     from tools.workflow_hitl.engine import WorkflowEngine
 
-    conn = get_connection()
-    now = datetime.now(timezone.utc).isoformat()
-
-    import hashlib, time
     task_id = "task-" + hashlib.sha256(str(time.time_ns()).encode()).hexdigest()[:10]
-    conn.execute(
-        """INSERT INTO kanban_tasks
-           (id, title, description, task_type, priority, status,
-            dispatch_source, scheduled_at, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        (
-            task_id,
-            f"[HITL REVIEW] {req_count} requirement(s) from chat session",
-            f"SAFe decomposition pending human review.\n\nIntake session: {session_id}\nChat context: {context_id}",
-            "review",
-            "high",
-            "pending_review",
-            f"chat:{context_id}",
-            now, now, now,
-        ),
-    )
-    conn.commit()
-    conn.close()
+    now = _now()
+
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO kanban_tasks
+               (id, title, description, task_type, priority, status,
+                dispatch_source, scheduled_at, created_at, updated_at, hitl_stage)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+            (
+                task_id,
+                f"[HITL REVIEW] {req_count} requirement(s) from chat session",
+                (
+                    f"SAFe decomposition pending human review.\n\n"
+                    f"Intake session: {session_id}\nChat context: {context_id}"
+                ),
+                "chore",
+                "high",
+                "backlog",
+                f"chat:{context_id}",
+                now, now, now,
+                "review",
+            ),
+        )
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
 
     engine = WorkflowEngine()
     instance_id = engine.create_instance(
@@ -180,24 +200,28 @@ def _create_hitl_review(
         canvas_type="requirements",
     )
 
-    # Auto-advance past the automated "build" stage — human starts at "review"
+    # Auto-advance past the automated "build" stage -- human starts at "review"
     try:
         engine.advance_stage(instance_id)
     except Exception as exc:
         logger.debug("Auto-advance past build stage: %s", exc)
 
-    # Store instance → session mapping for post-approve promote
-    mapping_conn = sqlite3.connect(str(db_path))
-    mapping_conn.row_factory = sqlite3.Row
-    _ensure_tables(mapping_conn)
-    mapping_conn.execute(
-        """INSERT OR IGNORE INTO hitl_intake_pending
-           (instance_id, session_id, context_id, created_at)
-           VALUES (?,?,?,?)""",
-        (instance_id, session_id, context_id, now),
-    )
-    mapping_conn.commit()
-    mapping_conn.close()
+    # Store instance -> session mapping for post-approve promote
+    conn = get_connection()
+    try:
+        conn.execute(
+            """INSERT INTO hitl_intake_pending
+               (instance_id, session_id, context_id, created_at)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (instance_id) DO NOTHING""",
+            (instance_id, session_id, context_id, now),
+        )
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    finally:
+        conn.close()
 
     logger.info(
         "HITL review instance %s created for session %s (%d reqs)",
@@ -213,50 +237,37 @@ def _create_hitl_review(
 def process_message_for_intake(
     context_id: str,
     user_message: str,
-    db_path: Path | None = None,
+    **_kwargs: Any,
 ) -> dict[str, Any]:
     """Analyze user_message; if requirements found, decompose and queue for HITL review.
 
     Returns:
-        {"skipped": True}                                       — no requirement signals
+        {"skipped": True}                                       -- no requirement signals
         {"session_id", "requirements_found", "hitl_instance_id", "tasks_staged", "review_url"}
-        {"session_id", "requirements_found", "error"}          — on failure
+        {"session_id", "requirements_found", "error"}          -- on failure
     """
     if not _is_requirement_bearing(user_message):
         return {"skipped": True}
 
-    import sys
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
-
-    resolved_db = db_path or DB_PATH
+    ensure_mapping_tables()
 
     # Get or create intake session
     try:
-        conn = sqlite3.connect(str(resolved_db))
-        conn.row_factory = sqlite3.Row
-        _ensure_tables(conn)
-        session_id = _get_or_create_session(context_id, conn)
-        reqs_before = _req_count(session_id, conn)
-        conn.close()
+        session_id = _get_or_create_session(context_id)
+        reqs_before = _req_count(session_id)
     except Exception as exc:
-        logger.error("Intake hook — session setup failed for context %s: %s", context_id, exc)
+        logger.error("Intake hook -- session setup failed for context %s: %s", context_id, exc)
         return {"error": str(exc), "tasks_staged": 0}
 
     # Process turn through intake engine
     try:
         from tools.requirements.intake_engine import process_turn
-        process_turn(session_id, user_message, db_path=resolved_db)
+        process_turn(session_id, user_message)
     except Exception as exc:
-        logger.error("Intake hook — process_turn failed for session %s: %s", session_id, exc)
+        logger.error("Intake hook -- process_turn failed for session %s: %s", session_id, exc)
         return {"session_id": session_id, "error": str(exc), "tasks_staged": 0}
 
-    # Count new requirements extracted
-    conn = sqlite3.connect(str(resolved_db))
-    conn.row_factory = sqlite3.Row
-    reqs_after = _req_count(session_id, conn)
-    conn.close()
-
+    reqs_after = _req_count(session_id)
     new_reqs = reqs_after - reqs_before
     if new_reqs <= 0:
         return {"session_id": session_id, "requirements_found": 0, "tasks_staged": 0}
@@ -269,21 +280,20 @@ def process_message_for_intake(
             target_level="story",
             generate_bdd=True,
             estimate=True,
-            db_path=resolved_db,
         )
     except Exception as exc:
-        logger.error("Intake hook — decomposition failed for session %s: %s", session_id, exc)
+        logger.error("Intake hook -- decomposition failed for session %s: %s", session_id, exc)
         return {"session_id": session_id, "requirements_found": new_reqs, "error": str(exc), "tasks_staged": 0}
 
-    # Route to HITL review — human must approve before Kanban promotion
+    # Route to HITL review -- human must approve before Kanban promotion
     try:
-        instance_id = _create_hitl_review(session_id, context_id, new_reqs, resolved_db)
+        instance_id = _create_hitl_review(session_id, context_id, new_reqs)
     except Exception as exc:
-        logger.error("Intake hook — HITL instance creation failed for session %s: %s", session_id, exc)
+        logger.error("Intake hook -- HITL instance creation failed for session %s: %s", session_id, exc)
         return {"session_id": session_id, "requirements_found": new_reqs, "error": str(exc), "tasks_staged": 0}
 
     logger.info(
-        "Intake hook: context=%s session=%s reqs=%d → HITL review %s",
+        "Intake hook: context=%s session=%s reqs=%d -> HITL review %s",
         context_id, session_id, new_reqs, instance_id,
     )
     return {

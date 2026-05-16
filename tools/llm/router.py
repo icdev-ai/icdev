@@ -329,7 +329,12 @@ class LLMRouter:
                 from tools.llm.ollama_provider import OllamaProvider
 
                 base_url = _expand_env(provider_cfg.get("base_url", "http://localhost:11434"))
-                instance = OllamaProvider(base_url=base_url)
+                api_key_env = provider_cfg.get("api_key_env", "")
+                api_key = _expand_env(provider_cfg.get("api_key", ""))
+                if not api_key and api_key_env:
+                    import os
+                    api_key = os.getenv(api_key_env, "")
+                instance = OllamaProvider(base_url=base_url, api_key=api_key)
 
             elif ptype == "gemini":
                 from tools.llm.gemini_provider import GeminiProvider
