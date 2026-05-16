@@ -1575,22 +1575,28 @@
         if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
 
         var approved = [], deleted = [], custom = [];
+        var approvedCount = 0, deletedCount = 0;
         var cards = container.querySelectorAll('.panel-hitl-card');
         cards.forEach(function (card) {
             var state = card.dataset.state;
             var reqId = card.dataset.reqId;
             var textEl = card.querySelector('.panel-hitl-card__text');
             var text = (textEl ? textEl.innerText : card.dataset.text || '').trim();
-            if (state === 'approved' && reqId) {
+            // pending cards not yet acted on are treated as approved
+            var effectiveState = (state === 'pending') ? 'approved' : state;
+            if ((effectiveState === 'approved') && reqId) {
                 approved.push(reqId);
-            } else if (state === 'rejected' && reqId) {
+                approvedCount++;
+            } else if (effectiveState === 'approved') {
+                // approved card with no DB id yet — still count it client-side
+                approvedCount++;
+            } else if (effectiveState === 'rejected' && reqId) {
                 deleted.push(reqId);
+                deletedCount++;
+            } else if (effectiveState === 'rejected') {
+                deletedCount++;
             } else if (state === 'custom' && text) {
                 custom.push({ text: text, type: 'functional', priority: 'medium' });
-            }
-            // pending cards (not yet acted on) are treated as approved
-            if (state === 'pending' && reqId) {
-                approved.push(reqId);
             }
         });
 
@@ -1606,14 +1612,15 @@
                 if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✓ Confirm Selection'; }
                 return;
             }
-            // Lock the section
+            // Lock the section — use client-side counts as source of truth for display
             var hitlSection = container.querySelector('.panel-hitl-section');
             if (hitlSection) {
+                var customCount = result.custom_added || custom.length;
                 hitlSection.innerHTML = (
                     '<div class="panel-hitl-confirmed">' +
-                    '&#x2713; Confirmed: ' + result.approved + ' approved, ' +
-                    result.deleted + ' removed' +
-                    (result.custom_added ? ', ' + result.custom_added + ' added by you' : '') +
+                    '&#x2713; Confirmed: ' + approvedCount + ' approved, ' +
+                    deletedCount + ' removed' +
+                    (customCount ? ', ' + customCount + ' added by you' : '') +
                     '.</div>'
                 );
             }
