@@ -1595,7 +1595,8 @@ def create_app() -> Flask:
 
     # ---- GeoSIGINT Blueprint ----
     try:
-        import importlib.util as _ilu, sys as _sys
+        import importlib.util as _ilu
+        import sys as _sys
         _geo_bp_path = BASE_DIR / "apps" / "geosigint" / "blueprint.py"
         if not _geo_bp_path.exists():
             raise FileNotFoundError(f"GeoSIGINT blueprint not found at {_geo_bp_path}")
