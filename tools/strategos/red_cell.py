@@ -50,21 +50,23 @@ def _now_utc() -> str:
 
 def _llm_call(prompt: str) -> str:
     try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-        router = LLMRouter()
-        req = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
+        from tools.chat.llm_middleware import chat_llm_invoke
+        content, _meta = chat_llm_invoke(
+            "chat_response",
+            [{"role": "user", "content": prompt}],
             system_prompt=(
                 "You are a senior intelligence analyst conducting Red Cell analysis. "
                 "Think and write from the adversary's perspective. "
                 "Be analytically rigorous, cite observable indicators, and avoid mirror-imaging."
             ),
-            max_tokens=900,
+            canvas_type="strategos",
+            session_id="",
             classification="CUI // SP-CTI",
+            max_tokens=900,
+            temperature=0.7,
+            agent_id="icdev-strategos-redcell",
         )
-        resp = router.invoke("chat_response", req)
-        return (resp.content or "").strip()
+        return content or "[Synthesis unavailable — complete manually.]"
     except Exception as exc:
         logger.warning("Red Cell LLM call failed: %s", exc)
         return "[Synthesis unavailable — complete manually.]"

@@ -710,16 +710,19 @@ def _call_llm_with_migration_context(content: str, session_id: str = "", chain_m
             "Use markdown formatting. Be direct and specific."
         )
 
-        router = LLMRouter()
-        req = LLMRequest(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": content},
-            ],
-            chain_mode=chain_mode,
+        from tools.chat.llm_middleware import chat_llm_invoke
+        result, _meta = chat_llm_invoke(
+            "chat_response",
+            [{"role": "user", "content": content}],
+            system_prompt=system_prompt,
+            canvas_type="cam",
+            session_id="",
+            classification="CUI",
+            max_tokens=2048,
+            temperature=0.7,
+            agent_id="icdev-cam-advisor",
         )
-        resp = router.invoke("chat_response", req)
-        return resp.content if resp and resp.content else None
+        return result or None
     except (ImportError, Exception) as exc:
         logger.debug("LLM unavailable for migration chat: %s", exc)
         return None
