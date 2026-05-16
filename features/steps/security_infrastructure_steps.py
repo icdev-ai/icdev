@@ -8,6 +8,7 @@ existence so the scenario runs fast and without network/DB dependencies.
 """
 
 import os
+import sys
 
 from behave import given, then, when
 
@@ -60,6 +61,91 @@ def step_verify_classification_enforcer(context):
     context.module_path = os.path.join(
         context.project_root, 'tools/security/classification_enforcer.py'
     )
+
+
+@when('Enforce attribute-based access control (ABAC) with mandatory classification markings on all returned data objects')
+def step_enforce_abac_cross_domain(context):
+    """Exercise the ABAC engine to verify cross-domain pull enforcement and classification markings."""
+    context.missing = []
+    abac_path = os.path.join(context.project_root, 'tools', 'security', 'abac_engine.py')
+    if not os.path.exists(abac_path):
+        context.missing.append('tools/security/abac_engine.py not found')
+        return
+
+    # Ensure project root is on sys.path so tools.* imports resolve
+    if context.project_root not in sys.path:
+        sys.path.insert(0, context.project_root)
+
+    try:
+        import importlib
+        mod = importlib.import_module('tools.security.abac_engine')
+    except Exception as exc:
+        context.missing.append(f'abac_engine import failed: {exc}')
+        return
+
+    # Subject: cleared analyst at partner agency
+    cleared_analyst = {
+        'user_id': 'analyst-001',
+        'role': 'cleared_analyst',
+        'agency': 'partner_agency',
+        'clearance_level': 2,
+        'classification': 'SECRET',
+        'compartments': ['COI_INTEL'],
+        'entitlements': ['cross_domain_pull'],
+        'impact_level': 'IL4',
+    }
+
+    # Subject: uncleared user
+    uncleared_user = {
+        'user_id': 'user-002',
+        'role': 'viewer',
+        'agency': 'internal',
+        'clearance_level': 1,
+        'classification': 'CUI',
+        'compartments': [],
+        'entitlements': [],
+        'impact_level': 'IL2',
+    }
+
+    resource = {
+        'type': 'cross_domain_data',
+        'source_il': 'IL4',
+        'target_il': 'IL2',
+        'classification': 'SECRET',
+        'data_owner': 'MCIP',
+        'compartments': ['COI_INTEL'],
+    }
+
+    data_objects = [
+        {'id': 'rec-001', 'content': 'Operational briefing A', 'sensitivity': 'high'},
+        {'id': 'rec-002', 'content': 'Mission summary B', 'sensitivity': 'medium'},
+    ]
+
+    # Verify permitted pull returns marked objects
+    try:
+        result = mod.enforce_cross_domain_pull(cleared_analyst, resource, data_objects)
+        if not result.permitted:
+            context.missing.append(f'Cleared analyst denied: {result.reason}')
+        elif not result.data_objects:
+            context.missing.append('Permitted pull returned no data objects')
+        else:
+            for obj in result.data_objects:
+                if obj.get('classification_marking') != 'SECRET':
+                    context.missing.append(
+                        f"Object {obj.get('id')} missing correct classification_marking"
+                    )
+    except Exception as exc:
+        context.missing.append(f'Permitted pull test failed: {exc}')
+
+    # Verify denied pull returns no data (no leak)
+    try:
+        result = mod.enforce_cross_domain_pull(uncleared_user, resource, data_objects)
+        if result.permitted:
+            context.missing.append('Uncleared user was permitted — ABAC leak')
+        if result.data_objects:
+            context.missing.append('Denied pull leaked data objects')
+    except Exception as exc:
+        context.missing.append(f'Denied pull test failed: {exc}')
 
 
 # ---------------------------------------------------------------------------

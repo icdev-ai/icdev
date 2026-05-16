@@ -29,4 +29,9 @@ Feature: Security Requirement Validation
     When the classification enforcer capability is verified
     Then the classification enforcer module exists and is importable
 
+  Scenario: ABAC enforces mandatory classification markings on cross-domain data pull
+    Given the system enforces security controls per the accreditation boundary
+    When Enforce attribute-based access control (ABAC) with mandatory classification markings on all returned data objects
+    Then the system behaves as specified and the requirement is satisfied
+
 # CUI // SP-CTI

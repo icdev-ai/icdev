@@ -94,6 +94,51 @@ def step_il5_ingestion_sla(context):
             context.missing.append(f'il5/ingestion.py import error: {exc}')
 
 
+_DAT_ARTIFACTS = [
+    'tools/dat/ingestion_engine.py',
+    'tools/dat/dti_calculator.py',
+    'tools/dat/dti_update_runner.py',
+    'tools/dashboard/templates/strategos/dat.html',
+    'tools/dat/icdev_dat_scheduler_task.xml',
+    'args/dat_config.yaml',
+    'tools/strategos/dat.py',
+]
+
+
+@when('the Diplomatic Activity Tracker capability is verified')
+def step_verify_dat_capability(context):
+    context.missing = [
+        a for a in _DAT_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+    if not context.missing:
+        # Verify DTI can be computed end-to-end
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                'dti_calculator',
+                os.path.join(context.project_root, 'tools', 'dat', 'dti_calculator.py'),
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            sample_manifest = {
+                'cables': [
+                    {'tension_level': 'high', 'received_at': '2026-05-16T00:00:00+00:00'},
+                ],
+                'schedules': [
+                    {'emergency': True, 'veto_cast': False, 'walkout': False},
+                ],
+                'metadata': [
+                    {'escalation_flag': True, 'communication_breakdown': False, 'frequency_delta': -0.5},
+                ],
+            }
+            score = mod.compute_dti_from_manifest(sample_manifest)
+            if not (0.0 <= score <= 1.0):
+                context.missing.append(f'DTI score {score} out of expected [0.0, 1.0] range')
+        except Exception as exc:
+            context.missing.append(f'DTI computation verification failed: {exc}')
+
+
 @when(
     'Infrastructure and platform enablement for functional capabilities. '
     'Covers environment setup, CI/CD pipeline configuration, security '
@@ -355,6 +400,41 @@ def step_data_fabric_manifest_exists(context, path):
 
 @then('the data fabric tests exist at "{path}"')
 def step_data_fabric_tests_exist(context, path):
+    _assert_path(context, path)
+
+
+@then('the DAT ingestion engine exists at "{path}"')
+def step_dat_ingestion_engine_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the DTI calculator exists at "{path}"')
+def step_dti_calculator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the DAT update runner exists at "{path}"')
+def step_dat_update_runner_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the DAT dashboard template exists at "{path}"')
+def step_dat_dashboard_template_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the DAT scheduler configuration exists at "{path}"')
+def step_dat_scheduler_config_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the DAT configuration exists at "{path}"')
+def step_dat_config_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the DAT blueprint module exists at "{path}"')
+def step_dat_blueprint_module_exists(context, path):
     _assert_path(context, path)
 
 
