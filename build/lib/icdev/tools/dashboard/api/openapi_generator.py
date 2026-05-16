@@ -71,12 +71,13 @@ from __future__ import annotations
 import ast
 import copy
 import inspect
-import json
 import logging
 import re
 import textwrap
 import urllib.error
+import urllib.parse
 import urllib.request
+import requests
 from typing import TYPE_CHECKING, Any, Iterator
 
 if TYPE_CHECKING:
@@ -357,6 +358,18 @@ def infer_schema_from_json(value: Any, *, max_depth: int = 8, _depth: int = 0) -
     return {"type": "string"}
 
 
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def _is_safe_url(url: str) -> bool:
+    """Reject non-HTTP(S) schemes to prevent file:// and other unsafe accesses (B310)."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme in _ALLOWED_SCHEMES
+    except Exception:
+        return False
+
+
 def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) -> dict | None:
     """GET `base_url + path`; infer schema from JSON payload; return schema or None.
 
@@ -367,21 +380,18 @@ def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) ->
     """
     if "{" in path:
         return None
-    try:
-        with urllib.request.urlopen(base_url.rstrip("/") + path, timeout=timeout) as resp:
-            if resp.status // 100 != 2:
-                return None
-            ctype = resp.headers.get("Content-Type", "")
-            if "application/json" not in ctype:
-                return None
-            body = resp.read()
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
-        logger.debug("sample_response_schema(%s): %s", path, exc)
+    url = base_url.rstrip("/") + path
+    if not _is_safe_url(url):
         return None
     try:
-        payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logger.debug("sample_response_schema(%s): non-JSON body: %s", path, exc)
+        resp = requests.get(url, timeout=timeout)
+        if resp.status_code // 100 != 2:
+            return None
+        if "application/json" not in resp.headers.get("Content-Type", ""):
+            return None
+        payload = resp.json()
+    except (requests.RequestException, TimeoutError, ConnectionError, OSError) as exc:
+        logger.debug("sample_response_schema(%s): %s", path, exc)
         return None
     return infer_schema_from_json(payload)
 
