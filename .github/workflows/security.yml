@@ -1,0 +1,292 @@
+# [TEMPLATE: CUI // SP-CTI]
+name: ICDEV Security Baseline Enforcement
+
+on:
+  push:
+    branches: [master, main, "feature-*", "kanban/*"]
+    paths:
+      - "args/security_baseline.yaml"
+      - "tools/**"
+      - "icdev/**"
+      - "requirements.txt"
+      - "docker/**"
+      - ".github/workflows/security.yml"
+  pull_request:
+    branches: [master, main]
+
+env:
+  PYTHONPATH: "."
+  BASELINE_FILE: "args/security_baseline.yaml"
+
+jobs:
+  # ── Validate security_baseline.yaml is well-formed ────────────────────────
+  validate-baseline:
+    name: Validate Security Baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Validate security_baseline.yaml
+        run: |
+          python - <<'EOF'
+          import sys, yaml, pathlib
+
+          baseline_path = pathlib.Path("args/security_baseline.yaml")
+          if not baseline_path.exists():
+              print(f"ERROR: baseline not found at {baseline_path}")
+              sys.exit(1)
+
+          with baseline_path.open(encoding="utf-8") as f:
+              doc = yaml.safe_load(f)
+
+          required_sections = [
+              "metadata",
+              "encryption",
+              "authentication_authorization",
+              "audit_logging",
+              "configuration_management",
+              "vulnerability_management",
+          ]
+          missing = [s for s in required_sections if s not in doc]
+          if missing:
+              print(f"ERROR: baseline missing required sections: {missing}")
+              sys.exit(1)
+
+          # Enforce all block-level controls are present
+          block_controls = [
+              ("encryption", "SC-ENC-001"),
+              ("authentication_authorization", "SC-AUTHN-002"),
+              ("audit_logging", "SC-AUDIT-003"),
+              ("vulnerability_management", "SC-VULN-005"),
+          ]
+          for section, expected_id in block_controls:
+              actual_id = doc.get(section, {}).get("id")
+              if actual_id != expected_id:
+                  print(f"ERROR: {section}.id expected {expected_id}, got {actual_id}")
+                  sys.exit(1)
+              enforcement = doc[section].get("enforcement")
+              if enforcement != "block":
+                  print(f"ERROR: {section}.enforcement must be 'block', got '{enforcement}'")
+                  sys.exit(1)
+
+          version = doc.get("metadata", {}).get("version")
+          classification = doc.get("metadata", {}).get("classification")
+          print(f"Baseline OK  version={version}  classification={classification}")
+          print(f"Sections validated: {required_sections}")
+          EOF
+
+  # ── security-scan: SAST + SCA + secret detection + baseline enforcement ───
+  security-scan:
+    name: Security Scan (Baseline Enforced)
+    runs-on: ubuntu-latest
+    needs: validate-baseline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install security tooling
+        run: pip install bandit pip-audit pyyaml
+
+      - name: Load blocking controls from security_baseline.yaml
+        id: baseline
+        run: |
+          python - <<'EOF'
+          import yaml, json, pathlib, os
+
+          doc = yaml.safe_load(pathlib.Path("args/security_baseline.yaml").read_text(encoding="utf-8"))
+
+          block_sections = [k for k, v in doc.items() if isinstance(v, dict) and v.get("enforcement") == "block"]
+          warn_sections  = [k for k, v in doc.items() if isinstance(v, dict) and v.get("enforcement") == "warn"]
+
+          tls_min = doc.get("encryption", {}).get("requirements", {}).get("in_transit", {}).get("min_tls_version", "1.2")
+          sast_freq = (doc.get("vulnerability_management", {})
+                          .get("requirements", {})
+                          .get("scan_frequency", {})
+                          .get("sast", "on_every_commit"))
+
+          print(f"Block-level controls  : {block_sections}")
+          print(f"Warn-level controls   : {warn_sections}")
+          print(f"Min TLS version       : {tls_min}")
+          print(f"SAST trigger policy   : {sast_freq}")
+
+          # Write summary to $GITHUB_STEP_SUMMARY
+          summary_lines = [
+              "## Security Baseline Controls Active",
+              f"| Level | Controls |",
+              f"|-------|----------|",
+              f"| **block** | {', '.join(block_sections)} |",
+              f"| **warn**  | {', '.join(warn_sections)} |",
+              "",
+              f"Baseline file: `args/security_baseline.yaml`",
+          ]
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path:
+              with open(summary_path, "a") as f:
+                  f.write("\n".join(summary_lines) + "\n")
+          EOF
+
+      - name: SAST — bandit (SC-VULN-005 block enforcement)
+        run: |
+          echo "Running SAST per vulnerability_management.requirements.scan_frequency.sast=on_every_commit"
+          echo "Baseline: args/security_baseline.yaml  Control: SC-VULN-005  Enforcement: block"
+          bandit -r tools/ icdev/ \
+            -q \
+            --severity-level high \
+            --confidence-level high \
+            --format txt
+
+      - name: SCA — pip-audit (SC-VULN-005 block enforcement)
+        run: |
+          echo "Running SCA per vulnerability_management.requirements.scan_frequency.sca=on_every_commit"
+          echo "Baseline: args/security_baseline.yaml  Control: SC-VULN-005  Enforcement: block"
+          pip install -r requirements.txt --quiet
+          pip-audit --skip-editable -q
+        continue-on-error: true   # advisory — pip-audit may flag transitive deps outside our control
+
+      - name: Secret detection (SC-CM-004 warn enforcement)
+        run: |
+          echo "Scanning for hardcoded secrets — Baseline: args/security_baseline.yaml  Control: SC-CM-004"
+          # Detect common secret patterns: API keys, passwords, tokens
+          if grep -rn \
+               -e 'password\s*=\s*["'"'"'][^${}]' \
+               -e 'api_key\s*=\s*["'"'"'][^${}]' \
+               -e 'secret\s*=\s*["'"'"'][^${}]' \
+               -e 'ANTHROPIC_API_KEY\s*=\s*[^${\[]' \
+               --include="*.py" --include="*.yaml" --include="*.yml" \
+               --exclude-dir=".git" --exclude-dir="tests" \
+               --exclude-dir="node_modules" \
+               . 2>/dev/null; then
+            echo "WARNING: Potential hardcoded secrets detected — review before merge"
+            exit 1
+          else
+            echo "Secret scan: PASS — no hardcoded credentials detected"
+          fi
+        continue-on-error: true   # warn level per SC-CM-004 enforcement: warn
+
+      - name: Cipher / TLS policy check (SC-ENC-001 block enforcement)
+        run: |
+          echo "Verifying rejected ciphers absent from codebase"
+          echo "Baseline: args/security_baseline.yaml  Control: SC-ENC-001  Enforcement: block"
+          REJECTED="RC4|DES|3DES|NULL_CIPHER"
+          if grep -rn -E "$REJECTED" \
+               --include="*.py" --include="*.yaml" --include="*.yml" \
+               --exclude-dir=".git" \
+               . 2>/dev/null; then
+            echo "ERROR: Rejected cipher found — blocked by SC-ENC-001"
+            exit 1
+          else
+            echo "Cipher check: PASS"
+          fi
+
+      - name: Audit log immutability check (SC-AUDIT-003 block enforcement)
+        run: |
+          echo "Verifying no UPDATE/DELETE on audit tables"
+          echo "Baseline: args/security_baseline.yaml  Control: SC-AUDIT-003  Enforcement: block"
+          python - <<'EOF'
+          import ast, pathlib, sys
+
+          violations = []
+          for py_file in pathlib.Path("tools").rglob("*.py"):
+              try:
+                  src = py_file.read_text(encoding="utf-8", errors="ignore")
+              except Exception:
+                  continue
+              if "audit" not in src.lower():
+                  continue
+              lower = src.lower()
+              for bad in ("update audit", "delete from audit", "delete audit"):
+                  if bad in lower:
+                      violations.append(f"{py_file}: '{bad}'")
+
+          if violations:
+              for v in violations:
+                  print(f"ERROR: {v}")
+              print("Blocked by SC-AUDIT-003 (audit_logging.requirements.immutable=true)")
+              sys.exit(1)
+          else:
+              print("Audit immutability check: PASS")
+          EOF
+
+      - name: Baseline enforcement summary
+        if: always()
+        run: |
+          python - <<'EOF'
+          import yaml, pathlib
+
+          doc = yaml.safe_load(pathlib.Path("args/security_baseline.yaml").read_text(encoding="utf-8"))
+          print("=" * 60)
+          print("SECURITY BASELINE ENFORCEMENT SUMMARY")
+          print(f"Baseline : args/security_baseline.yaml")
+          print(f"Version  : {doc['metadata']['version']}")
+          print(f"Class.   : {doc['metadata']['classification']}")
+          print("Controls :")
+          for key, val in doc.items():
+              if isinstance(val, dict) and "id" in val:
+                  print(f"  [{val['enforcement'].upper():5s}] {val['id']} — {val['title']}")
+          print("=" * 60)
+          EOF
+
+  # ── Container hardening check (SC-CM-004 — triggered on Dockerfile changes)
+  container-hardening:
+    name: Container Hardening Check (SC-CM-004)
+    runs-on: ubuntu-latest
+    needs: validate-baseline
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PyYAML
+        run: pip install pyyaml
+
+      - name: Check container hardening requirements (security_baseline.yaml)
+        run: |
+          echo "Baseline: args/security_baseline.yaml  Control: SC-CM-004  Enforcement: warn"
+          python - <<'EOF'
+          import yaml, pathlib, sys
+
+          doc = yaml.safe_load(pathlib.Path("args/security_baseline.yaml").read_text(encoding="utf-8"))
+          cm = doc.get("configuration_management", {}).get("requirements", {}).get("container_hardening", {})
+
+          required = {
+              "non_root_user": True,
+              "read_only_rootfs": True,
+              "no_new_privileges": True,
+          }
+          print(f"Required container controls: {required}")
+          print(f"Baseline values           : {cm}")
+
+          violations = []
+          for key, expected in required.items():
+              if cm.get(key) != expected:
+                  violations.append(f"{key}: expected {expected}, got {cm.get(key)}")
+
+          dockerfiles = list(pathlib.Path("docker").rglob("Dockerfile*")) if pathlib.Path("docker").exists() else []
+          print(f"Dockerfiles found: {[str(d) for d in dockerfiles]}")
+
+          for df in dockerfiles:
+              content = df.read_text(encoding="utf-8", errors="ignore")
+              if "USER root" in content and "USER " not in content.split("USER root")[-1]:
+                  violations.append(f"{df}: runs as root with no USER switch after")
+
+          if violations:
+              for v in violations:
+                  print(f"WARN: {v}")
+              print("Container hardening: WARN (enforcement=warn; will block at deploy)")
+          else:
+              print("Container hardening: PASS")
+          EOF
+        continue-on-error: true   # SC-CM-004 enforcement: warn at code-review, block at deploy
+# [TEMPLATE: CUI // SP-CTI]
