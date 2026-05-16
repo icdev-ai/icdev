@@ -606,12 +606,12 @@ Generate only the requirements block. No preamble, no explanations."""
             if req_type not in all_types:
                 req_type = "functional"
 
-            req_id = f"req-boost-{session_id[:8]}-{len(added)}"
+            req_id = f"req-boost-{uuid.uuid4().hex[:12]}"
             conn.execute(
                 """INSERT INTO intake_requirements
                    (id, session_id, source_turn, requirement_type, raw_text,
                     acceptance_criteria, classification, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'deferred', ?)""",
                 (req_id, session_id, turn_number, req_type, req_text,
                  criteria, classification, now),
             )

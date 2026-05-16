@@ -2001,6 +2001,20 @@ CREATE TABLE IF NOT EXISTS cross_agency_transfers (
 );
 CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
 CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
+
+-- IL5 data ingestion log (30-second display SLA, CUI/IL5)
+CREATE TABLE IF NOT EXISTS il5_ingestion_log (
+    id                  TEXT PRIMARY KEY,
+    source_id           TEXT NOT NULL,
+    content_hash        TEXT NOT NULL,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    impact_level        TEXT NOT NULL DEFAULT 'IL5',
+    ingested_at         TEXT NOT NULL,
+    source_published_at TEXT,
+    display_latency_s   REAL,
+    sla_met             INTEGER,
+    metadata            TEXT NOT NULL DEFAULT '{}'
+);
 """
 
 # ---------------------------------------------------------------------------

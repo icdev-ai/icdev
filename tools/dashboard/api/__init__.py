@@ -247,6 +247,9 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.canvas_projects import canvas_projects_api
     _mount_inline(canvas_projects_api)   # inline routes: /api/canvas-projects/*
 
+    from tools.dashboard.api.il5 import il5_api
+    _mount(il5_api, v1_prefix="/api/v1/il5", legacy_prefix="/api/il5")
+
     from tools.dashboard.api.writeguard import writeguard_api
     _mount(writeguard_api, v1_prefix="/api/v1/writeguard")
 

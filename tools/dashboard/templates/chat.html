@@ -427,6 +427,12 @@
                 <div id="ai-boost-status" style="font-size:0.74rem;color:var(--text-muted);margin-top:4px;display:none;"></div>
             </div>
 
+            <!-- Pre-export review -->
+            <div id="pre-export-actions" style="display:none;margin-bottom:8px;">
+                <button class="btn btn-secondary" style="width:100%;font-size:0.8rem;padding:6px 10px;margin-bottom:4px;" onclick="ICDEV.chatViewRequirements()">&#x1F441; View Requirements</button>
+                <button class="btn btn-secondary" style="width:100%;font-size:0.8rem;padding:6px 10px;" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
+            </div>
+
             <div id="chat-actions" class="chat-actions">
                 <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
                 <button class="btn btn-warning btn-sm" id="force-build-btn" style="display:none;margin-top:4px;" onclick="ICDEV.chatForceStartBuild()" title="Start building below the 70% readiness threshold">&#x26A0; Start Building Now</button>

@@ -925,6 +925,7 @@
 .build-phase-connector-active { background: var(--accent-blue); }
 .build-phase-icon-pulse { animation: iconPulse 1s ease-in-out infinite; }
 @keyframes iconPulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+@keyframes spin { to { transform: rotate(360deg); } }
 .build-phase-text { display: flex; flex-direction: column; }
 .build-phase-name { font-weight: 500; }
 .build-phase-detail { font-size: 0.7rem; color: var(--text-muted); }

@@ -1040,6 +1040,8 @@
             forceBtn.style.display = (overall > 0 && overall < 0.7 && hasReqs) ? 'block' : 'none';
             forceBtn.title = 'Readiness: ' + Math.round(overall * 100) + '% — recommended threshold is 70%';
         }
+        var preExport = document.getElementById('pre-export-actions');
+        if (preExport) preExport.style.display = hasReqs ? 'block' : 'none';
         if (boostSection) {
             boostSection.style.display = (overall < 0.7) ? 'block' : 'none';
         }
@@ -1254,7 +1256,7 @@
                 return;
             }
             var added = data.added || 0;
-            var newPct = data.new_score ? Math.round(data.new_score * 100) : null;
+            var newPct = data.new_score != null ? Math.round(data.new_score * 100) : null;
             var msg = added + ' requirement' + (added !== 1 ? 's' : '') + ' generated';
             if (data.missing_types_filled && data.missing_types_filled.length > 0) {
                 msg += ' covering: ' + data.missing_types_filled.join(', ');
@@ -1635,6 +1637,8 @@
             if (panel) panel.style.display = 'block';
             var exportBtn = document.getElementById('export-btn');
             if (exportBtn) exportBtn.style.display = 'none';
+            var preExport = document.getElementById('pre-export-actions');
+            if (preExport) preExport.style.display = 'none';
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Export error: ' + err.message }); });
     }
@@ -1655,20 +1659,42 @@
 
     function chatRunSimulation() {
         if (!_activeIntakeSessionId) return;
-        appendMessage({ role: 'system', content: 'Generating COAs with simulation...' });
+        var thinkingId = _appendThinkingBubble('Generating COAs with simulation...');
         fetch(INTAKE_API + '/coas/' + _activeIntakeSessionId + '/generate', { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            _removeThinkingBubble(thinkingId);
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             var count = data.coas ? data.coas.length : 0;
             appendMessage({ role: 'system', content: count + ' COAs generated. Select one in the sidebar.' });
             if (data.coas) renderCoaCards(data.coas);
         })
-        .catch(function (err) { appendMessage({ role: 'system', content: 'Simulation error: ' + err.message }); });
+        .catch(function (err) { _removeThinkingBubble(thinkingId); appendMessage({ role: 'system', content: 'Simulation error: ' + err.message }); });
     }
 
     function _escHtml(s) {
         return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function _appendThinkingBubble(label) {
+        var id = 'thinking-' + Date.now();
+        var stream = document.getElementById('message-stream');
+        if (stream) {
+            var div = document.createElement('div');
+            div.id = id;
+            div.className = 'chat-msg chat-msg-system';
+            div.innerHTML = '<div class="chat-msg-content" style="opacity:0.7;">'
+                + '<span style="display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.2);border-top-color:#4a90d9;border-radius:50%;animation:spin 1s linear infinite;margin-right:6px;vertical-align:middle;"></span>'
+                + _escHtml(label)
+                + '</div>';
+            stream.appendChild(div);
+            stream.scrollTop = stream.scrollHeight;
+        }
+        return id;
+    }
+    function _removeThinkingBubble(id) {
+        var el = document.getElementById(id);
+        if (el) el.remove();
     }
 
     function _buildReqsTable(reqs) {
@@ -1731,10 +1757,11 @@
 
     function chatGeneratePRD() {
         if (!_activeIntakeSessionId) return;
-        appendMessage({ role: 'system', content: 'Generating PRD...' });
+        var thinkingId = _appendThinkingBubble('Generating PRD...');
         fetch(INTAKE_API + '/prd/' + _activeIntakeSessionId)
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            _removeThinkingBubble(thinkingId);
             if (data.error) { appendMessage({ role: 'system', content: 'Error generating PRD: ' + data.error }); return; }
             var md = data.prd_markdown || '';
             if (!md) { appendMessage({ role: 'system', content: 'PRD generated but empty — add more requirements first.' }); return; }
@@ -1778,15 +1805,16 @@
                 appendMessage({ role: 'system', content: 'PRD downloaded.' });
             }
         })
-        .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
+        .catch(function (err) { _removeThinkingBubble(thinkingId); appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
     }
 
     function chatValidatePRD() {
         if (!_activeIntakeSessionId) return;
-        appendMessage({ role: 'system', content: 'Running PRD quality validation (6 checks)...' });
+        var thinkingId = _appendThinkingBubble('Running PRD quality validation (6 checks)...');
         fetch(INTAKE_API + '/prd/' + _activeIntakeSessionId + '/validate')
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            _removeThinkingBubble(thinkingId);
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             var overall = (data.overall || 'unknown').toUpperCase();
             var score = data.overall_score || 0;
@@ -1801,7 +1829,7 @@
             }
             appendMessage({ role: 'system', content: lines.join('\n') });
         })
-        .catch(function (err) { appendMessage({ role: 'system', content: 'Validation error: ' + err.message }); });
+        .catch(function (err) { _removeThinkingBubble(thinkingId); appendMessage({ role: 'system', content: 'Validation error: ' + err.message }); });
     }
 
     // ===================================================================
