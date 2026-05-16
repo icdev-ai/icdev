@@ -1,0 +1,39 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ IaC Tools — Terraform + Ansible (Combined)
+# Pulls Terraform from the official HashiCorp image; adds Ansible via pip.
+# Run on-demand via: docker compose run --rm iac-tools terraform ...
+#                    docker compose run --rm iac-tools ansible-playbook ...
+
+FROM hashicorp/terraform:latest AS terraform-source
+
+FROM python:3.12-alpine
+
+LABEL classification="CUI" \
+      dissemination_control="SP-CTI" \
+      originator="ICDEV" \
+      description="Combined IaC toolchain — Terraform (latest) + Ansible (latest)"
+
+# Copy Terraform binary from official image
+COPY --from=terraform-source /bin/terraform /usr/local/bin/terraform
+
+# Ansible + common IaC dependencies
+RUN apk add --no-cache \
+        openssh-client \
+        sshpass \
+        git \
+        curl \
+        bash \
+    && pip install --no-cache-dir \
+        ansible \
+        boto3 \
+        botocore \
+    && ansible --version \
+    && terraform version
+
+# Non-root user
+RUN addgroup -g 1001 iac && adduser -D -u 1001 -G iac iac
+
+WORKDIR /workspace
+USER iac
+
+ENTRYPOINT ["/bin/bash"]
