@@ -1,111 +1,119 @@
 {% extends "base.html" %}
-{# CUI // SP-CTI — Cache Savings Dashboard #}
-{# NIST 800-53: SC-28, AU-12, SA-11 #}
+{# CUI // SP-CTI — Cache Savings Dashboard (D-CACHE-VIS-1) #}
+{# NIST 800-53: SC-28 (Protection at Rest), AU-12 (Audit Record Generation), SA-11 (Developer Testing) #}
 
 {% block title %}Cache Savings — ICDEV™{% endblock %}
 
+{% set iqe_canvas    = "cache_savings" %}
+{% set iqe_api_route = "/api/core/iqe-query" %}
+{% set iqe_title     = "Query Cache Stats" %}
+{% set iqe_examples  = [
+    {"label": "Hit rate by function",    "query": "SELECT function, hit_rate_pct FROM cache.stats ORDER BY hit_rate_pct DESC"},
+    {"label": "Top functions by hits",   "query": "SELECT function, total_hits, avoided_calls FROM cache.stats ORDER BY total_hits DESC LIMIT 10"},
+    {"label": "Cost savings breakdown",  "query": "SELECT function, cost_usd_saved FROM cache.stats ORDER BY cost_usd_saved DESC"},
+] %}
+
 {% block content %}
-<div class="container-fluid py-4">
-  <div class="d-flex align-items-center mb-4">
-    <h2 class="me-3 mb-0">
-      <i class="bi bi-lightning-charge-fill text-warning"></i>
-      Cache Savings Dashboard
-    </h2>
-    <span class="badge bg-secondary">Last {{ stats.window_hours }}h</span>
+<div style="padding: 20px 24px;">
+
+  <!-- Header -->
+  <div style="display:flex; align-items:center; gap:12px; margin-bottom:24px;">
+    <span style="font-size:22px; font-weight:700; color:var(--text-primary);">Cache Savings</span>
+    <span style="font-size:12px; padding:3px 10px; background:{% if stats.enabled %}#15803d{% else %}#7f1d1d{% endif %}; color:#fff; border-radius:4px; font-weight:600;">
+      {{ "ENABLED" if stats.enabled else "DISABLED" }}
+    </span>
+    <span style="font-size:12px; padding:3px 10px; background:var(--bg-card); border:1px solid var(--border); color:var(--text-dim); border-radius:4px;">
+      backend: {{ stats.backend }}
+    </span>
+    <a href="/api/cache-savings/stats" target="_blank" style="margin-left:auto; font-size:12px; color:var(--accent-blue-light);">JSON API ↗</a>
   </div>
 
-  <!-- KPI Cards -->
-  <div class="row g-3 mb-4">
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body text-center">
-          <div class="fs-2 fw-bold text-success">{{ stats.hit_rate_pct|round(1) }}%</div>
-          <div class="text-muted small">Cache Hit Rate</div>
-          <div class="progress mt-2" style="height:6px">
-            <div class="progress-bar bg-success" style="width:{{ stats.hit_rate_pct }}%"></div>
-          </div>
-        </div>
+  <!-- KPI tiles -->
+  <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px,1fr)); gap:16px; margin-bottom:24px;">
+
+    <div class="card" style="padding:18px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:#22c55e;">{{ stats.summary.hit_rate_pct|round(1) }}%</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Cache Hit Rate</div>
+      <div style="height:4px; background:var(--border); border-radius:2px; margin-top:8px;">
+        <div style="height:4px; background:#22c55e; border-radius:2px; width:{{ [stats.summary.hit_rate_pct, 100]|min }}%;"></div>
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body text-center">
-          <div class="fs-2 fw-bold text-primary">{{ "{:,}".format(stats.hit_count) }}</div>
-          <div class="text-muted small">Cache Hits</div>
-          <div class="text-muted small mt-1">{{ "{:,}".format(stats.miss_count) }} misses</div>
-        </div>
+    <div class="card" style="padding:18px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:var(--accent-blue-light);">{{ "{:,}".format(stats.summary.total_entries) }}</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Cached Entries</div>
+      <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">{{ "{:,}".format(stats.summary.total_hits) }} total hits</div>
+    </div>
+
+    <div class="card" style="padding:18px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:#818cf8;">{{ "{:,}".format(stats.summary.cache_read_tokens) }}</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Context Cache Reads</div>
+      <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">{{ "{:,}".format(stats.summary.cache_write_tokens) }} written</div>
+    </div>
+
+    <div class="card" style="padding:18px; text-align:center;">
+      <div style="font-size:28px; font-weight:700; color:#f59e0b;">${{ "%.4f"|format(stats.summary.total_usd_saved) }}</div>
+      <div style="font-size:12px; color:var(--text-dim); margin-top:4px;">Estimated Savings (USD)</div>
+      <div style="font-size:11px; color:var(--text-dim); margin-top:4px;">
+        resp: ${{ "%.4f"|format(stats.summary.resp_cache_usd_saved) }} +
+        ctx: ${{ "%.4f"|format(stats.summary.context_cache_usd_saved) }}
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body text-center">
-          <div class="fs-2 fw-bold text-info">{{ "{:,}".format(stats.tokens_saved) }}</div>
-          <div class="text-muted small">Tokens Saved</div>
-          <div class="text-muted small mt-1">via cache reads</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-3">
-      <div class="card shadow-sm border-0 h-100">
-        <div class="card-body text-center">
-          <div class="fs-2 fw-bold text-warning">${{ "%.4f"|format(stats.cost_usd_saved) }}</div>
-          <div class="text-muted small">Estimated Cost Savings (USD)</div>
-          <div class="text-muted small mt-1">blended cached-read pricing</div>
-        </div>
-      </div>
-    </div>
   </div>
 
-  <!-- Detail Table -->
-  <div class="card shadow-sm border-0">
-    <div class="card-header fw-semibold">
-      Cache Performance Summary
+  <!-- Per-function breakdown -->
+  {% if stats.by_function %}
+  <div class="card" style="margin-bottom:24px;">
+    <div class="card-label" style="padding:14px 18px; border-bottom:1px solid var(--border); font-weight:600;">
+      By Function
     </div>
-    <div class="card-body p-0">
-      <table class="table table-sm table-hover mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Metric</th>
-            <th class="text-end">Value</th>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <thead>
+          <tr style="background:var(--bg-hover);">
+            <th style="padding:8px 14px; text-align:left; color:var(--text-dim); font-weight:500;">Function</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Entries</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Hit Rate</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Avoided Calls</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Read Tokens</th>
+            <th style="padding:8px 14px; text-align:right; color:var(--text-dim); font-weight:500;">Cost Saved</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Hit Rate</td>
-            <td class="text-end fw-bold text-success">{{ stats.hit_rate_pct }}%</td>
+          {% for fn in stats.by_function %}
+          <tr style="border-top:1px solid var(--border);">
+            <td style="padding:8px 14px; color:var(--text-primary); font-family:monospace; font-size:12px;">{{ fn.function }}</td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(fn.total_entries) }}</td>
+            <td style="padding:8px 14px; text-align:right;">
+              <span style="color:{% if fn.hit_rate_pct >= 50 %}#22c55e{% elif fn.hit_rate_pct >= 20 %}#f59e0b{% else %}#ef4444{% endif %}; font-weight:600;">
+                {{ fn.hit_rate_pct }}%
+              </span>
+            </td>
+            <td style="padding:8px 14px; text-align:right; color:var(--text-dim);">{{ "{:,}".format(fn.avoided_calls) }}</td>
+            <td style="padding:8px 14px; text-align:right; color:#818cf8;">{{ "{:,}".format(fn.cache_read_tokens) }}</td>
+            <td style="padding:8px 14px; text-align:right; color:#f59e0b; font-weight:600;">${{ "%.4f"|format(fn.cost_usd_saved) }}</td>
           </tr>
-          <tr>
-            <td>Total Cache Hits</td>
-            <td class="text-end">{{ "{:,}".format(stats.hit_count) }}</td>
-          </tr>
-          <tr>
-            <td>Total Cache Misses</td>
-            <td class="text-end">{{ "{:,}".format(stats.miss_count) }}</td>
-          </tr>
-          <tr>
-            <td>Tokens Saved (cache reads)</td>
-            <td class="text-end">{{ "{:,}".format(stats.tokens_saved) }}</td>
-          </tr>
-          <tr>
-            <td>Estimated Cost Savings</td>
-            <td class="text-end text-warning fw-bold">${{ "%.6f"|format(stats.cost_usd_saved) }}</td>
-          </tr>
-          <tr>
-            <td>Look-back Window</td>
-            <td class="text-end">{{ stats.window_hours }} hours</td>
-          </tr>
+          {% endfor %}
         </tbody>
       </table>
     </div>
   </div>
-
-  <div class="mt-3 text-muted small">
-    Savings estimated using blended cached-input read pricing.
-    Tokens saved = sum of <code>cache_read_input_tokens</code> from all cached LLM responses.
-    Includes Anthropic prompt caching and OpenAI prefix caching.
+  {% else %}
+  <div class="card" style="padding:32px; text-align:center; color:var(--text-dim); margin-bottom:24px;">
+    No cached entries yet. Cache activates after the first LLM invocation on an enabled function.
   </div>
+  {% endif %}
+
+  <!-- IQE Query Widget -->
+  {% include "includes/iqe_query_widget.html" %}
+
+  <div style="margin-top:16px; font-size:11px; color:var(--text-dim);">
+    Pricing model: Anthropic claude-sonnet-4-6 — Input $3/MTok · Output $15/MTok · Cache write $3.75/MTok · Cache read $0.30/MTok.
+    Context cache savings = read_tokens × ($3.00 − $0.30)/MTok minus write premium.
+    Response cache savings = avoided_calls × (input_cost + output_cost) per entry.
+    NIST 800-53: SC-28, AU-12, SA-11.
+  </div>
+
 </div>
 {% endblock %}
