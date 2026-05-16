@@ -464,4 +464,5 @@ ALL_BLUEPRINTS = [
     ("cpmp_api", "/api/v1/cpmp", True),
     ("proposal_genesis_api", "/api/v1/proposal-genesis", True),
     ("jise_api", "/api/v1/jise", False),
+    ("il5_api", "/api/v1/il5", False),
 ]
