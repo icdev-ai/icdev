@@ -37,6 +37,13 @@ ONTOLOGY_SOURCES = [
     Path("tools/qdc_canvas/constants.py"),
     Path("tools/aiml_canvas/constants.py"),
     Path("tools/mission_canvas/constants.py"),
+    # Additional canvas / tool ontology maps
+    Path("tools/ai_observatory/constants.py"),
+    Path("tools/govlift/constants.py"),
+    Path("tools/system_graph/constants.py"),
+    Path("tools/gameday/constants.py"),
+    Path("tools/ttx/constants.py"),
+    Path("tools/workflow_hitl/constants.py"),
 ]
 
 
@@ -69,6 +76,17 @@ def validate_catalog() -> dict[str, Any]:
         valid_prefixes = set(namespaces.keys())
 
         for name, obj in inspect.getmembers(mod):
+            # Handle flat string-map format: GAMEDAY_ONTOLOGY_MAP, INFRA_ONTOLOGY_MAP, etc.
+            if name.endswith("_ONTOLOGY_MAP") and isinstance(obj, dict):
+                domain = name.replace("_ONTOLOGY_MAP", "").lower()
+                stats["domains"].add(domain)
+                for key, val in obj.items():
+                    if isinstance(val, str) and ":" in val:
+                        stats["concepts"] += 1
+                        prefix = val.split(":")[0] if not val.startswith("http") else ""
+                        if prefix:
+                            stats["prefixes"].add(prefix)
+                continue
             if name.endswith("_ONTOLOGY") and isinstance(obj, dict):
                 domain = name.replace("_ONTOLOGY", "").lower()
                 stats["domains"].add(domain)

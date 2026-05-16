@@ -118,3 +118,14 @@ CYBER_SCENARIOS = [
         "compliance_brief": "Assess insider threat program controls against NIST 800-53 PS-3, AT-3, AU-12, SI-12.",
     },
 ]
+
+# Ontology mappings for the Knowledge Graph ontology bridge
+GAMEDAY_ONTOLOGY_MAP: dict[str, str] = {
+    "recon_findings":    "https://icdev.dev/ontology/security#ReconFindings",
+    "ttp_analysis":      "https://icdev.dev/ontology/security#TTPAnalysis",
+    "exploit_chain":     "https://icdev.dev/ontology/security#ExploitChain",
+    "attack_plan":       "https://icdev.dev/ontology/security#AttackPlan",
+    "threat_detection":  "https://icdev.dev/ontology/security#ThreatDetection",
+    "coa_recommendation":"https://icdev.dev/ontology/strategy#COARecommendation",
+    "incident_response": "https://icdev.dev/ontology/security#IncidentResponse",
+}

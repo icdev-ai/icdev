@@ -213,7 +213,7 @@ def run() -> None:
         # Verify persisted in chat_intake_sessions
         conn = _conn()
         row = conn.execute(
-            "SELECT session_id FROM chat_intake_sessions WHERE context_id = ?",
+            "SELECT session_id FROM chat_intake_sessions WHERE context_id = %s",
             (CONTEXT_ID,),
         ).fetchone()
         conn.close()
@@ -425,43 +425,71 @@ def run() -> None:
         _print_final(results, start_ts)
         return
 
-    # -- STEP 8: HITL Reviewer submits feedback (approve) ---------------------
+    # -- STEP 8: HITL Reviewer submits feedback (approve all stages) ----------
     _print_step(8, "HITL Reviewer approves decomposed requirements")
     step = {"step": 8, "name": "HITL approval submission"}
     try:
         from tools.workflow_hitl import feedback as wf_feedback
 
-        _print_info("Submitting approval as 'mcip-requirements-analyst'...")
-        _print_info(f"  Decision: APPROVE")
-        _print_info(f"  Rationale: All {decomp_count} decomposed items meet MCIP acceptance criteria")
+        _print_info("Approving all HITL stages as 'mcip-requirements-analyst'...")
 
-        feedback_id = wf_feedback.submit_feedback(
-            approval_id=approval_id,
-            decision="approve",
-            submitted_by="mcip-requirements-analyst",
-            rating=4,
-            comments=(
-                f"Reviewed {decomp_count} SAFe items decomposed from {reqs_extracted} "
-                f"requirements for the MCIP FICTITIOUS scenario. "
-                "Stories are well-scoped, BDD criteria are present, WSJF estimates are reasonable. "
-                "Approving for Kanban promotion."
-            ),
-            feedback_types=["completeness", "clarity", "testability"],
-        )
+        feedback_ids = []
+        # Loop: approve each pending stage until the workflow completes
+        max_stages = 10
+        for stage_attempt in range(max_stages):
+            conn = _conn()
+            pending = conn.execute(
+                "SELECT * FROM wf_approvals WHERE instance_id=%s AND status='pending' LIMIT 1",
+                (instance_id,),
+            ).fetchone()
+            conn.close()
 
-        assert_true("Feedback ID returned", bool(feedback_id))
-        _print_info(f"  Feedback ID: {feedback_id}")
+            if not pending:
+                _print_info(f"  No more pending approvals after {stage_attempt} stage(s)")
+                break
 
-        # Verify approval status updated
+            current_stage = pending["stage"]
+            _print_info(f"  Stage {stage_attempt + 1}: approving '{current_stage}'")
+
+            fid = wf_feedback.submit_feedback(
+                approval_id=pending["id"],
+                decision="approve",
+                submitted_by="mcip-requirements-analyst",
+                rating=4,
+                comments=(
+                    f"[{current_stage.upper()}] Reviewed {decomp_count} SAFe items "
+                    f"decomposed from {reqs_extracted} requirements for the MCIP "
+                    "FICTITIOUS scenario. Approving for Kanban promotion."
+                ),
+                feedback_types=["completeness", "clarity", "testability"],
+            )
+            feedback_ids.append(fid)
+            _print_info(f"    Feedback ID: {fid}")
+
+            # Check if workflow is now complete
+            conn = _conn()
+            inst_status = conn.execute(
+                "SELECT status FROM wf_instances WHERE id=%s", (instance_id,)
+            ).fetchone()
+            conn.close()
+            if inst_status and inst_status["status"] == "approved":
+                _print_info(f"  Workflow fully approved after '{current_stage}' stage")
+                break
+
+        assert_true("At least one feedback ID returned", len(feedback_ids) >= 1)
+        _print_info(f"  Total feedback submissions: {len(feedback_ids)}")
+
+        # Verify final approval status
         conn = _conn()
-        updated = conn.execute(
-            "SELECT status FROM wf_approvals WHERE id=%s", (approval_id,)
+        inst_row = conn.execute(
+            "SELECT status, current_stage FROM wf_instances WHERE id=%s", (instance_id,)
         ).fetchone()
-        _print_info(f"  Approval status: {updated['status']}")
         conn.close()
+        _print_info(f"  Instance status: {inst_row['status']}, stage: {inst_row['current_stage']}")
 
         step["status"] = "PASS"
-        step["feedback_id"] = feedback_id
+        step["feedback_id"] = feedback_ids[-1] if feedback_ids else None
+        step["stages_approved"] = len(feedback_ids)
         results["passed"] += 1
     except Exception as exc:
         step["status"] = "FAIL"
