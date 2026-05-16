@@ -108,6 +108,22 @@ try:
 except ImportError:
     _HAS_ELICITATION = False
 
+try:
+    from tools.security.column_security import apply_column_policy
+    from tools.security.field_security import apply_field_policy
+    _HAS_FIELD_SECURITY = True
+except ImportError:
+    _HAS_FIELD_SECURITY = False
+    def apply_column_policy(table, role, row): return row  # noqa: E731
+    def apply_field_policy(schema, role, data): return data  # noqa: E731
+
+try:
+    from tools.requirements.ontology_enricher import enrich_requirements as _enrich_reqs
+    _HAS_ONTOLOGY = True
+except ImportError:
+    _HAS_ONTOLOGY = False
+    def _enrich_reqs(reqs, session_context=None): return reqs  # noqa: E731
+
 # ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------

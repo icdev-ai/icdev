@@ -162,6 +162,17 @@ column_policies:
     columns:
       billing_info: "null"
       stripe_customer_id: "null"
+  - table: intake_sessions
+    role: viewer
+    columns:
+      customer_name: redact
+      customer_org: redact
+  - table: intake_requirements
+    role: viewer
+    columns:
+      acceptance_criteria: truncate
+      gaps: "null"
+      ambiguities: "null"
 
 # ---------------------------------------------------------------------------
 # Field-Level Security — API response field filtering
@@ -186,6 +197,17 @@ field_policies:
       billing_info: "null"
       stripe_customer_id: "null"
       admin_notes: "null"
+  - schema: intake_session
+    role: viewer
+    fields:
+      customer_name: redact
+      customer_org: redact
+  - schema: intake_requirement
+    role: viewer
+    fields:
+      acceptance_criteria: truncate
+      gaps: "null"
+      ambiguities: "null"
 
 # ---------------------------------------------------------------------------
 # Clearance Matrix — numeric ordering for Bell-LaPadula
