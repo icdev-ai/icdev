@@ -2632,6 +2632,27 @@ CREATE TABLE IF NOT EXISTS llm_chain_telemetry (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS mcip_dat_events (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL CHECK(source_type IN ('cable_traffic','unsc_schedule','backchannel_metadata')),
+    content_hash TEXT NOT NULL,
+    sender TEXT NOT NULL DEFAULT 'unknown',
+    recipient TEXT NOT NULL DEFAULT 'unknown',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tension_signal REAL NOT NULL DEFAULT 0.5 CHECK(tension_signal >= 0.0 AND tension_signal <= 1.0),
+    ingested_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mcip_dti_scores (
+    id TEXT PRIMARY KEY,
+    score REAL NOT NULL DEFAULT 0.0,
+    cable_sub REAL NOT NULL DEFAULT 0.0,
+    unsc_sub REAL NOT NULL DEFAULT 0.0,
+    backchannel_sub REAL NOT NULL DEFAULT 0.0,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    computed_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_chain_telemetry_function ON llm_chain_telemetry (function);
 CREATE INDEX IF NOT EXISTS idx_chain_telemetry_created ON llm_chain_telemetry (created_at);
 """
