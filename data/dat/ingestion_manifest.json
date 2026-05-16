@@ -1,0 +1,35 @@
+{
+  "manifest_id": "7647d543-c33b-466e-bd13-f917a50096d6",
+  "run_at": "2026-05-16T06:21:12.633161+00:00",
+  "config_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d1\\args\\dat_config.yaml",
+  "classification": "CUI",
+  "sources": {
+    "state_dept_cables": {
+      "source": "state_dept_cables",
+      "source_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d1\\data\\dat\\state_dept_cables",
+      "status": "ok",
+      "record_count": 20,
+      "files_read": 2,
+      "errors": []
+    },
+    "unsc_schedule": {
+      "source": "unsc_schedule",
+      "source_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d1\\data\\dat\\unsc_schedule",
+      "status": "ok",
+      "record_count": 18,
+      "files_read": 2,
+      "errors": []
+    },
+    "backchannel_logs": {
+      "source": "backchannel_logs",
+      "source_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d1\\data\\dat\\backchannel_logs",
+      "status": "ok",
+      "record_count": 28,
+      "files_read": 2,
+      "errors": []
+    }
+  },
+  "total_records": 66,
+  "status": "ok",
+  "manifest_path": "C:\\AI\\ICDev\\.tmp\\worktrees\\task-07b5fecc70-d1\\data\\dat\\ingestion_manifest.json"
+}
