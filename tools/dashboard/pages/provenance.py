@@ -194,7 +194,6 @@ def verify_entry():
     if not registry_id:
         return jsonify({"error": "registry_id required"}), 400
 
-    # Delegate to provenance_verifier
     try:
         from tools.blockchain.provenance_verifier import verify_citation
 
@@ -202,3 +201,63 @@ def verify_entry():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@provenance_api.route("/blockchain-status", methods=["GET"])
+def blockchain_status():
+    """GET /api/provenance/blockchain-status — GovChain queue depth and anchor stats."""
+    conn = _get_db()
+    try:
+        result = {
+            "pending_queue_depth": 0,
+            "total_anchored": 0,
+            "total_unanchored": 0,
+            "anchor_pct": 0.0,
+            "recent_tx_ids": [],
+            "fabric_enabled": False,
+        }
+
+        # Pending queue
+        if _table_exists(conn, "govchain_pending_operations"):
+            row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM govchain_pending_operations WHERE status='pending'"
+            ).fetchone()
+            result["pending_queue_depth"] = row["cnt"] if row else 0
+
+            flushed = conn.execute(
+                "SELECT COUNT(*) as cnt FROM govchain_pending_operations WHERE status='flushed'"
+            ).fetchone()
+            result["total_flushed"] = flushed["cnt"] if flushed else 0
+
+        # Anchor stats from registry
+        if _table_exists(conn, "source_citation_registry"):
+            totals = conn.execute(
+                "SELECT COUNT(*) as total, SUM(CASE WHEN blockchain_tx_id IS NOT NULL THEN 1 ELSE 0 END) as anchored FROM source_citation_registry"
+            ).fetchone()
+            if totals and totals["total"]:
+                result["total_anchored"] = totals["anchored"] or 0
+                total = totals["total"]
+                result["total_unanchored"] = total - result["total_anchored"]
+                result["anchor_pct"] = round(result["total_anchored"] / total * 100, 1)
+
+            # 5 most recent TX IDs
+            recent = conn.execute(
+                "SELECT id, blockchain_tx_id, citation_type, created_at FROM source_citation_registry WHERE blockchain_tx_id IS NOT NULL ORDER BY created_at DESC LIMIT 5"
+            ).fetchall()
+            result["recent_tx_ids"] = [
+                {"registry_id": r["id"], "tx_id": r["blockchain_tx_id"], "citation_type": r["citation_type"], "created_at": r["created_at"]}
+                for r in recent
+            ]
+
+        # Fabric enabled status
+        try:
+            from tools.blockchain.blockchain_config import get_config
+            cfg = get_config()
+            result["fabric_enabled"] = cfg.is_enabled()
+            result["air_gapped"] = cfg.is_air_gapped()
+        except Exception:
+            pass
+
+        return jsonify(result)
+    finally:
+        conn.close()
