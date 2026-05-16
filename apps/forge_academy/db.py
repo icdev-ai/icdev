@@ -1125,11 +1125,8 @@ def get_user_competencies(user_id: int) -> list[dict]:
 
 
 def seed_mission_ontology_mappings() -> None:
-<<<<<<< HEAD
-    """Seed ontology mappings for all builtin missions in a single transaction."""
-=======
+def seed_mission_ontology_mappings() -> None:
     """Seed ontology mappings for all builtin missions."""
->>>>>>> 2b5fb9d97be87c13ccf07b72285c2429c0e29407
     from .ontology import build_mission_ontology_id, build_step_ontology_id
     from .content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS
     conn = get_connection()
@@ -1145,20 +1142,6 @@ def seed_mission_ontology_mappings() -> None:
             title=m.get("title", ""),
             tier=m.get("tier", 1),
         )
-<<<<<<< HEAD
-        conn.execute(
-            """INSERT INTO fa_mission_ontology
-               (mission_id, ontology_id, mission_class, topic_class, competency_class, prereq_ontology_paths_json)
-               VALUES (?, ?, ?, ?, ?, ?)
-               ON CONFLICT(mission_id) DO UPDATE SET
-                 ontology_id=excluded.ontology_id,
-                 mission_class=excluded.mission_class,
-                 topic_class=excluded.topic_class,
-                 competency_class=excluded.competency_class,
-                 prereq_ontology_paths_json=excluded.prereq_ontology_paths_json""",
-            (mission_id, onto["ontology_id"], onto["mission_class"], onto["topic_class"],
-             onto["competency_class"], json.dumps(onto["prereq_ontology_paths"] or [])),
-=======
         upsert_mission_ontology(
             mission_id=mission_id,
             ontology_id=onto["ontology_id"],
@@ -1166,7 +1149,6 @@ def seed_mission_ontology_mappings() -> None:
             topic_class=onto["topic_class"],
             competency_class=onto["competency_class"],
             prereq_paths=onto["prereq_ontology_paths"],
->>>>>>> 2b5fb9d97be87c13ccf07b72285c2429c0e29407
         )
         # Seed step ontologies
         steps = BUILTIN_STEPS.get(m["slug"], [])
@@ -1178,22 +1160,9 @@ def seed_mission_ontology_mappings() -> None:
             if not step_row:
                 continue
             step_onto = build_step_ontology_id(m["slug"], step["step_num"], step.get("step_type", "configure"))
-<<<<<<< HEAD
-            conn.execute(
-                """INSERT INTO fa_step_ontology
-                   (step_id, ontology_id, step_class)
-                   VALUES (?, ?, ?)
-                   ON CONFLICT(step_id) DO UPDATE SET
-                     ontology_id=excluded.ontology_id,
-                     step_class=excluded.step_class""",
-                (step_row["id"], step_onto["ontology_id"], step_onto["step_class"]),
-            )
-    conn.commit()
-=======
             upsert_step_ontology(
                 step_id=step_row["id"],
                 ontology_id=step_onto["ontology_id"],
                 step_class=step_onto["step_class"],
             )
->>>>>>> 2b5fb9d97be87c13ccf07b72285c2429c0e29407
     _log.info("FORGE Academy: seeded ontology mappings")
