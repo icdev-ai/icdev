@@ -36,6 +36,38 @@ def step_system_operational(context):
 # When steps
 # ---------------------------------------------------------------------------
 
+_IL5_ARTIFACTS = [
+    'tools/il5/ingestion.py',
+]
+
+_IL5_SLA_SECONDS = 30
+
+
+@when('Support IL5 data ingestion and display within 30 seconds of source publication')
+def step_il5_ingestion_sla(context):
+    context.missing = [
+        a for a in _IL5_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+    if not context.missing:
+        # Verify the SLA constant matches the requirement
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'il5_ingestion',
+            os.path.join(context.project_root, 'tools', 'il5', 'ingestion.py'),
+        )
+        mod = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(mod)
+            if getattr(mod, 'SLA_SECONDS', None) != _IL5_SLA_SECONDS:
+                context.missing.append(
+                    f'SLA_SECONDS mismatch: expected {_IL5_SLA_SECONDS}, '
+                    f'got {getattr(mod, "SLA_SECONDS", None)}'
+                )
+        except Exception as exc:
+            context.missing.append(f'il5/ingestion.py import error: {exc}')
+
+
 @when(
     'Infrastructure and platform enablement for functional capabilities. '
     'Covers environment setup, CI/CD pipeline configuration, security '
