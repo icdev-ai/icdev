@@ -148,6 +148,10 @@ ALLOWED_EXTENSIONS = {
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
+    # Bypass classification-level RLS: session_id is the auth token for intake;
+    # without this, the security middleware's default CUI context filters out
+    # Government sessions (classification='IL4'/'IL2') from every SELECT.
+    conn.set_security_context(None)
     return conn
 
 
@@ -491,6 +495,8 @@ def get_intake_session(session_id):
             }
         )
     except Exception as exc:
+        import logging as _logging
+        _logging.getLogger("intake").exception("GET /session/%s failed: %s", session_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
