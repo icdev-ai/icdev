@@ -951,6 +951,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderSandboxTile);
+    window.renderSandboxTile = renderSandboxTile;
 })();
 
 // Oracle Insights tile renderer
@@ -1004,6 +1005,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderOracleTile);
+    window.renderOracleTile = renderOracleTile;
 })();
 
 // MCP Monitor tile renderer
@@ -1049,6 +1051,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderMcpTile);
+    window.renderMcpTile = renderMcpTile;
 })();
 
 // Cache Savings tile renderer
@@ -1080,6 +1083,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderCacheTile);
+    window.renderCacheTile = renderCacheTile;
 })();
 </script>
 

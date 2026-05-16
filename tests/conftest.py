@@ -2764,6 +2764,18 @@ CREATE INDEX IF NOT EXISTS idx_sg_pir_type     ON sg_pir_requirements(pir_type);
 CREATE INDEX IF NOT EXISTS idx_sg_pir_status   ON sg_pir_requirements(status);
 CREATE INDEX IF NOT EXISTS idx_sg_pir_priority ON sg_pir_requirements(collection_priority);
 CREATE INDEX IF NOT EXISTS idx_sg_pir_created  ON sg_pir_requirements(created_at);
+
+CREATE TABLE IF NOT EXISTS siem_delivery_log (
+    id              TEXT PRIMARY KEY,
+    alert_title     TEXT,
+    severity        TEXT,
+    siem_endpoint   TEXT,
+    status_code     INTEGER,
+    duration_ms     REAL,
+    sla_met         INTEGER,
+    error           TEXT,
+    delivered_at    TEXT
+);
 """
 
 # ---------------------------------------------------------------------------
