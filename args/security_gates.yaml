@@ -516,6 +516,34 @@ cross_platform:
     require_gitattributes: true
     require_timezone_aware_datetime: true
 
+# URL Scheme Validation Gate (Bandit B310 — urllib_urlopen non-HTTP schemes)
+# Blocks code that passes non-HTTP(S) URLs to urllib.request.urlopen or similar
+# functions, which Bandit flags as B310. file:/, ftp:/, custom URI schemes must
+# not appear in external interface calls without an explicit allowlist exception.
+# Run: python -m bandit -r tools/ --test B310 --severity-level medium --json
+url_scheme_validation:
+  description: "Block non-HTTP(S) schemes in external interface calls (Bandit B310)"
+  blocking:
+    - b310_non_http_scheme_in_urlopen         # file:/, ftp:/, data:, custom:// in urlopen calls
+    - file_scheme_in_external_call            # file:/ URI reaching external-interface functions
+    - custom_scheme_without_allowlist         # non-standard URI scheme with no documented exception
+  warning:
+    - ftp_scheme_detected                     # ftp:/ URI — prefer https:/ equivalent
+    - scheme_validation_not_enforced          # urllib call has no scheme pre-check
+  thresholds:
+    permitted_schemes:
+      - http
+      - https
+    max_b310_findings: 0
+    require_scheme_allowlist: true
+    scheme_check_required_for_user_input: true
+  note: >
+    B310 violations are detected by Bandit test B310 (urllib_urlopen).
+    To suppress a single call that is genuinely safe (e.g., test fixtures),
+    add # nosec B310 with a justification comment on the same line.
+    New external-interface modules MUST pre-validate the URL scheme before
+    calling urlopen/requests.get/httpx or any equivalent.
+
 # Endpoint Security Gates (D-EPSEC-2)
 endpoint_security:
   blocking:
@@ -1429,3 +1457,19 @@ gates:
     warn_on: [no_tls, missing_classification]
     tool: tools/mcp/mcp_scanner.py
     nist_controls: [SC-8, AC-3, AU-12]
+
+  - id: URL-SEC-001
+    name: URL Scheme Validation Gate (B310)
+    description: Blocks non-HTTP(S) URI schemes (file:/, ftp:/, custom://) in external interface calls. Detects Bandit B310 — urllib_urlopen called with a scheme outside the http/https allowlist.
+    severity: HIGH
+    block_on:
+      - b310_non_http_scheme_in_urlopen
+      - file_scheme_in_external_call
+      - custom_scheme_without_allowlist
+    warn_on:
+      - ftp_scheme_detected
+      - scheme_validation_not_enforced
+    permitted_schemes: [http, https]
+    tool: "python -m bandit -r tools/ --test B310 --severity-level medium --json"
+    nist_controls: [SI-10, SC-8, SA-11]
+    bandit_test: B310
