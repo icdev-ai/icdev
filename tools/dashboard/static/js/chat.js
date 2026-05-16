@@ -524,14 +524,16 @@
         // Append user message immediately
         appendMessage({ role: 'user', content: content });
 
-        // Show typing indicator
+        // Show animated typing indicator
         var typingId = 'typing-' + Date.now();
         var stream = document.getElementById('message-stream');
         if (stream) {
-            stream.innerHTML += '<div id="' + typingId + '" style="padding: 8px 12px; margin-bottom: 4px; background: var(--bg-secondary); border-radius: 4px;">'
-                + '<div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-blue); margin-bottom: 4px;">Agent</div>'
-                + '<div style="font-size: 0.85rem; opacity: 0.6;">Thinking...</div></div>';
-            stream.scrollTop = stream.scrollHeight;
+            var typingEl = document.createElement('div');
+            typingEl.id = typingId;
+            typingEl.className = 'msg-typing-indicator';
+            typingEl.innerHTML = '<span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span>';
+            stream.appendChild(typingEl);
+            typingEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
 
         fetch(INTAKE_API + '/turn', {
@@ -2433,6 +2435,7 @@
 
         if (btnNew) btnNew.addEventListener('click', function () {
             if (modal) modal.classList.add('chat-modal-overlay--visible');
+            _populateTitleHistory();
         });
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
@@ -2643,14 +2646,67 @@
             }
             var regimeChecks = document.querySelectorAll('.ctx-regime-chip input');
             for (var ri = 0; ri < regimeChecks.length; ri++) regimeChecks[ri].checked = false;
-            // Reset expert panel
+            // Reset expert panel — ON by default
             var mpEnabled = document.getElementById('modal-panel-enabled');
             var mpPersonas = document.getElementById('modal-panel-personas');
-            if (mpEnabled) mpEnabled.checked = false;
-            if (mpPersonas) mpPersonas.style.display = 'none';
+            if (mpEnabled) mpEnabled.checked = true;
+            if (mpPersonas) mpPersonas.style.display = 'flex';
             var mpChips = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]');
-            for (var pi = 0; pi < mpChips.length; pi++) mpChips[pi].checked = mpChips[pi].value === 'developer' || mpChips[pi].value === 'analyst';
+            for (var pi = 0; pi < mpChips.length; pi++) {
+                var isDefault = mpChips[pi].value === 'developer' || mpChips[pi].value === 'analyst';
+                mpChips[pi].checked = isDefault;
+                var mpChipLabel = mpChips[pi].closest('.panel-chip');
+                if (mpChipLabel) mpChipLabel.classList.toggle('panel-chip--active', isDefault);
+            }
             _updateModalForCanvas('intake');
+        }
+
+        // Title history — last 10 titles from localStorage
+        function _saveTitleHistory(title) {
+            if (!title) return;
+            var key = 'icdev_ctx_title_history';
+            var hist = [];
+            try { hist = JSON.parse(localStorage.getItem(key) || '[]'); } catch (e) {}
+            hist = hist.filter(function (t) { return t !== title; });
+            hist.unshift(title);
+            hist = hist.slice(0, 10);
+            localStorage.setItem(key, JSON.stringify(hist));
+        }
+        function _populateTitleHistory() {
+            var dl = document.getElementById('ctx-title-history');
+            if (!dl) return;
+            var hist = [];
+            try { hist = JSON.parse(localStorage.getItem('icdev_ctx_title_history') || '[]'); } catch (e) {}
+            dl.innerHTML = hist.map(function (t) { return '<option value="' + t.replace(/"/g, '&quot;') + '">'; }).join('');
+        }
+
+        // Custom persona — wire the Add button
+        var btnAddPersona = document.getElementById('btn-add-custom-persona');
+        if (btnAddPersona) {
+            btnAddPersona.addEventListener('click', function () {
+                var nameEl   = document.getElementById('ctx-custom-persona-name');
+                var promptEl = document.getElementById('ctx-custom-persona-prompt');
+                var name   = (nameEl   ? nameEl.value   : '').trim();
+                var prompt = (promptEl ? promptEl.value : '').trim();
+                if (!name) return;
+                var container = document.getElementById('ctx-preset-chips');
+                if (!container) return;
+                var chip = document.createElement('button');
+                chip.type = 'button';
+                chip.className = 'ctx-preset-chip ctx-preset-chip--custom';
+                chip.textContent = name;
+                chip.addEventListener('click', function () {
+                    var chips = container.querySelectorAll('.ctx-preset-chip');
+                    for (var ci = 0; ci < chips.length; ci++) chips[ci].classList.remove('ctx-preset-chip--active');
+                    chip.classList.add('ctx-preset-chip--active');
+                    var ta = document.getElementById('new-ctx-prompt');
+                    if (ta) ta.value = prompt;
+                });
+                container.appendChild(chip);
+                chip.click(); // auto-select
+                if (nameEl)   nameEl.value   = '';
+                if (promptEl) promptEl.value = '';
+            });
         }
 
         if (btnCreate) btnCreate.addEventListener('click', function () {
@@ -2660,28 +2716,27 @@
             var canvasMode = canvasSelect ? canvasSelect.value : 'intake';
             var comp = _readCompliance();
             var isIntake = canvasMode === 'intake' && document.getElementById('new-ctx-intake').checked;
+            var finalTitle = title || (canvasMode === 'intake' ? 'Requirements Session' : canvasMode.toUpperCase() + ' Chat');
 
             if (canvasMode !== 'intake') {
-                // Design canvas — append compliance blurb to system prompt
                 var compBlurb = _buildComplianceBlurb(comp.il, comp.regimes);
                 var sysPrompt = (prompt + compBlurb).trim();
-                createContext({ title: title || (canvasMode.toUpperCase() + ' Chat'), agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
+                createContext({ title: finalTitle, agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
                     if (ctx && ctx.context_id) setContextCanvasType(ctx.context_id, canvasMode);
                 });
             } else if (isIntake) {
                 var mpEl = document.getElementById('modal-panel-enabled');
-                var panelEnabled = mpEl ? mpEl.checked : false;
+                var panelEnabled = mpEl ? mpEl.checked : true; // default ON
                 var panelPersonas = [];
-                if (panelEnabled) {
-                    var panelChecks = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:checked');
-                    for (var pci = 0; pci < panelChecks.length; pci++) panelPersonas.push(panelChecks[pci].value);
-                    if (!panelPersonas.length) panelPersonas = ['developer', 'analyst'];
-                }
-                createIntakeContext({ title: title, agent_model: model, classification: comp.il, panelEnabled: panelEnabled, panelPersonas: panelPersonas });
+                var panelChecks = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:checked');
+                for (var pci = 0; pci < panelChecks.length; pci++) panelPersonas.push(panelChecks[pci].value);
+                if (!panelPersonas.length) panelPersonas = ['developer', 'analyst'];
+                createIntakeContext({ title: finalTitle, agent_model: model, classification: comp.il, panelEnabled: panelEnabled, panelPersonas: panelPersonas });
             } else {
                 var compBlurbR = _buildComplianceBlurb(comp.il, comp.regimes);
-                createContext({ title: title, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
+                createContext({ title: finalTitle, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
             }
+            _saveTitleHistory(finalTitle);
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
             _resetModal();
         });
