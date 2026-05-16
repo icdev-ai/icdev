@@ -4,5 +4,6 @@
 # activity. Use: GeoSIGINT analyst review, NIST RA-3 threat indicator tracking.
 
 foreach e in geospatial.eo_signals
-where e.relevance_score > 0.75
+where e.relevance_score > 0.75 or e.cloud_pct > 60
+where e.status != "archived"
 select e.id, e.scene_id, e.satellite, e.aoi_tag, e.sensing_date, e.cloud_pct, e.relevance_score, e.status
