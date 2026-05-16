@@ -21,18 +21,12 @@ Usage::
 
 from __future__ import annotations
 
-import json
 import logging
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.il5.ingestion import (
-    IL5_CLASSIFICATION,
-    IL5_IMPACT_LEVEL,
-    ingest_il5_event,
     get_il5_events,
 )
 

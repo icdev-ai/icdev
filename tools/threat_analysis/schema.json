@@ -1,0 +1,173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ICDEV Threat Analysis Schema",
+  "description": "JSON Schema definitions for ThreatBaseline and IndicatorScore data models used in PIR alerting configuration.",
+  "definitions": {
+    "ScopeLevel": {
+      "type": "string",
+      "enum": ["global", "platform", "tenant", "project", "user"],
+      "description": "Hierarchy of baseline specificity — higher specificity wins during validation."
+    },
+    "SeverityBand": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"],
+      "description": "Operator-defined severity classification for a threshold breach."
+    },
+    "ScoreType": {
+      "type": "string",
+      "enum": ["raw", "normalized", "aggregated"],
+      "description": "How the indicator score was derived."
+    },
+    "ThreatBaseline": {
+      "type": "object",
+      "required": ["id", "indicator_name", "threshold_score", "operator_id"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Primary key."
+        },
+        "indicator_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable indicator key."
+        },
+        "indicator_category": {
+          "type": "string",
+          "default": "general",
+          "description": "Logical grouping, e.g. 'network', 'endpoint'."
+        },
+        "scope": {
+          "$ref": "#/definitions/ScopeLevel",
+          "default": "project",
+          "description": "Specificity level of this baseline."
+        },
+        "scope_id": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Identifier for the scoped entity (optional for global)."
+        },
+        "threshold_score": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Numeric threshold the indicator must not exceed."
+        },
+        "severity_band": {
+          "$ref": "#/definitions/SeverityBand",
+          "default": "medium",
+          "description": "Classification when threshold is breached."
+        },
+        "operator_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "User or system that created the baseline."
+        },
+        "rationale": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Why this threshold was chosen."
+        },
+        "is_active": {
+          "type": "boolean",
+          "default": true,
+          "description": "Inactive baselines are ignored during validation."
+        },
+        "created_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "default": null
+        },
+        "updated_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "default": null
+        }
+      }
+    },
+    "IndicatorScore": {
+      "type": "object",
+      "required": ["id", "indicator_name", "score"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Primary key."
+        },
+        "indicator_name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Indicator key that was observed."
+        },
+        "indicator_category": {
+          "type": "string",
+          "default": "general",
+          "description": "Logical grouping."
+        },
+        "scope": {
+          "$ref": "#/definitions/ScopeLevel",
+          "default": "project",
+          "description": "Scope at which the score was observed."
+        },
+        "scope_id": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Entity ID for the scoped observation."
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Observed numeric score."
+        },
+        "score_type": {
+          "$ref": "#/definitions/ScoreType",
+          "default": "raw",
+          "description": "How the score was derived."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Origin of the observation (sensor, feed, API, etc.)."
+        },
+        "operator_id": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Analyst or system that ingested the score."
+        },
+        "baseline_id": {
+          "type": ["string", "null"],
+          "default": null,
+          "description": "Baseline used for evaluation at ingestion time."
+        },
+        "exceeded": {
+          "type": ["boolean", "null"],
+          "default": null,
+          "description": "Whether the score exceeded the baseline threshold."
+        },
+        "delta": {
+          "type": ["number", "null"],
+          "default": null,
+          "description": "Amount by which the score exceeded the threshold (zero if not exceeded)."
+        },
+        "severity_at_time": {
+          "anyOf": [
+            { "$ref": "#/definitions/SeverityBand" },
+            { "type": "null" }
+          ],
+          "default": null,
+          "description": "Severity band from the baseline at the moment of evaluation."
+        },
+        "evaluated_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "default": null,
+          "description": "Timestamp when the score was evaluated against the baseline."
+        },
+        "created_at": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "default": null
+        }
+      }
+    }
+  }
+}

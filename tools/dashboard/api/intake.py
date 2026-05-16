@@ -34,6 +34,10 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 UPLOAD_DIR = BASE_DIR / ".tmp" / "uploads"
 
+# Simple in-memory cache for AI context (session_id -> {conversation_text, reqs_hash, timestamp})
+_AI_CONTEXT_CACHE: dict = {}
+_AI_CACHE_TTL_SECONDS = 60
+
 # ---------------------------------------------------------------------------
 # Backend imports (graceful)
 # ---------------------------------------------------------------------------
@@ -270,7 +274,7 @@ def process_intake_turn():
         return jsonify({"error": "Intake engine not available"}), 503
 
     try:
-        result = process_turn(session_id, message, )
+        result = process_turn(session_id, message)
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -303,7 +307,7 @@ def process_panel_turn():
 
         session_data = dict(session)
 
-        from tools.requirements.multi_persona_panel import run_panel, persist_panel_requirements, _auto_generate_ac
+        from tools.requirements.multi_persona_panel import run_panel, persist_panel_requirements
 
         panel = run_panel(
             session_data=session_data,
@@ -318,7 +322,7 @@ def process_panel_turn():
             (session_id,),
         ).fetchone()[0]
 
-        written = persist_panel_requirements(panel, turn_number, )
+        written = persist_panel_requirements(panel, turn_number)
 
         # Store the panel turn in conversation history so session context is preserved
         conn.execute(
@@ -339,6 +343,14 @@ def process_panel_turn():
             (session_id, turn_number + 1, analyst_summary, session_data.get("classification", "CUI")),
         )
         conn.commit()
+
+        # Auto-decompose so new panel requirements are traceable
+        if _HAS_DECOMP:
+            try:
+                from tools.requirements.decomposition_engine import decompose_requirements
+                decompose_requirements(session_id)
+            except Exception:
+                pass
 
         return jsonify({
             "status": "ok",
@@ -431,7 +443,7 @@ def hitl_confirm(session_id):
         new_score = None
         try:
             from tools.requirements.readiness_scorer import score_readiness
-            result = score_readiness(session_id, )
+            result = score_readiness(session_id)
             new_score = result.get("overall_score") if isinstance(result, dict) else None
         except Exception:
             pass
@@ -490,7 +502,7 @@ def upload_intake_file():
         extracted = []
         if doc_id:
             try:
-                extracted = extract_doc_requirements(doc_id, )
+                extracted = extract_doc_requirements(doc_id)
             except Exception:
                 pass
         result["requirements_extracted"] = len(extracted) if extracted else 0
@@ -694,12 +706,20 @@ Generate only the requirements block. No preamble, no explanations."""
 
         conn.commit()
 
+        # Auto-decompose so new requirements are traceable
+        if _HAS_DECOMP:
+            try:
+                from tools.requirements.decomposition_engine import decompose_requirements
+                decompose_requirements(session_id)
+            except Exception:
+                pass
+
         # Rescore
         new_score = None
         if _HAS_SCORER:
             try:
                 from tools.requirements.readiness_scorer import score_readiness
-                result = score_readiness(session_id, )
+                result = score_readiness(session_id)
                 new_score = result.get("overall_score")
             except Exception:
                 pass
@@ -726,7 +746,7 @@ def get_readiness(session_id):
         return jsonify({"error": "Readiness scorer not available"}), 503
 
     try:
-        result = score_readiness(session_id, )
+        result = score_readiness(session_id)
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -741,7 +761,7 @@ def get_complexity(session_id):
         return jsonify({"error": "Complexity scorer not available"}), 503
 
     try:
-        result = _score_complexity(session_id, )
+        result = _score_complexity(session_id)
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -767,7 +787,7 @@ def activate_elicitation_technique(session_id):
     technique_id = data.get("technique_id")
     if not technique_id:
         return jsonify({"error": "technique_id required"}), 400
-    result = _activate_technique(session_id, technique_id, )
+    result = _activate_technique(session_id, technique_id)
     if result.get("status") == "error":
         return jsonify(result), 400
     return jsonify(result)
@@ -778,7 +798,7 @@ def deactivate_elicitation_technique(session_id):
     """Deactivate the current elicitation technique for a session."""
     if not _HAS_ELICITATION:
         return jsonify({"error": "Elicitation techniques not available"}), 503
-    result = _deactivate_technique(session_id, )
+    result = _deactivate_technique(session_id)
     if result.get("status") == "error":
         return jsonify(result), 400
     return jsonify(result)
@@ -791,7 +811,7 @@ def export_intake_requirements(session_id):
         return jsonify({"error": "Intake engine not available"}), 503
 
     try:
-        result = export_requirements(session_id, )
+        result = export_requirements(session_id)
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -1002,7 +1022,7 @@ def get_session_coas(session_id):
     """List COAs for an intake session."""
     if _HAS_COA:
         try:
-            result = _list_coas(session_id, )
+            result = _list_coas(session_id)
             for coa in result.get("coas", []):
                 _parse_coa_json_fields(coa)
             return jsonify(result)
@@ -1080,7 +1100,7 @@ def generate_session_coas(session_id):
         conn.close()
 
     try:
-        result = _generate_3_coas(session_id, project_id=project_id, simulate=True, )
+        result = _generate_3_coas(session_id, project_id=project_id, simulate=True)
         # Parse JSON fields for JS
         for coa in result.get("coas", []):
             _parse_coa_json_fields(coa)

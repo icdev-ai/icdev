@@ -27,6 +27,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.audit.audit_logger import log_event
 
 
 def _utcnow_iso() -> str:
@@ -180,6 +181,11 @@ class NotificationGateway:
             "deliveries": {},
         }
 
+        # Write PIR alerts to the secure log store (audit_trail) regardless
+        # of whether external notification delivery is enabled.
+        if event_type == "pir_alert":
+            self._secure_log(event_type, severity, title, metadata)
+
         if not self.enabled:
             result["skipped"] = "notifications_disabled"
             return result
@@ -264,6 +270,33 @@ class NotificationGateway:
             conn.close()
         except Exception:
             pass  # Best-effort — never block on audit
+
+    def _secure_log(
+        self,
+        event_type: str,
+        severity: str,
+        title: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Write PIR alert to the secure audit trail (audit_trail).
+
+        Satisfies NIST 800-53 AU-2/AU-9 by persisting alert generation
+        events to the immutable append-only audit store.
+        """
+        try:
+            log_event(
+                event_type="pir_alert_generated",
+                actor="notification_gateway",
+                action=title,
+                details={
+                    "severity": severity,
+                    "event_type": event_type,
+                    **(metadata or {}),
+                },
+                classification="CUI",
+            )
+        except Exception:
+            pass  # Best-effort — never block notification delivery on audit
 
 
 # ---------------------------------------------------------------------------

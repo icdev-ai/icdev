@@ -340,5 +340,88 @@ class _StubResult:
         self.stderr = msg
 
 
-def _make_stub_result(msg):
-    return _StubResult(msg)
+# ---------------------------------------------------------------------------
+# Threat-level threshold / PIR alert automation
+# ---------------------------------------------------------------------------
+
+@when('Generate Priority Intelligence Requirements (PIR) alerts when indicator scores exceed operator-defined baselines')
+def step_generate_pir_alerts_on_threshold_exceeded(context):
+    """Configure a baseline, inject an exceeded score, and auto-generate a PIR."""
+    from icdev.tools.threat_analysis.service import (
+        create_baseline,
+        auto_generate_pir_alert,
+    )
+    from icdev.tools.db.storage import get_connection
+
+    indicator = "compliance_test_anomaly"
+    operator_id = "analyst-test-001"
+    scope = "project"
+    scope_id = "proj-compliance-001"
+    threshold = 25.0
+    severity_band = "high"
+    injected_score = 78.0
+
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM indicator_baselines WHERE indicator_name = ?", (indicator,))
+        conn.execute("DELETE FROM sg_pir_requirements WHERE topic LIKE ?", (f"%{indicator}%",))
+        conn.commit()
+    finally:
+        conn.close()
+
+    baseline = create_baseline(
+        indicator_name=indicator,
+        threshold_score=threshold,
+        scope=scope,
+        scope_id=scope_id,
+        severity_band=severity_band,
+        operator_id=operator_id,
+        rationale="Compliance BDD test baseline",
+    )
+    context.baseline = baseline
+
+    result = auto_generate_pir_alert(
+        indicator_name=indicator,
+        score=injected_score,
+        scope=scope,
+        scope_id=scope_id,
+        operator_id=operator_id,
+    )
+    context.pir_result = result
+
+
+@then('the system behaves as specified and the requirement is satisfied')
+def step_system_behaves_as_specified(context):
+    """Unified acceptance check: handles infra missing-artifacts and PIR results."""
+    # Infrastructure / functional / IL5 scenarios
+    if hasattr(context, 'missing') and context.missing:
+        assert False, (
+            f"Artifacts missing: {context.missing}. "
+            "Requirement cannot be satisfied."
+        )
+
+    # PIR / threshold scenarios
+    if hasattr(context, 'pir_result') and context.pir_result is not None:
+        result = context.pir_result
+        assert result["exceeded"] is True, f"Expected score to exceed baseline, got {result}"
+        assert result["pir_generated"] is True, f"Expected PIR to be auto-generated, got {result}"
+        assert result["pir_id"] is not None, "Generated PIR id is missing"
+
+        # Verify the PIR exists in the database
+        from icdev.tools.intelligence.pir_manager import get_pir
+        pir = get_pir(result["pir_id"])
+        assert pir is not None, f"PIR {result['pir_id']} not found in database"
+        assert pir["pir_type"] == "PIR"
+        assert pir["status"] == "active"
+        assert result["indicator_name"] in pir["topic"]
+        assert pir["collection_priority"] <= 2, (
+            f"High-severity baseline should map to priority 1 or 2, got {pir['collection_priority']}"
+        )
+
+
+@then('no missing compliance artifacts exist')
+def step_no_missing_compliance_artifacts(context):
+    """Verify no compliance infrastructure artifacts are missing."""
+    assert len(context.missing) == 0, (
+        f"Missing compliance artifacts: {context.missing}"
+    )
