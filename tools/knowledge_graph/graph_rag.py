@@ -42,7 +42,6 @@ from typing import Any, Dict, List, Optional
 logger = logging.getLogger("icdev.knowledge_graph.graph_rag")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 # ---------------------------------------------------------------------------
 # Scoring Profile Definitions (D-KARL-1)
@@ -570,17 +569,11 @@ def _load_ontology_relations(
         except Exception:
             pass  # kg_ontology not available (PostgreSQL backend without migration)
 
-    # Always load subclass closure directly from SQLite icdev.db — federation.py writes
-    # there regardless of the active storage backend (PostgreSQL or SQLite).
+    # Load subclass closure from the canonical connection (PostgreSQL or SQLite).
     try:
-        _sqconn = sqlite3.connect(str(ICDEV_DB))
-        _sqconn.row_factory = sqlite3.Row
-        try:
-            closure_rows = _sqconn.execute(
-                "SELECT subclass, superclass, distance FROM ontology_subclass_closure"
-            ).fetchall()
-        finally:
-            _sqconn.close()
+        closure_rows = conn.execute(
+            "SELECT subclass, superclass, distance FROM ontology_subclass_closure"
+        ).fetchall()
         for _row in closure_rows:
             sub = _row["subclass"].lower().replace(":", "_")
             sup = _row["superclass"].lower().replace(":", "_")
