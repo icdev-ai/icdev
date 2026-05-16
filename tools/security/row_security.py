@@ -86,8 +86,17 @@ def inject_row_predicate(
     # Determine injection point
     predicate = " AND ".join(extra_clauses)
 
-    # For INSERT/DDL/PRAGMA: do not modify
-    if _RE_INSERT.match(sql) or sql.strip().upper().startswith("PRAGMA") or sql.strip().upper().startswith("CREATE"):
+    # For INSERT/UPDATE/DELETE/DDL/PRAGMA: do not modify.
+    # UPDATE/DELETE params in SQLite are ordered SET-first then WHERE-last;
+    # prepending extra WHERE params corrupts the SET slots.
+    # PostgreSQL handles UPDATE/DELETE RLS natively via its own policy engine.
+    if (
+        _RE_INSERT.match(sql)
+        or _RE_UPDATE.match(sql)
+        or _RE_DELETE.match(sql)
+        or sql.strip().upper().startswith("PRAGMA")
+        or sql.strip().upper().startswith("CREATE")
+    ):
         return sql, ()
 
     # Find WHERE or append before ORDER BY / GROUP BY / LIMIT
