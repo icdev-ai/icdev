@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from collections import defaultdict
@@ -215,6 +216,128 @@ CROSS_DOMAIN_PROPERTIES: List[Dict[str, Any]] = [
     },
 ]
 
+# Directory containing domain TTL files (loaded at build time)
+_TTL_DIR = BASE_DIR / "args" / "ontology"
+
+
+# =========================================================================
+# TTL LOADER (lightweight, no rdflib dependency)
+# =========================================================================
+
+
+def _parse_ttl_file(
+    path: Path,
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, str]]]:
+    """Extract classes and alignments from a Turtle file using regex.
+
+    Handles the subset of TTL used in args/ontology/:
+    - @prefix declarations
+    - subject rdf:type owl:Class
+    - subject rdfs:subClassOf object
+    - subject rdf:type <KnownClass>  (treated as rdfs:subClassOf)
+    - subject rdfs:label "..."
+    - subject owl:equivalentClass object
+
+    Returns:
+        (classes, alignments)  — lists ready to merge into DOMAIN_ONTOLOGIES.
+    """
+    text = path.read_text(encoding="utf-8")
+
+    # 1. Prefix map: prefix_name -> uri_base (used only to validate CURIEs exist)
+    known_prefixes: Set[str] = set()
+    for m in re.finditer(r"@prefix\s+(\w+):\s+<[^>]+>\s*\.", text):
+        known_prefixes.add(m.group(1))
+
+    def _is_curie(term: str) -> bool:
+        if ":" not in term or term.startswith("<"):
+            return False
+        prefix = term.split(":", 1)[0]
+        return prefix in known_prefixes
+
+    def _clean(term: str) -> str:
+        return term.rstrip(";.,").strip()
+
+    # 2. First pass — owl:Class declarations
+    classes: Dict[str, Dict[str, Any]] = {}
+    known_class_ids: Set[str] = set()
+    for m in re.finditer(r"(\w+:\S+)\s+rdf:type\s+owl:Class", text):
+        cid = _clean(m.group(1))
+        if _is_curie(cid):
+            local = cid.split(":", 1)[1]
+            classes.setdefault(cid, {"id": cid, "label": local, "superclasses": []})
+            known_class_ids.add(cid)
+
+    # 3. Labels (match subject + rdfs:label on same or adjacent line)
+    for m in re.finditer(r"(\w+:\S+)[^.]*?rdfs:label\s+\"([^\"]+)\"", text, re.DOTALL):
+        cid = _clean(m.group(1))
+        if cid in classes:
+            classes[cid]["label"] = m.group(2)
+
+    # 4. Explicit rdfs:subClassOf
+    for m in re.finditer(r"(\w+:\S+)\s+rdfs:subClassOf\s+(\w+:\S+)", text):
+        sub = _clean(m.group(1))
+        sup = _clean(m.group(2))
+        if sub in classes and sup not in classes[sub]["superclasses"]:
+            classes[sub]["superclasses"].append(sup)
+
+    # 5. rdf:type <KnownClass> → treat as rdfs:subClassOf
+    for m in re.finditer(r"(\w+:\S+)\s+rdf:type\s+(\w+:\S+)", text):
+        sub = _clean(m.group(1))
+        rtype = _clean(m.group(2))
+        if rtype in ("owl:Class", "owl:Ontology", "owl:ObjectProperty", "owl:DatatypeProperty"):
+            continue
+        if rtype in known_class_ids and _is_curie(sub):
+            if sub not in classes:
+                local = sub.split(":", 1)[1]
+                classes[sub] = {"id": sub, "label": local, "superclasses": []}
+            if rtype not in classes[sub]["superclasses"]:
+                classes[sub]["superclasses"].append(rtype)
+            # Resolve label from rdfs:label on the same subject if present
+    # Re-apply labels for newly added instance entries
+    for m in re.finditer(r"(\w+:\S+)[^.]*?rdfs:label\s+\"([^\"]+)\"", text, re.DOTALL):
+        cid = _clean(m.group(1))
+        if cid in classes:
+            classes[cid]["label"] = m.group(2)
+
+    # 6. owl:equivalentClass triples → alignments
+    alignments: List[Dict[str, str]] = []
+    for m in re.finditer(r"(\w+:\S+)\s+owl:equivalentClass\s+(\w+:\S+)", text):
+        src = _clean(m.group(1))
+        tgt = _clean(m.group(2))
+        alignments.append({"source": src, "target": tgt, "assertion": "owl:equivalentClass"})
+
+    return list(classes.values()), alignments
+
+
+def _load_ttl_classes(
+    ttl_dir: Path,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, str]]]:
+    """Load all *.ttl files from ttl_dir and merge into domain ontology format.
+
+    Returns:
+        (extra_domains, extra_alignments) where extra_domains is a dict
+        mapping domain_name -> list-of-class-dicts, ready to merge with
+        DOMAIN_ONTOLOGIES.
+    """
+    extra_domains: Dict[str, List[Dict[str, Any]]] = {}
+    extra_alignments: List[Dict[str, str]] = []
+
+    if not ttl_dir.is_dir():
+        return extra_domains, extra_alignments
+
+    for ttl_path in sorted(ttl_dir.glob("*.ttl")):
+        try:
+            classes, alignments = _parse_ttl_file(ttl_path)
+        except Exception:
+            continue
+        if classes:
+            # Use filename stem as domain name (e.g. icdev_core, external_mappings)
+            domain = ttl_path.stem
+            extra_domains[domain] = classes
+        extra_alignments.extend(alignments)
+
+    return extra_domains, extra_alignments
+
 
 # =========================================================================
 # HELPERS
@@ -362,11 +485,18 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         conn.execute("DELETE FROM ontology_federation_meta WHERE key = 'last_build'")
         conn.commit()
 
-        # 2. Insert domain classes
+        # Load extra classes and alignments from args/ontology/*.ttl
+        ttl_domains, ttl_alignments = _load_ttl_classes(_TTL_DIR)
+
+        # 2. Insert domain classes (hardcoded + TTL-derived, deduplicated by class id)
+        seen_class_ids: Set[str] = set()
         all_classes: List[Tuple[str, str, str, str, str]] = []
-        for domain, classes in DOMAIN_ONTOLOGIES.items():
+        for domain, classes in {**DOMAIN_ONTOLOGIES, **ttl_domains}.items():
             for cls in classes:
                 cid = cls["id"]
+                if cid in seen_class_ids:
+                    continue
+                seen_class_ids.add(cid)
                 label = cls["label"]
                 supers = json.dumps(cls.get("superclasses", []))
                 all_classes.append((cid, domain, label, supers, cid))
@@ -376,15 +506,19 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
             all_classes,
         )
 
-        # 3. Store alignments
-        alignments_rows = [(a["source"], a["target"], a["assertion"]) for a in EQUIVALENT_CLASSES]
+        # 3. Store alignments (hardcoded + TTL-derived, deduplicated)
+        all_alignments = EQUIVALENT_CLASSES + ttl_alignments
+        alignments_rows = list({
+            (a["source"], a["target"], a["assertion"])
+            for a in all_alignments
+        })
         conn.executemany(
             "INSERT INTO ontology_alignments (source, target, assertion) VALUES (?, ?, ?)",
             alignments_rows,
         )
 
         # 4. Compute canonical IDs
-        canon_map = _build_equivalence_map(EQUIVALENT_CLASSES)
+        canon_map = _build_equivalence_map(all_alignments)
         for src, tgt in canon_map.items():
             conn.execute(
                 "UPDATE ontology_classes SET canonical_id = ? WHERE id = ?",
@@ -414,15 +548,15 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
         # Build adjacency from superclasses + alignments
         subclass_of: Dict[str, Set[str]] = defaultdict(set)
 
-        # From domain ontologies
-        for domain, classes in DOMAIN_ONTOLOGIES.items():
+        # From domain ontologies (hardcoded + TTL-derived)
+        for domain, classes in {**DOMAIN_ONTOLOGIES, **ttl_domains}.items():
             for cls in classes:
                 cid = cls["id"]
                 for sup in cls.get("superclasses", []):
                     subclass_of[cid].add(sup)
 
-        # From alignments
-        for a in EQUIVALENT_CLASSES:
+        # From alignments (hardcoded + TTL-derived)
+        for a in all_alignments:
             if a["assertion"] == "owl:subClassOf":
                 subclass_of[a["source"]].add(a["target"])
             elif a["assertion"] == "owl:equivalentClass":
@@ -473,12 +607,16 @@ def build_federation(db_path: Optional[str] = None) -> Dict[str, Any]:
             "SELECT canonical_id, COUNT(*) FROM ontology_classes GROUP BY canonical_id HAVING COUNT(*) > 1"
         ).fetchall()
 
+        ttl_class_count = sum(len(v) for v in ttl_domains.values())
         return {
             "status": "ok",
             "action": "build_federation",
             "classes_total": class_count,
+            "classes_from_ttl": ttl_class_count,
+            "ttl_domains_loaded": list(ttl_domains.keys()),
             "properties_total": prop_count,
             "alignments_total": alignment_count,
+            "alignments_from_ttl": len(ttl_alignments),
             "closure_pairs": closure_count,
             "canonical_groups": len(canon_groups),
             "canonical_merged_classes": [
