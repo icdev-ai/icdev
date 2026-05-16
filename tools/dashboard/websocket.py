@@ -16,9 +16,9 @@ Usage:
 
     # To run with WebSocket support:
     if socketio:
-        socketio.run(app, host='0.0.0.0', port=5000)
+        socketio.run(app, host=HOST, port=PORT)
     else:
-        app.run(host='0.0.0.0', port=5000)
+        app.run(host=HOST, port=PORT)
 """
 
 _socketio = None
