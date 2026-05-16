@@ -367,9 +367,12 @@
                 }
                 renderMessages(mapped);
             })
-            .catch(function () {
+            .catch(function (err) {
+                console.error('[ICDEV] Failed to load session messages:', err);
                 var stream = document.getElementById('message-stream');
-                if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! Describe what you want to build.' });
+                if (stream && !stream.querySelector('.msg-bubble--agent')) {
+                    stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! Describe what you want to build.' });
+                }
             });
 
         // Start RICOAS features
@@ -2326,10 +2329,9 @@
                     }, 400);
                 }
 
-                // Show welcome message from intake
+                // Show welcome message from intake (turn_number:1 ensures "Agent (#1)" label + Q&A widget)
                 if (data.message) {
-                    var stream = document.getElementById('message-stream');
-                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: data.message });
+                    renderMessages([{ role: 'assistant', content: data.message, turn_number: 1 }]);
                 }
 
                 // Update URL for backward compat
