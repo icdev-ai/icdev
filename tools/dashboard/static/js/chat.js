@@ -97,6 +97,25 @@
         return d.innerHTML;
     }
 
+    function mdToHtml(s) {
+        // Escape HTML first, then convert lightweight markdown
+        var html = escHtml(s);
+        // Bold: **text** or __text__
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+        // Italic: *text* or _text_
+        html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+        html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+        // Headings
+        html = html.replace(/^#### (.*)$/gm, '<h5>$1</h5>');
+        html = html.replace(/^### (.*)$/gm, '<h4>$1</h4>');
+        html = html.replace(/^## (.*)$/gm, '<h3>$1</h3>');
+        html = html.replace(/^# (.*)$/gm, '<h2>$1</h2>');
+        // Line breaks
+        html = html.replace(/\n/g, '<br>');
+        return html;
+    }
+
     function escAttr(s) {
         return escHtml(s).replace(/'/g, '&#39;');
     }
@@ -1353,17 +1372,10 @@
     function sendPanelMessage(content) {
         appendMessage({ role: 'user', content: content });
 
-        var typingId = 'typing-' + Date.now();
-        var stream = document.getElementById('message-stream');
         var names = _panelPersonas.map(function (p) {
             return p.replace('_', ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
         }).join(', ');
-        if (stream) {
-            stream.innerHTML += '<div id="' + typingId + '" style="padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:4px;">'
-                + '<div style="font-size:0.72rem;font-weight:700;color:#4a90d9;margin-bottom:3px;">Panel [' + escHtml(names) + ']</div>'
-                + '<div style="font-size:0.85rem;opacity:0.6;">Experts thinking in parallel…</div></div>';
-            stream.scrollTop = stream.scrollHeight;
-        }
+        var thinkingId = _appendThinkingBubble('Panel [' + names + '] — Experts thinking in parallel…');
 
         fetch(INTAKE_API + '/panel-turn', {
             method: 'POST',
@@ -1376,8 +1388,7 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            var typing = document.getElementById(typingId);
-            if (typing) typing.remove();
+            _removeThinkingBubble(thinkingId);
 
             if (data.error) {
                 appendMessage({ role: 'system', content: 'Panel error: ' + data.error });
@@ -1392,8 +1403,7 @@
             refreshComplexity();
         })
         .catch(function (err) {
-            var typing = document.getElementById(typingId);
-            if (typing) typing.remove();
+            _removeThinkingBubble(thinkingId);
             appendMessage({ role: 'system', content: 'Panel error: ' + err.message });
         });
     }
@@ -1418,7 +1428,7 @@
                 html += '<div class="panel-persona-bubble__body" style="color:#f87171;font-size:0.8rem;">Error: ' + escHtml(r.error) + '</div>';
             } else {
                 var bodyText = (r.response || '').replace(/^REQ:.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
-                html += '<div class="panel-persona-bubble__body">' + escHtml(bodyText) + '</div>';
+                html += '<div class="panel-persona-bubble__body">' + mdToHtml(bodyText) + '</div>';
             }
             html += '</div>';
         });
@@ -2346,11 +2356,11 @@
     }
 
     function renderContent(text) {
-        // Use marked.js if available, otherwise escape HTML and preserve whitespace
+        // Use marked.js if available, otherwise lightweight markdown fallback
         if (typeof marked !== 'undefined') {
             try { return marked.parse(text); } catch (e) { /* fall through */ }
         }
-        return '<span style="white-space:pre-wrap;word-break:break-word;">' + escHtml(text) + '</span>';
+        return '<span style="white-space:pre-wrap;word-break:break-word;">' + mdToHtml(text) + '</span>';
     }
 
     function appendTechniqueActivation(data) {

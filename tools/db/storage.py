@@ -65,7 +65,9 @@ def _extract_table_name(sql: str) -> Optional[str]:
     return None
 
 # Load .env if available (so ICDEV_STORAGE_BACKEND is picked up)
-_BASE = Path(__file__).resolve().parent.parent.parent
+_BASE = Path(__file__).resolve().parent
+while _BASE.name in ("db", "tools", "icdev"):
+    _BASE = _BASE.parent
 try:
     from dotenv import load_dotenv
 
@@ -81,7 +83,7 @@ except ImportError:
                 if _k and _k not in os.environ:
                     os.environ[_k] = _v
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+BASE_DIR = _BASE
 
 
 def _default_db_path() -> str:
