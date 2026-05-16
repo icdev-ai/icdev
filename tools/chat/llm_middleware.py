@@ -29,7 +29,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 logger = logging.getLogger("icdev.chat.middleware")
 

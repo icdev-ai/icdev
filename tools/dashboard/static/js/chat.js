@@ -351,15 +351,16 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.error) {
-                    // Fallback: show welcome message
-                    var stream = document.getElementById('message-stream');
-                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV™ Requirements Analyst. Tell me about the application you want to build.' });
+                    // Log error but preserve existing content (POST welcome message already shown)
+                    console.error('[ICDEV] GET /session error for', intakeSessionId, ':', data.error);
                     return;
                 }
                 var messages = data.messages || data.conversation || [];
                 var mapped = [];
                 for (var i = 0; i < messages.length; i++) {
                     var m = messages[i];
+                    // Skip internal system metadata messages (JSON events like session_created)
+                    if (m.role === 'system') continue;
                     mapped.push({
                         role: m.role === 'customer' ? 'user' : m.role === 'analyst' ? 'assistant' : m.role,
                         content: m.content,
@@ -368,9 +369,8 @@
                 }
                 renderMessages(mapped);
             })
-            .catch(function () {
-                var stream = document.getElementById('message-stream');
-                if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! Describe what you want to build.' });
+            .catch(function (err) {
+                console.error('[ICDEV] GET /session fetch failed:', err, 'for session', intakeSessionId);
             });
 
         // Start RICOAS features
@@ -2431,7 +2431,10 @@
                 // Show welcome message from intake
                 if (data.message) {
                     var stream = document.getElementById('message-stream');
-                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: data.message });
+                    if (stream) {
+                        stream.innerHTML = renderMessageHtml({ role: 'assistant', content: data.message, turn_number: 1 });
+                        _injectQAWidget(stream, data.message);
+                    }
                 }
 
                 // Update URL for backward compat
@@ -2929,7 +2932,7 @@
                 // Increment use counts for any custom experts being launched
                 var _customExpertVals = _lsGet(_EXPERT_STORE).map(function(e) { return e.value; });
                 _incrementExpertUses(panelPersonas.filter(function(v) { return _customExpertVals.indexOf(v) !== -1; }));
-                createIntakeContext({ title: finalTitle, agent_model: model, classification: comp.il, panelEnabled: panelEnabled, panelPersonas: panelPersonas });
+                createIntakeContext({ title: finalTitle, agent_model: model, classification: comp.il, frameworks: comp.regimes.join(','), panelEnabled: panelEnabled, panelPersonas: panelPersonas });
             } else {
                 var compBlurbR = _buildComplianceBlurb(comp.il, comp.regimes);
                 createContext({ title: finalTitle, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
