@@ -732,8 +732,13 @@ def _gather_advanced_signals(session_id, db_path):
     return clarification_signals, parallel_opportunities
 
 
-def _append_mosa_probe_section(mosa_signals, response_parts):
-    """Append MOSA detection summary and targeted pillar probe questions."""
+def _append_mosa_probe_section(mosa_signals, response_parts, asked_pillars=None):
+    """Append MOSA detection summary and targeted pillar probe questions.
+
+    Returns the set of pillar keys whose questions were newly added this turn,
+    so the caller can persist them and skip re-asking next turn.
+    """
+    asked_pillars = asked_pillars or set()
     mosa_pillars = mosa_signals.get("detected_pillars", [])
     if mosa_signals.get("dod_ic_detected"):
         response_parts.append(
@@ -751,7 +756,9 @@ def _append_mosa_probe_section(mosa_signals, response_parts):
         "modular_architecture", "open_standards", "open_interfaces",
         "data_rights", "competitive_sourcing", "continuous_assessment",
     }
-    missing = all_pillars - set(mosa_pillars)
+    # Exclude pillars that were already asked in prior turns
+    missing = (all_pillars - set(mosa_pillars)) - asked_pillars
+    newly_asked = set()
     if missing and len(mosa_pillars) < 4:
         probes = {
             "open_interfaces": "Do you have existing Interface Control Documents (ICDs) or API specifications?",
@@ -761,10 +768,13 @@ def _append_mosa_probe_section(mosa_signals, response_parts):
             "modular_architecture": "Is the system designed with modular, loosely-coupled components?",
             "continuous_assessment": "Will there be ongoing architecture reviews and modularity metrics?",
         }
-        probe_qs = [probes[p] for p in sorted(missing) if p in probes][:2]
+        probe_keys = [p for p in sorted(missing) if p in probes][:2]
+        probe_qs = [probes[p] for p in probe_keys]
         if probe_qs:
             response_parts.append("\nTo complete MOSA assessment, please clarify:")
             response_parts.extend(f"  - {q}" for q in probe_qs)
+            newly_asked = set(probe_keys)
+    return newly_asked
 
 
 def _append_ai_governance_probe_section(ai_governance_signals, response_parts):
@@ -858,6 +868,9 @@ def process_turn(
     except (ValueError, TypeError):
         pass
     flagged_terms = set(context.get("flagged_ambiguities", []))
+    mosa_asked_pillars = set(context.get("mosa_asked_pillars", []))
+    asked_followup_dims = set(context.get("asked_followup_dims", []))
+    asked_clarifications = set(context.get("asked_clarification_questions", []))
     ambiguities = [a for a in raw_ambiguities if a["phrase"].lower() not in flagged_terms]
 
     # Record newly flagged terms so future turns skip them
@@ -1010,7 +1023,14 @@ def process_turn(
             )
 
         if mosa_signals.get("mosa_detected"):
-            _append_mosa_probe_section(mosa_signals, response_parts)
+            newly_asked = _append_mosa_probe_section(mosa_signals, response_parts, mosa_asked_pillars)
+            if newly_asked:
+                mosa_asked_pillars.update(newly_asked)
+                context["mosa_asked_pillars"] = sorted(mosa_asked_pillars)
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
+                )
 
         if ai_governance_signals.get("ai_governance_detected"):
             _append_ai_governance_probe_section(ai_governance_signals, response_parts)
@@ -1062,15 +1082,27 @@ def process_turn(
                     "What are the pass/fail conditions or acceptance criteria?"
                 ),
             }
-            if dims[weakest] < 0.7:
+            if dims[weakest] < 0.7 and weakest not in asked_followup_dims:
                 response_parts.append(f"\n{followup_questions[weakest]}")
+                asked_followup_dims.add(weakest)
+                context["asked_followup_dims"] = sorted(asked_followup_dims)
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
+                )
 
         # Structured clarification from Impact × Uncertainty matrix (D159)
         if clarification_signals:
             top_q = clarification_signals[0]
             question_text = top_q.get("question", "")
-            if question_text:
+            if question_text and question_text not in asked_clarifications:
                 response_parts.append(f"\nTo help me clarify: {question_text}")
+                asked_clarifications.add(question_text)
+                context["asked_clarification_questions"] = sorted(asked_clarifications)
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
+                )
 
         # Parallel execution opportunities (D161)
         if parallel_opportunities:
