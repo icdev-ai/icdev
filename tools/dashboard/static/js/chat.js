@@ -2355,7 +2355,28 @@
                 if (options.panelEnabled && options.panelPersonas && options.panelPersonas.length) {
                     var _pendingPersonas = options.panelPersonas;
                     setTimeout(function () {
-                        // Sync sidebar chips BEFORE chatTogglePanel reads them via _syncPanelPersonas
+                        var sidebarContainer = document.getElementById('panel-persona-chips');
+                        // Inject any custom experts not already in the sidebar chip list
+                        if (sidebarContainer) {
+                            _pendingPersonas.forEach(function (pVal) {
+                                if (!sidebarContainer.querySelector('input[value="' + pVal + '"]')) {
+                                    var lbl = document.createElement('label');
+                                    lbl.className = 'panel-chip panel-chip--custom panel-chip--active';
+                                    var cb2 = document.createElement('input');
+                                    cb2.type = 'checkbox';
+                                    cb2.value = pVal;
+                                    cb2.checked = true;
+                                    cb2.addEventListener('change', function () {
+                                        lbl.classList.toggle('panel-chip--active', cb2.checked);
+                                        _syncPanelPersonas();
+                                    });
+                                    lbl.appendChild(cb2);
+                                    lbl.appendChild(document.createTextNode(' ' + pVal.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); })));
+                                    sidebarContainer.appendChild(lbl);
+                                }
+                            });
+                        }
+                        // Sync checked state for all chips
                         var sidebarChips = document.querySelectorAll('#panel-persona-chips input[type="checkbox"]');
                         for (var sci = 0; sci < sidebarChips.length; sci++) {
                             sidebarChips[sci].checked = _pendingPersonas.indexOf(sidebarChips[sci].value) !== -1;
@@ -2621,6 +2642,37 @@
             });
         }
 
+        // Wire "+ Add Expert" for user-defined panel experts
+        var btnAddPanelExpert = document.getElementById('btn-add-panel-expert');
+        if (btnAddPanelExpert) {
+            btnAddPanelExpert.addEventListener('click', function () {
+                var nameInput = document.getElementById('modal-panel-custom-name');
+                var name = (nameInput ? nameInput.value : '').trim();
+                if (!name || !modalPanelPersonas) return;
+                // Build a value key: lowercase, underscores
+                var val = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                if (!val) return;
+                // Avoid duplicates
+                if (modalPanelPersonas.querySelector('input[value="' + val + '"]')) {
+                    if (nameInput) nameInput.value = '';
+                    return;
+                }
+                var label = document.createElement('label');
+                label.className = 'panel-chip panel-chip--active panel-chip--custom';
+                var cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = val;
+                cb.checked = true;
+                cb.addEventListener('change', function () {
+                    label.classList.toggle('panel-chip--active', cb.checked);
+                });
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(' ' + name));
+                modalPanelPersonas.appendChild(label);
+                if (nameInput) nameInput.value = '';
+            });
+        }
+
         function _readCompliance() {
             var envEl = document.querySelector('input[name="ctx-env"]:checked');
             var isGov = envEl && envEl.value === 'gov';
@@ -2654,11 +2706,16 @@
             }
             var regimeChecks = document.querySelectorAll('.ctx-regime-chip input');
             for (var ri = 0; ri < regimeChecks.length; ri++) regimeChecks[ri].checked = false;
-            // Reset expert panel — ON by default
+            // Reset expert panel — ON by default, remove custom chips
             var mpEnabled = document.getElementById('modal-panel-enabled');
             var mpPersonas = document.getElementById('modal-panel-personas');
             if (mpEnabled) mpEnabled.checked = true;
-            if (mpPersonas) mpPersonas.style.display = 'flex';
+            if (mpPersonas) {
+                mpPersonas.style.display = 'flex';
+                // Remove user-added custom expert chips
+                var customChips = mpPersonas.querySelectorAll('.panel-chip--custom');
+                customChips.forEach(function (c) { c.remove(); });
+            }
             var mpChips = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]');
             for (var pi = 0; pi < mpChips.length; pi++) {
                 var isDefault = mpChips[pi].value === 'developer' || mpChips[pi].value === 'analyst';
@@ -2666,6 +2723,8 @@
                 var mpChipLabel = mpChips[pi].closest('.panel-chip');
                 if (mpChipLabel) mpChipLabel.classList.toggle('panel-chip--active', isDefault);
             }
+            var mpCustomInput = document.getElementById('modal-panel-custom-name');
+            if (mpCustomInput) mpCustomInput.value = '';
             _updateModalForCanvas('intake');
         }
 
@@ -2718,6 +2777,11 @@
         }
 
         if (btnCreate) btnCreate.addEventListener('click', function () {
+            // Show spinner while context is being created
+            var _origLabel = btnCreate.textContent;
+            btnCreate.disabled = true;
+            btnCreate.innerHTML = '&#x23F3; Creating…';
+
             var title = document.getElementById('new-ctx-title').value.trim();
             var model = document.getElementById('new-ctx-model').value;
             var prompt = document.getElementById('new-ctx-prompt').value.trim();
@@ -2747,6 +2811,9 @@
             _saveTitleHistory(finalTitle);
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
             _resetModal();
+            // Restore button (it may be re-opened without a page refresh)
+            btnCreate.disabled = false;
+            btnCreate.textContent = _origLabel || 'Create';
         });
 
         // Send message

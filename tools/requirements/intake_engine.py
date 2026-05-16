@@ -577,7 +577,7 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
         "impact_level": params.impact_level,
         "session_status": "active",
         "readiness_score": 0.0,
-        "message": welcome_message,
+        "message": placeholder,
     }
 
 
