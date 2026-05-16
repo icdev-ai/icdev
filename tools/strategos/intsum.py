@@ -161,22 +161,20 @@ def _build_prompts(ctx: dict[str, Any]) -> list[str]:
 def _synthesize_paragraph(prompt: str) -> str:
     """Call LLM for one paragraph."""
     try:
-        from tools.chat.llm_middleware import chat_llm_invoke
-        content, _meta = chat_llm_invoke(
-            "chat_response",
-            [{"role": "user", "content": prompt}],
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             system_prompt=(
                 "You are a military intelligence analyst writing classified INTSUM paragraphs. "
                 "Write in formal intelligence report prose. Be concise and specific."
             ),
-            canvas_type="strategos",
-            session_id="",
-            classification="CUI // SP-CTI",
             max_tokens=512,
-            temperature=0.7,
-            agent_id="icdev-strategos-intsum",
+            classification="CUI // SP-CTI",
         )
-        return content or "[Synthesis unavailable — LLM not accessible. Review source data manually.]"
+        resp = router.invoke("chat_response", req)
+        return (resp.content or "").strip()
     except Exception as exc:
         logger.warning("LLM synthesis failed: %s", exc)
         return "[Synthesis unavailable — LLM not accessible. Review source data manually.]"

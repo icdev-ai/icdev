@@ -136,22 +136,20 @@ def synthesize_step(session_id: str, step_num: int) -> dict[str, Any]:
 
 def _llm_synthesize(prompt: str) -> str:
     try:
-        from tools.chat.llm_middleware import chat_llm_invoke
-        content, _meta = chat_llm_invoke(
-            "chat_response",
-            [{"role": "user", "content": prompt}],
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
             system_prompt=(
                 "You are a senior military intelligence analyst. "
                 "Produce structured, classified IPB products in formal J2 prose."
             ),
-            canvas_type="strategos",
-            session_id="",
-            classification="CUI // SP-CTI",
             max_tokens=1024,
-            temperature=0.7,
-            agent_id="icdev-strategos-ipb",
+            classification="CUI // SP-CTI",
         )
-        return content or "[Synthesis unavailable — review source data manually.]"
+        resp = router.invoke("chat_response", req)
+        return (resp.content or "").strip()
     except Exception as exc:
         logger.warning("IPB LLM synthesis failed: %s", exc)
         return "[Synthesis unavailable — review source data manually.]"

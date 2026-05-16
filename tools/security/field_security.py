@@ -175,9 +175,6 @@ def field_security_after_request(response) -> Any:
 
 _SCHEMA_PATH_MAP = [
     # More-specific prefixes must come before shorter overlapping ones.
-    ("/api/intake/requirements", "intake_requirement"),
-    ("/api/intake/session",      "intake_session"),
-    ("/api/chat",                "chat_message"),
     ("/profile/api/llm-keys", "api_key"),
     ("/profile/api/keys",     "api_key"),
     ("/profile",              "user_profile"),

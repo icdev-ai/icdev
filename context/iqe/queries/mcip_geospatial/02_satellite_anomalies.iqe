@@ -1,9 +1,0 @@
-# IQE-GEO-002: Electro-optical satellite scenes flagged as anomalies
-# Surfaces EO/IR imagery signals with high relevance scores or high cloud
-# coverage that may indicate denial, deception, or priority area-of-interest
-# activity. Use: GeoSIGINT analyst review, NIST RA-3 threat indicator tracking.
-
-foreach e in geospatial.eo_signals
-where e.relevance_score > 0.75 or e.cloud_pct > 60
-where e.status != "archived"
-select e.id, e.scene_id, e.satellite, e.aoi_tag, e.sensing_date, e.cloud_pct, e.relevance_score, e.status

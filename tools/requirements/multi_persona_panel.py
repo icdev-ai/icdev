@@ -54,7 +54,7 @@ experts are reviewing the same message in parallel. Your job:
 4. Be terse. 3-4 sentences max, then your REQs, then your question.
 
 Other experts will cover their domains. Focus on yours.
-<!-- cache_breakpoint -->"""
+"""
 
 _PANEL_EXTRACTION_SYSTEM = """\
 Extract all system requirements from this expert panel response.
@@ -147,13 +147,6 @@ def run_panel(
     results.sort(key=lambda r: order.get(r.persona, 99))
 
     merged = _merge_requirements(results)
-    # Enrich merged requirements with ontology concept IRIs
-    if merged:
-        try:
-            from tools.requirements.ontology_enricher import enrich_requirements
-            enrich_requirements(merged, session_context=session_data)
-        except Exception:
-            pass
     panel_q = _synthesize_panel_question(results)
 
     return PanelResult(
@@ -167,15 +160,10 @@ def run_panel(
     )
 
 
-def persist_panel_requirements(
-    panel: PanelResult, turn_number: int, db_path=None, status: str = "pending_review"
-) -> tuple:
-    """Write merged requirements to intake_requirements as pending_review (awaiting HITL).
-
-    Returns (count_written, list_of_req_ids).
-    """
+def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=None) -> int:
+    """Write merged requirements to intake_requirements. Returns count written."""
     if not panel.merged_requirements:
-        return 0, []
+        return 0
 
     # Always get a connection — for PostgreSQL backend db_path is ignored by get_connection
     conn = get_connection(db_path=str(db_path)) if db_path else get_connection()
@@ -183,7 +171,6 @@ def persist_panel_requirements(
 
     try:
         written = 0
-        inserted_ids: list = []
         now = datetime.now(timezone.utc).isoformat()
         for req in panel.merged_requirements:
             req_id = f"req-{uuid.uuid4().hex[:12]}"
@@ -191,7 +178,7 @@ def persist_panel_requirements(
                 """INSERT OR IGNORE INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
                     source_turn, source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'panel', ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, 'panel', 'draft', ?)""",
                 (
                     req_id,
                     panel.session_id,
@@ -199,60 +186,16 @@ def persist_panel_requirements(
                     req.get("type", "functional"),
                     req.get("priority", "medium"),
                     turn_number,
-                    status,
                     now,
                 ),
             )
-            # Attach id back to the req dict so callers can surface it to the UI
-            req["id"] = req_id
-            inserted_ids.append(req_id)
             written += 1
         conn.commit()
-
-        # Blockchain provenance anchor — non-blocking, best-effort
-        if inserted_ids:
-            _anchor_requirements_async(panel.session_id, inserted_ids, panel.merged_requirements, turn_number)
-
-        return written, inserted_ids
+        return written
     except Exception:
-        return 0, []
+        return 0
     finally:
         conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Blockchain anchoring helper
-# ---------------------------------------------------------------------------
-
-def _anchor_requirements_async(
-    session_id: str,
-    req_ids: list,
-    requirements: list,
-    turn_number: int,
-) -> None:
-    """Fire-and-forget blockchain anchor in a daemon thread. Never raises."""
-    import threading
-
-    def _do_anchor():
-        try:
-            import hashlib
-            from tools.blockchain.chain_anchor import ChainAnchor
-            # Build a deterministic Merkle-like root from requirement texts
-            combined = "\n".join(sorted(r.get("text", "") for r in requirements))
-            merkle_root = hashlib.sha256(combined.encode("utf-8")).hexdigest()
-            metadata = {
-                "source": "panel_requirements",
-                "session_id": session_id,
-                "turn_number": turn_number,
-                "requirement_count": len(req_ids),
-                "req_ids": req_ids[:10],  # first 10 for metadata
-            }
-            ChainAnchor().anchor_merkle_root(merkle_root, metadata)
-        except Exception:
-            pass  # Non-critical — never let this break the panel flow
-
-    t = threading.Thread(target=_do_anchor, daemon=True)
-    t.start()
 
 
 # ---------------------------------------------------------------------------
@@ -280,16 +223,15 @@ def _run_one_persona(
 
         persona = _load_persona(persona_key)
         if not persona:
-            # User-defined expert — synthesize a generic expert persona on the fly
-            label = persona_key.replace("_", " ").title()
-            persona = {
-                "display_name": label,
-                "system_prompt": (
-                    f"You are a senior {label} with deep domain expertise. "
-                    f"Your job is to identify requirements from your domain perspective."
-                ),
-                "opening_question": f"As a {label}, what key requirements concern you most?",
-            }
+            return PersonaResult(
+                persona=persona_key,
+                display_name=persona_key,
+                color=color,
+                response="",
+                requirements=[],
+                question="",
+                error=f"Unknown persona: {persona_key}",
+            )
 
         display_name = persona.get("display_name", persona_key)
         system_prompt = _build_panel_system_prompt(persona, session_data)
@@ -301,8 +243,6 @@ def _run_one_persona(
             system_prompt=system_prompt,
             max_tokens=600,
             temperature=0.7,
-            effort="medium",          # Extended thinking budget where supported
-            cache_control="ephemeral", # Prompt caching — stable persona base is cached
             agent_id=f"icdev-panel-{persona_key}",
             project_id=session_data.get("project_id", ""),
             classification=session_data.get("classification", "CUI"),
@@ -311,13 +251,6 @@ def _run_one_persona(
         content = (response.content or "").strip() if response else ""
 
         requirements = _extract_reqs_from_response(content, session_data.get("classification", "CUI"))
-        # Enrich extracted requirements with ontology type IRIs and concept tags
-        if requirements:
-            try:
-                from tools.requirements.ontology_enricher import enrich_requirements
-                enrich_requirements(requirements)
-            except Exception:
-                pass
         question = _extract_question(content)
 
         return PersonaResult(
@@ -348,14 +281,10 @@ def _run_one_persona(
 # ---------------------------------------------------------------------------
 
 def _build_panel_system_prompt(persona: Dict, session_data: Dict) -> str:
-    # Stable persona base (cacheable across turns) — cache_breakpoint separates it from dynamic context
-    stable_part = "\n".join([
+    ctx_parts = [
         persona.get("system_prompt", ""),
         "",
         _PANEL_DIRECTIVE,
-    ])
-    # Dynamic session context (changes per session — placed after breakpoint)
-    ctx_parts = [
         "--- Session Context ---",
         f"Classification: {session_data.get('classification', 'CUI')}",
         f"Impact Level: {session_data.get('impact_level', 'IL4')}",
@@ -368,7 +297,7 @@ def _build_panel_system_prompt(persona: Dict, session_data: Dict) -> str:
             ctx_parts.append(f"Frameworks: {', '.join(ctx['selected_frameworks'])}")
     except (ValueError, TypeError):
         pass
-    return stable_part + "\n" + "\n".join(ctx_parts)
+    return "\n".join(ctx_parts)
 
 
 # ---------------------------------------------------------------------------

@@ -102,10 +102,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
         raise ValueError(f"Session '{session_id}' not found.")
 
     session_data = dict(session)
-    reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? AND status != 'pending_review'",
-        (session_id,),
-    ).fetchall()
+    reqs = conn.execute("SELECT * FROM intake_requirements WHERE session_id = ?", (session_id,)).fetchall()
     reqs = [dict(r) for r in reqs]
     total = len(reqs)
 

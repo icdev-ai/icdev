@@ -351,16 +351,15 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.error) {
-                    // Log error but preserve existing content (POST welcome message already shown)
-                    console.error('[ICDEV] GET /session error for', intakeSessionId, ':', data.error);
+                    // Fallback: show welcome message
+                    var stream = document.getElementById('message-stream');
+                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV™ Requirements Analyst. Tell me about the application you want to build.' });
                     return;
                 }
                 var messages = data.messages || data.conversation || [];
                 var mapped = [];
                 for (var i = 0; i < messages.length; i++) {
                     var m = messages[i];
-                    // Skip internal system metadata messages (JSON events like session_created)
-                    if (m.role === 'system') continue;
                     mapped.push({
                         role: m.role === 'customer' ? 'user' : m.role === 'analyst' ? 'assistant' : m.role,
                         content: m.content,
@@ -369,8 +368,9 @@
                 }
                 renderMessages(mapped);
             })
-            .catch(function (err) {
-                console.error('[ICDEV] GET /session fetch failed:', err, 'for session', intakeSessionId);
+            .catch(function () {
+                var stream = document.getElementById('message-stream');
+                if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! Describe what you want to build.' });
             });
 
         // Start RICOAS features
@@ -524,16 +524,14 @@
         // Append user message immediately
         appendMessage({ role: 'user', content: content });
 
-        // Show animated typing indicator
+        // Show typing indicator
         var typingId = 'typing-' + Date.now();
         var stream = document.getElementById('message-stream');
         if (stream) {
-            var typingEl = document.createElement('div');
-            typingEl.id = typingId;
-            typingEl.className = 'msg-typing-indicator';
-            typingEl.innerHTML = '<span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span>';
-            stream.appendChild(typingEl);
-            typingEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            stream.innerHTML += '<div id="' + typingId + '" style="padding: 8px 12px; margin-bottom: 4px; background: var(--bg-secondary); border-radius: 4px;">'
+                + '<div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-blue); margin-bottom: 4px;">Agent</div>'
+                + '<div style="font-size: 0.85rem; opacity: 0.6;">Thinking...</div></div>';
+            stream.scrollTop = stream.scrollHeight;
         }
 
         fetch(INTAKE_API + '/turn', {
@@ -585,13 +583,8 @@
         var typingId = 'typing-' + Date.now();
         var stream = document.getElementById('message-stream');
         if (stream) {
-            var canvasTypingEl = document.createElement('div');
-            canvasTypingEl.id = typingId;
-            canvasTypingEl.className = 'msg-typing-indicator';
-            canvasTypingEl.innerHTML = '<span style="font-size:0.72rem;font-weight:700;color:var(--accent-blue);margin-right:8px;">' + escHtml(canvasType.toUpperCase()) + '</span>'
-                + '<span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span>';
-            stream.appendChild(canvasTypingEl);
-            canvasTypingEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            stream.innerHTML += '<div id="' + typingId + '" class="msg-bubble msg-bubble--system"><div class="agent-name">' + canvasType.toUpperCase() + ' Agent</div><div style="opacity:0.6;font-size:0.85rem;">Thinking...</div></div>';
+            stream.scrollTop = stream.scrollHeight;
         }
 
         var simSessionId = _simSessionMap[ctxId] || '';
@@ -1254,10 +1247,8 @@
             var added = data.added || 0;
             var newPct = data.new_score ? Math.round(data.new_score * 100) : null;
             var msg = added + ' requirement' + (added !== 1 ? 's' : '') + ' generated';
-            if (added > 0 && data.missing_types_filled && data.missing_types_filled.length > 0) {
+            if (data.missing_types_filled && data.missing_types_filled.length > 0) {
                 msg += ' covering: ' + data.missing_types_filled.join(', ');
-            } else if (added === 0) {
-                msg += ' — no gaps found or LLM response could not be parsed';
             }
             if (newPct !== null) msg += '. New score: ' + newPct + '%';
             if (statusEl) { statusEl.textContent = msg; }
@@ -1364,13 +1355,10 @@
             return p.replace('_', ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
         }).join(', ');
         if (stream) {
-            var panelTypingEl = document.createElement('div');
-            panelTypingEl.id = typingId;
-            panelTypingEl.className = 'msg-typing-indicator msg-typing-indicator--panel';
-            panelTypingEl.innerHTML = '<span style="font-size:0.72rem;font-weight:700;color:#4a90d9;margin-right:8px;">Panel [' + escHtml(names) + ']</span>'
-                + '<span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span>';
-            stream.appendChild(panelTypingEl);
-            panelTypingEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+            stream.innerHTML += '<div id="' + typingId + '" style="padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:4px;">'
+                + '<div style="font-size:0.72rem;font-weight:700;color:#4a90d9;margin-bottom:3px;">Panel [' + escHtml(names) + ']</div>'
+                + '<div style="font-size:0.85rem;opacity:0.6;">Experts thinking in parallel…</div></div>';
+            stream.scrollTop = stream.scrollHeight;
         }
 
         fetch(INTAKE_API + '/panel-turn', {
@@ -1412,12 +1400,9 @@
 
         var responses = data.panel_responses || [];
         var merged = data.merged_requirements || [];
-        var sessionId = data.session_id || _activeIntakeSessionId;
-        var hitlId = 'hitl-' + Date.now();
 
-        var html = '<div class="panel-response" id="' + hitlId + '">';
+        var html = '<div class="panel-response">';
 
-        // Per-persona bubbles (analysis text only, no req pills here)
         responses.forEach(function (r) {
             var color = r.color || '#4a90d9';
             html += '<div class="panel-persona-bubble" style="--panel-color:' + escHtml(color) + '">';
@@ -1425,217 +1410,71 @@
             if (r.error) {
                 html += '<div class="panel-persona-bubble__body" style="color:#f87171;font-size:0.8rem;">Error: ' + escHtml(r.error) + '</div>';
             } else {
+                // Strip REQ: lines from body — show them separately as pills
                 var bodyText = (r.response || '').replace(/^REQ:.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
                 html += '<div class="panel-persona-bubble__body">' + escHtml(bodyText) + '</div>';
+                if (r.requirements && r.requirements.length > 0) {
+                    html += '<div class="panel-persona-bubble__reqs">';
+                    r.requirements.forEach(function (req) {
+                        html += '<span class="panel-req-pill" title="' + escHtml(req.type || '') + '">' + escHtml(req.text) + '</span>';
+                    });
+                    html += '</div>';
+                }
             }
             html += '</div>';
         });
 
-        // HITL review section
+        // Consensus footer
+        html += '<div class="panel-consensus">';
         if (merged.length > 0) {
-            html += '<div class="panel-hitl-section">';
-            html += '<div class="panel-hitl-header">';
-            html += '<span class="panel-hitl-title">&#x270F;&#xFE0F; Review AI-Generated Requirements</span>';
-            html += '<span class="panel-hitl-subtitle">Approve, edit, or remove each requirement before it counts toward your score.</span>';
-            html += '</div>';
-            html += '<div class="panel-hitl-cards" id="' + hitlId + '-cards">';
-            merged.forEach(function (req, idx) {
-                var cardId = hitlId + '-card-' + idx;
-                var reqId = req.id || '';
-                html += '<div class="panel-hitl-card panel-hitl-card--pending" id="' + cardId + '" data-req-id="' + escHtml(reqId) + '" data-state="pending">';
-                html += '<div class="panel-hitl-card__meta">';
-                html += '<span class="panel-req-type-badge panel-req-type-badge--' + escHtml(req.type || 'functional') + '">' + escHtml(req.type || 'functional') + '</span>';
-                html += '<span class="panel-req-priority-badge">' + escHtml(req.priority || 'medium') + '</span>';
-                html += '</div>';
-                html += '<div class="panel-hitl-card__text" contenteditable="true" spellcheck="true" data-orig="' + escHtml(req.text) + '">' + escHtml(req.text) + '</div>';
-                html += '<div class="panel-hitl-card__actions">';
-                html += '<button class="panel-hitl-btn panel-hitl-btn--approve" data-hitl-action="approve" data-hitl-id="' + hitlId + '" data-card-id="' + cardId + '" title="Approve">&#x2713; Approve</button>';
-                html += '<button class="panel-hitl-btn panel-hitl-btn--reject" data-hitl-action="reject" data-hitl-id="' + hitlId + '" data-card-id="' + cardId + '" title="Remove">&#x2715; Remove</button>';
-                html += '</div>';
-                html += '</div>';
-            });
-            html += '</div>';
-
-            // Human-authored input
-            html += '<div class="panel-hitl-custom">';
-            html += '<label class="panel-hitl-custom__label">Add your own requirement:</label>';
-            html += '<div class="panel-hitl-custom__row">';
-            html += '<input type="text" class="panel-hitl-custom__input" id="' + hitlId + '-custom" placeholder="The system shall …" />';
-            html += '<button class="panel-hitl-btn panel-hitl-btn--add" data-hitl-action="add" data-hitl-id="' + hitlId + '">+ Add</button>';
-            html += '</div>';
-            html += '</div>';
-
-            // Confirm button
-            html += '<div class="panel-hitl-footer">';
-            html += '<button class="panel-hitl-btn panel-hitl-btn--confirm" id="' + hitlId + '-confirm" data-hitl-action="confirm" data-hitl-id="' + hitlId + '" data-session-id="' + escHtml(sessionId) + '">&#x2713; Confirm Selection</button>';
-            html += '<span class="panel-hitl-status" id="' + hitlId + '-status"></span>';
-            html += '</div>';
-            html += '</div>'; // panel-hitl-section
+            html += '<strong>' + merged.length + ' requirement' + (merged.length !== 1 ? 's' : '') + ' captured</strong>';
         } else {
-            html += '<div class="panel-consensus">No new requirements extracted this turn.</div>';
+            html += 'No new requirements extracted this turn.';
         }
-
         if (data.panel_question) {
-            html += '<div class="panel-consensus"><em>' + escHtml(data.panel_question) + '</em></div>';
+            html += ' &mdash; <em>' + escHtml(data.panel_question) + '</em>';
         }
-        html += '</div>'; // panel-response
+        html += '</div>';
+
+        // Next-step guidance bar (shown when no follow-up question and score is below threshold)
+        var _curScore = typeof _lastReadinessScore === 'number' ? _lastReadinessScore : 0;
+        if (!data.panel_question) {
+            var _pct = Math.round(_curScore * 100);
+            var _needed = 70 - _pct;
+            if (_curScore < 0.7) {
+                html += '<div class="panel-next-step">';
+                html += '<span class="panel-next-step__score">Score: <strong>' + _pct + '%</strong> / 70% needed</span>';
+                html += '<span class="panel-next-step__hint">';
+                if (_pct < 20) {
+                    html += 'Keep describing your requirements — add functional, security, and data requirements.';
+                } else if (_pct < 40) {
+                    html += 'Good start! Add acceptance criteria, timeline, and compliance details to raise your score.';
+                } else {
+                    html += 'Almost there! ' + _needed + '% more — mention budget, team size, or add testability criteria.';
+                }
+                html += '</span></div>';
+            } else {
+                html += '<div class="panel-next-step panel-next-step--ready">';
+                html += 'Requirements ready — use <strong>Generate Plan</strong> or <strong>Export</strong> in the sidebar.';
+                html += '</div>';
+            }
+        }
+        html += '</div>';
 
         stream.innerHTML += html;
         stream.scrollTop = stream.scrollHeight;
 
+        // Inject inline QA widget for the panel question
         if (data.panel_question) {
             _injectQAWidget(stream, data.panel_question);
         }
 
+        // Re-focus message input so the user can keep typing
         var _inp = document.getElementById('message-input');
         if (_inp && !_inp.disabled) {
             _inp.placeholder = 'Add more requirements, describe use cases, mention constraints…';
+            _inp.focus();
         }
-    }
-
-    // HITL card interactions — exposed on window so event-delegated handlers can reach them
-    function _hitlSetApprove(card) {
-        card.dataset.state = 'approved';
-        card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--rejected');
-        card.classList.add('panel-hitl-card--approved');
-        var textEl = card.querySelector('.panel-hitl-card__text');
-        if (textEl) card.dataset.text = textEl.innerText.trim();
-        var approveBtn = card.querySelector('.panel-hitl-btn--approve');
-        if (approveBtn) { approveBtn.disabled = true; approveBtn.innerHTML = '&#x2713; Approved'; }
-        var rejectBtn = card.querySelector('.panel-hitl-btn--reject');
-        if (rejectBtn) { rejectBtn.disabled = false; rejectBtn.innerHTML = '&#x2715; Remove'; }
-    }
-
-    function _hitlSetPending(card) {
-        card.dataset.state = 'pending';
-        card.classList.remove('panel-hitl-card--approved', 'panel-hitl-card--rejected');
-        card.classList.add('panel-hitl-card--pending');
-        var approveBtn = card.querySelector('.panel-hitl-btn--approve');
-        if (approveBtn) { approveBtn.disabled = false; approveBtn.innerHTML = '&#x2713; Approve'; }
-        var rejectBtn = card.querySelector('.panel-hitl-btn--reject');
-        if (rejectBtn) { rejectBtn.disabled = false; rejectBtn.innerHTML = '&#x2715; Remove'; }
-    }
-
-    function _hitlSetReject(card) {
-        card.dataset.state = 'rejected';
-        card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--approved');
-        card.classList.add('panel-hitl-card--rejected');
-        var approveBtn = card.querySelector('.panel-hitl-btn--approve');
-        if (approveBtn) { approveBtn.disabled = false; approveBtn.innerHTML = '&#x2713; Approve'; }
-        var rejectBtn = card.querySelector('.panel-hitl-btn--reject');
-        if (rejectBtn) { rejectBtn.disabled = true; rejectBtn.innerHTML = '&#x2715; Removed'; }
-    }
-
-    function _hitlApprove(hitlId, cardId) {
-        var card = document.getElementById(cardId);
-        if (!card) return;
-        // Toggle: approved → pending, anything else → approved
-        if (card.dataset.state === 'approved') { _hitlSetPending(card); }
-        else { _hitlSetApprove(card); }
-    }
-
-    function _hitlReject(hitlId, cardId) {
-        var card = document.getElementById(cardId);
-        if (!card) return;
-        // Toggle: rejected → pending, anything else → rejected
-        if (card.dataset.state === 'rejected') { _hitlSetPending(card); }
-        else { _hitlSetReject(card); }
-    }
-
-    function _hitlAddCustom(hitlId) {
-        var input = document.getElementById(hitlId + '-custom');
-        if (!input) return;
-        var text = (input.value || '').trim();
-        if (!text) return;
-        var cardsEl = document.getElementById(hitlId + '-cards');
-        if (!cardsEl) return;
-        var cardId = hitlId + '-custom-' + Date.now();
-        var div = document.createElement('div');
-        div.className = 'panel-hitl-card panel-hitl-card--approved panel-hitl-card--custom';
-        div.id = cardId;
-        div.dataset.reqId = '';
-        div.dataset.state = 'custom';
-        div.dataset.text = text;
-        div.dataset.hitlId = hitlId;
-        div.innerHTML = (
-            '<div class="panel-hitl-card__meta"><span class="panel-req-type-badge panel-req-type-badge--functional">functional</span><span class="panel-req-priority-badge">medium</span></div>' +
-            '<div class="panel-hitl-card__text" contenteditable="true">' + escHtml(text) + '</div>' +
-            '<div class="panel-hitl-card__actions">' +
-            '<button class="panel-hitl-btn panel-hitl-btn--reject" data-hitl-action="reject" data-hitl-id="' + hitlId + '" data-card-id="' + cardId + '">&#x2715; Remove</button>' +
-            '</div>'
-        );
-        cardsEl.appendChild(div);
-        input.value = '';
-        input.focus();
-    }
-
-    function _hitlConfirm(hitlId, sessionId) {
-        var container = document.getElementById(hitlId);
-        if (!container) return;
-        var confirmBtn = document.getElementById(hitlId + '-confirm');
-        var statusEl = document.getElementById(hitlId + '-status');
-        if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.textContent = 'Saving…'; }
-
-        var approved = [], deleted = [], custom = [];
-        var approvedCount = 0, deletedCount = 0;
-        var cards = container.querySelectorAll('.panel-hitl-card');
-        cards.forEach(function (card) {
-            var state = card.dataset.state;
-            var reqId = card.dataset.reqId;
-            var textEl = card.querySelector('.panel-hitl-card__text');
-            var text = (textEl ? textEl.innerText : card.dataset.text || '').trim();
-            // pending cards not yet acted on are treated as approved
-            var effectiveState = (state === 'pending') ? 'approved' : state;
-            if ((effectiveState === 'approved') && reqId) {
-                approved.push(reqId);
-                approvedCount++;
-            } else if (effectiveState === 'approved') {
-                // approved card with no DB id yet — still count it client-side
-                approvedCount++;
-            } else if (effectiveState === 'rejected' && reqId) {
-                deleted.push(reqId);
-                deletedCount++;
-            } else if (effectiveState === 'rejected') {
-                deletedCount++;
-            } else if (state === 'custom' && text) {
-                custom.push({ text: text, type: 'functional', priority: 'medium' });
-            }
-        });
-
-        fetch(INTAKE_API + '/hitl-confirm/' + sessionId, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ approved: approved, deleted: deleted, custom: custom }),
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (result) {
-            if (result.error) {
-                if (statusEl) statusEl.textContent = 'Error: ' + result.error;
-                if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✓ Confirm Selection'; }
-                return;
-            }
-            // Lock the section — use client-side counts as source of truth for display
-            var hitlSection = container.querySelector('.panel-hitl-section');
-            if (hitlSection) {
-                var customCount = result.custom_added || custom.length;
-                hitlSection.innerHTML = (
-                    '<div class="panel-hitl-confirmed">' +
-                    '&#x2713; Confirmed: ' + approvedCount + ' approved, ' +
-                    deletedCount + ' removed' +
-                    (customCount ? ', ' + customCount + ' added by you' : '') +
-                    '.</div>'
-                );
-            }
-            refreshReadiness();
-            if (result.new_score !== null && result.new_score !== undefined) {
-                var pct = Math.round(result.new_score * 100);
-                appendMessage({ role: 'system', content: '✓ HITL confirmed. Readiness score: ' + pct + '%.' });
-            }
-        })
-        .catch(function (err) {
-            if (statusEl) statusEl.textContent = 'Error: ' + err.message;
-            if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = '✓ Confirm Selection'; }
-        });
     }
 
     function chatExport() {
@@ -2394,28 +2233,7 @@
                 if (options.panelEnabled && options.panelPersonas && options.panelPersonas.length) {
                     var _pendingPersonas = options.panelPersonas;
                     setTimeout(function () {
-                        var sidebarContainer = document.getElementById('panel-persona-chips');
-                        // Inject any custom experts not already in the sidebar chip list
-                        if (sidebarContainer) {
-                            _pendingPersonas.forEach(function (pVal) {
-                                if (!sidebarContainer.querySelector('input[value="' + pVal + '"]')) {
-                                    var lbl = document.createElement('label');
-                                    lbl.className = 'panel-chip panel-chip--custom panel-chip--active';
-                                    var cb2 = document.createElement('input');
-                                    cb2.type = 'checkbox';
-                                    cb2.value = pVal;
-                                    cb2.checked = true;
-                                    cb2.addEventListener('change', function () {
-                                        lbl.classList.toggle('panel-chip--active', cb2.checked);
-                                        _syncPanelPersonas();
-                                    });
-                                    lbl.appendChild(cb2);
-                                    lbl.appendChild(document.createTextNode(' ' + pVal.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); })));
-                                    sidebarContainer.appendChild(lbl);
-                                }
-                            });
-                        }
-                        // Sync checked state for all chips
+                        // Sync sidebar chips BEFORE chatTogglePanel reads them via _syncPanelPersonas
                         var sidebarChips = document.querySelectorAll('#panel-persona-chips input[type="checkbox"]');
                         for (var sci = 0; sci < sidebarChips.length; sci++) {
                             sidebarChips[sci].checked = _pendingPersonas.indexOf(sidebarChips[sci].value) !== -1;
@@ -2431,10 +2249,7 @@
                 // Show welcome message from intake
                 if (data.message) {
                     var stream = document.getElementById('message-stream');
-                    if (stream) {
-                        stream.innerHTML = renderMessageHtml({ role: 'assistant', content: data.message, turn_number: 1 });
-                        _injectQAWidget(stream, data.message);
-                    }
+                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: data.message });
                 }
 
                 // Update URL for backward compat
@@ -2506,8 +2321,6 @@
 
         if (btnNew) btnNew.addEventListener('click', function () {
             if (modal) modal.classList.add('chat-modal-overlay--visible');
-            _populateTitleHistory();
-            _populateCustomChips();
         });
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
@@ -2685,28 +2498,6 @@
             });
         }
 
-        // Wire "+ Add Expert" for user-defined panel experts
-        var btnAddPanelExpert = document.getElementById('btn-add-panel-expert');
-        if (btnAddPanelExpert) {
-            btnAddPanelExpert.addEventListener('click', function () {
-                var nameInput = document.getElementById('modal-panel-custom-name');
-                var name = (nameInput ? nameInput.value : '').trim();
-                if (!name || !modalPanelPersonas) return;
-                var val = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-                if (!val) return;
-                // Persist (increments uses if already known)
-                _upsertExpert(name, val);
-                // Remove existing chip for this value (re-render from store)
-                modalPanelPersonas.querySelectorAll('.panel-chip--custom').forEach(function(c) { c.remove(); });
-                // Re-render all cached experts (sorted by uses) + check the new one
-                _lsGet(_EXPERT_STORE).sort(_byUseDesc).forEach(function(e, idx) {
-                    var autoCheck = e.value === val || idx < 2;
-                    modalPanelPersonas.appendChild(_makeExpertChip(e.name, e.value, autoCheck));
-                });
-                if (nameInput) nameInput.value = '';
-            });
-        }
-
         function _readCompliance() {
             var envEl = document.querySelector('input[name="ctx-env"]:checked');
             var isGov = envEl && envEl.value === 'gov';
@@ -2740,209 +2531,47 @@
             }
             var regimeChecks = document.querySelectorAll('.ctx-regime-chip input');
             for (var ri = 0; ri < regimeChecks.length; ri++) regimeChecks[ri].checked = false;
-            // Reset expert panel — ON by default, remove custom chips
+            // Reset expert panel
             var mpEnabled = document.getElementById('modal-panel-enabled');
             var mpPersonas = document.getElementById('modal-panel-personas');
-            if (mpEnabled) mpEnabled.checked = true;
-            if (mpPersonas) mpPersonas.style.display = 'flex';
-            // Reset built-in chip states, then re-render cached custom experts
-            var mpChips = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:not(.panel-chip--custom input)');
-            document.querySelectorAll('#modal-panel-personas .panel-chip:not(.panel-chip--custom) input[type="checkbox"]').forEach(function(cb) {
-                var isDefault = cb.value === 'developer' || cb.value === 'analyst';
-                cb.checked = isDefault;
-                var lbl = cb.closest('.panel-chip');
-                if (lbl) lbl.classList.toggle('panel-chip--active', isDefault);
-            });
-            var mpCustomInput = document.getElementById('modal-panel-custom-name');
-            if (mpCustomInput) mpCustomInput.value = '';
-            _populateCustomChips();
+            if (mpEnabled) mpEnabled.checked = false;
+            if (mpPersonas) mpPersonas.style.display = 'none';
+            var mpChips = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]');
+            for (var pi = 0; pi < mpChips.length; pi++) mpChips[pi].checked = mpChips[pi].value === 'developer' || mpChips[pi].value === 'analyst';
             _updateModalForCanvas('intake');
         }
 
-        // ── Cached custom persona / expert storage ──────────────────────
-        var _PERSONA_STORE  = 'icdev_custom_personas';
-        var _EXPERT_STORE   = 'icdev_custom_panel_experts';
-        var _TITLE_STORE    = 'icdev_ctx_title_history';
-
-        function _lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; } }
-        function _lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
-        function _byUseDesc(a, b) { return (b.uses || 0) - (a.uses || 0); }
-
-        // --- Persona store ---
-        function _upsertPersona(name, prompt) {
-            var store = _lsGet(_PERSONA_STORE);
-            var i = store.findIndex(function(p) { return p.name === name; });
-            if (i >= 0) { store[i].prompt = prompt; store[i].uses = (store[i].uses || 0) + 1; }
-            else store.push({ name: name, prompt: prompt, uses: 1 });
-            _lsSet(_PERSONA_STORE, store);
-        }
-        function _incrementPersonaUse(name) {
-            var store = _lsGet(_PERSONA_STORE);
-            var i = store.findIndex(function(p) { return p.name === name; });
-            if (i >= 0) { store[i].uses = (store[i].uses || 0) + 1; _lsSet(_PERSONA_STORE, store); }
-        }
-
-        // --- Expert store ---
-        function _upsertExpert(name, value) {
-            var store = _lsGet(_EXPERT_STORE);
-            var i = store.findIndex(function(e) { return e.value === value; });
-            if (i >= 0) { store[i].uses = (store[i].uses || 0) + 1; }
-            else store.push({ name: name, value: value, uses: 1 });
-            _lsSet(_EXPERT_STORE, store);
-        }
-        function _incrementExpertUses(values) {
-            var store = _lsGet(_EXPERT_STORE);
-            values.forEach(function(v) {
-                var i = store.findIndex(function(e) { return e.value === v; });
-                if (i >= 0) store[i].uses = (store[i].uses || 0) + 1;
-            });
-            _lsSet(_EXPERT_STORE, store);
-        }
-
-        // --- Title history ---
-        function _saveTitleHistory(title) {
-            if (!title) return;
-            var hist = _lsGet(_TITLE_STORE).filter(function(t) { return t !== title; });
-            hist.unshift(title);
-            _lsSet(_TITLE_STORE, hist.slice(0, 10));
-        }
-        function _populateTitleHistory() {
-            var dl = document.getElementById('ctx-title-history');
-            if (!dl) return;
-            dl.innerHTML = _lsGet(_TITLE_STORE).map(function(t) {
-                return '<option value="' + t.replace(/"/g, '&quot;') + '">';
-            }).join('');
-        }
-
-        // --- Build a persona chip (for preset container) ---
-        function _makePersonaChip(name, prompt, container, isCustom, uses) {
-            var chip = document.createElement('button');
-            chip.type = 'button';
-            chip.className = 'ctx-preset-chip' + (isCustom ? ' ctx-preset-chip--custom' : '');
-            chip.dataset.customName = name;
-            chip.appendChild(document.createTextNode(name));
-            if (isCustom && uses) {
-                var badge = document.createElement('span');
-                badge.className = 'ctx-preset-chip__uses';
-                badge.textContent = uses + 'x';
-                chip.appendChild(badge);
-            }
-            chip.addEventListener('click', function() {
-                container.querySelectorAll('.ctx-preset-chip').forEach(function(c) { c.classList.remove('ctx-preset-chip--active'); });
-                chip.classList.add('ctx-preset-chip--active');
-                var ta = document.getElementById('new-ctx-prompt');
-                if (ta) ta.value = prompt;
-                if (isCustom) _incrementPersonaUse(name);
-            });
-            return chip;
-        }
-
-        // --- Build an expert chip (for modal-panel-personas) ---
-        function _makeExpertChip(name, value, autoCheck, uses) {
-            var lbl = document.createElement('label');
-            lbl.className = 'panel-chip panel-chip--custom' + (autoCheck ? ' panel-chip--active' : '');
-            lbl.dataset.customVal = value;
-            var cb = document.createElement('input');
-            cb.type = 'checkbox'; cb.value = value; cb.checked = autoCheck;
-            cb.addEventListener('change', function() { lbl.classList.toggle('panel-chip--active', cb.checked); });
-            lbl.appendChild(cb);
-            lbl.appendChild(document.createTextNode(' ' + name));
-            if (uses) {
-                var badge = document.createElement('span');
-                badge.className = 'panel-chip__uses';
-                badge.textContent = uses + 'x';
-                lbl.appendChild(badge);
-            }
-            return lbl;
-        }
-
-        // --- Render cached custom chips into the modal ---
-        function _populateCustomChips() {
-            // Persona preset chips
-            var presetEl = document.getElementById('ctx-preset-chips');
-            if (presetEl) {
-                presetEl.querySelectorAll('.ctx-preset-chip--custom').forEach(function(c) { c.remove(); });
-                _lsGet(_PERSONA_STORE).sort(_byUseDesc).forEach(function(p) {
-                    presetEl.appendChild(_makePersonaChip(p.name, p.prompt, presetEl, true, p.uses));
-                });
-            }
-            // Expert panel chips
-            var expertsEl = document.getElementById('modal-panel-personas');
-            if (expertsEl) {
-                expertsEl.querySelectorAll('.panel-chip--custom').forEach(function(c) { c.remove(); });
-                _lsGet(_EXPERT_STORE).sort(_byUseDesc).forEach(function(e, idx) {
-                    // Auto-check only the top 2 most-used experts
-                    expertsEl.appendChild(_makeExpertChip(e.name, e.value, idx < 2, e.uses));
-                });
-            }
-        }
-
-        // Custom persona — wire the Add button
-        var btnAddPersona = document.getElementById('btn-add-custom-persona');
-        if (btnAddPersona) {
-            btnAddPersona.addEventListener('click', function () {
-                var nameEl   = document.getElementById('ctx-custom-persona-name');
-                var promptEl = document.getElementById('ctx-custom-persona-prompt');
-                var name   = (nameEl   ? nameEl.value   : '').trim();
-                var prompt = (promptEl ? promptEl.value : '').trim();
-                if (!name) return;
-                var container = document.getElementById('ctx-preset-chips');
-                if (!container) return;
-                // Persist first
-                _upsertPersona(name, prompt);
-                // Remove existing chip for this name if present (avoid duplicate)
-                container.querySelectorAll('.ctx-preset-chip--custom').forEach(function(c) {
-                    if (c.dataset.customName === name) c.remove();
-                });
-                var chip = _makePersonaChip(name, prompt, container, true);
-                container.appendChild(chip);
-                chip.click();
-                if (nameEl)   nameEl.value   = '';
-                if (promptEl) promptEl.value = '';
-            });
-        }
-
         if (btnCreate) btnCreate.addEventListener('click', function () {
-            // Show spinner while context is being created
-            var _origLabel = btnCreate.textContent;
-            btnCreate.disabled = true;
-            btnCreate.innerHTML = '&#x23F3; Creating…';
-
             var title = document.getElementById('new-ctx-title').value.trim();
             var model = document.getElementById('new-ctx-model').value;
             var prompt = document.getElementById('new-ctx-prompt').value.trim();
             var canvasMode = canvasSelect ? canvasSelect.value : 'intake';
             var comp = _readCompliance();
             var isIntake = canvasMode === 'intake' && document.getElementById('new-ctx-intake').checked;
-            var finalTitle = title || (canvasMode === 'intake' ? 'Requirements Session' : canvasMode.toUpperCase() + ' Chat');
 
             if (canvasMode !== 'intake') {
+                // Design canvas — append compliance blurb to system prompt
                 var compBlurb = _buildComplianceBlurb(comp.il, comp.regimes);
                 var sysPrompt = (prompt + compBlurb).trim();
-                createContext({ title: finalTitle, agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
+                createContext({ title: title || (canvasMode.toUpperCase() + ' Chat'), agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
                     if (ctx && ctx.context_id) setContextCanvasType(ctx.context_id, canvasMode);
                 });
             } else if (isIntake) {
                 var mpEl = document.getElementById('modal-panel-enabled');
-                var panelEnabled = mpEl ? mpEl.checked : true; // default ON
+                var panelEnabled = mpEl ? mpEl.checked : false;
                 var panelPersonas = [];
-                var panelChecks = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:checked');
-                for (var pci = 0; pci < panelChecks.length; pci++) panelPersonas.push(panelChecks[pci].value);
-                if (!panelPersonas.length) panelPersonas = ['developer', 'analyst'];
-                // Increment use counts for any custom experts being launched
-                var _customExpertVals = _lsGet(_EXPERT_STORE).map(function(e) { return e.value; });
-                _incrementExpertUses(panelPersonas.filter(function(v) { return _customExpertVals.indexOf(v) !== -1; }));
-                createIntakeContext({ title: finalTitle, agent_model: model, classification: comp.il, frameworks: comp.regimes.join(','), panelEnabled: panelEnabled, panelPersonas: panelPersonas });
+                if (panelEnabled) {
+                    var panelChecks = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:checked');
+                    for (var pci = 0; pci < panelChecks.length; pci++) panelPersonas.push(panelChecks[pci].value);
+                    if (!panelPersonas.length) panelPersonas = ['developer', 'analyst'];
+                }
+                createIntakeContext({ title: title, agent_model: model, classification: comp.il, panelEnabled: panelEnabled, panelPersonas: panelPersonas });
             } else {
                 var compBlurbR = _buildComplianceBlurb(comp.il, comp.regimes);
-                createContext({ title: finalTitle, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
+                createContext({ title: title, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
             }
-            _saveTitleHistory(finalTitle);
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
             _resetModal();
-            // Restore button (it may be re-opened without a page refresh)
-            btnCreate.disabled = false;
-            btnCreate.textContent = _origLabel || 'Create';
         });
 
         // Send message
@@ -3323,20 +2952,6 @@
             inp.dispatchEvent(new Event('input'));
             sendMessage();
         }
-    });
-
-    // HITL action delegation — handles approve/reject/add/confirm buttons in panel cards
-    document.addEventListener('click', function(e) {
-        var btn = e.target.closest('[data-hitl-action]');
-        if (!btn) return;
-        var action  = btn.getAttribute('data-hitl-action');
-        var hitlId  = btn.getAttribute('data-hitl-id');
-        var cardId  = btn.getAttribute('data-card-id');
-        var sessId  = btn.getAttribute('data-session-id');
-        if (action === 'approve') { _hitlApprove(hitlId, cardId); }
-        else if (action === 'reject')  { _hitlReject(hitlId, cardId); }
-        else if (action === 'add')     { _hitlAddCustom(hitlId); }
-        else if (action === 'confirm') { _hitlConfirm(hitlId, sessId); }
     });
 
     // Init on DOM ready
