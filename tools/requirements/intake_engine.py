@@ -2402,7 +2402,7 @@ def _detect_ai_governance_signals(text, session_data=None):
 def _quick_readiness_estimate(session_id, conn):
     """Quick readiness estimate based on requirement counts and quality."""
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved')",
+        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
         (session_id,),
     ).fetchall()
 

@@ -103,7 +103,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     session_data = dict(session)
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved')",
+        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
         (session_id,),
     ).fetchall()
     reqs = [dict(r) for r in reqs]
