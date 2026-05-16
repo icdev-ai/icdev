@@ -131,6 +131,10 @@ ALLOWED_EXTENSIONS = {
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
+    # Bypass CUI-level RLS: intake uses session_id as the auth token.
+    # Without this, the Flask security middleware's default CUI context
+    # filters out Government sessions (classification=IL4/IL2) from SELECTs.
+    conn.set_security_context(None)
     return conn
 
 

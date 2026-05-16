@@ -1521,9 +1521,62 @@
         .catch(function (err) { appendMessage({ role: 'system', content: 'Simulation error: ' + err.message }); });
     }
 
+    function _escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function _buildReqsTable(reqs) {
+        if (!reqs || !reqs.length) return '<p style="color:var(--text-muted)">No requirements found.</p>';
+        var TYPE_LABELS = { functional:'Functional', security:'Security', compliance:'Compliance', performance:'Performance', integration:'Integration', data:'Data', non_functional:'Non-Functional' };
+        var rows = reqs.map(function(r, i) {
+            var t = (r.requirement_type || r.type || 'functional').toLowerCase();
+            var p = (r.priority || 'medium').toLowerCase();
+            var tLabel = TYPE_LABELS[t] || t;
+            return '<tr>' +
+                '<td style="width:32px;text-align:center;color:var(--text-muted);font-size:0.75rem;">' + (i+1) + '</td>' +
+                '<td>' + _escHtml(r.raw_text || r.text || '') + '</td>' +
+                '<td style="width:120px;"><span class="req-type-badge req-type--' + t + '">' + tLabel + '</span></td>' +
+                '<td style="width:80px;"><span class="req-priority-badge req-priority--' + p + '">' + p.charAt(0).toUpperCase() + p.slice(1) + '</span></td>' +
+                '<td style="width:70px;font-size:0.75rem;color:var(--text-muted);">' + _escHtml(r.status || 'draft') + '</td>' +
+                '</tr>';
+        }).join('');
+        return '<table class="reqs-table">' +
+            '<thead><tr><th>#</th><th>Requirement</th><th>Type</th><th>Priority</th><th>Status</th></tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+            '</table>';
+    }
+
     function chatViewRequirements() {
         if (!_activeIntakeSessionId) return;
-        window.open(INTAKE_API + '/session/' + _activeIntakeSessionId, '_blank');
+        appendMessage({ role: 'system', content: 'Loading requirements...' });
+        fetch(INTAKE_API + '/export/' + _activeIntakeSessionId, { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
+            var reqs = data.requirements || [];
+            var modal = document.getElementById('reqs-viewer-modal');
+            var metaEl = document.getElementById('reqs-modal-meta');
+            var bodyEl = document.getElementById('reqs-modal-body');
+            if (!modal || !bodyEl) { window.open(INTAKE_API + '/session/' + _activeIntakeSessionId, '_blank'); return; }
+            var metaParts = [reqs.length + ' requirement' + (reqs.length !== 1 ? 's' : '')];
+            if (data.customer_name) metaParts.push(data.customer_name);
+            if (data.impact_level) metaParts.push(data.impact_level);
+            if (metaEl) metaEl.textContent = metaParts.join(' · ');
+            bodyEl.innerHTML = _buildReqsTable(reqs);
+            var dlBtn = document.getElementById('reqs-download-btn');
+            if (dlBtn) {
+                dlBtn.onclick = function () {
+                    var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+                    var url = URL.createObjectURL(blob);
+                    var a = document.createElement('a');
+                    a.href = url; a.download = 'requirements-' + _activeIntakeSessionId + '.json';
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                };
+            }
+            modal.classList.add('chat-modal-overlay--visible');
+        })
+        .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
     }
 
     // ===================================================================
@@ -1539,17 +1592,45 @@
             if (data.error) { appendMessage({ role: 'system', content: 'Error generating PRD: ' + data.error }); return; }
             var md = data.prd_markdown || '';
             if (!md) { appendMessage({ role: 'system', content: 'PRD generated but empty — add more requirements first.' }); return; }
-            var blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url; a.download = 'PRD-' + _activeIntakeSessionId + '.md';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            var summary = 'PRD generated: ' + (data.total_requirements || 0) + ' requirements';
-            if (data.has_coa) summary += ', COA included';
-            if (data.has_decomposition) summary += ', SAFe decomposition included';
-            summary += '. Downloaded.';
-            appendMessage({ role: 'system', content: summary });
+            var modal = document.getElementById('prd-viewer-modal');
+            var metaEl = document.getElementById('prd-modal-meta');
+            var bodyEl = document.getElementById('prd-modal-body');
+            if (modal && bodyEl) {
+                bodyEl.innerHTML = (typeof marked !== 'undefined')
+                    ? marked.parse(md)
+                    : '<pre style="white-space:pre-wrap;word-break:break-word;">' + _escHtml(md) + '</pre>';
+                if (metaEl) {
+                    var metaParts = [(data.total_requirements || 0) + ' requirements'];
+                    if (data.has_coa) metaParts.push('COA included');
+                    if (data.has_decomposition) metaParts.push('SAFe decomposition included');
+                    if (data.readiness_score) metaParts.push('Readiness: ' + Math.round(data.readiness_score) + '%');
+                    metaEl.textContent = metaParts.join(' · ');
+                }
+                var dlBtn = document.getElementById('prd-download-btn');
+                if (dlBtn) {
+                    dlBtn.onclick = function () {
+                        var blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+                        var url = URL.createObjectURL(blob);
+                        var a = document.createElement('a');
+                        a.href = url; a.download = 'PRD-' + _activeIntakeSessionId + '.md';
+                        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    };
+                }
+                modal.classList.add('chat-modal-overlay--visible');
+                var summary = 'PRD ready: ' + (data.total_requirements || 0) + ' requirements';
+                if (data.has_coa) summary += ', COA included';
+                if (data.has_decomposition) summary += ', SAFe decomposition included';
+                appendMessage({ role: 'system', content: summary });
+            } else {
+                var blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url; a.download = 'PRD-' + _activeIntakeSessionId + '.md';
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                appendMessage({ role: 'system', content: 'PRD downloaded.' });
+            }
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
     }
@@ -2325,6 +2406,25 @@
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
         });
+
+        // PRD viewer modal close buttons
+        var prdModal = document.getElementById('prd-viewer-modal');
+        ['prd-modal-close','prd-modal-cancel'].forEach(function(id) {
+            var btn = document.getElementById(id);
+            if (btn) btn.addEventListener('click', function () {
+                if (prdModal) prdModal.classList.remove('chat-modal-overlay--visible');
+            });
+        });
+
+        // Requirements viewer modal close buttons
+        var reqsModal = document.getElementById('reqs-viewer-modal');
+        ['reqs-modal-close','reqs-modal-cancel'].forEach(function(id) {
+            var btn = document.getElementById(id);
+            if (btn) btn.addEventListener('click', function () {
+                if (reqsModal) reqsModal.classList.remove('chat-modal-overlay--visible');
+            });
+        });
+
         // ---------------------------------------------------------------
         // Canvas preset definitions (persona chips + system prompts)
         // ---------------------------------------------------------------

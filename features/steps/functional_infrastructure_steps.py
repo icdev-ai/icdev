@@ -31,6 +31,16 @@ _INTERFACE_ARTIFACTS = [
     'args/security_gates.yaml',
 ]
 
+_DEPLOYMENT_ARTIFACTS = [
+    'tools/infra/iac_generator.py',
+    'tools/infra/terraform_generator.py',
+    'tools/infra/ansible_generator.py',
+    'tools/infra/k8s_generator.py',
+    'tools/infra/dockerfile_generator.py',
+    'args/deployment_profiles.yaml',
+    'args/infra_canvas_config.yaml',
+]
+
 
 @given('the system is operational and the user is authenticated')
 def step_system_operational(context):
@@ -159,6 +169,43 @@ def step_verify_compliance(context):
     ]
 
 
+@when(
+    'Infrastructure and platform enablement for deployment capabilities. '
+    'Covers IaC generation, container tooling, and deployment configuration '
+    'required to support 3 deployment requirement(s).'
+)
+def step_deployment_enablement(context):
+    context.missing = [
+        a for a in _DEPLOYMENT_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+
+
+@when('the IaC generation tooling is verified')
+def step_verify_iac_tooling(context):
+    context.check_paths = [
+        'tools/infra/iac_generator.py',
+        'tools/infra/terraform_generator.py',
+        'tools/infra/ansible_generator.py',
+    ]
+
+
+@when('the container and orchestration tooling is verified')
+def step_verify_container_tooling(context):
+    context.check_paths = [
+        'tools/infra/k8s_generator.py',
+        'tools/infra/dockerfile_generator.py',
+    ]
+
+
+@when('the deployment configuration is verified')
+def step_verify_deployment_config(context):
+    context.check_paths = [
+        'args/deployment_profiles.yaml',
+        'args/infra_canvas_config.yaml',
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Then steps
 # ---------------------------------------------------------------------------
@@ -249,6 +296,41 @@ def step_mosa_assessor_exists(context, path):
 
 @then('the modular design analyzer exists at "{path}"')
 def step_modular_design_analyzer_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the IaC generator exists at "{path}"')
+def step_iac_generator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the Terraform generator exists at "{path}"')
+def step_terraform_generator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the Ansible generator exists at "{path}"')
+def step_ansible_generator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the Kubernetes generator exists at "{path}"')
+def step_k8s_generator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the Dockerfile generator exists at "{path}"')
+def step_dockerfile_generator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the deployment profiles config exists at "{path}"')
+def step_deployment_profiles_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the infra canvas config exists at "{path}"')
+def step_infra_canvas_config_exists(context, path):
     _assert_path(context, path)
 
 # CUI // SP-CTI

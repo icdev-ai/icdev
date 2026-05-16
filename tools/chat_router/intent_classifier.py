@@ -55,12 +55,13 @@ _RULES: list[tuple[str, float, list[str]]] = [
 
     # --- Network Design / NDC ---
     ("ndc", 0.90, [
-        r"\bnetwork\s+(topology|design|diagram|segment|architecture)\b",
-        r"\bfirewall\b",
-        r"\bvlan\b",
-        r"\bsubnet\b",
-        r"\brouter\b",
-        r"\bload\s+balanc",
+        r"\bnetwork\s+(topology|design|diagram|segment)\b",
+        r"\bnetwork\s+architecture\b.*\b(firewall|vlan|router|subnet|dmz|acl)\b",
+        r"\bfirewall\s+(design|rule|policy|architecture)\b",
+        r"\bvlan\s+(design|segmentation|trunking|tagging)\b",
+        r"\bsubnet\s+(design|mask|cidr|allocation)\b",
+        r"\brouter\s+(config|design|protocol|bgp|ospf)\b",
+        r"\bload\s+balanc.*\b(design|architect|config)\b",
         r"\bdns\s+(config|design|setup)\b",
         r"\bvpn\b.*design",
         r"\bppsm\b",
@@ -72,9 +73,10 @@ _RULES: list[tuple[str, float, list[str]]] = [
         r"\bzero.trust.network\b",
         r"\bnetwork\s+segmentation\b",
         r"\bblast\s+radius\b",
-        r"\bredundancy\b.*network",
-        r"\bnetwork\s+(topology|map|diagram)",
-        r"\btopology\b",
+        r"\bredundancy\b.*\b(network|wan|link)\b",
+        r"\bnetwork\s+(topology|map|diagram)\b",
+        r"\b(bgp|ospf|eigrp|isis)\s+(routing|design|peering)\b",
+        r"\bdmz\s+(design|architecture|zone)\b",
     ]),
 
     # --- Security Design / SDC ---
@@ -209,6 +211,24 @@ _INTAKE_STRONG: list[str] = [
     r"\bricoas\b",
     r"\bproject\s+brief\b",
     r"\bfeasibilit",
+    # Intelligence / OSINT / ISR — always requirements intake, never NDC
+    r"\bosint\b",
+    r"\bopen.source\s+intelligence\b",
+    r"\bintelligence\s+(analysis|gather|collect|monitor|fusion|report)\b",
+    r"\bisr\b",  # Intelligence, Surveillance, Reconnaissance
+    r"\bsigint\b",
+    r"\bgeoint\b",
+    r"\bhumint\b",
+    r"\bmasint\b",
+    r"\bfinint\b",
+    r"\bthreat\s+(intelligence|actor|hunt)\b",
+    r"\bindicator\s+of\s+(compromise|attack)\b",
+    r"\bioc\b",
+    r"\bconflict\s+(monitor|track|analys)",
+    r"\battribution\b",
+    r"\badversary\s+(track|profile|analys)\b",
+    r"\bsituation\s+(aware|report|monitor)\b",
+    r"\btargeting\s+(analys|system)\b",
 ]
 
 
