@@ -1249,6 +1249,23 @@ _PRIORITY_KEYWORDS = {
 }
 
 
+_IMPERATIVE_VERBS = {
+    "create", "build", "develop", "design", "implement", "deploy", "integrate",
+    "generate", "produce", "construct", "establish", "configure", "set up",
+    "monitor", "capture", "track", "detect", "alert", "notify", "log",
+    "display", "visualize", "visualise", "show", "render", "present", "depict",
+    "analyze", "analyse", "process", "correlate", "aggregate", "ingest",
+    "expose", "publish", "send", "deliver", "report",
+    "ensure", "enforce", "validate", "verify", "authenticate", "authorize",
+}
+
+_INTEREST_SIGNALS = {
+    "interested in", "i'd like", "id like", "looking for", "looking to",
+    "want to know", "want to see", "would like", "we'd like", "we would like",
+    "hoping to", "expect to", "plan to", "trying to",
+}
+
+
 def _extract_requirements_from_text(text, session_id, turn_number, conn):
     """Extract structured requirements from customer text using keyword analysis."""
     extracted = []
@@ -1257,28 +1274,32 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
 
     for sentence in sentences:
         lower = sentence.lower()
+        words = lower.split()
+        first_word = words[0] if words else ""
 
         # Check if this sentence contains requirement-like language
         has_req_signal = any(
             kw in lower
             for kw in [
-                "need",
-                "want",
-                "must",
-                "shall",
-                "should",
-                "require",
-                "able to",
-                "capability",
-                "feature",
-                "support",
-                "provide",
-                "enable",
-                "allow",
-                "system will",
-                "system shall",
+                "need", "want", "must", "shall", "should", "require",
+                "able to", "capability", "feature", "support", "provide",
+                "enable", "allow", "system will", "system shall",
+                # expanded: desire/interest phrases
+                "interested in", "i'd like", "id like", "looking for",
+                "looking to", "would like", "we'd like", "hoping to",
+                "want to", "want to know", "want to see",
+                # expanded: capability verbs anywhere in sentence
+                "monitor", "capture", "track", "detect", "alert",
+                "display", "visualize", "visualise", "depict", "render",
+                "analyze", "analyse", "correlate", "aggregate", "ingest",
+                "expose", "integrate", "deploy", "implement",
             ]
         )
+
+        # Also catch imperative sentences: start with an action verb
+        if not has_req_signal:
+            has_req_signal = first_word in _IMPERATIVE_VERBS
+
         if not has_req_signal:
             continue
 

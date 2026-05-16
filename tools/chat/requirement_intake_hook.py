@@ -41,12 +41,24 @@ _REQ_PATTERNS = [
     r"\brequirement[s]?\b",
     r"\buser stor(?:y|ies)\b",
     r"\bas a\b.{0,60}\bi want\b",
+    r"\bi want\b",
+    r"\bwe want\b",
     r"\bgiven\b.{0,120}\bwhen\b.{0,120}\bthen\b",
     r"\bcapabilit(?:y|ies)\b",
     r"\bacceptance criteri(?:a|on)\b",
     r"\bthe system\b.{0,60}\b(?:shall|should|must|will|needs?)\b",
     r"\bfeature request\b",
     r"\bfunctional requirement\b",
+    # imperative sentences (starts with action verb)
+    r"(?:^|\. )(?:create|build|develop|design|implement|deploy|integrate|generate)\b",
+    r"(?:^|\. )(?:monitor|capture|track|detect|alert|display|visuali[sz]e|depict)\b",
+    r"(?:^|\. )(?:analyze|analyse|process|correlate|aggregate|ingest|expose)\b",
+    r"(?:^|\. )(?:ensure|enforce|provide|enable|allow|establish|configure)\b",
+    # interest / desire expressions
+    r"\bi(?:'?m| am) interested in\b",
+    r"\b(?:looking for|looking to|hoping to|plan to|trying to)\b",
+    r"\bwould like\b",
+    r"\bi(?:'?d| would) like\b",
 ]
 
 _REQ_RE = re.compile("|".join(_REQ_PATTERNS), re.IGNORECASE | re.DOTALL)
