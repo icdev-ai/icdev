@@ -3476,7 +3476,15 @@ def create_app() -> Flask:
 
     # ---- Database helper ----
     def _get_db():
-        conn = get_connection(db_path=str(DB_PATH))
+        import os
+        if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+            conn = get_connection()
+        else:
+            conn = get_connection(db_path=str(DB_PATH))
+        try:
+            conn.set_security_context(None)
+        except Exception:
+            pass
         return conn
 
     # ---- CPMP / Proposals / GovCon Pages (D-CHILD-6: guarded) ----
