@@ -12,7 +12,7 @@
     grid-template-columns: 260px 1px 1fr;
     grid-template-rows: 1fr auto;
     gap: 0;
-    margin-top: 12px;
+    margin-top: 4px;
     flex: 1;
     min-height: 0;
     border: 1px solid var(--border-color);

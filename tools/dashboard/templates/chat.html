@@ -41,30 +41,40 @@
   .panel-chip--architect.panel-chip--active  { background:#059669; border-color:#059669; }
 
   /* ---- Panel response bubbles ---- */
-  .panel-response { margin-bottom:8px; }
+  .panel-response { margin-bottom:6px; }
   .panel-persona-bubble {
     border-left:3px solid var(--panel-color,#4a90d9);
     background:var(--bg-secondary,#1a1a2e);
-    border-radius:0 8px 8px 0;
-    padding:10px 14px; margin-bottom:6px;
+    border-radius:0 6px 6px 0;
+    padding:7px 12px; margin-bottom:4px;
   }
   .panel-persona-bubble__label {
-    font-size:0.7rem; font-weight:700; text-transform:uppercase;
-    color:var(--panel-color,#4a90d9); margin-bottom:4px; letter-spacing:.04em;
+    font-size:0.68rem; font-weight:700; text-transform:uppercase;
+    color:var(--panel-color,#4a90d9); margin-bottom:3px; letter-spacing:.04em;
   }
-  .panel-persona-bubble__body { font-size:0.87rem; white-space:pre-wrap; word-break:break-word; }
-  .panel-persona-bubble__reqs { margin-top:8px; }
+  .panel-persona-bubble__body { font-size:0.84rem; white-space:pre-wrap; word-break:break-word; line-height:1.4; }
+  .panel-persona-bubble__reqs { margin-top:6px; }
   .panel-req-pill {
-    display:inline-block; font-size:0.72rem;
+    display:inline-block; font-size:0.7rem;
     background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
-    border-radius:6px; padding:3px 8px; margin:2px 4px 2px 0;
+    border-radius:5px; padding:2px 7px; margin:2px 3px 2px 0;
     color:var(--text-secondary,#aaa);
   }
   .panel-consensus {
     border-top:1px solid var(--border-color,#2a2a40);
-    padding-top:8px; margin-top:4px;
-    font-size:0.8rem; color:var(--text-muted,#888);
+    padding-top:6px; margin-top:4px;
+    font-size:0.78rem; color:var(--text-muted,#888);
   }
+  /* Next-step guidance bar */
+  .panel-next-step {
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+    margin-top:6px; padding:6px 10px;
+    background:rgba(74,144,217,.08); border:1px solid rgba(74,144,217,.2);
+    border-radius:6px; font-size:0.78rem;
+  }
+  .panel-next-step__score { color:var(--accent-blue,#4a90d9); font-size:0.76rem; white-space:nowrap; }
+  .panel-next-step__hint  { color:var(--text-secondary,#bbb); flex:1; }
+  .panel-next-step--ready { background:rgba(5,150,105,.08); border-color:rgba(5,150,105,.25); color:#34d399; }
   .panel-mode-indicator {
     display:none; font-size:0.7rem; font-weight:700; color:#4a90d9;
     padding:2px 7px; border:1px solid #4a90d9; border-radius:10px; margin-left:6px;
@@ -74,30 +84,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h1>Multi-Stream Chat</h1>
-    <p class="text-muted">Parallel agent conversations with requirements intake, COA generation, and build pipeline — up to 5 concurrent contexts.</p>
-    <div style="margin-top:0.6rem;font-size:0.84rem;color:var(--text-muted);">AI detects your intent automatically — ask about migration, network design, security architecture, or requirements and it routes to the right backend.</div>
-</div>
-
-<!-- Stats bar -->
-<div class="stat-grid" id="chat-top-stats">
-    <div class="stat-card" data-stat="active">
-        <div class="stat-value" id="stat-active">0</div>
-        <div class="stat-label">Active Chats</div>
-    </div>
-    <div class="stat-card" data-stat="processing">
-        <div class="stat-value" id="stat-processing">0</div>
-        <div class="stat-label">Processing</div>
-    </div>
-    <div class="stat-card" data-stat="queued">
-        <div class="stat-value" id="stat-queued">0</div>
-        <div class="stat-label">Queued Messages</div>
-    </div>
-    <div class="stat-card" data-stat="total">
-        <div class="stat-value" id="stat-total">0</div>
-        <div class="stat-label">Total Contexts</div>
-    </div>
+<!-- Compact status strip (replaces tall stat cards + page header) -->
+<div id="chat-top-stats" style="display:flex;align-items:center;gap:16px;padding:4px 16px 4px;border-bottom:1px solid var(--border-color,#2a2a40);font-size:0.75rem;color:var(--text-muted,#888);flex-shrink:0;">
+    <strong style="color:var(--text-primary,#e0e0e0);font-size:0.82rem;">ICDEV™ Chat</strong>
+    <span>Active: <span id="stat-active" style="color:var(--accent-blue,#4a90d9);font-weight:700;">0</span></span>
+    <span>Processing: <span id="stat-processing" style="font-weight:700;">0</span></span>
+    <span>Queued: <span id="stat-queued" style="font-weight:700;">0</span></span>
+    <span>Contexts: <span id="stat-total" style="font-weight:700;">0</span></span>
 </div>
 
 <!-- Main layout: CSS Grid with resize handles (D-CU-5) -->

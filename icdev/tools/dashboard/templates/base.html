@@ -166,6 +166,7 @@
                     <li class="nav-section-label">Monitor</li>
                     <li><a href="/monitoring">Monitoring</a></li>
                     <li><a href="/platform-health">Platform Health</a></li>
+                    <li><a href="/cache-savings">Cache Savings</a></li>
                     <li><a href="/activity">Activity</a></li>
                     <li><a href="/batch">Batch</a></li>
                     <li><a href="/simulate/chat">Simulate Chat</a></li>
@@ -298,13 +299,14 @@
 
             <!-- ── Intelligence ──────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub','/ai-observatory'] %}active{% endif %}">Intelligence ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub','/ai-observatory','/ontology'] %}active{% endif %}">Intelligence ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Awareness</li>
                     <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
                     <li><a href="/components-map">Component Map</a></li>
                     <li><a href="/ask-icdev">Ask ICDEV</a></li>
                     <li><a href="/ai-observatory" style="color:#a78bfa;">AI Observatory</a></li>
+                    <li><a href="/ontology" style="color:#34d399;">Ontology Explorer</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Research</li>
                     {% if not airgap_mode %}
@@ -807,6 +809,8 @@
             [/^\/agents/, 'agents'],
             [/^\/projects/, 'projects'],
             [/^\/ai-observatory/, 'ai_observatory'],
+            [/^\/ontology/, 'ontology'],
+            [/^\/cache-savings/, 'cache_savings'],
         ];
 
         function detectCanvas() {
