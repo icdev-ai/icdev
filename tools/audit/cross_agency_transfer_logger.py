@@ -150,8 +150,8 @@ class CrossAgencyTransferLogger:
                 log.warning("%s table missing — skipping audit log", _TABLE)
                 return ""
             conn.execute(
-                f"""
-                INSERT INTO {_TABLE}
+                """
+                INSERT INTO cross_agency_transfers
                     (id, transfer_id, event_type, source_agency, target_agency,
                      data_type, data_classification, actor, project_id,
                      bytes_transferred, checksum, duration_ms,
@@ -226,7 +226,7 @@ def query_by_transfer_id(transfer_id: str) -> list[dict]:
     if not _table_exists(conn):
         return []
     rows = conn.execute(
-        f"SELECT * FROM {_TABLE} WHERE transfer_id=? ORDER BY occurred_at DESC LIMIT 50",
+        "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at DESC LIMIT 50",
         (transfer_id,),
     ).fetchall()
     return [dict(r) for r in rows]
