@@ -52,3 +52,11 @@ GRAPH_SOURCES = [
     "migrations",      # tools/db/migrations/ dependency chain
     "codebase",        # routes, blueprints, db_tables, agents from tools/
 ]
+
+# Ontology class mappings for KG enrichment
+SYSTEM_GRAPH_ONTOLOGY_MAP: dict[str, str] = {
+    "skill":  "core:Concept",
+    "tool":   "core:Resource",
+    "reflex": "core:Concept",
+    "route":  "core:Resource",
+}
