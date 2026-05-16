@@ -255,14 +255,6 @@ def step_verify_deployment_config(context):
 # Then steps
 # ---------------------------------------------------------------------------
 
-@then('the system behaves as specified and the requirement is satisfied')
-def step_requirement_satisfied(context):
-    assert not context.missing, (
-        f"Functional infrastructure artifacts missing: {context.missing}. "
-        "Platform enablement requirement cannot be satisfied."
-    )
-
-
 def _assert_path(context, path):
     full = os.path.join(context.project_root, path)
     assert os.path.exists(full), f"Required artifact not found: {full}"

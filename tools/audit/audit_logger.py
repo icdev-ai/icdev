@@ -251,6 +251,8 @@ VALID_EVENT_TYPES = (
     "cross_agency_transfer_completed",
     "cross_agency_transfer_failed",
     "cross_agency_transfer_rejected",
+    # Alert dispatcher events (secure log store integration)
+    "pir_alert_generated",
 )
 
 

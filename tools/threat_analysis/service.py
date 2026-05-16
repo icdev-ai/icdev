@@ -242,6 +242,68 @@ def validate_indicator_score(
     }
 
 
+def auto_generate_pir_alert(
+    indicator_name: str,
+    score: float,
+    scope: str = "project",
+    scope_id: str = "",
+    operator_id: str = "",
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Validate an indicator score and auto-generate a PIR when threshold is exceeded.
+
+    Wraps ``validate_indicator_score`` and, on breach, calls the PIR manager to
+    create an active Priority Intelligence Requirement with priority mapped
+    from the baseline severity band.
+
+    Args:
+        indicator_name: The indicator key to evaluate.
+        score: The observed numeric score.
+        scope: Starting scope level for baseline lookup.
+        scope_id: Entity ID for the scoped lookup.
+        operator_id: Analyst or system to task the PIR to.
+
+    Returns:
+        Dict containing all validation fields plus:
+        - ``pir_generated`` (bool)
+        - ``pir_id`` (str | None)
+    """
+    result = validate_indicator_score(
+        indicator_name=indicator_name,
+        score=score,
+        scope=scope,
+        scope_id=scope_id,
+        db_path=db_path,
+    )
+
+    if not result["exceeded"]:
+        result["pir_generated"] = False
+        result["pir_id"] = None
+        return result
+
+    severity = result.get("severity_band") or _DEFAULT_SEVERITY_BAND
+    priority_mapping = {"critical": 1, "high": 2, "medium": 3, "low": 4}
+    collection_priority = priority_mapping.get(severity, 3)
+
+    from tools.intelligence.pir_manager import create_pir
+
+    pir = create_pir(
+        pir_type="PIR",
+        topic=f"{indicator_name} threshold exceeded",
+        description=(
+            f"Indicator '{indicator_name}' scored {score}, "
+            f"exceeding baseline {result['threshold']} by {result['delta']}. "
+            f"Severity band: {severity}."
+        ),
+        collection_priority=collection_priority,
+        tasked_to=operator_id,
+    )
+
+    result["pir_generated"] = True
+    result["pir_id"] = pir.get("id")
+    return result
+
+
 def list_baselines(
     indicator_name: str = "",
     scope: str = "",

@@ -2714,6 +2714,37 @@ CREATE INDEX IF NOT EXISTS idx_indicator_baselines_name
 CREATE INDEX IF NOT EXISTS idx_indicator_baselines_operator
     ON indicator_baselines(operator_id, created_at);
 
+CREATE TABLE IF NOT EXISTS indicator_scores (
+    id TEXT PRIMARY KEY,
+    indicator_name TEXT NOT NULL,
+    indicator_category TEXT DEFAULT 'general',
+    scope TEXT NOT NULL DEFAULT 'project'
+        CHECK(scope IN ('global', 'platform', 'tenant', 'project', 'user')),
+    scope_id TEXT,
+    score REAL NOT NULL
+        CHECK(score >= 0),
+    score_type TEXT DEFAULT 'raw'
+        CHECK(score_type IN ('raw', 'normalized', 'aggregated')),
+    source TEXT,
+    operator_id TEXT,
+    baseline_id TEXT,
+    exceeded INTEGER,
+    delta REAL,
+    severity_at_time TEXT
+        CHECK(severity_at_time IN ('low', 'medium', 'high', 'critical')),
+    evaluated_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_name
+    ON indicator_scores(indicator_name, created_at);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_scope
+    ON indicator_scores(scope, scope_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_baseline
+    ON indicator_scores(baseline_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_scores_exceeded
+    ON indicator_scores(exceeded, created_at)
+    WHERE exceeded = 1;
+
 CREATE TABLE IF NOT EXISTS sg_pir_requirements (
     id                  TEXT PRIMARY KEY,
     pir_type            TEXT NOT NULL DEFAULT 'PIR'

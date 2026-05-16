@@ -9,6 +9,7 @@ Covers:
 import pytest
 
 from tools.threat_analysis.service import (
+    auto_generate_pir_alert,
     create_baseline,
     list_baselines,
     validate_indicator_score,
@@ -42,9 +43,25 @@ def db_conn():
             ON indicator_baselines(scope, scope_id, is_active);
         CREATE INDEX IF NOT EXISTS idx_indicator_baselines_name
             ON indicator_baselines(indicator_name, is_active);
+        CREATE TABLE IF NOT EXISTS sg_pir_requirements (
+            id                  TEXT PRIMARY KEY,
+            pir_type            TEXT NOT NULL DEFAULT 'PIR'
+                                    CHECK(pir_type IN ('PIR','CCIR','EEI')),
+            topic               TEXT NOT NULL,
+            description         TEXT,
+            collection_priority INTEGER NOT NULL DEFAULT 3
+                                    CHECK(collection_priority BETWEEN 1 AND 5),
+            status              TEXT NOT NULL DEFAULT 'active'
+                                    CHECK(status IN ('active','satisfied','cancelled')),
+            tasked_to           TEXT,
+            due_by              TEXT,
+            created_at          TEXT NOT NULL,
+            updated_at          TEXT NOT NULL
+        );
         """
     )
     conn.execute("DELETE FROM indicator_baselines")
+    conn.execute("DELETE FROM sg_pir_requirements")
     conn.commit()
     yield conn
     conn.execute("DELETE FROM indicator_baselines")
@@ -158,3 +175,63 @@ class TestListBaselines:
         assert len(rows) == 1
         rows = list_baselines(is_active=False)
         assert len(rows) == 0
+
+
+class TestAutoGeneratePirAlert:
+    def test_exceeded_score_generates_pir(self, db_conn):
+        create_baseline(
+            "network_anomaly",
+            threshold_score=30.0,
+            scope="project",
+            scope_id="proj-a",
+            severity_band="high",
+            operator_id="op-1",
+        )
+        result = auto_generate_pir_alert(
+            "network_anomaly", 75.0, scope="project", scope_id="proj-a", operator_id="op-1"
+        )
+        assert result["exceeded"] is True
+        assert result["pir_generated"] is True
+        assert result["pir_id"] is not None
+        assert result["severity_band"] == "high"
+
+    def test_non_exceeded_score_does_not_generate_pir(self, db_conn):
+        create_baseline(
+            "cpu_usage",
+            threshold_score=90.0,
+            scope="global",
+            operator_id="op-2",
+        )
+        result = auto_generate_pir_alert("cpu_usage", 45.0, scope="global")
+        assert result["exceeded"] is False
+        assert result["pir_generated"] is False
+        assert result["pir_id"] is None
+
+    def test_critical_severity_maps_to_priority_1(self, db_conn):
+        create_baseline(
+            "ransomware_likelihood",
+            threshold_score=10.0,
+            scope="tenant",
+            scope_id="tenant-x",
+            severity_band="critical",
+            operator_id="op-3",
+        )
+        result = auto_generate_pir_alert(
+            "ransomware_likelihood",
+            95.0,
+            scope="tenant",
+            scope_id="tenant-x",
+            operator_id="op-3",
+        )
+        assert result["exceeded"] is True
+        assert result["pir_generated"] is True
+        from tools.intelligence.pir_manager import get_pir
+        pir = get_pir(result["pir_id"])
+        assert pir["collection_priority"] == 1
+
+    def test_unbounded_score_no_baseline_no_pir(self, db_conn):
+        result = auto_generate_pir_alert("unknown_indicator", 99.0)
+        assert result["unbounded"] is True
+        assert result["exceeded"] is False
+        assert result["pir_generated"] is False
+        assert result["pir_id"] is None
