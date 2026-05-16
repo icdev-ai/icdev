@@ -12,8 +12,6 @@ Routes:
 from __future__ import annotations
 
 import json
-import sqlite3
-from pathlib import Path
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -21,21 +19,19 @@ from tools.ontology.constants import CANVAS_KEY, DOMAIN_LABELS
 
 bp = Blueprint("ontology", __name__)
 
-_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
-_ICDEV_DB = _DATA_DIR / "icdev.db"
+
+def _get_conn():
+    """Return the canonical ICDEV storage connection (respects ICDEV_STORAGE_BACKEND)."""
+    from tools.db.storage import get_connection  # noqa: PLC0415
+    return get_connection()
 
 
-def _sqlite() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_ICDEV_DB))
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-    ).fetchone()
-    return row is not None
+def _table_exists(conn, table: str) -> bool:
+    try:
+        conn.execute(f"SELECT 1 FROM {table} LIMIT 1")  # nosec B608
+        return True
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +41,7 @@ def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
 
 @bp.route("/ontology")
 def ontology_page():
-    conn = _sqlite()
+    conn = _get_conn()
     try:
         stats: dict = {}
         if _table_exists(conn, "ontology_classes"):
@@ -104,7 +100,7 @@ def ontology_page():
 @bp.route("/api/ontology/classes")
 def api_ontology_classes():
     domain = request.args.get("domain", "")
-    conn = _sqlite()
+    conn = _get_conn()
     try:
         if not _table_exists(conn, "ontology_classes"):
             return jsonify({"classes": [], "total": 0})
@@ -140,7 +136,7 @@ def api_ontology_closure():
     class_id = request.args.get("class_id", "")
     if not class_id:
         return jsonify({"error": "class_id required"}), 400
-    conn = _sqlite()
+    conn = _get_conn()
     try:
         if not _table_exists(conn, "ontology_subclass_closure"):
             return jsonify({"superclasses": [], "subclasses": []})
