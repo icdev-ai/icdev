@@ -1125,7 +1125,6 @@ def get_user_competencies(user_id: int) -> list[dict]:
 
 
 def seed_mission_ontology_mappings() -> None:
-def seed_mission_ontology_mappings() -> None:
     """Seed ontology mappings for all builtin missions."""
     from .ontology import build_mission_ontology_id, build_step_ontology_id
     from .content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS

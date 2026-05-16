@@ -83,76 +83,23 @@ def _poll_feed(
 ) -> Dict[str, Any]:
     """Fetch items from the publication feed and persist new ones.
 
+    Delegates the full fetch → adapter → display flow to
+    ``IngestionPipelineService`` so IL5 ingestion runs through the
+    canonical pipeline rather than bypassing it.
+
     Returns a summary dict: {fetched, ingested, skipped, errors}.
-    Failures on individual items are isolated — one bad record does not
-    abort the rest of the batch.
     """
-    fetched = ingested = skipped = 0
-    errors: List[str] = []
+    from src.ingestion.pipeline.IngestionPipelineService import IngestionPipelineService
 
-    try:
-        req = urllib.request.Request(
-            feed_url,
-            headers={"Accept": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read().decode("utf-8")
-        items: List[Dict[str, Any]] = json.loads(raw)
-    except urllib.error.URLError as exc:
-        log.warning("IL5 feed unreachable (%s): %s", feed_url, exc)
-        return {"fetched": 0, "ingested": 0, "skipped": 0, "errors": [str(exc)]}
-    except (json.JSONDecodeError, ValueError) as exc:
-        log.warning("IL5 feed returned unparseable response: %s", exc)
-        return {"fetched": 0, "ingested": 0, "skipped": 0, "errors": [str(exc)]}
-
-    fetched = len(items)
-
-    for item in items:
-        try:
-            source_id: str = str(item.get("source_id") or item.get("id") or "unknown")
-            content: str = item.get("content") or json.dumps(item)
-            published_raw: Optional[str] = item.get("published_at") or item.get(
-                "source_published_at"
-            )
-            source_published_at: Optional[datetime] = None
-            if published_raw:
-                try:
-                    source_published_at = datetime.fromisoformat(
-                        published_raw.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    log.debug("Could not parse published_at %r", published_raw)
-
-            metadata: Dict[str, Any] = {
-                k: v
-                for k, v in item.items()
-                if k not in {"content", "source_id", "id", "published_at", "source_published_at"}
-            }
-            metadata.update(
-                {
-                    "classification": IL5_CLASSIFICATION,
-                    "impact_level": IL5_IMPACT_LEVEL,
-                    "feed_url": feed_url,
-                }
-            )
-
-            ingest_il5_event(
-                source_id,
-                content,
-                source_published_at=source_published_at,
-                metadata=metadata,
-                db_path=db_path,
-            )
-            ingested += 1
-        except Exception as exc:  # noqa: BLE001 — per-item isolation
-            errors.append(f"{item.get('id', '?')}: {exc}")
-            skipped += 1
-            log.debug("Skipped IL5 feed item: %s", exc)
-
+    result = IngestionPipelineService.trigger_il5(
+        feed_url=feed_url,
+        limit=_DEFAULT_LIMIT,
+        db_path=db_path,
+    )
     return {
-        "fetched": fetched,
-        "ingested": ingested,
-        "skipped": skipped,
-        "errors": errors,
+        "fetched": result.get("fetched", 0),
+        "ingested": result.get("ingested", 0),
+        "skipped": 0,
+        "errors": result.get("errors", []),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }

@@ -190,7 +190,7 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
                     panel.session_id,
                     req["text"],
                     req.get("type", "functional"),
-                    req.get("priority", "medium"),
+                    req.get("priority") or "high",
                     req.get("acceptance_criteria", ""),
                     turn_number,
                     now,
@@ -296,6 +296,11 @@ def _build_panel_system_prompt(persona: Dict, session_data: Dict) -> str:
         f"Classification: {session_data.get('classification', 'CUI')}",
         f"Impact Level: {session_data.get('impact_level', 'IL4')}",
     ]
+    if session_data.get("impact_level", "IL4") in ("IL4", "IL5", "IL6"):
+        ctx_parts.append(
+            "SECURITY MANDATE: This session is at IL4 or higher. "
+            "You MUST contribute at least one security requirement."
+        )
     try:
         ctx = json.loads(session_data.get("context_summary") or "{}")
         if ctx.get("goal"):
@@ -310,6 +315,15 @@ def _build_panel_system_prompt(persona: Dict, session_data: Dict) -> str:
 # ---------------------------------------------------------------------------
 # Requirement and question extraction
 # ---------------------------------------------------------------------------
+
+def _auto_generate_ac(text: str) -> str:
+    """Generate a lightweight BDD acceptance criterion from requirement text."""
+    text = text.strip().rstrip(".")
+    m = re.search(r"(?:system|user|admin|device|component)\s+(?:shall|should|must|will|may)\s+(.+)", text, re.I)
+    action = m.group(1).strip() if m else text
+    action = action[:120]
+    return f"Given the preconditions are satisfied\nWhen {action}\nThen the outcome is validated with 100% compliance"
+
 
 def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
     """Extract requirements from a persona response.
@@ -334,6 +348,8 @@ def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
         req_text = re.sub(r'[\*_`]+$', '', req_text).strip().rstrip(".")
         if not req_text or len(req_text) < 10:
             return
+        if not ac_text or not ac_text.strip():
+            ac_text = _auto_generate_ac(req_text)
         key = req_text.lower()[:60]
         if key not in seen:
             seen.add(key)
@@ -390,11 +406,14 @@ def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
                     key = req_text.lower()[:60]
                     if key not in seen:
                         seen.add(key)
+                        ac = item.get("acceptance_criteria", "").strip()
+                        if not ac:
+                            ac = _auto_generate_ac(req_text)
                         results.append({
                             "text": req_text,
                             "type": item.get("type", "functional"),
                             "priority": item.get("priority", "medium"),
-                            "acceptance_criteria": item.get("acceptance_criteria", ""),
+                            "acceptance_criteria": ac,
                         })
     except Exception:
         pass
