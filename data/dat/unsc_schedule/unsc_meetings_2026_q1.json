@@ -1,0 +1,61 @@
+{
+  "feed_id": "unsc-2026-q1",
+  "generated_at": "2026-01-01T00:00:00Z",
+  "classification": "UNCLASSIFIED",
+  "meetings": [
+    {
+      "meeting_id": "UNSC-2026-0101",
+      "date": "2026-01-10",
+      "time_utc": "10:00",
+      "topic": "Middle East Peace Process",
+      "presiding_member": "United States",
+      "agenda_items": ["Ceasefire monitoring", "Humanitarian corridors"],
+      "status": "scheduled"
+    },
+    {
+      "meeting_id": "UNSC-2026-0102",
+      "date": "2026-01-15",
+      "time_utc": "14:00",
+      "topic": "Cybersecurity Threats to Critical Infrastructure",
+      "presiding_member": "France",
+      "agenda_items": ["Attribution framework", "Collective response protocols"],
+      "status": "scheduled"
+    },
+    {
+      "meeting_id": "UNSC-2026-0103",
+      "date": "2026-01-22",
+      "time_utc": "10:00",
+      "topic": "Climate Security Nexus",
+      "presiding_member": "United Kingdom",
+      "agenda_items": ["Sea level threats", "Resource conflict prevention"],
+      "status": "scheduled"
+    },
+    {
+      "meeting_id": "UNSC-2026-0201",
+      "date": "2026-02-05",
+      "time_utc": "10:00",
+      "topic": "North Korea Denuclearization",
+      "presiding_member": "China",
+      "agenda_items": ["Sanctions enforcement", "Dialogue pathways"],
+      "status": "scheduled"
+    },
+    {
+      "meeting_id": "UNSC-2026-0202",
+      "date": "2026-02-19",
+      "time_utc": "14:00",
+      "topic": "African Union Partnership",
+      "presiding_member": "Russia",
+      "agenda_items": ["Peacekeeping mandate renewal", "Economic development"],
+      "status": "scheduled"
+    },
+    {
+      "meeting_id": "UNSC-2026-0301",
+      "date": "2026-03-12",
+      "time_utc": "10:00",
+      "topic": "Global Health Security",
+      "presiding_member": "United States",
+      "agenda_items": ["Pandemic preparedness", "WHO reform"],
+      "status": "scheduled"
+    }
+  ]
+}

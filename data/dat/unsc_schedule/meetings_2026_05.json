@@ -1,0 +1,20 @@
+{
+  "feed_version": "1.0",
+  "generated_at": "2026-05-16T00:00:00Z",
+  "source": "UNSC Secretariat",
+  "classification": "UNCLASSIFIED // PUBLIC",
+  "meetings": [
+    {"meeting_id": "SC/2026/001", "date": "2026-05-02", "type": "open", "topic": "Middle East Situation", "chamber": "UNSC", "presiding_member": "France"},
+    {"meeting_id": "SC/2026/002", "date": "2026-05-05", "type": "closed", "topic": "Ukraine Ceasefire Mechanism", "chamber": "UNSC", "presiding_member": "UK"},
+    {"meeting_id": "SC/2026/003", "date": "2026-05-07", "type": "open", "topic": "Sudan Humanitarian Corridor", "chamber": "UNSC", "presiding_member": "USA"},
+    {"meeting_id": "SC/2026/004", "date": "2026-05-09", "type": "open", "topic": "Haiti Security Support Mission", "chamber": "UNSC", "presiding_member": "Ecuador"},
+    {"meeting_id": "SC/2026/005", "date": "2026-05-12", "type": "closed", "topic": "DPRK Sanctions Committee", "chamber": "UNSC", "presiding_member": "Japan"},
+    {"meeting_id": "SC/2026/006", "date": "2026-05-14", "type": "open", "topic": "Somalia Al-Shabaab Review", "chamber": "UNSC", "presiding_member": "Malta"},
+    {"meeting_id": "SC/2026/007", "date": "2026-05-16", "type": "open", "topic": "Cyber Norms Working Group", "chamber": "UNSC", "presiding_member": "Switzerland"},
+    {"meeting_id": "SC/2026/008", "date": "2026-05-19", "type": "closed", "topic": "Iran Non-Proliferation", "chamber": "UNSC", "presiding_member": "Slovenia"},
+    {"meeting_id": "SC/2026/009", "date": "2026-05-21", "type": "open", "topic": "West Africa Stability Update", "chamber": "UNSC", "presiding_member": "Algeria"},
+    {"meeting_id": "SC/2026/010", "date": "2026-05-23", "type": "open", "topic": "Sea Lanes / Freedom of Navigation", "chamber": "UNSC", "presiding_member": "China"},
+    {"meeting_id": "SC/2026/011", "date": "2026-05-26", "type": "closed", "topic": "Secretary-General Briefing", "chamber": "UNSC", "presiding_member": "Russia"},
+    {"meeting_id": "SC/2026/012", "date": "2026-05-28", "type": "open", "topic": "Climate-Security Nexus", "chamber": "UNSC", "presiding_member": "Sierra Leone"}
+  ]
+}
