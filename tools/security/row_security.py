@@ -62,13 +62,22 @@ def inject_row_predicate(
         extra_clauses.append(f"{tenant_column} = ?")
         extra_params.append(tenant_id)
 
-    # Classification predicate
+    # Classification predicate — rows with NULL/empty classification are always
+    # visible (unclassified data is world-readable within the tenant).
+    # Only rows that have a non-empty classification must match the caller's level.
     if classifications:
         placeholders = ", ".join(["?"] * len(classifications))
-        extra_clauses.append(f"{classification_column} IN ({placeholders})")
-        extra_params.extend(sorted(classifications))
+        sorted_classes = sorted(classifications)
+        extra_clauses.append(
+            f"({classification_column} IS NULL OR {classification_column} = '' "
+            f"OR {classification_column} IN ({placeholders}))"
+        )
+        extra_params.extend(sorted_classes)
     elif classification:
-        extra_clauses.append(f"{classification_column} = ?")
+        extra_clauses.append(
+            f"({classification_column} IS NULL OR {classification_column} = '' "
+            f"OR {classification_column} = ?)"
+        )
         extra_params.append(classification)
 
     if not extra_clauses:

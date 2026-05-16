@@ -1065,6 +1065,29 @@ def move_task(task_id):
         vals.append(task_id)
 
         conn.execute(sql, tuple(vals))
+
+        # Record transition for kv-viz reaper-bar / TIF counter.
+        # state_machine.py does this for scheduler-driven transitions; the
+        # HTTP move path previously skipped it, leaving current_attempt_started_at=None.
+        try:
+            import secrets as _sec
+            conn.execute(
+                "INSERT INTO kanban_status_transitions "
+                "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "kst-" + _sec.token_hex(6),
+                    task_id,
+                    existing["status"],
+                    new_status,
+                    "dashboard",
+                    bypass_reason or None,
+                    now,
+                ),
+            )
+        except Exception:
+            pass  # Best-effort; annotator degrades gracefully if row absent
+
         conn.commit()
 
         # Notify on done transitions (matches genesis scheduler behavior)

@@ -10121,6 +10121,29 @@ CREATE TABLE IF NOT EXISTS wf_report_section_chunks (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_wf_rsc_report ON wf_report_section_chunks(report_id, section_key);
+
+-- Cross-Agency Data Transfer Audit (NIST AU-2, AU-9 — append-only)
+CREATE TABLE IF NOT EXISTS cross_agency_transfers (
+    id                  TEXT PRIMARY KEY,
+    transfer_id         TEXT NOT NULL,
+    event_type          TEXT NOT NULL CHECK(event_type IN (
+                            'initiated', 'completed', 'failed', 'rejected')),
+    source_agency       TEXT NOT NULL,
+    target_agency       TEXT NOT NULL,
+    data_type           TEXT,
+    data_classification TEXT NOT NULL DEFAULT 'CUI',
+    actor               TEXT NOT NULL DEFAULT '',
+    project_id          TEXT,
+    bytes_transferred   INTEGER,
+    checksum            TEXT,
+    duration_ms         INTEGER,
+    rejection_reason    TEXT,
+    error_code          TEXT,
+    details             TEXT,
+    occurred_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
+CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
 """
 
 

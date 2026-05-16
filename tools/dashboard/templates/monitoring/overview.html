@@ -211,7 +211,8 @@ flowchart TD
 
 {% block scripts %}
 <script>
-(function() {
+// charts.js loads with defer — must wait for DOMContentLoaded before ICDEV.donutChart exists.
+document.addEventListener('DOMContentLoaded', function() {
     if (!window.ICDEV || !ICDEV.donutChart) return;
     var alerts = {{ alerts | tojson }};
     if (alerts.length > 0) {
@@ -237,6 +238,6 @@ flowchart TD
         document.getElementById('chart-mon-severity').innerHTML = '<p class="text-muted" style="text-align:center;padding:50px 0;">No alert data</p>';
         document.getElementById('chart-mon-status').innerHTML = '<p class="text-muted" style="text-align:center;padding:50px 0;">No alert data</p>';
     }
-})();
+});
 </script>
 {% endblock %}
