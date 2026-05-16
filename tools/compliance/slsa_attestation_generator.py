@@ -259,7 +259,7 @@ def generate_slsa_provenance(
             except sqlite3.OperationalError:
                 pass
 
-        return {
+        result = {
             "project_id": project_id,
             "slsa_level": slsa_level,
             "slsa_level_description": SLSA_LEVEL_REQUIREMENTS[slsa_level]["description"],
@@ -268,7 +268,37 @@ def generate_slsa_provenance(
             "evidence_met": sum(1 for v in evidence.values() if v),
             "evidence_total": len(evidence),
             "generated_at": now.isoformat(),
+            "blockchain_registry_id": None,
+            "blockchain_anchor_status": "skipped",
         }
+
+        # Anchor SLSA provenance hash to GovChain via source_citation_registry
+        try:
+            from tools.provenance.registry import register_citation
+            from tools.blockchain.chain_anchor import ChainAnchor
+
+            provenance_bytes = json.dumps(provenance, sort_keys=True).encode()
+            source_hash = hashlib.sha256(provenance_bytes).hexdigest()
+
+            reg_id = register_citation(
+                citation_type="slsa",
+                source_table="slsa_attestations",
+                source_record_id=f"{project_id}:{now.isoformat()}",
+                source_hash=source_hash,
+                source_doc=f"SLSA-L{slsa_level} provenance for {project_id}",
+                classification="CUI",
+                project_id=project_id,
+                db_path=db_path,
+            )
+
+            if reg_id:
+                result["blockchain_registry_id"] = reg_id
+                anchor_result = ChainAnchor(db_path=db_path).anchor_provenance([reg_id])
+                result["blockchain_anchor_status"] = anchor_result.get("status", "unknown")
+        except Exception:
+            pass  # Blockchain unavailable — provenance generation still succeeds
+
+        return result
     finally:
         if conn:
             conn.close()

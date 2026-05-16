@@ -78,6 +78,7 @@
 - [Observability, Traceability & Explainable AI (Phase 46)](manifest/observability-traceability-explainable-ai.md)
 - [Ontology](manifest/ontology.md)
 - [Provenance](manifest/provenance.md)
+- [Blockchain / GovChain (D-GC-1 through D-GC-11)](manifest/blockchain.md)
 - [Code Intelligence (Phase 52 — D331-D337)](manifest/code-intelligence.md)
 - [AI Governance Integration (Phase 50)](manifest/ai-governance-integration.md)
 - [FedRAMP 20x KSI + OWASP ASI (Phase 53)](manifest/fedramp-20x-ksi-owasp-asi.md)
