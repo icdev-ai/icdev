@@ -1585,6 +1585,48 @@ CREATE TABLE IF NOT EXISTS user_compartments (
     PRIMARY KEY (user_id, compartment_name)
 );
 
+CREATE TABLE IF NOT EXISTS sg_pir_requirements (
+    id TEXT PRIMARY KEY,
+    pir_type TEXT NOT NULL,
+    topic TEXT,
+    description TEXT,
+    collection_priority TEXT,
+    status TEXT DEFAULT 'active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sg_ccir_trigger_events (
+    id TEXT PRIMARY KEY,
+    ccir_id TEXT NOT NULL,
+    signal_source TEXT,
+    signal_text TEXT,
+    match_score REAL,
+    resolved INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    resolved_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sg_sigint_events (
+    id TEXT PRIMARY KEY,
+    description TEXT,
+    event_type TEXT,
+    collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sg_eo_signals (
+    id TEXT PRIMARY KEY,
+    description TEXT,
+    signal_type TEXT,
+    collected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS sg_socmint_signals (
+    id TEXT PRIMARY KEY,
+    text TEXT,
+    platform TEXT,
+    posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(content, type, tags);
 
 CREATE TABLE IF NOT EXISTS des_execution_events (
