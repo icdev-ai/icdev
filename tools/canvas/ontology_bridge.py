@@ -139,6 +139,26 @@ _register("qdc", _qdc_map)
 _register("aiml", _aiml_map)
 _register("mission", _mission_map)
 
+
+def _ai_observatory_map() -> dict[str, str]:
+    from tools.ai_observatory.constants import AI_OBSERVATORY_ONTOLOGY_MAP
+    return AI_OBSERVATORY_ONTOLOGY_MAP
+
+
+def _govlift_map() -> dict[str, str]:
+    from tools.govlift.constants import GOVLIFT_ONTOLOGY_MAP
+    return GOVLIFT_ONTOLOGY_MAP
+
+
+def _system_graph_map() -> dict[str, str]:
+    from tools.system_graph.constants import SYSTEM_GRAPH_ONTOLOGY_MAP
+    return SYSTEM_GRAPH_ONTOLOGY_MAP
+
+
+_register("ai_observatory", _ai_observatory_map)
+_register("govlift", _govlift_map)
+_register("system_graph", _system_graph_map)
+
 # ── Public API ─────────────────────────────────────────────────────────────────
 
 

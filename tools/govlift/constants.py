@@ -104,3 +104,15 @@ CHECK_WAVE_STATUS       = f"status IN ('{_wv}')"
 CHECK_RISK_LEVEL        = f"risk_level IN ('{_rl}')"
 CHECK_INTEGRATION_SYS   = f"system_name IN ('{_is}')"
 CHECK_ROLLBACK_STATUS   = f"status IN ('{_rs}')"
+
+# Ontology class mappings for KG enrichment
+GOVLIFT_ONTOLOGY_MAP: dict[str, str] = {
+    "web_app":           "infra:ComputeInstance",
+    "database":          "data:DataStore",
+    "api_service":       "infra:ComputeInstance",
+    "batch_job":         "infra:ComputeInstance",
+    "message_queue":     "infra:InfrastructureResource",
+    "storage":           "infra:StorageBucket",
+    "network_appliance": "network:NetworkResource",
+    "legacy_app":        "infra:ComputeInstance",
+}

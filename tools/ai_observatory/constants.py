@@ -50,3 +50,17 @@ CONFIDENCE_THRESHOLDS = {
     "medium": 0.50,
     "low": 0.30,
 }
+
+# Ontology class mappings for KG enrichment
+AI_OBSERVATORY_ONTOLOGY_MAP: dict[str, str] = {
+    "compliance_finding":   "compliance:NISTControl",
+    "threat_assessment":    "security:Control",
+    "boundary_impact":      "boundary:SystemBoundary",
+    "anomaly_detection":    "security:Control",
+    "classification":       "security:Classification",
+    "risk_score":           "core:Concept",
+    "readiness_assessment": "core:Concept",
+    "narrative":            "core:Concept",
+    "remediation":          "core:Concept",
+    "confabulation_flag":   "core:Concept",
+}
