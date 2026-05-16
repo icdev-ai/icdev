@@ -1,0 +1,68 @@
+# CUI // SP-CTI
+# ICDEV™ Security Configuration — NIST Audit Logging Flags  # v2026-05-16
+# Classification: CUI // SP-CTI  |  Impact Level: IL4/IL5
+
+security:
+  classification: CUI
+  impact_level: IL4
+
+  # ============================================================
+  # Audit & Logging (NIST 800-53 Rev 5)
+  # ============================================================
+  audit:
+    enabled: true
+    nist_au_2_active: true
+    nist_au_9_active: true
+    event_generation: true
+    protection_of_audit_information: true
+    append_only: true
+    immutable_storage: true
+
+    # Audit event coverage (AU-2)
+    required_events:
+      - authentication
+      - authorization
+      - data_access
+      - data_modification
+      - configuration_change
+      - cross_agency_transfer
+
+    # Audit protection (AU-9)
+    access_controls:
+      restrict_admin_override: true
+      encrypt_at_rest: true
+      tamper_detection: true
+
+  compliance:
+    frameworks:
+      - NIST_800_53
+      - FedRAMP
+      - CMMC
+    controls:
+      AU-2: active
+      AU-9: active
+      AU-11: active
+      AU-12: active
+
+  # ============================================================
+  # Encryption & Auth
+  # ============================================================
+  encryption:
+    at_rest: AES-256
+    in_transit: TLS_1_3
+  auth:
+    mfa_required: true
+    session_timeout_minutes: 30
+
+  # ============================================================
+  # Scanning Gates
+  # ============================================================
+  scanning:
+    sast: true
+    sca: true
+    secrets: true
+  gates:
+    block_on_cat1_stig: true
+    block_on_critical_vuln: true
+    block_on_failed_test: true
+    block_on_missing_cui_markings: true

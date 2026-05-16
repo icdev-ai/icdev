@@ -1,0 +1,39 @@
+# CUI // SP-CTI
+# ICDEV™ Application Configuration — Runtime Audit Trail Enablement  # v2026-05-16
+# Classification: CUI // SP-CTI  |  Impact Level: IL4/IL5
+
+application:
+  name: ICDEV
+  version: "1.0.0"
+
+  # ============================================================
+  # Audit Trail Service
+  # ============================================================
+  audit_trail:
+    enabled: true
+    service: active
+    nist_controls:
+      - AU-2
+      - AU-9
+    append_only: true
+    immutable: true
+    retention_days: 365
+
+  logging:
+    level: INFO
+    audit_level: DEBUG
+    flags:
+      nist_au_2: active
+      nist_au_9: active
+    output:
+      - file
+      - database
+    db_table: audit_trail
+
+  # ============================================================
+  # Runtime Security Flags
+  # ============================================================
+  security:
+    enforce_audit_logging: true
+    require_audit_context: true
+    fail_on_missing_audit_trail: false
