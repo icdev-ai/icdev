@@ -29,6 +29,7 @@ from tools.dashboard.api.openapi_generator import (
     generate_openapi_spec,
     infer_response_schema,
     sample_get_route,
+    sample_response_schema,
     walk_api_v1_routes,
 )
 
@@ -321,6 +322,38 @@ class TestSampleGetRoute:
         ):
             result = sample_get_route("http://localhost:5050/api/v1/projects")
 
+        assert result is None
+
+    def test_rejects_file_scheme(self):
+        """B310: file:// URLs must be rejected before urlopen is called."""
+        result = sample_get_route("file:///etc/passwd")
+        assert result is None
+
+    def test_rejects_ftp_scheme(self):
+        """B310: ftp:// URLs must be rejected before urlopen is called."""
+        result = sample_get_route("ftp://example.com/data.json")
+        assert result is None
+
+    def test_rejects_relative_url(self):
+        """B310: Relative URLs without a safe scheme must be rejected."""
+        result = sample_get_route("/etc/passwd")
+        assert result is None
+
+
+class TestSampleResponseSchema:
+    def test_rejects_file_scheme(self):
+        """B310: file:// base_url must be rejected before urlopen is called."""
+        result = sample_response_schema("/api/v1/projects", "file:///etc/")
+        assert result is None
+
+    def test_rejects_ftp_scheme(self):
+        """B310: ftp:// base_url must be rejected before urlopen is called."""
+        result = sample_response_schema("/api/v1/projects", "ftp://example.com")
+        assert result is None
+
+    def test_returns_none_on_unsafe_url(self):
+        """B310: Any non-http(s) scheme must be rejected."""
+        result = sample_response_schema("/api/v1/projects", "data:text/html,test")
         assert result is None
 
 

@@ -432,15 +432,35 @@ def infer_response_schema(value: Any, *, max_depth: int = 7, _depth: int = 0) ->
     return {"type": "string"}
 
 
+_ALLOWED_SCHEMES = ("http", "https")
+
+
+def _is_safe_url(url: str) -> bool:
+    """Reject non-HTTP(S) schemes to prevent file:// and other unsafe accesses (B310)."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        return parsed.scheme in _ALLOWED_SCHEMES
+    except Exception:
+        return False
+
+
 def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) -> dict | None:
     """GET `base_url + path`; infer schema from JSON payload; return schema or None."""
     if "{" in path:
         return None
+<<<<<<< Updated upstream
     full_url = base_url.rstrip("/") + path
     if urllib.parse.urlparse(full_url).scheme not in ("http", "https"):
         return None
     try:
         with urllib.request.urlopen(full_url, timeout=timeout) as resp:  # nosec B310
+=======
+    url = base_url.rstrip("/") + path
+    if not _is_safe_url(url):
+        return None
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+>>>>>>> Stashed changes
             if resp.status // 100 != 2:
                 return None
             ctype = resp.headers.get("Content-Type", "")
@@ -460,7 +480,11 @@ def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) ->
 
 def sample_get_route(url: str, *, timeout: float = 2.0) -> dict | None:
     """GET url; return decoded JSON body or None on any failure."""
+<<<<<<< Updated upstream
     if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+=======
+    if not _is_safe_url(url):
+>>>>>>> Stashed changes
         return None
     try:
         with urllib.request.urlopen(url, timeout=timeout) as resp:  # nosec B310
