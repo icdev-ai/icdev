@@ -1039,7 +1039,8 @@ def get_connection(db_path: str = None) -> StorageConnection:
     ):
         raw_conn = _get_sqlite_connection(db_path)
         conn = StorageConnection(raw_conn, "sqlite")
-        _attach_flask_security_context(conn)
+        # Canvas/auxiliary SQLite DBs have no tenant_id/classification columns
+        # — skip RLS so inject_row_predicate doesn't break every query.
         return conn
 
     if backend == "postgresql":

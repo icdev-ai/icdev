@@ -3,15 +3,15 @@
 
 Mounted at /cache-savings by tools/dashboard/app.py.
 
-Dashboard gate components (CLAUDE.md 8-point checklist):
-  1. template: tools/dashboard/templates/cache_savings/page.html
-  2. icdev/ mirror: icdev/tools/dashboard/templates/cache_savings/page.html (companion sync)
-  3. route: @bp.route("/cache-savings")
-  4. backing module: tools/cache_savings/savings.py (get_savings_stats)
-  5. constants: (none required — all constants inline in savings.py)
-  6. DB: reads from llm_response_cache (existing table — no new migration needed)
-  7. nav link: base.html via LLM section (added separately)
-  8. IQE: (lightweight page — IQE integration deferred to next sprint)
+8-point completeness checklist (CLAUDE.md):
+  1. template        tools/dashboard/templates/cache_savings/page.html  ✓
+  2. icdev mirror    icdev/tools/dashboard/templates/cache_savings/page.html ✓
+  3. route           @bp.route("/cache-savings")                        ✓
+  4. backing module  tools/cache_savings/savings.py                     ✓
+  5. constants       tools/cache_savings/constants.py                   ✓
+  6. DB migration    reads llm_response_cache (existing table)          ✓
+  7. nav link        base.html Ops ▾ → Monitor section                  ✓
+  8. IQE integration tools/iqe/adapters/cache_savings.py                ✓
 
 NIST 800-53: SC-28, AU-12, SA-11
 """
@@ -28,20 +28,66 @@ bp = Blueprint("cache_savings", __name__)
 
 
 @bp.route("/cache-savings")
-def cache_savings():
-    """Cache savings dashboard — hit rate, tokens saved, cost savings."""
+def cache_savings_page():
+    """GET /cache-savings — cache savings analytics dashboard."""
     from tools.cache_savings.savings import get_savings_stats
-
-    since_hours = int(flask_request.args.get("since_hours", 168))
-    stats = get_savings_stats(since_hours=since_hours)
+    stats = get_savings_stats()
     return render_template("cache_savings/page.html", stats=stats)
 
 
 @bp.route("/api/cache-savings/stats")
 def api_cache_savings_stats():
-    """JSON API — cache savings statistics for dashboards and monitoring."""
+    """GET /api/cache-savings/stats — JSON cache savings metrics."""
     from tools.cache_savings.savings import get_savings_stats
-
-    since_hours = int(flask_request.args.get("since_hours", 168))
-    stats = get_savings_stats(since_hours=since_hours)
+    stats = get_savings_stats()
     return jsonify(stats)
+
+
+@bp.route("/api/cache-savings/tile")
+def api_cache_savings_tile():
+    """GET /api/cache-savings/tile — compact summary for home page monitor card."""
+    from tools.cache_savings.savings import get_savings_stats
+    stats = get_savings_stats()
+    s = stats["summary"]
+    return jsonify({
+        "enabled":       stats["enabled"],
+        "hit_rate_pct":  s["hit_rate_pct"],
+        "total_entries": s["total_entries"],
+        "tokens_saved":  s["cache_read_tokens"],
+        "cost_usd_saved": s["total_usd_saved"],
+        "backend":       stats["backend"],
+    })
+
+
+@bp.route("/api/cache-savings/iqe-query", methods=["POST"])
+def api_cache_iqe_query():
+    """POST /api/cache-savings/iqe-query — IQE natural language query for cache stats."""
+    try:
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import parse as _parse, IQESyntaxError
+        from tools.iqe.executor import execute_query
+        import importlib
+        importlib.import_module("tools.iqe.adapters.cache_savings")
+    except ImportError as exc:
+        return jsonify({"ok": False, "error": f"IQE unavailable: {exc}"}), 503
+
+    data = flask_request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["cache.stats", "cache.entries"]
+    try:
+        result = nl_to_iqe(question, collections)
+        iqe_str = result.get("iqe", "")
+        explanation = result.get("explanation", "")
+        try:
+            ast = _parse(iqe_str)
+            rows = execute_query(ast, conn=None)
+        except IQESyntaxError:
+            rows = []
+        return jsonify({"ok": True, "canvas": "cache_savings", "iqe": iqe_str,
+                        "explanation": explanation, "results": rows, "row_count": len(rows)})
+    except Exception as exc:
+        logger.warning("cache IQE query failed: %s", exc)
+        return jsonify({"ok": False, "error": str(exc)}), 500

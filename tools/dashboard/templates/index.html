@@ -888,6 +888,18 @@ document.addEventListener('DOMContentLoaded', function() {
     </div>
 </div>
 
+{# ── Recent Task Events — rendered below monitor cards by refreshProjectsInFlight() ── #}
+<details id="pif-events-section" style="margin-bottom:24px; display:none;">
+  <summary style="cursor:pointer; list-style:none; display:flex; align-items:center; gap:0.5rem;
+                  padding:0.6rem 0.8rem; background:var(--bg-card,#1e293b); border-radius:8px;
+                  border:1px solid var(--border-color,#2a2a40);">
+    <span style="font-size:0.9rem; font-weight:600; color:var(--text-primary);">Recent Task Events</span>
+    <span id="pif-events-count" style="font-size:0.72rem; color:var(--text-muted); margin-left:0.25rem;"></span>
+    <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);">last 24h</span>
+  </summary>
+  <div id="pif-events-list" style="margin-top:0.5rem;"></div>
+</details>
+
 <script>
 // OPT-57: Sandbox liveness tile renderer
 (function () {
