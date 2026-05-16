@@ -1,0 +1,6 @@
+# IQE-ONT-003: Cross-domain class equivalences and alignments
+# Returns all owl:equivalentClass and owl:subClassOf alignments across domains.
+# Use: federation review, external standard mappings (STIX, OSCAL, DCAT).
+
+foreach alignment in ontology.alignments
+select alignment.source, alignment.assertion, alignment.target

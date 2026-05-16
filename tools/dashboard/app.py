@@ -1684,6 +1684,13 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("AI Observatory blueprint failed to register: %s", _exc)
 
+    try:
+        from tools.ontology.blueprint import bp as _ont_bp
+        app.register_blueprint(_ont_bp)
+        app.logger.info("Ontology Explorer blueprint registered at /ontology")
+    except Exception as _exc:
+        app.logger.warning("Ontology Explorer blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -2445,6 +2452,7 @@ def create_app() -> Flask:
             "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
             "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
+            "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

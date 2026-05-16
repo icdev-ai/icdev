@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+{% block title %}Ontology Explorer — ICDEV™{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Ontology Explorer</h1>
+  <p class="page-subtitle">Cross-domain class hierarchy, equivalences, and knowledge graph enrichment</p>
+</div>
+
+{# ── Stats Row ── #}
+<div class="stats-row" style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.class_count }}</div>
+    <div class="stat-label">Classes</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.domain_count }}</div>
+    <div class="stat-label">Domains</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.closure_pairs }}</div>
+    <div class="stat-label">Closure Pairs</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.alignment_count }}</div>
+    <div class="stat-label">Alignments</div>
+  </div>
+  <div style="margin-left:auto;display:flex;align-items:center;">
+    <button id="rebuild-btn" class="btn btn-sm btn-primary" onclick="rebuildFederation()">Rebuild Federation</button>
+  </div>
+</div>
+
+{# ── Domain Breakdown ── #}
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h3 class="card-title">Domain Breakdown</h3></div>
+  <div class="card-body">
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+      <button class="domain-btn active" data-domain="" onclick="filterDomain(this,'')">All</button>
+      {% for d in domains %}
+      <button class="domain-btn" data-domain="{{ d.domain }}" onclick="filterDomain(this,'{{ d.domain }}')">
+        {{ d.label }} <span class="badge">{{ d.count }}</span>
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+{# ── Class Table ── #}
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h3 class="card-title" style="margin:0;">Classes</h3>
+    <input id="class-search" type="text" class="form-control form-control-sm" style="width:250px;"
+           placeholder="Filter classes…" oninput="filterClasses()">
+  </div>
+  <div class="card-body" style="padding:0;">
+    <div id="class-table-wrap" style="overflow-x:auto;">
+      <table class="table table-sm table-hover" id="class-table">
+        <thead>
+          <tr>
+            <th>Class ID</th>
+            <th>Domain</th>
+            <th>Label</th>
+            <th>Superclasses</th>
+            <th>Canonical</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="class-tbody">
+          <tr><td colspan="6" class="text-center text-muted">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ── Closure Detail Panel ── #}
+<div id="closure-panel" class="card" style="display:none;margin-bottom:1.5rem;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h3 class="card-title" style="margin:0;">Hierarchy: <span id="closure-title"></span></h3>
+    <button class="btn btn-sm btn-secondary" onclick="closeClosure()">Close</button>
+  </div>
+  <div class="card-body">
+    <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+      <div>
+        <h6>Superclasses (ancestors)</h6>
+        <ul id="super-list" style="list-style:none;padding:0;"></ul>
+      </div>
+      <div>
+        <h6>Subclasses (descendants)</h6>
+        <ul id="sub-list" style="list-style:none;padding:0;"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── IQE Widget ── #}
+{% include "includes/iqe_query_widget.html" %}
+
+<style>
+.stat-card{background:var(--card-bg,#1e2130);border-radius:8px;padding:1rem 1.5rem;min-width:120px;text-align:center;}
+.stat-value{font-size:1.8rem;font-weight:700;color:var(--accent,#4a9eff);}
+.stat-label{font-size:.8rem;color:var(--text-muted,#8892a4);margin-top:.2rem;}
+.domain-btn{border:1px solid var(--border,#2d3347);background:transparent;color:var(--text,#cdd6f4);padding:.25rem .75rem;border-radius:999px;cursor:pointer;font-size:.8rem;transition:all .15s;}
+.domain-btn:hover,.domain-btn.active{background:var(--accent,#4a9eff);color:#fff;border-color:var(--accent,#4a9eff);}
+.domain-btn .badge{background:rgba(255,255,255,.15);border-radius:999px;padding:.1rem .4rem;margin-left:.3rem;font-size:.7rem;}
+#class-table tbody tr:hover{cursor:pointer;}
+#class-table .btn-link{background:none;border:none;color:var(--accent,#4a9eff);cursor:pointer;padding:0;font-size:.8rem;}
+.dist-badge{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.75rem;background:var(--card-bg,#1e2130);border:1px solid var(--border,#2d3347);margin:.1rem;}
+</style>
+
+<script>
+var _allClasses = [];
+var _currentDomain = '';
+
+function loadClasses(domain) {
+  _currentDomain = domain;
+  var url = '/api/ontology/classes' + (domain ? '?domain=' + encodeURIComponent(domain) : '');
+  fetch(url).then(r => r.json()).then(data => {
+    _allClasses = data.classes || [];
+    renderClasses(_allClasses);
+  }).catch(e => {
+    document.getElementById('class-tbody').innerHTML =
+      '<tr><td colspan="6" class="text-center text-danger">Error loading classes: ' + e + '</td></tr>';
+  });
+}
+
+function renderClasses(classes) {
+  var q = (document.getElementById('class-search').value || '').toLowerCase();
+  var filtered = q ? classes.filter(c =>
+    (c.id||'').toLowerCase().includes(q) ||
+    (c.label||'').toLowerCase().includes(q) ||
+    (c.domain||'').toLowerCase().includes(q)
+  ) : classes;
+  var html = '';
+  if (!filtered.length) {
+    html = '<tr><td colspan="6" class="text-center text-muted">No classes found.</td></tr>';
+  } else {
+    filtered.forEach(c => {
+      var supers = (c.superclasses || []).map(s =>
+        '<span class="dist-badge">' + esc(s) + '</span>'
+      ).join('');
+      var canonical = (c.canonical_id && c.canonical_id !== c.id)
+        ? '<span class="text-muted" style="font-size:.75rem;">' + esc(c.canonical_id) + '</span>'
+        : '<span class="text-muted" style="font-size:.75rem;">self</span>';
+      html += '<tr onclick="showClosure(\'' + esc(c.id) + '\')">' +
+        '<td><code style="font-size:.8rem;">' + esc(c.id) + '</code></td>' +
+        '<td><span style="font-size:.75rem;">' + esc(c.domain) + '</span></td>' +
+        '<td>' + esc(c.label) + '</td>' +
+        '<td>' + (supers || '<span class="text-muted">—</span>') + '</td>' +
+        '<td>' + canonical + '</td>' +
+        '<td><button class="btn-link" onclick="event.stopPropagation();showClosure(\'' + esc(c.id) + '\')">⬡</button></td>' +
+        '</tr>';
+    });
+  }
+  document.getElementById('class-tbody').innerHTML = html;
+}
+
+function filterDomain(btn, domain) {
+  document.querySelectorAll('.domain-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadClasses(domain);
+}
+
+function filterClasses() {
+  renderClasses(_allClasses);
+}
+
+function showClosure(classId) {
+  document.getElementById('closure-title').textContent = classId;
+  document.getElementById('closure-panel').style.display = '';
+  document.getElementById('super-list').innerHTML = '<li class="text-muted">Loading…</li>';
+  document.getElementById('sub-list').innerHTML = '<li class="text-muted">Loading…</li>';
+  fetch('/api/ontology/closure?class_id=' + encodeURIComponent(classId))
+    .then(r => r.json()).then(data => {
+      var superHtml = (data.superclasses || []).map(s =>
+        '<li><code>' + esc(s.id) + '</code> <span class="text-muted">d=' + s.distance + '</span></li>'
+      ).join('') || '<li class="text-muted">None (root class)</li>';
+      var subHtml = (data.subclasses || []).map(s =>
+        '<li><code>' + esc(s.id) + '</code> <span class="text-muted">d=' + s.distance + '</span></li>'
+      ).join('') || '<li class="text-muted">None (leaf class)</li>';
+      document.getElementById('super-list').innerHTML = superHtml;
+      document.getElementById('sub-list').innerHTML = subHtml;
+    });
+}
+
+function closeClosure() {
+  document.getElementById('closure-panel').style.display = 'none';
+}
+
+function rebuildFederation() {
+  var btn = document.getElementById('rebuild-btn');
+  btn.disabled = true;
+  btn.textContent = 'Rebuilding…';
+  fetch('/api/ontology/rebuild', {method:'POST'})
+    .then(r => r.json()).then(data => {
+      btn.textContent = 'Rebuilt (' + (data.classes_total||'?') + ' classes)';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Rebuild Federation'; }, 3000);
+      loadClasses(_currentDomain);
+    }).catch(e => {
+      btn.textContent = 'Error';
+      setTimeout(() => { btn.disabled = false; btn.textContent = 'Rebuild Federation'; }, 3000);
+    });
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// Initial load
+loadClasses('');
+</script>
+{% endblock %}
