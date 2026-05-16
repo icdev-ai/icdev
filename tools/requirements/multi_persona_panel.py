@@ -165,9 +165,9 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
     if not panel.merged_requirements:
         return 0
 
-    conn = get_connection(db_path=str(db_path)) if db_path else None
-    if conn is None:
-        return 0
+    # Always get a connection — for PostgreSQL backend db_path is ignored by get_connection
+    conn = get_connection(db_path=str(db_path)) if db_path else get_connection()
+    conn.set_security_context(None)
 
     try:
         written = 0
@@ -177,8 +177,8 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
             conn.execute(
                 """INSERT OR IGNORE INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
-                    turn_number, status, source, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'draft', 'panel', ?)""",
+                    source_turn, source_document, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'panel', 'draft', ?)""",
                 (
                     req_id,
                     panel.session_id,
