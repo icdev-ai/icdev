@@ -9857,6 +9857,7 @@ CREATE TABLE IF NOT EXISTS canvas_kg_nodes (
     node_id         TEXT NOT NULL,
     node_type       TEXT,
     label           TEXT,
+    ontology_id     TEXT,
     metadata_json   TEXT DEFAULT '{}',
     updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
