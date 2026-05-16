@@ -437,6 +437,35 @@ AIMC_NODE_TYPES: list[str] = [
 # Each entry: id, name, provider, family, context_window, vram_gb, cost_per_1k_tokens,
 #             il_suitability [2,4,5,6], air_gap_ready, quantization_options, notes
 FOUNDATION_MODELS = [
+    # ── Ollama Cloud (ollama.com — requires OLLAMA_API_KEY) ───────────────────
+    {
+        "id": "kimi-cloud",
+        "name": "Kimi K2.6 (Ollama Cloud)",
+        "provider": "Ollama Cloud",
+        "family": "Kimi",
+        "type": "llm",
+        "context_window": 32768,
+        "vram_gb": 0,
+        "cost_per_1k_tokens": 0.0,
+        "il_suitability": [2, 4, 5],
+        "air_gap_ready": False,
+        "quantization_options": [],
+        "notes": "Kimi K2.6 via ollama.com cloud API — primary inference model; requires OLLAMA_API_KEY",
+    },
+    {
+        "id": "gpt-oss-cloud",
+        "name": "GPT-OSS 120B (Ollama Cloud)",
+        "provider": "Ollama Cloud",
+        "family": "GPT-OSS",
+        "type": "llm",
+        "context_window": 32768,
+        "vram_gb": 0,
+        "cost_per_1k_tokens": 0.0,
+        "il_suitability": [2, 4, 5],
+        "air_gap_ready": False,
+        "quantization_options": [],
+        "notes": "Large open-source model via ollama.com cloud API; requires OLLAMA_API_KEY",
+    },
     # ── Ollama / Local ────────────────────────────────────────────────────────
     {
         "id": "qwen3-local",
@@ -450,7 +479,21 @@ FOUNDATION_MODELS = [
         "il_suitability": [2, 4, 5, 6],
         "air_gap_ready": True,
         "quantization_options": ["Q4_K_M", "Q5_K_M", "Q8_0", "fp16"],
-        "notes": "Primary ICDEV™ model — fully air-gap safe, GGUF quantized",
+        "notes": "Qwen3.5 local — thinking disabled for speed; air-gap safe, GGUF quantized",
+    },
+    {
+        "id": "kimi-local",
+        "name": "Kimi K2.6 (Local Ollama)",
+        "provider": "Ollama",
+        "family": "Kimi",
+        "type": "llm",
+        "context_window": 32768,
+        "vram_gb": 16,
+        "cost_per_1k_tokens": 0.0,
+        "il_suitability": [2, 4, 5, 6],
+        "air_gap_ready": True,
+        "quantization_options": ["Q4_K_M", "Q8_0"],
+        "notes": "Kimi K2.6 pulled locally via Ollama — air-gap safe fallback",
     },
     {
         "id": "llama3-70b-instruct",
