@@ -1715,6 +1715,13 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Cache Savings blueprint failed to register: %s", _exc)
 
+    # ---- JISE Portal Blueprint ----
+    try:
+        from tools.intelligence.jise_portal import jise_bp as _jise_bp
+        app.register_blueprint(_jise_bp)
+        app.logger.info("JISE Portal blueprint registered at /api/v1/jise")
+    except Exception as _exc:
+        app.logger.warning("JISE Portal blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
