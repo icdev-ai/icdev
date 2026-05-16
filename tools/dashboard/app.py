@@ -1087,6 +1087,13 @@ def create_app() -> Flask:
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
 
+    # Register field-level security middleware (CUI enforcement on JSON responses)
+    try:
+        from tools.security.middleware import init_security
+        init_security(app, classification="CUI")
+    except ImportError:
+        pass
+
     # Initialize WebSocket (D170 — optional, graceful fallback)
     init_socketio(app)
 

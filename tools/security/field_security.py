@@ -146,15 +146,41 @@ def field_security_after_request(response) -> Any:
     return response
 
 
+_SCHEMA_PATH_MAP = [
+    # More-specific prefixes must come before shorter overlapping ones.
+    ("/profile/api/llm-keys", "api_key"),
+    ("/profile/api/keys",     "api_key"),
+    ("/profile",              "user_profile"),
+    ("/api/users",            "user_profile"),
+    ("/users",                "user_profile"),
+    ("/user",                 "user_profile"),
+    ("/api/tenants",          "tenant"),
+    ("/tenants",              "tenant"),
+    ("/tenant",               "tenant"),
+    ("/api/projects",         "project"),
+    ("/projects",             "project"),
+    ("/project",              "project"),
+    ("/api/compliance",       "compliance"),
+    ("/compliance",           "compliance"),
+    ("/api/audit",            "audit_trail"),
+    ("/audit",                "audit_trail"),
+    ("/api/notifications",    "notification"),
+    ("/api/alerts",           "notification"),
+    ("/api/agents",           "agent"),
+    ("/api/tasks",            "task"),
+    ("/api/findings",         "finding"),
+    ("/api/simulation",       "simulation"),
+    ("/api/research",         "research"),
+    ("/api/knowledge",        "knowledge"),
+    ("/api/rag",              "rag"),
+]
+
+
 def _infer_schema(path: str) -> Optional[str]:
     """Infer schema name from URL path for policy lookup."""
-    # Simple heuristic mapping
-    if "/user" in path or "/profile" in path:
-        return "user_profile"
-    if "/tenant" in path:
-        return "tenant"
-    if "/project" in path:
-        return "project"
+    for prefix, schema in _SCHEMA_PATH_MAP:
+        if path.startswith(prefix) or prefix in path:
+            return schema
     return None
 
 

@@ -50,6 +50,19 @@ import os
 import re
 import sqlite3
 from pathlib import Path
+from typing import Any, Optional
+
+# Regex for table name extraction used by column-level masking.
+_RE_FROM_TABLE = re.compile(r"\bFROM\b\s+([\w\"\.]+)", re.IGNORECASE)
+_RE_UPDATE_TABLE = re.compile(r"\bUPDATE\b\s+([\w\"\.]+)", re.IGNORECASE)
+
+
+def _extract_table_name(sql: str) -> Optional[str]:
+    """Return the primary table name from a SELECT or UPDATE statement."""
+    m = _RE_FROM_TABLE.search(sql) or _RE_UPDATE_TABLE.search(sql)
+    if m:
+        return m.group(1).strip('"').split(".")[-1]
+    return None
 
 # Load .env if available (so ICDEV_STORAGE_BACKEND is picked up)
 _BASE = Path(__file__).resolve().parent.parent.parent
@@ -547,8 +560,10 @@ class StorageCursor:
     def __init__(self, cursor, backend: str):
         self._cursor = cursor
         self._backend = backend
+        self._table_name: Optional[str] = None
 
     def execute(self, sql: str, params=None):
+        self._table_name = _extract_table_name(sql)
         sql, params = self._inject_rls(sql, params)
         sql = translate_sql(sql, self._backend)
         if sql.strip() == "SELECT 1" and params:
@@ -571,15 +586,47 @@ class StorageCursor:
         row = self._cursor.fetchone()
         if row is None:
             return None
+        row = self._apply_column_masking(row)
         if self._backend == "postgresql" and isinstance(row, dict):
             return DictRow(row)
         return row
 
     def fetchall(self):
         rows = self._cursor.fetchall()
+        rows = [self._apply_column_masking(r) for r in rows]
         if self._backend == "postgresql":
             return [DictRow(r) if isinstance(r, dict) else r for r in rows]
         return rows
+
+    def _apply_column_masking(self, row: Any) -> Any:
+        """Apply column-level masking when a security context and table name are set."""
+        ctx = getattr(self, "_security_context", None)
+        if not ctx or not self._table_name:
+            return row
+        role = getattr(ctx, "role", "")
+        if not role:
+            return row
+        try:
+            from tools.security.column_security import get_column_policies_for_role, mask_columns
+            policies = get_column_policies_for_role(self._table_name, role)
+            if not policies:
+                return row
+            # Convert row to dict using cursor description column names.
+            desc = self._cursor.description
+            if desc is None:
+                return row
+            col_names = [d[0] for d in desc]
+            if isinstance(row, (tuple, list)):
+                row_dict = dict(zip(col_names, row))
+            elif isinstance(row, dict):
+                row_dict = dict(row)
+            elif hasattr(row, "keys"):
+                row_dict = {k: row[k] for k in row.keys()}
+            else:
+                return row
+            return DictRow(mask_columns(row_dict, policies))
+        except Exception:
+            return row
 
     def fetchmany(self, size=None):
         rows = self._cursor.fetchmany(size) if size else self._cursor.fetchmany()
@@ -876,6 +923,23 @@ def _get_sqlite_connection(db_path: str = None):
     return conn
 
 
+def _attach_flask_security_context(conn: "StorageConnection") -> None:
+    """Auto-attach Flask g.security_context to a connection when in a request context.
+
+    Bridges the middleware-set SecurityContext (on Flask's g) to the storage
+    layer so that RLS predicate injection fires automatically on every query
+    without requiring each route handler to call set_security_context() manually.
+    """
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            ctx = getattr(g, "security_context", None)
+            if ctx:
+                conn.set_security_context(ctx)
+    except ImportError:
+        pass
+
+
 def get_connection(db_path: str = None) -> StorageConnection:
     """Return a StorageConnection for the configured backend.
 
@@ -886,7 +950,9 @@ def get_connection(db_path: str = None) -> StorageConnection:
     lost during PG outages.
 
     Returns a StorageConnection wrapper that transparently handles
-    SQL translation between SQLite and PostgreSQL.
+    SQL translation between SQLite and PostgreSQL. When called inside a
+    Flask request context the connection is automatically scoped to the
+    authenticated user's tenant and classification via set_security_context.
     """
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
 
@@ -900,14 +966,18 @@ def get_connection(db_path: str = None) -> StorageConnection:
         and Path(db_path).resolve() != Path(_main_db).resolve()
     ):
         raw_conn = _get_sqlite_connection(db_path)
-        return StorageConnection(raw_conn, "sqlite")
+        conn = StorageConnection(raw_conn, "sqlite")
+        _attach_flask_security_context(conn)
+        return conn
 
     if backend == "postgresql":
         db_url = os.environ.get("ICDEV_DATABASE_URL")
         no_fallback = os.environ.get("ICDEV_PG_NO_FALLBACK", "").lower() in ("true", "1")
         try:
             raw_conn = _get_pg_connection(db_url)
-            return StorageConnection(raw_conn, "postgresql")
+            conn = StorageConnection(raw_conn, "postgresql")
+            _attach_flask_security_context(conn)
+            return conn
         except Exception as exc:
             if no_fallback:
                 raise ConnectionError(
@@ -922,10 +992,14 @@ def get_connection(db_path: str = None) -> StorageConnection:
                 exc,
             )
             raw_conn = _get_sqlite_connection(db_path)
-            return StorageConnection(raw_conn, "sqlite")
+            conn = StorageConnection(raw_conn, "sqlite")
+            _attach_flask_security_context(conn)
+            return conn
     else:
         raw_conn = _get_sqlite_connection(db_path)
-        return StorageConnection(raw_conn, "sqlite")
+        conn = StorageConnection(raw_conn, "sqlite")
+        _attach_flask_security_context(conn)
+        return conn
 
 
 def get_backend() -> str:
