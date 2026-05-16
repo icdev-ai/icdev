@@ -2773,12 +2773,18 @@
         }
 
         // --- Build a persona chip (for preset container) ---
-        function _makePersonaChip(name, prompt, container, isCustom) {
+        function _makePersonaChip(name, prompt, container, isCustom, uses) {
             var chip = document.createElement('button');
             chip.type = 'button';
             chip.className = 'ctx-preset-chip' + (isCustom ? ' ctx-preset-chip--custom' : '');
             chip.dataset.customName = name;
-            chip.textContent = name;
+            chip.appendChild(document.createTextNode(name));
+            if (isCustom && uses) {
+                var badge = document.createElement('span');
+                badge.className = 'ctx-preset-chip__uses';
+                badge.textContent = uses + 'x';
+                chip.appendChild(badge);
+            }
             chip.addEventListener('click', function() {
                 container.querySelectorAll('.ctx-preset-chip').forEach(function(c) { c.classList.remove('ctx-preset-chip--active'); });
                 chip.classList.add('ctx-preset-chip--active');
@@ -2790,7 +2796,7 @@
         }
 
         // --- Build an expert chip (for modal-panel-personas) ---
-        function _makeExpertChip(name, value, autoCheck) {
+        function _makeExpertChip(name, value, autoCheck, uses) {
             var lbl = document.createElement('label');
             lbl.className = 'panel-chip panel-chip--custom' + (autoCheck ? ' panel-chip--active' : '');
             lbl.dataset.customVal = value;
@@ -2799,6 +2805,12 @@
             cb.addEventListener('change', function() { lbl.classList.toggle('panel-chip--active', cb.checked); });
             lbl.appendChild(cb);
             lbl.appendChild(document.createTextNode(' ' + name));
+            if (uses) {
+                var badge = document.createElement('span');
+                badge.className = 'panel-chip__uses';
+                badge.textContent = uses + 'x';
+                lbl.appendChild(badge);
+            }
             return lbl;
         }
 
@@ -2809,7 +2821,7 @@
             if (presetEl) {
                 presetEl.querySelectorAll('.ctx-preset-chip--custom').forEach(function(c) { c.remove(); });
                 _lsGet(_PERSONA_STORE).sort(_byUseDesc).forEach(function(p) {
-                    presetEl.appendChild(_makePersonaChip(p.name, p.prompt, presetEl, true));
+                    presetEl.appendChild(_makePersonaChip(p.name, p.prompt, presetEl, true, p.uses));
                 });
             }
             // Expert panel chips
@@ -2818,7 +2830,7 @@
                 expertsEl.querySelectorAll('.panel-chip--custom').forEach(function(c) { c.remove(); });
                 _lsGet(_EXPERT_STORE).sort(_byUseDesc).forEach(function(e, idx) {
                     // Auto-check only the top 2 most-used experts
-                    expertsEl.appendChild(_makeExpertChip(e.name, e.value, idx < 2));
+                    expertsEl.appendChild(_makeExpertChip(e.name, e.value, idx < 2, e.uses));
                 });
             }
         }
