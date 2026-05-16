@@ -178,7 +178,7 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
                 """INSERT OR IGNORE INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
                     source_turn, source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'panel', 'draft', ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, 'panel', 'deferred', ?)""",
                 (
                     req_id,
                     panel.session_id,
