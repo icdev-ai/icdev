@@ -2263,6 +2263,15 @@
         var classification = options.classification !== undefined ? options.classification : (cfg.wizardClassification || '');
         var frameworks = (options.frameworks || cfg.wizardFrameworks || '').split(',').filter(function (f) { return f.trim(); });
 
+        // Show hourglass placeholder while LLM generates the welcome (~10-15s)
+        var stream = document.getElementById('message-stream');
+        if (stream) {
+            stream.innerHTML = '<div class="msg-bubble msg-bubble--system" id="ctx-loading-placeholder">'
+                + '<div class="agent-name">Agent</div>'
+                + '<div style="opacity:0.6;font-size:0.85rem;">&#8987; Setting up your session…</div>'
+                + '</div>';
+        }
+
         // Step 1: Create intake session
         fetch(INTAKE_API + '/session', {
             method: 'POST',
@@ -2281,6 +2290,8 @@
         .then(function (data) {
             if (data.error) {
                 console.error('[ICDEV] Intake session error:', data.error);
+                var ph = document.getElementById('ctx-loading-placeholder');
+                if (ph) ph.remove();
                 appendMessage({ role: 'system', content: 'Could not start your session. Please refresh the page or create a new conversation. If this keeps happening, contact your administrator.' });
                 return;
             }
