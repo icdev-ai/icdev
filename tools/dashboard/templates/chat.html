@@ -80,6 +80,50 @@
     padding:2px 7px; border:1px solid #4a90d9; border-radius:10px; margin-left:6px;
   }
   .panel-mode-active .panel-mode-indicator { display:inline; }
+
+  /* ---- PRD / Requirements viewer modals ---- */
+  .chat-modal--wide { width: min(860px, 92vw); }
+  .chat-modal__header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .chat-modal__close { background:none; border:none; color:var(--text-muted,#888); font-size:1.5rem; cursor:pointer; line-height:1; padding:0 4px; }
+  .chat-modal__close:hover { color:var(--text-primary,#e0e0e0); }
+  .chat-modal__meta { font-size:0.75rem; color:var(--text-muted,#888); margin-bottom:12px; }
+  .prd-viewer-body {
+    font-size:0.88rem; line-height:1.65; color:var(--text-primary,#e0e0e0);
+    padding:16px; background:var(--bg-secondary,#1a1a2e);
+    border:1px solid var(--border-color,#2a2a40); border-radius:6px; margin-bottom:4px;
+  }
+  .prd-viewer-body h1,.prd-viewer-body h2,.prd-viewer-body h3,.prd-viewer-body h4 { color:var(--accent-blue,#4a90d9); margin-top:1.2em; margin-bottom:0.4em; }
+  .prd-viewer-body h1 { font-size:1.2rem; }
+  .prd-viewer-body h2 { font-size:1.05rem; border-bottom:1px solid var(--border-color,#2a2a40); padding-bottom:4px; }
+  .prd-viewer-body h3 { font-size:0.95rem; }
+  .prd-viewer-body table { width:100%; border-collapse:collapse; font-size:0.82rem; }
+  .prd-viewer-body th { background:var(--bg-card,#12121f); padding:6px 10px; text-align:left; border:1px solid var(--border-color,#2a2a40); }
+  .prd-viewer-body td { padding:5px 10px; border:1px solid var(--border-color,#2a2a40); vertical-align:top; }
+  .prd-viewer-body code { background:rgba(255,255,255,.07); padding:1px 5px; border-radius:3px; font-size:0.83em; }
+  .prd-viewer-body pre { background:rgba(0,0,0,.3); padding:10px; border-radius:5px; overflow-x:auto; }
+  .prd-viewer-body pre code { background:none; padding:0; }
+  .prd-viewer-body ul,.prd-viewer-body ol { padding-left:1.4em; }
+  .prd-viewer-body li { margin-bottom:3px; }
+  .prd-viewer-body blockquote { border-left:3px solid var(--border-color,#2a2a40); padding-left:10px; color:var(--text-muted,#888); margin:0; }
+  .prd-viewer-body strong { color:var(--text-primary,#e0e0e0); }
+  .reqs-viewer-body { font-size:0.84rem; }
+  .reqs-table { width:100%; border-collapse:collapse; }
+  .reqs-table th { background:var(--bg-card,#12121f); padding:8px 12px; text-align:left; border:1px solid var(--border-color,#2a2a40); font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted,#888); white-space:nowrap; }
+  .reqs-table td { padding:8px 12px; border:1px solid var(--border-color,#2a2a40); vertical-align:top; }
+  .reqs-table tr:hover td { background:rgba(255,255,255,.02); }
+  .req-type-badge,.req-priority-badge { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:10px; white-space:nowrap; }
+  .req-type--functional    { background:rgba(74,144,217,.15); color:#4a90d9; }
+  .req-type--security      { background:rgba(220,38,38,.15);  color:#f87171; }
+  .req-type--compliance    { background:rgba(217,119,6,.15);  color:#fbbf24; }
+  .req-type--performance   { background:rgba(5,150,105,.15);  color:#34d399; }
+  .req-type--integration   { background:rgba(99,102,241,.15); color:#a5b4fc; }
+  .req-type--data          { background:rgba(219,39,119,.15); color:#f472b6; }
+  .req-type--non_functional{ background:rgba(75,85,99,.25);   color:#9ca3af; }
+  .req-priority--high   { background:rgba(220,38,38,.12);  color:#f87171; }
+  .req-priority--medium { background:rgba(217,119,6,.12);  color:#fbbf24; }
+  .req-priority--low    { background:rgba(74,144,217,.12); color:#93c5fd; }
+  .chat-modal__btn--export { background:var(--accent-blue,#4a90d9); color:#fff; border:none; padding:8px 18px; border-radius:5px; cursor:pointer; font-size:0.84rem; font-weight:600; }
+  .chat-modal__btn--export:hover { opacity:0.85; }
 </style>
 {% endblock %}
 
@@ -561,6 +605,38 @@
         <div class="chat-modal__actions">
             <button id="btn-cancel-modal" class="chat-modal__btn chat-modal__btn--cancel">Cancel</button>
             <button id="btn-create-context" class="chat-modal__btn chat-modal__btn--create">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- PRD Viewer Modal -->
+<div id="prd-viewer-modal" class="chat-modal-overlay">
+    <div class="chat-modal chat-modal--scrollable chat-modal--wide">
+        <div class="chat-modal__header">
+            <h3 class="chat-modal__title" id="prd-modal-title">Product Requirements Document</h3>
+            <button class="chat-modal__close" id="prd-modal-close" title="Close">&times;</button>
+        </div>
+        <div class="chat-modal__meta" id="prd-modal-meta"></div>
+        <div id="prd-modal-body" class="prd-viewer-body"></div>
+        <div class="chat-modal__actions" style="margin-top:12px;">
+            <button class="chat-modal__btn chat-modal__btn--cancel" id="prd-modal-cancel">Close</button>
+            <button class="chat-modal__btn chat-modal__btn--export" id="prd-download-btn">&#x2B07; Download .md</button>
+        </div>
+    </div>
+</div>
+
+<!-- Requirements Viewer Modal -->
+<div id="reqs-viewer-modal" class="chat-modal-overlay">
+    <div class="chat-modal chat-modal--scrollable chat-modal--wide">
+        <div class="chat-modal__header">
+            <h3 class="chat-modal__title">Requirements</h3>
+            <button class="chat-modal__close" id="reqs-modal-close" title="Close">&times;</button>
+        </div>
+        <div class="chat-modal__meta" id="reqs-modal-meta"></div>
+        <div id="reqs-modal-body" class="reqs-viewer-body"></div>
+        <div class="chat-modal__actions" style="margin-top:12px;">
+            <button class="chat-modal__btn chat-modal__btn--cancel" id="reqs-modal-cancel">Close</button>
+            <button class="chat-modal__btn chat-modal__btn--export" id="reqs-download-btn">&#x2B07; Export JSON</button>
         </div>
     </div>
 </div>
