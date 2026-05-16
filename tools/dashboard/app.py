@@ -1692,6 +1692,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("GovLift blueprint failed to register: %s", _exc)
 
+    # ---- MCIP DAT (Diplomatic Activity Tracker) ----
+    try:
+        from tools.mcip.blueprint import bp as _dat_bp
+        app.register_blueprint(_dat_bp)
+        app.logger.info("MCIP DAT blueprint registered at /dat")
+    except Exception as _exc:
+        app.logger.warning("MCIP DAT blueprint failed to register: %s", _exc)
+
     # ---- AI Observatory (cross-canvas AI decision traceability) ----
     try:
         from tools.ai_observatory.blueprint import bp as _ao_bp
@@ -2469,6 +2477,7 @@ def create_app() -> Flask:
             "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
+            "dat":           ("tools.iqe.adapters.mcip",           ["dat.events", "dat.dti_history"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

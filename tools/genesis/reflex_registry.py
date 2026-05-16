@@ -63,6 +63,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("socmint",                    DOMAIN, 6.0,  "SOCMINT harvester — Telegram milblog → sg_socmint_signals"),
     ReflexEntry("aadc_compliance",            DOMAIN, 4.0,  "AADC compliance scoring — NIST/OWASP/ATLAS node coverage",
                 on_demand=True),
+    ReflexEntry("mcip_dti_scorer",            DOMAIN, 6.0,  "MCIP DAT — compute and persist Diplomatic Tension Index every 6 h"),
 
     # ── SUPPORT ───────────────────────────────────────────────────────────────
     ReflexEntry("audit",       SUPPORT, 6.0,  "Compliance and security audit sweep"),

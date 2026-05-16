@@ -439,6 +439,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "canvas_ai_decisions",
         # Cross-Agency Data Transfer (NIST AU-2, AU-9 — append-only transfer audit log)
         "cross_agency_transfers",
+        # MCIP DAT — DTI score snapshots (NIST AU-2, SI-4 — append-only scoring audit trail)
+        "mcip_dti_scores",
     ]
 
     if tool_name == "Bash":
