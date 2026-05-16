@@ -404,6 +404,64 @@ def validate_prd_endpoint(session_id):
         return jsonify({"error": str(exc)}), 500
 
 
+@intake_api.route("/api/intake/force-build/<session_id>", methods=["POST"])
+def force_build(session_id):
+    """Start build regardless of readiness score (user override).
+
+    Runs SAFe decomposition on whatever requirements exist and returns
+    a build context so the client can proceed to the build pipeline.
+    Requires ``{"confirmed": true}`` in the request body as an explicit
+    acknowledgement that the readiness threshold is not met.
+    """
+    data = request.get_json(silent=True) or {}
+    if not data.get("confirmed"):
+        return jsonify({"error": "confirmed=true is required to override the readiness threshold"}), 400
+
+    conn = _get_db()
+    try:
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = dict(session)
+        readiness_score = session_data.get("readiness_score", 0) or 0
+
+        req_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()["cnt"]
+
+        if req_count == 0:
+            return jsonify({"error": "No requirements captured yet — add at least one requirement before building"}), 400
+
+        items_created = 0
+        try:
+            from tools.requirements.decomposition_engine import decompose_requirements
+            result = decompose_requirements(session_id, db_path=DB_PATH)
+            items_created = result.get("items_created", 0)
+        except Exception:
+            pass
+
+        return jsonify({
+            "status": "ok",
+            "forced": True,
+            "session_id": session_id,
+            "readiness_score": readiness_score,
+            "requirements_count": req_count,
+            "items_created": items_created,
+            "message": (
+                f"Build started with {readiness_score:.0%} readiness — "
+                f"{req_count} requirement(s), {items_created} work item(s) created. "
+                "Fill remaining gaps during development."
+            ),
+            "next_steps": ["Run /feature or /icdev-build to generate the application"],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 @intake_api.route("/api/intake/trigger-build/<session_id>", methods=["POST"])
 def trigger_build(session_id):
     """Prepare build context from an intake session and return next-step info.
