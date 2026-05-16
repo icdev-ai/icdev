@@ -1,125 +1,151 @@
 # CUI // SP-CTI
-"""Cache savings statistics — aggregates prompt caching metrics from the LLM response cache.
+"""Cache Savings analytics — aggregate hit rates, token savings, and cost deltas.
 
-Queries the llm_response_cache table to compute:
-  - hit_count / miss_count / hit_rate_pct
-  - tokens_saved (cache_read_input_tokens accumulated across all hits)
-  - cost_usd_saved (estimated based on per-model pricing)
-
-NIST 800-53: AU-12 (Audit Record Generation), SC-28 (Protection at Rest),
-SA-11 (Developer Testing).
-
-Usage::
-
-    python tools/cache_savings/savings.py --json
-    python tools/cache_savings/savings.py --since-hours 24 --json
+Two-level cache cost model:
+  Response cache  — full LLM call avoided (input + output cost saved)
+  Context cache   — tokens read at $0.30/MTok vs $3.00/MTok input price
 """
 
 from __future__ import annotations
 
-import argparse
-import json
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict
+from typing import Any
 
-logger = logging.getLogger("icdev.cache_savings.savings")
+log = logging.getLogger("icdev.cache_savings.savings")
 
-# Approximate blended per-token read cost for savings estimate (USD / 1k tokens).
-# Conservative baseline: uses cheapest plausible provider (GPT-4o-mini cache read).
-_DEFAULT_COST_PER_1K_CACHED_TOKENS_READ = 0.0000375  # OpenAI cached input pricing
+# Anthropic claude-sonnet-4-6 pricing (USD / token)
+_IN  = 3.00 / 1_000_000      # $3.00/MTok
+_OUT = 15.00 / 1_000_000     # $15.00/MTok
+_CW  = 3.75 / 1_000_000      # $3.75/MTok cache write (25% premium)
+_CR  = 0.30 / 1_000_000      # $0.30/MTok cache read  (90% discount)
 
 
-def get_savings_stats(since_hours: int = 168) -> Dict[str, Any]:
-    """Return cache savings statistics for the given look-back window.
-
-    Args:
-        since_hours: How many hours back to aggregate (default 168 = 7 days).
+def get_savings_stats(conn: Any = None) -> dict:
+    """Return aggregated cache savings metrics.
 
     Returns:
-        Dict with keys:
-          hit_count (int): Responses served from cache.
-          miss_count (int): Responses computed fresh.
-          hit_rate_pct (float): Percentage of requests served from cache [0, 100].
-          tokens_saved (int): Sum of cache_read_input_tokens from all cached responses.
-          cost_usd_saved (float): Estimated USD saved by reading from cache.
-          window_hours (int): Look-back window used for this computation.
+        {
+          enabled (bool), backend (str), window_hours (int),
+          summary  { total_entries, total_hits, hit_rate_pct, hit_count, miss_count,
+                     cache_write_tokens, cache_read_tokens, tokens_saved,
+                     resp_cache_usd_saved, context_cache_usd_saved, total_usd_saved,
+                     context_cache_write_premium, cost_usd_saved },
+          by_function [ { function, total_entries, total_hits, hit_rate_pct,
+                          avoided_calls, cache_write_tokens, cache_read_tokens,
+                          resp_cache_usd_saved, context_cache_usd_saved, cost_usd_saved } ]
+        }
     """
-    try:
+    if conn is None:
         from tools.db.storage import get_connection
-
         conn = get_connection()
-        since_ts = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).strftime(
-            "%Y-%m-%dT%H:%M:%SZ"
-        )
 
-        # Hit count = rows whose hit_count > 1 (served from cache at least once) OR
-        # rows with cache_read_input_tokens > 0
-        hit_row = conn.execute(
+    try:
+        rows = conn.execute(
             """
             SELECT
-                COUNT(*) AS hit_count,
-                COALESCE(SUM(cache_read_input_tokens), 0) AS tokens_saved
+                function,
+                COUNT(*)                              AS total_entries,
+                SUM(hit_count)                        AS total_hits,
+                SUM(input_tokens)                     AS input_tokens,
+                SUM(output_tokens)                    AS output_tokens,
+                COALESCE(SUM(cache_creation_input_tokens), 0) AS cache_write_tokens,
+                COALESCE(SUM(cache_read_input_tokens),     0) AS cache_read_tokens
             FROM llm_response_cache
-            WHERE created_at >= ?
-            AND (hit_count > 1 OR cache_read_input_tokens > 0)
-            """,
-            (since_ts,),
-        ).fetchone()
-
-        total_row = conn.execute(
-            "SELECT COUNT(*) AS total FROM llm_response_cache WHERE created_at >= ?",
-            (since_ts,),
-        ).fetchone()
-
-        conn.close()
-
-        hit_count = int(hit_row["hit_count"] or 0) if hit_row else 0
-        tokens_saved = int(hit_row["tokens_saved"] or 0) if hit_row else 0
-        total = int(total_row["total"] or 0) if total_row else 0
-        miss_count = max(0, total - hit_count)
-        hit_rate_pct = round((hit_count / total) * 100, 2) if total > 0 else 0.0
-        cost_usd_saved = round(tokens_saved / 1000.0 * _DEFAULT_COST_PER_1K_CACHED_TOKENS_READ, 6)
-
+            WHERE expires_at > datetime('now')
+            GROUP BY function
+            ORDER BY SUM(hit_count) DESC
+            LIMIT 50
+            """
+        ).fetchall()
     except Exception as exc:
-        logger.debug("get_savings_stats: DB query failed, returning zeros: %s", exc)
-        hit_count = 0
-        miss_count = 0
-        tokens_saved = 0
-        hit_rate_pct = 0.0
-        cost_usd_saved = 0.0
+        log.debug("cache savings query failed: %s", exc)
+        return _empty()
 
+    by_function = []
+    t_entries = t_hits = t_cw = t_cr = 0
+    t_resp_saved = t_ctx_saved = t_ctx_premium = 0.0
+
+    for row in rows:
+        fn      = row[0]
+        entries = row[1] or 0
+        hits    = row[2] or 0
+        inp     = row[3] or 0
+        out     = row[4] or 0
+        cw      = row[5] or 0
+        cr      = row[6] or 0
+
+        # Each repeat hit (beyond the first) avoided a full LLM call
+        avoided = max(0, hits - entries)
+        resp_saved = avoided * (inp * _IN + out * _OUT)
+
+        ctx_saved   = cr * (_IN - _CR)
+        ctx_premium = cw * (_CW - _IN)
+        net_ctx     = max(0.0, ctx_saved - ctx_premium)
+
+        hit_rate = round(hits / entries * 100, 1) if entries else 0.0
+
+        by_function.append({
+            "function":              fn,
+            "total_entries":         entries,
+            "total_hits":            hits,
+            "hit_rate_pct":          hit_rate,
+            "avoided_calls":         avoided,
+            "cache_write_tokens":    cw,
+            "cache_read_tokens":     cr,
+            "resp_cache_usd_saved":  round(resp_saved, 4),
+            "context_cache_usd_saved": round(net_ctx, 4),
+            "cost_usd_saved":        round(resp_saved + net_ctx, 4),
+        })
+
+        t_entries += entries
+        t_hits    += hits
+        t_cw      += cw
+        t_cr      += cr
+        t_resp_saved  += resp_saved
+        t_ctx_saved   += net_ctx
+        t_ctx_premium += ctx_premium
+
+    platform_hit_rate = round(t_hits / t_entries * 100, 1) if t_entries else 0.0
+    miss_count = max(0, t_entries - t_hits)
+
+    try:
+        from tools.llm.response_cache import _load_config
+        cfg = _load_config()
+        enabled = cfg.get("enabled", False)
+        backend = cfg.get("backend", "unknown")
+    except Exception:
+        enabled, backend = False, "unknown"
+
+    total_saved = t_resp_saved + t_ctx_saved
     return {
-        "hit_count": hit_count,
-        "miss_count": miss_count,
-        "hit_rate_pct": hit_rate_pct,
-        "tokens_saved": tokens_saved,
-        "cost_usd_saved": cost_usd_saved,
-        "window_hours": since_hours,
+        "enabled":      enabled,
+        "backend":      backend,
+        "window_hours": 168,
+        "summary": {
+            "total_entries":           t_entries,
+            "total_hits":              t_hits,
+            "hit_count":               t_hits,
+            "miss_count":              miss_count,
+            "hit_rate_pct":            platform_hit_rate,
+            "cache_write_tokens":      t_cw,
+            "cache_read_tokens":       t_cr,
+            "tokens_saved":            t_cr,
+            "resp_cache_usd_saved":    round(t_resp_saved, 4),
+            "context_cache_usd_saved": round(t_ctx_saved, 4),
+            "total_usd_saved":         round(total_saved, 4),
+            "cost_usd_saved":          round(total_saved, 4),
+            "context_cache_write_premium": round(t_ctx_premium, 4),
+        },
+        "by_function": by_function,
     }
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
-def _main():
-    parser = argparse.ArgumentParser(description="ICDEV™ cache savings statistics")
-    parser.add_argument("--since-hours", type=int, default=168, help="Look-back window in hours (default 168 = 7 days)")
-    parser.add_argument("--json", action="store_true", help="Output JSON")
-    args = parser.parse_args()
-
-    stats = get_savings_stats(since_hours=args.since_hours)
-    if args.json:
-        print(json.dumps(stats, indent=2))
-    else:
-        print(f"Cache hit rate:   {stats['hit_rate_pct']:.1f}%")
-        print(f"Hits:             {stats['hit_count']}")
-        print(f"Misses:           {stats['miss_count']}")
-        print(f"Tokens saved:     {stats['tokens_saved']:,}")
-        print(f"Cost saved (est): ${stats['cost_usd_saved']:.4f} USD")
-        print(f"Window:           {stats['window_hours']} hours")
-
-
-if __name__ == "__main__":
-    _main()
+def _empty() -> dict:
+    summary = {
+        "total_entries": 0, "total_hits": 0, "hit_count": 0, "miss_count": 0,
+        "hit_rate_pct": 0.0, "cache_write_tokens": 0, "cache_read_tokens": 0,
+        "tokens_saved": 0, "resp_cache_usd_saved": 0.0, "context_cache_usd_saved": 0.0,
+        "total_usd_saved": 0.0, "cost_usd_saved": 0.0, "context_cache_write_premium": 0.0,
+    }
+    return {"enabled": False, "backend": "unknown", "window_hours": 168,
+            "summary": summary, "by_function": []}
