@@ -1,0 +1,37 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV Security Baseline
+# Classification: CUI // SP-CTI | Impact Level: IL4
+
+classification:
+  level: CUI
+  caveats:
+    - SP-CTI
+  impact_level: IL4
+
+security_gates:
+  block_on_cat1_stig: true
+  warn_on_cat2_stig: true
+  block_on_critical_vulns: true
+  block_on_high_vulns: true
+  require_sbom: true
+  require_cui_markings: true
+
+encryption:
+  at_rest: AES-256-GCM
+  in_transit: TLSv1.3
+  key_management: FIPS 140-2 Level 2
+
+access_control:
+  min_auth_factor: 2
+  session_timeout_minutes: 30
+  max_failed_attempts: 5
+
+logging:
+  retention_days: 365
+  immutable_audit_trail: true
+  forward_to_siem: true
+
+containers:
+  run_as_non_root: true
+  read_only_rootfs: true
+  no_new_privileges: true

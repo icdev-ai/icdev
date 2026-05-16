@@ -1,0 +1,43 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV Base GitLab CI Template
+# Classification: CUI // SP-CTI
+
+stages:
+  - validate
+  - lint
+  - test
+  - security
+  - compliance
+
+variables:
+  ICDEV_CLASSIFICATION: "CUI"
+  ICDEV_IMPACT_LEVEL: "IL4"
+
+lint:
+  stage: lint
+  image: python:3.11-slim
+  script:
+    - pip install ruff
+    - ruff check . --select E,F,W
+  allow_failure: false
+
+test:unit:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - pip install --quiet -r requirements.txt
+  script:
+    - pytest tests/ -v --tb=short --ignore=tests/e2e
+  allow_failure: false
+
+security:bandit:
+  stage: security
+  image: python:3.11-slim
+  script:
+    - pip install bandit
+    - bandit -r tools/ -ll -f json -o bandit-report.json
+  artifacts:
+    when: always
+    paths:
+      - bandit-report.json
+  allow_failure: true

@@ -1,0 +1,29 @@
+# CI/CD Pipeline Configuration Template
+# Classification: CUI // SP-CTI
+
+pipeline:
+  name: icdev-ci
+  trigger:
+    - push
+    - merge_request
+  stages:
+    - validate
+    - build
+    - test
+    - security_scan
+    - deploy
+
+jobs:
+  validate:
+    stage: validate
+    script:
+      - python tools/testing/health_check.py --json
+  test:
+    stage: test
+    script:
+      - pytest tests/ --cov=tools --cov-report=xml
+  security_scan:
+    stage: security_scan
+    script:
+      - python -m bandit -r tools/ --severity-level medium
+      - python tools/workflow/coherence_checker.py --all --gate

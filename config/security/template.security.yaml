@@ -1,0 +1,25 @@
+# Security Configuration Template
+# Classification: CUI // SP-CTI
+
+security:
+  classification: CUI
+  impact_level: IL4
+  encryption:
+    at_rest: AES-256
+    in_transit: TLS_1_3
+  auth:
+    mfa_required: true
+    session_timeout_minutes: 30
+  scanning:
+    sast: true
+    sca: true
+    secrets: true
+  compliance:
+    frameworks:
+      - NIST_800_53
+      - FedRAMP
+      - CMMC
+    gates:
+      block_on_cat1_stig: true
+      block_on_critical_vuln: true
+      block_on_failed_test: true
