@@ -151,7 +151,7 @@ def _tier_limits(tier_key):
 # ============================================================================
 
 
-def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
+def create_tenant(name, impact_level, tier, admin_email, admin_name=None, compartments=None):
     """Create a new tenant with admin user and initial API key.
 
     For IL2-IL4 with Starter/Professional tier: auto-approves (status=provisioning).
@@ -193,21 +193,22 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
         if row:
             raise ValueError("A tenant with slug '{}' already exists (id={}).".format(slug, row[0]))
 
+        compartments_json = json.dumps(compartments or [])
         conn.execute(
             """INSERT INTO tenants
                (id, name, slug, status, tier, impact_level,
-                db_host, db_name, k8s_namespace, settings,
+                db_host, db_name, k8s_namespace, settings, compartments,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (tenant_id, name, slug, initial_status, tier_lower, il, None, None, None, json.dumps({}), now, now),
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (tenant_id, name, slug, initial_status, tier_lower, il, None, None, None, json.dumps({}), compartments_json, now, now),
         )
 
         display_name = admin_name or admin_email.split("@")[0]
         conn.execute(
             """INSERT INTO users
                (id, tenant_id, email, display_name, role, auth_method,
-                status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                compartments, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 user_id,
                 tenant_id,
@@ -215,6 +216,7 @@ def create_tenant(name, impact_level, tier, admin_email, admin_name=None):
                 display_name,
                 UserRole.TENANT_ADMIN.value,
                 AuthMethod.API_KEY.value,
+                compartments_json,
                 "active",
                 now,
             ),
@@ -767,7 +769,7 @@ def list_users(tenant_id):
         conn.close()
 
 
-def add_user(tenant_id, email, display_name, role, auth_method="api_key"):
+def add_user(tenant_id, email, display_name, role, auth_method="api_key", compartments=None):
     """Add a user to a tenant.
 
     Validates role and auth_method against allowed enum values.
@@ -826,12 +828,13 @@ def add_user(tenant_id, email, display_name, role, auth_method="api_key"):
         user_id = "user-" + uuid.uuid4().hex[:12]
         now = _utcnow()
 
+        compartments_json = json.dumps(compartments or [])
         conn.execute(
             """INSERT INTO users
                (id, tenant_id, email, display_name, role, auth_method,
-                status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, tenant_id, email, display_name, role_lower, auth_lower, "active", now),
+                compartments, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, tenant_id, email, display_name, role_lower, auth_lower, compartments_json, "active", now),
         )
 
         _audit_platform(
@@ -953,6 +956,7 @@ def main():
     parser.add_argument("--tier", type=str, help="Subscription tier (starter, professional, enterprise)")
     parser.add_argument("--admin-email", type=str, help="Admin email address")
     parser.add_argument("--admin-name", type=str, default=None, help="Admin display name")
+    parser.add_argument("--compartments", type=str, default=None, help="Comma-separated compartment tags (e.g. COI_FINANCE,LAC_DC_EAST)")
 
     parser.add_argument("--approver-id", type=str, help="Approver user ID")
 
@@ -971,12 +975,14 @@ def main():
         if args.create:
             if not all([args.name, args.il, args.tier, args.admin_email]):
                 parser.error("--create requires --name, --il, --tier, and --admin-email")
+            comps = [c.strip() for c in args.compartments.split(",") if c.strip()] if args.compartments else None
             result = create_tenant(
                 name=args.name,
                 impact_level=args.il,
                 tier=args.tier,
                 admin_email=args.admin_email,
                 admin_name=args.admin_name,
+                compartments=comps,
             )
             _print_result(result, args.as_json)
 
@@ -1021,12 +1027,14 @@ def main():
             if not all([args.tenant_id, args.email, args.role]):
                 parser.error("--add-user requires --tenant-id, --email, and --role")
             display = args.display_name or args.email.split("@")[0]
+            comps = [c.strip() for c in args.compartments.split(",") if c.strip()] if args.compartments else None
             result = add_user(
                 tenant_id=args.tenant_id,
                 email=args.email,
                 display_name=display,
                 role=args.role,
                 auth_method=args.auth_method,
+                compartments=comps,
             )
             _print_result(result, args.as_json)
 

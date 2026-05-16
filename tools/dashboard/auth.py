@@ -188,26 +188,39 @@ def validate_api_key(raw_key):
         conn.close()
 
 
-def get_user_by_id(user_id):
-    """Fetch a dashboard user by ID."""
+def get_user_by_id(user_id, tenant_id=None):
+    """Fetch a dashboard user by ID, scoped to tenant when provided."""
     conn = _get_db()
     try:
+        if tenant_id is not None:
+            return conn.execute(
+                "SELECT * FROM dashboard_users WHERE id = ? AND tenant_id = ?",
+                (user_id, tenant_id),
+            ).fetchone()
         return conn.execute("SELECT * FROM dashboard_users WHERE id = ?", (user_id,)).fetchone()
     finally:
         conn.close()
 
 
-def list_users(status=None):
-    """List all dashboard users, optionally filtered by status."""
+def list_users(status=None, tenant_id=None):
+    """List all dashboard users, optionally filtered by status and tenant."""
     conn = _get_db()
     try:
+        clauses = []
+        params = []
         if status:
-            rows = conn.execute(
-                "SELECT * FROM dashboard_users WHERE status = ? ORDER BY created_at DESC",
-                (status,),
-            ).fetchall()
+            clauses.append("status = ?")
+            params.append(status)
+        if tenant_id is not None:
+            clauses.append("tenant_id = ?")
+            params.append(tenant_id)
         else:
-            rows = conn.execute("SELECT * FROM dashboard_users ORDER BY created_at DESC").fetchall()
+            clauses.append("(tenant_id IS NULL OR tenant_id = '')")
+        where = "WHERE " + " AND ".join(clauses) if clauses else ""
+        rows = conn.execute(
+            f"SELECT * FROM dashboard_users {where} ORDER BY created_at DESC",
+            params,
+        ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()

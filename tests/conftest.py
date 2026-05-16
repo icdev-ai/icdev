@@ -1886,6 +1886,59 @@ CREATE TABLE IF NOT EXISTS ontology_federation_meta (
     value TEXT,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Security Framework (Phase 74 — sec-fnd)
+CREATE TABLE IF NOT EXISTS security_context_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    role TEXT,
+    clearance_level INTEGER,
+    compartments TEXT,
+    tenant_id TEXT,
+    classification TEXT,
+    auth_method TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS abac_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    policy_name TEXT,
+    decision TEXT NOT NULL,
+    subject TEXT,
+    resource TEXT,
+    action TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS mac_violations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    event_type TEXT,
+    resource_classification TEXT,
+    action TEXT,
+    details TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS rls_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    action TEXT,
+    tenant_id TEXT,
+    details TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS column_mask_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    role TEXT,
+    masked_columns TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS field_filter_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    schema_name TEXT,
+    role TEXT,
+    filtered_fields TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -1900,6 +1953,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     impact_level TEXT DEFAULT 'IL4',
     status TEXT DEFAULT 'active',
     settings TEXT DEFAULT '{}',
+    compartments TEXT DEFAULT '[]',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -1911,6 +1965,7 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT,
     role TEXT DEFAULT 'developer',
     password_hash TEXT,
+    compartments TEXT DEFAULT '[]',
     last_login TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (tenant_id) REFERENCES tenants(id)

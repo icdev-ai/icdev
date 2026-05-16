@@ -51,19 +51,31 @@ def create_session(
     return dict(row)
 
 
-def get_session(session_id: int) -> dict[str, Any] | None:
+def get_session(session_id: int, tenant_id: str | None = None) -> dict[str, Any] | None:
     conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM ttx_sessions WHERE session_id = ?", (session_id,)
-    ).fetchone()
+    if tenant_id is not None:
+        row = conn.execute(
+            "SELECT * FROM ttx_sessions WHERE session_id = ? AND tenant_id = ?",
+            (session_id, tenant_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM ttx_sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
     return dict(row) if row else None
 
 
-def get_session_by_code(join_code: str) -> dict[str, Any] | None:
+def get_session_by_code(join_code: str, tenant_id: str | None = None) -> dict[str, Any] | None:
     conn = get_connection()
-    row = conn.execute(
-        "SELECT * FROM ttx_sessions WHERE join_code = ?", (join_code.upper(),)
-    ).fetchone()
+    if tenant_id is not None:
+        row = conn.execute(
+            "SELECT * FROM ttx_sessions WHERE join_code = ? AND tenant_id = ?",
+            (join_code.upper(), tenant_id),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM ttx_sessions WHERE join_code = ?", (join_code.upper(),)
+        ).fetchone()
     return dict(row) if row else None
 
 
@@ -87,11 +99,17 @@ def list_sessions(state: str | None = None, tenant_id: str | None = None) -> lis
     return [dict(r) for r in rows]
 
 
-def update_session_state(session_id: int, new_state: str) -> dict[str, Any] | None:
+def update_session_state(session_id: int, new_state: str, tenant_id: str | None = None) -> dict[str, Any] | None:
     if new_state not in SESSION_STATES:
         raise ValueError(f"Invalid state: {new_state!r}")
     conn = get_connection()
-    updates: list[tuple] = [(new_state, session_id)]
+    # Verify tenant ownership before updating
+    if tenant_id is not None:
+        existing = conn.execute(
+            "SELECT tenant_id FROM ttx_sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if existing and existing["tenant_id"] != tenant_id:
+            raise PermissionError("Session does not belong to this tenant")
     if new_state == "active":
         conn.execute(
             "UPDATE ttx_sessions SET state = ?, started_at = ? WHERE session_id = ?",
@@ -105,7 +123,7 @@ def update_session_state(session_id: int, new_state: str) -> dict[str, Any] | No
     else:
         conn.execute(
             "UPDATE ttx_sessions SET state = ? WHERE session_id = ?",
-            *updates,
+            (new_state, session_id),
         )
     conn.commit()
-    return get_session(session_id)
+    return get_session(session_id, tenant_id=tenant_id)

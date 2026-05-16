@@ -5,7 +5,7 @@ from __future__ import annotations
 
 Provides a ``SecurityContext`` dataclass that captures:
 - user_id, role, tenant_id
-- clearance_level (numeric, derived from classification string)
+- clearance_level (numeric, computed from classification string)
 - compartments (COI, LAC, ECI tags)
 - impact_level, classification, mtls_cn, auth_method
 
@@ -16,10 +16,9 @@ Thread-local and Flask ``g`` integration for synchronous code;
 
 import json
 import logging
-import os
 import threading
 from contextvars import ContextVar
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Any, Optional, Set
 
 logger = logging.getLogger("security.context")
@@ -122,42 +121,46 @@ def _extract_from_flask_g() -> Optional[SecurityContext]:
     except ImportError:
         return None
 
-    # Already attached?
-    existing = getattr(g, "security_context", None)
-    if isinstance(existing, SecurityContext):
-        return existing
+    try:
+        # Already attached?
+        existing = getattr(g, "security_context", None)
+        if isinstance(existing, SecurityContext):
+            return existing
 
-    # Derive from auth middleware fields
-    user = getattr(g, "current_user", None) or {}
-    tenant_id = getattr(g, "tenant_id", None)
-    user_role = getattr(g, "user_role", None) or user.get("role", "")
-    user_id = getattr(g, "user_id", None) or user.get("id", "") or user.get("user_id", "")
+        # Derive from auth middleware fields
+        user = getattr(g, "current_user", None) or {}
+        tenant_id = getattr(g, "tenant_id", None)
+        user_role = getattr(g, "user_role", None) or user.get("role", "")
+        user_id = getattr(g, "user_id", None) or user.get("id", "") or user.get("user_id", "")
 
-    # Compartments may be stored on the user dict or g
-    compartments = set(user.get("compartments", []))
-    extra = getattr(g, "compartments", None)
-    if isinstance(extra, (list, tuple, set)):
-        compartments |= set(extra)
+        # Compartments may be stored on the user dict or g
+        compartments = set(user.get("compartments", []))
+        extra = getattr(g, "compartments", None)
+        if isinstance(extra, (list, tuple, set)):
+            compartments |= set(extra)
 
-    classification = user.get("classification", "CUI")
-    clearance = _get_clearance_order(classification)
+        classification = user.get("classification", "CUI")
+        clearance = _get_clearance_order(classification)
 
-    mtls_cn = request.headers.get("X-Client-Cert-CN") if request else None
-    auth_method = user.get("auth_method", "")
+        mtls_cn = request.headers.get("X-Client-Cert-CN") if request else None
+        auth_method = user.get("auth_method", "")
 
-    ctx = SecurityContext(
-        user_id=str(user_id) if user_id else "",
-        role=str(user_role) if user_role else "",
-        clearance_level=clearance,
-        compartments=frozenset(compartments),
-        impact_level=user.get("impact_level", "IL4"),
-        tenant_id=str(tenant_id) if tenant_id else None,
-        classification=classification.upper(),
-        mtls_cn=mtls_cn,
-        auth_method=auth_method,
-    )
-    g.security_context = ctx
-    return ctx
+        ctx = SecurityContext(
+            user_id=str(user_id) if user_id else "",
+            role=str(user_role) if user_role else "",
+            clearance_level=clearance,
+            compartments=frozenset(compartments),
+            impact_level=user.get("impact_level", "IL4"),
+            tenant_id=str(tenant_id) if tenant_id else None,
+            classification=classification.upper(),
+            mtls_cn=mtls_cn,
+            auth_method=auth_method,
+        )
+        g.security_context = ctx
+        return ctx
+    except RuntimeError:
+        # Working outside of application context
+        return None
 
 
 def from_request(request) -> Optional[SecurityContext]:

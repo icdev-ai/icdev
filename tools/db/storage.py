@@ -658,23 +658,16 @@ class StorageConnection:
 
     def execute(self, sql: str, params=None):
         """Execute SQL with automatic translation."""
-        if self._backend == "postgresql":
-            cursor = self._conn.cursor()
-            sc = StorageCursor(cursor, self._backend)
-            return sc.execute(sql, params)
-        else:
-            # SQLite — use native execute
-            translated = translate_sql(sql, "sqlite")  # No-op for sqlite
-            if params is None:
-                return self._conn.execute(translated)
-            return self._conn.execute(translated, params)
+        cursor = self._conn.cursor()
+        sc = StorageCursor(cursor, self._backend)
+        sc.set_security_context(getattr(self, "_security_context", None))
+        return sc.execute(sql, params)
 
     def executemany(self, sql: str, params_list):
-        if self._backend == "postgresql":
-            cursor = self._conn.cursor()
-            sc = StorageCursor(cursor, self._backend)
-            return sc.executemany(sql, params_list)
-        return self._conn.executemany(sql, params_list)
+        cursor = self._conn.cursor()
+        sc = StorageCursor(cursor, self._backend)
+        sc.set_security_context(getattr(self, "_security_context", None))
+        return sc.executemany(sql, params_list)
 
     def executescript(self, sql: str):
         """Execute multiple SQL statements.
@@ -712,9 +705,9 @@ class StorageConnection:
         self._conn.close()
 
     def cursor(self):
-        if self._backend == "postgresql":
-            return StorageCursor(self._conn.cursor(), self._backend)
-        return self._conn.cursor()
+        sc = StorageCursor(self._conn.cursor(), self._backend)
+        sc.set_security_context(getattr(self, "_security_context", None))
+        return sc
 
     def set_security_context(self, ctx) -> None:
         """Attach a SecurityContext for RLS predicate injection and PG session vars."""

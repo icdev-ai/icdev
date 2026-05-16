@@ -20,7 +20,7 @@ Reuses ``tools.compliance.classification_manager`` for clearance ordering.
 import functools
 import json
 import logging
-from typing import Any, Callable, Optional, Set
+from typing import Callable, Optional, Set
 
 logger = logging.getLogger("security.mac")
 
