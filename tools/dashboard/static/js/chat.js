@@ -1437,8 +1437,8 @@
                 html += '</div>';
                 html += '<div class="panel-hitl-card__text" contenteditable="true" spellcheck="true" data-orig="' + escHtml(req.text) + '">' + escHtml(req.text) + '</div>';
                 html += '<div class="panel-hitl-card__actions">';
-                html += '<button class="panel-hitl-btn panel-hitl-btn--approve" onclick="_hitlApprove(\'' + hitlId + '\',\'' + cardId + '\')" title="Approve">&#x2713; Approve</button>';
-                html += '<button class="panel-hitl-btn panel-hitl-btn--reject" onclick="_hitlReject(\'' + hitlId + '\',\'' + cardId + '\')" title="Remove">&#x2715; Remove</button>';
+                html += '<button class="panel-hitl-btn panel-hitl-btn--approve" data-hitl-action="approve" data-hitl-id="' + hitlId + '" data-card-id="' + cardId + '" title="Approve">&#x2713; Approve</button>';
+                html += '<button class="panel-hitl-btn panel-hitl-btn--reject" data-hitl-action="reject" data-hitl-id="' + hitlId + '" data-card-id="' + cardId + '" title="Remove">&#x2715; Remove</button>';
                 html += '</div>';
                 html += '</div>';
             });
@@ -1449,13 +1449,13 @@
             html += '<label class="panel-hitl-custom__label">Add your own requirement:</label>';
             html += '<div class="panel-hitl-custom__row">';
             html += '<input type="text" class="panel-hitl-custom__input" id="' + hitlId + '-custom" placeholder="The system shall …" />';
-            html += '<button class="panel-hitl-btn panel-hitl-btn--add" onclick="_hitlAddCustom(\'' + hitlId + '\')">+ Add</button>';
+            html += '<button class="panel-hitl-btn panel-hitl-btn--add" data-hitl-action="add" data-hitl-id="' + hitlId + '">+ Add</button>';
             html += '</div>';
             html += '</div>';
 
             // Confirm button
             html += '<div class="panel-hitl-footer">';
-            html += '<button class="panel-hitl-btn panel-hitl-btn--confirm" id="' + hitlId + '-confirm" onclick="_hitlConfirm(\'' + hitlId + '\',\'' + escHtml(sessionId) + '\')">&#x2713; Confirm Selection</button>';
+            html += '<button class="panel-hitl-btn panel-hitl-btn--confirm" id="' + hitlId + '-confirm" data-hitl-action="confirm" data-hitl-id="' + hitlId + '" data-session-id="' + escHtml(sessionId) + '">&#x2713; Confirm Selection</button>';
             html += '<span class="panel-hitl-status" id="' + hitlId + '-status"></span>';
             html += '</div>';
             html += '</div>'; // panel-hitl-section
@@ -1481,14 +1481,13 @@
         }
     }
 
-    // HITL card interactions
+    // HITL card interactions — exposed on window so event-delegated handlers can reach them
     function _hitlApprove(hitlId, cardId) {
         var card = document.getElementById(cardId);
         if (!card) return;
         card.dataset.state = 'approved';
         card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--rejected');
         card.classList.add('panel-hitl-card--approved');
-        // Update text from contenteditable back to data attr
         var textEl = card.querySelector('.panel-hitl-card__text');
         if (textEl) card.dataset.text = textEl.innerText.trim();
     }
@@ -1515,11 +1514,12 @@
         div.dataset.reqId = '';
         div.dataset.state = 'custom';
         div.dataset.text = text;
+        div.dataset.hitlId = hitlId;
         div.innerHTML = (
             '<div class="panel-hitl-card__meta"><span class="panel-req-type-badge panel-req-type-badge--functional">functional</span><span class="panel-req-priority-badge">medium</span></div>' +
             '<div class="panel-hitl-card__text" contenteditable="true">' + escHtml(text) + '</div>' +
             '<div class="panel-hitl-card__actions">' +
-            '<button class="panel-hitl-btn panel-hitl-btn--reject" onclick="_hitlReject(\'' + hitlId + '\',\'' + cardId + '\')">&#x2715; Remove</button>' +
+            '<button class="panel-hitl-btn panel-hitl-btn--reject" data-hitl-action="reject" data-hitl-id="' + hitlId + '" data-card-id="' + cardId + '">&#x2715; Remove</button>' +
             '</div>'
         );
         cardsEl.appendChild(div);
@@ -3064,6 +3064,20 @@
             inp.dispatchEvent(new Event('input'));
             sendMessage();
         }
+    });
+
+    // HITL action delegation — handles approve/reject/add/confirm buttons in panel cards
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('[data-hitl-action]');
+        if (!btn) return;
+        var action  = btn.getAttribute('data-hitl-action');
+        var hitlId  = btn.getAttribute('data-hitl-id');
+        var cardId  = btn.getAttribute('data-card-id');
+        var sessId  = btn.getAttribute('data-session-id');
+        if (action === 'approve') { _hitlApprove(hitlId, cardId); }
+        else if (action === 'reject')  { _hitlReject(hitlId, cardId); }
+        else if (action === 'add')     { _hitlAddCustom(hitlId); }
+        else if (action === 'confirm') { _hitlConfirm(hitlId, sessId); }
     });
 
     // Init on DOM ready
