@@ -729,6 +729,7 @@
 </div>
 
 <!-- Pass config to JS -->
+{% autoescape false %}
 <script>
     window._CHAT_CONFIG = {
         sessionId: {{ session_id|tojson if session_id is defined else 'null' }},
@@ -743,6 +744,7 @@
         defaultModel: {{ llm_default_model|tojson if llm_default_model is defined else '"default"' }}
     };
 </script>
+{% endautoescape %}
 {% endblock %}
 
 {% block scripts %}
