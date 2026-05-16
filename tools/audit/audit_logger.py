@@ -246,6 +246,11 @@ VALID_EVENT_TYPES = (
     "poam.auto_remediate.approved",
     "poam.auto_remediate.skipped",
     "poam.auto_remediate.failed",
+    # Cross-Agency Data Transfer events (NIST AU-2, AU-9)
+    "cross_agency_transfer_initiated",
+    "cross_agency_transfer_completed",
+    "cross_agency_transfer_failed",
+    "cross_agency_transfer_rejected",
 )
 
 
