@@ -1492,27 +1492,52 @@
     }
 
     // HITL card interactions — exposed on window so event-delegated handlers can reach them
-    function _hitlApprove(hitlId, cardId) {
-        var card = document.getElementById(cardId);
-        if (!card) return;
+    function _hitlSetApprove(card) {
         card.dataset.state = 'approved';
         card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--rejected');
         card.classList.add('panel-hitl-card--approved');
         var textEl = card.querySelector('.panel-hitl-card__text');
         if (textEl) card.dataset.text = textEl.innerText.trim();
         var approveBtn = card.querySelector('.panel-hitl-btn--approve');
-        if (approveBtn) {
-            approveBtn.disabled = true;
-            approveBtn.innerHTML = '&#x2713; Approved';
-        }
+        if (approveBtn) { approveBtn.disabled = true; approveBtn.innerHTML = '&#x2713; Approved'; }
+        var rejectBtn = card.querySelector('.panel-hitl-btn--reject');
+        if (rejectBtn) { rejectBtn.disabled = false; rejectBtn.innerHTML = '&#x2715; Remove'; }
+    }
+
+    function _hitlSetPending(card) {
+        card.dataset.state = 'pending';
+        card.classList.remove('panel-hitl-card--approved', 'panel-hitl-card--rejected');
+        card.classList.add('panel-hitl-card--pending');
+        var approveBtn = card.querySelector('.panel-hitl-btn--approve');
+        if (approveBtn) { approveBtn.disabled = false; approveBtn.innerHTML = '&#x2713; Approve'; }
+        var rejectBtn = card.querySelector('.panel-hitl-btn--reject');
+        if (rejectBtn) { rejectBtn.disabled = false; rejectBtn.innerHTML = '&#x2715; Remove'; }
+    }
+
+    function _hitlSetReject(card) {
+        card.dataset.state = 'rejected';
+        card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--approved');
+        card.classList.add('panel-hitl-card--rejected');
+        var approveBtn = card.querySelector('.panel-hitl-btn--approve');
+        if (approveBtn) { approveBtn.disabled = false; approveBtn.innerHTML = '&#x2713; Approve'; }
+        var rejectBtn = card.querySelector('.panel-hitl-btn--reject');
+        if (rejectBtn) { rejectBtn.disabled = true; rejectBtn.innerHTML = '&#x2715; Removed'; }
+    }
+
+    function _hitlApprove(hitlId, cardId) {
+        var card = document.getElementById(cardId);
+        if (!card) return;
+        // Toggle: approved → pending, anything else → approved
+        if (card.dataset.state === 'approved') { _hitlSetPending(card); }
+        else { _hitlSetApprove(card); }
     }
 
     function _hitlReject(hitlId, cardId) {
         var card = document.getElementById(cardId);
         if (!card) return;
-        card.dataset.state = 'rejected';
-        card.classList.remove('panel-hitl-card--pending', 'panel-hitl-card--approved');
-        card.classList.add('panel-hitl-card--rejected');
+        // Toggle: rejected → pending, anything else → rejected
+        if (card.dataset.state === 'rejected') { _hitlSetPending(card); }
+        else { _hitlSetReject(card); }
     }
 
     function _hitlAddCustom(hitlId) {
