@@ -12,6 +12,7 @@ Wraps existing RICOAS backend tools:
 """
 
 import sys
+import uuid
 import threading
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -298,8 +299,87 @@ def process_panel_turn():
             "total_requirements": panel.total_requirements,
             "panel_question": panel.panel_question,
             "requirements_written": written,
+            "pending_hitl": True,
         })
 
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@intake_api.route("/api/intake/hitl-confirm/<session_id>", methods=["POST"])
+def hitl_confirm(session_id):
+    """HITL confirmation endpoint for panel-generated requirements.
+
+    Body:
+      {
+        "approved":  ["req-id-1", "req-id-2"],
+        "deleted":   ["req-id-3"],
+        "custom":    [{"text": "...", "type": "functional", "priority": "medium"}]
+      }
+    Returns: {approved, deleted, custom_added, new_score}
+    """
+    body = request.get_json(silent=True) or {}
+    approved_ids = body.get("approved") or []
+    deleted_ids  = body.get("deleted") or []
+    custom_reqs  = body.get("custom") or []
+
+    if not session_id:
+        return jsonify({"error": "session_id required"}), 400
+
+    conn = _get_db()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        for req_id in approved_ids:
+            conn.execute(
+                "UPDATE intake_requirements SET status = 'draft', updated_at = ? WHERE id = ? AND session_id = ?",
+                (now, req_id, session_id),
+            )
+
+        for req_id in deleted_ids:
+            conn.execute(
+                "DELETE FROM intake_requirements WHERE id = ? AND session_id = ?",
+                (req_id, session_id),
+            )
+
+        custom_added = 0
+        for c in custom_reqs:
+            text = (c.get("text") or "").strip()
+            if not text:
+                continue
+            req_id = f"req-{uuid.uuid4().hex[:12]}"
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, raw_text, requirement_type, priority,
+                    source_document, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
+                (req_id, session_id,
+                 text,
+                 c.get("type", "functional"),
+                 c.get("priority", "medium"),
+                 now),
+            )
+            custom_added += 1
+
+        conn.commit()
+
+        new_score = None
+        try:
+            from tools.requirements.readiness_scorer import score_readiness
+            result = score_readiness(session_id)
+            new_score = result.get("overall_score") if isinstance(result, dict) else None
+        except Exception:
+            pass
+
+        return jsonify({
+            "status": "ok",
+            "approved": len(approved_ids),
+            "deleted": len(deleted_ids),
+            "custom_added": custom_added,
+            "new_score": new_score,
+        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
