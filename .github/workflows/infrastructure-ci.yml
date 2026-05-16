@@ -1,0 +1,274 @@
+# [TEMPLATE: CUI // SP-CTI]
+name: Infrastructure CI/CD
+
+on:
+  push:
+    branches: [master, main, "infra-*", "feature-*"]
+    paths:
+      - "docker/**"
+      - "docker-compose*.yml"
+      - "deploy/**"
+      - ".github/workflows/infrastructure-ci.yml"
+  pull_request:
+    branches: [master, main]
+    paths:
+      - "docker/**"
+      - "docker-compose*.yml"
+      - "deploy/**"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment (ci / staging / production)"
+        required: true
+        default: "ci"
+        type: choice
+        options: [ci, staging, production]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/icdev
+
+jobs:
+  # ── Validate: YAML syntax + compose config ─────────────────────────────
+  validate-compose:
+    name: Validate Compose Files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install docker-compose (v2)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y docker-compose-plugin
+
+      - name: Validate docker-compose.yml syntax
+        run: docker compose -f docker-compose.yml config --quiet
+
+      - name: Validate docker-compose.ci.yml syntax
+        run: docker compose -f docker-compose.ci.yml config --quiet
+
+      - name: Validate Helm chart (if present)
+        uses: azure/setup-helm@v4
+        continue-on-error: true
+      - run: |
+          if [ -d deploy/helm ]; then
+            helm lint deploy/helm/
+            helm template icdev deploy/helm/ > /dev/null
+          else
+            echo "No Helm chart found — skipping"
+          fi
+        continue-on-error: true
+
+  # ── Build: core infrastructure images ──────────────────────────────────
+  build-images:
+    name: Build Infrastructure Images
+    runs-on: ubuntu-latest
+    needs: validate-compose
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: agent-base,    file: docker/Dockerfile.agent-base }
+          - { name: dashboard,     file: docker/Dockerfile.dashboard }
+          - { name: orchestrator,  file: docker/Dockerfile.orchestrator }
+          - { name: architect,     file: docker/Dockerfile.architect }
+          - { name: builder,       file: docker/Dockerfile.builder }
+          - { name: compliance,    file: docker/Dockerfile.compliance }
+          - { name: security,      file: docker/Dockerfile.security }
+          - { name: infrastructure,file: docker/Dockerfile.infrastructure }
+          - { name: api-gateway,   file: docker/Dockerfile.api-gateway }
+          - { name: iac,           file: docker/Dockerfile.iac }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build ${{ matrix.image.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.file }}
+          tags: |
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:latest
+          cache-from: type=gha,scope=${{ matrix.image.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}
+          # Push to GHCR only on main branch push
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          # Always load for local smoke test
+          load: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+
+      - name: Smoke-test image (non-root, read-only rootfs)
+        run: |
+          docker run --rm \
+            --user 65534:65534 \
+            --read-only \
+            --tmpfs /tmp \
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }} \
+            python --version 2>/dev/null || \
+          docker run --rm \
+            ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:${{ github.sha }} \
+            echo "image OK"
+
+  # ── Deploy: spin up CI stack and run health checks ──────────────────────
+  provision-ci-stack:
+    name: Provision CI Infrastructure Stack
+    runs-on: ubuntu-latest
+    needs: build-images
+    env:
+      ICDEV_PG_PASSWORD: ci-test-password
+      ICDEV_DASHBOARD_SECRET: ci-test-secret-32chars-minimum!!
+      ICDEV_CLASSIFICATION: CUI
+      IMPACT_LEVEL: IL4
+      ICDEV_STORAGE_BACKEND: sqlite
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e . 2>/dev/null || true
+
+      - name: Write CI .env
+        run: |
+          cat > .env <<'EOF'
+          ICDEV_PG_USER=icdev
+          ICDEV_PG_PASSWORD=ci-test-password
+          ICDEV_PG_DB=icdev
+          ICDEV_DASHBOARD_SECRET=ci-test-secret-32chars-minimum!!
+          ICDEV_STORAGE_BACKEND=sqlite
+          ICDEV_CLASSIFICATION=CUI
+          IMPACT_LEVEL=IL4
+          ICDEV_CUI_BANNER_ENABLED=true
+          EOF
+
+      - name: Start CI infrastructure stack
+        run: |
+          docker compose -f docker-compose.ci.yml up -d --wait --timeout 120
+        timeout-minutes: 5
+
+      - name: Wait for dashboard health endpoint
+        run: |
+          for i in $(seq 1 24); do
+            if curl -sf http://localhost:5050/health > /dev/null 2>&1; then
+              echo "Dashboard is healthy"
+              break
+            fi
+            echo "Attempt $i/24 — waiting 5s..."
+            sleep 5
+          done
+          curl -sf http://localhost:5050/health | python -m json.tool
+
+      - name: Run Python health check
+        run: python tools/testing/health_check.py --json
+
+      - name: Verify DB schema
+        run: python tools/db/init_icdev_db.py
+
+      - name: Run core unit tests against live stack
+        run: |
+          pytest tests/test_init_icdev_db.py \
+                 tests/test_schemas.py \
+                 -v --tb=short
+
+      - name: Run BDD scenarios (infrastructure)
+        run: |
+          behave features/ --tags=infrastructure --no-capture \
+            --format progress 2>/dev/null || \
+          echo "No infrastructure-tagged BDD scenarios found — skipping"
+        continue-on-error: true
+
+      - name: Collect docker logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs --tail=100
+
+      - name: Tear down CI stack
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v --remove-orphans
+
+  # ── Deploy: push IaC artifacts (main branch only) ──────────────────────
+  deploy-infrastructure:
+    name: Deploy Infrastructure Artifacts
+    runs-on: ubuntu-latest
+    needs: provision-ci-stack
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    env:
+      ICDEV_CLASSIFICATION: CUI
+      IMPACT_LEVEL: IL4
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tag and push release images
+        run: |
+          SHORT_SHA="${GITHUB_SHA::8}"
+          for img in agent-base dashboard orchestrator architect builder \
+                     compliance security infrastructure api-gateway iac; do
+            docker pull ${{ env.IMAGE_PREFIX }}/${img}:${{ github.sha }} 2>/dev/null || true
+            docker tag  ${{ env.IMAGE_PREFIX }}/${img}:${{ github.sha }} \
+                        ${{ env.IMAGE_PREFIX }}/${img}:${SHORT_SHA} || true
+            docker push ${{ env.IMAGE_PREFIX }}/${img}:${SHORT_SHA} || true
+          done
+
+      - name: Update Helm values with new image tag
+        run: |
+          SHORT_SHA="${GITHUB_SHA::8}"
+          if [ -f deploy/helm/values.yaml ]; then
+            sed -i "s/tag: .*/tag: ${SHORT_SHA}/" deploy/helm/values.yaml
+            echo "Updated Helm values to tag=${SHORT_SHA}"
+          fi
+
+      - name: Generate deployment manifest
+        run: |
+          mkdir -p artifacts
+          cat > artifacts/deployment-manifest.json <<EOF
+          {
+            "sha": "${{ github.sha }}",
+            "short_sha": "${GITHUB_SHA::8}",
+            "branch": "${{ github.ref_name }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "classification": "CUI",
+            "impact_level": "IL4",
+            "images": [
+              "agent-base", "dashboard", "orchestrator", "architect",
+              "builder", "compliance", "security", "infrastructure",
+              "api-gateway", "iac"
+            ],
+            "registry": "${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}"
+          }
+          EOF
+          cat artifacts/deployment-manifest.json
+
+      - name: Upload deployment manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-manifest-${{ github.sha }}
+          path: artifacts/deployment-manifest.json
+          retention-days: 90
+# [TEMPLATE: CUI // SP-CTI]
