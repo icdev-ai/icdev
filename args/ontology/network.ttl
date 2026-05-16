@@ -1,0 +1,42 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix core: <https://icdev.dev/ns/core#> .
+@prefix network: <https://icdev.dev/ns/network#> .
+
+<https://icdev.dev/ontology/network>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV NETWORK Domain Ontology" ;
+    dcterms:description "Class hierarchy for the network canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+network:AWSVPC rdf:type owl:Class ;
+    rdfs:label "AWS VPC" ;
+    rdfs:subClassOf network:VirtualNetwork .
+
+network:CloudVPC rdf:type owl:Class ;
+    rdfs:label "Cloud VPC" ;
+    rdfs:subClassOf network:VirtualNetwork .
+
+network:VirtualNetwork rdf:type owl:Class ;
+    rdfs:label "Virtual Network" ;
+    rdfs:subClassOf network:NetworkResource .
+
+network:Subnet rdf:type owl:Class ;
+    rdfs:label "Subnet" ;
+    rdfs:subClassOf network:NetworkResource .
+
+network:NetworkResource rdf:type owl:Class ;
+    rdfs:label "Network Resource" ;
+    rdfs:subClassOf core:Resource .
+
+network:Firewall rdf:type owl:Class ;
+    rdfs:label "Firewall" ;
+    rdfs:subClassOf network:NetworkResource .
+
+network:LoadBalancer rdf:type owl:Class ;
+    rdfs:label "Load Balancer" ;
+    rdfs:subClassOf network:NetworkResource .

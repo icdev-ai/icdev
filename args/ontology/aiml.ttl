@@ -1,0 +1,42 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix aiml: <https://icdev.dev/ns/aiml#> .
+@prefix core: <https://icdev.dev/ns/core#> .
+
+<https://icdev.dev/ontology/aiml>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV AIML Domain Ontology" ;
+    dcterms:description "Class hierarchy for the aiml canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+aiml:AIModel rdf:type owl:Class ;
+    rdfs:label "AI Model" ;
+    rdfs:subClassOf core:Resource .
+
+aiml:Adaptation rdf:type owl:Class ;
+    rdfs:label "Model Adaptation" ;
+    rdfs:subClassOf core:Concept .
+
+aiml:AIData rdf:type owl:Class ;
+    rdfs:label "AI Data Source" ;
+    rdfs:subClassOf core:Resource .
+
+aiml:AISafety rdf:type owl:Class ;
+    rdfs:label "AI Safety Component" ;
+    rdfs:subClassOf core:Concept .
+
+aiml:AIEval rdf:type owl:Class ;
+    rdfs:label "AI Evaluation" ;
+    rdfs:subClassOf core:Concept .
+
+aiml:AIDeployment rdf:type owl:Class ;
+    rdfs:label "AI Deployment Target" ;
+    rdfs:subClassOf core:Resource .
+
+aiml:AIGovernance rdf:type owl:Class ;
+    rdfs:label "AI Governance Artifact" ;
+    rdfs:subClassOf core:Concept .

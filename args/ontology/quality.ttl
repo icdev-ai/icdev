@@ -1,0 +1,38 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix core: <https://icdev.dev/ns/core#> .
+@prefix quality: <https://icdev.dev/ns/quality#> .
+
+<https://icdev.dev/ontology/quality>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV QUALITY Domain Ontology" ;
+    dcterms:description "Class hierarchy for the quality canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+quality:QualityGate rdf:type owl:Class ;
+    rdfs:label "Quality Gate" ;
+    rdfs:subClassOf core:Concept .
+
+quality:QualityGate.SAST rdf:type owl:Class ;
+    rdfs:label "SAST Gate" ;
+    rdfs:subClassOf quality:QualityGate .
+
+quality:QualityGate.DAST rdf:type owl:Class ;
+    rdfs:label "DAST Gate" ;
+    rdfs:subClassOf quality:QualityGate .
+
+quality:QualityGate.SCA rdf:type owl:Class ;
+    rdfs:label "SCA Gate" ;
+    rdfs:subClassOf quality:QualityGate .
+
+quality:QualityGate.UnitTest rdf:type owl:Class ;
+    rdfs:label "Unit Test Gate" ;
+    rdfs:subClassOf quality:QualityGate .
+
+quality:QualityGate.E2E rdf:type owl:Class ;
+    rdfs:label "E2E Test Gate" ;
+    rdfs:subClassOf quality:QualityGate .

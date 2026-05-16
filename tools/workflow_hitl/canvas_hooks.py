@@ -41,7 +41,7 @@ def auto_create_instance_if_assigned(
     conn = get_connection()
     try:
         existing = conn.execute(
-            "SELECT id FROM wf_instances WHERE task_id=? AND status IN ('active','waiting_external') LIMIT 1",
+            "SELECT id FROM wf_instances WHERE task_id=%s AND status IN ('active','waiting_external') LIMIT 1",
             (task_id,),
         ).fetchone()
         if existing:

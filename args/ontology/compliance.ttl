@@ -1,0 +1,26 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix compliance: <https://icdev.dev/ns/compliance#> .
+@prefix core: <https://icdev.dev/ns/core#> .
+
+<https://icdev.dev/ontology/compliance>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV COMPLIANCE Domain Ontology" ;
+    dcterms:description "Class hierarchy for the compliance canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+compliance:NISTControl rdf:type owl:Class ;
+    rdfs:label "NIST Control" ;
+    rdfs:subClassOf core:Concept .
+
+compliance:FedRAMPControl rdf:type owl:Class ;
+    rdfs:label "FedRAMP Control" ;
+    rdfs:subClassOf compliance:NISTControl .
+
+compliance:STIGRule rdf:type owl:Class ;
+    rdfs:label "STIG Rule" ;
+    rdfs:subClassOf core:Concept .

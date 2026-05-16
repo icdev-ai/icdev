@@ -1,0 +1,58 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix core: <https://icdev.dev/ns/core#> .
+@prefix pipeline: <https://icdev.dev/ns/pipeline#> .
+
+<https://icdev.dev/ontology/pipeline>
+    rdf:type owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    dcterms:title "ICDEV PIPELINE Domain Ontology" ;
+    dcterms:description "Class hierarchy for the pipeline canvas domain." ;
+    dcterms:date "2026-05-15"^^xsd:date .
+
+pipeline:CICDPlatform rdf:type owl:Class ;
+    rdfs:label "CI/CD Platform" ;
+    rdfs:subClassOf core:Resource .
+
+pipeline:GitOpsPlatform rdf:type owl:Class ;
+    rdfs:label "GitOps Platform" ;
+    rdfs:subClassOf pipeline:CICDPlatform .
+
+pipeline:SCM rdf:type owl:Class ;
+    rdfs:label "Source Control" ;
+    rdfs:subClassOf core:Resource .
+
+pipeline:BuildTool rdf:type owl:Class ;
+    rdfs:label "Build Tool" ;
+    rdfs:subClassOf core:Resource .
+
+pipeline:SecurityScan rdf:type owl:Class ;
+    rdfs:label "Security Scan" ;
+    rdfs:subClassOf core:Concept .
+
+pipeline:Registry rdf:type owl:Class ;
+    rdfs:label "Artifact Registry" ;
+    rdfs:subClassOf core:Resource .
+
+pipeline:Attestation rdf:type owl:Class ;
+    rdfs:label "Supply Chain Attestation" ;
+    rdfs:subClassOf core:Concept .
+
+pipeline:Policy rdf:type owl:Class ;
+    rdfs:label "Pipeline Policy" ;
+    rdfs:subClassOf core:Concept .
+
+pipeline:ApprovalGate rdf:type owl:Class ;
+    rdfs:label "Approval Gate" ;
+    rdfs:subClassOf core:Concept .
+
+pipeline:SecretsManager rdf:type owl:Class ;
+    rdfs:label "Secrets Manager" ;
+    rdfs:subClassOf core:Resource .
+
+pipeline:DeployStrategy rdf:type owl:Class ;
+    rdfs:label "Deployment Strategy" ;
+    rdfs:subClassOf core:Concept .

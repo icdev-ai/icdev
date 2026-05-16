@@ -34,7 +34,7 @@ def add_citation(
             """INSERT INTO wf_citations
                (id, instance_id, stage, source_doc, source_type, doc_version,
                 section, page_number, excerpt, cited_by, cited_in_type, cited_in_id, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,?,?,?,?,?,?,?,?,?,?,?,%s)""",
             (cite_id, instance_id, stage, source_doc, source_type, doc_version,
              section, page_number, excerpt, cited_by, cited_in_type, cited_in_id, _now()),
         )
@@ -52,7 +52,7 @@ def get_by_instance(instance_id: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_citations WHERE instance_id=? ORDER BY stage, created_at",
+            "SELECT * FROM wf_citations WHERE instance_id=%s ORDER BY stage, created_at",
             (instance_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -65,7 +65,7 @@ def get_by_record(cited_in_type: str, cited_in_id: str) -> list:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM wf_citations WHERE cited_in_type=? AND cited_in_id=? ORDER BY created_at",
+            "SELECT * FROM wf_citations WHERE cited_in_type=%s AND cited_in_id=%s ORDER BY created_at",
             (cited_in_type, cited_in_id),
         ).fetchall()
         return [dict(r) for r in rows]

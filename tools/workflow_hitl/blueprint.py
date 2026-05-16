@@ -295,13 +295,13 @@ def create_wf_blueprint() -> Blueprint:
             try:
                 clauses, params = [], []
                 if task_id:
-                    clauses.append("task_id=?")
+                    clauses.append("task_id=%s")
                     params.append(task_id)
                 if project_id:
-                    clauses.append("project_id=?")
+                    clauses.append("project_id=%s")
                     params.append(project_id)
                 if status:
-                    clauses.append("status=?")
+                    clauses.append("status=%s")
                     params.append(status)
                 where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
                 rows = conn.execute(
@@ -558,7 +558,7 @@ def create_wf_blueprint() -> Blueprint:
         try:
             conn = get_connection()
             try:
-                row = conn.execute("SELECT * FROM wf_external_steps WHERE id=?", (step_id,)).fetchone()
+                row = conn.execute("SELECT * FROM wf_external_steps WHERE id=%s", (step_id,)).fetchone()
                 step = dict(row) if row else None
             finally:
                 conn.close()
@@ -688,7 +688,7 @@ def create_wf_blueprint() -> Blueprint:
             conn = get_connection()
             try:
                 approval = conn.execute(
-                    "SELECT * FROM wf_approvals WHERE id=?", (approval_id,)
+                    "SELECT * FROM wf_approvals WHERE id=%s", (approval_id,)
                 ).fetchone()
                 approval = dict(approval) if approval else None
             finally:
@@ -724,7 +724,7 @@ def create_wf_blueprint() -> Blueprint:
             conn = get_connection()
             try:
                 approval = conn.execute(
-                    "SELECT id FROM wf_approvals WHERE id=?", (approval_id,)
+                    "SELECT id FROM wf_approvals WHERE id=%s", (approval_id,)
                 ).fetchone()
             finally:
                 conn.close()
@@ -748,7 +748,7 @@ def create_wf_blueprint() -> Blueprint:
             conn = get_connection()
             try:
                 inst = conn.execute(
-                    "SELECT id FROM wf_instances WHERE id=?", (instance_id,)
+                    "SELECT id FROM wf_instances WHERE id=%s", (instance_id,)
                 ).fetchone()
             finally:
                 conn.close()
@@ -774,7 +774,7 @@ def create_wf_blueprint() -> Blueprint:
             conn = get_connection()
             try:
                 fb = conn.execute(
-                    "SELECT * FROM wf_feedback WHERE id=?", (feedback_id,)
+                    "SELECT * FROM wf_feedback WHERE id=%s", (feedback_id,)
                 ).fetchone()
                 fb = dict(fb) if fb else None
             finally:
