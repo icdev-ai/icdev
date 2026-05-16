@@ -646,3 +646,10 @@
 | Chain Orchestrator | tools\llm\chain_orchestrator.py | Auto-registered: llm/chain_orchestrator.py | --json | JSON |
 | Chain Prompts | tools\llm\chain_prompts.py | Auto-registered: llm/chain_prompts.py | --json | JSON |
 | Tenable Connector | tools\databridge\connectors\tenable_connector.py | Auto-registered: connectors/tenable_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Multi Persona Panel | tools\requirements\multi_persona_panel.py | Auto-registered: requirements/multi_persona_panel.py | --json | JSON |
+| Govchain Anchor | tools\genesis\reflexes\govchain_anchor.py | Auto-registered: reflexes/govchain_anchor.py | --json | JSON |
