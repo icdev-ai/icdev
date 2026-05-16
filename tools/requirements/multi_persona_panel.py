@@ -167,10 +167,15 @@ def run_panel(
     )
 
 
-def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=None) -> int:
-    """Write merged requirements to intake_requirements. Returns count written."""
+def persist_panel_requirements(
+    panel: PanelResult, turn_number: int, db_path=None, status: str = "pending_review"
+) -> tuple:
+    """Write merged requirements to intake_requirements as pending_review (awaiting HITL).
+
+    Returns (count_written, list_of_req_ids).
+    """
     if not panel.merged_requirements:
-        return 0
+        return 0, []
 
     # Always get a connection — for PostgreSQL backend db_path is ignored by get_connection
     conn = get_connection(db_path=str(db_path)) if db_path else get_connection()
@@ -186,7 +191,7 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
                 """INSERT OR IGNORE INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
                     source_turn, source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'panel', 'draft', ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, 'panel', ?, ?)""",
                 (
                     req_id,
                     panel.session_id,
@@ -194,9 +199,12 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
                     req.get("type", "functional"),
                     req.get("priority", "medium"),
                     turn_number,
+                    status,
                     now,
                 ),
             )
+            # Attach id back to the req dict so callers can surface it to the UI
+            req["id"] = req_id
             inserted_ids.append(req_id)
             written += 1
         conn.commit()
@@ -205,9 +213,9 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
         if inserted_ids:
             _anchor_requirements_async(panel.session_id, inserted_ids, panel.merged_requirements, turn_number)
 
-        return written
+        return written, inserted_ids
     except Exception:
-        return 0
+        return 0, []
     finally:
         conn.close()
 

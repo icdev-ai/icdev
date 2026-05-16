@@ -13,6 +13,7 @@ Wraps existing RICOAS backend tools:
 
 import sys
 import threading
+import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -268,7 +269,7 @@ def process_panel_turn():
             (session_id,),
         ).fetchone()[0]
 
-        written = persist_panel_requirements(panel, turn_number, db_path=DB_PATH)
+        written, req_ids = persist_panel_requirements(panel, turn_number, db_path=DB_PATH)
 
         # Store the panel turn in conversation history so session context is preserved
         conn.execute(
@@ -279,7 +280,7 @@ def process_panel_turn():
         )
         analyst_summary = (
             f"[Panel] {len(personas)} experts reviewed your message. "
-            f"{written} requirement(s) captured."
+            f"{written} requirement(s) pending HITL review."
             + (f" Follow-up: {panel.panel_question}" if panel.panel_question else "")
         )
         conn.execute(
@@ -289,6 +290,10 @@ def process_panel_turn():
             (session_id, turn_number + 1, analyst_summary, session_data.get("classification", "CUI")),
         )
         conn.commit()
+
+        # Attach IDs to merged_requirements for HITL UI
+        for req, req_id in zip(panel.merged_requirements, req_ids):
+            req.setdefault("id", req_id)
 
         return jsonify({
             "status": "ok",
@@ -310,8 +315,91 @@ def process_panel_turn():
             "total_requirements": panel.total_requirements,
             "panel_question": panel.panel_question,
             "requirements_written": written,
+            "pending_hitl": True,
         })
 
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@intake_api.route("/api/intake/hitl-confirm/<session_id>", methods=["POST"])
+def hitl_confirm(session_id):
+    """HITL confirmation endpoint for panel-generated requirements.
+
+    Body:
+      {
+        "approved":  ["req-id-1", "req-id-2"],   // promote pending_review → draft
+        "deleted":   ["req-id-3"],                // delete rejected
+        "custom":    [{"text": "...", "type": "functional", "priority": "medium"}]  // human-authored
+      }
+    Returns: {approved, deleted, custom_added, new_score}
+    """
+    body = request.get_json(silent=True) or {}
+    approved_ids = body.get("approved") or []
+    deleted_ids  = body.get("deleted") or []
+    custom_reqs  = body.get("custom") or []
+
+    if not session_id:
+        return jsonify({"error": "session_id required"}), 400
+
+    conn = _get_db()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Promote approved requirements to 'draft'
+        for req_id in approved_ids:
+            conn.execute(
+                "UPDATE intake_requirements SET status = 'draft', updated_at = ? WHERE id = ? AND session_id = ?",
+                (now, req_id, session_id),
+            )
+
+        # Delete rejected requirements
+        for req_id in deleted_ids:
+            conn.execute(
+                "DELETE FROM intake_requirements WHERE id = ? AND session_id = ?",
+                (req_id, session_id),
+            )
+
+        # Insert human-authored requirements directly as 'draft'
+        custom_added = 0
+        for c in custom_reqs:
+            text = (c.get("text") or "").strip()
+            if not text:
+                continue
+            req_id = f"req-{uuid.uuid4().hex[:12]}"
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, raw_text, requirement_type, priority,
+                    source_document, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
+                (req_id, session_id,
+                 text,
+                 c.get("type", "functional"),
+                 c.get("priority", "medium"),
+                 now),
+            )
+            custom_added += 1
+
+        conn.commit()
+
+        # Rescore after HITL confirmation
+        new_score = None
+        try:
+            from tools.requirements.readiness_scorer import score_readiness
+            result = score_readiness(session_id)
+            new_score = result.get("overall_score") if isinstance(result, dict) else None
+        except Exception:
+            pass
+
+        return jsonify({
+            "status": "ok",
+            "approved": len(approved_ids),
+            "deleted": len(deleted_ids),
+            "custom_added": custom_added,
+            "new_score": new_score,
+        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

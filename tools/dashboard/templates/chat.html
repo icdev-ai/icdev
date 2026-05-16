@@ -80,6 +80,75 @@
     padding:2px 7px; border:1px solid #4a90d9; border-radius:10px; margin-left:6px;
   }
   .panel-mode-active .panel-mode-indicator { display:inline; }
+
+  /* ---- HITL Review Section ---- */
+  .panel-hitl-section {
+    margin-top:8px; border:1px solid rgba(74,144,217,.25);
+    border-radius:8px; padding:10px 12px; background:rgba(74,144,217,.04);
+  }
+  .panel-hitl-header { margin-bottom:8px; }
+  .panel-hitl-title { font-size:0.8rem; font-weight:700; color:var(--accent-blue,#4a90d9); }
+  .panel-hitl-subtitle { display:block; font-size:0.72rem; color:var(--text-muted,#888); margin-top:2px; }
+  .panel-hitl-cards { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+  .panel-hitl-card {
+    border-radius:6px; padding:8px 10px;
+    border:1px solid rgba(255,255,255,.1);
+    background:var(--bg-secondary,#1a1a2e);
+    transition:border-color .2s, opacity .2s;
+  }
+  .panel-hitl-card--pending  { border-color:rgba(255,200,50,.3); }
+  .panel-hitl-card--approved { border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.04); }
+  .panel-hitl-card--rejected { opacity:.45; border-color:rgba(248,113,113,.3); text-decoration:line-through; }
+  .panel-hitl-card--custom   { border-color:rgba(139,92,246,.35); background:rgba(139,92,246,.04); }
+  .panel-hitl-card__meta { display:flex; gap:5px; margin-bottom:4px; align-items:center; }
+  .panel-hitl-card__text {
+    font-size:0.82rem; line-height:1.45; color:var(--text-primary,#e0e0e0);
+    outline:none; min-height:1.4em;
+    border-bottom:1px dashed transparent; transition:border-color .2s;
+  }
+  .panel-hitl-card__text:focus { border-bottom-color:rgba(74,144,217,.5); }
+  .panel-hitl-card__actions { display:flex; gap:6px; margin-top:6px; }
+  .panel-req-type-badge {
+    font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
+    padding:1px 6px; border-radius:10px;
+    background:rgba(74,144,217,.18); color:#93c5fd;
+  }
+  .panel-req-type-badge--security    { background:rgba(220,38,38,.18); color:#fca5a5; }
+  .panel-req-type-badge--compliance  { background:rgba(245,158,11,.18); color:#fcd34d; }
+  .panel-req-type-badge--performance { background:rgba(5,150,105,.18);  color:#6ee7b7; }
+  .panel-req-priority-badge {
+    font-size:0.62rem; padding:1px 6px; border-radius:10px;
+    background:rgba(255,255,255,.07); color:var(--text-muted,#888);
+  }
+  .panel-hitl-btn {
+    font-size:0.72rem; padding:3px 10px; border-radius:5px; border:none;
+    cursor:pointer; font-weight:600; transition:background .15s, opacity .15s;
+  }
+  .panel-hitl-btn--approve { background:rgba(52,211,153,.2); color:#34d399; }
+  .panel-hitl-btn--approve:hover { background:rgba(52,211,153,.35); }
+  .panel-hitl-btn--reject  { background:rgba(248,113,113,.2); color:#f87171; }
+  .panel-hitl-btn--reject:hover  { background:rgba(248,113,113,.35); }
+  .panel-hitl-btn--add     { background:rgba(139,92,246,.2); color:#a78bfa; }
+  .panel-hitl-btn--add:hover     { background:rgba(139,92,246,.35); }
+  .panel-hitl-btn--confirm { background:rgba(52,211,153,.25); color:#34d399; padding:5px 16px; font-size:0.78rem; }
+  .panel-hitl-btn--confirm:hover { background:rgba(52,211,153,.45); }
+  .panel-hitl-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .panel-hitl-custom { margin:6px 0 10px; }
+  .panel-hitl-custom__label { font-size:0.72rem; color:var(--text-muted,#888); display:block; margin-bottom:4px; }
+  .panel-hitl-custom__row { display:flex; gap:6px; }
+  .panel-hitl-custom__input {
+    flex:1; font-size:0.8rem; padding:4px 8px; border-radius:5px;
+    border:1px solid rgba(255,255,255,.12); background:var(--bg-primary,#0f0f1a);
+    color:var(--text-primary,#e0e0e0); outline:none;
+  }
+  .panel-hitl-custom__input:focus { border-color:rgba(74,144,217,.5); }
+  .panel-hitl-footer { display:flex; align-items:center; gap:10px; }
+  .panel-hitl-status { font-size:0.75rem; color:var(--text-muted,#888); }
+  .panel-hitl-confirmed {
+    padding:8px 12px; background:rgba(52,211,153,.08);
+    border:1px solid rgba(52,211,153,.25); border-radius:6px;
+    font-size:0.8rem; color:#34d399;
+  }
 </style>
 {% endblock %}
 
