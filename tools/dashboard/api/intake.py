@@ -297,7 +297,7 @@ def process_panel_turn():
 
         session_data = dict(session)
 
-        from tools.requirements.multi_persona_panel import run_panel, persist_panel_requirements
+        from tools.requirements.multi_persona_panel import run_panel, persist_panel_requirements, _auto_generate_ac
 
         panel = run_panel(
             session_data=session_data,
@@ -405,15 +405,17 @@ def hitl_confirm(session_id):
             if not text:
                 continue
             req_id = f"req-{uuid.uuid4().hex[:12]}"
+            ac = _auto_generate_ac(text)
             conn.execute(
                 """INSERT INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
-                    source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
+                    acceptance_criteria, source_document, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
                 (req_id, session_id,
                  text,
                  c.get("type", "functional"),
                  c.get("priority", "medium"),
+                 ac,
                  now),
             )
             custom_added += 1
@@ -663,13 +665,15 @@ Generate only the requirements block. No preamble, no explanations."""
                 req_type = "functional"
 
             req_id = f"req-boost-{uuid.uuid4().hex[:12]}"
+            if not criteria:
+                criteria = _auto_generate_ac(req_text)
             conn.execute(
                 """INSERT INTO intake_requirements
                    (id, session_id, source_turn, requirement_type, raw_text,
-                    acceptance_criteria, classification, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'deferred', ?)""",
+                    acceptance_criteria, classification, priority, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'deferred', ?)""",
                 (req_id, session_id, turn_number, req_type, req_text,
-                 criteria, classification, now),
+                 criteria, classification, 'high', now),
             )
             added.append({"id": req_id, "type": req_type, "text": req_text, "criteria": criteria})
 
@@ -794,7 +798,7 @@ def get_prd(session_id):
     if not _HAS_PRD:
         return jsonify({"error": "PRD generator not available"}), 503
     try:
-        result = _generate_prd(session_id, db_path=DB_PATH)
+        result = _generate_prd(session_id)
         if result.get("status") != "ok":
             return jsonify(result), 404
         return jsonify(result)
@@ -808,7 +812,7 @@ def validate_prd_endpoint(session_id):
     if not _HAS_PRD_VALIDATOR:
         return jsonify({"error": "PRD validator not available"}), 503
     try:
-        result = _validate_prd(session_id, db_path=DB_PATH)
+        result = _validate_prd(session_id)
         if result.get("status") != "ok":
             return jsonify(result), 404
         return jsonify(result)
@@ -849,7 +853,7 @@ def force_build(session_id):
         items_created = 0
         try:
             from tools.requirements.decomposition_engine import decompose_requirements
-            result = decompose_requirements(session_id, db_path=DB_PATH)
+            result = decompose_requirements(session_id)
             items_created = result.get("items_created", 0)
         except Exception:
             pass
