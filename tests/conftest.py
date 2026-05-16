@@ -974,6 +974,19 @@ CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id
 CREATE INDEX IF NOT EXISTS idx_kanban_failure_count ON kanban_tasks(failure_count);
 CREATE INDEX IF NOT EXISTS idx_kanban_dispatch_source ON kanban_tasks(dispatch_source);
 
+CREATE TABLE IF NOT EXISTS chat_intake_sessions (
+    context_id  TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS hitl_intake_pending (
+    instance_id TEXT PRIMARY KEY,
+    session_id  TEXT NOT NULL,
+    context_id  TEXT,
+    created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kanban_verifications (
     id                    TEXT PRIMARY KEY,
     task_id               TEXT NOT NULL,
