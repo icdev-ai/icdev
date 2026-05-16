@@ -598,7 +598,14 @@ Generate only the requirements block. No preamble, no explanations."""
         # --- Parse and persist ---
         import re as _re
         added = []
-        blocks = _re.split(r"\n(?=TYPE:)", content.strip())
+        # Normalize line endings then split on any line that begins a TYPE: block
+        # (handles bold markdown **TYPE:**, numbered "1. TYPE:", plain "TYPE:")
+        _normalized = content.replace("\r\n", "\n").replace("\r", "\n").strip()
+        # Split on blank line OR newline immediately before a TYPE: marker
+        blocks = _re.split(r"\n{1,2}(?=\s*\**\s*TYPE\s*:)", _normalized)
+        if len(blocks) <= 1:
+            # Fallback: whole content is one block (no newline before TYPE:)
+            blocks = [_normalized]
         now = datetime.now(timezone.utc).isoformat()
 
         # Get next turn number
@@ -610,28 +617,29 @@ Generate only the requirements block. No preamble, no explanations."""
 
         for block in blocks:
             block = block.strip()
-            if not block.startswith("TYPE:"):
-                continue
-            type_m = _re.search(r"TYPE:\s*(.+)", block)
-            text_m = _re.search(r"TEXT:\s*(.+)", block, _re.DOTALL)
-            crit_m = _re.search(r"CRITERIA:\s*(.+)", block, _re.DOTALL)
+            # Flexible match: optional markdown/numbering prefix before TYPE:
+            type_m = _re.search(r"(?:^|\n)\s*\**\s*TYPE\s*:\**\s*(.+)", block, _re.IGNORECASE)
+            text_m = _re.search(r"\**TEXT\s*:\**\s*(.+?)(?=\n\s*\**\s*(?:TYPE|CRITERIA)\s*:|\Z)", block, _re.IGNORECASE | _re.DOTALL)
+            crit_m = _re.search(r"\**CRITERIA\s*:\**\s*(.+?)(?=\n\s*\**\s*(?:TYPE|TEXT)\s*:|\Z)", block, _re.IGNORECASE | _re.DOTALL)
 
             if not type_m or not text_m:
                 continue
 
-            req_type = type_m.group(1).strip().lower().replace(" ", "_")
-            req_text = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", text_m.group(1))[0].strip()
-            criteria = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", crit_m.group(1))[0].strip() if crit_m else ""
+            req_type = _re.sub(r"[*_`]", "", type_m.group(1)).strip().lower().replace(" ", "_")
+            req_text = _re.sub(r"[*_`]", "", text_m.group(1)).strip()
+            criteria = _re.sub(r"[*_`]", "", crit_m.group(1)).strip() if crit_m else ""
 
+            if not req_text:
+                continue
             if req_type not in all_types:
                 req_type = "functional"
 
             req_id = f"req-boost-{session_id[:8]}-{len(added)}"
             conn.execute(
                 """INSERT INTO intake_requirements
-                   (id, session_id, source_turn, requirement_type, raw_text,
-                    acceptance_criteria, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (id, session_id, source_turn, requirement_type, priority, raw_text,
+                    acceptance_criteria, classification, status, created_at)
+                   VALUES (?, ?, ?, ?, 'medium', ?, ?, ?, 'draft', ?)""",
                 (req_id, session_id, turn_number, req_type, req_text,
                  criteria, classification, now),
             )
