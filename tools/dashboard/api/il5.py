@@ -8,7 +8,6 @@ NIST 800-53: AU-2, AU-12, SC-28, SI-12.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict
 

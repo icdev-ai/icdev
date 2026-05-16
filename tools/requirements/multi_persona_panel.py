@@ -31,6 +31,8 @@ from tools.db.storage import get_connection
 
 # Matches "REQ:" anywhere on a line — handles bullets (- * 1.), bold (**REQ:**), indented
 _RE_REQ_MARKER = re.compile(r'(?:[-*\d.)>\s]|\*{1,2})*\s*REQ\s*:+\s*(.+)', re.IGNORECASE)
+# Matches "AC:" anywhere on a line — acceptance criteria
+_RE_AC_MARKER = re.compile(r'(?:[-*\d.)>\s]|\*{1,2})*\s*AC\s*:+\s*(.+)', re.IGNORECASE)
 # Matches imperative requirement statements without a REQ: prefix
 _RE_IMPERATIVE = re.compile(
     r'(?:The (?:system|platform|tool|service|solution) (?:shall|must|will)\b|'
@@ -49,7 +51,10 @@ experts are reviewing the same message in parallel. Your job:
 
 1. Respond ONLY from your professional domain lens — do not try to cover everything.
 2. Generate 3-6 concrete draft requirements that YOUR domain would own.
-   Format each as: "REQ: <imperative statement starting with 'The system shall' or 'Users must'>"
+   Format each as:
+   REQ: <imperative statement starting with 'The system shall' or 'Users must'>
+   AC: <one measurable acceptance criterion for that requirement>
+   At least one requirement should mention timeline, budget, or team size where relevant.
 3. Ask ONE targeted follow-up question from your domain's perspective.
 4. Be terse. 3-4 sentences max, then your REQs, then your question.
 
@@ -58,9 +63,10 @@ Other experts will cover their domains. Focus on yours.
 
 _PANEL_EXTRACTION_SYSTEM = """\
 Extract all system requirements from this expert panel response.
-Return a JSON array. Each element: {"text": "<requirement>", "type": "<functional|non_functional|security|compliance|data|integration|performance>", "priority": "<high|medium|low>"}.
+Return a JSON array. Each element: {"text": "<requirement>", "type": "<functional|non_functional|security|compliance|data|integration|performance>", "priority": "<high|medium|low>", "acceptance_criteria": "<measurable condition or empty string>"}.
 Look for:
 - Lines prefixed with REQ: (with or without bullets/numbers/markdown)
+- Lines prefixed with AC: (acceptance criteria belonging to the nearest preceding REQ)
 - Imperative statements: "The system shall...", "The system must...", "Users must...", "The platform shall..."
 - Any concrete capability, constraint, or behaviour the system is expected to have.
 If nothing is found, return [].
@@ -177,14 +183,15 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
             conn.execute(
                 """INSERT OR IGNORE INTO intake_requirements
                    (id, session_id, raw_text, requirement_type, priority,
-                    source_turn, source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, 'panel', 'deferred', ?)""",
+                    acceptance_criteria, source_turn, source_document, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 'panel', 'deferred', ?)""",
                 (
                     req_id,
                     panel.session_id,
                     req["text"],
                     req.get("type", "functional"),
                     req.get("priority", "medium"),
+                    req.get("acceptance_criteria", ""),
                     turn_number,
                     now,
                 ),
@@ -314,25 +321,39 @@ def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
     """
     results: List[Dict] = []
     seen: set = set()
+    lines = text.splitlines()
 
-    def _add(req_text: str) -> None:
+    # Pre-index AC lines by line index
+    ac_by_idx: Dict[int, str] = {}
+    for idx, line in enumerate(lines):
+        m = _RE_AC_MARKER.search(line)
+        if m:
+            ac_by_idx[idx] = m.group(1).strip()
+
+    def _add(req_text: str, ac_text: str = "") -> None:
         req_text = re.sub(r'[\*_`]+$', '', req_text).strip().rstrip(".")
         if not req_text or len(req_text) < 10:
             return
         key = req_text.lower()[:60]
         if key not in seen:
             seen.add(key)
-            results.append({"text": req_text, "type": _infer_type(req_text), "priority": "medium"})
+            results.append({"text": req_text, "type": _infer_type(req_text), "priority": "medium", "acceptance_criteria": ac_text})
 
     # Pass 1 — lines with explicit REQ: marker (any position on line)
-    for line in text.splitlines():
+    for idx, line in enumerate(lines):
         m = _RE_REQ_MARKER.search(line)
         if m:
-            _add(m.group(1).strip())
+            # Look for nearest AC line after this REQ line
+            ac_text = ""
+            for ac_idx in sorted(ac_by_idx.keys()):
+                if ac_idx > idx:
+                    ac_text = ac_by_idx[ac_idx]
+                    break
+            _add(m.group(1).strip(), ac_text)
 
     # Pass 2 — imperative statements that survived without a REQ: marker
     if not results:
-        for line in text.splitlines():
+        for line in lines:
             m = _RE_IMPERATIVE.search(line)
             if m:
                 # Grab from the match start to end of line
@@ -373,6 +394,7 @@ def _extract_reqs_from_response(text: str, classification: str) -> List[Dict]:
                             "text": req_text,
                             "type": item.get("type", "functional"),
                             "priority": item.get("priority", "medium"),
+                            "acceptance_criteria": item.get("acceptance_criteria", ""),
                         })
     except Exception:
         pass

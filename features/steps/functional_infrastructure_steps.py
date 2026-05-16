@@ -333,4 +333,29 @@ def step_deployment_profiles_exists(context, path):
 def step_infra_canvas_config_exists(context, path):
     _assert_path(context, path)
 
+
+@when('the IC IE data fabric interface is verified')
+def step_verify_ic_ie_data_fabric(context):
+    context.check_paths = [
+        'icdev/tools/ic_ie/data_fabric.py',
+        'tools/manifest/ic-ie-data-fabric.md',
+        'tests/test_ic_ie_data_fabric.py',
+    ]
+
+
+@then('the data fabric service exists at "{path}"')
+def step_data_fabric_service_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the data fabric manifest exists at "{path}"')
+def step_data_fabric_manifest_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the data fabric tests exist at "{path}"')
+def step_data_fabric_tests_exist(context, path):
+    _assert_path(context, path)
+
+
 # CUI // SP-CTI
