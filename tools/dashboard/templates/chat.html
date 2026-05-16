@@ -80,107 +80,6 @@
     padding:2px 7px; border:1px solid #4a90d9; border-radius:10px; margin-left:6px;
   }
   .panel-mode-active .panel-mode-indicator { display:inline; }
-
-  /* Animated typing indicator */
-  .msg-typing-indicator {
-    display:flex; align-items:center; gap:4px;
-    padding:10px 14px; margin-bottom:6px;
-    background:var(--bg-secondary,#1a1a2e); border-radius:8px;
-    width:fit-content; max-width:220px;
-  }
-  .msg-typing-indicator--panel { max-width:380px; }
-  .msg-typing-dot {
-    width:7px; height:7px; border-radius:50%;
-    background:var(--accent-blue,#4a90d9);
-    display:inline-block;
-    animation:typing-bounce 1.2s infinite ease-in-out;
-  }
-  .msg-typing-dot:nth-child(2) { animation-delay:.2s; }
-  .msg-typing-dot:nth-child(3) { animation-delay:.4s; }
-  @keyframes typing-bounce {
-    0%,60%,100% { transform:translateY(0); opacity:.4; }
-    30%          { transform:translateY(-5px); opacity:1; }
-  }
-  /* Custom persona chip */
-  .ctx-preset-chip--custom { border-style:dashed; }
-  /* Use-count badge on custom chips */
-  .ctx-preset-chip__uses, .panel-chip__uses {
-    display:inline-block; font-size:0.58rem; font-weight:700;
-    background:rgba(74,144,217,.25); color:#93c5fd;
-    border-radius:8px; padding:0 5px; margin-left:4px; vertical-align:middle;
-    line-height:1.5;
-  }
-
-  /* ---- HITL Review Section ---- */
-  .panel-hitl-section {
-    margin-top:8px; border:1px solid rgba(74,144,217,.25);
-    border-radius:8px; padding:10px 12px; background:rgba(74,144,217,.04);
-  }
-  .panel-hitl-header { margin-bottom:8px; }
-  .panel-hitl-title { font-size:0.8rem; font-weight:700; color:var(--accent-blue,#4a90d9); }
-  .panel-hitl-subtitle { display:block; font-size:0.72rem; color:var(--text-muted,#888); margin-top:2px; }
-  .panel-hitl-cards { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
-  .panel-hitl-card {
-    border-radius:6px; padding:8px 10px;
-    border:1px solid rgba(255,255,255,.1);
-    background:var(--bg-secondary,#1a1a2e);
-    transition:border-color .2s, opacity .2s;
-  }
-  .panel-hitl-card--pending  { border-color:rgba(255,200,50,.3); }
-  .panel-hitl-card--approved { border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.04); }
-  .panel-hitl-card--rejected { opacity:.45; border-color:rgba(248,113,113,.3); text-decoration:line-through; }
-  .panel-hitl-card--custom   { border-color:rgba(139,92,246,.35); background:rgba(139,92,246,.04); }
-  .panel-hitl-card__meta { display:flex; gap:5px; margin-bottom:4px; align-items:center; }
-  .panel-hitl-card__text {
-    font-size:0.82rem; line-height:1.45; color:var(--text-primary,#e0e0e0);
-    outline:none; min-height:1.4em;
-    border-bottom:1px dashed transparent; transition:border-color .2s;
-  }
-  .panel-hitl-card__text:focus { border-bottom-color:rgba(74,144,217,.5); }
-  .panel-hitl-card__actions { display:flex; gap:6px; margin-top:6px; }
-  .panel-req-type-badge {
-    font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
-    padding:1px 6px; border-radius:10px;
-    background:rgba(74,144,217,.18); color:#93c5fd;
-  }
-  .panel-req-type-badge--security    { background:rgba(220,38,38,.18); color:#fca5a5; }
-  .panel-req-type-badge--compliance  { background:rgba(245,158,11,.18); color:#fcd34d; }
-  .panel-req-type-badge--performance { background:rgba(5,150,105,.18);  color:#6ee7b7; }
-  .panel-req-priority-badge {
-    font-size:0.62rem; padding:1px 6px; border-radius:10px;
-    background:rgba(255,255,255,.07); color:var(--text-muted,#888);
-  }
-  .panel-hitl-btn {
-    font-size:0.72rem; padding:3px 10px; border-radius:5px; border:none;
-    cursor:pointer; font-weight:600; transition:background .15s, opacity .15s;
-  }
-  .panel-hitl-btn--approve { background:rgba(52,211,153,.2); color:#34d399; }
-  .panel-hitl-btn--approve:hover { background:rgba(52,211,153,.35); }
-  .panel-hitl-btn--approve:disabled { background:rgba(52,211,153,.08); color:#34d399; opacity:.45; cursor:default; }
-  .panel-hitl-btn--reject  { background:rgba(248,113,113,.2); color:#f87171; }
-  .panel-hitl-btn--reject:hover  { background:rgba(248,113,113,.35); }
-  .panel-hitl-btn--reject:disabled { background:rgba(248,113,113,.08); color:#f87171; opacity:.45; cursor:default; }
-  .panel-hitl-btn--add     { background:rgba(139,92,246,.2); color:#a78bfa; }
-  .panel-hitl-btn--add:hover     { background:rgba(139,92,246,.35); }
-  .panel-hitl-btn--confirm { background:rgba(52,211,153,.25); color:#34d399; padding:5px 16px; font-size:0.78rem; }
-  .panel-hitl-btn--confirm:hover { background:rgba(52,211,153,.45); }
-  .panel-hitl-btn:disabled { opacity:.5; cursor:not-allowed; }
-  .panel-hitl-custom { margin:6px 0 10px; }
-  .panel-hitl-custom__label { font-size:0.72rem; color:var(--text-muted,#888); display:block; margin-bottom:4px; }
-  .panel-hitl-custom__row { display:flex; gap:6px; }
-  .panel-hitl-custom__input {
-    flex:1; font-size:0.8rem; padding:4px 8px; border-radius:5px;
-    border:1px solid rgba(255,255,255,.12); background:var(--bg-primary,#0f0f1a);
-    color:var(--text-primary,#e0e0e0); outline:none;
-  }
-  .panel-hitl-custom__input:focus { border-color:rgba(74,144,217,.5); }
-  .panel-hitl-footer { display:flex; align-items:center; gap:10px; }
-  .panel-hitl-status { font-size:0.75rem; color:var(--text-muted,#888); }
-  .panel-hitl-confirmed {
-    padding:8px 12px; background:rgba(52,211,153,.08);
-    border:1px solid rgba(52,211,153,.25); border-radius:6px;
-    font-size:0.8rem; color:#34d399;
-  }
 </style>
 {% endblock %}
 
@@ -543,11 +442,10 @@
     <div class="chat-modal chat-modal--scrollable">
         <h3 class="chat-modal__title">New Chat Context</h3>
 
-        <!-- Title with recent history datalist -->
+        <!-- Title -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Title</label>
-            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title..." list="ctx-title-history" autocomplete="off">
-            <datalist id="ctx-title-history"></datalist>
+            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title...">
         </div>
 
         <!-- Agent Model -->
@@ -582,11 +480,6 @@
         <div class="chat-modal__field" id="ctx-preset-row">
             <label class="chat-modal__label">Persona <span class="chat-modal__label-sub">— click to pre-fill system prompt</span></label>
             <div class="ctx-preset-chips" id="ctx-preset-chips"></div>
-            <div class="ctx-custom-persona-row" style="display:flex;gap:6px;margin-top:6px;">
-                <input type="text" id="ctx-custom-persona-name" class="chat-modal__input" placeholder="Custom persona name…" style="flex:1;font-size:0.8rem;padding:4px 8px;">
-                <textarea id="ctx-custom-persona-prompt" class="chat-modal__input" placeholder="System prompt for this persona…" rows="2" style="flex:2;font-size:0.8rem;padding:4px 8px;resize:vertical;"></textarea>
-                <button type="button" id="btn-add-custom-persona" class="chat-modal__btn chat-modal__btn--cancel" style="align-self:flex-start;padding:4px 12px;font-size:0.75rem;">+ Add</button>
-            </div>
         </div>
 
         <!-- Compliance context -->
@@ -640,26 +533,22 @@
             </label>
         </div>
 
-        <!-- Expert Panel (intake canvas only) — ON by default -->
+        <!-- Expert Panel (intake canvas only) -->
         <div class="chat-modal__field" id="panel-mode-row" style="display:none;">
             <label class="chat-modal__label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                 Expert Panel
                 <label class="panel-toggle-label" title="Multiple AI personas respond each turn in parallel">
-                    <input type="checkbox" id="modal-panel-enabled" checked>
+                    <input type="checkbox" id="modal-panel-enabled">
                     <span class="panel-toggle-pill"></span>
                 </label>
             </label>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">Fire multiple AI experts per turn — Developer, Analyst, PM, ISSO, Architect respond in parallel</div>
-            <div id="modal-panel-personas" class="panel-persona-chips" style="display:flex;flex-wrap:wrap;gap:5px;">
+            <div id="modal-panel-personas" class="panel-persona-chips" style="display:none;">
                 <label class="panel-chip panel-chip--developer panel-chip--active"><input type="checkbox" value="developer" checked> Developer</label>
                 <label class="panel-chip panel-chip--analyst panel-chip--active"><input type="checkbox" value="analyst" checked> Analyst</label>
                 <label class="panel-chip panel-chip--pm"><input type="checkbox" value="pm"> PM</label>
                 <label class="panel-chip panel-chip--isso"><input type="checkbox" value="isso"> ISSO</label>
                 <label class="panel-chip panel-chip--architect"><input type="checkbox" value="solutions_architect"> Architect</label>
-            </div>
-            <div style="display:flex;gap:6px;margin-top:7px;align-items:center;">
-                <input type="text" id="modal-panel-custom-name" class="chat-modal__input" placeholder="Custom expert name…" style="flex:1;font-size:0.78rem;padding:3px 8px;">
-                <button type="button" id="btn-add-panel-expert" class="chat-modal__btn chat-modal__btn--cancel" style="padding:3px 12px;font-size:0.75rem;white-space:nowrap;">+ Add Expert</button>
             </div>
         </div>
 

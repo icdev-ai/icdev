@@ -332,6 +332,7 @@ class LLMRouter:
                 api_key_env = provider_cfg.get("api_key_env", "")
                 api_key = _expand_env(provider_cfg.get("api_key", ""))
                 if not api_key and api_key_env:
+                    import os
                     api_key = os.getenv(api_key_env, "")
                 instance = OllamaProvider(base_url=base_url, api_key=api_key)
 
@@ -1144,10 +1145,6 @@ class LLMRouter:
             return
 
         if response.stop_reason and response.stop_reason.lower() in ("error", "tool_use"):
-            return
-
-        # Never cache empty responses — they indicate model failure or thinking overflow
-        if not (response.content or "").strip():
             return
 
         ttl = rcfg.get("ttl_seconds", 3600)

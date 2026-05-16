@@ -784,46 +784,14 @@ class ChatManager:
                 compressed = _compress_history(chat_msgs, budget_tokens=3000)
                 conversation = sys_msgs + compressed
 
-            from tools.chat.llm_middleware import chat_llm_invoke
+            from tools.llm.provider import LLMRequest
 
-            # Read canvas_type from context_config in DB (set via PATCH /<id>/mode)
-            canvas_type = "chat"
-            classification = DEFAULT_CLASSIFICATION
-            try:
-                _ct_conn = get_connection()
-                _ct_conn.set_security_context(None)
-                _ct_row = _ct_conn.execute(
-                    "SELECT context_config, classification FROM chat_contexts WHERE id = ?",
-                    (ctx.context_id,),
-                ).fetchone()
-                _ct_conn.close()
-                if _ct_row:
-                    import json as _json
-                    _cfg = _json.loads(_ct_row[0] or "{}") if _ct_row[0] else {}
-                    canvas_type = _cfg.get("canvas_type", "chat") or "chat"
-                    classification = _ct_row[1] or DEFAULT_CLASSIFICATION
-            except Exception:
-                pass
-
-            # Build system message from conversation if present, else use ctx.system_prompt
-            sys_msgs = [m for m in conversation if m.get("role") == "system"]
-            system_prompt = sys_msgs[0]["content"] if sys_msgs else (ctx.system_prompt or "")
-            non_sys = [m for m in conversation if m.get("role") != "system"]
-
-            result, _meta = chat_llm_invoke(
-                "chat_response",
-                non_sys,
-                system_prompt=system_prompt,
-                canvas_type=canvas_type,
-                session_id=ctx.context_id,
-                classification=classification,
-                max_tokens=2048,
-                temperature=0.7,
-                project_id=getattr(ctx, "project_id", "") or "",
-                agent_id=f"icdev-{canvas_type}",
+            request = LLMRequest(
+                messages=conversation,
+                model=ctx.agent_model,
             )
-            if not result:
-                result = str(_meta)
+            response = router.invoke("chat_response", request)
+            result = response.content if response.content else str(response)
 
             # Store RAG + KG sources for attribution display
             if rag_results:

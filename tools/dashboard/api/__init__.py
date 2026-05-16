@@ -371,14 +371,6 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("JISE portal API skipped: %s", exc)
 
-    # IL5 ingestion + display — /api/v1/il5
-    try:
-        from tools.il5.api_routes import il5_api
-        _mount(il5_api, v1_prefix="/api/v1/il5")
-        logger.info("IL5 API registered at /api/v1/il5/")
-    except Exception as exc:
-        logger.warning("IL5 API skipped: %s", exc)
-
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook
@@ -464,5 +456,4 @@ ALL_BLUEPRINTS = [
     ("cpmp_api", "/api/v1/cpmp", True),
     ("proposal_genesis_api", "/api/v1/proposal-genesis", True),
     ("jise_api", "/api/v1/jise", False),
-    ("il5_api", "/api/v1/il5", False),
 ]

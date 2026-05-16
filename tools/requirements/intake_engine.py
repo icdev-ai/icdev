@@ -378,20 +378,18 @@ def _generate_persona_response(session_data, message, signals, conn):
         conversation_messages = _build_conversation_history(session_id, conn, message)
         system_prompt = _build_llm_system_prompt(session_data, signals, persona, ctx, session_id, conn)
 
-        from tools.chat.llm_middleware import chat_llm_invoke
-        content, _meta = chat_llm_invoke(
-            "intake_persona_response",
-            conversation_messages,
+        router = get_router()
+        request = _LLMRequest(
+            messages=conversation_messages,
             system_prompt=system_prompt,
-            canvas_type="intake",
-            session_id=session_data.get("id", ""),
-            classification=session_data.get("classification", "CUI"),
             max_tokens=1024,
             temperature=0.7,
-            project_id=session_data.get("project_id", ""),
             agent_id="icdev-requirements-analyst",
+            project_id=session_data.get("project_id", ""),
+            classification=session_data.get("classification", "CUI"),
         )
-        return content or None
+        response = router.invoke("intake_persona_response", request)
+        return response.content.strip() if response and response.content else None
     except Exception:
         return None
 
@@ -528,37 +526,16 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
         })),
     )
 
-    # Use a static placeholder immediately so context creation is instant.
-    # The real LLM welcome is generated in a background thread and written to DB.
-    placeholder = (
-        f"Welcome, {params.customer_name}. I'm your ICDEV™ Requirements Analyst. "
-        f"Tell me about the system you want to build — what problem does it need to solve?"
-    )
+    welcome_message = _generate_welcome_message(params, classification)
+
     conn.execute(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type, classification)
            VALUES (?, 1, 'analyst', ?, 'text', ?)""",
-        (session_id, placeholder, classification or "CUI"),
+        (session_id, welcome_message, classification or "CUI"),
     )
     conn.commit()
     conn.close()
-
-    # Fire LLM welcome in background — updates the DB row when ready
-    import threading as _threading
-    def _async_welcome():
-        try:
-            real_welcome = _generate_welcome_message(params, classification)
-            if real_welcome and real_welcome != placeholder:
-                _conn2 = _get_connection(params.db_path)
-                _conn2.execute(
-                    "UPDATE intake_conversation SET content = ? WHERE session_id = ? AND turn_number = 1",
-                    (real_welcome, session_id),
-                )
-                _conn2.commit()
-                _conn2.close()
-        except Exception:
-            pass
-    _threading.Thread(target=_async_welcome, daemon=True).start()
 
     if _HAS_AUDIT:
         log_event(
@@ -577,7 +554,7 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
         "impact_level": params.impact_level,
         "session_status": "active",
         "readiness_score": 0.0,
-        "message": placeholder,
+        "message": welcome_message,
     }
 
 

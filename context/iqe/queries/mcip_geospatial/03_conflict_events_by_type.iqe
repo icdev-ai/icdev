@@ -1,7 +1,0 @@
-# IQE-GEO-003: Geospatial conflict and threat events by event type
-# Returns conflict events recorded by the Strategos geospatial intelligence
-# engine, grouped by event_type (frontline_position, cyber_op, kinetic, etc.).
-# Use: operational picture updates, NIST AU-2 event logging traceability.
-
-foreach c in geospatial.conflict_events
-select c.id, c.event_type, c.source, c.event_date, c.geometry, c.created_at

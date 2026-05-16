@@ -13,7 +13,6 @@ Wraps existing RICOAS backend tools:
 
 import sys
 import threading
-import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -109,22 +108,6 @@ try:
 except ImportError:
     _HAS_ELICITATION = False
 
-try:
-    from tools.security.column_security import apply_column_policy
-    from tools.security.field_security import apply_field_policy
-    _HAS_FIELD_SECURITY = True
-except ImportError:
-    _HAS_FIELD_SECURITY = False
-    def apply_column_policy(table, role, row): return row  # noqa: E731
-    def apply_field_policy(schema, role, data): return data  # noqa: E731
-
-try:
-    from tools.requirements.ontology_enricher import enrich_requirements as _enrich_reqs
-    _HAS_ONTOLOGY = True
-except ImportError:
-    _HAS_ONTOLOGY = False
-    def _enrich_reqs(reqs, session_context=None): return reqs  # noqa: E731
-
 # ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------
@@ -148,10 +131,6 @@ ALLOWED_EXTENSIONS = {
 
 def _get_db():
     conn = get_connection(db_path=str(DB_PATH))
-    # Bypass classification-level RLS: session_id is the auth token for intake;
-    # without this, the security middleware's default CUI context filters out
-    # Government sessions (classification='IL4'/'IL2') from every SELECT.
-    conn.set_security_context(None)
     return conn
 
 
@@ -273,7 +252,7 @@ def process_panel_turn():
             (session_id,),
         ).fetchone()[0]
 
-        written, req_ids = persist_panel_requirements(panel, turn_number, db_path=DB_PATH)
+        written = persist_panel_requirements(panel, turn_number, db_path=DB_PATH)
 
         # Store the panel turn in conversation history so session context is preserved
         conn.execute(
@@ -284,7 +263,7 @@ def process_panel_turn():
         )
         analyst_summary = (
             f"[Panel] {len(personas)} experts reviewed your message. "
-            f"{written} requirement(s) pending HITL review."
+            f"{written} requirement(s) captured."
             + (f" Follow-up: {panel.panel_question}" if panel.panel_question else "")
         )
         conn.execute(
@@ -294,10 +273,6 @@ def process_panel_turn():
             (session_id, turn_number + 1, analyst_summary, session_data.get("classification", "CUI")),
         )
         conn.commit()
-
-        # Attach IDs to merged_requirements for HITL UI
-        for req, req_id in zip(panel.merged_requirements, req_ids):
-            req.setdefault("id", req_id)
 
         return jsonify({
             "status": "ok",
@@ -319,91 +294,8 @@ def process_panel_turn():
             "total_requirements": panel.total_requirements,
             "panel_question": panel.panel_question,
             "requirements_written": written,
-            "pending_hitl": True,
         })
 
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-    finally:
-        conn.close()
-
-
-@intake_api.route("/api/intake/hitl-confirm/<session_id>", methods=["POST"])
-def hitl_confirm(session_id):
-    """HITL confirmation endpoint for panel-generated requirements.
-
-    Body:
-      {
-        "approved":  ["req-id-1", "req-id-2"],   // promote pending_review → draft
-        "deleted":   ["req-id-3"],                // delete rejected
-        "custom":    [{"text": "...", "type": "functional", "priority": "medium"}]  // human-authored
-      }
-    Returns: {approved, deleted, custom_added, new_score}
-    """
-    body = request.get_json(silent=True) or {}
-    approved_ids = body.get("approved") or []
-    deleted_ids  = body.get("deleted") or []
-    custom_reqs  = body.get("custom") or []
-
-    if not session_id:
-        return jsonify({"error": "session_id required"}), 400
-
-    conn = _get_db()
-    try:
-        now = datetime.now(timezone.utc).isoformat()
-
-        # Promote approved requirements to 'draft'
-        for req_id in approved_ids:
-            conn.execute(
-                "UPDATE intake_requirements SET status = 'draft', updated_at = ? WHERE id = ? AND session_id = ?",
-                (now, req_id, session_id),
-            )
-
-        # Delete rejected requirements
-        for req_id in deleted_ids:
-            conn.execute(
-                "DELETE FROM intake_requirements WHERE id = ? AND session_id = ?",
-                (req_id, session_id),
-            )
-
-        # Insert human-authored requirements directly as 'draft'
-        custom_added = 0
-        for c in custom_reqs:
-            text = (c.get("text") or "").strip()
-            if not text:
-                continue
-            req_id = f"req-{uuid.uuid4().hex[:12]}"
-            conn.execute(
-                """INSERT INTO intake_requirements
-                   (id, session_id, raw_text, requirement_type, priority,
-                    source_document, status, created_at)
-                   VALUES (?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
-                (req_id, session_id,
-                 text,
-                 c.get("type", "functional"),
-                 c.get("priority", "medium"),
-                 now),
-            )
-            custom_added += 1
-
-        conn.commit()
-
-        # Rescore after HITL confirmation
-        new_score = None
-        try:
-            from tools.requirements.readiness_scorer import score_readiness
-            result = score_readiness(session_id)
-            new_score = result.get("overall_score") if isinstance(result, dict) else None
-        except Exception:
-            pass
-
-        return jsonify({
-            "status": "ok",
-            "approved": len(approved_ids),
-            "deleted": len(deleted_ids),
-            "custom_added": custom_added,
-            "new_score": new_score,
-        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -495,8 +387,6 @@ def get_intake_session(session_id):
             }
         )
     except Exception as exc:
-        import logging as _logging
-        _logging.getLogger("intake").exception("GET /session/%s failed: %s", session_id, exc)
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
@@ -604,14 +494,7 @@ Generate only the requirements block. No preamble, no explanations."""
         # --- Parse and persist ---
         import re as _re
         added = []
-        # Normalize line endings then split on any line that begins a TYPE: block
-        # (handles bold markdown **TYPE:**, numbered "1. TYPE:", plain "TYPE:")
-        _normalized = content.replace("\r\n", "\n").replace("\r", "\n").strip()
-        # Split on blank line OR newline immediately before a TYPE: marker
-        blocks = _re.split(r"\n{1,2}(?=\s*\**\s*TYPE\s*:)", _normalized)
-        if len(blocks) <= 1:
-            # Fallback: whole content is one block (no newline before TYPE:)
-            blocks = [_normalized]
+        blocks = _re.split(r"\n(?=TYPE:)", content.strip())
         now = datetime.now(timezone.utc).isoformat()
 
         # Get next turn number
@@ -623,29 +506,28 @@ Generate only the requirements block. No preamble, no explanations."""
 
         for block in blocks:
             block = block.strip()
-            # Flexible match: optional markdown/numbering prefix before TYPE:
-            type_m = _re.search(r"(?:^|\n)\s*\**\s*TYPE\s*:\**\s*(.+)", block, _re.IGNORECASE)
-            text_m = _re.search(r"\**TEXT\s*:\**\s*(.+?)(?=\n\s*\**\s*(?:TYPE|CRITERIA)\s*:|\Z)", block, _re.IGNORECASE | _re.DOTALL)
-            crit_m = _re.search(r"\**CRITERIA\s*:\**\s*(.+?)(?=\n\s*\**\s*(?:TYPE|TEXT)\s*:|\Z)", block, _re.IGNORECASE | _re.DOTALL)
+            if not block.startswith("TYPE:"):
+                continue
+            type_m = _re.search(r"TYPE:\s*(.+)", block)
+            text_m = _re.search(r"TEXT:\s*(.+)", block, _re.DOTALL)
+            crit_m = _re.search(r"CRITERIA:\s*(.+)", block, _re.DOTALL)
 
             if not type_m or not text_m:
                 continue
 
-            req_type = _re.sub(r"[*_`]", "", type_m.group(1)).strip().lower().replace(" ", "_")
-            req_text = _re.sub(r"[*_`]", "", text_m.group(1)).strip()
-            criteria = _re.sub(r"[*_`]", "", crit_m.group(1)).strip() if crit_m else ""
+            req_type = type_m.group(1).strip().lower().replace(" ", "_")
+            req_text = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", text_m.group(1))[0].strip()
+            criteria = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", crit_m.group(1))[0].strip() if crit_m else ""
 
-            if not req_text:
-                continue
             if req_type not in all_types:
                 req_type = "functional"
 
             req_id = f"req-boost-{session_id[:8]}-{len(added)}"
             conn.execute(
                 """INSERT INTO intake_requirements
-                   (id, session_id, source_turn, requirement_type, priority, raw_text,
-                    acceptance_criteria, classification, status, created_at)
-                   VALUES (?, ?, ?, ?, 'medium', ?, ?, ?, 'draft', ?)""",
+                   (id, session_id, source_turn, requirement_type, raw_text,
+                    acceptance_criteria, classification, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (req_id, session_id, turn_number, req_type, req_text,
                  criteria, classification, now),
             )

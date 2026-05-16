@@ -175,21 +175,11 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
-        # Disable thinking mode for local models (qwen3, etc.) to avoid spending
-        # all num_predict tokens on reasoning before producing output.
-        # Cloud models (kimi-k2.6:cloud) keep thinking enabled; they get a
-        # larger num_predict budget below so thinking + output both fit.
-        # Configurable via disable_thinking: true in model config.
-        disable_thinking = (
-            model_config.get("disable_thinking", False)
-            or "qwen3" in model_id.lower()
-        )
-        if disable_thinking:
+        # Disable thinking mode when explicitly configured or for qwen3 models.
+        # qwen3 burns all num_predict tokens on reasoning before producing output,
+        # causing timeouts. Configurable via disable_thinking: true in model config.
+        if model_config.get("disable_thinking", False) or "qwen3" in model_id.lower():
             payload["think"] = False
-        else:
-            # Thinking model: override num_predict to model max so the model has
-            # room to reason AND produce output (request.max_tokens is too small).
-            options["num_predict"] = model_config.get("max_output_tokens", 8192)
 
         # Structured output via Ollama's format parameter
         if request.output_schema and model_config.get("supports_structured_output", False):
@@ -278,15 +268,9 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
-        # Disable thinking mode for local models (see invoke() comment)
-        disable_thinking = (
-            model_config.get("disable_thinking", False)
-            or "qwen3" in model_id.lower()
-        )
-        if disable_thinking:
+        # Disable thinking mode for qwen3+ models (see invoke() comment)
+        if "qwen3" in model_id.lower():
             payload["think"] = False
-        else:
-            options["num_predict"] = model_config.get("max_output_tokens", 8192)
 
         if request.output_schema and model_config.get("supports_structured_output", False):
             payload["format"] = "json"
