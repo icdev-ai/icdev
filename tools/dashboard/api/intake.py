@@ -186,11 +186,18 @@ ALLOWED_EXTENSIONS = {
 
 
 def _get_db():
-    conn = get_connection(db_path=str(DB_PATH))
+    import os
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+    else:
+        conn = get_connection(db_path=str(DB_PATH))
     # Bypass CUI-level RLS: intake uses session_id as the auth token.
     # Without this, the Flask security middleware's default CUI context
     # filters out Government sessions (classification=IL4/IL2) from SELECTs.
-    conn.set_security_context(None)
+    try:
+        conn.set_security_context(None)
+    except Exception:
+        pass
     return conn
 
 
@@ -233,7 +240,6 @@ def create_intake_session():
             customer_org=customer_org,
             impact_level=impact_level,
             classification=classification.upper(),
-            db_path=DB_PATH,
             role=effective_role,
             goal=goal,
             selected_frameworks=frameworks,
@@ -264,7 +270,7 @@ def process_intake_turn():
         return jsonify({"error": "Intake engine not available"}), 503
 
     try:
-        result = process_turn(session_id, message, db_path=DB_PATH)
+        result = process_turn(session_id, message, )
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -312,7 +318,7 @@ def process_panel_turn():
             (session_id,),
         ).fetchone()[0]
 
-        written = persist_panel_requirements(panel, turn_number, db_path=DB_PATH)
+        written = persist_panel_requirements(panel, turn_number, )
 
         # Store the panel turn in conversation history so session context is preserved
         conn.execute(
@@ -425,7 +431,7 @@ def hitl_confirm(session_id):
         new_score = None
         try:
             from tools.requirements.readiness_scorer import score_readiness
-            result = score_readiness(session_id, db_path=DB_PATH)
+            result = score_readiness(session_id, )
             new_score = result.get("overall_score") if isinstance(result, dict) else None
         except Exception:
             pass
@@ -478,14 +484,13 @@ def upload_intake_file():
             session_id=session_id,
             file_path=str(file_path),
             document_type=doc_type,
-            db_path=DB_PATH,
-        )
+            )
         # Auto-extract requirements
         doc_id = result.get("document_id")
         extracted = []
         if doc_id:
             try:
-                extracted = extract_doc_requirements(doc_id, db_path=DB_PATH)
+                extracted = extract_doc_requirements(doc_id, )
             except Exception:
                 pass
         result["requirements_extracted"] = len(extracted) if extracted else 0
@@ -694,7 +699,7 @@ Generate only the requirements block. No preamble, no explanations."""
         if _HAS_SCORER:
             try:
                 from tools.requirements.readiness_scorer import score_readiness
-                result = score_readiness(session_id, db_path=DB_PATH)
+                result = score_readiness(session_id, )
                 new_score = result.get("overall_score")
             except Exception:
                 pass
@@ -721,7 +726,7 @@ def get_readiness(session_id):
         return jsonify({"error": "Readiness scorer not available"}), 503
 
     try:
-        result = score_readiness(session_id, db_path=DB_PATH)
+        result = score_readiness(session_id, )
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -736,7 +741,7 @@ def get_complexity(session_id):
         return jsonify({"error": "Complexity scorer not available"}), 503
 
     try:
-        result = _score_complexity(session_id, db_path=DB_PATH)
+        result = _score_complexity(session_id, )
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
@@ -762,7 +767,7 @@ def activate_elicitation_technique(session_id):
     technique_id = data.get("technique_id")
     if not technique_id:
         return jsonify({"error": "technique_id required"}), 400
-    result = _activate_technique(session_id, technique_id, db_path=DB_PATH)
+    result = _activate_technique(session_id, technique_id, )
     if result.get("status") == "error":
         return jsonify(result), 400
     return jsonify(result)
@@ -773,7 +778,7 @@ def deactivate_elicitation_technique(session_id):
     """Deactivate the current elicitation technique for a session."""
     if not _HAS_ELICITATION:
         return jsonify({"error": "Elicitation techniques not available"}), 503
-    result = _deactivate_technique(session_id, db_path=DB_PATH)
+    result = _deactivate_technique(session_id, )
     if result.get("status") == "error":
         return jsonify(result), 400
     return jsonify(result)
@@ -786,7 +791,7 @@ def export_intake_requirements(session_id):
         return jsonify({"error": "Intake engine not available"}), 503
 
     try:
-        result = export_requirements(session_id, db_path=DB_PATH)
+        result = export_requirements(session_id, )
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -997,7 +1002,7 @@ def get_session_coas(session_id):
     """List COAs for an intake session."""
     if _HAS_COA:
         try:
-            result = _list_coas(session_id, db_path=DB_PATH)
+            result = _list_coas(session_id, )
             for coa in result.get("coas", []):
                 _parse_coa_json_fields(coa)
             return jsonify(result)
@@ -1075,7 +1080,7 @@ def generate_session_coas(session_id):
         conn.close()
 
     try:
-        result = _generate_3_coas(session_id, project_id=project_id, simulate=True, db_path=DB_PATH)
+        result = _generate_3_coas(session_id, project_id=project_id, simulate=True, )
         # Parse JSON fields for JS
         for coa in result.get("coas", []):
             _parse_coa_json_fields(coa)
@@ -1101,7 +1106,6 @@ def select_session_coa(session_id):
                 coa_id=coa_id,
                 selected_by=selected_by,
                 rationale=rationale,
-                db_path=DB_PATH,
             )
             return jsonify(result)
         except ValueError as exc:
