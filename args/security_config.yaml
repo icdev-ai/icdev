@@ -173,6 +173,15 @@ column_policies:
       acceptance_criteria: truncate
       gaps: "null"
       ambiguities: "null"
+  - table: chat_messages
+    role: viewer
+    columns:
+      content: truncate
+  - table: chat_contexts
+    role: viewer
+    columns:
+      system_prompt: "null"
+      context_config: "null"
 
 # ---------------------------------------------------------------------------
 # Field-Level Security — API response field filtering
@@ -208,6 +217,11 @@ field_policies:
       acceptance_criteria: truncate
       gaps: "null"
       ambiguities: "null"
+  - schema: chat_message
+    role: viewer
+    fields:
+      system_prompt: "null"
+      context_config: "null"
 
 # ---------------------------------------------------------------------------
 # Clearance Matrix — numeric ordering for Bell-LaPadula

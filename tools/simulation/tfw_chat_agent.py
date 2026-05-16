@@ -545,17 +545,19 @@ def _handle_analyze(session_id: str, canvas_type: str, args_text: str) -> dict:
 def _llm_call(system_prompt: str, user_content: str) -> str | None:
     """Invoke LLM via router (provider-agnostic). Returns text or None on failure."""
     try:
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
-        router = LLMRouter()
-        req = LLMRequest(
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_content},
-            ],
+        from tools.chat.llm_middleware import chat_llm_invoke
+        content, _meta = chat_llm_invoke(
+            "chat_response",
+            [{"role": "user", "content": user_content}],
+            system_prompt=system_prompt,
+            canvas_type="simulation",
+            session_id="",
+            classification="CUI",
+            max_tokens=1024,
+            temperature=0.7,
+            agent_id="icdev-tfw-agent",
         )
-        resp = router.invoke("chat_response", req)
-        return (resp.content or "").strip() if resp else None
+        return content or None
     except Exception as exc:
         logger.warning("LLM call failed: %s", exc)
         return None

@@ -378,18 +378,20 @@ def _generate_persona_response(session_data, message, signals, conn):
         conversation_messages = _build_conversation_history(session_id, conn, message)
         system_prompt = _build_llm_system_prompt(session_data, signals, persona, ctx, session_id, conn)
 
-        router = get_router()
-        request = _LLMRequest(
-            messages=conversation_messages,
+        from tools.chat.llm_middleware import chat_llm_invoke
+        content, _meta = chat_llm_invoke(
+            "intake_persona_response",
+            conversation_messages,
             system_prompt=system_prompt,
+            canvas_type="intake",
+            session_id=session_data.get("id", ""),
+            classification=session_data.get("classification", "CUI"),
             max_tokens=1024,
             temperature=0.7,
-            agent_id="icdev-requirements-analyst",
             project_id=session_data.get("project_id", ""),
-            classification=session_data.get("classification", "CUI"),
+            agent_id="icdev-requirements-analyst",
         )
-        response = router.invoke("intake_persona_response", request)
-        return response.content.strip() if response and response.content else None
+        return content or None
     except Exception:
         return None
 
