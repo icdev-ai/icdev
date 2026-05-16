@@ -9,6 +9,42 @@ import sys
 from behave import given, then, when
 
 
+_COMPLIANCE_INFRA_ARTIFACTS = [
+    '.env.example',
+    'requirements.txt',
+    'tools/testing/health_check.py',
+    'tools/ci/pipeline_config_generator.py',
+    'args/cicd_config.yaml',
+    'tools/devsecops/pipeline_security_generator.py',
+    'args/security_gates.yaml',
+    'tools/compliance/classification_manager.py',
+    'tools/compliance/control_mapper.py',
+    'tools/compliance/ssp_generator.py',
+    'args/compliance_config.yaml',
+]
+
+
+@given('the system is deployed within the authorized environment')
+def step_system_in_authorized_env(context):
+    context.project_root = os.getcwd()
+    assert os.path.isdir(context.project_root), (
+        f"Project root not found: {context.project_root}"
+    )
+
+
+@when(
+    'Infrastructure and platform enablement for compliance capabilities. '
+    'Covers environment setup, CI/CD pipeline configuration, security '
+    'hardening, and compliance scaffolding required to support 2 compliance '
+    'requirement(s).'
+)
+def step_compliance_enablement(context):
+    context.missing = [
+        a for a in _COMPLIANCE_INFRA_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+
+
 @given('a project with Python source files')
 def step_project_with_python(context):
     """Set project directory with Python files."""

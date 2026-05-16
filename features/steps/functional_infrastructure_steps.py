@@ -23,9 +23,25 @@ _FUNCTIONAL_ARTIFACTS = [
     'tools/compliance/control_mapper.py',
 ]
 
+_INTERFACE_ARTIFACTS = [
+    'tools/mosa/icd_generator.py',
+    'tools/mosa/modular_design_analyzer.py',
+    'tools/compliance/mosa_assessor.py',
+    'args/mosa_config.yaml',
+    'args/security_gates.yaml',
+]
+
 
 @given('the system is operational and the user is authenticated')
 def step_system_operational(context):
+    context.project_root = os.getcwd()
+    assert os.path.isdir(context.project_root), (
+        f"Project root not found: {context.project_root}"
+    )
+
+
+@given('all external system interfaces are connected and operational')
+def step_interfaces_operational(context):
     context.project_root = os.getcwd()
     assert os.path.isdir(context.project_root), (
         f"Project root not found: {context.project_root}"
@@ -78,6 +94,35 @@ def step_functional_enablement(context):
     context.missing = [
         a for a in _FUNCTIONAL_ARTIFACTS
         if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+
+
+@when(
+    'Infrastructure and platform enablement for interface capabilities. '
+    'Covers environment setup, CI/CD pipeline configuration, security '
+    'hardening, and compliance scaffolding required to support 2 interface '
+    'requirement(s).'
+)
+def step_interface_enablement(context):
+    context.missing = [
+        a for a in _INTERFACE_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+
+
+@when('the ICD generation infrastructure is verified')
+def step_verify_icd_gen(context):
+    context.check_paths = [
+        'tools/mosa/icd_generator.py',
+        'args/mosa_config.yaml',
+    ]
+
+
+@when('the compliance scaffolding for interfaces is verified')
+def step_verify_interface_compliance(context):
+    context.check_paths = [
+        'tools/compliance/mosa_assessor.py',
+        'tools/mosa/modular_design_analyzer.py',
     ]
 
 
@@ -173,6 +218,37 @@ def step_classification_manager_exists(context, path):
 
 @then('the control mapper exists at "{path}"')
 def step_control_mapper_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the ICD generator exists at "{path}"')
+def step_icd_generator_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the MOSA configuration exists at "{path}"')
+def step_mosa_config_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the MOSA gate blocks on "{condition}"')
+def step_mosa_gate_blocks(context, condition):
+    gates_path = os.path.join(context.project_root, 'args', 'security_gates.yaml')
+    assert os.path.exists(gates_path), f"Security gates config not found: {gates_path}"
+    with open(gates_path, 'r', encoding='utf-8') as fh:
+        content = fh.read()
+    assert condition in content, (
+        f"MOSA gate condition '{condition}' not found in security_gates.yaml"
+    )
+
+
+@then('the MOSA assessor exists at "{path}"')
+def step_mosa_assessor_exists(context, path):
+    _assert_path(context, path)
+
+
+@then('the modular design analyzer exists at "{path}"')
+def step_modular_design_analyzer_exists(context, path):
     _assert_path(context, path)
 
 # CUI // SP-CTI
