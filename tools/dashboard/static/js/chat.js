@@ -585,8 +585,13 @@
         var typingId = 'typing-' + Date.now();
         var stream = document.getElementById('message-stream');
         if (stream) {
-            stream.innerHTML += '<div id="' + typingId + '" class="msg-bubble msg-bubble--system"><div class="agent-name">' + canvasType.toUpperCase() + ' Agent</div><div style="opacity:0.6;font-size:0.85rem;">Thinking...</div></div>';
-            stream.scrollTop = stream.scrollHeight;
+            var canvasTypingEl = document.createElement('div');
+            canvasTypingEl.id = typingId;
+            canvasTypingEl.className = 'msg-typing-indicator';
+            canvasTypingEl.innerHTML = '<span style="font-size:0.72rem;font-weight:700;color:var(--accent-blue);margin-right:8px;">' + escHtml(canvasType.toUpperCase()) + '</span>'
+                + '<span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span>';
+            stream.appendChild(canvasTypingEl);
+            canvasTypingEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
 
         var simSessionId = _simSessionMap[ctxId] || '';
@@ -1357,10 +1362,13 @@
             return p.replace('_', ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
         }).join(', ');
         if (stream) {
-            stream.innerHTML += '<div id="' + typingId + '" style="padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:4px;">'
-                + '<div style="font-size:0.72rem;font-weight:700;color:#4a90d9;margin-bottom:3px;">Panel [' + escHtml(names) + ']</div>'
-                + '<div style="font-size:0.85rem;opacity:0.6;">Experts thinking in parallel…</div></div>';
-            stream.scrollTop = stream.scrollHeight;
+            var panelTypingEl = document.createElement('div');
+            panelTypingEl.id = typingId;
+            panelTypingEl.className = 'msg-typing-indicator msg-typing-indicator--panel';
+            panelTypingEl.innerHTML = '<span style="font-size:0.72rem;font-weight:700;color:#4a90d9;margin-right:8px;">Panel [' + escHtml(names) + ']</span>'
+                + '<span class="msg-typing-dot"></span><span class="msg-typing-dot"></span><span class="msg-typing-dot"></span>';
+            stream.appendChild(panelTypingEl);
+            panelTypingEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
         }
 
         fetch(INTAKE_API + '/panel-turn', {

@@ -81,6 +81,29 @@
   }
   .panel-mode-active .panel-mode-indicator { display:inline; }
 
+  /* Animated typing indicator */
+  .msg-typing-indicator {
+    display:flex; align-items:center; gap:4px;
+    padding:10px 14px; margin-bottom:6px;
+    background:var(--bg-secondary,#1a1a2e); border-radius:8px;
+    width:fit-content; max-width:220px;
+  }
+  .msg-typing-indicator--panel { max-width:380px; }
+  .msg-typing-dot {
+    width:7px; height:7px; border-radius:50%;
+    background:var(--accent-blue,#4a90d9);
+    display:inline-block;
+    animation:typing-bounce 1.2s infinite ease-in-out;
+  }
+  .msg-typing-dot:nth-child(2) { animation-delay:.2s; }
+  .msg-typing-dot:nth-child(3) { animation-delay:.4s; }
+  @keyframes typing-bounce {
+    0%,60%,100% { transform:translateY(0); opacity:.4; }
+    30%          { transform:translateY(-5px); opacity:1; }
+  }
+  /* Custom persona chip */
+  .ctx-preset-chip--custom { border-style:dashed; }
+
   /* ---- HITL Review Section ---- */
   .panel-hitl-section {
     margin-top:8px; border:1px solid rgba(74,144,217,.25);
