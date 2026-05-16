@@ -29,12 +29,23 @@ except ImportError:
     HAS_ANTHROPIC = False
 
 
+_CACHE_BREAKPOINT_MARKER = "<!-- cache_breakpoint -->"
+
+
 class AnthropicLLMProvider(LLMProvider):
     """Direct Anthropic API provider using the anthropic SDK.
 
     Supports thinking, tools, structured output — same capabilities
     as Bedrock but via the direct Anthropic API.
+
+    D-CACHE-RAG-1: Multi-breakpoint support.
+    System prompts containing '<!-- cache_breakpoint -->' markers are split
+    into separate text blocks, each with cache_control={'type':'ephemeral'}.
+    Up to MAX_CACHE_BREAKPOINTS breakpoints are honoured (Anthropic limit).
     """
+
+    # Anthropic hard limit: max 4 cache_control blocks per request (D-CACHE-RAG-2)
+    MAX_CACHE_BREAKPOINTS: int = 4
 
     def __init__(self, api_key: str = "", base_url: str = "https://api.anthropic.com"):
         self._api_key = api_key
@@ -91,15 +102,38 @@ class AnthropicLLMProvider(LLMProvider):
         system_parts = [s for s in (request.system_prompt, extracted_system) if s]
         if system_parts:
             system_text = "\n\n".join(system_parts)
-            # D-CACHE-6: Anthropic prompt caching — system prompt as blocks with cache_control
+            # D-CACHE-6 / D-CACHE-RAG-1: Multi-breakpoint Anthropic prompt caching.
+            # Split system_text on '<!-- cache_breakpoint -->' markers to create
+            # separate blocks with cache_control. Cap at MAX_CACHE_BREAKPOINTS (4).
             if request.cache_control == "ephemeral" and HAS_ANTHROPIC:
-                kwargs["system"] = [
-                    {
-                        "type": "text",
-                        "text": system_text,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ]
+                if _CACHE_BREAKPOINT_MARKER in system_text:
+                    raw_segments = system_text.split(_CACHE_BREAKPOINT_MARKER)
+                    # Cap total blocks to MAX_CACHE_BREAKPOINTS; merge extras into last
+                    max_blocks = self.MAX_CACHE_BREAKPOINTS
+                    if len(raw_segments) > max_blocks:
+                        # Keep first (max_blocks-1) segments, merge remainder into last
+                        segments = raw_segments[: max_blocks - 1] + [
+                            _CACHE_BREAKPOINT_MARKER.join(raw_segments[max_blocks - 1 :])
+                        ]
+                    else:
+                        segments = raw_segments
+                    # Build block list: all but last get cache_control
+                    system_blocks = []
+                    for i, seg in enumerate(segments):
+                        block: Dict[str, Any] = {"type": "text", "text": seg}
+                        if i < len(segments) - 1:
+                            block["cache_control"] = {"type": "ephemeral"}
+                        system_blocks.append(block)
+                    kwargs["system"] = system_blocks
+                else:
+                    # Single block with cache_control (existing D-CACHE-6 behaviour)
+                    kwargs["system"] = [
+                        {
+                            "type": "text",
+                            "text": system_text,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ]
             else:
                 kwargs["system"] = system_text
 

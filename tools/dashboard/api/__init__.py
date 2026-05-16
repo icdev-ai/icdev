@@ -363,6 +363,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("Safety Monitor API skipped: %s", exc)
 
+    # JISE Portal feed — /api/v1/jise/{status,requirements,intelligence,compliance}
+    try:
+        from tools.dashboard.api.jise import jise_api
+        _mount(jise_api, v1_prefix="/api/v1/jise")
+        logger.info("JISE portal API registered at /api/v1/jise/")
+    except Exception as exc:
+        logger.warning("JISE portal API skipped: %s", exc)
+
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook
@@ -447,4 +455,5 @@ ALL_BLUEPRINTS = [
     ("govcon_api", "/api/v1/govcon", True),
     ("cpmp_api", "/api/v1/cpmp", True),
     ("proposal_genesis_api", "/api/v1/proposal-genesis", True),
+    ("jise_api", "/api/v1/jise", False),
 ]

@@ -714,6 +714,17 @@ class StorageCursor:
     def _inject_rls(self, sql: str, params) -> tuple[str, Any]:
         """Auto-inject row predicates when a security context is set."""
         ctx = getattr(self, "_security_context", None)
+        _sql_head = sql.strip()[:50]
+        if "UPDATE" in _sql_head.upper():
+            try:
+                with open(r"C:\AI\ICDev\.tmp\rls_debug.txt", "a") as _f:
+                    _f.write(f"UPDATE ctx={repr(ctx)[:100]} params_head={repr(params)[:80]}\n")
+            except Exception as _ex:
+                try:
+                    with open(r"C:\AI\ICDev\.tmp\rls_debug.txt", "w") as _f:
+                        _f.write(f"open failed: {_ex}\n")
+                except Exception:
+                    pass
         if not ctx:
             return sql, params
         try:

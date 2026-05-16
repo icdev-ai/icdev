@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}DAT — Diplomatic Activity Tracker{% endblock %}
+
+{% block head %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Diplomatic Activity Tracker <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">DAT · Diplomatic Tension Index</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<!-- Theater selector -->
+<div style="margin-bottom:1rem;display:flex;align-items:center;gap:.75rem">
+    <label style="font-size:.8rem;color:var(--text-secondary)">Theater:</label>
+    <select id="theaterSel" style="font-size:.8rem;padding:.3rem .6rem;background:var(--bg-card);border:1px solid var(--border);border-radius:4px;color:var(--text-primary)">
+        <option value="global" {% if theater == 'global' %}selected{% endif %}>Global</option>
+        <option value="ukraine" {% if theater == 'ukraine' %}selected{% endif %}>Ukraine</option>
+        <option value="pacific" {% if theater == 'pacific' %}selected{% endif %}>Pacific</option>
+        <option value="middle_east" {% if theater == 'middle_east' %}selected{% endif %}>Middle East</option>
+    </select>
+    <button id="refreshBtn" class="btn" style="font-size:.75rem;padding:.3rem .8rem">Refresh DTI</button>
+    <span id="refreshStatus" style="font-size:.75rem;color:var(--text-muted)"></span>
+</div>
+
+<!-- Row 1: DTI Score + component scores -->
+<div style="display:grid;grid-template-columns:200px 1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- DTI Gauge -->
+    <div class="card" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:1.25rem">
+        <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">Diplomatic Tension Index</div>
+        <div id="dtiValue" style="font-size:3rem;font-weight:700;line-height:1">
+            {{ "%.1f"|format(latest.dti_score|default(0)) }}
+        </div>
+        <div style="font-size:.8rem;color:var(--text-muted);margin:.2rem 0">/&thinsp;100</div>
+        <div id="dtiBadge" style="margin-top:.5rem;padding:.25rem .8rem;border-radius:4px;font-size:.75rem;font-weight:600;
+            background:{% if (latest.dti_score|default(0)) >= 75 %}#ef4444{% elif (latest.dti_score|default(0)) >= 50 %}#f97316{% elif (latest.dti_score|default(0)) >= 25 %}#f59e0b{% else %}#10b981{% endif %};
+            color:#fff">
+            {% if (latest.dti_score|default(0)) >= 75 %}CRITICAL
+            {% elif (latest.dti_score|default(0)) >= 50 %}HIGH
+            {% elif (latest.dti_score|default(0)) >= 25 %}ELEVATED
+            {% else %}ROUTINE{% endif %}
+        </div>
+        {% if latest.computed_at %}
+        <div style="font-size:.65rem;color:var(--text-muted);margin-top:.5rem">{{ latest.computed_at[:16] }} UTC</div>
+        {% endif %}
+    </div>
+
+    <!-- Cable Score -->
+    <div class="card">
+        <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Cable Traffic (40%)</div>
+        <div style="font-size:2rem;font-weight:700;color:var(--accent-blue)">{{ "%.1f"|format(latest.cable_score|default(0)) }}</div>
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-top:.3rem">{{ latest.cable_count|default(0) }} cables (30d)</div>
+        <div style="margin-top:.5rem;height:6px;background:var(--bg-secondary);border-radius:3px">
+            <div style="height:100%;border-radius:3px;background:var(--accent-blue);width:{{ [latest.cable_score|default(0), 100]|min }}%"></div>
+        </div>
+    </div>
+
+    <!-- UNSC Score -->
+    <div class="card">
+        <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">UNSC Activity (30%)</div>
+        <div style="font-size:2rem;font-weight:700;color:#f59e0b">{{ "%.1f"|format(latest.unsc_score|default(0)) }}</div>
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-top:.3rem">{{ latest.unsc_count|default(0) }} events (30d)</div>
+        <div style="margin-top:.5rem;height:6px;background:var(--bg-secondary);border-radius:3px">
+            <div style="height:100%;border-radius:3px;background:#f59e0b;width:{{ [latest.unsc_score|default(0), 100]|min }}%"></div>
+        </div>
+    </div>
+
+    <!-- Back-channel Score -->
+    <div class="card">
+        <div style="font-size:.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Back-Channel (30%)</div>
+        <div style="font-size:2rem;font-weight:700;color:#a78bfa">{{ "%.1f"|format(latest.backchannel_score|default(0)) }}</div>
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-top:.3rem">{{ latest.backchannel_count|default(0) }} observations (30d)</div>
+        <div style="margin-top:.5rem;height:6px;background:var(--bg-secondary);border-radius:3px">
+            <div style="height:100%;border-radius:3px;background:#a78bfa;width:{{ [latest.backchannel_score|default(0), 100]|min }}%"></div>
+        </div>
+    </div>
+
+</div>
+
+<!-- Row 2: DTI Trend chart -->
+<div class="card" style="margin-bottom:1rem">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">DTI Trend (last 48 snapshots · 6h cadence)</div>
+    </div>
+    <div style="height:160px">
+        <canvas id="dtiChart"></canvas>
+    </div>
+</div>
+
+<!-- Row 3: Feed tables -->
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- Cable Traffic -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+            <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">State Dept Cable Traffic</div>
+            <button onclick="openIngest('cable')" class="btn" style="font-size:.7rem;padding:.2rem .55rem">+ Ingest</button>
+        </div>
+        {% if cables %}
+        <div style="max-height:280px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+                <thead>
+                    <tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Ref</th>
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Origin</th>
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Level</th>
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Received</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for c in cables %}
+                <tr style="border-bottom:1px solid var(--border-subtle)" title="{{ c.subject or '' }}">
+                    <td style="padding:.3rem .4rem;color:var(--text-primary)">{{ c.cable_ref or '—' }}</td>
+                    <td style="padding:.3rem .4rem;color:var(--text-secondary)">{{ c.origin or '—' }}</td>
+                    <td style="padding:.3rem .4rem">
+                        <span style="padding:.15rem .45rem;border-radius:3px;font-size:.7rem;font-weight:600;
+                            background:{% if c.tension_level == 'critical' %}#ef4444{% elif c.tension_level == 'high' %}#f97316{% elif c.tension_level == 'medium' %}#f59e0b{% else %}#10b981{% endif %};
+                            color:#fff">{{ c.tension_level }}</span>
+                    </td>
+                    <td style="padding:.3rem .4rem;color:var(--text-muted)">{{ (c.received_at or '')[:10] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:.8rem;padding:.5rem 0">No cable records. Use the + Ingest button to add data.</div>
+        {% endif %}
+    </div>
+
+    <!-- UNSC Events -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+            <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">UNSC Meeting Schedule</div>
+            <button onclick="openIngest('unsc')" class="btn" style="font-size:.7rem;padding:.2rem .55rem">+ Ingest</button>
+        </div>
+        {% if unsc_events %}
+        <div style="max-height:280px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+                <thead>
+                    <tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Topic</th>
+                        <th style="text-align:center;padding:.25rem .4rem;font-weight:500">Emrg</th>
+                        <th style="text-align:center;padding:.25rem .4rem;font-weight:500">Veto</th>
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for e in unsc_events %}
+                <tr style="border-bottom:1px solid var(--border-subtle)">
+                    <td style="padding:.3rem .4rem;color:var(--text-primary)">{{ (e.topic or e.event_type or '—')[:30] }}</td>
+                    <td style="padding:.3rem .4rem;text-align:center">
+                        {% if e.emergency %}<span style="color:#ef4444;font-weight:700">&#9888;</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}
+                    </td>
+                    <td style="padding:.3rem .4rem;text-align:center">
+                        {% if e.veto_cast %}<span style="color:#f97316;font-weight:700">V</span>{% else %}<span style="color:var(--text-muted)">—</span>{% endif %}
+                    </td>
+                    <td style="padding:.3rem .4rem;color:var(--text-muted)">{{ (e.scheduled_at or '')[:10] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:.8rem;padding:.5rem 0">No UNSC events. Use the + Ingest button to add data.</div>
+        {% endif %}
+    </div>
+
+    <!-- Back-channel -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem">
+            <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Back-Channel Metadata</div>
+            <button onclick="openIngest('backchannel')" class="btn" style="font-size:.7rem;padding:.2rem .55rem">+ Ingest</button>
+        </div>
+        {% if backchannels %}
+        <div style="max-height:280px;overflow-y:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:.78rem">
+                <thead>
+                    <tr style="color:var(--text-muted);border-bottom:1px solid var(--border)">
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Type</th>
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Parties</th>
+                        <th style="text-align:center;padding:.25rem .4rem;font-weight:500">Escl</th>
+                        <th style="text-align:left;padding:.25rem .4rem;font-weight:500">Observed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for b in backchannels %}
+                <tr style="border-bottom:1px solid var(--border-subtle)">
+                    <td style="padding:.3rem .4rem;color:var(--text-primary)">{{ b.channel_type or '—' }}</td>
+                    <td style="padding:.3rem .4rem;color:var(--text-secondary);font-size:.72rem">
+                        {% if b.parties %}{{ b.parties[:2]|join(', ') }}{% if b.parties|length > 2 %} +{{ b.parties|length - 2 }}{% endif %}{% else %}—{% endif %}
+                    </td>
+                    <td style="padding:.3rem .4rem;text-align:center">
+                        {% if b.escalation_flag %}<span style="color:#ef4444;font-weight:700">&#9650;</span>
+                        {% elif b.communication_breakdown %}<span style="color:#f97316;font-weight:700">&#9675;</span>
+                        {% else %}<span style="color:var(--text-muted)">—</span>{% endif %}
+                    </td>
+                    <td style="padding:.3rem .4rem;color:var(--text-muted)">{{ (b.observed_at or '')[:10] }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div style="color:var(--text-muted);font-size:.8rem;padding:.5rem 0">No back-channel records. Use the + Ingest button to add data.</div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- Ingest Modal -->
+<div id="ingestModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;align-items:center;justify-content:center">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:1.5rem;min-width:400px;max-width:520px;width:90%">
+        <h3 id="modalTitle" style="margin:0 0 1rem;font-size:1rem">Ingest Signal</h3>
+        <div id="modalBody"></div>
+        <div style="display:flex;gap:.5rem;justify-content:flex-end;margin-top:1rem">
+            <button onclick="closeModal()" class="btn" style="font-size:.8rem">Cancel</button>
+            <button onclick="submitIngest()" class="btn btn-primary" style="font-size:.8rem">Submit</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const historyData = {{ history_json|safe }};
+const theater = "{{ theater }}";
+
+// ── DTI Trend Chart ──────────────────────────────────────────────────────────
+(function () {
+    const labels = historyData.map(d => (d.computed_at || '').slice(5, 16));
+    const dtiVals = historyData.map(d => d.dti_score || 0);
+    const cableVals = historyData.map(d => d.cable_score || 0);
+    const unscVals = historyData.map(d => d.unsc_score || 0);
+    const bcVals = historyData.map(d => d.backchannel_score || 0);
+
+    new Chart(document.getElementById('dtiChart'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: 'DTI', data: dtiVals, borderColor: '#ef4444', borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false },
+                { label: 'Cable', data: cableVals, borderColor: '#3b82f6', borderWidth: 1, pointRadius: 0, tension: 0.3, fill: false },
+                { label: 'UNSC', data: unscVals, borderColor: '#f59e0b', borderWidth: 1, pointRadius: 0, tension: 0.3, fill: false },
+                { label: 'Back-ch.', data: bcVals, borderColor: '#a78bfa', borderWidth: 1, pointRadius: 0, tension: 0.3, fill: false },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#9ca3af', font: { size: 11 } } } },
+            scales: {
+                x: { ticks: { color: '#6b7280', font: { size: 10 }, maxTicksLimit: 8 }, grid: { color: '#1f2937' } },
+                y: { min: 0, max: 100, ticks: { color: '#6b7280', font: { size: 10 } }, grid: { color: '#1f2937' } },
+            },
+        },
+    });
+})();
+
+// ── Theater selector ─────────────────────────────────────────────────────────
+document.getElementById('theaterSel').addEventListener('change', function () {
+    window.location.href = '/strategos/dat?theater=' + this.value;
+});
+
+// ── DTI Refresh ──────────────────────────────────────────────────────────────
+document.getElementById('refreshBtn').addEventListener('click', async function () {
+    const btn = this;
+    const status = document.getElementById('refreshStatus');
+    btn.disabled = true;
+    status.textContent = 'Refreshing…';
+    try {
+        const r = await fetch('/api/strategos/dat/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ theater_id: theater }),
+        });
+        const d = await r.json();
+        if (d.status === 'ok') {
+            const score = d.snapshot?.dti_score ?? '—';
+            status.textContent = 'DTI updated: ' + score;
+            setTimeout(() => window.location.reload(), 800);
+        } else {
+            status.textContent = 'Error: ' + (d.error || 'unknown');
+        }
+    } catch (e) {
+        status.textContent = 'Request failed';
+    } finally {
+        btn.disabled = false;
+    }
+});
+
+// ── Ingest Modal ──────────────────────────────────────────────────────────────
+let _ingestType = null;
+
+const FORMS = {
+    cable: `
+        <div style="display:grid;gap:.6rem;font-size:.82rem">
+            <label>Cable Ref <input id="f_cable_ref" class="form-input" placeholder="STATE-2026-001" style="width:100%;margin-top:.2rem"></label>
+            <label>Origin Embassy / Consulate <input id="f_origin" class="form-input" placeholder="AMEMBASSY MOSCOW" style="width:100%;margin-top:.2rem"></label>
+            <label>Subject <input id="f_subject" class="form-input" placeholder="Bilateral relations update" style="width:100%;margin-top:.2rem"></label>
+            <label>Tension Level
+                <select id="f_tension" class="form-input" style="width:100%;margin-top:.2rem">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                </select>
+            </label>
+            <label>Summary <textarea id="f_summary" class="form-input" rows="2" style="width:100%;margin-top:.2rem" placeholder="Brief summary…"></textarea></label>
+        </div>`,
+    unsc: `
+        <div style="display:grid;gap:.6rem;font-size:.82rem">
+            <label>Topic <input id="f_topic" class="form-input" placeholder="Middle East ceasefire resolution" style="width:100%;margin-top:.2rem"></label>
+            <label>Agenda Item <input id="f_agenda" class="form-input" placeholder="S/AGENDA/2026/1" style="width:100%;margin-top:.2rem"></label>
+            <label>Date (UTC) <input id="f_scheduled_at" type="datetime-local" class="form-input" style="width:100%;margin-top:.2rem"></label>
+            <div style="display:flex;gap:1rem;margin-top:.2rem">
+                <label><input type="checkbox" id="f_emergency"> Emergency session</label>
+                <label><input type="checkbox" id="f_veto"> Veto cast</label>
+                <label><input type="checkbox" id="f_walkout"> Walkout</label>
+            </div>
+            <label>Outcome <input id="f_outcome" class="form-input" placeholder="Resolution adopted / vetoed" style="width:100%;margin-top:.2rem"></label>
+        </div>`,
+    backchannel: `
+        <div style="display:grid;gap:.6rem;font-size:.82rem">
+            <label>Channel Type
+                <select id="f_channel_type" class="form-input" style="width:100%;margin-top:.2rem">
+                    <option value="diplomatic">Diplomatic</option>
+                    <option value="intelligence">Intelligence</option>
+                    <option value="military">Military</option>
+                    <option value="economic">Economic</option>
+                </select>
+            </label>
+            <label>Parties (comma-separated) <input id="f_parties" class="form-input" placeholder="USA, RUS" style="width:100%;margin-top:.2rem"></label>
+            <label>Frequency Delta (-1 to +1) <input id="f_freq_delta" class="form-input" type="number" step="0.1" min="-1" max="1" value="0" style="width:100%;margin-top:.2rem"></label>
+            <div style="display:flex;gap:1rem;margin-top:.2rem">
+                <label><input type="checkbox" id="f_escalation"> Escalation</label>
+                <label><input type="checkbox" id="f_breakdown"> Communication breakdown</label>
+            </div>
+        </div>`,
+};
+
+function openIngest(type) {
+    _ingestType = type;
+    const titles = { cable: 'Ingest Cable Traffic', unsc: 'Ingest UNSC Event', backchannel: 'Ingest Back-Channel' };
+    document.getElementById('modalTitle').textContent = titles[type] || 'Ingest';
+    document.getElementById('modalBody').innerHTML = FORMS[type] || '';
+    document.getElementById('ingestModal').style.display = 'flex';
+}
+
+function closeModal() {
+    document.getElementById('ingestModal').style.display = 'none';
+    _ingestType = null;
+}
+
+async function submitIngest() {
+    if (!_ingestType) return;
+    let payload = { theater_id: theater };
+    let url = '';
+
+    if (_ingestType === 'cable') {
+        url = '/api/strategos/dat/ingest/cable';
+        payload.cable_ref = document.getElementById('f_cable_ref').value;
+        payload.origin = document.getElementById('f_origin').value;
+        payload.subject = document.getElementById('f_subject').value;
+        payload.tension_level = document.getElementById('f_tension').value;
+        payload.summary = document.getElementById('f_summary').value;
+    } else if (_ingestType === 'unsc') {
+        url = '/api/strategos/dat/ingest/unsc';
+        payload.topic = document.getElementById('f_topic').value;
+        payload.agenda_item = document.getElementById('f_agenda').value;
+        payload.scheduled_at = document.getElementById('f_scheduled_at').value;
+        payload.emergency = document.getElementById('f_emergency').checked;
+        payload.veto_cast = document.getElementById('f_veto').checked;
+        payload.walkout = document.getElementById('f_walkout').checked;
+        payload.outcome = document.getElementById('f_outcome').value;
+    } else if (_ingestType === 'backchannel') {
+        url = '/api/strategos/dat/ingest/backchannel';
+        payload.channel_type = document.getElementById('f_channel_type').value;
+        const partiesRaw = document.getElementById('f_parties').value;
+        payload.parties = partiesRaw.split(',').map(s => s.trim()).filter(Boolean);
+        payload.frequency_delta = parseFloat(document.getElementById('f_freq_delta').value) || 0;
+        payload.escalation_flag = document.getElementById('f_escalation').checked;
+        payload.communication_breakdown = document.getElementById('f_breakdown').checked;
+    }
+
+    try {
+        const r = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        if (d.status === 'ok') {
+            closeModal();
+            window.location.reload();
+        } else {
+            alert('Error: ' + (d.error || JSON.stringify(d)));
+        }
+    } catch (e) {
+        alert('Request failed: ' + e.message);
+    }
+}
+
+// Close modal on backdrop click
+document.getElementById('ingestModal').addEventListener('click', function (e) {
+    if (e.target === this) closeModal();
+});
+</script>
+{% endblock %}

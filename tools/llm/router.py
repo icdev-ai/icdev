@@ -925,8 +925,14 @@ class LLMRouter:
                         pass
 
             # Prepend to system prompt
+            # D-CACHE-RAG-1: Insert cache breakpoint marker between injected context and
+            # the original system prompt so AnthropicLLMProvider can split the system
+            # into separate blocks with cache_control breakpoints on the static portion.
+            separator = ""
+            if request.cache_control == "ephemeral" and (request.system_prompt or "").strip():
+                separator = "\n<!-- cache_breakpoint -->\n"
             req = copy.copy(request)
-            req.system_prompt = context_block + citation_block + (request.system_prompt or "")
+            req.system_prompt = context_block + citation_block + separator + (request.system_prompt or "")
             logger.debug(
                 "RAG augment: injected %d chunks (%d chars, citations=%s) for %s",
                 len(context_parts),
