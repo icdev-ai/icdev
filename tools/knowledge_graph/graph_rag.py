@@ -550,24 +550,53 @@ def _load_ontology_relations(
     Returns:
         Dict of subject_type → [{"type": str, "predicate": str, "distance": int}, ...]
     """
-    if not graph_ids:
-        return dict(_ONTOLOGY_FALLBACK) if fallback else {}
-
-    placeholders = ",".join("?" for _ in graph_ids)
-    rows = conn.execute(
-        f"SELECT subject_type, predicate, object_type, path_distance FROM kg_ontology WHERE graph_id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
-        list(graph_ids),
-    ).fetchall()
-
     relations: Dict[str, List[Dict[str, Any]]] = {}
-    for r in rows:
-        st = r["subject_type"].lower()
-        entry: Dict[str, Any] = {
-            "type": r["object_type"].lower(),
-            "predicate": r["predicate"],
-            "distance": max(int(r["path_distance"] or 1), 1),
-        }
-        relations.setdefault(st, []).append(entry)
+
+    if graph_ids:
+        placeholders = ",".join("?" for _ in graph_ids)
+        try:
+            rows = conn.execute(
+                f"SELECT subject_type, predicate, object_type, path_distance FROM kg_ontology WHERE graph_id IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
+                list(graph_ids),
+            ).fetchall()
+            for r in rows:
+                st = r["subject_type"].lower()
+                entry: Dict[str, Any] = {
+                    "type": r["object_type"].lower(),
+                    "predicate": r["predicate"],
+                    "distance": max(int(r["path_distance"] or 1), 1),
+                }
+                relations.setdefault(st, []).append(entry)
+        except Exception:
+            pass  # kg_ontology not available (PostgreSQL backend without migration)
+
+    # Always load subclass closure directly from SQLite icdev.db — federation.py writes
+    # there regardless of the active storage backend (PostgreSQL or SQLite).
+    try:
+        _sqconn = sqlite3.connect(str(ICDEV_DB))
+        _sqconn.row_factory = sqlite3.Row
+        try:
+            closure_rows = _sqconn.execute(
+                "SELECT subclass, superclass, distance FROM ontology_subclass_closure"
+            ).fetchall()
+        finally:
+            _sqconn.close()
+        for _row in closure_rows:
+            sub = _row["subclass"].lower().replace(":", "_")
+            sup = _row["superclass"].lower().replace(":", "_")
+            dist = max(int(_row["distance"] or 1), 1)
+            existing_sub = {(e["type"], e["predicate"]) for e in relations.get(sub, [])}
+            if (sup, "rdfs:subClassOf") not in existing_sub:
+                relations.setdefault(sub, []).append(
+                    {"type": sup, "predicate": "rdfs:subClassOf", "distance": dist}
+                )
+            existing_sup = {(e["type"], e["predicate"]) for e in relations.get(sup, [])}
+            if (sub, "rdfs:superClassOf") not in existing_sup:
+                relations.setdefault(sup, []).append(
+                    {"type": sub, "predicate": "rdfs:superClassOf", "distance": dist}
+                )
+    except Exception:
+        pass  # ontology_subclass_closure not yet built — hardcoded fallback covers it
 
     if fallback:
         for st, entries in _ONTOLOGY_FALLBACK.items():
