@@ -6,3 +6,10 @@ metadata:
   labels:
     app.kubernetes.io/part-of: icdev
     classification: CUI
+    # Pod Security Admission — warn and audit on restricted violations; enforce baseline
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
