@@ -38,6 +38,7 @@
 
     // RICOAS timers and state
     var _readinessTimer = null;
+    var _lastReadinessScore = 0;
     var _coaTimer = null;
     var _coasLoaded = false;
     var _buildTimer = null;
@@ -659,7 +660,7 @@
 
     function _injectQAWidget(stream, rawContent) {
         var questions = _extractQuestions(rawContent);
-        if (questions.length < 2) return; // only show when there are multiple questions
+        if (questions.length < 1) return;
 
         var lastBubble = stream.lastElementChild;
         if (!lastBubble || lastBubble.classList.contains('qa-widget')) return;
@@ -1021,10 +1022,17 @@
             if (placeholder) placeholder.style.display = 'none';
         }
 
+        _lastReadinessScore = overall;
         var planBtn = document.getElementById('generate-plan-btn');
         var exportBtn = document.getElementById('export-btn');
+        var forceBtn = document.getElementById('force-build-btn');
         if (planBtn) planBtn.style.display = overall >= 0.7 ? 'block' : 'none';
         if (exportBtn) exportBtn.style.display = overall > 0 ? 'block' : 'none';
+        if (forceBtn) {
+            var hasReqs = (data.total_requirements || data.requirement_count || 0) > 0;
+            forceBtn.style.display = (overall > 0 && overall < 0.7 && hasReqs) ? 'block' : 'none';
+            forceBtn.title = 'Readiness: ' + Math.round(overall * 100) + '% — recommended threshold is 70%';
+        }
     }
 
     function startReadinessPolling() {
@@ -1215,6 +1223,27 @@
         if (!_activeIntakeSessionId) return;
         appendMessage({ role: 'system', content: 'Readiness threshold reached! Exporting requirements for plan generation...' });
         chatExport();
+    }
+
+    function chatForceStartBuild() {
+        if (!_activeIntakeSessionId) return;
+        var pct = Math.round(_lastReadinessScore * 100);
+        if (!confirm('Your readiness is ' + pct + '% (recommended: 70%).\n\nGaps in the requirements may lead to rework. Proceed anyway?')) return;
+        fetch(INTAKE_API + '/force-build/' + _activeIntakeSessionId, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ confirmed: true })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
+            appendMessage({ role: 'system', content: '⚠ ' + data.message });
+            var panel = document.getElementById('post-export-actions');
+            if (panel) panel.style.display = 'block';
+            var forceBtn = document.getElementById('force-build-btn');
+            if (forceBtn) forceBtn.style.display = 'none';
+        })
+        .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
     }
 
     function chatExport() {
@@ -2378,6 +2407,7 @@
     // ===================================================================
 
     ns.chatGeneratePlan = chatGeneratePlan;
+    ns.chatForceStartBuild = chatForceStartBuild;
     ns.chatExport = chatExport;
     ns.chatTriggerBuild = chatTriggerBuild;
     ns.chatRunSimulation = chatRunSimulation;
