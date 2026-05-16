@@ -1265,65 +1265,143 @@ _INTEREST_SIGNALS = {
     "hoping to", "expect to", "plan to", "trying to",
 }
 
+_REQ_EXTRACTION_SYSTEM = """\
+You are a requirements analyst. Extract ALL distinct requirements from the user message below.
+A requirement is any expression of need, desire, capability, constraint, or system behaviour —
+including imperative sentences ("Create X"), interest statements ("I'm interested in Y"),
+and "I want / we need / it should" expressions.
+
+Return a JSON array only — no prose, no markdown. Each element:
+{
+  "text": "<exact or lightly cleaned requirement text>",
+  "type": "<functional|non_functional|constraint|interface|data|security|performance|compliance>",
+  "priority": "<high|medium|low>"
+}
+
+If the message contains no requirements (casual chat), return [].
+"""
+
+
+def _extract_requirements_llm(text: str, classification: str = "CUI") -> list[dict]:
+    """Use the LLM router to extract requirements from text.
+
+    Returns a list of dicts with keys: text, type, priority.
+    Returns empty list on any failure so the caller can fall back to keyword extraction.
+    """
+    if not _HAS_LLM:
+        return []
+    try:
+        router = get_router()
+        request = _LLMRequest(
+            messages=[{"role": "user", "content": text}],
+            system_prompt=_REQ_EXTRACTION_SYSTEM,
+            max_tokens=2048,
+            temperature=0.2,
+            classification=classification,
+        )
+        response = router.invoke("requirement_extraction", request)
+        if not response or not response.content:
+            return []
+
+        content = response.content.strip()
+        # Strip markdown fences if present
+        if content.startswith("```"):
+            content = content.split("```", 2)[-1] if content.count("```") >= 2 else content
+            content = content.lstrip("json").strip()
+        # Handle <think>...</think> from reasoning models
+        if "<think>" in content:
+            content = content[content.rfind("</think>") + len("</think>"):].strip()
+
+        parsed = json.loads(content)
+        if not isinstance(parsed, list):
+            return []
+
+        result = []
+        for item in parsed:
+            if not isinstance(item, dict) or not item.get("text", "").strip():
+                continue
+            result.append({
+                "text": item["text"].strip(),
+                "type": item.get("type", "functional"),
+                "priority": item.get("priority", "medium"),
+            })
+        return result
+    except Exception:
+        return []
+
 
 def _extract_requirements_from_text(text, session_id, turn_number, conn):
-    """Extract structured requirements from customer text using keyword analysis."""
-    extracted = []
-    # Split on sentence boundaries
-    sentences = [s.strip() for s in text.replace("\n", ". ").split(".") if s.strip() and len(s.strip()) > 10]
+    """Extract structured requirements. Tries LLM intent extraction first, falls back to keywords."""
+    # Look up classification once
+    sess_row = conn.execute(
+        "SELECT classification FROM intake_sessions WHERE id = ?",
+        (session_id,),
+    ).fetchone()
+    req_classification = sess_row[0] if sess_row else "CUI"
 
+    # --- Primary path: LLM-based intent extraction ---
+    llm_items = _extract_requirements_llm(text, req_classification)
+
+    extracted = []
+    if llm_items:
+        for item in llm_items:
+            req_id = _generate_id("req")
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, source_turn, raw_text, requirement_type,
+                    priority, status, classification)
+                   VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
+                (req_id, session_id, turn_number,
+                 item["text"], item["type"], item["priority"], req_classification),
+            )
+            extracted.append({
+                "id": req_id,
+                "raw_text": item["text"],
+                "requirement_type": item["type"],
+                "priority": item["priority"],
+            })
+        return extracted
+
+    # --- Fallback: keyword-based extraction (used when LLM unavailable or returns []) ---
+    sentences = [s.strip() for s in text.replace("\n", ". ").split(".") if s.strip() and len(s.strip()) > 10]
     for sentence in sentences:
         lower = sentence.lower()
         words = lower.split()
         first_word = words[0] if words else ""
 
-        # Check if this sentence contains requirement-like language
         has_req_signal = any(
             kw in lower
             for kw in [
                 "need", "want", "must", "shall", "should", "require",
                 "able to", "capability", "feature", "support", "provide",
                 "enable", "allow", "system will", "system shall",
-                # expanded: desire/interest phrases
                 "interested in", "i'd like", "id like", "looking for",
                 "looking to", "would like", "we'd like", "hoping to",
                 "want to", "want to know", "want to see",
-                # expanded: capability verbs anywhere in sentence
                 "monitor", "capture", "track", "detect", "alert",
                 "display", "visualize", "visualise", "depict", "render",
                 "analyze", "analyse", "correlate", "aggregate", "ingest",
                 "expose", "integrate", "deploy", "implement",
             ]
         )
-
-        # Also catch imperative sentences: start with an action verb
         if not has_req_signal:
             has_req_signal = first_word in _IMPERATIVE_VERBS
-
         if not has_req_signal:
             continue
 
-        # Detect type
-        req_type = "functional"  # default
+        req_type = "functional"
         for rtype, keywords in _REQ_TYPE_KEYWORDS.items():
             if any(kw.lower() in lower for kw in keywords):
                 req_type = rtype
                 break
 
-        # Detect priority
-        priority = "medium"  # default
+        priority = "medium"
         for prio, keywords in _PRIORITY_KEYWORDS.items():
             if any(kw in lower for kw in keywords):
                 priority = prio
                 break
 
-        # Create requirement record — classification inherited from session
         req_id = _generate_id("req")
-        sess_row = conn.execute(
-            "SELECT classification FROM intake_sessions WHERE id = ?",
-            (session_id,),
-        ).fetchone()
-        req_classification = sess_row[0] if sess_row else "CUI"
         conn.execute(
             """INSERT INTO intake_requirements
                (id, session_id, source_turn, raw_text, requirement_type,
@@ -1331,15 +1409,12 @@ def _extract_requirements_from_text(text, session_id, turn_number, conn):
                VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)""",
             (req_id, session_id, turn_number, sentence.strip(), req_type, priority, req_classification),
         )
-
-        extracted.append(
-            {
-                "id": req_id,
-                "raw_text": sentence.strip(),
-                "requirement_type": req_type,
-                "priority": priority,
-            }
-        )
+        extracted.append({
+            "id": req_id,
+            "raw_text": sentence.strip(),
+            "requirement_type": req_type,
+            "priority": priority,
+        })
 
     return extracted
 

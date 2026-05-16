@@ -1952,6 +1952,32 @@ CREATE TABLE IF NOT EXISTS field_filter_audit (
     filtered_fields TEXT,
     recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Blockchain / GovChain (D-GC-1 through D-GC-11, migrations 149 + 151)
+CREATE TABLE IF NOT EXISTS source_citation_registry (
+    id TEXT PRIMARY KEY,
+    citation_type TEXT NOT NULL,
+    source_table TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    source_doc TEXT,
+    source_hash TEXT,
+    anchor_hash TEXT,
+    merkle_root TEXT,
+    blockchain_tx_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    project_id TEXT,
+    trust_score REAL DEFAULT 0.0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govchain_pending_operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_type TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 # ---------------------------------------------------------------------------
