@@ -245,7 +245,238 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ── Tab switcher ──────────────────────────────────────────────────────────────
+function switchTab(tab) {
+  document.getElementById('view-table').style.display = tab === 'table' ? '' : 'none';
+  document.getElementById('view-tree').style.display  = tab === 'tree'  ? '' : 'none';
+  document.getElementById('tab-table').classList.toggle('active', tab === 'table');
+  document.getElementById('tab-tree').classList.toggle('active',  tab === 'tree');
+  if (tab === 'tree' && !_treeBuilt) buildTree();
+}
+
 // Initial load
 loadClasses('');
+</script>
+
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script>
+// ── D3 Hierarchy Tree ─────────────────────────────────────────────────────────
+var _treeBuilt = false;
+var _treeRoot  = null;
+var _treeSvg   = null;
+var _treeG     = null;
+var _treeLayout = null;
+
+var _DOMAIN_COLORS = [
+  '#4a9eff','#34d399','#f59e0b','#ef4444','#a78bfa',
+  '#ec4899','#14b8a6','#f97316','#84cc16','#06b6d4',
+  '#8b5cf6','#e879f9','#fb923c','#22d3ee',
+];
+var _domainColor = {};
+
+function buildTree() {
+  _treeBuilt = true;
+  document.getElementById('tree-status').textContent = 'Building tree…';
+
+  fetch('/api/ontology/classes')
+    .then(r => r.json())
+    .then(data => {
+      var classes = data.classes || [];
+      if (!classes.length) {
+        document.getElementById('tree-status').textContent = 'No classes to display.';
+        return;
+      }
+
+      // Assign colors to domains
+      var domains = [...new Set(classes.map(c => c.domain))].sort();
+      domains.forEach((d, i) => { _domainColor[d] = _DOMAIN_COLORS[i % _DOMAIN_COLORS.length]; });
+      renderLegend(domains);
+
+      // Build id→node map; add virtual ROOT
+      var nodeMap = {};
+      classes.forEach(c => { nodeMap[c.id] = {id: c.id, domain: c.domain, label: c.label, superclasses: c.superclasses || [], children: []}; });
+
+      // Build adjacency using first known superclass as parent
+      var childSet = new Set();
+      classes.forEach(c => {
+        var supers = (c.superclasses || []).filter(s => nodeMap[s]);
+        if (supers.length) {
+          nodeMap[supers[0]].children.push(nodeMap[c.id]);
+          childSet.add(c.id);
+        }
+      });
+
+      // Virtual root with all top-level nodes
+      var roots = classes.filter(c => !childSet.has(c.id));
+      var virtualRoot = {id: '__ROOT__', domain: '', label: 'Ontology', children: roots.map(c => nodeMap[c.id])};
+
+      // Collapse large subtrees (>40 children) by default
+      function collapseDeep(node, depth) {
+        if (depth > 2 && node.children && node.children.length) {
+          node._children = node.children;
+          node.children = null;
+        } else if (node.children) {
+          node.children.forEach(ch => collapseDeep(ch, depth + 1));
+        }
+      }
+      // Don't auto-collapse if total < 60 nodes
+      if (classes.length > 60) collapseDeep(virtualRoot, 0);
+
+      _treeRoot = d3.hierarchy(virtualRoot, d => d.children);
+      _treeRoot.x0 = 0;
+      _treeRoot.y0 = 0;
+
+      var container = document.getElementById('tree-container');
+      var W = Math.max(container.clientWidth, 900);
+      var nodeH = 28;
+
+      _treeSvg = d3.select('#tree-svg')
+        .attr('width', W)
+        .attr('height', 500);
+
+      _treeG = _treeSvg.append('g').attr('transform', 'translate(180,20)');
+
+      // Zoom
+      _treeSvg.call(d3.zoom().scaleExtent([0.2, 3]).on('zoom', e => {
+        _treeG.attr('transform', e.transform);
+      }));
+
+      _treeLayout = d3.tree().nodeSize([nodeH, 220]);
+      updateTree(_treeRoot);
+      document.getElementById('tree-status').textContent =
+        classes.length + ' classes · click a node to expand/collapse · scroll/pinch to zoom';
+    })
+    .catch(e => {
+      document.getElementById('tree-status').textContent = 'Error: ' + e;
+    });
+}
+
+function updateTree(source) {
+  _treeLayout(_treeRoot);
+  var nodes = _treeRoot.descendants();
+  var links = _treeRoot.links();
+
+  // Resize SVG height dynamically
+  var yVals = nodes.map(n => n.x);
+  var minY = Math.min(...yVals), maxY = Math.max(...yVals);
+  var svgH = Math.max(500, maxY - minY + 80);
+  _treeSvg.attr('height', svgH);
+
+  var duration = 300;
+
+  // ── Links ──
+  var link = _treeG.selectAll('.link').data(links, d => d.target.data.id);
+  var linkEnter = link.enter().append('path').attr('class', 'link')
+    .attr('d', d => {
+      var o = {x: source.x0 || 0, y: source.y0 || 0};
+      return diagonal({source: o, target: o});
+    });
+  link.merge(linkEnter).transition().duration(duration)
+    .attr('d', diagonal);
+  link.exit().transition().duration(duration)
+    .attr('d', d => {
+      var o = {x: source.x, y: source.y};
+      return diagonal({source: o, target: o});
+    }).remove();
+
+  // ── Nodes ──
+  var node = _treeG.selectAll('.node').data(nodes, d => d.data.id);
+  var nodeEnter = node.enter().append('g').attr('class', d => {
+    var cls = 'node';
+    if (!d.data.children && d.data._children) cls += ' collapsed';
+    return cls;
+  }).attr('transform', d => 'translate(' + (source.y0||0) + ',' + (source.x0||0) + ')')
+    .on('click', (event, d) => {
+      if (d.data.id === '__ROOT__') return;
+      if (d.children) { d._children = d.children; d.children = null; }
+      else if (d._children) { d.children = d._children; d._children = null; }
+      updateTree(d);
+    })
+    .on('dblclick', (event, d) => {
+      if (d.data.id !== '__ROOT__') showClosure(d.data.id);
+    });
+
+  nodeEnter.append('circle').attr('r', 0)
+    .attr('fill', d => d.data.id === '__ROOT__' ? '#374151' : (_domainColor[d.data.domain] || '#4a9eff'))
+    .attr('stroke', d => d.data.id === '__ROOT__' ? '#6b7280' : (_domainColor[d.data.domain] || '#4a9eff'));
+
+  nodeEnter.append('text')
+    .attr('dy', '0.35em')
+    .attr('x', d => (d.children || d._children) ? -10 : 10)
+    .style('text-anchor', d => (d.children || d._children) ? 'end' : 'start')
+    .text(d => {
+      var lbl = d.data.label || d.data.id;
+      return lbl.length > 28 ? lbl.slice(0, 26) + '…' : lbl;
+    });
+
+  var nodeMerge = node.merge(nodeEnter);
+  nodeMerge.transition().duration(duration)
+    .attr('transform', d => 'translate(' + d.y + ',' + d.x + ')')
+    .select('circle').attr('r', d => d.data.id === '__ROOT__' ? 8 : 5);
+
+  nodeMerge.attr('class', d => {
+    var cls = 'node';
+    if (!d.children && d._children) cls += ' collapsed';
+    return cls;
+  });
+
+  node.exit().transition().duration(duration)
+    .attr('transform', d => 'translate(' + source.y + ',' + source.x + ')').remove();
+
+  nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+}
+
+function diagonal(d) {
+  return 'M' + d.source.y + ',' + d.source.x
+    + 'C' + ((d.source.y + d.target.y) / 2) + ',' + d.source.x
+    + ' ' + ((d.source.y + d.target.y) / 2) + ',' + d.target.x
+    + ' ' + d.target.y + ',' + d.target.x;
+}
+
+function resetTree() {
+  if (_treeSvg) _treeSvg.call(d3.zoom().transform, d3.zoomIdentity.translate(180, 20));
+}
+
+function collapseAll() {
+  if (!_treeRoot) return;
+  function collapseNode(d) {
+    if (d.children) { d._children = d.children; d.children = null; }
+    if (d._children) d._children.forEach(collapseNode);
+  }
+  if (_treeRoot.children) _treeRoot.children.forEach(collapseNode);
+  updateTree(_treeRoot);
+}
+
+function expandAll() {
+  if (!_treeRoot) return;
+  function expandNode(d) {
+    if (d._children) { d.children = d._children; d._children = null; }
+    if (d.children) d.children.forEach(expandNode);
+  }
+  expandNode(_treeRoot);
+  updateTree(_treeRoot);
+}
+
+function highlightNode() {
+  var q = (document.getElementById('tree-search').value || '').toLowerCase().trim();
+  if (!_treeG) return;
+  _treeG.selectAll('.node').classed('highlighted', false).classed('dimmed', false);
+  if (!q) return;
+  _treeG.selectAll('.node').classed('highlighted', d =>
+    (d.data.id||'').toLowerCase().includes(q) || (d.data.label||'').toLowerCase().includes(q)
+  ).classed('dimmed', d =>
+    !((d.data.id||'').toLowerCase().includes(q) || (d.data.label||'').toLowerCase().includes(q))
+  );
+}
+
+function renderLegend(domains) {
+  var html = '<span style="color:var(--text-muted,#8892a4);margin-right:.5rem;">Domains:</span>';
+  domains.forEach(d => {
+    html += '<span style="display:inline-flex;align-items:center;gap:.3rem;margin-right:.5rem;">'
+      + '<svg width="10" height="10"><circle cx="5" cy="5" r="5" fill="' + (_domainColor[d]||'#4a9eff') + '"/></svg>'
+      + d + '</span>';
+  });
+  document.getElementById('tree-legend').innerHTML = html;
+}
 </script>
 {% endblock %}
