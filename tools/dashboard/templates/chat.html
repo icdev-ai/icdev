@@ -304,6 +304,14 @@
                 <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">&#x2713; <span id="coa-selected-name"></span> selected</div>
             </div>
 
+            <!-- AI Boost — fills missing requirement types automatically -->
+            <div id="ai-boost-section" style="display:none;margin-bottom:8px;">
+                <button id="ai-boost-btn" class="btn btn-primary" style="width:100%;font-size:0.8rem;padding:7px 10px;" onclick="ICDEV.chatAiBoost()">
+                    &#x26A1; AI Boost &mdash; Fill Gaps Automatically
+                </button>
+                <div id="ai-boost-status" style="font-size:0.74rem;color:var(--text-muted);margin-top:4px;display:none;"></div>
+            </div>
+
             <div id="chat-actions" class="chat-actions">
                 <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
                 <button class="btn btn-warning btn-sm" id="force-build-btn" style="display:none;margin-top:4px;" onclick="ICDEV.chatForceStartBuild()" title="Start building below the 70% readiness threshold">&#x26A0; Start Building Now</button>

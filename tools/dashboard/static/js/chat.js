@@ -1032,12 +1032,16 @@
         var planBtn = document.getElementById('generate-plan-btn');
         var exportBtn = document.getElementById('export-btn');
         var forceBtn = document.getElementById('force-build-btn');
+        var boostSection = document.getElementById('ai-boost-section');
+        var hasReqs = (data.total_requirements || data.requirement_count || 0) > 0;
         if (planBtn) planBtn.style.display = overall >= 0.7 ? 'block' : 'none';
         if (exportBtn) exportBtn.style.display = overall > 0 ? 'block' : 'none';
         if (forceBtn) {
-            var hasReqs = (data.total_requirements || data.requirement_count || 0) > 0;
             forceBtn.style.display = (overall > 0 && overall < 0.7 && hasReqs) ? 'block' : 'none';
             forceBtn.title = 'Readiness: ' + Math.round(overall * 100) + '% — recommended threshold is 70%';
+        }
+        if (boostSection) {
+            boostSection.style.display = (overall < 0.7) ? 'block' : 'none';
         }
     }
 
@@ -1224,6 +1228,64 @@
     // ===================================================================
     // SECTION 10: RICOAS Features — Export, Plan, Post-Export Actions
     // ===================================================================
+
+    function chatAiBoost() {
+        if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('ai-boost-btn');
+        var statusEl = document.getElementById('ai-boost-status');
+        if (btn) { btn.disabled = true; btn.textContent = '⚡ Generating…'; }
+        if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'AI is analyzing your session and drafting missing requirements…'; }
+
+        fetch(INTAKE_API + '/ai-boost/' + _activeIntakeSessionId, { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (btn) { btn.disabled = false; btn.innerHTML = '&#x26A1; AI Boost &mdash; Fill Gaps Automatically'; }
+            if (data.error) {
+                if (statusEl) statusEl.textContent = 'Error: ' + data.error;
+                return;
+            }
+            var added = data.added || 0;
+            var newPct = data.new_score ? Math.round(data.new_score * 100) : null;
+            var msg = added + ' requirement' + (added !== 1 ? 's' : '') + ' generated';
+            if (data.missing_types_filled && data.missing_types_filled.length > 0) {
+                msg += ' covering: ' + data.missing_types_filled.join(', ');
+            }
+            if (newPct !== null) msg += '. New score: ' + newPct + '%';
+            if (statusEl) { statusEl.textContent = msg; }
+            appendMessage({ role: 'system', content: '⚡ AI Boost: ' + msg + '. Review in the sidebar.' });
+
+            // Refresh readiness display
+            refreshReadiness();
+            setText('stat-requirements', (data.requirements || []).length + added);
+
+            // Show the requirements inline as pills
+            if (data.requirements && data.requirements.length > 0) {
+                var stream = document.getElementById('message-stream');
+                if (stream) {
+                    var html = '<div class="panel-response"><div class="panel-persona-bubble" style="--panel-color:#7c3aed">';
+                    html += '<div class="panel-persona-bubble__label">AI Boost — Gap Fill</div>';
+                    html += '<div class="panel-persona-bubble__body" style="font-size:0.8rem;color:var(--text-muted);">Generated requirements for missing types:</div>';
+                    html += '<div class="panel-persona-bubble__reqs">';
+                    data.requirements.forEach(function (r) {
+                        html += '<span class="panel-req-pill" title="' + escHtml(r.type) + ': ' + escHtml(r.criteria || '') + '">[' + escHtml(r.type) + '] ' + escHtml(r.text) + '</span>';
+                    });
+                    html += '</div></div>';
+                    if (newPct !== null && newPct >= 70) {
+                        html += '<div class="panel-next-step panel-next-step--ready">Requirements ready — use <strong>Generate Plan</strong> or <strong>Export</strong> in the sidebar.</div>';
+                    } else if (newPct !== null) {
+                        html += '<div class="panel-next-step"><span class="panel-next-step__score">Score: <strong>' + newPct + '%</strong> / 70%</span><span class="panel-next-step__hint">Keep adding requirements or try Boost again if gaps remain.</span></div>';
+                    }
+                    html += '</div>';
+                    stream.innerHTML += html;
+                    stream.scrollTop = stream.scrollHeight;
+                }
+            }
+        })
+        .catch(function (err) {
+            if (btn) { btn.disabled = false; btn.innerHTML = '&#x26A1; AI Boost &mdash; Fill Gaps Automatically'; }
+            if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+        });
+    }
 
     function chatGeneratePlan() {
         if (!_activeIntakeSessionId) return;
@@ -2634,6 +2696,7 @@
     ns.chatForceStartBuild = chatForceStartBuild;
     ns.chatTogglePanel = chatTogglePanel;
     ns.chatExport = chatExport;
+    ns.chatAiBoost = chatAiBoost;
     ns.chatTriggerBuild = chatTriggerBuild;
     ns.chatRunSimulation = chatRunSimulation;
     ns.chatViewRequirements = chatViewRequirements;

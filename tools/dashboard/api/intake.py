@@ -392,6 +392,184 @@ def get_intake_session(session_id):
         conn.close()
 
 
+@intake_api.route("/api/intake/ai-boost/<session_id>", methods=["POST"])
+def ai_boost(session_id):
+    """Use AI to auto-generate gap-filling requirements for all missing types.
+
+    Reads the full conversation + existing requirements, identifies missing
+    requirement types and scoring gaps, then uses LLM to draft requirements
+    that directly raise completeness, compliance, and feasibility scores.
+    """
+    conn = _get_db()
+    try:
+        session = conn.execute(
+            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = dict(session)
+        classification = session_data.get("classification", "")
+
+        # --- Load context ---
+        existing_reqs = conn.execute(
+            "SELECT requirement_type, raw_text, acceptance_criteria FROM intake_requirements WHERE session_id = ?",
+            (session_id,),
+        ).fetchall()
+        existing_reqs = [dict(r) for r in existing_reqs]
+
+        conversation = conn.execute(
+            "SELECT role, content FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+            (session_id,),
+        ).fetchall()
+        conversation_text = "\n".join(
+            f"{r['role'].upper()}: {r['content']}" for r in conversation
+        )[:4000]
+
+        existing_types = {r["requirement_type"] for r in existing_reqs}
+        existing_summary = "\n".join(
+            f"- [{r['requirement_type']}] {r['raw_text']}" for r in existing_reqs
+        ) or "(none yet)"
+
+        # All types the scorer expects
+        all_types = ["functional", "security", "interface", "data", "performance", "compliance"]
+        missing_types = [t for t in all_types if t not in existing_types]
+
+        # Scoring gaps: check feasibility keywords
+        all_text = " ".join(r["raw_text"] or "" for r in existing_reqs).lower()
+        needs_timeline = "timeline" not in all_text and "deadline" not in all_text
+        needs_budget = "budget" not in all_text and "cost" not in all_text
+        needs_team = "team" not in all_text and "staff" not in all_text
+
+        feasibility_hints = []
+        if needs_timeline:
+            feasibility_hints.append("Include a requirement mentioning timeline or delivery deadline.")
+        if needs_budget:
+            feasibility_hints.append("Include a requirement mentioning budget or cost constraints.")
+        if needs_team:
+            feasibility_hints.append("Include a requirement mentioning team size or staffing.")
+
+        # --- Build LLM prompt ---
+        req_per_type = 3 if len(missing_types) <= 3 else 2
+        type_list = ", ".join(missing_types) if missing_types else "all types (add more depth)"
+
+        boost_prompt = f"""You are a senior requirements analyst. Based on the following intake session, generate {req_per_type} requirements for each of these types: {type_list}.
+
+CONVERSATION SO FAR:
+{conversation_text}
+
+EXISTING REQUIREMENTS:
+{existing_summary}
+
+INSTRUCTIONS:
+- Generate requirements that are SPECIFIC to what the customer described — not generic boilerplate.
+- Each requirement must include clear acceptance criteria.
+- {chr(10).join(feasibility_hints) if feasibility_hints else ''}
+- Format each requirement EXACTLY like this (one blank line between):
+
+TYPE: <requirement_type>
+TEXT: <specific requirement statement>
+CRITERIA: <measurable acceptance criteria>
+
+Generate only the requirements block. No preamble, no explanations."""
+
+        try:
+            from tools.llm import get_router
+            from tools.llm.provider import LLMRequest
+            router = get_router()
+            req = LLMRequest(
+                messages=[{"role": "user", "content": boost_prompt}],
+                system_prompt="You are a requirements analyst generating structured software requirements.",
+                max_tokens=1200,
+                temperature=0.4,
+                agent_id="icdev-ai-boost",
+                project_id=session_data.get("project_id", ""),
+                classification=classification,
+            )
+            response = router.invoke("requirements_generation", req)
+            content = (response.content or "").strip() if response else ""
+        except Exception as exc:
+            return jsonify({"error": f"LLM unavailable: {exc}"}), 503
+
+        # --- Parse and persist ---
+        import re as _re
+        added = []
+        blocks = _re.split(r"\n(?=TYPE:)", content.strip())
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Get next turn number
+        turn_row = conn.execute(
+            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        turn_number = turn_row[0] if turn_row else 1
+
+        for block in blocks:
+            block = block.strip()
+            if not block.startswith("TYPE:"):
+                continue
+            type_m = _re.search(r"TYPE:\s*(.+)", block)
+            text_m = _re.search(r"TEXT:\s*(.+)", block, _re.DOTALL)
+            crit_m = _re.search(r"CRITERIA:\s*(.+)", block, _re.DOTALL)
+
+            if not type_m or not text_m:
+                continue
+
+            req_type = type_m.group(1).strip().lower().replace(" ", "_")
+            req_text = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", text_m.group(1))[0].strip()
+            criteria = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", crit_m.group(1))[0].strip() if crit_m else ""
+
+            if req_type not in all_types:
+                req_type = "functional"
+
+            req_id = f"req-boost-{session_id[:8]}-{len(added)}"
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, turn_number, requirement_type, raw_text,
+                    acceptance_criteria, classification, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (req_id, session_id, turn_number, req_type, req_text,
+                 criteria, classification, now),
+            )
+            added.append({"id": req_id, "type": req_type, "text": req_text, "criteria": criteria})
+
+        # Log as assistant turn
+        if added:
+            summary = f"[AI Boost] Generated {len(added)} requirements covering: {', '.join(sorted({r['type'] for r in added}))}."
+            conn.execute(
+                """INSERT INTO intake_conversation
+                   (session_id, turn_number, role, content, content_type, classification)
+                   VALUES (?, ?, 'analyst', ?, 'text', ?)""",
+                (session_id, turn_number, summary, classification),
+            )
+
+        conn.commit()
+
+        # Rescore
+        new_score = None
+        if _HAS_SCORER:
+            try:
+                from tools.requirements.readiness_scorer import score_readiness
+                result = score_readiness(session_id)
+                new_score = result.get("overall_score")
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "ok",
+            "session_id": session_id,
+            "added": len(added),
+            "requirements": added,
+            "new_score": new_score,
+            "missing_types_filled": missing_types,
+        })
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 @intake_api.route("/api/intake/readiness/<session_id>", methods=["GET"])
 def get_readiness(session_id):
     """Get readiness score for a session."""
