@@ -351,15 +351,14 @@
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.error) {
-                    // Fallback: show welcome message
-                    var stream = document.getElementById('message-stream');
-                    if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: 'Welcome! I\'m the ICDEV™ Requirements Analyst. Tell me about the application you want to build.' });
+                    console.error('[ICDEV] GET /session error for', intakeSessionId, ':', data.error);
                     return;
                 }
                 var messages = data.messages || data.conversation || [];
                 var mapped = [];
                 for (var i = 0; i < messages.length; i++) {
                     var m = messages[i];
+                    if (m.role === 'system') continue;
                     mapped.push({
                         role: m.role === 'customer' ? 'user' : m.role === 'analyst' ? 'assistant' : m.role,
                         content: m.content,
