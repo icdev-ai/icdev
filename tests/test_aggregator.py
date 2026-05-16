@@ -22,22 +22,29 @@ def test_aggregate_outputs_valid_geojson():
     dip = DiplomaticClient(base_url="http://d")
     svc = AggregatorService(osint, sat, dip)
 
-    with patch("src.clients.osint_client.requests.request", return_value=_make_mock_resp({
-        "items": [
-            {"id": "o1", "source": "osint", "title": "O1", "content": "c", "timestamp": "2026-05-16T10:00:00Z", "metadata": {"longitude": 10.0, "latitude": 20.0}},
-        ]
-    })):
-        with patch("src.clients.satellite_client.requests.request", return_value=_make_mock_resp({
-            "items": [
-                {"id": "s1", "source": "sat", "title": "S1", "content": "c", "timestamp": "2026-05-16T10:00:00Z", "metadata": {"longitude": 30.0, "latitude": 40.0}},
-            ]
-        })):
-            with patch("src.clients.diplomatic_client.requests.request", return_value=_make_mock_resp({
+    def _route(method, url, **kwargs):
+        if url.startswith("http://o/feeds"):
+            return _make_mock_resp({
+                "items": [
+                    {"id": "o1", "source": "osint", "title": "O1", "content": "c", "timestamp": "2026-05-16T10:00:00Z", "metadata": {"longitude": 10.0, "latitude": 20.0}},
+                ]
+            })
+        if url.startswith("http://s/scenes") and "region" not in url.split("?")[-1]:
+            return _make_mock_resp({
+                "items": [
+                    {"id": "s1", "source": "sat", "title": "S1", "content": "c", "timestamp": "2026-05-16T10:00:00Z", "metadata": {"longitude": 30.0, "latitude": 40.0}},
+                ]
+            })
+        if url.startswith("http://d/summaries"):
+            return _make_mock_resp({
                 "items": [
                     {"id": "d1", "source": "diplomatic", "title": "D1", "content": "c", "timestamp": "2026-05-16T10:00:00Z", "metadata": {"longitude": 50.0, "latitude": 60.0}},
                 ]
-            })):
-                result = svc.aggregate()
+            })
+        return _make_mock_resp({"items": []})
+
+    with patch("requests.request", side_effect=_route):
+        result = svc.aggregate()
 
     assert result["type"] == "FeatureCollection"
     assert len(result["features"]) == 3
@@ -58,18 +65,17 @@ def test_aggregate_falls_back_geo_coordinates():
     dip = DiplomaticClient(base_url="http://d")
     svc = AggregatorService(osint, sat, dip)
 
-    with patch("src.clients.osint_client.requests.request", return_value=_make_mock_resp({
-        "items": [
-            {"id": "o1", "source": "osint", "title": "O1", "content": "c", "timestamp": "2026-05-16T10:00:00Z"},
-        ]
-    })):
-        with patch("src.clients.satellite_client.requests.request", return_value=_make_mock_resp({
-            "items": []
-        })):
-            with patch("src.clients.diplomatic_client.requests.request", return_value=_make_mock_resp({
-                "items": []
-            })):
-                result = svc.aggregate()
+    def _route(method, url, **kwargs):
+        if url.startswith("http://o/feeds"):
+            return _make_mock_resp({
+                "items": [
+                    {"id": "o1", "source": "osint", "title": "O1", "content": "c", "timestamp": "2026-05-16T10:00:00Z"},
+                ]
+            })
+        return _make_mock_resp({"items": []})
+
+    with patch("requests.request", side_effect=_route):
+        result = svc.aggregate()
 
     assert len(result["features"]) == 1
     coords = result["features"][0]["geometry"]["coordinates"]
@@ -82,7 +88,7 @@ def test_aggregate_raises_on_osint_failure():
     dip = DiplomaticClient(base_url="http://d")
     svc = AggregatorService(osint, sat, dip)
 
-    with patch("src.clients.osint_client.requests.request", side_effect=Exception("down")):
+    with patch("requests.request", side_effect=Exception("down")):
         with pytest.raises(AggregatorError, match="OSINT fetch failed"):
             svc.aggregate()
 
@@ -93,10 +99,8 @@ def test_to_geojson_string():
     dip = DiplomaticClient(base_url="http://d")
     svc = AggregatorService(osint, sat, dip)
 
-    with patch("src.clients.osint_client.requests.request", return_value=_make_mock_resp({"items": []})):
-        with patch("src.clients.satellite_client.requests.request", return_value=_make_mock_resp({"items": []})):
-            with patch("src.clients.diplomatic_client.requests.request", return_value=_make_mock_resp({"items": []})):
-                s = svc.to_geojson_string()
+    with patch("requests.request", return_value=_make_mock_resp({"items": []})):
+        s = svc.to_geojson_string()
 
     parsed = json.loads(s)
     assert parsed["type"] == "FeatureCollection"

@@ -34,6 +34,12 @@ def _ensure_schema() -> None:
     conn = get_connection(db_path=str(DB_PATH))
     try:
         create_il5_schema(conn)
+    except Exception as exc:
+        # PostgreSQL can raise UniqueViolation on concurrent CREATE TABLE IF NOT EXISTS
+        # when the composite type already exists. Swallow only that race.
+        msg = str(exc).lower()
+        if "unique violation" not in msg and "already exists" not in msg:
+            raise
     finally:
         conn.close()
 
