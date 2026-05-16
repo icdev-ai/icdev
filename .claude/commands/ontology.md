@@ -32,19 +32,19 @@ PROMPT: The code-generation prompt for ontology-aware RAG (default: "Generate a 
 4. **Query Ontology**
    Run a SPARQL-like query over the unified ontology:
    ```bash
-   python tools/ontology/ontology_catalog.py --query "$QUERY" --json
+   python tools/ontology/federation.py --query "$QUERY" --json
    ```
 
 5. **Export External Mappings**
    Export ICDEV™ ontology classes to an external standard:
    ```bash
-   python tools/ontology/external_mappings.py --to "$EXPORT_FORMAT" --json
+   python tools/ontology/external_mappings.py --export "$EXPORT_FORMAT" --json
    ```
 
-6. **Run RAG with Ontology**
-   Perform ontology-aware code generation via the LLM router:
+6. **List Ontology Classes**
+   List all registered classes (optionally filtered by domain):
    ```bash
-   python tools/llm/router.py --ontology-aware --function code_generation --prompt "$PROMPT" --json
+   python tools/ontology/federation.py --list-classes --json
    ```
 
 ## Notes
