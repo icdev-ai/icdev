@@ -154,7 +154,7 @@
 
             <!-- ── Ops ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/projects','/agents','/orchestration','/monitoring','/platform-health','/activity','/cicd','/kanban','/batch','/simulation'] %}active{% endif %}">Ops ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/projects','/agents','/orchestration','/monitoring','/platform-health','/activity','/cicd','/kanban','/batch','/simulation','/il5'] %}active{% endif %}">Ops ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">DevOps</li>
                     <li><a href="/projects">Projects</a></li>
@@ -168,6 +168,7 @@
                     <li><a href="/platform-health">Platform Health</a></li>
                     <li><a href="/cache-savings">Cache Savings</a></li>
                     <li><a href="/activity">Activity</a></li>
+                    <li><a href="/il5">IL5 Ingestion</a></li>
                     <li><a href="/batch">Batch</a></li>
                     <li><a href="/simulate/chat">Simulate Chat</a></li>
                     <li><a href="/simulate/chat?canvas=cam" title="AI migration path advisor — COAs, deprecated code detection, refactor dispatch">Migration Chat</a></li>

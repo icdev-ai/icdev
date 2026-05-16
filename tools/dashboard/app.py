@@ -2618,6 +2618,11 @@ def create_app() -> Flask:
         """Usage tracking + cost dashboard."""
         return render_template("usage.html")
 
+    @app.route("/il5")
+    def il5_page():
+        """IL5 data ingestion — parsed records and SLA compliance."""
+        return render_template("il5/page.html")
+
     @app.route("/wizard")
     def wizard_page():
         """Getting Started wizard — guides new users to the right workflow."""

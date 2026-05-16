@@ -2648,6 +2648,24 @@ CREATE TABLE IF NOT EXISTS llm_chain_telemetry (
 
 CREATE INDEX IF NOT EXISTS idx_chain_telemetry_function ON llm_chain_telemetry (function);
 CREATE INDEX IF NOT EXISTS idx_chain_telemetry_created ON llm_chain_telemetry (created_at);
+
+CREATE TABLE IF NOT EXISTS indicator_baselines (
+    id              TEXT PRIMARY KEY,
+    indicator_key   TEXT NOT NULL,
+    scope_type      TEXT NOT NULL DEFAULT 'global'
+        CHECK(scope_type IN ('global','project','system','program','organization')),
+    scope_id        TEXT DEFAULT '',
+    baseline_value  REAL NOT NULL,
+    operator_id     TEXT,
+    description     TEXT DEFAULT '',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(indicator_key, scope_type, scope_id)
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_key ON indicator_baselines(indicator_key);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_scope ON indicator_baselines(scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_indicator_baselines_operator ON indicator_baselines(operator_id);
 """
 
 # ---------------------------------------------------------------------------
