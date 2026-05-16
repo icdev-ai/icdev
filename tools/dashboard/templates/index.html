@@ -792,6 +792,11 @@ function refreshDashboard() {
     if (window.refreshAutonomyStatus) window.refreshAutonomyStatus();
     // Refresh charts (re-trigger the chart loader in the scripts block)
     if (window._loadCharts) window._loadCharts();
+    // Refresh monitor tiles
+    if (window.renderSandboxTile) window.renderSandboxTile();
+    if (window.renderOracleTile) window.renderOracleTile();
+    if (window.renderMcpTile) window.renderMcpTile();
+    if (window.renderCacheTile) window.renderCacheTile();
     // Visual feedback on button
     var btn = document.getElementById('refresh-btn');
     if (btn) {
