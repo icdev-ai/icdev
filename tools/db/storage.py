@@ -104,6 +104,14 @@ DB_PATH = os.environ.get("ICDEV_DB_PATH", _default_db_path())
 _BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
 
 # ---------------------------------------------------------------------------
+# Audit logging flags — disabled by default (overhead on every query).
+# Enable per-layer: ICDEV_AUDIT_RLS=1, ICDEV_AUDIT_COLUMN=1
+# Or override in tests: import tools.db.storage as s; s.AUDIT_RLS = True
+# ---------------------------------------------------------------------------
+AUDIT_RLS = os.environ.get("ICDEV_AUDIT_RLS", "").lower() in ("1", "true", "yes")
+AUDIT_COLUMN = os.environ.get("ICDEV_AUDIT_COLUMN", "").lower() in ("1", "true", "yes")
+
+# ---------------------------------------------------------------------------
 # SQL Translator — converts SQLite SQL to PostgreSQL SQL
 # ---------------------------------------------------------------------------
 # Regex patterns compiled once at module load
@@ -552,6 +560,44 @@ class DictRow:
 
 
 # ---------------------------------------------------------------------------
+# Audit write helpers — fire-and-forget via raw sqlite3 (no recursion risk)
+# ---------------------------------------------------------------------------
+
+def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
+    """Append one row to rls_audit. Never raises — failures are silently dropped."""
+    try:
+        import sqlite3 as _sq
+        from datetime import datetime, timezone
+        _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
+        _ac.execute(
+            "INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (table_name, "rls_filter", tenant_id, "{}", datetime.now(timezone.utc).isoformat()),
+        )
+        _ac.commit()
+        _ac.close()
+    except Exception:
+        pass
+
+
+def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
+    """Append one row to column_mask_audit. Never raises."""
+    try:
+        import sqlite3 as _sq, json as _js
+        from datetime import datetime, timezone
+        _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
+        _ac.execute(
+            "INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)"
+            " VALUES (?, ?, ?, ?)",
+            (table_name, role, _js.dumps(masked_cols), datetime.now(timezone.utc).isoformat()),
+        )
+        _ac.commit()
+        _ac.close()
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Cursor wrapper — translates SQL and wraps results
 # ---------------------------------------------------------------------------
 class StorageCursor:
@@ -587,6 +633,7 @@ class StorageCursor:
         if row is None:
             return None
         row = self._apply_column_masking(row)
+        self._maybe_audit_column_mask()
         if self._backend == "postgresql" and isinstance(row, dict):
             return DictRow(row)
         return row
@@ -594,6 +641,8 @@ class StorageCursor:
     def fetchall(self):
         rows = self._cursor.fetchall()
         rows = [self._apply_column_masking(r) for r in rows]
+        if rows:
+            self._maybe_audit_column_mask()
         if self._backend == "postgresql":
             return [DictRow(r) if isinstance(r, dict) else r for r in rows]
         return rows
@@ -684,9 +733,32 @@ class StorageCursor:
                     params = tuple(extra) + tuple(params)
                 else:
                     params = tuple(extra) + (params,)
+                if AUDIT_RLS:
+                    _write_rls_audit(
+                        self._table_name or "unknown",
+                        getattr(ctx, "tenant_id", None),
+                    )
             return new_sql, params
         except Exception:
             return sql, params
+
+    def _maybe_audit_column_mask(self) -> None:
+        """Write one column_mask_audit record if AUDIT_COLUMN is enabled and policies exist."""
+        if not AUDIT_COLUMN:
+            return
+        ctx = getattr(self, "_security_context", None)
+        if not ctx or not self._table_name:
+            return
+        role = getattr(ctx, "role", "")
+        if not role:
+            return
+        try:
+            from tools.security.column_security import get_column_policies_for_role
+            policies = get_column_policies_for_role(self._table_name, role)
+            if policies:
+                _write_column_audit(self._table_name, role, list(policies.keys()))
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------

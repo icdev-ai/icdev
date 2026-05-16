@@ -19,10 +19,35 @@ Flask integration:
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger("security.field")
+
+# Audit logging — disabled by default. Enable: ICDEV_AUDIT_FIELD=1
+# Or in tests: import tools.security.field_security as fs; fs.AUDIT_FIELD = True
+AUDIT_FIELD = os.environ.get("ICDEV_AUDIT_FIELD", "").lower() in ("1", "true", "yes")
+
+_DB_PATH_DEFAULT = str(Path(__file__).resolve().parent.parent.parent / "data" / "icdev.db")
+
+
+def _write_field_audit(schema: str, role: str, filtered_fields: list) -> None:
+    """Append one row to field_filter_audit. Never raises."""
+    try:
+        import sqlite3 as _sq
+        from datetime import datetime, timezone
+        _db = os.environ.get("ICDEV_DB_PATH", _DB_PATH_DEFAULT)
+        _ac = _sq.connect(_db, timeout=5)
+        _ac.execute(
+            "INSERT INTO field_filter_audit (schema_name, role, filtered_fields, recorded_at)"
+            " VALUES (?, ?, ?, ?)",
+            (schema, role, json.dumps(filtered_fields), datetime.now(timezone.utc).isoformat()),
+        )
+        _ac.commit()
+        _ac.close()
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Config loader
@@ -140,6 +165,8 @@ def field_security_after_request(response) -> Any:
         filtered = filter_response_fields(data, policies)
         response.set_data(json.dumps(filtered))
         response.headers["X-Field-Filtered"] = "true"
+        if AUDIT_FIELD:
+            _write_field_audit(schema, role, list(policies.keys()))
     except Exception as exc:
         logger.debug("Field filtering failed: %s", exc)
 
