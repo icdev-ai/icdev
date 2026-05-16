@@ -2402,6 +2402,8 @@
 
         if (btnNew) btnNew.addEventListener('click', function () {
             if (modal) modal.classList.add('chat-modal-overlay--visible');
+            _populateTitleHistory();
+            _populateCustomChips();
         });
         if (btnCancel) btnCancel.addEventListener('click', function () {
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
@@ -2631,14 +2633,168 @@
             }
             var regimeChecks = document.querySelectorAll('.ctx-regime-chip input');
             for (var ri = 0; ri < regimeChecks.length; ri++) regimeChecks[ri].checked = false;
-            // Reset expert panel
+            // Reset expert panel — ON by default, personas visible
             var mpEnabled = document.getElementById('modal-panel-enabled');
             var mpPersonas = document.getElementById('modal-panel-personas');
-            if (mpEnabled) mpEnabled.checked = false;
-            if (mpPersonas) mpPersonas.style.display = 'none';
-            var mpChips = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]');
-            for (var pi = 0; pi < mpChips.length; pi++) mpChips[pi].checked = mpChips[pi].value === 'developer' || mpChips[pi].value === 'analyst';
+            if (mpEnabled) mpEnabled.checked = true;
+            if (mpPersonas) mpPersonas.style.display = 'flex';
+            document.querySelectorAll('#modal-panel-personas .panel-chip:not(.panel-chip--custom) input[type="checkbox"]').forEach(function(cb) {
+                var isDefault = cb.value === 'developer' || cb.value === 'analyst';
+                cb.checked = isDefault;
+                var lbl = cb.closest('.panel-chip');
+                if (lbl) lbl.classList.toggle('panel-chip--active', isDefault);
+            });
+            var mpCustomInput = document.getElementById('modal-panel-custom-name');
+            if (mpCustomInput) mpCustomInput.value = '';
+            _populateCustomChips();
             _updateModalForCanvas('intake');
+        }
+
+        // ── Cached custom persona / expert / title storage (localStorage) ──
+        var _PERSONA_STORE  = 'icdev_custom_personas';
+        var _EXPERT_STORE   = 'icdev_custom_panel_experts';
+        var _TITLE_STORE    = 'icdev_ctx_title_history';
+
+        function _lsGet(key) { try { return JSON.parse(localStorage.getItem(key) || '[]'); } catch(e) { return []; } }
+        function _lsSet(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); } catch(e) {} }
+        function _byUseDesc(a, b) { return (b.uses || 0) - (a.uses || 0); }
+
+        function _upsertPersona(name, prompt) {
+            var store = _lsGet(_PERSONA_STORE);
+            var i = store.findIndex(function(p) { return p.name === name; });
+            if (i >= 0) { store[i].prompt = prompt; store[i].uses = (store[i].uses || 0) + 1; }
+            else store.push({ name: name, prompt: prompt, uses: 1 });
+            _lsSet(_PERSONA_STORE, store);
+        }
+        function _incrementPersonaUse(name) {
+            var store = _lsGet(_PERSONA_STORE);
+            var i = store.findIndex(function(p) { return p.name === name; });
+            if (i >= 0) { store[i].uses = (store[i].uses || 0) + 1; _lsSet(_PERSONA_STORE, store); }
+        }
+        function _upsertExpert(name, value) {
+            var store = _lsGet(_EXPERT_STORE);
+            var i = store.findIndex(function(e) { return e.value === value; });
+            if (i >= 0) { store[i].uses = (store[i].uses || 0) + 1; }
+            else store.push({ name: name, value: value, uses: 1 });
+            _lsSet(_EXPERT_STORE, store);
+        }
+        function _incrementExpertUses(values) {
+            var store = _lsGet(_EXPERT_STORE);
+            values.forEach(function(v) {
+                var i = store.findIndex(function(e) { return e.value === v; });
+                if (i >= 0) store[i].uses = (store[i].uses || 0) + 1;
+            });
+            _lsSet(_EXPERT_STORE, store);
+        }
+        function _saveTitleHistory(title) {
+            if (!title) return;
+            var hist = _lsGet(_TITLE_STORE).filter(function(t) { return t !== title; });
+            hist.unshift(title);
+            _lsSet(_TITLE_STORE, hist.slice(0, 10));
+        }
+        function _populateTitleHistory() {
+            var dl = document.getElementById('ctx-title-history');
+            if (!dl) return;
+            dl.innerHTML = _lsGet(_TITLE_STORE).map(function(t) {
+                return '<option value="' + t.replace(/"/g, '&quot;') + '">';
+            }).join('');
+        }
+        function _makePersonaChip(name, prompt, container, isCustom, uses) {
+            var chip = document.createElement('button');
+            chip.type = 'button';
+            chip.className = 'ctx-preset-chip' + (isCustom ? ' ctx-preset-chip--custom' : '');
+            chip.dataset.customName = name;
+            chip.appendChild(document.createTextNode(name));
+            if (isCustom && uses) {
+                var badge = document.createElement('span');
+                badge.className = 'ctx-preset-chip__uses';
+                badge.textContent = uses + 'x';
+                chip.appendChild(badge);
+            }
+            chip.addEventListener('click', function() {
+                container.querySelectorAll('.ctx-preset-chip').forEach(function(c) { c.classList.remove('ctx-preset-chip--active'); });
+                chip.classList.add('ctx-preset-chip--active');
+                var ta = document.getElementById('new-ctx-prompt');
+                if (ta) ta.value = prompt;
+                if (isCustom) _incrementPersonaUse(name);
+            });
+            return chip;
+        }
+        function _makeExpertChip(name, value, autoCheck, uses) {
+            var lbl = document.createElement('label');
+            lbl.className = 'panel-chip panel-chip--custom' + (autoCheck ? ' panel-chip--active' : '');
+            lbl.dataset.customVal = value;
+            var cb = document.createElement('input');
+            cb.type = 'checkbox'; cb.value = value; cb.checked = autoCheck;
+            cb.addEventListener('change', function() { lbl.classList.toggle('panel-chip--active', cb.checked); });
+            lbl.appendChild(cb);
+            lbl.appendChild(document.createTextNode(' ' + name));
+            if (uses) {
+                var badge = document.createElement('span');
+                badge.className = 'panel-chip__uses';
+                badge.textContent = uses + 'x';
+                lbl.appendChild(badge);
+            }
+            return lbl;
+        }
+        function _populateCustomChips() {
+            var presetEl = document.getElementById('ctx-preset-chips');
+            if (presetEl) {
+                presetEl.querySelectorAll('.ctx-preset-chip--custom').forEach(function(c) { c.remove(); });
+                _lsGet(_PERSONA_STORE).sort(_byUseDesc).forEach(function(p) {
+                    presetEl.appendChild(_makePersonaChip(p.name, p.prompt, presetEl, true, p.uses));
+                });
+            }
+            var expertsEl = document.getElementById('modal-panel-personas');
+            if (expertsEl) {
+                expertsEl.querySelectorAll('.panel-chip--custom').forEach(function(c) { c.remove(); });
+                _lsGet(_EXPERT_STORE).sort(_byUseDesc).forEach(function(e, idx) {
+                    expertsEl.appendChild(_makeExpertChip(e.name, e.value, idx < 2, e.uses));
+                });
+            }
+        }
+
+        // Custom persona — wire Add button
+        var btnAddPersona = document.getElementById('btn-add-custom-persona');
+        if (btnAddPersona) {
+            btnAddPersona.addEventListener('click', function () {
+                var nameEl   = document.getElementById('ctx-custom-persona-name');
+                var promptEl = document.getElementById('ctx-custom-persona-prompt');
+                var name   = (nameEl   ? nameEl.value   : '').trim();
+                var prompt = (promptEl ? promptEl.value : '').trim();
+                if (!name) return;
+                var container = document.getElementById('ctx-preset-chips');
+                if (!container) return;
+                _upsertPersona(name, prompt);
+                container.querySelectorAll('.ctx-preset-chip--custom').forEach(function(c) {
+                    if (c.dataset.customName === name) c.remove();
+                });
+                var chip = _makePersonaChip(name, prompt, container, true);
+                container.appendChild(chip);
+                chip.click();
+                if (nameEl)   nameEl.value   = '';
+                if (promptEl) promptEl.value = '';
+            });
+        }
+
+        // Custom expert panel — wire Add Expert button
+        var btnAddPanelExpert = document.getElementById('btn-add-panel-expert');
+        if (btnAddPanelExpert) {
+            btnAddPanelExpert.addEventListener('click', function () {
+                var nameInput = document.getElementById('modal-panel-custom-name');
+                var name = (nameInput ? nameInput.value : '').trim();
+                var modalPanelPersonas = document.getElementById('modal-panel-personas');
+                if (!name || !modalPanelPersonas) return;
+                var val = name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+                if (!val) return;
+                _upsertExpert(name, val);
+                modalPanelPersonas.querySelectorAll('.panel-chip--custom').forEach(function(c) { c.remove(); });
+                _lsGet(_EXPERT_STORE).sort(_byUseDesc).forEach(function(e, idx) {
+                    var autoCheck = e.value === val || idx < 2;
+                    modalPanelPersonas.appendChild(_makeExpertChip(e.name, e.value, autoCheck, e.uses));
+                });
+                if (nameInput) nameInput.value = '';
+            });
         }
 
         if (btnCreate) btnCreate.addEventListener('click', function () {
@@ -2648,28 +2804,32 @@
             var canvasMode = canvasSelect ? canvasSelect.value : 'intake';
             var comp = _readCompliance();
             var isIntake = canvasMode === 'intake' && document.getElementById('new-ctx-intake').checked;
+            var finalTitle = title || (canvasMode === 'intake' ? 'Requirements Session' : canvasMode.toUpperCase() + ' Chat');
 
             if (canvasMode !== 'intake') {
                 // Design canvas — append compliance blurb to system prompt
                 var compBlurb = _buildComplianceBlurb(comp.il, comp.regimes);
                 var sysPrompt = (prompt + compBlurb).trim();
-                createContext({ title: title || (canvasMode.toUpperCase() + ' Chat'), agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
+                createContext({ title: finalTitle, agent_model: model, system_prompt: sysPrompt }).then(function (ctx) {
                     if (ctx && ctx.context_id) setContextCanvasType(ctx.context_id, canvasMode);
                 });
             } else if (isIntake) {
                 var mpEl = document.getElementById('modal-panel-enabled');
-                var panelEnabled = mpEl ? mpEl.checked : false;
+                var panelEnabled = mpEl ? mpEl.checked : true;
                 var panelPersonas = [];
                 if (panelEnabled) {
                     var panelChecks = document.querySelectorAll('#modal-panel-personas input[type="checkbox"]:checked');
                     for (var pci = 0; pci < panelChecks.length; pci++) panelPersonas.push(panelChecks[pci].value);
                     if (!panelPersonas.length) panelPersonas = ['developer', 'analyst'];
                 }
-                createIntakeContext({ title: title, agent_model: model, classification: comp.il, panelEnabled: panelEnabled, panelPersonas: panelPersonas });
+                var _customExpertVals = _lsGet(_EXPERT_STORE).map(function(e) { return e.value; });
+                _incrementExpertUses(panelPersonas.filter(function(v) { return _customExpertVals.indexOf(v) !== -1; }));
+                createIntakeContext({ title: finalTitle, agent_model: model, classification: comp.il, frameworks: comp.regimes.join(','), panelEnabled: panelEnabled, panelPersonas: panelPersonas });
             } else {
                 var compBlurbR = _buildComplianceBlurb(comp.il, comp.regimes);
-                createContext({ title: title, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
+                createContext({ title: finalTitle, agent_model: model, system_prompt: (prompt + compBlurbR).trim() });
             }
+            _saveTitleHistory(finalTitle);
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
             _resetModal();
         });
