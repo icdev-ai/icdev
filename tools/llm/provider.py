@@ -51,6 +51,8 @@ class LLMResponse:
     input_tokens: int = 0
     output_tokens: int = 0
     thinking_tokens: int = 0  # 0 for non-Anthropic
+    cache_creation_input_tokens: int = 0  # D-CACHE-10: Anthropic prompt cache write cost
+    cache_read_input_tokens: int = 0      # D-CACHE-10: Anthropic prompt cache read savings
     duration_ms: int = 0
     stop_reason: str = ""
     classification: str = "CUI"

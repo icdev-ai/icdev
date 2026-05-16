@@ -59,21 +59,21 @@ def _llm_persona(role_id: str, player_name: str, template: dict) -> dict[str, An
     attributes = template.get("attributes", [])
     attr_block = ", ".join(attributes) if attributes else "rank/grade, unit/agency, specialty, clearance level, years of experience"
 
+    user_msg = (
+        f"Generate a persona for player '{player_name}' playing the role of '{role_label}'.\n"
+        f"Include these attributes: {attr_block}.\n"
+        "Also include: a 2-sentence role_brief explaining their current assignment and why they're in this exercise.\n"
+        "Return JSON only."
+    )
     req = LLMRequest(
-        function="persona_gen",
+        messages=[{"role": "user", "content": user_msg}],
         system_prompt=(
             "You generate realistic but fictional exercise personas for government tabletop exercises. "
             "Return JSON only. All fields must be plausible for a US government/defense context."
         ),
-        user_message=(
-            f"Generate a persona for player '{player_name}' playing the role of '{role_label}'.\n"
-            f"Include these attributes: {attr_block}.\n"
-            "Also include: a 2-sentence role_brief explaining their current assignment and why they're in this exercise.\n"
-            "Return JSON only."
-        ),
         max_tokens=400,
     )
-    resp = router.invoke(req)
+    resp = router.invoke("persona_gen", req)
     raw = resp.content.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]

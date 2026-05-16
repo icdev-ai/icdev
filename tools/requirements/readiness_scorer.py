@@ -52,6 +52,18 @@ FRAMEWORK_KEYWORDS = {
 
 
 def _get_connection(db_path=None):
+    import os
+    # When PostgreSQL backend is configured, bypass the db_path comparison
+    # logic in get_connection() (which may incorrectly fall back to SQLite due
+    # to platform path string differences). Call get_connection() with no
+    # db_path so the configured backend is always used.
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return conn
     path = db_path or DB_PATH
     if not path.exists():
         raise FileNotFoundError(f"Database not found: {path}\nRun: python tools/db/init_icdev_db.py")

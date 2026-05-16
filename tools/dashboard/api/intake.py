@@ -398,11 +398,28 @@ def get_readiness(session_id):
     if not _HAS_SCORER:
         return jsonify({"error": "Readiness scorer not available"}), 503
 
+    import os
     try:
+        # Pre-check: verify session exists via _get_db() before calling scorer
+        conn = _get_db()
+        probe = conn.execute(
+            "SELECT id, classification FROM intake_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        conn.close()
+        if not probe:
+            from flask import g
+            return jsonify({
+                "error": f"Session '{session_id}' not found in DB.",
+                "backend": os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite"),
+                "security_ctx": str(getattr(g, "security_context", None)),
+                "db_path": str(DB_PATH),
+            }), 404
+
         result = score_readiness(session_id, db_path=DB_PATH)
         return jsonify(result)
     except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        import traceback
+        return jsonify({"error": str(exc), "trace": traceback.format_exc()[-1000:]}), 500
 
 
 @intake_api.route("/api/intake/complexity/<session_id>", methods=["GET"])
