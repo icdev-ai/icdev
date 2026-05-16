@@ -12,6 +12,7 @@ Tasks are tagged `dispatch_source='chat:{context_id}'` and appear in the
 |------|------|-------------|-------|--------|
 | Kanban Bridge | tools/chat/kanban_bridge.py | Link/list/create Kanban tasks for a chat context; auto-create V&V chain (CodeLens + Coherence + E2E) | CLI: --list/--create/--vv-chain --context ctx-id | task dicts |
 | Build Sync Extension | tools/extensions/builtins/081_build_kanban_sync.py | Extension hook: detects build-completion signals in assistant messages; auto-creates V&V chain tasks; throttled 20-turn cooldown | chat_message_after hook | V&V chain in kanban_tasks |
+| Requirement Intake Hook | tools/chat/requirement_intake_hook.py | Auto-detect requirement-bearing messages (regex, no LLM); run intake engine + SAFe decomposition; route to HITL review queue instead of direct Kanban | context_id, user_message | {hitl_instance_id, session_id, requirements_found, review_url} |
 
 ### CLI
 ```bash

@@ -91,7 +91,9 @@ def submit_feedback(
     if decision == "approve" or decision == "conditional":
         try:
             from tools.workflow_hitl.engine import WorkflowEngine
-            WorkflowEngine().advance_stage(instance_id)
+            advance_result = WorkflowEngine().advance_stage(instance_id)
+            if advance_result.get("completed"):
+                _post_approve(instance_id)
         except Exception as exc:
             logger.warning("advance_stage failed after feedback: %s", exc)
     elif decision == "kickback":
@@ -102,6 +104,17 @@ def submit_feedback(
             logger.warning("kickback failed after feedback: %s", exc)
 
     return feedback_id
+
+
+def _post_approve(instance_id: str) -> None:
+    """Fire post-completion handlers for fully approved HITL instances."""
+    try:
+        from tools.workflow_hitl.intake_promote_handler import maybe_promote
+        maybe_promote(instance_id)
+    except ImportError:
+        pass
+    except Exception as exc:
+        logger.warning("Post-approve hook failed for %s: %s", instance_id, exc)
 
 
 def get_by_instance(instance_id: str) -> list:

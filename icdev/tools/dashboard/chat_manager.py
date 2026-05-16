@@ -64,6 +64,26 @@ def _dispatch_hook(hook_name: str, context: dict) -> dict:
         return context
 
 
+def _fire_intake_hook(context_id: str, content: str) -> None:
+    """Run the requirement intake hook in a background daemon thread (non-blocking)."""
+    def _run() -> None:
+        try:
+            from tools.chat.requirement_intake_hook import process_message_for_intake
+            result = process_message_for_intake(context_id, content)
+            if result.get("hitl_instance_id"):
+                logger.info(
+                    "Intake hook: %d requirement(s) queued for HITL review "
+                    "(instance=%s) context=%s",
+                    result.get("requirements_found", 0),
+                    result["hitl_instance_id"],
+                    context_id,
+                )
+        except Exception as exc:
+            logger.debug("Intake hook error for context %s: %s", context_id, exc)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
     """Mark context dirty on state tracker if available (Feature 4)."""
     try:
@@ -394,6 +414,9 @@ class ChatManager:
             }
         )
         ctx.last_activity_at = datetime.now(timezone.utc).isoformat()
+
+        if role == "user":
+            _fire_intake_hook(context_id, content)
 
         _mark_dirty(
             context_id,

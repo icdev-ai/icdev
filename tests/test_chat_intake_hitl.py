@@ -248,14 +248,13 @@ class TestMaybePromote:
         conn.commit()
         conn.close()
 
+        from tools.workflow_hitl import intake_promote_handler
         with (
-            patch("tools.workflow_hitl.intake_promote_handler.get_connection",
-                  return_value=sqlite3.connect(str(tmp_db))),
+            patch.object(intake_promote_handler, "get_connection",
+                         return_value=sqlite3.connect(str(tmp_db))),
             patch("tools.requirements.intake_kanban_promoter.promote",
                   return_value={"inserted": 3, "skipped": 0}) as mock_promote,
         ):
-            from tools.workflow_hitl import intake_promote_handler
-            import importlib; importlib.reload(intake_promote_handler)
             result = intake_promote_handler.maybe_promote("wfi-known")
 
         mock_promote.assert_called_once_with(session_id="sess-known")
