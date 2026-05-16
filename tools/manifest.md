@@ -163,6 +163,7 @@
 - [Unclassified (auto-added)](manifest/unclassified.md)
 - [DDC Data Science — Explore, Query Sandbox, Quality Rules](manifest/ddc-data-science.md)
 - [System Graph — Federated Sigma.js Graph](manifest/system-graph.md)
+- [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 
 
 ## Auto-Registered (Coherence Fix)
