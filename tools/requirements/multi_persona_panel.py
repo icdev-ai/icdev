@@ -280,15 +280,16 @@ def _run_one_persona(
 
         persona = _load_persona(persona_key)
         if not persona:
-            return PersonaResult(
-                persona=persona_key,
-                display_name=persona_key,
-                color=color,
-                response="",
-                requirements=[],
-                question="",
-                error=f"Unknown persona: {persona_key}",
-            )
+            # User-defined expert — synthesize a generic expert persona on the fly
+            label = persona_key.replace("_", " ").title()
+            persona = {
+                "display_name": label,
+                "system_prompt": (
+                    f"You are a senior {label} with deep domain expertise. "
+                    f"Your job is to identify requirements from your domain perspective."
+                ),
+                "opening_question": f"As a {label}, what key requirements concern you most?",
+            }
 
         display_name = persona.get("display_name", persona_key)
         system_prompt = _build_panel_system_prompt(persona, session_data)
