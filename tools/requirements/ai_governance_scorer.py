@@ -55,8 +55,8 @@ def _load_gov_config() -> dict:
 _AI_KEYWORDS = {
     "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
     "neural network", "llm", "large language model", "generative ai", "genai",
-    "model inference", "algorithmic", "predictive model", "classification model",
-    "recommendation engine", "nlp", "computer vision", "chatbot", "agent",
+    "model inference", "algorithmic decision", "predictive model", "classification model",
+    "recommendation engine", "natural language processing", "computer vision",
 }
 
 

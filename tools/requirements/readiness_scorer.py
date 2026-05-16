@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import json
+import uuid
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 from pathlib import Path
@@ -232,7 +233,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
         gov_result = score_ai_governance_readiness(session_data.get("project_id", ""), conn=conn)
         ai_governance_readiness = gov_result.get("score", 0.0)
-    except (ImportError, Exception):
+    except (ImportError, Exception) as _exc:
         try:
             conn.rollback()
         except Exception:

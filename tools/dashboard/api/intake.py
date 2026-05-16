@@ -117,6 +117,54 @@ except ImportError:
     _HAS_ELICITATION = False
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_AI_KEYWORDS = {
+    "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
+    "neural network", "llm", "large language model", "generative ai", "genai",
+    "model inference", "algorithmic decision", "predictive model", "classification model",
+    "recommendation engine", "natural language processing", "computer vision",
+}
+
+
+def _session_mentions_ai(conn, session_id: str) -> bool:
+    """Check if session requirements mention AI/ML keywords."""
+    rows = conn.execute(
+        "SELECT raw_text FROM intake_requirements WHERE session_id = ?", (session_id,)
+    ).fetchall()
+    all_text = " ".join((r[0] if isinstance(r, (tuple, list)) else r.get("raw_text", "")) for r in rows).lower()
+    return any(kw in all_text for kw in _AI_KEYWORDS)
+
+
+def _seed_ai_governance_baseline(conn, project_id: str, session_id: str) -> None:
+    """Insert minimal AI governance records if session mentions AI."""
+    if not _session_mentions_ai(conn, session_id):
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    # Seed use-case inventory
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO ai_use_case_inventory
+               (project_id, name, purpose, risk_level, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (project_id, "Primary AI Capability", "Auto-detected from requirements intake", "minimal_risk", now),
+        )
+    except Exception:
+        pass
+    # Seed framework applicability (NIST AI RMF)
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO framework_applicability
+               (project_id, framework_id, source, detection_rule, created_at)
+               VALUES (?, ?, 'auto_detected', 'ai_keyword_intake', ?)""",
+            (project_id, "nist_ai_rmf", now),
+        )
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------
 
@@ -1014,6 +1062,9 @@ def generate_session_coas(session_id):
                     _create_devsecops_profile(project_id, maturity_level="level_2_managed")
                 except Exception:
                     pass
+
+            # Auto-seed AI governance baseline if session mentions AI
+            _seed_ai_governance_baseline(conn, project_id, session_id)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -1281,6 +1332,9 @@ def _run_build_pipeline(session_id):
                         _create_devsecops_profile(project_id, maturity_level="level_2_managed")
                     except Exception:
                         pass
+
+                # Auto-seed AI governance baseline if session mentions AI
+                _seed_ai_governance_baseline(conn, project_id, session_id)
         except Exception as exc:
             _update_phase("scaffold", "error", f"Project setup failed: {exc}")
             _set_overall("error", str(exc))
