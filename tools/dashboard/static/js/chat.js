@@ -1500,6 +1500,11 @@
         card.classList.add('panel-hitl-card--approved');
         var textEl = card.querySelector('.panel-hitl-card__text');
         if (textEl) card.dataset.text = textEl.innerText.trim();
+        var approveBtn = card.querySelector('.panel-hitl-btn--approve');
+        if (approveBtn) {
+            approveBtn.disabled = true;
+            approveBtn.innerHTML = '&#x2713; Approved';
+        }
     }
 
     function _hitlReject(hitlId, cardId) {
