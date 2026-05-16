@@ -532,6 +532,25 @@
             </label>
         </div>
 
+        <!-- Expert Panel (intake canvas only) -->
+        <div class="chat-modal__field" id="panel-mode-row" style="display:none;">
+            <label class="chat-modal__label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+                Expert Panel
+                <label class="panel-toggle-label" title="Multiple AI personas respond each turn in parallel">
+                    <input type="checkbox" id="modal-panel-enabled">
+                    <span class="panel-toggle-pill"></span>
+                </label>
+            </label>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">Fire multiple AI experts per turn — Developer, Analyst, PM, ISSO, Architect respond in parallel</div>
+            <div id="modal-panel-personas" class="panel-persona-chips" style="display:none;">
+                <label class="panel-chip panel-chip--developer panel-chip--active"><input type="checkbox" value="developer" checked> Developer</label>
+                <label class="panel-chip panel-chip--analyst panel-chip--active"><input type="checkbox" value="analyst" checked> Analyst</label>
+                <label class="panel-chip panel-chip--pm"><input type="checkbox" value="pm"> PM</label>
+                <label class="panel-chip panel-chip--isso"><input type="checkbox" value="isso"> ISSO</label>
+                <label class="panel-chip panel-chip--architect"><input type="checkbox" value="solutions_architect"> Architect</label>
+            </div>
+        </div>
+
         <!-- System Prompt textarea -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">System Prompt <span class="chat-modal__label-sub">— optional, presets above auto-fill</span></label>
