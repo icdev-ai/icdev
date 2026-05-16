@@ -51,6 +51,8 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("strategos.pattern_learner", STRATEGOS, 24.0,
                 "RL weight-adjustment loop: aggregate annotations and update signal-scoring deltas",
                 on_demand=True),
+    ReflexEntry("dat_refresh", STRATEGOS, 6.0,
+                "DAT: ingest diplomatic signals and recompute Diplomatic Tension Index (DTI) for all theaters"),
 
     # ── DOMAIN ────────────────────────────────────────────────────────────────
     ReflexEntry("market",                     DOMAIN, 1.0,  "Market data refresh and signal detection"),

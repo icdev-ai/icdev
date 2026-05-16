@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-16"?>
+<!--
+  ICDEV™ DAT 6-Hour DTI Update Scheduler
+  CUI // SP-CTI
+
+  Import with:
+    schtasks /Create /XML tools\dat\icdev_dat_scheduler_task.xml /TN "\ICDEV DAT DTI Update"
+
+  Manual test run:
+    schtasks /Run /TN "\ICDEV DAT DTI Update"
+
+  Remove:
+    schtasks /Delete /TN "\ICDEV DAT DTI Update" /F
+-->
+<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Author>CHUON\schuo</Author>
+    <Description>ICDEV DAT — ingests diplomatic signals (State Dept cables, UNSC meetings, back-channel logs) and recomputes the Diplomatic Tension Index every 6 hours.</Description>
+    <URI>\ICDEV DAT DTI Update</URI>
+  </RegistrationInfo>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-21-2408192572-3571384308-2746898348-1001</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <!-- Hard cap at 10 minutes — matches acceptance criterion -->
+    <ExecutionTimeLimit>PT10M</ExecutionTimeLimit>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <RestartOnFailure>
+      <Count>2</Count>
+      <Interval>PT5M</Interval>
+    </RestartOnFailure>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+  </Settings>
+  <Triggers>
+    <!-- Fire at system boot, then repeat every 6 hours indefinitely -->
+    <BootTrigger>
+      <Repetition>
+        <Interval>PT6H</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </BootTrigger>
+    <!-- Also fire at logon so the first run happens immediately on session start -->
+    <LogonTrigger>
+      <Delay>PT2M</Delay>
+      <Repetition>
+        <Interval>PT6H</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+    </LogonTrigger>
+  </Triggers>
+  <Actions Context="Author">
+    <Exec>
+      <Command>python</Command>
+      <Arguments>tools\dat\dti_update_runner.py --json</Arguments>
+      <WorkingDirectory>C:\AI\ICDev</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>

@@ -9,6 +9,8 @@ Reads from three source types and emits a unified JSON manifest with per-source 
 | File | Description | Input | Output |
 |------|-------------|-------|--------|
 | `tools/dat/ingestion_engine.py` | Main ingestion engine — reads all three sources, writes manifest JSON, persists audit row | `args/dat_config.yaml`; source directories | `data/dat/ingestion_manifest.json`; audit row in `dat_ingestion_log` |
+| `tools/dat/dti_update_runner.py` | One-shot scheduler runner — ingestion + DTI refresh in sequence; exits non-zero if > 10 min | `args/dat_config.yaml`; `--bypass-cooldown` for testing | stdout JSON; DTI snapshot in `sg_dat_dti_snapshots` |
+| `tools/dat/icdev_dat_scheduler_task.xml` | Windows Task Scheduler XML — repeats every 6 hours; hard-caps execution at 10 min | Task Scheduler import | Windows scheduled task `\ICDEV DAT DTI Update` |
 
 ## Source Types
 
@@ -32,6 +34,21 @@ python tools/dat/ingestion_engine.py --config args/dat_config.yaml --json
 
 # Verbose logging
 python tools/dat/ingestion_engine.py --verbose --json
+
+# One-shot ingestion + DTI update (as called by Task Scheduler)
+python tools/dat/dti_update_runner.py --json
+
+# Bypass 6-hour cooldown — use for smoke testing
+python tools/dat/dti_update_runner.py --bypass-cooldown --json
+
+# Register Windows Task Scheduler task (run once as admin)
+schtasks /Create /XML tools\dat\icdev_dat_scheduler_task.xml /TN "\ICDEV DAT DTI Update"
+
+# Trigger a manual test run via Task Scheduler
+schtasks /Run /TN "\ICDEV DAT DTI Update"
+
+# Remove the scheduled task
+schtasks /Delete /TN "\ICDEV DAT DTI Update" /F
 ```
 
 ## Manifest Output Schema
