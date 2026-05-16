@@ -28,7 +28,24 @@
         "classification": { "type": "string", "default": "CUI", "enum": ["CUI", "SECRET", "TOP_SECRET"] },
         "ip_address": { "type": ["string", "null"], "description": "Source IP for remote actions" },
         "session_id": { "type": ["string", "null"], "description": "Correlation / session ID" },
-        "timestamp": { "type": "string", "format": "date-time", "description": "UTC timestamp of the event" }
+        "timestamp": { "type": "string", "format": "date-time", "description": "UTC timestamp of the event" },
+        "event_category": {
+          "type": "string",
+          "description": "High-level event category",
+          "enum": ["cross_agency_transfer", "general"]
+        },
+        "source_agency_id": { "type": "string", "description": "Identifier of the originating agency" },
+        "dest_agency_id": { "type": "string", "description": "Identifier of the destination agency" },
+        "transfer_timestamp": { "type": "string", "format": "date-time", "description": "UTC timestamp when the transfer occurred" }
+      },
+      "if": {
+        "properties": {
+          "event_category": { "const": "cross_agency_transfer" }
+        },
+        "required": ["event_category"]
+      },
+      "then": {
+        "required": ["source_agency_id", "dest_agency_id", "transfer_timestamp"]
       },
       "additionalProperties": false
     },
