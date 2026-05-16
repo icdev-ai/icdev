@@ -1177,15 +1177,34 @@ def last_update():
             "SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'done'"
         ).fetchone()
         count = count_row["cnt"] if count_row else 0
+
+        # Include latest notification as a change signal so the 15-second poller
+        # also fires on in_progress transitions, not only on task completion.
+        notif_row = conn.execute(
+            "SELECT MAX(created_at) AS latest FROM notifications WHERE source = 'genesis.kanban'"
+        ).fetchone()
+        latest_notif = str(notif_row["latest"]) if notif_row and notif_row["latest"] else None
+
+        task_ts = None
+        task_id = None
+        task_title = None
         if row:
             row = dict(row)
-            return jsonify({
-                "last_update": row["completed_at"],
-                "task_id": row["id"],
-                "task_title": row["title"],
-                "completed_count": count,
-            })
-        return jsonify({"last_update": None, "task_id": None, "task_title": None, "completed_count": 0})
+            ca = row["completed_at"]
+            task_ts = ca.isoformat() if hasattr(ca, "isoformat") else str(ca) if ca else None
+            task_id = row["id"]
+            task_title = row["title"]
+
+        # Use whichever timestamp is more recent
+        candidates = [t for t in (task_ts, latest_notif) if t]
+        last_update = max(candidates) if candidates else None
+
+        return jsonify({
+            "last_update": last_update,
+            "task_id": task_id,
+            "task_title": task_title,
+            "completed_count": count,
+        })
     finally:
         conn.close()
 
