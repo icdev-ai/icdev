@@ -389,7 +389,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  state_dept_cables : {src['state_dept_cables']['record_count']:>6} records")
         print(f"  unsc_schedule     : {src['unsc_schedule']['record_count']:>6} records")
         print(f"  backchannel_logs  : {src['backchannel_logs']['record_count']:>6} records")
-        print("  ─────────────────────────────")
+        print("  " + "-" * 29)
         print(f"  total             : {manifest['total_records']:>6} records")
         print(f"  status            : {manifest['status']}")
         if not args.dry_run:
