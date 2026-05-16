@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>GovProposal Dashboard</h1>
+
+<!-- Pipeline Overview -->
+<section class="card">
+    <h2>Pipeline Overview</h2>
+    <div class="pipeline-stages">
+        {% set stage_labels = {
+            'discovered': 'Discovered', 'qualifying': 'Qualifying',
+            'go_decision': 'Go/No-Go', 'capture': 'Capture',
+            'drafting': 'Drafting', 'pink_review': 'Pink Review',
+            'red_review': 'Red Review', 'gold_review': 'Gold Review',
+            'white_review': 'White QC', 'production': 'Production',
+            'submitted': 'Submitted', 'awarded': 'Awarded',
+            'lost': 'Lost', 'no_bid': 'No Bid'
+        } %}
+        {% for stage_id, label in stage_labels.items() %}
+        <div class="pipeline-stage {% if stages.get(stage_id, 0) > 0 %}pipeline-stage-active{% endif %}
+                         {% if stage_id == 'awarded' %}pipeline-stage-success{% endif %}
+                         {% if stage_id == 'lost' or stage_id == 'no_bid' %}pipeline-stage-inactive{% endif %}">
+            <div class="pipeline-stage-count">{{ stages.get(stage_id, 0) }}</div>
+            <div class="pipeline-stage-label">{{ label }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- CAG Alert Banner -->
+{% if open_alerts > 0 %}
+<section class="card card-danger">
+    <h2>Classification Aggregation Guard</h2>
+    <p class="alert-text">
+        <strong>{{ open_alerts }} open alert{{ 's' if open_alerts != 1 }}</strong>
+        — potential classification by compilation detected.
+        <a href="{{ url_for('cag_monitor') }}">Review alerts</a>
+    </p>
+</section>
+{% endif %}
+
+<div class="two-col">
+    <!-- Recent Opportunities -->
+    <section class="card">
+        <h2>Recent Opportunities</h2>
+        {% if recent_opps %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Agency</th>
+                    <th>Deadline</th>
+                    <th>Fit</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for opp in recent_opps %}
+                <tr>
+                    <td><a href="{{ url_for('opportunity_detail', opp_id=opp['id']) }}">{{ opp['title'][:60] }}{% if opp['title']|length > 60 %}...{% endif %}</a></td>
+                    <td>{{ opp['agency'][:30] if opp['agency'] else '—' }}</td>
+                    <td>{{ opp['response_deadline'][:10] if opp['response_deadline'] else '—' }}</td>
+                    <td>
+                        {% if opp['fit_score'] %}
+                        <span class="score {% if opp['fit_score'] >= 0.75 %}score-high{% elif opp['fit_score'] >= 0.50 %}score-mid{% else %}score-low{% endif %}">
+                            {{ (opp['fit_score'] * 100)|round(0)|int }}
+                        </span>
+                        {% else %}—{% endif %}
+                    </td>
+                    <td><span class="badge badge-{{ opp['status'] }}">{{ opp['status'] }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">No opportunities discovered yet. Contact your system administrator to scan SAM.gov for the latest contract opportunities.</p>
+        {% endif %}
+    </section>
+
+    <!-- Active Proposals -->
+    <section class="card">
+        <h2>Active Proposals</h2>
+        {% if active_proposals %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Agency</th>
+                    <th>Due</th>
+                    <th>CAG</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prop in active_proposals %}
+                <tr>
+                    <td><a href="{{ url_for('proposal_detail', prop_id=prop['id']) }}">{{ prop['title'][:50] }}{% if prop['title']|length > 50 %}...{% endif %}</a></td>
+                    <td>{{ prop['agency'][:25] if prop['agency'] else '—' }}</td>
+                    <td>{{ prop['due_date'][:10] if prop['due_date'] else '—' }}</td>
+                    <td>
+                        <span class="cag-status cag-{{ prop['cag_status'] }}">
+                            {{ prop['cag_status']|upper if prop['cag_status'] else 'PENDING' }}
+                        </span>
+                    </td>
+                    <td><span class="badge badge-{{ prop['status'] }}">{{ prop['status'] }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty-state">No active proposals.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}Proposals — Kanban — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div>
+        <h1 style="margin:0">Proposals</h1>
+        <p class="subtitle" style="margin:.2rem 0 0">{{ total }} proposal{{ 's' if total != 1 else '' }} across {{ column_meta|length }} stages</p>
+    </div>
+    <div style="display:flex;gap:.5rem;align-items:center">
+        <a href="{{ url_for('proposals') }}"
+           style="padding:.35rem .85rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;color:#555;text-decoration:none;background:#fff">
+            ☰ List
+        </a>
+        <span style="padding:.35rem .85rem;border:1px solid #2980b9;border-radius:4px;font-size:.82rem;color:#2980b9;background:#eaf4fb;font-weight:600">
+            ⬜ Kanban
+        </span>
+    </div>
+</div>
+
+{# ── Review Stage Legend ──────────────────────────────────────────────────── #}
+<div style="background:#f8f9fa;border:1px solid #e0e0e0;border-radius:6px;padding:.65rem 1rem;margin-bottom:1rem;display:flex;flex-wrap:wrap;gap:.5rem 1.25rem;align-items:center">
+    <span style="font-size:.78rem;font-weight:600;color:#7f8c8d;text-transform:uppercase;letter-spacing:.04em">Review Stages:</span>
+    <span style="font-size:.78rem;display:flex;align-items:center;gap:.35rem">
+        <span style="display:inline-block;width:10px;height:10px;background:#f48fb1;border-radius:2px"></span>
+        <strong>Pink Team</strong> — First internal draft review. Checks completeness and identifies major gaps.
+    </span>
+    <span style="font-size:.78rem;display:flex;align-items:center;gap:.35rem">
+        <span style="display:inline-block;width:10px;height:10px;background:#e53935;border-radius:2px"></span>
+        <strong>Red Team</strong> — Adversarial review. A separate team critiques the proposal as if they were the evaluator.
+    </span>
+    <span style="font-size:.78rem;display:flex;align-items:center;gap:.35rem">
+        <span style="display:inline-block;width:10px;height:10px;background:#f9a825;border-radius:2px"></span>
+        <strong>Gold Team</strong> — Senior leadership review. Final approval of strategy, pricing, and win themes.
+    </span>
+    <span style="font-size:.78rem;display:flex;align-items:center;gap:.35rem">
+        <span style="display:inline-block;width:10px;height:10px;background:#90a4ae;border-radius:2px"></span>
+        <strong>White QC</strong> — Final clean-copy quality check. Formatting, grammar, compliance review before submission.
+    </span>
+</div>
+
+{# ── Kanban board ─────────────────────────────────────────────────────────── #}
+<div id="kb-wrapper" style="position:relative">
+
+{# Scroll hint — shown when board overflows, hidden when scrolled to end #}
+<div id="kb-scroll-hint"
+     style="position:absolute;top:0;right:0;bottom:1rem;width:72px;
+            background:linear-gradient(to right,rgba(255,255,255,0) 0%,rgba(255,255,255,.92) 60%,#fff 100%);
+            pointer-events:none;z-index:5;display:none;align-items:center;justify-content:center">
+    <span style="font-size:.7rem;color:#2980b9;font-weight:600;writing-mode:vertical-rl;
+                 transform:rotate(180deg);letter-spacing:.05em">scroll ›</span>
+</div>
+
+<div id="kanban-board" style="display:flex;gap:.75rem;overflow-x:auto;padding-bottom:1rem;align-items:flex-start;min-height:60vh">
+
+{% for key, label, color in column_meta %}
+{% set cards = columns[key] %}
+<div class="kb-col"
+     data-col="{{ key }}"
+     style="flex:0 0 220px;background:#f4f5f7;border-radius:6px;padding:.5rem;min-height:200px">
+
+    {# Column header #}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem;padding:.3rem .4rem;border-radius:4px;background:{{ color }}1a;border-left:3px solid {{ color }}">
+        <span style="font-size:.78rem;font-weight:700;color:{{ color }};text-transform:uppercase;letter-spacing:.05em">{{ label }}</span>
+        <span class="kb-count" style="font-size:.72rem;background:{{ color }};color:#fff;border-radius:10px;padding:.1rem .45rem;font-weight:700">{{ cards|length }}</span>
+    </div>
+
+    {# Cards #}
+    <div class="kb-cards" data-col="{{ key }}" style="min-height:60px">
+    {% for p in cards %}
+    <div class="kb-card"
+         draggable="true"
+         data-id="{{ p.id }}"
+         data-status="{{ p.status }}"
+         style="background:#fff;border-radius:5px;padding:.55rem .65rem;margin-bottom:.45rem;box-shadow:0 1px 3px rgba(0,0,0,.1);cursor:grab;border-left:3px solid {{ color }};position:relative">
+
+        {# Agency badge #}
+        {% if p.agency %}
+        <div style="font-size:.65rem;color:#7f8c8d;margin-bottom:.2rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.agency[:28] }}</div>
+        {% endif %}
+
+        {# Title #}
+        <a href="{{ url_for('proposal_detail', prop_id=p.id) }}"
+           style="font-size:.8rem;font-weight:600;color:#2c3e50;text-decoration:none;display:block;line-height:1.35"
+           onclick="event.stopPropagation()">
+            {{ p.title[:55] }}{% if p.title|length > 55 %}…{% endif %}
+        </a>
+
+        {# Meta row #}
+        <div style="display:flex;gap:.4rem;align-items:center;margin-top:.4rem;flex-wrap:wrap">
+            {% if p.due_date %}
+            <span style="font-size:.65rem;color:#7f8c8d">📅 {{ p.due_date[:10] }}</span>
+            {% endif %}
+
+            {% if p.cag_status %}
+            <span style="font-size:.62rem;padding:.1rem .3rem;border-radius:3px;font-weight:700;
+                {% if p.cag_status == 'green' %}background:#d5f5e3;color:#27ae60
+                {% elif p.cag_status == 'yellow' %}background:#fef9e7;color:#f39c12
+                {% elif p.cag_status == 'red' %}background:#fadbd8;color:#e74c3c
+                {% else %}background:#ecf0f1;color:#7f8c8d{% endif %}">
+                CAG {{ p.cag_status|upper }}
+            </span>
+            {% endif %}
+        </div>
+
+        {# AI sections indicator #}
+        {% if p.section_count %}
+        <div style="margin-top:.4rem;font-size:.65rem;color:#7f8c8d">
+            {% if p.pending_count %}
+            <span title="{{ p.pending_count }} pending HITL review" style="color:#e67e22">⏳ {{ p.pending_count }} pending</span>
+            {% elif p.accepted_count %}
+            <span style="color:#27ae60">✓ {{ p.accepted_count }}/{{ p.section_count }} AI sections</span>
+            {% else %}
+            <span>{{ p.section_count }} AI section{{ 's' if p.section_count != 1 else '' }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        {# PM chip #}
+        {% if p.assigned_pm %}
+        <div style="margin-top:.3rem;font-size:.62rem;color:#7f8c8d;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            👤 {{ p.assigned_pm[:20] }}
+        </div>
+        {% endif %}
+
+    </div>
+    {% endfor %}
+
+    {# Empty placeholder #}
+    {% if not cards %}
+    <div class="kb-empty" style="text-align:center;padding:1.5rem .5rem;color:#bdc3c7;font-size:.75rem;border:2px dashed #e0e0e0;border-radius:4px">
+        Drop here
+    </div>
+    {% endif %}
+    </div>{# /kb-cards #}
+
+</div>{# /kb-col #}
+{% endfor %}
+
+</div>{# /kanban-board #}
+</div>{# /kb-wrapper #}
+
+{# ── Toast notification #}
+<div id="kb-toast"
+     style="display:none;position:fixed;bottom:1.5rem;right:1.5rem;background:#2c3e50;color:#fff;padding:.6rem 1.1rem;border-radius:6px;font-size:.82rem;box-shadow:0 4px 12px rgba(0,0,0,.2);z-index:9999">
+</div>
+
+<script>
+// ── Drag-and-Drop ─────────────────────────────────────────────────────────────
+let dragCard = null;
+let originCol = null;
+
+document.querySelectorAll(".kb-card").forEach(card => {
+    card.addEventListener("dragstart", e => {
+        dragCard = card;
+        originCol = card.closest(".kb-cards").dataset.col;
+        e.dataTransfer.effectAllowed = "move";
+        card.style.opacity = "0.5";
+    });
+    card.addEventListener("dragend", () => {
+        if (dragCard) dragCard.style.opacity = "1";
+        dragCard = null;
+        originCol = null;
+        document.querySelectorAll(".kb-cards").forEach(z => z.classList.remove("kb-over"));
+    });
+});
+
+document.querySelectorAll(".kb-cards").forEach(zone => {
+    zone.addEventListener("dragover", e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        zone.classList.add("kb-over");
+    });
+    zone.addEventListener("dragleave", () => zone.classList.remove("kb-over"));
+
+    zone.addEventListener("drop", e => {
+        e.preventDefault();
+        zone.classList.remove("kb-over");
+        const destCol = zone.dataset.col;
+        if (!dragCard || destCol === originCol) return;
+
+        const propId = dragCard.dataset.id;
+        moveCard(propId, destCol, dragCard, zone, originCol);
+    });
+});
+
+async function moveCard(propId, newStatus, cardEl, destZone, srcCol) {
+    try {
+        const resp = await fetch(`/api/proposals/${propId}/status`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus })
+        });
+        const data = await resp.json();
+        if (data.error) { showToast("Error: " + data.error, true); return; }
+
+        // Move card DOM
+        const emptyEl = destZone.querySelector(".kb-empty");
+        if (emptyEl) emptyEl.remove();
+        destZone.appendChild(cardEl);
+        cardEl.dataset.status = newStatus;
+
+        // Update column counters
+        updateCount(srcCol, -1);
+        updateCount(newStatus, +1);
+
+        // Show empty placeholder in src if now empty
+        const srcZone = document.querySelector(`.kb-cards[data-col="${srcCol}"]`);
+        if (srcZone && !srcZone.querySelector(".kb-card")) {
+            srcZone.innerHTML = `<div class="kb-empty" style="text-align:center;padding:1.5rem .5rem;color:#bdc3c7;font-size:.75rem;border:2px dashed #e0e0e0;border-radius:4px">Drop here</div>`;
+        }
+
+        showToast("Moved to " + newStatus.replace(/_/g, " "));
+    } catch(err) {
+        showToast("Network error: " + err.message, true);
+    }
+}
+
+function updateCount(col, delta) {
+    const colEl = document.querySelector(`.kb-col[data-col="${col}"]`);
+    if (!colEl) return;
+    const badge = colEl.querySelector(".kb-count");
+    if (!badge) return;
+    const cur = parseInt(badge.textContent) || 0;
+    badge.textContent = Math.max(0, cur + delta);
+}
+
+function showToast(msg, isError) {
+    const t = document.getElementById("kb-toast");
+    t.textContent = msg;
+    t.style.background = isError ? "#e74c3c" : "#2c3e50";
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; }, 2800);
+}
+
+// ── Horizontal scroll hint ─────────────────────────────────────────────────
+(function() {
+    const board = document.getElementById("kanban-board");
+    const hint  = document.getElementById("kb-scroll-hint");
+    if (!board || !hint) return;
+    function updateHint() {
+        const overflows = board.scrollWidth > board.clientWidth + 4;
+        const atEnd     = board.scrollLeft + board.clientWidth >= board.scrollWidth - 8;
+        hint.style.display = (overflows && !atEnd) ? "flex" : "none";
+    }
+    updateHint();
+    board.addEventListener("scroll", updateHint);
+    window.addEventListener("resize", updateHint);
+})();
+</script>
+
+<style>
+.kb-cards.kb-over {
+    background: rgba(41, 128, 185, 0.08);
+    outline: 2px dashed #2980b9;
+    border-radius: 4px;
+}
+.kb-card:hover {
+    box-shadow: 0 3px 8px rgba(0,0,0,.18) !important;
+    transform: translateY(-1px);
+    transition: all .12s ease;
+}
+</style>
+{% endblock %}

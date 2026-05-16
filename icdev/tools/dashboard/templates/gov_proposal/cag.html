@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}CAG Monitor — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>CAG Monitor
+    <span style="font-size:.65em;font-weight:400;color:#7f8c8d;vertical-align:middle"> — Classification Aggregation Guard</span>
+</h1>
+
+<!-- Plain-English Explanation Banner -->
+<div style="background:#eaf4fb;border-left:4px solid #2980b9;border-radius:4px;padding:1rem 1.25rem;margin-bottom:1.5rem">
+    <div style="display:flex;gap:.6rem;align-items:flex-start">
+        <span style="font-size:1.4rem;line-height:1">🔍</span>
+        <div>
+            <strong style="color:#1a5276">What is the CAG Monitor?</strong>
+            <p style="margin:.35rem 0 0;color:#2c3e50;font-size:.9rem;line-height:1.6">
+                The <strong>Classification Aggregation Guard</strong> protects against the
+                <em>mosaic effect</em> — a situation where individually harmless pieces of
+                information, when combined across multiple proposals, could reveal sensitive
+                or classified details about your company's capabilities or contracts.
+            </p>
+            <p style="margin:.5rem 0 0;color:#2c3e50;font-size:.9rem;line-height:1.6">
+                <strong>When an alert fires:</strong> The system detected that two or more
+                proposals together disclose a combination of topics (e.g., specific
+                agencies + classified system names + security clearance levels) that could
+                be problematic if seen by a competitor or adversary.
+            </p>
+            <p style="margin:.5rem 0 0;color:#2c3e50;font-size:.9rem;line-height:1.6">
+                <strong>What to do:</strong> Review the flagged proposals and consider
+                redacting, generalizing, or segregating the sensitive combination before
+                submitting. Contact your security officer for <strong>CRITICAL</strong>
+                or <strong>HIGH</strong> alerts.
+            </p>
+        </div>
+    </div>
+</div>
+
+<!-- Alert Summary -->
+<div class="cag-summary">
+    {% for severity in ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] %}
+    <div class="cag-card cag-card-{{ severity|lower }}">
+        <div class="cag-card-count">{{ alert_summary.get(severity, 0) }}</div>
+        <div class="cag-card-label">{{ severity }}</div>
+    </div>
+    {% endfor %}
+    <div class="cag-card">
+        <div class="cag-card-count">{{ rule_count }}</div>
+        <div class="cag-card-label">Active Rules</div>
+    </div>
+</div>
+
+<!-- Recent Alerts -->
+<section class="card">
+    <h2>Recent Alerts</h2>
+    {% if recent_alerts %}
+    <table class="data-table">
+        <thead>
+            <tr><th>Severity</th><th>Proposal</th><th>Categories</th><th>Classification</th><th>Status</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+            {% for alert in recent_alerts %}
+            <tr class="alert-row alert-row-{{ alert['severity']|lower }}">
+                <td><span class="badge badge-{{ alert['severity']|lower }}">{{ alert['severity'] }}</span></td>
+                <td>{{ alert['proposal_title'] or alert['proposal_id'] or '—' }}</td>
+                <td><code>{{ alert['categories_triggered'] }}</code></td>
+                <td><strong>{{ alert['resulting_classification'] }}</strong></td>
+                <td><span class="badge badge-{{ alert['status'] }}">{{ alert['status'] }}</span></td>
+                <td>{{ alert['created_at'][:16] if alert['created_at'] else '—' }}</td>
+            </tr>
+            {% if alert['remediation_suggestion'] %}
+            <tr class="remediation-row">
+                <td colspan="6"><em>Remediation: {{ alert['remediation_suggestion'] }}</em></td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No alerts. All proposals clear of aggregation violations.</p>
+    {% endif %}
+</section>
+
+<!-- Cross-Proposal Exposure -->
+{% if exposures %}
+<section class="card">
+    <h2>Cross-Proposal Exposure Register</h2>
+    <p>Tracking cumulative category exposure across proposals to detect compilation risk.</p>
+    <table class="data-table">
+        <thead><tr><th>Capability Group</th><th>Proposals</th><th>Cumulative Categories</th></tr></thead>
+        <tbody>
+            {% for exp in exposures %}
+            <tr>
+                <td>{{ exp['capability_group'] }}</td>
+                <td>{{ exp['exposure_count'] }}</td>
+                <td><code>{{ exp['all_categories'] }}</code></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+{% endblock %}

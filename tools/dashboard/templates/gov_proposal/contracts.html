@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Contracts — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>Contract Performance Management</h1>
+
+<!-- Stat grid -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem">
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#2980b9">{{ active_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Active Contracts</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#2c3e50">{{ total_cdrls }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Total CDRLs</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:{% if overdue_count > 0 %}#e74c3c{% else %}#27ae60{% endif %}">{{ overdue_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Overdue Items</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:{% if avg_risk >= 0.5 %}#e74c3c{% elif avg_risk >= 0.2 %}#f39c12{% else %}#27ae60{% endif %}">{{ '%.2f'|format(avg_risk) }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Avg CPARS Risk</div>
+    </div>
+</div>
+
+<!-- Filter -->
+<div style="margin-bottom:1rem;display:flex;gap:0.5rem;align-items:center">
+    <label style="font-size:.85rem;font-weight:600;color:#555">Filter:</label>
+    <a href="{{ url_for('contracts') }}" class="{% if not status_filter %}active{% endif %}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if not status_filter %}#fff{% else %}#555{% endif %};background:{% if not status_filter %}#2980b9{% else %}#fff{% endif %}">All</a>
+    <a href="{{ url_for('contracts', status='active') }}" class="{% if status_filter == 'active' %}active{% endif %}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if status_filter == 'active' %}#fff{% else %}#555{% endif %};background:{% if status_filter == 'active' %}#27ae60{% else %}#fff{% endif %}">Active</a>
+    <a href="{{ url_for('contracts', status='completed') }}" class="{% if status_filter == 'completed' %}active{% endif %}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if status_filter == 'completed' %}#fff{% else %}#555{% endif %};background:{% if status_filter == 'completed' %}#7f8c8d{% else %}#fff{% endif %}">Completed</a>
+</div>
+
+<!-- Contracts table -->
+<section class="card">
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Contract #</th>
+                <th>Name</th>
+                <th>Agency</th>
+                <th>Type</th>
+                <th>CDRLs</th>
+                <th>Obligations</th>
+                <th>CPARS Risk</th>
+                <th>Status</th>
+                <th>POP End</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in contracts %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('contract_detail', contract_id=c['id']) }}">
+                        {{ c['contract_number'] or '—' }}
+                    </a>
+                </td>
+                <td>
+                    <a href="{{ url_for('contract_detail', contract_id=c['id']) }}">
+                        {{ c['contract_name'][:50] }}{% if c['contract_name']|length > 50 %}...{% endif %}
+                    </a>
+                </td>
+                <td>{{ c['agency'][:25] if c['agency'] else '—' }}</td>
+                <td>{{ (c['contract_type'] or '—')|upper }}</td>
+                <td>
+                    <span style="font-weight:600;color:{% if c['cdrl_done'] == c['cdrl_count'] and c['cdrl_count'] > 0 %}#27ae60{% else %}#2c3e50{% endif %}">
+                        {{ c['cdrl_done'] }}/{{ c['cdrl_count'] }}
+                    </span>
+                </td>
+                <td>
+                    <span style="font-weight:600;color:{% if c['obl_done'] == c['obl_count'] and c['obl_count'] > 0 %}#27ae60{% else %}#2c3e50{% endif %}">
+                        {{ c['obl_done'] }}/{{ c['obl_count'] }}
+                    </span>
+                </td>
+                <td>
+                    {% set risk = c['cpars_risk_score'] or 0.0 %}
+                    <span style="padding:.2rem .6rem;border-radius:3px;font-size:.82rem;font-weight:600;
+                        {% if risk >= 0.8 %}background:#fde8e8;color:#c0392b
+                        {% elif risk >= 0.5 %}background:#fef3e2;color:#e67e22
+                        {% elif risk >= 0.2 %}background:#fef9e7;color:#f1c40f
+                        {% else %}background:#e8f8f0;color:#27ae60{% endif %}">
+                        {{ '%.2f'|format(risk) }}
+                    </span>
+                </td>
+                <td><span class="badge badge-{{ c['status'] }}">{{ c['status']|replace('_',' ') }}</span></td>
+                <td>{{ c['period_of_performance_end'][:10] if c['period_of_performance_end'] else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if not contracts %}
+    <div class="empty-state" style="padding:2.5rem 1rem;text-align:center">
+        <p style="margin-bottom:.5rem;color:#7f8c8d;font-size:.95rem">No contracts yet.</p>
+        <p style="color:#95a5a6;font-size:.85rem">Mark a proposal as "awarded" to activate contract tracking.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

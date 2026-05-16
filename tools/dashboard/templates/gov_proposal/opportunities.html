@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Opportunities — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <h1 style="margin:0">Opportunity Pipeline</h1>
+    <button id="sam-scan-btn" onclick="runSamScan()"
+            style="background:#27ae60;color:#fff;border:none;padding:.45rem 1.1rem;border-radius:4px;cursor:pointer;font-size:.85rem;font-weight:600">
+        🔎 Scan SAM.gov
+    </button>
+</div>
+
+<!-- SAM scan status banner -->
+<div id="sam-scan-status" style="display:none;margin-bottom:1rem"></div>
+
+<!-- Filters -->
+<section class="card">
+    <form method="GET" class="filter-form">
+        <label>Status:
+            <select name="status">
+                <option value="">All</option>
+                {% for s in ['discovered','qualifying','go_decision','capture','drafting','submitted','awarded','lost','no_bid'] %}
+                <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s|replace('_',' ')|title }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <label>Agency:
+            <select name="agency">
+                <option value="">All</option>
+                {% for a in agencies %}
+                <option value="{{ a }}" {% if agency_filter == a %}selected{% endif %}>{{ a[:50] }}</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit" class="btn btn-primary">Filter</button>
+        <a href="{{ url_for('opportunities') }}" class="btn btn-secondary">Clear</a>
+    </form>
+</section>
+
+<!-- Opportunity List -->
+<section class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Agency</th>
+                <th>NAICS</th>
+                <th>Set-Aside</th>
+                <th>Deadline</th>
+                <th>Est. Value</th>
+                <th>Fit</th>
+                <th>Qual.</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for opp in opportunities %}
+            <tr>
+                <td><a href="{{ url_for('opportunity_detail', opp_id=opp['id']) }}">{{ opp['title'][:55] }}{% if opp['title']|length > 55 %}...{% endif %}</a></td>
+                <td>{{ opp['agency'][:25] if opp['agency'] else '—' }}</td>
+                <td>{{ opp['naics_code'] or '—' }}</td>
+                <td>{{ opp['set_aside_type'] or 'F&O' }}</td>
+                <td>{{ opp['response_deadline'][:10] if opp['response_deadline'] else '—' }}</td>
+                <td>{% if opp['estimated_value_high'] %}${{ '{:,.0f}'.format(opp['estimated_value_high']) }}{% else %}—{% endif %}</td>
+                <td>
+                    {% if opp['fit_score'] is not none %}
+                    <span class="score {% if opp['fit_score'] >= 0.75 %}score-high{% elif opp['fit_score'] >= 0.50 %}score-mid{% else %}score-low{% endif %}">
+                        {{ (opp['fit_score'] * 100)|round(0)|int }}
+                    </span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if opp['qualification_score'] is not none %}
+                    <span class="score {% if opp['qualification_score'] >= 0.75 %}score-high{% elif opp['qualification_score'] >= 0.55 %}score-mid{% else %}score-low{% endif %}">
+                        {{ (opp['qualification_score'] * 100)|round(0)|int }}
+                    </span>
+                    {% else %}—{% endif %}
+                </td>
+                <td><span class="badge badge-{{ opp['status'] }}">{{ opp['status']|replace('_',' ') }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if not opportunities %}
+    <div class="empty-state" style="padding:2.5rem 1rem;text-align:center">
+        {% if status_filter or agency_filter %}
+        <p style="margin-bottom:1rem;color:#7f8c8d">No opportunities match the current filters.</p>
+        <a href="{{ url_for('opportunities') }}"
+           style="padding:.5rem 1.2rem;background:#fff;color:#2c3e50;border:1px solid #dfe6e9;border-radius:5px;text-decoration:none;font-weight:600;font-size:.88rem">
+            Clear Filters
+        </a>
+        {% else %}
+        <p style="margin-bottom:1rem;color:#7f8c8d">No opportunities yet. Use the SAM.gov scanner to discover new opportunities.</p>
+        <a href="{{ url_for('home') }}"
+           style="padding:.5rem 1.2rem;background:#0984e3;color:#fff;border-radius:5px;text-decoration:none;font-weight:600;font-size:.88rem">
+            Go to Dashboard
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+
+<script>
+async function runSamScan() {
+    const btn = document.getElementById('sam-scan-btn');
+    const banner = document.getElementById('sam-scan-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ Scanning…';
+    banner.style.display = 'none';
+
+    const warnStyle = 'background:#fff3cd;border:1px solid #ffc107;color:#856404;padding:.75rem 1rem;border-radius:5px;font-size:.88rem';
+    const okStyle   = 'background:#d4edda;border:1px solid #28a745;color:#155724;padding:.75rem 1rem;border-radius:5px;font-size:.88rem';
+    const errStyle  = 'background:#f8d7da;border:1px solid #dc3545;color:#721c24;padding:.75rem 1rem;border-radius:5px;font-size:.88rem';
+
+    try {
+        const resp = await fetch('/api/sam/scan', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({days_back: 7})
+        });
+        const data = await resp.json();
+
+        if (data.error) {
+            banner.innerHTML = `<div style="${errStyle}">⚠️ <strong>Scan failed:</strong> ${data.error}</div>`;
+        } else if (data.errors && data.errors.length > 0) {
+            banner.innerHTML = `<div style="${warnStyle}">⚠️ <strong>Scan completed with warnings:</strong><br>${data.errors[0]}</div>`;
+        } else {
+            const n = data.new_count || 0;
+            const msg = n > 0
+                ? `✅ Found <strong>${n} new opportunit${n === 1 ? 'y' : 'ies'}</strong> from SAM.gov. <a href="" style="font-weight:600">Refresh page</a> to see them.`
+                : `✅ Scan complete — no new opportunities (${data.total_fetched || 0} checked, ${data.duplicate_count || 0} already in pipeline).`;
+            banner.innerHTML = `<div style="${okStyle}">${msg}</div>`;
+        }
+    } catch (err) {
+        banner.innerHTML = `<div style="${errStyle}">⚠️ Network error: ${err.message}</div>`;
+    } finally {
+        banner.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '🔎 Scan SAM.gov';
+    }
+}
+</script>
+{% endblock %}

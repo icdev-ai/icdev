@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}{{ contact['full_name'] }} — CRM — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:1rem">
+    <a href="{{ url_for('crm') }}" style="color:#7f8c8d;text-decoration:none">&larr; CRM Contacts</a>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem">
+    <div>
+        <h1>{{ contact['full_name'] }}</h1>
+        <p class="subtitle">
+            {{ contact['title'] or 'No title' }}
+            {% if contact['company'] %} &nbsp;|&nbsp; {{ contact['company'] }}{% endif %}
+            {% if contact['agency'] %} &nbsp;|&nbsp; {{ contact['agency'] }}{% endif %}
+        </p>
+    </div>
+    {% if contact['relationship_type'] %}
+    <span style="padding:.4rem .9rem;border-radius:4px;font-size:.9rem;font-weight:600;
+                 background:{{ contact['color_code'] or '#95a5a6' }};color:white">
+        {{ contact['relationship_type']|title }}
+    </span>
+    {% endif %}
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1.6fr;gap:1.5rem">
+
+    <!-- Left: Profile & linked opps -->
+    <div>
+        <section class="card">
+            <h2>Contact Info</h2>
+            <table style="width:100%;border-collapse:collapse">
+                <tr><td style="color:#7f8c8d;font-size:.85rem;padding:.3rem 0;width:35%">Email</td>
+                    <td>{{ contact['email'] or '—' }}</td></tr>
+                <tr><td style="color:#7f8c8d;font-size:.85rem">Phone</td>
+                    <td>{{ contact['phone'] or '—' }}</td></tr>
+                <tr><td style="color:#7f8c8d;font-size:.85rem">Sector</td>
+                    <td>{{ contact['sector'] or '—' }}</td></tr>
+                <tr><td style="color:#7f8c8d;font-size:.85rem">Sub-Agency</td>
+                    <td>{{ contact['sub_agency'] or '—' }}</td></tr>
+                <tr><td style="color:#7f8c8d;font-size:.85rem">Last Contact</td>
+                    <td>{{ contact['last_contact_date'] or 'Never' }}</td></tr>
+                {% if contact['linkedin_url'] %}
+                <tr><td style="color:#7f8c8d;font-size:.85rem">LinkedIn</td>
+                    <td><a href="{{ contact['linkedin_url'] }}" target="_blank">Profile</a></td></tr>
+                {% endif %}
+                {% if contact['sam_entity_id'] %}
+                <tr><td style="color:#7f8c8d;font-size:.85rem">SAM Entity</td>
+                    <td><code style="font-size:.8rem">{{ contact['sam_entity_id'] }}</code></td></tr>
+                {% endif %}
+            </table>
+            {% if contact['notes'] %}
+            <div style="margin-top:.75rem;padding:.5rem;background:#f8f9fa;border-radius:4px;font-size:.85rem;color:#555">
+                {{ contact['notes'] }}
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Linked Opportunities -->
+        {% if linked_opps %}
+        <section class="card" style="margin-top:1rem">
+            <h2>Linked Opportunities</h2>
+            {% for opp in linked_opps %}
+            <div style="padding:.5rem 0;border-bottom:1px solid #f0f0f0">
+                <a href="{{ url_for('opportunity_detail', opp_id=opp['id']) }}" style="font-weight:600">
+                    {{ opp['title'][:50] }}{% if opp['title']|length > 50 %}…{% endif %}
+                </a>
+                <div style="font-size:.8rem;color:#7f8c8d;margin-top:.15rem">
+                    {{ opp['agency'] }} &nbsp;|&nbsp;
+                    <span class="badge" style="font-size:.7rem">{{ opp['status'] }}</span>
+                    {% if opp['role'] %} &nbsp;|&nbsp; Role: <strong>{{ opp['role']|replace('_',' ')|title }}</strong>{% endif %}
+                    {% if opp['influence_level'] %} &nbsp;|&nbsp;
+                    Influence:
+                    {% if opp['influence_level'] == 'high' %}<span style="color:#e74c3c">High</span>
+                    {% elif opp['influence_level'] == 'medium' %}<span style="color:#e67e22">Medium</span>
+                    {% else %}<span style="color:#95a5a6">Low</span>{% endif %}
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </section>
+        {% endif %}
+    </div>
+
+    <!-- Right: Interactions + Log form -->
+    <div>
+        <!-- Log new interaction -->
+        <section class="card" style="background:#f0f7ff;border:1px solid #c3daf9">
+            <h2>Log Interaction</h2>
+            <form method="post" action="{{ url_for('crm_log_interaction', contact_id=contact['id']) }}">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+                    <div>
+                        <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Type</label>
+                        <select name="interaction_type" style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                            <option value="note">Note</option>
+                            <option value="meeting">Meeting</option>
+                            <option value="call">Call</option>
+                            <option value="email">Email</option>
+                            <option value="conference">Conference</option>
+                            <option value="site_visit">Site Visit</option>
+                            <option value="rfp_response">RFP Response</option>
+                            <option value="bid_review">Bid Review</option>
+                            <option value="demo">Demo</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Outcome</label>
+                        <select name="outcome" style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                            <option value="">—</option>
+                            <option value="positive">Positive</option>
+                            <option value="neutral">Neutral</option>
+                            <option value="negative">Negative</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-bottom:.75rem">
+                    <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Subject</label>
+                    <input name="subject" style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px"
+                           placeholder="Brief subject...">
+                </div>
+                <div style="margin-bottom:.75rem">
+                    <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Notes <span style="color:#e74c3c">*</span></label>
+                    <textarea name="notes" rows="3" required
+                              style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;resize:vertical"
+                              placeholder="What was discussed? Key takeaways?"></textarea>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+                    <div>
+                        <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Next Action</label>
+                        <input name="next_action" style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px"
+                               placeholder="Follow-up task...">
+                    </div>
+                    <div>
+                        <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Due Date</label>
+                        <input name="next_action_date" type="date"
+                               style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                    </div>
+                </div>
+                <button type="submit" class="btn"
+                        style="background:#2980b9;color:white;padding:.45rem 1.25rem;border:none;border-radius:4px;cursor:pointer">
+                    Log Interaction
+                </button>
+            </form>
+        </section>
+
+        <!-- Interaction history -->
+        <section class="card" style="margin-top:1rem">
+            <h2>Interaction History ({{ interactions|length }})</h2>
+            {% if interactions %}
+            {% for inter in interactions %}
+            <div style="padding:.75rem 0;border-bottom:1px solid #f0f0f0">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                    <div>
+                        <span class="badge" style="font-size:.72rem;background:#ecf0f1;color:#2c3e50;padding:.1rem .4rem;border-radius:2px">
+                            {{ inter['interaction_type']|replace('_',' ')|title }}
+                        </span>
+                        {% if inter['outcome'] == 'positive' %}
+                        <span style="color:#27ae60;font-size:.8rem">&#9650; Positive</span>
+                        {% elif inter['outcome'] == 'negative' %}
+                        <span style="color:#e74c3c;font-size:.8rem">&#9660; Negative</span>
+                        {% endif %}
+                        {% if inter['subject'] %}
+                        <strong style="margin-left:.5rem;font-size:.9rem">{{ inter['subject'] }}</strong>
+                        {% endif %}
+                    </div>
+                    <small style="color:#7f8c8d">{{ inter['interaction_date'] }}</small>
+                </div>
+                <p style="margin:.4rem 0 0;font-size:.85rem;color:#555;white-space:pre-wrap">{{ inter['notes'] }}</p>
+                {% if inter['next_action'] %}
+                <div style="margin-top:.35rem;font-size:.8rem;color:#e67e22">
+                    &#128197; Next: {{ inter['next_action'] }}
+                    {% if inter['next_action_date'] %} — {{ inter['next_action_date'] }}{% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty-state">No interactions logged yet. Use the form above to start.</p>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}

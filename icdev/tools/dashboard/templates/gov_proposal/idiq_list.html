@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}IDIQ Vehicles — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>IDIQ / BPA / GWAC Vehicles</h1>
+
+<!-- Stat grid -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem">
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#2980b9">{{ total_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Total Vehicles</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#27ae60">{{ active_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Active</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#2c3e50">{{ total_task_orders }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Total Task Orders</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#2980b9">
+            {% if total_ceiling >= 1000000000 %}${{ (total_ceiling / 1000000000)|round(1) }}B
+            {% elif total_ceiling >= 1000000 %}${{ (total_ceiling / 1000000)|round(1) }}M
+            {% elif total_ceiling %}${{ '{:,.0f}'.format(total_ceiling) }}
+            {% else %}$0{% endif %}
+        </div>
+        <div style="font-size:.82rem;color:#7f8c8d">Total Ceiling Value</div>
+    </div>
+</div>
+
+<!-- Filter -->
+<div style="margin-bottom:1rem;display:flex;gap:0.5rem;align-items:center">
+    <label style="font-size:.85rem;font-weight:600;color:#555">Filter:</label>
+    <a href="{{ url_for('idiq_list') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if not status_filter %}#fff{% else %}#555{% endif %};background:{% if not status_filter %}#2980b9{% else %}#fff{% endif %}">All</a>
+    <a href="{{ url_for('idiq_list', status='active') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if status_filter == 'active' %}#fff{% else %}#555{% endif %};background:{% if status_filter == 'active' %}#27ae60{% else %}#fff{% endif %}">Active</a>
+    <a href="{{ url_for('idiq_list', status='expired') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if status_filter == 'expired' %}#fff{% else %}#555{% endif %};background:{% if status_filter == 'expired' %}#e74c3c{% else %}#fff{% endif %}">Expired</a>
+</div>
+
+<!-- Vehicles table -->
+<section class="card">
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Vehicle #</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Agency</th>
+                <th>Ceiling</th>
+                <th>Obligated</th>
+                <th>Utilization</th>
+                <th>Task Orders</th>
+                <th>Our Position</th>
+                <th>Status</th>
+                <th>End Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in vehicles %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('idiq_detail', vehicle_id=v['id']) }}">
+                        {{ v['vehicle_number'] or '---' }}
+                    </a>
+                </td>
+                <td>
+                    <a href="{{ url_for('idiq_detail', vehicle_id=v['id']) }}">
+                        {{ v['vehicle_name'][:50] }}{% if v['vehicle_name']|length > 50 %}...{% endif %}
+                    </a>
+                </td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if v['vehicle_type'] == 'idiq' %}background:#eaf4fb;color:#2980b9
+                        {% elif v['vehicle_type'] == 'bpa' %}background:#f3eaf8;color:#8e44ad
+                        {% elif v['vehicle_type'] == 'gwac' %}background:#e8f6f3;color:#16a085
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ v['vehicle_type']|upper }}
+                    </span>
+                </td>
+                <td>{{ v['agency'][:25] if v['agency'] else '---' }}</td>
+                <td>
+                    {% if v['ceiling_value'] %}
+                    <span style="font-weight:600;color:#2c3e50">${{ '{:,.0f}'.format(v['ceiling_value']) }}</span>
+                    {% else %}---{% endif %}
+                </td>
+                <td>
+                    {% if v['total_obligated'] %}
+                    <span style="font-weight:600;color:#2c3e50">${{ '{:,.0f}'.format(v['total_obligated']) }}</span>
+                    {% else %}---{% endif %}
+                </td>
+                <td>
+                    {% set util_pct = ((v['total_obligated'] or 0) / v['ceiling_value'] * 100)|round(1) if v['ceiling_value'] else 0 %}
+                    <div style="display:flex;align-items:center;gap:.4rem">
+                        <div style="flex:1;height:8px;background:#eee;border-radius:4px;overflow:hidden;min-width:60px">
+                            <div style="height:100%;border-radius:4px;width:{{ util_pct }}%;
+                                {% if util_pct > 90 %}background:#e74c3c
+                                {% elif util_pct >= 70 %}background:#f39c12
+                                {% else %}background:#27ae60{% endif %}"></div>
+                        </div>
+                        <span style="font-size:.78rem;font-weight:600;min-width:38px;text-align:right;
+                            {% if util_pct > 90 %}color:#e74c3c
+                            {% elif util_pct >= 70 %}color:#f39c12
+                            {% else %}color:#27ae60{% endif %}">{{ util_pct }}%</span>
+                    </div>
+                </td>
+                <td style="text-align:center;font-weight:600;color:#2c3e50">{{ v['task_order_count'] or 0 }}</td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if v['our_position'] == 'prime' %}background:#e8f8f0;color:#27ae60
+                        {% elif v['our_position'] == 'subcontractor' %}background:#eaf4fb;color:#2980b9
+                        {% elif v['our_position'] == 'teaming' %}background:#fef3e2;color:#e67e22
+                        {% elif v['our_position'] == 'pending' %}background:#fef9e7;color:#f1c40f
+                        {% elif v['our_position'] == 'not_on_vehicle' %}background:#f0f0f0;color:#7f8c8d
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ v['our_position']|replace('_',' ') }}
+                    </span>
+                </td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if v['status'] == 'active' %}background:#e8f8f0;color:#27ae60
+                        {% elif v['status'] == 'expired' %}background:#fde8e8;color:#e74c3c
+                        {% elif v['status'] == 'pending' %}background:#fef9e7;color:#f1c40f
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ v['status']|replace('_',' ') }}
+                    </span>
+                </td>
+                <td>{{ v['period_of_performance_end'][:10] if v['period_of_performance_end'] else '---' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if not vehicles %}
+    <div class="empty-state" style="padding:2.5rem 1rem;text-align:center">
+        <p style="margin-bottom:.5rem;color:#7f8c8d;font-size:.95rem">No IDIQ vehicles tracked yet.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

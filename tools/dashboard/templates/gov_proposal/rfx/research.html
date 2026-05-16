@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}RFX Research — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+        <h1>Government Research</h1>
+        <p class="subtitle">SAM.gov &bull; USASpending.gov &bull; Web — 24h TTL cache</p>
+    </div>
+</div>
+
+{# ── Search form ───────────────────────────────────────────────────────────── #}
+<section class="card" style="margin-bottom:1.25rem">
+    <h2 style="margin-bottom:.75rem">Research Query</h2>
+    <div style="display:grid;grid-template-columns:1fr 200px auto;gap:.75rem;align-items:flex-end">
+        <div>
+            <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Search Query <span style="color:#e74c3c">*</span></label>
+            <input id="query-input" type="text"
+                   placeholder="e.g., DISA cloud security monitoring, agency NAICS 541512"
+                   style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+        </div>
+        <div>
+            <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Proposal (optional)</label>
+            <select id="query-proposal"
+                    style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+                <option value="">— None —</option>
+                {% for p in proposals %}
+                <option value="{{ p.id }}" {% if selected_proposal == p.id %}selected{% endif %}>
+                    {{ p.title[:50] }}{% if p.title|length > 50 %}…{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <button id="search-btn" onclick="runResearch()"
+                    style="background:#d35400;color:#fff;border:none;padding:.45rem 1.1rem;border-radius:4px;cursor:pointer;font-size:.85rem;white-space:nowrap">
+                🔍 Deep Research
+            </button>
+        </div>
+    </div>
+    <div style="margin-top:.75rem">
+        <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;cursor:pointer">
+            <input type="checkbox" id="summarize-check" checked> Summarize results with AI
+        </label>
+    </div>
+</section>
+
+{# ── AI summary (populated by JS) #}
+<div id="summary-card" style="display:none" class="card" style="margin-bottom:1.25rem;background:#f0f4f8;border-left:4px solid #2980b9">
+    <h3 style="font-size:.9rem;margin-bottom:.4rem;color:#2980b9">AI Research Brief</h3>
+    <div id="summary-text" style="font-size:.83rem;line-height:1.7;white-space:pre-wrap"></div>
+</div>
+
+{# ── Live results (populated by JS) #}
+<div id="results-container"></div>
+
+{# ── Cached results ────────────────────────────────────────────────────────── #}
+{% if cached_research %}
+<section class="card" style="margin-top:1.25rem">
+    <h2 style="margin-bottom:.75rem">Cached Research ({{ cached_research|length }})</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Query</th>
+                <th>Source</th>
+                <th>Results</th>
+                <th>Cached</th>
+                <th>Expires</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for r in cached_research %}
+        <tr>
+            <td style="font-size:.82rem">{{ r.query_text }}</td>
+            <td>
+                <span style="background:#ecf0f1;padding:.1rem .35rem;border-radius:3px;font-size:.72rem;text-transform:uppercase">
+                    {{ r.cache_type or 'web' }}
+                </span>
+            </td>
+            <td style="text-align:center">—</td>
+            <td style="font-size:.75rem;white-space:nowrap">
+                {% if r.created_at %}
+                <span class="cache-age-badge" data-created="{{ r.created_at }}"
+                      style="display:inline-block;background:#eaf4fb;color:#2980b9;padding:.1rem .4rem;border-radius:3px;font-size:.7rem;font-weight:600">
+                    {{ (r.created_at)[:16] }}
+                </span>
+                {% else %}—{% endif %}
+            </td>
+            <td style="font-size:.75rem;white-space:nowrap;color:{% if r.expires_at and r.expires_at > now %}#27ae60{% else %}#e74c3c{% endif %}">
+                {{ (r.expires_at or '')[:16] or '—' }}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+{# Spinner/loader #}
+<div id="research-spinner" style="display:none;text-align:center;padding:2rem;color:#7f8c8d">
+    <div style="font-size:1.5rem;margin-bottom:.5rem">🔍</div>
+    <div>Querying SAM.gov, USASpending.gov, and web sources…</div>
+    <div style="font-size:.8rem;margin-top:.3rem">This may take 10–30 seconds.</div>
+</div>
+
+<script>
+function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function showResearchError(msg) {
+    const container = document.getElementById("results-container");
+    container.innerHTML = `
+        <div style="margin-top:1rem;padding:1rem 1.25rem;background:#fff5f5;border:1px solid #ffc1c1;
+                    border-radius:5px;display:flex;align-items:flex-start;gap:.75rem">
+            <span style="font-size:1.2rem;line-height:1.3">⚠️</span>
+            <div>
+                <strong style="color:#c0392b">Research Error</strong>
+                <p style="margin:.25rem 0 0;font-size:.85rem;color:#555">${escHtml(msg)}</p>
+            </div>
+        </div>`;
+}
+
+async function runResearch() {
+    const query = document.getElementById("query-input").value.trim();
+    if (!query) {
+        showResearchError("Please enter a search query before running research.");
+        return;
+    }
+    const btn = document.getElementById("search-btn");
+    const spinner = document.getElementById("research-spinner");
+    const container = document.getElementById("results-container");
+    const summaryCard = document.getElementById("summary-card");
+
+    btn.disabled = true; btn.textContent = "Searching…";
+    spinner.style.display = "block";
+    container.innerHTML = "";
+    summaryCard.style.display = "none";
+
+    const payload = {
+        query,
+        proposal_id: document.getElementById("query-proposal").value || null,
+        summarize: document.getElementById("summarize-check").checked,
+    };
+
+    try {
+        const resp = await fetch("/api/rfx/research", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(payload)
+        });
+        if (!resp.ok) {
+            showResearchError("Server returned " + resp.status + ". Please try again.");
+            return;
+        }
+        const data = await resp.json();
+        if (data.error) {
+            showResearchError(data.error);
+            return;
+        }
+
+        // Show AI summary
+        if (data.summary) {
+            document.getElementById("summary-text").textContent = data.summary;
+            summaryCard.style.display = "block";
+        }
+
+        // Render raw results
+        const allResults = (data.sam_results || []).concat(data.spend_results || []).concat(data.web_results || []);
+        if (allResults.length) {
+            const cached = data.from_cache
+                ? `<span style="font-size:.72rem;background:#eaf4fb;color:#2980b9;padding:.1rem .4rem;border-radius:3px;font-weight:600;margin-left:.5rem">cached</span>`
+                : '';
+            const html = allResults.map(r => `
+                <div style="padding:.6rem;border-bottom:1px solid #f0f0f0">
+                    <div style="font-weight:600;font-size:.85rem">${escHtml(r.title || r.award_id || 'Result')}</div>
+                    <div style="font-size:.78rem;color:#7f8c8d;margin-top:.2rem">${escHtml(
+                        (r.snippet || r.description || r.scope_description || '').slice(0, 300)
+                    )}</div>
+                    ${r.url ? `<a href="${escHtml(r.url)}" target="_blank" style="font-size:.75rem;color:#2980b9">${escHtml(r.url.slice(0,70))}</a>` : ''}
+                </div>
+            `).join('');
+            container.innerHTML = `<section class="card" style="margin-top:1.25rem">
+                <h2 style="margin-bottom:.5rem">Results (${allResults.length})${cached}</h2>
+                ${html}
+            </section>`;
+        } else {
+            container.innerHTML = `<div class="card" style="margin-top:1rem;text-align:center;color:#7f8c8d;padding:1.5rem">
+                No results found for that query.
+            </div>`;
+        }
+    } catch(err) {
+        showResearchError("Network error: " + err.message + ". Please check your connection and try again.");
+    } finally {
+        btn.disabled = false; btn.textContent = "🔍 Deep Research";
+        spinner.style.display = "none";
+    }
+}
+
+document.getElementById("query-input").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") runResearch();
+});
+
+// Render relative age for cache-age-badge elements
+(function() {
+    function relativeTime(isoStr) {
+        if (!isoStr) return isoStr;
+        var ms = Date.now() - new Date(isoStr).getTime();
+        if (isNaN(ms) || ms < 0) return isoStr.slice(0, 16);
+        var s = Math.floor(ms / 1000);
+        if (s < 60) return s + "s ago";
+        var m = Math.floor(s / 60);
+        if (m < 60) return m + "m ago";
+        var h = Math.floor(m / 60);
+        if (h < 24) return h + "h ago";
+        return Math.floor(h / 24) + "d ago";
+    }
+    document.querySelectorAll(".cache-age-badge").forEach(function(el) {
+        var ts = el.getAttribute("data-created");
+        if (ts) el.textContent = relativeTime(ts);
+    });
+})();
+</script>
+{% endblock %}

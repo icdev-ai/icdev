@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Contact' if contact.get('id') else 'New Contact' }} — CRM — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:1rem">
+    <a href="{{ url_for('crm') }}" style="color:#7f8c8d;text-decoration:none">&larr; CRM Contacts</a>
+</div>
+
+<h1>{{ 'Edit Contact' if contact.get('id') else 'New Contact' }}</h1>
+
+<form method="post" action="{{ url_for('crm_new') if not contact.get('id') else url_for('crm_detail', contact_id=contact['id']) }}"
+      style="max-width:720px">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem">
+
+        <!-- Full Name -->
+        <div style="grid-column:1/-1">
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">
+                Full Name <span style="color:#e74c3c">*</span>
+            </label>
+            <input name="full_name" required value="{{ contact.get('full_name','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="Jane Smith">
+        </div>
+
+        <!-- Title -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Title / Role</label>
+            <input name="title" value="{{ contact.get('title','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="Program Manager">
+        </div>
+
+        <!-- Company -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Company</label>
+            <input name="company" value="{{ contact.get('company','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="Acme Corp">
+        </div>
+
+        <!-- Agency -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Agency</label>
+            <input name="agency" value="{{ contact.get('agency','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="DoD / DHS / Army...">
+        </div>
+
+        <!-- Sub-Agency / Office -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Sub-Agency / Office</label>
+            <input name="sub_agency" value="{{ contact.get('sub_agency','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="PEO C3T / CISA / ...">
+        </div>
+
+        <!-- Sector -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Sector</label>
+            <select name="sector"
+                    style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
+                <option value="">— Select —</option>
+                {% for s in ['Defense','Civilian','Intel','SLED','Commercial','Healthcare','DHS','State Dept','DOE','HHS'] %}
+                <option value="{{ s }}" {{ 'selected' if contact.get('sector')==s else '' }}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Relationship Type -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Relationship Type</label>
+            <select name="relationship_type"
+                    style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">
+                <option value="">— Select —</option>
+                {% for rt in rel_types %}
+                <option value="{{ rt['type_name'] }}"
+                        {{ 'selected' if contact.get('relationship_type')==rt['type_name'] else '' }}>
+                    {{ rt['type_name']|title }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <!-- Email -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Email</label>
+            <input name="email" type="email" value="{{ contact.get('email','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="jane@example.com">
+        </div>
+
+        <!-- Phone -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Phone</label>
+            <input name="phone" value="{{ contact.get('phone','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="(571) 555-0100">
+        </div>
+
+        <!-- LinkedIn -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">LinkedIn URL</label>
+            <input name="linkedin_url" value="{{ contact.get('linkedin_url','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="https://linkedin.com/in/janesmith">
+        </div>
+
+        <!-- SAM Entity ID -->
+        <div>
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">SAM Entity ID</label>
+            <input name="sam_entity_id" value="{{ contact.get('sam_entity_id','') }}"
+                   style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;box-sizing:border-box"
+                   placeholder="UEI or CAGE code">
+        </div>
+
+        <!-- Notes -->
+        <div style="grid-column:1/-1">
+            <label style="display:block;font-size:.85rem;font-weight:600;margin-bottom:.3rem">Notes</label>
+            <textarea name="notes" rows="4"
+                      style="width:100%;padding:.45rem .65rem;border:1px solid #ccc;border-radius:4px;resize:vertical;box-sizing:border-box"
+                      placeholder="Background, talking points, context...">{{ contact.get('notes','') }}</textarea>
+        </div>
+
+    </div><!-- /grid -->
+
+    <div style="margin-top:1.5rem;display:flex;gap:.75rem">
+        <button type="submit" class="btn"
+                style="background:#27ae60;color:white;padding:.5rem 1.5rem;border:none;border-radius:4px;cursor:pointer;font-size:.95rem">
+            {{ 'Save Changes' if contact.get('id') else 'Add Contact' }}
+        </button>
+        <a href="{{ url_for('crm') }}"
+           style="padding:.5rem 1.25rem;border:1px solid #ccc;border-radius:4px;color:#555;text-decoration:none;font-size:.95rem">
+            Cancel
+        </a>
+    </div>
+</form>
+{% endblock %}

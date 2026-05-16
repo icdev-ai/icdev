@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}CRM — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div>
+        <h1>CRM — Contacts</h1>
+        <p class="subtitle">Competitors, partners, frienemies, vendors, and agency stakeholders.</p>
+    </div>
+    <a href="{{ url_for('crm_new') }}" class="btn" style="padding:.5rem 1rem;background:#2980b9;color:white;border-radius:4px;text-decoration:none">+ Add Contact</a>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.75rem;margin-bottom:1.5rem">
+    {% for rt in rel_types %}
+    {% set count = stats.get(rt['type_name'], 0) %}
+    <a href="{{ url_for('crm', rel=rt['type_name']) }}"
+       style="text-align:center;padding:.75rem;background:#fff;border-radius:8px;
+              border:2px solid {% if rel_filter == rt['type_name'] %}{{ rt['color_code'] or '#2980b9' }}{% else %}#e0e0e0{% endif %};
+              text-decoration:none;display:block">
+        <div style="font-size:1.4rem;font-weight:bold;color:{{ rt['color_code'] or '#2c3e50' }}">{{ count }}</div>
+        <div style="font-size:.75rem;color:#7f8c8d;text-transform:capitalize">{{ rt['type_name'] }}</div>
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Pending Actions -->
+{% if pending_actions %}
+<section class="card" style="margin-bottom:1rem;border-left:4px solid #e67e22">
+    <h2 style="color:#e67e22">&#9888; Pending Actions (Next 14 Days)</h2>
+    <table class="data-table">
+        <thead>
+            <tr><th>Contact</th><th>Next Action</th><th>Due Date</th></tr>
+        </thead>
+        <tbody>
+            {% for action in pending_actions %}
+            <tr>
+                <td><a href="{{ url_for('crm_detail', contact_id=action['contact_id']) }}">{{ action['full_name'] }}</a></td>
+                <td>{{ action['next_action'] }}</td>
+                <td>
+                    {% if action['next_action_date'] <= now[:10] %}
+                    <span class="badge badge-critical">{{ action['next_action_date'] }}</span>
+                    {% else %}
+                    {{ action['next_action_date'] }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<!-- Filters -->
+<section class="card" style="padding:1rem;margin-bottom:1rem">
+    <form method="get" style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+        <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Relationship</label>
+            <select name="rel" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                <option value="">All Types</option>
+                {% for rt in rel_types %}
+                <option value="{{ rt['type_name'] }}" {% if rel_filter == rt['type_name'] %}selected{% endif %}>
+                    {{ rt['type_name']|title }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if sectors %}
+        <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Sector</label>
+            <select name="sector" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                <option value="">All Sectors</option>
+                {% for s in sectors %}
+                <option value="{{ s }}" {% if sector_filter == s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        <div style="flex:1;min-width:160px">
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Search</label>
+            <input name="search" value="{{ search }}" placeholder="Name, company, email..."
+                   style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+        </div>
+        <button type="submit" class="btn" style="padding:.4rem 1rem">Filter</button>
+        {% if rel_filter or sector_filter or search %}
+        <a href="{{ url_for('crm') }}" style="padding:.4rem .6rem;color:#7f8c8d;text-decoration:none">Clear</a>
+        {% endif %}
+    </form>
+</section>
+
+<!-- Contact Table -->
+<section class="card">
+    <h2>Contacts ({{ contacts|length }})</h2>
+    {% if contacts %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name / Title</th>
+                <th>Company</th>
+                <th>Relationship</th>
+                <th>Sector</th>
+                <th>Last Contact</th>
+                <th>Interactions</th>
+                <th>Opps</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in contacts %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('crm_detail', contact_id=c['id']) }}">
+                        <strong>{{ c['full_name'] }}</strong>
+                    </a>
+                    {% if c['title'] %}
+                    <br><small style="color:#7f8c8d">{{ c['title'] }}</small>
+                    {% endif %}
+                </td>
+                <td>{{ c['company'] or '—' }}</td>
+                <td>
+                    {% if c['relationship_type'] %}
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.75rem;
+                                 background:{{ c['color_code'] or '#95a5a6' }};color:white">
+                        {{ c['relationship_type'] }}
+                    </span>
+                    {% else %}
+                    <span style="color:#bdc3c7">—</span>
+                    {% endif %}
+                </td>
+                <td>{{ c['sector'] or '—' }}</td>
+                <td>
+                    {% if c['last_contact_date'] %}
+                    <small>{{ c['last_contact_date'] }}</small>
+                    {% else %}
+                    <span style="color:#bdc3c7">Never</span>
+                    {% endif %}
+                </td>
+                <td style="text-align:center">
+                    {% if c['interaction_count'] > 0 %}
+                    <span class="badge badge-low">{{ c['interaction_count'] }}</span>
+                    {% else %}0{% endif %}
+                </td>
+                <td style="text-align:center">
+                    {% if c['opp_count'] > 0 %}
+                    <span class="badge badge-high">{{ c['opp_count'] }}</span>
+                    {% else %}0{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No contacts found. <a href="{{ url_for('crm_new') }}">Add a contact</a> or ask your system administrator to bulk-import from LinkedIn.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Exclusion List — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+        <h1>Sensitive Term Exclusion List</h1>
+        <p class="subtitle">{{ terms|length }} active term{{ 's' if terms|length != 1 else '' }} — masked before AI processing, restored at export</p>
+    </div>
+</div>
+
+{# ── Add term form ─────────────────────────────────────────────────────────── #}
+<section class="card" style="margin-bottom:1.25rem">
+    <h2 style="margin-bottom:.75rem">Add Sensitive Term</h2>
+    <p style="font-size:.8rem;color:#7f8c8d;margin-bottom:.75rem">
+        Terms are replaced with typed placeholders (e.g., <code>[PERSON_1]</code>, <code>[PROGRAM_1]</code>) before
+        any LLM call and restored in the final output. This prevents sensitive information from being processed
+        by cloud AI services.
+    </p>
+    <form id="add-term-form">
+        <div style="display:grid;grid-template-columns:1fr 160px 1fr;gap:.75rem;margin-bottom:.75rem">
+            <div>
+                <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Sensitive Term <span style="color:#e74c3c">*</span></label>
+                <input id="term-value" type="text" placeholder="e.g., Jane Smith, Program Sentinel"
+                       style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+            </div>
+            <div>
+                <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Type</label>
+                <select id="term-type"
+                        style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+                    <option value="person">Person</option>
+                    <option value="program">Program</option>
+                    <option value="organization">Organization</option>
+                    <option value="location">Location</option>
+                    <option value="capability">Capability</option>
+                    <option value="custom">Custom</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Context Notes</label>
+                <input id="term-notes" type="text" placeholder="Optional description"
+                       style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+            </div>
+        </div>
+        <div style="display:flex;gap:1.5rem;align-items:center;margin-bottom:.75rem">
+            <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;cursor:pointer">
+                <input type="checkbox" id="term-whole-word" checked> Whole word only
+            </label>
+            <label style="display:flex;align-items:center;gap:.35rem;font-size:.82rem;cursor:pointer">
+                <input type="checkbox" id="term-case-sensitive"> Case sensitive
+            </label>
+        </div>
+        <button type="submit"
+                style="background:#d35400;color:#fff;border:none;padding:.45rem 1.1rem;border-radius:4px;cursor:pointer;font-size:.85rem">
+            + Add to Exclusion List
+        </button>
+        <span id="add-status" style="margin-left:.75rem;font-size:.8rem;color:#7f8c8d"></span>
+    </form>
+</section>
+
+{# ── Terms by type ─────────────────────────────────────────────────────────── #}
+{% if by_type %}
+{% for ttype, tterms in by_type.items() %}
+<section class="card" style="margin-bottom:1rem">
+    <h3 style="margin-bottom:.5rem;font-size:.9rem;text-transform:uppercase;color:#7f8c8d;letter-spacing:.05em">
+        {{ ttype.replace('_',' ') }} ({{ tterms|length }})
+    </h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Sensitive Term</th>
+                <th>Placeholder</th>
+                <th>Options</th>
+                <th>Notes</th>
+                <th>Added</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for t in tterms %}
+        <tr id="term-row-{{ t.id }}">
+            <td><code style="font-size:.85rem">{{ t.sensitive_term }}</code></td>
+            <td><code style="font-size:.85rem;color:#8e44ad">{{ t.placeholder }}</code></td>
+            <td style="font-size:.75rem;color:#7f8c8d">
+                {% if t.whole_word %}whole-word{% endif %}
+                {% if t.case_sensitive %} &bull; case-sensitive{% endif %}
+            </td>
+            <td style="font-size:.78rem;color:#7f8c8d">{{ t.context_notes or '—' }}</td>
+            <td style="font-size:.75rem;white-space:nowrap">{{ (t.created_at or '')[:10] or '—' }}</td>
+            <td>
+                <button onclick="removeTerm('{{ t.id }}')"
+                        style="background:#e74c3c;color:#fff;border:none;padding:.2rem .5rem;border-radius:3px;cursor:pointer;font-size:.72rem">
+                    Remove
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endfor %}
+{% else %}
+<div class="card" style="text-align:center;padding:3rem">
+    <p style="color:#7f8c8d;font-size:1rem">No sensitive terms yet.</p>
+    <p style="color:#7f8c8d;font-size:.85rem;margin-top:.5rem">Add personnel names, program names, and proprietary capabilities above to protect them from cloud AI processing.</p>
+</div>
+{% endif %}
+
+{# ── Preview mask ──────────────────────────────────────────────────────────── #}
+<section class="card" style="margin-top:1.25rem">
+    <h2 style="margin-bottom:.75rem">Test Masking</h2>
+    <p style="font-size:.8rem;color:#7f8c8d;margin-bottom:.5rem">Paste sample text to preview which terms would be masked before LLM processing.</p>
+    <textarea id="preview-input" rows="4" placeholder="Paste text here…"
+              style="width:100%;padding:.5rem;border:1px solid #ddd;border-radius:3px;font-size:.82rem;font-family:inherit;resize:vertical"></textarea>
+    <div style="display:flex;gap:.5rem;margin-top:.5rem">
+        <button onclick="previewMask()"
+                style="background:#2c3e50;color:#fff;border:none;padding:.35rem .9rem;border-radius:4px;cursor:pointer;font-size:.82rem">
+            Preview Mask
+        </button>
+        <span id="preview-count" style="font-size:.8rem;color:#7f8c8d;line-height:2"></span>
+    </div>
+    <pre id="preview-output" style="display:none;margin-top:.75rem;background:#f8f9fa;border-radius:4px;padding:.75rem;font-size:.8rem;white-space:pre-wrap;max-height:200px;overflow-y:auto"></pre>
+</section>
+
+<script>
+document.getElementById("add-term-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const term = document.getElementById("term-value").value.trim();
+    if (!term) { alert("Term is required."); return; }
+    const status = document.getElementById("add-status");
+    status.textContent = "Adding…";
+    const resp = await fetch("/api/rfx/exclusions/add", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            sensitive_term: term,
+            term_type: document.getElementById("term-type").value,
+            context_notes: document.getElementById("term-notes").value || null,
+            whole_word: document.getElementById("term-whole-word").checked,
+            case_sensitive: document.getElementById("term-case-sensitive").checked,
+        })
+    });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); status.textContent = ""; }
+    else if (data.status === "exists") { status.textContent = "Term already exists as " + data.placeholder; }
+    else { status.textContent = "Added as " + data.placeholder; setTimeout(() => location.reload(), 1200); }
+});
+
+async function removeTerm(termId) {
+    if (!confirm("Remove this term from the exclusion list?")) return;
+    const resp = await fetch("/api/rfx/exclusions/" + termId, { method: "DELETE" });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); }
+    else { document.getElementById("term-row-" + termId).remove(); }
+}
+
+async function previewMask() {
+    const text = document.getElementById("preview-input").value;
+    if (!text.trim()) return;
+    const resp = await fetch("/api/rfx/exclusions/preview", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ text })
+    });
+    const data = await resp.json();
+    const out = document.getElementById("preview-output");
+    const cnt = document.getElementById("preview-count");
+    out.textContent = data.masked_preview || "(no changes)";
+    out.style.display = "block";
+    cnt.textContent = data.replacements + " replacement" + (data.replacements !== 1 ? "s" : "");
+}
+</script>
+{% endblock %}

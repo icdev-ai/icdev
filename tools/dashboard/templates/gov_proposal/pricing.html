@@ -1,0 +1,558 @@
+{% extends "base.html" %}
+{% block title %}Pricing Tool — {{ app_name }}{% endblock %}
+
+{% block head %}
+<style>
+/* ── Tier badge colors ──────────────────────────────── */
+.tier-bronze { background:#cd7f32;color:#fff;padding:.15rem .55rem;border-radius:3px;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em }
+.tier-silver { background:#95a5a6;color:#fff;padding:.15rem .55rem;border-radius:3px;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em }
+.tier-gold   { background:#d4ac0d;color:#fff;padding:.15rem .55rem;border-radius:3px;font-size:.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em }
+
+/* ── Package cards ──────────────────────────────────── */
+.pkg-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-top:1rem }
+.pkg-card { border:1px solid #e0e0e0;border-radius:6px;padding:1rem;background:#fff;position:relative }
+.pkg-card.bronze { border-top:3px solid #cd7f32 }
+.pkg-card.silver { border-top:3px solid #95a5a6 }
+.pkg-card.gold   { border-top:3px solid #d4ac0d }
+
+.pkg-price { font-size:1.6rem;font-weight:700;color:#2c3e50;line-height:1 }
+.pkg-price small { font-size:.7rem;font-weight:400;color:#7f8c8d }
+.price-row { display:flex;justify-content:space-between;margin:.2rem 0;font-size:.82rem }
+.price-row .label { color:#7f8c8d }
+.price-row .value { font-weight:600 }
+.market-band { font-size:.78rem;color:#27ae60;margin-top:.4rem }
+.cost-details { background:#f8f9fa;border-radius:4px;padding:.6rem .8rem;margin-top:.75rem;font-size:.78rem }
+.cost-details .row { display:flex;justify-content:space-between;margin:.15rem 0 }
+.cost-details .row .k { color:#7f8c8d }
+.cost-details .row .v { font-weight:600 }
+.cost-details .divider { border-top:1px solid #dee2e6;margin:.4rem 0 }
+.cost-details .total-row { font-weight:700;font-size:.85rem }
+.cost-details .margin-row { color:#27ae60;font-weight:600 }
+.cost-details .break-row { color:#e67e22;font-weight:600 }
+
+/* ── Service-line sections ──────────────────────────── */
+.sl-section { margin-bottom:2.5rem }
+.sl-header { display:flex;align-items:center;gap:.75rem;margin-bottom:.5rem }
+.sl-icon { font-size:1.4rem }
+
+/* ── Rate card / indirect rates panel ──────────────── */
+.rate-grid { display:grid;grid-template-columns:repeat(6,1fr);gap:.75rem;margin:.75rem 0 }
+.rate-tile { text-align:center;background:#f8f9fa;border-radius:5px;padding:.5rem .4rem }
+.rate-tile .pct { font-size:1.2rem;font-weight:700;color:#2c3e50 }
+.rate-tile .lbl { font-size:.7rem;color:#7f8c8d;margin-top:.1rem }
+
+/* ── Calculator ─────────────────────────────────────── */
+.calc-section { background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:1.25rem }
+.calc-grid { display:grid;grid-template-columns:1fr 1fr;gap:1.5rem }
+.labor-line { display:grid;grid-template-columns:1fr 100px 100px 28px;gap:.4rem;align-items:center;margin:.35rem 0 }
+.labor-line select, .labor-line input { padding:.35rem .5rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem }
+.labor-line .dlr-hint { font-size:.75rem;color:#7f8c8d }
+.result-box { background:#2c3e50;color:#fff;border-radius:6px;padding:1rem 1.2rem }
+.result-box .big-num { font-size:2rem;font-weight:700;line-height:1.1 }
+.result-box .lbl { font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.7 }
+.result-row { display:flex;justify-content:space-between;margin:.3rem 0;font-size:.82rem }
+.result-row .rk { opacity:.75 }
+.result-row .rv { font-weight:600 }
+.result-divider { border-top:1px solid rgba(255,255,255,.15);margin:.5rem 0 }
+.result-box .margin-good { color:#2ecc71 }
+.result-box .breakeven-color { color:#f39c12 }
+.save-row { margin-top:1rem;display:flex;gap:.75rem;align-items:center }
+</style>
+{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div>
+        <h1>Pricing Tool</h1>
+        <p class="subtitle">Market-calibrated Bronze/Silver/Gold packages with DCAA wrap-rate calculator.</p>
+    </div>
+    <div style="display:flex;gap:.75rem">
+        <a href="{{ url_for('pricing_scenarios') }}"
+           style="padding:.45rem 1rem;border:1px solid #ccc;border-radius:4px;color:#555;text-decoration:none;font-size:.85rem">
+            Saved Scenarios ({{ scenario_count }})
+        </a>
+    </div>
+</div>
+
+<!-- ── Indirect Rate Panel ────────────────────────────────────────────── -->
+<section class="card" style="margin-bottom:1.5rem">
+    <h2>Indirect Rate Structure
+        <small style="font-size:.75rem;font-weight:400;color:#7f8c8d;margin-left:.5rem">
+            {{ indirect.get('name','—') }}
+        </small>
+    </h2>
+    <div class="rate-grid">
+        {% set fr = (indirect.get('fringe_rate',0)*100)|round(1) %}
+        {% set oh = (indirect.get('overhead_rate',0)*100)|round(1) %}
+        {% set ga = (indirect.get('ga_rate',0)*100)|round(1) %}
+        {% set ft = (indirect.get('fee_tm',0)*100)|round(1) %}
+        {% set ff = (indirect.get('fee_ffp',0)*100)|round(1) %}
+        {% set om = (indirect.get('odc_markup',0)*100)|round(1) %}
+        {% set wrap_tm  = ((1+indirect.get('fringe_rate',0))*(1+indirect.get('overhead_rate',0))*(1+indirect.get('ga_rate',0))*(1+indirect.get('fee_tm',0))) %}
+        {% set wrap_ffp = ((1+indirect.get('fringe_rate',0))*(1+indirect.get('overhead_rate',0))*(1+indirect.get('ga_rate',0))*(1+indirect.get('fee_ffp',0))) %}
+        <div class="rate-tile">
+            <div class="pct">{{ fr }}%</div>
+            <div class="lbl">Fringe</div>
+        </div>
+        <div class="rate-tile">
+            <div class="pct">{{ oh }}%</div>
+            <div class="lbl">Overhead</div>
+        </div>
+        <div class="rate-tile">
+            <div class="pct">{{ ga }}%</div>
+            <div class="lbl">G&amp;A</div>
+        </div>
+        <div class="rate-tile" style="border:1px solid #d5e8d4">
+            <div class="pct" style="color:#27ae60">{{ ft }}%</div>
+            <div class="lbl">Fee (T&amp;M)</div>
+        </div>
+        <div class="rate-tile" style="border:1px solid #d5e8d4">
+            <div class="pct" style="color:#27ae60">{{ ff }}%</div>
+            <div class="lbl">Fee (FFP)</div>
+        </div>
+        <div class="rate-tile">
+            <div class="pct">{{ om }}%</div>
+            <div class="lbl">ODC Markup</div>
+        </div>
+    </div>
+    <p style="font-size:.78rem;color:#7f8c8d;margin-top:.4rem">
+        Wrap T&amp;M ≈ <strong>{{ "%.2f"|format(wrap_tm) }}x</strong> &nbsp;|&nbsp;
+        Wrap FFP ≈ <strong>{{ "%.2f"|format(wrap_ffp) }}x</strong> &nbsp;|&nbsp;
+        Formula: DLR × (1+Fringe) × (1+OH) × (1+G&amp;A) × (1+Fee) = Fully-Burdened Rate
+    </p>
+</section>
+
+<!-- ── Service Package Catalog ────────────────────────────────────────── -->
+{% set sl_icons = {
+    'cloud_infra':   '☁',
+    'cyber_pentest': '🛡',
+    'ai_ml_ops':     '🤖',
+    'help_desk':     '🖥'
+} %}
+
+{% for sl, sl_label in sl_labels.items() %}
+{% if packages.get(sl) %}
+<section class="sl-section card">
+    <div class="sl-header">
+        <span class="sl-icon">{{ sl_icons.get(sl,'●') }}</span>
+        <h2 style="margin:0">{{ sl_label }}</h2>
+        <span style="font-size:.78rem;color:#7f8c8d">
+            {% if sl == 'cloud_infra' %}Monthly managed services per environment{% endif %}
+            {% if sl == 'cyber_pentest' %}Quarterly engagement pricing{% endif %}
+            {% if sl == 'ai_ml_ops' %}Monthly MLOps operations per model cluster{% endif %}
+            {% if sl == 'help_desk' %}Monthly support per user tier{% endif %}
+        </span>
+    </div>
+
+    <div class="pkg-grid">
+    {% for pkg in packages[sl] %}
+    <div class="pkg-card {{ pkg.tier }}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.6rem">
+            <span class="tier-{{ pkg.tier }}">{{ pkg.tier }}</span>
+            <span style="font-size:.75rem;color:#7f8c8d">per {{ pkg.period }}</span>
+        </div>
+
+        <div style="font-weight:700;font-size:.95rem;margin-bottom:.35rem">{{ pkg.name }}</div>
+        <p style="font-size:.78rem;color:#555;line-height:1.45;margin-bottom:.75rem">
+            {{ pkg.description[:200] }}{% if pkg.description|length > 200 %}…{% endif %}
+        </p>
+
+        <!-- FFP Price (headline) -->
+        <div class="pkg-price">
+            ${{ "{:,.0f}".format(pkg.ffp.total_price) }}
+            <small>/ {{ pkg.period }} (FFP)</small>
+        </div>
+
+        <!-- T&M price -->
+        <div class="price-row" style="margin-top:.3rem">
+            <span class="label">T&amp;M loaded</span>
+            <span class="value">${{ "{:,.0f}".format(pkg.tm.total_price) }}/{{ pkg.period }}</span>
+        </div>
+
+        {% if pkg.market_low and pkg.market_high %}
+        <div class="market-band">
+            Market: ${{ "{:,.0f}".format(pkg.market_low) }} – ${{ "{:,.0f}".format(pkg.market_high) }}/{{ pkg.period }}
+        </div>
+        {% endif %}
+
+        <!-- Cost breakdown (FFP) -->
+        <div class="cost-details">
+            <div class="row"><span class="k">Direct Labor ({{ pkg.ffp.total_hours|round(0)|int }} hrs)</span>
+                            <span class="v">${{ "{:,.0f}".format(pkg.ffp.direct_labor_cost) }}</span></div>
+            <div class="row"><span class="k">Fringe + OH + G&amp;A</span>
+                            <span class="v">${{ "{:,.0f}".format(pkg.ffp.fringe_cost + pkg.ffp.overhead_cost + pkg.ffp.ga_cost) }}</span></div>
+            <div class="row"><span class="k">Fee ({{ (indirect.get('fee_ffp',0)*100)|round(0)|int }}%)</span>
+                            <span class="v">${{ "{:,.0f}".format(pkg.ffp.fee_amount) }}</span></div>
+            <div class="row"><span class="k">ODCs + markup</span>
+                            <span class="v">${{ "{:,.0f}".format(pkg.ffp.odc_cost) }}</span></div>
+            <div class="divider"></div>
+            <div class="row total-row"><span class="k">Total Price (FFP)</span>
+                                        <span class="v">${{ "{:,.0f}".format(pkg.ffp.total_price) }}</span></div>
+            <div class="row break-row"><span class="k">Breakeven (no fee)</span>
+                                        <span class="v">${{ "{:,.0f}".format(pkg.ffp.breakeven_price) }}</span></div>
+            <div class="row margin-row"><span class="k">Margin</span>
+                                         <span class="v">{{ "{:.1f}".format(pkg.ffp.margin_pct) }}%
+                                            (${{ "{:,.0f}".format(pkg.ffp.margin_amount) }})</span></div>
+        </div>
+
+        <!-- Labor mix pills -->
+        <div style="margin-top:.6rem">
+            {% for lm in pkg.labor_mix %}
+            <span style="display:inline-block;background:#eaf0fb;color:#2471a3;
+                         border-radius:3px;padding:.1rem .45rem;font-size:.7rem;margin:.1rem .1rem 0 0">
+                {{ lm.lcat_code }}: {{ lm.hours }} hrs
+            </span>
+            {% endfor %}
+            {% if pkg.odc_base %}
+            <span style="display:inline-block;background:#fef9e7;color:#9a7d0a;
+                         border-radius:3px;padding:.1rem .45rem;font-size:.7rem;margin:.1rem 0 0 0">
+                ODC: ${{ "{:,.0f}".format(pkg.odc_base) }}
+            </span>
+            {% endif %}
+        </div>
+
+        {% if pkg.notes %}
+        <p style="font-size:.72rem;color:#7f8c8d;margin-top:.5rem;font-style:italic">
+            {{ pkg.notes }}
+        </p>
+        {% endif %}
+
+        <button onclick="loadPackage('{{ pkg.id }}','{{ pkg.service_line }}','{{ pkg.tier }}','{{ pkg.period }}',{{ pkg.labor_mix | tojson | e }},{{ pkg.odc_base }})"
+                class="btn" style="width:100%;margin-top:.75rem;background:#2c3e50;color:#fff;
+                    border:none;padding:.4rem;border-radius:4px;cursor:pointer;font-size:.8rem">
+            Use in Calculator
+        </button>
+    </div>
+    {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endfor %}
+
+
+<!-- ── Interactive Calculator ─────────────────────────────────────────── -->
+<section class="card" style="margin-top:2rem">
+    <h2>Rate Builder &amp; Calculator
+        <small style="font-size:.75rem;font-weight:400;color:#7f8c8d;margin-left:.5rem">
+            Build a custom pricing scenario or load from a package above
+        </small>
+    </h2>
+    <div class="calc-grid">
+
+        <!-- Left: inputs -->
+        <div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-bottom:1rem">
+                <div>
+                    <label style="font-size:.8rem;font-weight:600">Service Line</label>
+                    <select id="calc-sl" style="width:100%;padding:.4rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem;margin-top:.2rem">
+                        {% for sl, lbl in sl_labels.items() %}
+                        <option value="{{ sl }}">{{ lbl }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:.8rem;font-weight:600">Contract Type</label>
+                    <select id="calc-ctype" style="width:100%;padding:.4rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem;margin-top:.2rem">
+                        <option value="ffp">Firm Fixed Price (FFP)</option>
+                        <option value="tm">Time &amp; Materials (T&amp;M)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:.8rem;font-weight:600">Period</label>
+                    <select id="calc-period" style="width:100%;padding:.4rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem;margin-top:.2rem">
+                        <option value="monthly">Monthly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="annual">Annual</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:.8rem;font-weight:600">ODC Base ($)</label>
+                    <input id="calc-odc" type="number" value="0" min="0" step="100"
+                           style="width:100%;padding:.4rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem;margin-top:.2rem;box-sizing:border-box"
+                           oninput="calcPricing()">
+                </div>
+            </div>
+
+            <!-- Labor lines -->
+            <div style="font-size:.8rem;font-weight:600;margin-bottom:.3rem">Labor Mix</div>
+            <div style="display:grid;grid-template-columns:1fr 90px 32px;gap:.4rem;margin-bottom:.2rem">
+                <span style="font-size:.72rem;color:#7f8c8d">LCAT (DLR/hr)</span>
+                <span style="font-size:.72rem;color:#7f8c8d">Hours</span>
+                <span></span>
+            </div>
+            <div id="labor-lines"></div>
+            <button onclick="addLaborLine()"
+                    style="margin-top:.5rem;padding:.3rem .75rem;border:1px dashed #aaa;
+                           background:#f8f9fa;border-radius:4px;cursor:pointer;font-size:.8rem;color:#555">
+                + Add Labor Line
+            </button>
+        </div>
+
+        <!-- Right: result box -->
+        <div>
+            <div class="result-box">
+                <div class="lbl">Total Price</div>
+                <div class="big-num" id="res-price">$—</div>
+                <div style="font-size:.8rem;opacity:.65;margin-top:.1rem" id="res-period-label">per period</div>
+
+                <div class="result-divider"></div>
+
+                <div class="result-row">
+                    <span class="rk">Direct Labor</span>
+                    <span class="rv" id="res-dlc">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">Fringe</span>
+                    <span class="rv" id="res-fringe">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">Overhead</span>
+                    <span class="rv" id="res-oh">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">G&amp;A</span>
+                    <span class="rv" id="res-ga">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">Cost Before Fee</span>
+                    <span class="rv" id="res-cbf">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">Fee</span>
+                    <span class="rv" id="res-fee">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">ODCs (with markup)</span>
+                    <span class="rv" id="res-odc">—</span>
+                </div>
+
+                <div class="result-divider"></div>
+
+                <div class="result-row">
+                    <span class="rk">Total Hours</span>
+                    <span class="rv" id="res-hours">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk">Wrap Rate</span>
+                    <span class="rv" id="res-wrap">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk breakeven-color">Breakeven (no profit)</span>
+                    <span class="rv breakeven-color" id="res-breakeven">—</span>
+                </div>
+                <div class="result-row">
+                    <span class="rk margin-good">Margin</span>
+                    <span class="rv margin-good" id="res-margin">—</span>
+                </div>
+            </div>
+
+            <div class="save-row">
+                <input id="scenario-name" type="text" placeholder="Scenario name (e.g. ACME Cloud Bronze FFP)"
+                       style="flex:1;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px;font-size:.85rem">
+                <button onclick="saveScenario()"
+                        class="btn" style="background:#27ae60;color:#fff;border:none;padding:.4rem 1rem;
+                                border-radius:4px;cursor:pointer;font-size:.85rem;white-space:nowrap">
+                    Save Scenario
+                </button>
+            </div>
+            <div id="save-msg" style="font-size:.8rem;margin-top:.3rem"></div>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Labor rate catalog from Flask
+const LABOR_RATES = {{ labor_rates | tojson }};
+
+// Current package context (set when "Use in Calculator" is clicked)
+let _currentPackageId = null;
+let _currentTier = null;
+
+function fmt(v) {
+    if (v === null || v === undefined || isNaN(v)) return '—';
+    return '$' + v.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0});
+}
+function fmtPct(v) { return isNaN(v) ? '—' : v.toFixed(1) + '%'; }
+
+function addLaborLine(lcat_code='', hours=0) {
+    const container = document.getElementById('labor-lines');
+    const idx = container.children.length;
+    const div = document.createElement('div');
+    div.className = 'labor-line';
+    div.dataset.idx = idx;
+
+    // Build select options
+    const opts = LABOR_RATES.map(lr => {
+        const sel = lr.lcat_code === lcat_code ? ' selected' : '';
+        return `<option value="${lr.lcat_code}" data-rate="${lr.base_rate}"${sel}>${lr.lcat_code} ($${lr.base_rate}/hr)</option>`;
+    }).join('');
+
+    div.innerHTML = `
+        <select onchange="calcPricing()">${opts}</select>
+        <input type="number" value="${hours||0}" min="0" step="1" placeholder="hrs"
+               oninput="calcPricing()" style="text-align:right">
+        <span class="dlr-hint" id="hint-${idx}"></span>
+        <button onclick="this.parentElement.remove();calcPricing()"
+                style="background:#e74c3c;color:#fff;border:none;border-radius:3px;
+                       width:22px;height:22px;cursor:pointer;font-size:.85rem;padding:0">×</button>
+    `;
+    container.appendChild(div);
+    updateHint(div);
+    calcPricing();
+}
+
+function updateHint(div) {
+    const sel = div.querySelector('select');
+    const hintEl = div.querySelector('.dlr-hint');
+    const rate = sel.options[sel.selectedIndex]?.dataset?.rate;
+    hintEl.textContent = rate ? `$${parseFloat(rate).toFixed(0)}/hr` : '';
+    sel.addEventListener('change', () => {
+        const r = sel.options[sel.selectedIndex]?.dataset?.rate;
+        hintEl.textContent = r ? `$${parseFloat(r).toFixed(0)}/hr` : '';
+    });
+}
+
+function getInputs() {
+    const lines = [];
+    document.querySelectorAll('#labor-lines .labor-line').forEach(div => {
+        const sel = div.querySelector('select');
+        const inp = div.querySelector('input');
+        if (sel && inp) {
+            lines.push({lcat_code: sel.value, hours: parseFloat(inp.value)||0});
+        }
+    });
+    return {
+        contract_type: document.getElementById('calc-ctype').value,
+        labor_lines: lines,
+        odc_base: parseFloat(document.getElementById('calc-odc').value)||0,
+        service_line: document.getElementById('calc-sl').value,
+        period: document.getElementById('calc-period').value,
+    };
+}
+
+function _showCalcError(msg) {
+    let errEl = document.getElementById('calc-validation-msg');
+    if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.id = 'calc-validation-msg';
+        errEl.style.cssText = 'margin:.5rem 0;padding:.5rem .85rem;background:#fff5f5;border:1px solid #ffc1c1;border-radius:4px;font-size:.83rem;color:#c0392b';
+        const calcSection = document.querySelector('.calc-section');
+        if (calcSection) calcSection.insertBefore(errEl, calcSection.firstChild);
+    }
+    errEl.textContent = msg;
+    errEl.style.display = msg ? 'block' : 'none';
+}
+
+function calcPricing() {
+    _showCalcError('');
+    const inputs = getInputs();
+
+    // Client-side validation
+    if (!inputs.labor_lines.length) {
+        _showCalcError('Add at least one labor line before calculating.');
+        return;
+    }
+    for (let i = 0; i < inputs.labor_lines.length; i++) {
+        const ll = inputs.labor_lines[i];
+        if (!ll.lcat_code) {
+            _showCalcError('Select an LCAT for labor line ' + (i + 1) + '.');
+            return;
+        }
+        if (!ll.hours || ll.hours <= 0) {
+            _showCalcError('Enter a positive number of hours for labor line ' + (i + 1) + '.');
+            return;
+        }
+        if (ll.hours > 8760) {
+            _showCalcError('Hours for labor line ' + (i + 1) + ' exceed 8,760 (one year). Please verify.');
+            return;
+        }
+    }
+    if (inputs.odc_base < 0) {
+        _showCalcError('ODC base cost cannot be negative.');
+        return;
+    }
+
+    fetch('/api/pricing/calculate', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(inputs),
+    }).then(r => r.json()).then(d => {
+        if (d.error) { _showCalcError('Calculation error: ' + d.error); return; }
+        document.getElementById('res-price').textContent    = d.total_price_fmt || fmt(d.total_price);
+        document.getElementById('res-period-label').textContent = 'per ' + inputs.period;
+        document.getElementById('res-dlc').textContent      = d.direct_labor_cost_fmt || fmt(d.direct_labor_cost);
+        document.getElementById('res-fringe').textContent   = d.fringe_cost_fmt || fmt(d.fringe_cost);
+        document.getElementById('res-oh').textContent       = d.overhead_cost_fmt || fmt(d.overhead_cost);
+        document.getElementById('res-ga').textContent       = d.ga_cost_fmt || fmt(d.ga_cost);
+        document.getElementById('res-cbf').textContent      = d.cost_before_fee_fmt || fmt(d.cost_before_fee);
+        document.getElementById('res-fee').textContent      = d.fee_amount_fmt || fmt(d.fee_amount);
+        document.getElementById('res-odc').textContent      = d.odc_cost_fmt || fmt(d.odc_cost);
+        document.getElementById('res-hours').textContent    = (d.total_hours||0).toFixed(0) + ' hrs';
+        document.getElementById('res-wrap').textContent     = d.wrap_rate_fmt || '—';
+        document.getElementById('res-breakeven').textContent = d.breakeven_price_fmt || fmt(d.breakeven_price);
+        document.getElementById('res-margin').textContent   =
+            (d.margin_pct_fmt || fmtPct(d.margin_pct)) + '  (' + (d.margin_amount_fmt || fmt(d.margin_amount)) + ')';
+    }).catch(err => _showCalcError('Network error: ' + err.message));
+}
+
+function loadPackage(pkgId, sl, tier, period, laborMix, odcBase) {
+    _currentPackageId = pkgId;
+    _currentTier = tier;
+
+    // Set dropdowns
+    document.getElementById('calc-sl').value = sl;
+    document.getElementById('calc-period').value = period;
+    document.getElementById('calc-odc').value = odcBase;
+
+    // Clear + rebuild labor lines
+    document.getElementById('labor-lines').innerHTML = '';
+    laborMix.forEach(lm => addLaborLine(lm.lcat_code, lm.hours));
+
+    // Suggest scenario name
+    document.getElementById('scenario-name').value =
+        '[Agency] — ' + tier.charAt(0).toUpperCase()+tier.slice(1) + ' ' +
+        sl.replace('_',' ') + ' (' +
+        document.getElementById('calc-ctype').value.toUpperCase() + ')';
+
+    // Scroll to calc
+    document.querySelector('.calc-section, section.card:last-of-type')
+        ?.scrollIntoView({behavior:'smooth',block:'start'});
+    calcPricing();
+}
+
+function saveScenario() {
+    const inputs = getInputs();
+    const name = document.getElementById('scenario-name').value.trim() || 'Untitled Scenario';
+    const msgEl = document.getElementById('save-msg');
+    msgEl.textContent = 'Saving…';
+    msgEl.style.color = '#7f8c8d';
+
+    fetch('/api/pricing/save', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({...inputs, name, package_id: _currentPackageId, tier: _currentTier}),
+    }).then(r => r.json()).then(d => {
+        if (d.ok) {
+            msgEl.style.color = '#27ae60';
+            msgEl.textContent = 'Saved! Total: $' + (d.total_price||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+        } else {
+            msgEl.style.color = '#e74c3c';
+            msgEl.textContent = 'Error: ' + (d.error || 'unknown');
+        }
+    }).catch(err => {
+        msgEl.style.color = '#e74c3c';
+        msgEl.textContent = 'Network error.';
+    });
+}
+
+// Boot: load a default Bronze Cloud line
+window.addEventListener('DOMContentLoaded', () => {
+    addLaborLine('CE-II', 33);
+    addLaborLine('PM-II', 4);
+    document.getElementById('calc-odc').value = 450;
+    calcPricing();
+});
+</script>
+{% endblock %}

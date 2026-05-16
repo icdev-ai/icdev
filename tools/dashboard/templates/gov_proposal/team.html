@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Team Directory — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div>
+        <h1>Team Directory</h1>
+        <p class="subtitle">Employee master: own staff, subcontractors, and teaming partners.</p>
+    </div>
+    <a href="{{ url_for('lcat_rates') }}" class="btn">LCAT Rate Cards</a>
+</div>
+
+<!-- Stats -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-bottom:1.5rem">
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:bold;color:#2c3e50">{{ stats.get('total', 0) }}</div>
+        <div style="color:#7f8c8d;font-size:.85rem">Active Employees</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:bold;color:#27ae60">{{ stats.get('own', 0) }}</div>
+        <div style="color:#7f8c8d;font-size:.85rem">Own Company</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:bold;color:#2980b9">{{ stats.get('cleared', 0) }}</div>
+        <div style="color:#7f8c8d;font-size:.85rem">Active Clearances</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:bold;color:#e67e22">{{ stats.get('available', 0) }}</div>
+        <div style="color:#7f8c8d;font-size:.85rem">Available Now</div>
+    </div>
+</div>
+
+<!-- Filters -->
+<section class="card" style="padding:1rem;margin-bottom:1rem">
+    <form method="get" style="display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap">
+        <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Company Type</label>
+            <select name="type" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                <option value="">All</option>
+                <option value="own" {% if company_type=='own' %}selected{% endif %}>Own Company</option>
+                <option value="sub" {% if company_type=='sub' %}selected{% endif %}>Subcontractor</option>
+                <option value="partner" {% if company_type=='partner' %}selected{% endif %}>Teaming Partner</option>
+            </select>
+        </div>
+        <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Clearance</label>
+            <select name="clearance" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                <option value="">Any</option>
+                <option value="secret" {% if clearance=='secret' %}selected{% endif %}>Secret+</option>
+                <option value="top_secret" {% if clearance=='top_secret' %}selected{% endif %}>Top Secret+</option>
+                <option value="ts_sci" {% if clearance=='ts_sci' %}selected{% endif %}>TS/SCI+</option>
+            </select>
+        </div>
+        <div>
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Availability</label>
+            <select name="availability" style="padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+                <option value="">Any</option>
+                <option value="available" {% if availability=='available' %}selected{% endif %}>Available</option>
+                <option value="partial" {% if availability=='partial' %}selected{% endif %}>Partial</option>
+            </select>
+        </div>
+        <div style="flex:1;min-width:160px">
+            <label style="display:block;font-size:.8rem;font-weight:600;margin-bottom:.25rem">Search</label>
+            <input name="search" value="{{ search }}" placeholder="Name, title, LCAT..."
+                   style="width:100%;padding:.4rem .6rem;border:1px solid #ccc;border-radius:4px">
+        </div>
+        <button type="submit" class="btn" style="padding:.4rem 1rem">Filter</button>
+        {% if company_type or clearance or availability or search %}
+        <a href="{{ url_for('team') }}" style="padding:.4rem .6rem;color:#7f8c8d;text-decoration:none">Clear</a>
+        {% endif %}
+    </form>
+</section>
+
+<!-- Employee Table -->
+<section class="card">
+    <h2>Employees ({{ employees|length }})</h2>
+    {% if employees %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Name / Title</th>
+                <th>Type</th>
+                <th>LCAT</th>
+                <th>Clearance</th>
+                <th>Availability</th>
+                <th>Skills</th>
+                <th>Certs</th>
+                <th>Exp (yrs)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for emp in employees %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('team_detail', emp_id=emp['id']) }}">
+                        <strong>{{ emp['full_name'] }}</strong>
+                    </a>
+                    {% if emp['job_title'] %}
+                    <br><small style="color:#7f8c8d">{{ emp['job_title'] }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if emp['company_type'] == 'own' %}
+                    <span class="badge badge-low">Own</span>
+                    {% elif emp['company_type'] == 'sub' %}
+                    <span class="badge" style="background:#e67e22;color:white;padding:.15rem .5rem;border-radius:3px;font-size:.75rem">Sub</span>
+                    {% else %}
+                    <span class="badge" style="background:#9b59b6;color:white;padding:.15rem .5rem;border-radius:3px;font-size:.75rem">Partner</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if emp['lcat_code'] %}
+                    <code style="font-size:.8rem">{{ emp['lcat_code'] }}</code>
+                    <br><small style="color:#7f8c8d">{{ emp['lcat_name'][:25] if emp['lcat_name'] else '' }}</small>
+                    {% else %}
+                    <span style="color:#bdc3c7">—</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if emp['clearance_level'] and emp['clearance_level'] != 'none' %}
+                    <span class="badge {% if emp['clearance_level'] in ['ts_sci','ts_sci_poly'] %}badge-critical{% elif emp['clearance_level'] == 'top_secret' %}badge-high{% else %}badge-low{% endif %}"
+                          style="font-size:.72rem">
+                        {{ emp['clearance_level']|upper|replace('_',' ') }}
+                    </span>
+                    {% if emp['clearance_status'] == 'expired' %}
+                    <span class="badge badge-critical" style="font-size:.7rem">EXPIRED</span>
+                    {% endif %}
+                    {% else %}
+                    <span style="color:#bdc3c7">None</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if emp['availability'] == 'available' %}
+                    <span style="color:#27ae60">&#9679; Available</span>
+                    {% elif emp['availability'] == 'partial' %}
+                    <span style="color:#e67e22">&#9679; Partial</span>
+                    {% else %}
+                    <span style="color:#e74c3c">&#9679; Committed</span>
+                    {% endif %}
+                </td>
+                <td style="text-align:center">{{ emp['skill_count'] or 0 }}</td>
+                <td style="text-align:center">
+                    {% if emp['cert_count'] and emp['cert_count'] > 0 %}
+                    <span class="badge badge-low">{{ emp['cert_count'] }}</span>
+                    {% else %}0{% endif %}
+                </td>
+                <td style="text-align:center">{{ emp['years_experience'] or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No employees found.
+        <a href="{{ url_for('team') }}">Clear filters</a> or contact your system administrator to import employee records.
+    </p>
+    {% endif %}
+</section>
+{% endblock %}

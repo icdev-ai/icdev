@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}{{ proposal['title'][:40] }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav style="font-size:.85rem;margin-bottom:1rem;color:#7f8c8d">
+    <a href="{{ url_for('sbir_list') }}" style="color:#2980b9;text-decoration:none">SBIR/STTR</a>
+    &rsaquo; {{ proposal['title'][:60] }}{% if proposal['title']|length > 60 %}...{% endif %}
+</nav>
+
+<h1 style="margin-bottom:.3rem">{{ proposal['title'][:80] }}{% if proposal['title']|length > 80 %}...{% endif %}</h1>
+{% if proposal['topic_number'] %}
+<p style="color:#7f8c8d;margin-bottom:1.5rem;font-size:.9rem">Topic {{ proposal['topic_number'] }}</p>
+{% endif %}
+
+<!-- Two-column top: Proposal Info + TRL Progress -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- Left: Proposal Info -->
+    <div class="card" style="padding:1.2rem">
+        <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Proposal Information</h3>
+        <dl style="display:grid;grid-template-columns:160px 1fr;gap:.4rem .8rem;margin:0;font-size:.88rem">
+            <dt style="font-weight:600;color:#555">Topic #</dt>
+            <dd style="margin:0">{{ proposal['topic_number'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Program</dt>
+            <dd style="margin:0">
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                    {% if proposal['program_type'] == 'sbir' %}background:#eaf4fb;color:#2980b9
+                    {% else %}background:#f3eaf8;color:#8e44ad{% endif %}">
+                    {{ proposal['program_type']|upper }}
+                </span>
+            </dd>
+            <dt style="font-weight:600;color:#555">Phase</dt>
+            <dd style="margin:0">{{ (proposal['phase'] or '—')|replace('_',' ')|title }}</dd>
+            <dt style="font-weight:600;color:#555">Agency</dt>
+            <dd style="margin:0">{{ proposal['agency'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Solicitation</dt>
+            <dd style="margin:0">{{ proposal['solicitation'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Award Amount</dt>
+            <dd style="margin:0">{% if proposal['award_amount'] %}${{ '{:,.0f}'.format(proposal['award_amount']) }}{% else %}—{% endif %}</dd>
+            <dt style="font-weight:600;color:#555">TRL</dt>
+            <dd style="margin:0">
+                <span style="font-weight:600;color:{% if proposal['trl_current'] >= 5 %}#27ae60{% elif proposal['trl_current'] >= 3 %}#f39c12{% else %}#7f8c8d{% endif %}">
+                    {{ proposal['trl_current'] }}
+                </span>
+                <span style="color:#7f8c8d;margin:0 .3rem">&rarr;</span>
+                <span style="font-weight:600;color:#2c3e50">{{ proposal['trl_target'] }}</span>
+            </dd>
+            <dt style="font-weight:600;color:#555">Status</dt>
+            <dd style="margin:0">
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                    {% if proposal['status'] == 'draft' %}background:#f0f0f0;color:#7f8c8d
+                    {% elif proposal['status'] == 'submitted' %}background:#eaf4fb;color:#2980b9
+                    {% elif proposal['status'] == 'awarded' %}background:#e8f8f0;color:#27ae60
+                    {% elif proposal['status'] == 'phase_complete' %}background:#e8f8f0;color:#27ae60
+                    {% elif proposal['status'] == 'closed' %}background:#f0f0f0;color:#7f8c8d
+                    {% elif proposal['status'] == 'withdrawn' %}background:#fde8e8;color:#e74c3c
+                    {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                    {{ proposal['status']|replace('_',' ') }}
+                </span>
+            </dd>
+            <dt style="font-weight:600;color:#555">Submission Deadline</dt>
+            <dd style="margin:0">{{ proposal['submission_deadline'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Award Date</dt>
+            <dd style="margin:0">{{ proposal['award_date'] or '—' }}</dd>
+        </dl>
+    </div>
+
+    <!-- Right: TRL Progress -->
+    <div class="card" style="padding:1.2rem;text-align:center">
+        <h3 style="margin-top:0;margin-bottom:.5rem;font-size:1rem;color:#2c3e50">TRL Progress</h3>
+        <div style="font-size:3rem;font-weight:700;margin:.5rem 0;
+            color:{% if proposal['trl_current'] >= 7 %}#27ae60{% elif proposal['trl_current'] >= 4 %}#f39c12{% else %}#e74c3c{% endif %}">
+            {{ proposal['trl_current'] }}
+        </div>
+        <!-- Progress bar -->
+        <div style="position:relative;height:12px;border-radius:6px;background:#eee;margin:1rem 0;overflow:hidden">
+            {% set pct = (proposal['trl_current'] / 9 * 100)|round(1) %}
+            <div style="position:absolute;top:0;left:0;height:100%;width:{{ pct }}%;border-radius:6px;
+                background:{% if proposal['trl_current'] >= 7 %}#27ae60{% elif proposal['trl_current'] >= 4 %}#f39c12{% else %}#e74c3c{% endif %};
+                transition:width .3s ease"></div>
+        </div>
+        <div style="font-size:.85rem;color:#7f8c8d">
+            TRL {{ proposal['trl_current'] }} / {{ proposal['trl_target'] }}
+        </div>
+        <!-- Scale labels -->
+        <div style="display:flex;justify-content:space-between;margin-top:.4rem;font-size:.7rem;color:#bdc3c7">
+            <span>1</span>
+            <span>3</span>
+            <span>5</span>
+            <span>7</span>
+            <span>9</span>
+        </div>
+    </div>
+</div>
+
+<!-- Checklist Section -->
+{% if checklist %}
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        Submission Checklist ({{ checklist|selectattr('complete')|list|length }}/{{ checklist|length }})
+    </h3>
+    <ul style="list-style:none;padding:0;margin:0">
+        {% for item in checklist %}
+        <li style="display:flex;align-items:center;gap:.6rem;padding:.5rem .4rem;border-bottom:1px solid #f0f0f0;font-size:.88rem">
+            {% if item['complete'] %}
+            <span style="color:#27ae60;font-size:1.1rem;min-width:20px;text-align:center" title="Complete">&#10003;</span>
+            {% elif item['required'] %}
+            <span style="color:#e74c3c;font-size:1.1rem;min-width:20px;text-align:center" title="Incomplete (required)">&#10007;</span>
+            {% else %}
+            <span style="color:#bdc3c7;font-size:1.1rem;min-width:20px;text-align:center" title="Incomplete (optional)">&#9675;</span>
+            {% endif %}
+            <span style="flex:1;{% if item['complete'] %}color:#7f8c8d;text-decoration:line-through{% endif %}">{{ item['item'] }}</span>
+            {% if item['required'] and not item['complete'] %}
+            <span style="padding:.1rem .4rem;border-radius:3px;font-size:.72rem;font-weight:600;background:#fde8e8;color:#e74c3c">REQUIRED</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+<!-- Notes Section -->
+{% if proposal.get('notes') %}
+<section class="card" style="padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Notes</h3>
+    <div style="font-size:.88rem;color:#555;white-space:pre-wrap;line-height:1.6">{{ proposal['notes'] }}</div>
+</section>
+{% endif %}
+
+{% endblock %}

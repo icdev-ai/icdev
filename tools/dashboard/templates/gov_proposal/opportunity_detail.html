@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}{{ opp['title'][:50] }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb"><a href="{{ url_for('opportunities') }}">Opportunities</a> &rsaquo; {{ opp['title'][:60] }}</nav>
+
+<h1>{{ opp['title'] }}</h1>
+
+<div class="two-col">
+    <section class="card">
+        <h2>Overview</h2>
+        <dl class="detail-list">
+            <dt>Solicitation #</dt><dd>{{ opp['solicitation_number'] or '—' }}</dd>
+            <dt>Agency</dt><dd>{{ opp['agency'] }}</dd>
+            <dt>Sub-Agency</dt><dd>{{ opp['sub_agency'] or '—' }}</dd>
+            <dt>NAICS</dt><dd>{{ opp['naics_code'] or '—' }}</dd>
+            <dt>Set-Aside</dt><dd>{{ opp['set_aside_type'] or 'Full & Open' }}</dd>
+            <dt>Type</dt><dd>{{ opp['opportunity_type'] or '—' }}</dd>
+            <dt>Posted</dt><dd>{{ opp['posted_date'][:10] if opp['posted_date'] else '—' }}</dd>
+            <dt>Deadline</dt><dd>{{ opp['response_deadline'][:10] if opp['response_deadline'] else '—' }}</dd>
+            <dt>Est. Value</dt><dd>{% if opp['estimated_value_high'] %}${{ '{:,.0f}'.format(opp['estimated_value_high']) }}{% else %}—{% endif %}</dd>
+            <dt>Status</dt><dd><span class="badge badge-{{ opp['status'] }}">{{ opp['status']|replace('_',' ') }}</span></dd>
+        </dl>
+    </section>
+
+    <section class="card">
+        <h2>Qualification Scorecard</h2>
+        {% if scores %}
+        <table class="data-table">
+            <thead><tr><th>Dimension</th><th>Score</th><th>Rationale</th></tr></thead>
+            <tbody>
+                {% for s in scores %}
+                <tr>
+                    <td>{{ s['dimension']|replace('_',' ')|title }}</td>
+                    <td>
+                        <span class="score {% if s['score'] >= 0.75 %}score-high{% elif s['score'] >= 0.55 %}score-mid{% else %}score-low{% endif %}">
+                            {{ (s['score'] * 100)|round(0)|int }}%
+                        </span>
+                    </td>
+                    <td>{{ s['rationale'][:80] if s['rationale'] else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if opp['qualification_score'] %}
+        <div class="overall-score">
+            Overall: <strong>{{ (opp['qualification_score'] * 100)|round(1) }}%</strong>
+            {% if opp['go_decision'] %}
+            — <span class="badge badge-{{ opp['go_decision'] }}">{{ opp['go_decision']|upper }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div style="text-align:center;padding:1.5rem 0">
+            <p style="color:#7f8c8d;margin-bottom:1rem">This opportunity hasn't been scored yet.</p>
+            <button id="score-btn" onclick="refreshScore('{{ opp['id'] }}')"
+                    style="background:#2980b9;color:#fff;border:none;padding:.5rem 1.25rem;border-radius:4px;cursor:pointer;font-size:.875rem">
+                ↻ Calculate Qualification Score
+            </button>
+            <span id="score-status" style="display:block;margin-top:.5rem;font-size:.8rem;color:#7f8c8d"></span>
+        </div>
+        <script>
+        function refreshScore(oppId) {
+            const btn = document.getElementById("score-btn");
+            const status = document.getElementById("score-status");
+            btn.disabled = true; btn.textContent = "⏳ Scoring…";
+            status.textContent = "Analyzing opportunity against your capabilities and past performance…";
+            fetch("/api/opportunities/" + oppId + "/score", {method:"POST"})
+                .then(r => r.json())
+                .then(d => {
+                    if (d.error) { status.textContent = "✗ " + d.error; btn.disabled = false; btn.textContent = "↻ Calculate Qualification Score"; }
+                    else { status.textContent = "✓ Score calculated. Reloading…"; setTimeout(() => location.reload(), 800); }
+                })
+                .catch(e => { status.textContent = "✗ Request failed: " + e.message; btn.disabled = false; btn.textContent = "↻ Calculate Qualification Score"; });
+        }
+        </script>
+        {% endif %}
+    </section>
+</div>
+
+{% if opp['description'] %}
+<section class="card">
+    <h2>Description</h2>
+    <div class="description-text">{{ opp['description'][:2000] }}</div>
+</section>
+{% endif %}
+
+<!-- Pipeline History -->
+<section class="card">
+    <h2>Pipeline History</h2>
+    {% if pipeline %}
+    <div class="timeline">
+        {% for stage in pipeline %}
+        <div class="timeline-item">
+            <div class="timeline-marker"></div>
+            <div class="timeline-content">
+                <strong>{{ stage['stage']|replace('_',' ')|title }}</strong>
+                <span class="timestamp">{{ stage['entered_at'][:16] }}</span>
+                {% if stage['notes'] %}<p>{{ stage['notes'] }}</p>{% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-state">No pipeline history.</p>
+    {% endif %}
+</section>
+
+<!-- Related Proposals -->
+{% if proposals %}
+<section class="card">
+    <h2>Proposals</h2>
+    <table class="data-table">
+        <thead><tr><th>Title</th><th>Version</th><th>Status</th><th>CAG</th><th>AI Draft</th></tr></thead>
+        <tbody>
+            {% for p in proposals %}
+            <tr>
+                <td><a href="{{ url_for('proposal_detail', prop_id=p['id']) }}">{{ p['title'] }}</a></td>
+                <td>v{{ p['version'] }}</td>
+                <td><span class="badge badge-{{ p['status'] }}">{{ p['status'] }}</span></td>
+                <td><span class="cag-status cag-{{ p['cag_status'] }}">{{ p['cag_status']|upper }}</span></td>
+                <td>
+                    <a href="{{ url_for('ai_proposal_detail', proposal_id=p['id']) }}"
+                       style="padding:.2rem .5rem;background:#2980b9;color:#fff;border-radius:3px;text-decoration:none;font-size:.75rem">
+                        ⚡ AI Draft
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+
+<!-- AI Proposal Engine CTA -->
+<section class="card" style="margin-top:1.25rem;border-left:4px solid #2980b9">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+            <h2 style="margin-bottom:.2rem">AI Proposal Engine</h2>
+            <p style="color:#7f8c8d;font-size:.85rem">Use ICDEV's AI engine to draft proposal sections with RAG context, win themes, and HITL review.</p>
+        </div>
+        <div style="display:flex;gap:.5rem">
+            <a href="{{ url_for('ai_proposals') }}"
+               style="padding:.4rem .9rem;background:#2c3e50;color:#fff;border-radius:4px;text-decoration:none;font-size:.85rem">
+                View All AI Proposals
+            </a>
+            <button onclick="createAIProposal()"
+                    style="padding:.4rem .9rem;background:#2980b9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:.85rem">
+                + New AI Draft from this Opportunity
+            </button>
+        </div>
+    </div>
+</section>
+
+<script>
+async function createAIProposal() {
+    const title = prompt("Proposal title:", "{{ opp['title'][:60]|replace('"','\\"') }} — Response");
+    if (!title) return;
+    const resp = await fetch("/api/rfx/proposals/create", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ opportunity_id: "{{ opp['id'] }}", title })
+    });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); }
+    else { window.location.href = "/ai-proposals/" + data.proposal_id; }
+}
+</script>
+{% endblock %}

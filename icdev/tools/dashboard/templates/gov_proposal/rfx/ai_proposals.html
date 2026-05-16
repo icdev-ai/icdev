@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}AI Proposals — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+        <h1>AI Proposal Engine</h1>
+        <p class="subtitle">{{ proposals|length }} proposal{{ 's' if proposals|length != 1 else '' }} — AI-assisted drafting with HITL review</p>
+    </div>
+</div>
+
+{% if proposals %}
+<section class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Proposal</th>
+                <th>Agency</th>
+                <th>Status</th>
+                <th>AI Sections</th>
+                <th>Accepted</th>
+                <th>Pending Review</th>
+                <th>Due Date</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in proposals %}
+        <tr>
+            <td>
+                <strong><a href="{{ url_for('ai_proposal_detail', proposal_id=p.id) }}">{{ p.title }}</a></strong>
+                {% if p.opp_title %}<br><small style="color:#7f8c8d">{{ p.opp_title[:60] }}{% if p.opp_title|length > 60 %}…{% endif %}</small>{% endif %}
+            </td>
+            <td>{{ p.agency or '—' }}</td>
+            <td>
+                <span style="background:#2c3e50;color:#fff;padding:.1rem .4rem;border-radius:3px;font-size:.72rem;font-weight:700;text-transform:uppercase">
+                    {{ (p.status or 'draft').replace('_',' ') }}
+                </span>
+            </td>
+            <td style="text-align:center">{{ p.section_count or 0 }}</td>
+            <td style="text-align:center;color:#27ae60;font-weight:700">{{ p.accepted_count or 0 }}</td>
+            <td style="text-align:center;color:#e67e22">{{ p.pending_count or 0 }}</td>
+            <td style="font-size:.8rem;white-space:nowrap">{{ (p.due_date or '')[:10] or '—' }}</td>
+            <td>
+                <a href="{{ url_for('ai_proposal_detail', proposal_id=p.id) }}"
+                   style="padding:.25rem .6rem;background:#2980b9;color:#fff;border-radius:3px;text-decoration:none;font-size:.78rem">
+                    Open
+                </a>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<section class="card" style="margin-top:1.25rem">
+    <h2>Quick Links</h2>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+        <a href="{{ url_for('rfx_documents') }}" class="btn" style="background:#2c3e50;color:#fff;padding:.5rem 1rem;border-radius:4px;text-decoration:none">Upload Documents</a>
+        <a href="{{ url_for('rfx_requirements') }}" class="btn" style="background:#16a085;color:#fff;padding:.5rem 1rem;border-radius:4px;text-decoration:none">View Requirements</a>
+        <a href="{{ url_for('rfx_exclusions') }}" class="btn" style="background:#8e44ad;color:#fff;padding:.5rem 1rem;border-radius:4px;text-decoration:none">Exclusion List</a>
+        <a href="{{ url_for('rfx_research') }}" class="btn" style="background:#d35400;color:#fff;padding:.5rem 1rem;border-radius:4px;text-decoration:none">Research</a>
+        <a href="{{ url_for('rfx_fine_tuning') }}" class="btn" style="background:#27ae60;color:#fff;padding:.5rem 1rem;border-radius:4px;text-decoration:none">Fine-Tuning</a>
+    </div>
+</section>
+
+{% else %}
+<div class="card" style="text-align:center;padding:3rem">
+    <p style="color:#7f8c8d;font-size:1rem">No proposals yet. Create a proposal from an Opportunity, then use the AI engine to draft sections.</p>
+    <a href="{{ url_for('opportunities') }}" class="btn"
+       style="display:inline-block;margin-top:.75rem;background:#2c3e50;color:#fff;padding:.5rem 1.5rem;border-radius:4px;text-decoration:none">
+        Go to Opportunities
+    </a>
+</div>
+{% endif %}
+{% endblock %}

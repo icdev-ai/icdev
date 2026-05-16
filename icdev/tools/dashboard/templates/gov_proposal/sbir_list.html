@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}SBIR/STTR — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>SBIR/STTR Tracker</h1>
+
+<!-- Stat grid -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem">
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#2980b9">{{ total_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Total Proposals</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#27ae60">{{ phase1_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Active Phase I</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:#e67e22">{{ phase2_count }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Active Phase II</div>
+    </div>
+    <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:2rem;font-weight:700;color:{% if avg_trl >= 5 %}#27ae60{% elif avg_trl >= 3 %}#f39c12{% else %}#7f8c8d{% endif %}">{{ avg_trl|round(1) }}</div>
+        <div style="font-size:.82rem;color:#7f8c8d">Avg TRL</div>
+    </div>
+</div>
+
+<!-- Filter -->
+<div style="margin-bottom:1rem;display:flex;gap:0.5rem;align-items:center">
+    <label style="font-size:.85rem;font-weight:600;color:#555">Filter:</label>
+    <a href="{{ url_for('sbir_list') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if not program_filter and not phase_filter %}#fff{% else %}#555{% endif %};background:{% if not program_filter and not phase_filter %}#2980b9{% else %}#fff{% endif %}">All</a>
+    <a href="{{ url_for('sbir_list', program_type='sbir') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if program_filter == 'sbir' %}#fff{% else %}#555{% endif %};background:{% if program_filter == 'sbir' %}#2980b9{% else %}#fff{% endif %}">SBIR</a>
+    <a href="{{ url_for('sbir_list', program_type='sttr') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if program_filter == 'sttr' %}#fff{% else %}#555{% endif %};background:{% if program_filter == 'sttr' %}#2980b9{% else %}#fff{% endif %}">STTR</a>
+    <a href="{{ url_for('sbir_list', phase='phase_1') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if phase_filter == 'phase_1' %}#fff{% else %}#555{% endif %};background:{% if phase_filter == 'phase_1' %}#27ae60{% else %}#fff{% endif %}">Phase I</a>
+    <a href="{{ url_for('sbir_list', phase='phase_2') }}"
+       style="padding:.25rem .7rem;border:1px solid #ddd;border-radius:4px;font-size:.82rem;text-decoration:none;color:{% if phase_filter == 'phase_2' %}#fff{% else %}#555{% endif %};background:{% if phase_filter == 'phase_2' %}#e67e22{% else %}#fff{% endif %}">Phase II</a>
+</div>
+
+<!-- SBIR/STTR table -->
+<section class="card">
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Topic #</th>
+                <th>Title</th>
+                <th>Program</th>
+                <th>Phase</th>
+                <th>Agency</th>
+                <th>Award</th>
+                <th>TRL</th>
+                <th>Status</th>
+                <th>Due Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in proposals %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('sbir_detail', proposal_id=p['id']) }}">
+                        {{ p['topic_number'] or '—' }}
+                    </a>
+                </td>
+                <td>
+                    <a href="{{ url_for('sbir_detail', proposal_id=p['id']) }}">
+                        {{ p['title'][:50] }}{% if p['title']|length > 50 %}...{% endif %}
+                    </a>
+                </td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if p['program_type'] == 'sbir' %}background:#eaf4fb;color:#2980b9
+                        {% else %}background:#f3eaf8;color:#8e44ad{% endif %}">
+                        {{ p['program_type']|upper }}
+                    </span>
+                </td>
+                <td>{{ (p['phase'] or '—')|replace('_',' ')|title }}</td>
+                <td>{{ p['agency'][:25] if p['agency'] else '—' }}</td>
+                <td>
+                    {% if p['award_amount'] %}
+                    <span style="font-weight:600;color:#2c3e50">${{ '{:,.0f}'.format(p['award_amount']) }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    <span style="font-weight:600;color:{% if p['trl_current'] >= 5 %}#27ae60{% elif p['trl_current'] >= 3 %}#f39c12{% else %}#7f8c8d{% endif %}">
+                        {{ p['trl_current'] }}/{{ p['trl_target'] }}
+                    </span>
+                </td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if p['status'] == 'draft' %}background:#f0f0f0;color:#7f8c8d
+                        {% elif p['status'] == 'submitted' %}background:#eaf4fb;color:#2980b9
+                        {% elif p['status'] == 'awarded' %}background:#e8f8f0;color:#27ae60
+                        {% elif p['status'] == 'phase_complete' %}background:#e8f8f0;color:#27ae60
+                        {% elif p['status'] == 'closed' %}background:#f0f0f0;color:#7f8c8d
+                        {% elif p['status'] == 'withdrawn' %}background:#fde8e8;color:#e74c3c
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ p['status']|replace('_',' ') }}
+                    </span>
+                </td>
+                <td>{{ p['submission_deadline'][:10] if p['submission_deadline'] else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% if not proposals %}
+    <div class="empty-state" style="padding:2.5rem 1rem;text-align:center">
+        <p style="margin-bottom:.5rem;color:#7f8c8d;font-size:.95rem">No SBIR/STTR proposals tracked yet.</p>
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

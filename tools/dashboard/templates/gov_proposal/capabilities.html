@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Core Capabilities — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+    <div>
+        <h1>Core Capabilities</h1>
+        <p class="subtitle">Company capabilities auto-derived from employee skill profiles and past performance.</p>
+    </div>
+    <div>
+        <button id="refresh-cap-btn" onclick="refreshCapabilities()"
+                style="background:#27ae60;color:#fff;border:none;padding:.4rem 1rem;border-radius:4px;cursor:pointer;font-size:.8rem">
+            ↻ Refresh Capabilities
+        </button>
+    </div>
+</div>
+
+<!-- Clearance Summary -->
+{% if clearance_summary %}
+<section class="card" style="margin-bottom:1.5rem">
+    <h2>Security Clearance Summary</h2>
+    <div style="display:flex;gap:1rem;flex-wrap:wrap">
+        {% for level, count in clearance_summary.items() %}
+        <div style="text-align:center;padding:.75rem 1.25rem;background:#f8f9fa;border-radius:8px;border:1px solid #dee2e6">
+            <div style="font-size:1.5rem;font-weight:bold;color:#2c3e50">{{ count }}</div>
+            <div style="font-size:.75rem;color:#7f8c8d;text-transform:uppercase;letter-spacing:.05em">
+                {{ level|replace('_',' ')|upper }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Capabilities by category -->
+{% if by_category %}
+{% for category, caps in by_category.items() %}
+<section class="card" style="margin-bottom:1rem">
+    <h2>{{ category|title|replace('_',' ') }}</h2>
+    <div style="display:flex;flex-wrap:wrap;gap:.75rem">
+        {% for cap in caps %}
+        <div style="padding:.6rem 1rem;border-radius:8px;border:1px solid #e0e0e0;
+                    background:#fff;min-width:160px;max-width:280px">
+            <div style="font-weight:600;font-size:.9rem;margin-bottom:.25rem">
+                {{ cap['capability_name'] }}
+            </div>
+            <div style="font-size:.75rem;color:#7f8c8d;display:flex;gap:.5rem;flex-wrap:wrap">
+                {% if cap['employee_count'] %}
+                <span title="Employees with this skill">&#128100; {{ cap['employee_count'] }}</span>
+                {% endif %}
+                {% if cap['proficiency_avg'] %}
+                <span title="Highest proficiency">
+                    {% if cap['proficiency_avg'] == 'expert' %}&#11088;{% elif cap['proficiency_avg'] == 'advanced' %}&#9733;{% else %}&#9900;{% endif %}
+                    {{ cap['proficiency_avg']|title }}
+                </span>
+                {% endif %}
+                {% if cap['proposal_count'] and cap['proposal_count'] > 0 %}
+                <span title="Used in proposals">&#128196; {{ cap['proposal_count'] }}</span>
+                {% endif %}
+            </div>
+            {% if cap['description'] %}
+            <div style="font-size:.75rem;color:#555;margin-top:.25rem">{{ cap['description'][:80] }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endfor %}
+{% else %}
+<section class="card" style="text-align:center;padding:2.5rem">
+    <p style="color:#7f8c8d;margin-bottom:1rem">No capabilities have been generated yet.</p>
+    <p style="font-size:.875rem;color:#95a5a6;margin-bottom:1.5rem">
+        Capabilities are automatically derived from your team's skills and past performance records.
+    </p>
+    <button onclick="refreshCapabilities()"
+            style="background:#27ae60;color:#fff;border:none;padding:.5rem 1.25rem;border-radius:4px;cursor:pointer;font-size:.875rem">
+        ↻ Generate Capabilities from Team Skills
+    </button>
+    <span id="cap-status" style="display:block;margin-top:.75rem;font-size:.8rem;color:#7f8c8d"></span>
+</section>
+{% endif %}
+
+<script>
+function refreshCapabilities() {
+    const btn = document.getElementById("refresh-cap-btn");
+    const status = document.getElementById("cap-status");
+    if (btn) { btn.disabled = true; btn.textContent = "⏳ Refreshing…"; }
+    if (status) status.textContent = "Aggregating capabilities from team skills…";
+    fetch("/api/capabilities/refresh", {method:"POST"})
+        .then(r => r.json())
+        .then(d => {
+            if (d.error) {
+                if (status) status.textContent = "✗ " + d.error;
+                if (btn) { btn.disabled = false; btn.textContent = "↻ Refresh Capabilities"; }
+            } else {
+                if (status) status.textContent = "✓ Capabilities updated. Reloading…";
+                setTimeout(() => location.reload(), 800);
+            }
+        })
+        .catch(e => {
+            if (status) status.textContent = "✗ Request failed: " + e.message;
+            if (btn) { btn.disabled = false; btn.textContent = "↻ Refresh Capabilities"; }
+        });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Pricing Scenarios — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+        <h1>Pricing Scenarios</h1>
+        <p class="subtitle">Saved pricing calculations. {{ scenarios|length }} scenario{{ 's' if scenarios|length != 1 else '' }} on file.</p>
+    </div>
+    <a href="{{ url_for('pricing') }}"
+       style="padding:.45rem 1rem;background:#2c3e50;color:#fff;border-radius:4px;
+              text-decoration:none;font-size:.85rem">
+        + New Scenario
+    </a>
+</div>
+
+{% if scenarios %}
+<section class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Scenario</th>
+                <th>Service Line</th>
+                <th>Tier</th>
+                <th>Type</th>
+                <th>Period</th>
+                <th>Hours</th>
+                <th>DLC</th>
+                <th>Cost</th>
+                <th>Price</th>
+                <th>Breakeven</th>
+                <th>Margin</th>
+                <th>Date</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for s in scenarios %}
+        <tr>
+            <td>
+                <strong>{{ s.name }}</strong>
+                {% if s.notes %}
+                <br><small style="color:#7f8c8d">{{ s.notes[:80] }}{% if s.notes|length > 80 %}…{% endif %}</small>
+                {% endif %}
+            </td>
+            <td>{{ s.sl_label }}</td>
+            <td>
+                {% if s.tier %}
+                <span style="background:{% if s.tier=='bronze' %}#cd7f32{% elif s.tier=='silver' %}#95a5a6{% else %}#d4ac0d{% endif %};
+                             color:#fff;padding:.1rem .4rem;border-radius:3px;font-size:.72rem;font-weight:700;text-transform:uppercase">
+                    {{ s.tier }}
+                </span>
+                {% else %}—{% endif %}
+            </td>
+            <td>
+                <span style="background:{% if s.contract_type=='ffp' %}#1a5276{% else %}#145a32{% endif %};
+                             color:#fff;padding:.1rem .4rem;border-radius:3px;font-size:.72rem;font-weight:700">
+                    {{ s.contract_type|upper }}
+                </span>
+            </td>
+            <td>{{ s.period|title }}</td>
+            <td style="text-align:right">{{ s.labor_hours|round(0)|int }}</td>
+            <td style="text-align:right">${{ "{:,.0f}".format(s.direct_labor_cost) }}</td>
+            <td style="text-align:right">${{ "{:,.0f}".format(s.total_cost_before_fee) }}</td>
+            <td style="text-align:right;font-weight:700">${{ "{:,.0f}".format(s.total_price) }}</td>
+            <td style="text-align:right;color:#e67e22">${{ "{:,.0f}".format(s.breakeven_price) }}</td>
+            <td style="text-align:right;color:#27ae60">
+                {{ "{:.1f}".format(s.margin_pct) }}%
+                <br><small>${{ "{:,.0f}".format(s.margin_amount) }}</small>
+            </td>
+            <td style="font-size:.78rem;color:#7f8c8d;white-space:nowrap">
+                {{ s.created_at[:10] if s.created_at else '—' }}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+
+<!-- Summary stats -->
+<section class="card" style="margin-top:1.25rem">
+    <h2>Portfolio Summary</h2>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem">
+        {% set total_pipe = scenarios | sum(attribute='total_price') %}
+        {% set avg_margin = (scenarios | sum(attribute='margin_pct')) / scenarios|length if scenarios else 0 %}
+        {% set total_hours = scenarios | sum(attribute='labor_hours') %}
+        {% set avg_price = total_pipe / scenarios|length if scenarios else 0 %}
+
+        <div style="text-align:center;background:#f8f9fa;border-radius:5px;padding:.75rem">
+            <div style="font-size:1.4rem;font-weight:700;color:#2c3e50">
+                ${{ "{:,.0f}".format(total_pipe) }}
+            </div>
+            <div style="font-size:.75rem;color:#7f8c8d">Total Pipeline Value</div>
+        </div>
+        <div style="text-align:center;background:#f8f9fa;border-radius:5px;padding:.75rem">
+            <div style="font-size:1.4rem;font-weight:700;color:#27ae60">
+                {{ "{:.1f}".format(avg_margin) }}%
+            </div>
+            <div style="font-size:.75rem;color:#7f8c8d">Avg Margin</div>
+        </div>
+        <div style="text-align:center;background:#f8f9fa;border-radius:5px;padding:.75rem">
+            <div style="font-size:1.4rem;font-weight:700;color:#2c3e50">
+                {{ "{:,.0f}".format(total_hours) }}
+            </div>
+            <div style="font-size:.75rem;color:#7f8c8d">Total Hours Priced</div>
+        </div>
+        <div style="text-align:center;background:#f8f9fa;border-radius:5px;padding:.75rem">
+            <div style="font-size:1.4rem;font-weight:700;color:#8e44ad">
+                ${{ "{:,.0f}".format(avg_price) }}
+            </div>
+            <div style="font-size:.75rem;color:#7f8c8d">Avg Scenario Price</div>
+        </div>
+    </div>
+
+    <!-- By service line -->
+    <div style="margin-top:1rem">
+        <h3 style="font-size:.9rem;margin-bottom:.5rem">By Service Line</h3>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem">
+            {% set sl_map = {'cloud_infra':'Cloud Infra','cyber_pentest':'Cyber/Pentest','ai_ml_ops':'AI/ML Ops','help_desk':'Help Desk'} %}
+            {% for sl, sl_lbl in sl_map.items() %}
+            {% set sl_scenarios = scenarios | selectattr('service_line','equalto',sl) | list %}
+            {% if sl_scenarios %}
+            <div style="background:#f8f9fa;border-radius:5px;padding:.6rem .75rem">
+                <div style="font-size:.8rem;font-weight:600;margin-bottom:.25rem">{{ sl_lbl }}</div>
+                {% for s in sl_scenarios %}
+                <div style="display:flex;justify-content:space-between;font-size:.75rem;margin:.1rem 0">
+                    <span style="color:#555">{{ s.tier|title if s.tier else 'Custom' }}</span>
+                    <span style="font-weight:600">${{ "{:,.0f}".format(s.total_price) }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+    </div>
+</section>
+
+{% else %}
+<div class="card" style="text-align:center;padding:3rem">
+    <p style="color:#7f8c8d;font-size:1rem">No pricing scenarios saved yet.</p>
+    <a href="{{ url_for('pricing') }}" class="btn"
+       style="display:inline-block;margin-top:.75rem;background:#2c3e50;color:#fff;
+              padding:.5rem 1.5rem;border-radius:4px;text-decoration:none">
+        Open Pricing Calculator
+    </a>
+</div>
+{% endif %}
+{% endblock %}
