@@ -15,8 +15,7 @@ Usage:
 """
 
 import logging
-import os
-from typing import Any, Callable, Optional, Set
+from typing import Any, Optional, Set
 
 logger = logging.getLogger("security.middleware")
 
@@ -76,7 +75,7 @@ def init_security(
         return
 
     from tools.security.security_context import SecurityContext, attach_to_flask_g
-    from tools.security.classification_enforcer import can_read, check_mac, log_mac_violation
+    from tools.security.classification_enforcer import can_read
     from tools.security.field_security import field_security_after_request
 
     app.config["ICDEV_CLASSIFICATION"] = classification.upper()

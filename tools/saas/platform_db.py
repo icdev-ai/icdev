@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS tenants (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(128) NOT NULL, slug VARCHAR(128) NOT NULL UNIQUE,
     impact_level VARCHAR(4) NOT NULL DEFAULT 'IL4' CHECK (impact_level IN ('IL2','IL4','IL5','IL6')),
+    compartments JSONB DEFAULT '[]',
     status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','provisioning','active','suspended','deactivated','deleted')),
     tier VARCHAR(20) NOT NULL DEFAULT 'starter' CHECK (tier IN ('starter','professional','enterprise')),
     db_host VARCHAR(256), db_name VARCHAR(128), db_port INTEGER DEFAULT 5432,
@@ -74,6 +75,7 @@ CREATE TABLE IF NOT EXISTS users (
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     email VARCHAR(256) NOT NULL, display_name VARCHAR(256),
     role VARCHAR(24) NOT NULL DEFAULT 'developer' CHECK (role IN ('tenant_admin','developer','compliance_officer','auditor','viewer')),
+    compartments JSONB DEFAULT '[]',
     auth_method VARCHAR(16) NOT NULL DEFAULT 'api_key' CHECK (auth_method IN ('api_key','oauth','cac_piv')),
     status VARCHAR(16) NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','deactivated')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), last_login TIMESTAMPTZ,
@@ -172,6 +174,7 @@ SQLITE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS tenants (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
     impact_level TEXT NOT NULL DEFAULT 'IL4' CHECK (impact_level IN ('IL2','IL4','IL5','IL6')),
+    compartments TEXT DEFAULT '[]',
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','provisioning','active','suspended','deactivated','deleted')),
     tier TEXT NOT NULL DEFAULT 'starter' CHECK (tier IN ('starter','professional','enterprise')),
     db_host TEXT, db_name TEXT, db_port INTEGER DEFAULT 5432,
@@ -190,6 +193,7 @@ CREATE TABLE IF NOT EXISTS users (
     tenant_id TEXT NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
     email TEXT NOT NULL, display_name TEXT,
     role TEXT NOT NULL DEFAULT 'developer' CHECK (role IN ('tenant_admin','developer','compliance_officer','auditor','viewer')),
+    compartments TEXT DEFAULT '[]',
     auth_method TEXT NOT NULL DEFAULT 'api_key' CHECK (auth_method IN ('api_key','oauth','cac_piv')),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','deactivated')),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -383,6 +387,10 @@ def init_platform_db(force=False):
         else:
             _init_sqlite_schema(cursor)
 
+        # Safe column additions for existing installs
+        _ensure_column(cursor, backend, "tenants", "compartments", "JSONB DEFAULT '[]'", "TEXT DEFAULT '[]'")
+        _ensure_column(cursor, backend, "users", "compartments", "JSONB DEFAULT '[]'", "TEXT DEFAULT '[]'")
+
         conn.commit()
 
         tables = _list_tables(cursor, backend)
@@ -429,6 +437,23 @@ def _init_sqlite_schema(cursor):
         stmt = stmt.strip()
         if stmt:
             cursor.execute(stmt)
+
+
+def _ensure_column(cursor, backend, table, column, pg_type, sqlite_type):
+    """Add a column if it does not already exist (safe for existing DBs)."""
+    try:
+        if backend == "postgresql":
+            cursor.execute(
+                "ALTER TABLE {} ADD COLUMN IF NOT EXISTS {} {}".format(table, column, pg_type)
+            )
+        else:
+            # SQLite doesn't support IF NOT EXISTS in ALTER TABLE
+            cursor.execute("PRAGMA table_info({})".format(table))
+            existing = {row[1] for row in cursor.fetchall()}
+            if column not in existing:
+                cursor.execute("ALTER TABLE {} ADD COLUMN {} {}".format(table, column, sqlite_type))
+    except Exception:
+        pass  # Ignore if table doesn't exist yet (will be created by schema init)
 
 
 def _split_sql_statements(sql):

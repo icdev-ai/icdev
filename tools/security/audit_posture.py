@@ -21,7 +21,6 @@ Public API:
 import json
 import logging
 import os
-from pathlib import Path
 from typing import Any, Dict
 
 logger = logging.getLogger("security.posture")
@@ -91,7 +90,7 @@ def _check_row_security() -> Dict[str, Any]:
 
 def _check_column_security() -> Dict[str, Any]:
     try:
-        from tools.security.column_security import mask_columns, apply_column_policy
+        from tools.security.column_security import mask_columns
 
         row = {"email": "a@b.com", "secret": "s1"}
         masked = mask_columns(row, {"secret": "null"})
@@ -115,7 +114,7 @@ def _check_field_security() -> Dict[str, Any]:
 
 def _check_encryption_at_rest() -> Dict[str, Any]:
     try:
-        mod = __import__("tools.security.encryption_at_rest", fromlist=["rotate_keys"])
+        __import__("tools.security.encryption_at_rest", fromlist=["rotate_keys"])
         return {"status": "pass", "detail": "module loadable"}
     except Exception as exc:
         return {"status": "warn", "detail": f"module not loadable: {exc}"}
@@ -131,7 +130,6 @@ def _check_mtls() -> Dict[str, Any]:
 
 def _check_middleware() -> Dict[str, Any]:
     try:
-        from tools.security.security_middleware import init_security
 
         return {"status": "pass", "detail": "init_security importable"}
     except Exception as exc:

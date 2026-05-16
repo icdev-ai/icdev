@@ -440,17 +440,29 @@ def _touch_streak(conn, user: dict) -> None:
     conn.commit()
 
 
-def get_user(user_id: int) -> dict | None:
-    row = get_connection().execute(
-        "SELECT * FROM fa_users WHERE id=?", (user_id,)
-    ).fetchone()
+def get_user(user_id: int, tenant_id: str | None = None) -> dict | None:
+    conn = get_connection()
+    if tenant_id is not None:
+        row = conn.execute(
+            "SELECT * FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM fa_users WHERE id=?", (user_id,)
+        ).fetchone()
     return dict(row) if row else None
 
 
-def get_user_by_username(username: str) -> dict | None:
-    row = get_connection().execute(
-        "SELECT * FROM fa_users WHERE username=?", (username,)
-    ).fetchone()
+def get_user_by_username(username: str, tenant_id: str | None = None) -> dict | None:
+    conn = get_connection()
+    if tenant_id is not None:
+        row = conn.execute(
+            "SELECT * FROM fa_users WHERE username=? AND tenant_id=?", (username, tenant_id)
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM fa_users WHERE username=?", (username,)
+        ).fetchone()
     return dict(row) if row else None
 
 
@@ -459,7 +471,7 @@ def get_user_by_username(username: str) -> dict | None:
 # ---------------------------------------------------------------------------
 
 def list_missions(tier: int = None, role: str = None,
-                  mission_type: str = None) -> list[dict]:
+                  mission_type: str = None, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
     q = "SELECT * FROM fa_missions WHERE is_active=1"
     params = []
@@ -469,6 +481,9 @@ def list_missions(tier: int = None, role: str = None,
     if mission_type:
         q += " AND mission_type=?"
         params.append(mission_type)
+    if tenant_id is not None:
+        q += " AND tenant_id=?"
+        params.append(tenant_id)
     q += " ORDER BY tier, order_idx"
     rows = conn.execute(q, params).fetchall()
     missions = [dict(r) for r in rows]
@@ -522,8 +537,15 @@ def upsert_mission(data: dict) -> int:
 # Progress CRUD
 # ---------------------------------------------------------------------------
 
-def get_mission_progress(user_id: int, mission_id: int) -> dict:
+def get_mission_progress(user_id: int, mission_id: int, tenant_id: str | None = None) -> dict:
     conn = get_connection()
+    # Verify user belongs to tenant before returning progress
+    if tenant_id is not None:
+        user_row = conn.execute(
+            "SELECT id FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+        ).fetchone()
+        if not user_row:
+            return {"status": "not_started", "xp_earned": 0, "attempts": 0, "score": 0}
     row = conn.execute(
         "SELECT * FROM fa_mission_progress WHERE user_id=? AND mission_id=?",
         (user_id, mission_id),
@@ -610,8 +632,15 @@ def complete_step(user_id: int, step_id: int, submission: str = "",
     conn.commit()
 
 
-def user_progress_summary(user_id: int) -> dict:
+def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
     conn = get_connection()
+    # Verify user belongs to tenant
+    if tenant_id is not None:
+        user_row = conn.execute(
+            "SELECT id FROM fa_users WHERE id=? AND tenant_id=?", (user_id, tenant_id)
+        ).fetchone()
+        if not user_row:
+            return {"total_missions": 0, "completed": 0, "steps_completed": 0, "in_progress": None}
     total = conn.execute("SELECT COUNT(*) FROM fa_missions WHERE is_active=1").fetchone()[0]
     done = conn.execute(
         "SELECT COUNT(*) FROM fa_mission_progress WHERE user_id=? AND status='completed'",
@@ -1096,7 +1125,7 @@ def get_user_competencies(user_id: int) -> list[dict]:
 
 
 def seed_mission_ontology_mappings() -> None:
-    """Seed ontology mappings for all builtin missions."""
+    """Seed ontology mappings for all builtin missions in a single transaction."""
     from .ontology import build_mission_ontology_id, build_step_ontology_id
     from .content_loader import BUILTIN_MISSIONS, BUILTIN_STEPS
     conn = get_connection()
@@ -1112,13 +1141,18 @@ def seed_mission_ontology_mappings() -> None:
             title=m.get("title", ""),
             tier=m.get("tier", 1),
         )
-        upsert_mission_ontology(
-            mission_id=mission_id,
-            ontology_id=onto["ontology_id"],
-            mission_class=onto["mission_class"],
-            topic_class=onto["topic_class"],
-            competency_class=onto["competency_class"],
-            prereq_paths=onto["prereq_ontology_paths"],
+        conn.execute(
+            """INSERT INTO fa_mission_ontology
+               (mission_id, ontology_id, mission_class, topic_class, competency_class, prereq_ontology_paths_json)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(mission_id) DO UPDATE SET
+                 ontology_id=excluded.ontology_id,
+                 mission_class=excluded.mission_class,
+                 topic_class=excluded.topic_class,
+                 competency_class=excluded.competency_class,
+                 prereq_ontology_paths_json=excluded.prereq_ontology_paths_json""",
+            (mission_id, onto["ontology_id"], onto["mission_class"], onto["topic_class"],
+             onto["competency_class"], json.dumps(onto["prereq_ontology_paths"] or [])),
         )
         # Seed step ontologies
         steps = BUILTIN_STEPS.get(m["slug"], [])
@@ -1130,9 +1164,14 @@ def seed_mission_ontology_mappings() -> None:
             if not step_row:
                 continue
             step_onto = build_step_ontology_id(m["slug"], step["step_num"], step.get("step_type", "configure"))
-            upsert_step_ontology(
-                step_id=step_row["id"],
-                ontology_id=step_onto["ontology_id"],
-                step_class=step_onto["step_class"],
+            conn.execute(
+                """INSERT INTO fa_step_ontology
+                   (step_id, ontology_id, step_class)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(step_id) DO UPDATE SET
+                     ontology_id=excluded.ontology_id,
+                     step_class=excluded.step_class""",
+                (step_row["id"], step_onto["ontology_id"], step_onto["step_class"]),
             )
+    conn.commit()
     _log.info("FORGE Academy: seeded ontology mappings")

@@ -9317,6 +9317,7 @@ CREATE TABLE IF NOT EXISTS workflow_acceptance_criteria (
     )),
     evidence TEXT,
     verified_at TEXT,
+    cot_config TEXT,
     created_at TEXT NOT NULL,
     FOREIGN KEY (loop_id) REFERENCES workflow_loops(id),
     FOREIGN KEY (bdd_story_id) REFERENCES safe_decomposition(id)

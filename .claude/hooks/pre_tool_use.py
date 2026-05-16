@@ -395,6 +395,12 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Security Framework (Phase 74 — sec-fnd)
         "security_policies",
         "user_compartments",
+        "security_context_log",
+        "abac_decisions",
+        "mac_violations",
+        "rls_audit",
+        "column_mask_audit",
+        "field_filter_audit",
         # FathomDesk Market Breadth (migration 047 — periodic breadth snapshots, NIST AU)
         "ad_breadth_snapshots",
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)

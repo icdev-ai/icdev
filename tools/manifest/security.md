@@ -28,7 +28,9 @@
 | Field Security | tools/security/field_security.py | Field-Level Security for API responses: `filter_response_fields()` strips or redacts fields based on `_FIELD_POLICIES`. Nested dict/list traversal; Flask `after_request` integration. | `--filter --schema <name> --json` | JSON |
 | Encryption at Rest | tools/security/encryption_at_rest.py | Per-classification encryption using HKDF-SHA256 column-specific keys from master keys. Optional HSM via PKCS#11. Key rotation with audit logging. | `--rotate --classification <level> --json` | JSON |
 | mTLS Integration | tools/security/mtls_integration.py | mTLS identity resolver: cert CN → SecurityContext via dashboard user lookup. CRL/OCSP revocation checks. SSL mode upgrades for IL5+. | `--verify --json` | JSON |
-| Security Middleware | tools/security/security_middleware.py | Flask `init_app()` registering `before_request` (auth extraction, context propagation, PG `SET` vars) and `after_request` (field filtering, `X-Classification-Ceiling` header). | `--init-app --json` | JSON |
+| Security Middleware | tools/security/middleware.py | Flask `init_security()` registering `before_request` (auth extraction, context propagation, PG `SET` vars) and `after_request` (field filtering, `X-Classification-Ceiling` header). | `--init-app --json` | JSON |
+| Security Middleware (alias) | tools/security/security_middleware.py | Thin re-export of `tools.security.middleware` for manifest compatibility. | — | — |
 | Audit Posture | tools/security/audit_posture.py | Security posture auditor: checks all framework layers (context, ABAC, MAC, RLS, column, field, encryption, mTLS, middleware) and reports health. | `--json` | JSON |
+| Security Config | args/security_config.yaml | Central ABAC, column, field, clearance matrix, and compartment (COI/LAC/ECI) registry. | YAML | Policies |
 
 
