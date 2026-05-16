@@ -125,6 +125,7 @@
 - [Bayesian Autoresearch (Phase 67, D-AR-1 through D-AR-10)](manifest/bayesian-autoresearch.md)
 - [SRE — Site Reliability Engineering](manifest/sre-site-reliability-engineering.md)
 - [Redaction & Data Protection (Phase 70 — D-RDT-1)](manifest/redaction-data-protection.md)
+- [GovProposal Subsystem (RFx, CRM, ERP, CAG, SBIR, IDIQ)](manifest/gov-proposal.md)
 - [ICDEV™ Studio — Low-Code/No-Code Platform (Phase 72 — D361-D366)](manifest/icdev-studio-low-code-no-code-platform.md)
 - [Autonomy Engine](manifest/autonomy-engine.md)
 - [Autoresearch (Additional)](manifest/autoresearch.md)
@@ -662,3 +663,13 @@
 |------|------|-------------|-------|--------|
 | Il5 Display Service | tools\il5\il5_display_service.py | Auto-registered: il5/il5_display_service.py | --json | JSON |
 | Il5 Ingestion Service | tools\il5\il5_ingestion_service.py | Auto-registered: il5/il5_ingestion_service.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Llm Middleware | tools\chat\llm_middleware.py | Auto-registered: chat/llm_middleware.py | --json | JSON |
+| Dti Calculator | tools\dat\dti_calculator.py | Auto-registered: dat/dti_calculator.py | --json | JSON |
+| Api Routes | tools\il5\api_routes.py | Auto-registered: il5/api_routes.py | --json | JSON |
+| Jise Portal | tools\intelligence\jise_portal.py | Auto-registered: intelligence/jise_portal.py | --json | JSON |
+| Ontology Enricher | tools\requirements\ontology_enricher.py | Auto-registered: requirements/ontology_enricher.py | --json | JSON |

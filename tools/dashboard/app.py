@@ -1388,6 +1388,10 @@ def create_app() -> Flask:
             "byok_enabled": BYOK_ENABLED,
             "strategos_enabled": _HAS_STRATEGOS,
             "govcon_enabled": _HAS_GOVCON and not _AIRGAP_MODE,
+            "gov_proposal_enabled": (
+                os.environ.get("ICDEV_GOV_PROPOSAL_ENABLED", "false").lower() == "true"
+                and not _AIRGAP_MODE
+            ),
             "network_enabled": _HAS_NETWORK,
             "pipeline_enabled": _HAS_PIPELINE,
             "security_canvas_enabled": _HAS_SECURITY_CANVAS,
@@ -3470,6 +3474,21 @@ def create_app() -> Flask:
     # ---- CPMP / Proposals / GovCon Pages (D-CHILD-6: guarded) ----
     if _HAS_GOVCON:
         _register_govcon_pages(app, _get_db)
+
+    # ---- GovProposal Subsystem (RFx AI engine, CRM, ERP, SBIR, IDIQ, recompetes) ----
+    _GOV_PROPOSAL_ENABLED = (
+        os.environ.get("ICDEV_GOV_PROPOSAL_ENABLED", "false").lower() == "true"
+        and not _AIRGAP_MODE
+    )
+    if _GOV_PROPOSAL_ENABLED:
+        try:
+            from icdev.tools.gov_proposal import gov_proposal_bp as _gp_bp
+            from icdev.tools.gov_proposal.db_init import init_db as _gp_init_db
+            _gp_init_db()
+            app.register_blueprint(_gp_bp)
+            app.logger.info("GovProposal blueprint registered at /gov-proposal")
+        except Exception as _exc:
+            app.logger.warning("GovProposal blueprint failed to register: %s", _exc)
 
     # ---- Phase 61: Orchestration Dashboard ----
 

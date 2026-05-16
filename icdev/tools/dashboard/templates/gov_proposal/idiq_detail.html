@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}{{ vehicle['vehicle_name'][:40] }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav style="font-size:.85rem;margin-bottom:1rem;color:#7f8c8d">
+    <a href="{{ url_for('idiq_list') }}" style="color:#2980b9;text-decoration:none">IDIQ</a>
+    &rsaquo; {{ vehicle['vehicle_name'][:60] }}
+</nav>
+
+<h1 style="margin-bottom:.3rem">{{ vehicle['vehicle_name'][:80] }}</h1>
+{% if vehicle['vehicle_number'] %}
+<p style="color:#7f8c8d;margin-bottom:1.5rem;font-size:.9rem">{{ vehicle['vehicle_number'] }}</p>
+{% endif %}
+
+<!-- Two-column top: Vehicle Info + Utilization -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- Left: Vehicle Information -->
+    <div class="card" style="padding:1.2rem">
+        <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Vehicle Information</h3>
+        <dl style="display:grid;grid-template-columns:140px 1fr;gap:.4rem .8rem;margin:0;font-size:.88rem">
+            <dt style="font-weight:600;color:#555">Vehicle #</dt>
+            <dd style="margin:0">{{ vehicle['vehicle_number'] or '---' }}</dd>
+            <dt style="font-weight:600;color:#555">Type</dt>
+            <dd style="margin:0">
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                    {% if vehicle['vehicle_type'] == 'idiq' %}background:#eaf4fb;color:#2980b9
+                    {% elif vehicle['vehicle_type'] == 'bpa' %}background:#f3eaf8;color:#8e44ad
+                    {% elif vehicle['vehicle_type'] == 'gwac' %}background:#e8f6f3;color:#16a085
+                    {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                    {{ vehicle['vehicle_type']|upper }}
+                </span>
+            </dd>
+            <dt style="font-weight:600;color:#555">Agency</dt>
+            <dd style="margin:0">{{ vehicle['agency'] or '---' }}</dd>
+            <dt style="font-weight:600;color:#555">Ordering Agency</dt>
+            <dd style="margin:0">{{ vehicle['ordering_agency'] or '---' }}</dd>
+            <dt style="font-weight:600;color:#555">Ceiling Value</dt>
+            <dd style="margin:0">{% if vehicle['ceiling_value'] %}${{ '{:,.0f}'.format(vehicle['ceiling_value']) }}{% else %}---{% endif %}</dd>
+            <dt style="font-weight:600;color:#555">Total Obligated</dt>
+            <dd style="margin:0">{% if vehicle['total_obligated'] %}${{ '{:,.0f}'.format(vehicle['total_obligated']) }}{% else %}---{% endif %}</dd>
+            <dt style="font-weight:600;color:#555">Our Position</dt>
+            <dd style="margin:0">
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                    {% if vehicle['our_position'] == 'prime' %}background:#e8f8f0;color:#27ae60
+                    {% elif vehicle['our_position'] == 'subcontractor' %}background:#eaf4fb;color:#2980b9
+                    {% elif vehicle['our_position'] == 'teaming' %}background:#fef3e2;color:#e67e22
+                    {% elif vehicle['our_position'] == 'pending' %}background:#fef9e7;color:#f1c40f
+                    {% elif vehicle['our_position'] == 'not_on_vehicle' %}background:#f0f0f0;color:#7f8c8d
+                    {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                    {{ vehicle['our_position']|replace('_',' ') }}
+                </span>
+            </dd>
+            <dt style="font-weight:600;color:#555">Status</dt>
+            <dd style="margin:0">
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                    {% if vehicle['status'] == 'active' %}background:#e8f8f0;color:#27ae60
+                    {% elif vehicle['status'] == 'expired' %}background:#fde8e8;color:#e74c3c
+                    {% elif vehicle['status'] == 'pending' %}background:#fef9e7;color:#f1c40f
+                    {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                    {{ vehicle['status']|replace('_',' ') }}
+                </span>
+            </dd>
+            <dt style="font-weight:600;color:#555">POP Start</dt>
+            <dd style="margin:0">{{ vehicle['period_of_performance_start'] or '---' }}</dd>
+            <dt style="font-weight:600;color:#555">POP End</dt>
+            <dd style="margin:0">{{ vehicle['period_of_performance_end'] or '---' }}</dd>
+            <dt style="font-weight:600;color:#555">Option Years</dt>
+            <dd style="margin:0">{{ vehicle['option_years'] if vehicle['option_years'] is not none else '---' }}</dd>
+            <dt style="font-weight:600;color:#555">Classification</dt>
+            <dd style="margin:0">{{ vehicle['classification'] or '---' }}</dd>
+        </dl>
+    </div>
+
+    <!-- Right: Utilization -->
+    <div class="card" style="padding:1.2rem;text-align:center">
+        <h3 style="margin-top:0;margin-bottom:.5rem;font-size:1rem;color:#2c3e50">Utilization</h3>
+        <div style="font-size:3rem;font-weight:700;margin:.5rem 0;
+            {% if utilization_pct > 90 %}color:#e74c3c
+            {% elif utilization_pct >= 70 %}color:#f39c12
+            {% else %}color:#27ae60{% endif %}">
+            {{ utilization_pct|round(1) }}%
+        </div>
+        <!-- Horizontal bar: obligated / ceiling -->
+        <div style="margin:1rem 0;text-align:left">
+            <div style="display:flex;justify-content:space-between;font-size:.75rem;color:#7f8c8d;margin-bottom:.3rem">
+                <span>Obligated</span>
+                <span>Ceiling</span>
+            </div>
+            <div style="height:12px;background:#eee;border-radius:6px;overflow:hidden">
+                <div style="height:100%;border-radius:6px;width:{{ utilization_pct if utilization_pct <= 100 else 100 }}%;
+                    {% if utilization_pct > 90 %}background:#e74c3c
+                    {% elif utilization_pct >= 70 %}background:#f39c12
+                    {% else %}background:#27ae60{% endif %}"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:.78rem;margin-top:.3rem">
+                <span style="font-weight:600;color:#2c3e50">{% if vehicle['total_obligated'] %}${{ '{:,.0f}'.format(vehicle['total_obligated']) }}{% else %}$0{% endif %}</span>
+                <span style="color:#7f8c8d">{% if vehicle['ceiling_value'] %}${{ '{:,.0f}'.format(vehicle['ceiling_value']) }}{% else %}---{% endif %}</span>
+            </div>
+        </div>
+        <div style="margin-top:1rem;font-size:.88rem;color:#2c3e50;font-weight:600">
+            {{ task_order_count }} Task Orders
+        </div>
+    </div>
+</div>
+
+<!-- Task Orders Section -->
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        Task Orders ({{ task_orders|length }})
+    </h3>
+    {% if task_orders %}
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>TO #</th>
+                <th>Name</th>
+                <th>Value</th>
+                <th>Status</th>
+                <th>Start Date</th>
+                <th>End Date</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for to in task_orders %}
+            <tr>
+                <td style="font-weight:600">{{ to['task_order_number'] or '---' }}</td>
+                <td>{{ to['task_order_name'][:60] }}{% if to['task_order_name']|length > 60 %}...{% endif %}</td>
+                <td>
+                    {% if to['value'] %}
+                    <span style="font-weight:600;color:#2c3e50">${{ '{:,.0f}'.format(to['value']) }}</span>
+                    {% else %}---{% endif %}
+                </td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if to['status'] == 'active' %}background:#e8f8f0;color:#27ae60
+                        {% elif to['status'] == 'completed' %}background:#f0f0f0;color:#7f8c8d
+                        {% elif to['status'] == 'pending' %}background:#fef9e7;color:#f1c40f
+                        {% elif to['status'] == 'cancelled' %}background:#fde8e8;color:#e74c3c
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ to['status']|replace('_',' ') }}
+                    </span>
+                </td>
+                <td>{{ to['period_of_performance_start'][:10] if to['period_of_performance_start'] else '---' }}</td>
+                <td>{{ to['period_of_performance_end'][:10] if to['period_of_performance_end'] else '---' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:#7f8c8d;font-size:.9rem;text-align:center;padding:1rem">No task orders under this vehicle.</p>
+    {% endif %}
+</section>
+{% endblock %}

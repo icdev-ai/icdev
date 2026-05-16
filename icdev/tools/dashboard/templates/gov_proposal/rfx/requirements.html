@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}RFX Requirements — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+        <h1>Requirements</h1>
+        <p class="subtitle">{{ requirements|length }} requirement{{ 's' if requirements|length != 1 else '' }} extracted from RFP documents</p>
+    </div>
+</div>
+
+{# ── Filter / extract bar ───────────────────────────────────────────────────── #}
+<section class="card" style="margin-bottom:1.25rem">
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+        <div>
+            <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Filter by Proposal</label>
+            <select id="filter-proposal" onchange="filterByProposal()"
+                    style="padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem;min-width:200px">
+                <option value="">— All Proposals —</option>
+                {% for p in proposals %}
+                <option value="{{ p.id }}" {% if selected_proposal == p.id %}selected{% endif %}>
+                    {{ p.title[:60] }}{% if p.title|length > 60 %}…{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% if selected_proposal %}
+        <div>
+            <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Extract via LLM</label>
+            <button onclick="extractLLM()" id="extract-btn"
+                    style="background:#8e44ad;color:#fff;border:none;padding:.4rem .9rem;border-radius:4px;cursor:pointer;font-size:.85rem">
+                ⚡ LLM Extract
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+{# ── Compliance gauge ───────────────────────────────────────────────────────── #}
+{% if compliance %}
+{% set addressed = compliance.get('addressed', 0) %}
+{% set total_req = (compliance.get('addressed',0) + compliance.get('not_addressed',0) + compliance.get('partial',0)) %}
+{% set pct = ((addressed / total_req) * 100)|round(0)|int if total_req else 0 %}
+<section class="card" style="margin-bottom:1.25rem">
+    <h2 style="margin-bottom:.5rem">Compliance Coverage</h2>
+    <div style="display:flex;align-items:center;gap:1rem">
+        <div style="flex:1">
+            <div style="background:#ecf0f1;border-radius:4px;height:12px">
+                <div style="background:{% if pct >= 80 %}#27ae60{% elif pct >= 50 %}#e67e22{% else %}#e74c3c{% endif %};height:12px;border-radius:4px;width:{{ pct }}%;transition:width .4s"></div>
+            </div>
+        </div>
+        <strong style="font-size:1.1rem;min-width:50px">{{ pct }}%</strong>
+    </div>
+    <div style="display:flex;gap:1.5rem;margin-top:.5rem;font-size:.8rem;color:#7f8c8d">
+        <span style="color:#27ae60">✓ {{ addressed }} addressed</span>
+        <span style="color:#e67e22">~ {{ compliance.get('partial', 0) }} partial</span>
+        <span style="color:#e74c3c">✗ {{ compliance.get('not_addressed', 0) }} not addressed</span>
+    </div>
+</section>
+{% endif %}
+
+{# ── Requirements table ─────────────────────────────────────────────────────── #}
+{% if requirements %}
+<section class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Req #</th>
+                <th>Section</th>
+                <th>Type</th>
+                <th>Volume</th>
+                <th>Priority</th>
+                <th>Requirement Text</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for r in requirements %}
+        <tr>
+            <td style="white-space:nowrap;font-size:.78rem;font-family:monospace">{{ r.req_number or '—' }}</td>
+            <td>
+                <span style="background:#ecf0f1;padding:.1rem .3rem;border-radius:3px;font-size:.72rem;text-transform:uppercase">
+                    {{ (r.section or 'other').replace('_',' ') }}
+                </span>
+            </td>
+            <td>
+                <span style="font-weight:700;color:{% if r.req_type in ('shall','must') %}#e74c3c{% elif r.req_type == 'should' %}#e67e22{% else %}#2c3e50{% endif %};font-size:.8rem">
+                    {{ r.req_type or '—' }}
+                </span>
+            </td>
+            <td style="font-size:.78rem">{{ (r.volume or '—').replace('_',' ') }}</td>
+            <td>
+                {% if r.priority == 'critical' %}
+                <span style="background:#e74c3c;color:#fff;padding:.1rem .35rem;border-radius:3px;font-size:.7rem">CRITICAL</span>
+                {% elif r.priority == 'high' %}
+                <span style="background:#e67e22;color:#fff;padding:.1rem .35rem;border-radius:3px;font-size:.7rem">HIGH</span>
+                {% elif r.priority == 'medium' %}
+                <span style="background:#f39c12;color:#fff;padding:.1rem .35rem;border-radius:3px;font-size:.7rem">MED</span>
+                {% else %}
+                <span style="background:#95a5a6;color:#fff;padding:.1rem .35rem;border-radius:3px;font-size:.7rem">LOW</span>
+                {% endif %}
+            </td>
+            <td style="max-width:400px;font-size:.8rem">{{ r.req_text or '—' }}</td>
+            <td>
+                {% if r.status == 'addressed' %}
+                <span style="color:#27ae60;font-weight:700">✓ Addressed</span>
+                {% elif r.status == 'partial' %}
+                <span style="color:#e67e22">~ Partial</span>
+                {% else %}
+                <span style="color:#e74c3c">✗ Open</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% else %}
+<div class="card" style="text-align:center;padding:3rem">
+    <p style="color:#7f8c8d">No requirements found. Upload and extract from RFP documents first.</p>
+    <a href="{{ url_for('rfx_documents') }}" class="btn"
+       style="display:inline-block;margin-top:.75rem;background:#2c3e50;color:#fff;padding:.5rem 1.5rem;border-radius:4px;text-decoration:none">
+        Upload Documents
+    </a>
+</div>
+{% endif %}
+
+<script>
+function filterByProposal() {
+    const pid = document.getElementById("filter-proposal").value;
+    const url = new URL(location.href);
+    if (pid) url.searchParams.set("proposal_id", pid);
+    else url.searchParams.delete("proposal_id");
+    location.href = url.toString();
+}
+
+async function extractLLM() {
+    const pid = new URLSearchParams(location.search).get("proposal_id");
+    if (!pid) return;
+    const btn = document.getElementById("extract-btn");
+    btn.disabled = true; btn.textContent = "Extracting…";
+    const resp = await fetch("/api/rfx/requirements/extract", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ proposal_id: pid })
+    });
+    const data = await resp.json();
+    if (data.error) { alert(data.error); btn.disabled = false; btn.textContent = "⚡ LLM Extract"; }
+    else { alert("Extracted " + (data.total || 0) + " requirements."); location.reload(); }
+}
+</script>
+{% endblock %}

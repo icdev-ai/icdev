@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}{{ contract['contract_name'][:40] }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav style="font-size:.85rem;margin-bottom:1rem;color:#7f8c8d">
+    <a href="{{ url_for('contracts') }}" style="color:#2980b9;text-decoration:none">Contracts</a>
+    &rsaquo; {{ contract['contract_name'][:60] }}
+</nav>
+
+<h1 style="margin-bottom:.3rem">{{ contract['contract_name'][:80] }}</h1>
+{% if contract['contract_number'] %}
+<p style="color:#7f8c8d;margin-bottom:1.5rem;font-size:.9rem">{{ contract['contract_number'] }}</p>
+{% endif %}
+
+<!-- Two-column top: Contract Info + CPARS Risk -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- Left: Contract Info -->
+    <div class="card" style="padding:1.2rem">
+        <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Contract Information</h3>
+        <dl style="display:grid;grid-template-columns:140px 1fr;gap:.4rem .8rem;margin:0;font-size:.88rem">
+            <dt style="font-weight:600;color:#555">Contract #</dt>
+            <dd style="margin:0">{{ contract['contract_number'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Type</dt>
+            <dd style="margin:0">{{ (contract['contract_type'] or '—')|upper }}</dd>
+            <dt style="font-weight:600;color:#555">Agency</dt>
+            <dd style="margin:0">{{ contract['agency'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">CO</dt>
+            <dd style="margin:0">{{ contract['contracting_officer'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">COR</dt>
+            <dd style="margin:0">{{ contract['cor_name'] or '—' }}{% if contract['cor_email'] %} ({{ contract['cor_email'] }}){% endif %}</dd>
+            <dt style="font-weight:600;color:#555">POP Start</dt>
+            <dd style="margin:0">{{ contract['period_of_performance_start'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">POP End</dt>
+            <dd style="margin:0">{{ contract['period_of_performance_end'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Value</dt>
+            <dd style="margin:0">{% if contract['contract_value'] %}${{ '{:,.0f}'.format(contract['contract_value']) }}{% else %}—{% endif %}</dd>
+            <dt style="font-weight:600;color:#555">Status</dt>
+            <dd style="margin:0"><span class="badge badge-{{ contract['status'] }}">{{ contract['status']|replace('_',' ') }}</span></dd>
+            <dt style="font-weight:600;color:#555">Classification</dt>
+            <dd style="margin:0">{{ contract['classification'] }}</dd>
+        </dl>
+    </div>
+
+    <!-- Right: CPARS Risk Gauge -->
+    <div class="card" style="padding:1.2rem;text-align:center">
+        <h3 style="margin-top:0;margin-bottom:.5rem;font-size:1rem;color:#2c3e50">CPARS Risk</h3>
+        <div style="font-size:3rem;font-weight:700;margin:.5rem 0;
+            color:{% if risk_level == 'critical' %}#c0392b{% elif risk_level == 'high' %}#e67e22{% elif risk_level == 'moderate' %}#f1c40f{% else %}#27ae60{% endif %}">
+            {{ '%.2f'|format(risk_score) }}
+        </div>
+        <span style="padding:.3rem .8rem;border-radius:4px;font-size:.85rem;font-weight:600;text-transform:uppercase;
+            {% if risk_level == 'critical' %}background:#fde8e8;color:#c0392b
+            {% elif risk_level == 'high' %}background:#fef3e2;color:#e67e22
+            {% elif risk_level == 'moderate' %}background:#fef9e7;color:#f1c40f
+            {% else %}background:#e8f8f0;color:#27ae60{% endif %}">
+            {{ risk_level }}
+        </span>
+        <div style="margin-top:1rem;font-size:.8rem;color:#7f8c8d;text-align:left">
+            <div>CDRLs: {{ cdrl_delivered }}/{{ cdrl_total }} delivered</div>
+            <div>Obligations: {{ obl_compliant }}/{{ obl_total }} compliant</div>
+        </div>
+    </div>
+</div>
+
+<!-- CDRLs Section -->
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        CDRLs ({{ cdrl_total }})
+    </h3>
+    {% if cdrl_total > 0 %}
+    <!-- Compliance bar -->
+    <div style="display:flex;height:8px;border-radius:4px;overflow:hidden;margin-bottom:1rem;background:#eee">
+        {% set accepted = cdrls|selectattr('status','equalto','accepted')|list|length %}
+        {% set delivered = cdrls|selectattr('status','equalto','delivered')|list|length %}
+        {% set overdue = cdrls|selectattr('status','equalto','overdue')|list|length %}
+        {% set other = cdrl_total - accepted - delivered - overdue %}
+        {% if accepted > 0 %}<div style="width:{{ (accepted/cdrl_total*100)|round(1) }}%;background:#27ae60" title="{{ accepted }} accepted"></div>{% endif %}
+        {% if delivered > 0 %}<div style="width:{{ (delivered/cdrl_total*100)|round(1) }}%;background:#2980b9" title="{{ delivered }} delivered"></div>{% endif %}
+        {% if overdue > 0 %}<div style="width:{{ (overdue/cdrl_total*100)|round(1) }}%;background:#e74c3c" title="{{ overdue }} overdue"></div>{% endif %}
+        {% if other > 0 %}<div style="width:{{ (other/cdrl_total*100)|round(1) }}%;background:#bdc3c7" title="{{ other }} pending"></div>{% endif %}
+    </div>
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>CDRL #</th>
+                <th>DI #</th>
+                <th>Title</th>
+                <th>Frequency</th>
+                <th>Next Due</th>
+                <th>Status</th>
+                <th>Assigned To</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in cdrls %}
+            <tr>
+                <td style="font-weight:600">{{ c['cdrl_number'] }}</td>
+                <td>{{ c['di_number'] or '—' }}</td>
+                <td>{{ c['title'][:60] }}{% if c['title']|length > 60 %}...{% endif %}</td>
+                <td>{{ c['frequency'] }}</td>
+                <td>{{ c['next_due_date'] or '—' }}</td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if c['status'] == 'accepted' %}background:#e8f8f0;color:#27ae60
+                        {% elif c['status'] == 'delivered' %}background:#eaf4fb;color:#2980b9
+                        {% elif c['status'] == 'overdue' %}background:#fde8e8;color:#c0392b
+                        {% elif c['status'] == 'rejected' %}background:#fde8e8;color:#e74c3c
+                        {% elif c['status'] == 'at_risk' %}background:#fef3e2;color:#e67e22
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ c['status']|replace('_',' ') }}
+                    </span>
+                </td>
+                <td>{{ c['assigned_to'] or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:#7f8c8d;font-size:.9rem;text-align:center;padding:1rem">No CDRLs imported for this contract.</p>
+    {% endif %}
+</section>
+
+<!-- SOW Obligations Section -->
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        SOW Obligations ({{ sow_obligations|length }})
+    </h3>
+    {% if sow_obligations %}
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Obligation</th>
+                <th>Level</th>
+                <th>Source</th>
+                <th>Due Date</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for o in sow_obligations %}
+            <tr>
+                <td>{{ o['obligation_text'][:100] }}{% if o['obligation_text']|length > 100 %}...{% endif %}</td>
+                <td>
+                    <span style="padding:.1rem .4rem;border-radius:3px;font-size:.75rem;font-weight:600;
+                        {% if o['obligation_level'] == 'shall' %}background:#fde8e8;color:#c0392b
+                        {% elif o['obligation_level'] == 'must' %}background:#fef3e2;color:#e67e22
+                        {% elif o['obligation_level'] == 'will' %}background:#fef9e7;color:#f1c40f
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ o['obligation_level']|upper }}
+                    </span>
+                </td>
+                <td>{{ (o['source_section'] or '')|replace('_',' ') }}</td>
+                <td>{{ o['due_date'] or '—' }}</td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if o['status'] == 'compliant' %}background:#e8f8f0;color:#27ae60
+                        {% elif o['status'] == 'non_compliant' %}background:#fde8e8;color:#c0392b
+                        {% elif o['status'] == 'in_progress' %}background:#eaf4fb;color:#2980b9
+                        {% elif o['status'] == 'waived' %}background:#f0f0f0;color:#7f8c8d
+                        {% else %}background:#f5f5f5;color:#95a5a6{% endif %}">
+                        {{ o['status']|replace('_',' ') }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p style="color:#7f8c8d;font-size:.9rem;text-align:center;padding:1rem">No SOW obligations imported.</p>
+    {% endif %}
+</section>
+
+<!-- Deliverable Milestones Section -->
+{% if deliverables %}
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        Deliverable Milestones ({{ deliverables|length }})
+    </h3>
+    <div class="table-container">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Deliverable</th>
+                <th>Level</th>
+                <th>Due Date</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in deliverables %}
+            <tr>
+                <td>{{ d['obligation_text'][:100] }}{% if d['obligation_text']|length > 100 %}...{% endif %}</td>
+                <td>
+                    <span style="padding:.1rem .4rem;border-radius:3px;font-size:.75rem;font-weight:600;
+                        {% if d['obligation_level'] == 'shall' %}background:#fde8e8;color:#c0392b
+                        {% else %}background:#f0f0f0;color:#7f8c8d{% endif %}">
+                        {{ d['obligation_level']|upper }}
+                    </span>
+                </td>
+                <td>{{ d['due_date'] or '—' }}</td>
+                <td>
+                    <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;
+                        {% if d['status'] == 'compliant' %}background:#e8f8f0;color:#27ae60
+                        {% elif d['status'] == 'non_compliant' %}background:#fde8e8;color:#c0392b
+                        {% elif d['status'] == 'in_progress' %}background:#eaf4fb;color:#2980b9
+                        {% else %}background:#f5f5f5;color:#95a5a6{% endif %}">
+                        {{ d['status']|replace('_',' ') }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</section>
+{% endif %}
+
+<!-- Upcoming Reminders -->
+{% if reminders %}
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        Pending Reminders ({{ reminders|length }})
+    </h3>
+    {% for r in reminders %}
+    <div style="display:flex;align-items:center;gap:.8rem;padding:.6rem .8rem;margin-bottom:.5rem;border-radius:5px;
+        {% if r['severity'] == 'overdue' %}background:#fde8e8;border-left:4px solid #e74c3c
+        {% elif r['severity'] == 'urgent' %}background:#fef3e2;border-left:4px solid #e67e22
+        {% elif r['severity'] == 'warning' %}background:#fef9e7;border-left:4px solid #f1c40f
+        {% else %}background:#eaf4fb;border-left:4px solid #3498db{% endif %}">
+        <span style="font-size:.78rem;font-weight:700;text-transform:uppercase;min-width:60px;
+            {% if r['severity'] == 'overdue' %}color:#e74c3c
+            {% elif r['severity'] == 'urgent' %}color:#e67e22
+            {% elif r['severity'] == 'warning' %}color:#f1c40f
+            {% else %}color:#3498db{% endif %}">
+            {{ r['severity'] }}
+        </span>
+        <span style="flex:1;font-size:.88rem">{{ r['title'][:100] }}</span>
+        <span style="font-size:.8rem;color:#7f8c8d;white-space:nowrap">Due: {{ r['due_date'] }}</span>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+<!-- Timeline: Next Due Dates -->
+{% if timeline %}
+<section class="card" style="padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">
+        Upcoming Timeline
+    </h3>
+    {% for item in timeline %}
+    <div style="display:flex;align-items:center;gap:.8rem;padding:.5rem 0;border-bottom:1px solid #f0f0f0;font-size:.88rem">
+        <span style="min-width:90px;font-weight:600;color:#2c3e50">{{ item['date'] }}</span>
+        <span style="padding:.1rem .5rem;border-radius:3px;font-size:.75rem;font-weight:600;background:#eaf4fb;color:#2980b9;min-width:70px;text-align:center">{{ item['type'] }}</span>
+        <span style="flex:1">{{ item['title'] }}</span>
+        <span style="padding:.1rem .4rem;border-radius:3px;font-size:.75rem;
+            {% if item['status'] == 'overdue' or item['status'] == 'non_compliant' %}color:#e74c3c
+            {% elif item['status'] == 'at_risk' %}color:#e67e22
+            {% else %}color:#7f8c8d{% endif %}">
+            {{ item['status']|replace('_',' ') }}
+        </span>
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% block title %}RFX Documents — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+    <div>
+        <h1>RFX Documents</h1>
+        <p class="subtitle">{{ documents|length }} document{{ 's' if documents|length != 1 else '' }} — upload RFI/RFP files for AI processing</p>
+    </div>
+</div>
+
+{# ── Upload card ────────────────────────────────────────────────────────────── #}
+<section class="card" style="margin-bottom:1.25rem">
+    <h2 style="margin-bottom:.75rem">Upload Document</h2>
+    <form id="upload-form" enctype="multipart/form-data">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem;margin-bottom:.75rem">
+            <div>
+                <label style="display:block;font-size:.8rem;margin-bottom:.2rem">File (PDF, DOCX, TXT) <span style="color:#e74c3c">*</span></label>
+                <input type="file" id="upload-file" name="file" accept=".pdf,.docx,.doc,.txt,.md"
+                       style="font-size:.85rem;width:100%">
+            </div>
+            <div>
+                <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Document Type</label>
+                <select id="upload-type" name="doc_type"
+                        style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+                    <option value="rfp">RFP / RFI / Solicitation</option>
+                    <option value="sow">Statement of Work (SOW)</option>
+                    <option value="cdd">Capability Description Document</option>
+                    <option value="past_performance">Past Performance</option>
+                    <option value="corpus">Training Corpus</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div>
+                <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Link to Proposal (optional)</label>
+                <input type="text" id="upload-proposal" name="proposal_id" placeholder="Proposal ID"
+                       style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+            </div>
+        </div>
+        <div style="margin-bottom:.75rem">
+            <label style="display:block;font-size:.8rem;margin-bottom:.2rem">Notes</label>
+            <input type="text" id="upload-notes" name="notes" placeholder="Optional description"
+                   style="width:100%;padding:.4rem;border:1px solid #ddd;border-radius:3px;font-size:.85rem">
+        </div>
+        <button type="submit" id="upload-btn"
+                style="background:#16a085;color:#fff;border:none;padding:.45rem 1.1rem;border-radius:4px;cursor:pointer;font-size:.85rem">
+            ↑ Upload &amp; Process
+        </button>
+        <span id="upload-status" style="margin-left:.75rem;font-size:.8rem;color:#7f8c8d"></span>
+    </form>
+</section>
+
+{# ── Documents table ────────────────────────────────────────────────────────── #}
+{% if documents %}
+<section class="card">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Type</th>
+                <th>Pages</th>
+                <th title="Number of text passages the AI can search through in this document">Passages</th>
+                <th title="AI-Ready means the document has been indexed and the AI can search it when drafting proposal sections">AI-Ready
+                    <span style="font-size:.65rem;font-weight:400;color:#7f8c8d"> (?)</span>
+                </th>
+                <th>Uploaded</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for d in documents %}
+        <tr id="doc-row-{{ d.id }}">
+            <td>
+                <strong>{{ d.filename }}</strong>
+                {% if d.notes %}<br><small style="color:#7f8c8d">{{ d.notes }}</small>{% endif %}
+            </td>
+            <td>
+                <span style="background:#ecf0f1;padding:.1rem .35rem;border-radius:3px;font-size:.72rem;text-transform:uppercase">
+                    {{ (d.doc_type or 'other').replace('_',' ') }}
+                </span>
+            </td>
+            <td style="text-align:center">{{ d.page_count or '—' }}</td>
+            <td style="text-align:center">{{ d.chunk_count or 0 }}</td>
+            <td style="text-align:center">
+                {% if d.vectorized %}
+                <span style="color:#27ae60;font-weight:700" title="This document is indexed and ready for AI to search">✓ Ready</span>
+                {% else %}
+                <button onclick="vectorizeDoc('{{ d.id }}')" id="vec-{{ d.id }}"
+                        title="Click to index this document — the AI will then be able to search it when drafting proposal sections"
+                        style="background:#8e44ad;color:#fff;border:none;padding:.2rem .5rem;border-radius:3px;cursor:pointer;font-size:.72rem">
+                    ✦ Make AI-Ready
+                </button>
+                {% endif %}
+            </td>
+            <td style="font-size:.78rem;white-space:nowrap">{{ (d.created_at or '')[:10] or '—' }}</td>
+            <td>
+                <button onclick="deleteDoc('{{ d.id }}')"
+                        style="background:#e74c3c;color:#fff;border:none;padding:.2rem .5rem;border-radius:3px;cursor:pointer;font-size:.72rem">
+                    Delete
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% else %}
+<div class="card" style="text-align:center;padding:3rem">
+    <p style="color:#7f8c8d">No documents uploaded yet. Upload RFP/RFI files above to begin AI-assisted proposal writing.</p>
+</div>
+{% endif %}
+
+<div id="doc-toast" style="display:none;position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;
+     padding:.7rem 1.1rem;border-radius:6px;font-size:.875rem;color:#fff;max-width:400px;
+     box-shadow:0 4px 12px rgba(0,0,0,.25)"></div>
+
+<script>
+function docToast(msg, type, dur) {
+    var t = document.getElementById("doc-toast");
+    t.textContent = msg;
+    t.style.background = type === "error" ? "#c0392b" : type === "warn" ? "#e67e22" : "#27ae60";
+    t.style.display = "block";
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function() { t.style.display = "none"; }, dur || 4000);
+}
+
+document.getElementById("upload-form").addEventListener("submit", async function(e) {
+    e.preventDefault();
+    const file = document.getElementById("upload-file").files[0];
+    if (!file) { docToast("Please select a file to upload.", "error"); return; }
+    const btn = document.getElementById("upload-btn");
+    const status = document.getElementById("upload-status");
+    btn.disabled = true;
+    btn.textContent = "⏳ Uploading…";
+    status.textContent = "Processing document — this may take a moment…";
+
+    const fd = new FormData(e.target);
+    try {
+        const resp = await fetch("/api/rfx/documents/upload", { method: "POST", body: fd });
+        const data = await resp.json();
+        if (data.error) {
+            docToast("Upload error: " + data.error, "error");
+            status.textContent = "";
+        } else if (data.status === "duplicate") {
+            docToast("This document was already uploaded (duplicate file detected).", "warn");
+            status.textContent = "";
+        } else {
+            status.textContent = "✓ Uploaded — " + data.chunk_count + " passages extracted.";
+            docToast("✓ Document uploaded and processed successfully.", "success");
+            setTimeout(() => location.reload(), 1800);
+        }
+    } catch(err) {
+        docToast("Upload failed: " + err.message, "error");
+        status.textContent = "";
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "↑ Upload & Process";
+    }
+});
+
+async function vectorizeDoc(docId) {
+    const btn = document.getElementById("vec-" + docId);
+    btn.disabled = true; btn.textContent = "⏳ Indexing…";
+    try {
+        const resp = await fetch("/api/rfx/documents/" + docId + "/vectorize", { method: "POST" });
+        const data = await resp.json();
+        if (data.error) {
+            docToast("Indexing failed: " + data.error, "error");
+            btn.disabled = false; btn.textContent = "✦ Make AI-Ready";
+        } else {
+            docToast("✓ Document is now AI-Ready and searchable.", "success");
+            setTimeout(() => location.reload(), 1200);
+        }
+    } catch(err) {
+        docToast("Indexing failed: " + err.message, "error");
+        btn.disabled = false; btn.textContent = "✦ Make AI-Ready";
+    }
+}
+
+async function deleteDoc(docId) {
+    if (!confirm("Delete this document and all its content? This cannot be undone.")) return;
+    try {
+        const resp = await fetch("/api/rfx/documents/" + docId, { method: "DELETE" });
+        const data = await resp.json();
+        if (data.error) { docToast("Delete failed: " + data.error, "error"); }
+        else { document.getElementById("doc-row-" + docId).remove(); }
+    } catch(err) { docToast("Delete failed: " + err.message, "error"); }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}LCAT Rate Cards — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>LCAT Rate Cards</h1>
+<p class="subtitle">Labor Category cost structures — direct labor, fringe, overhead, G&amp;A, fee, and fully-burdened wrap rates.</p>
+
+<section class="card">
+    <h2>LCAT Definitions &amp; Current Rates</h2>
+    {% if lcats %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>LCAT Code</th>
+                <th>Name</th>
+                <th>NAICS</th>
+                <th>Min Exp</th>
+                <th>DLR ($/hr)</th>
+                <th>Fringe</th>
+                <th>OH</th>
+                <th>G&amp;A</th>
+                <th>Fee</th>
+                <th>Wrap</th>
+                <th>FBR ($/hr)</th>
+                <th>Staff</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for lcat in lcats %}
+            <tr>
+                <td><code>{{ lcat['lcat_code'] }}</code></td>
+                <td>{{ lcat['lcat_name'] }}</td>
+                <td><small>{{ lcat['naics_code'] or '—' }}</small></td>
+                <td>{{ lcat['min_experience_years'] or '—' }} yrs</td>
+                {% if lcat['direct_labor_rate'] %}
+                <td><strong>${{ "%.2f"|format(lcat['direct_labor_rate']) }}</strong></td>
+                <td>{{ "%.1f"|format((lcat['fringe_rate'] or 0)*100) }}%</td>
+                <td>{{ "%.1f"|format((lcat['overhead_rate'] or 0)*100) }}%</td>
+                <td>{{ "%.1f"|format((lcat['ga_rate'] or 0)*100) }}%</td>
+                <td>{{ "%.1f"|format((lcat['fee_rate'] or 0)*100) }}%</td>
+                <td>
+                    {% if lcat['wrap_rate'] %}
+                    <strong>{{ "%.2f"|format(lcat['wrap_rate']) }}x</strong>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if lcat['direct_labor_rate'] and lcat['wrap_rate'] %}
+                    ${{ "%.2f"|format(lcat['direct_labor_rate'] * lcat['wrap_rate']) }}
+                    {% else %}—{% endif %}
+                </td>
+                {% else %}
+                <td colspan="7" style="color:#bdc3c7;font-style:italic">No rate card set</td>
+                {% endif %}
+                <td style="text-align:center">{{ lcat['employee_count'] or 0 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <p style="margin-top:.75rem;font-size:.8rem;color:#7f8c8d">
+        <strong>FBR</strong> (Fully-Burdened Rate) = DLR × Wrap Rate &nbsp;|&nbsp;
+        <strong>Wrap</strong> = 1 + Fringe + OH + G&amp;A + Fee
+    </p>
+    {% else %}
+    <div style="text-align:center;padding:2rem">
+        <p style="color:#7f8c8d;margin-bottom:.5rem">No Labor Categories (LCATs) defined yet.</p>
+        <p style="font-size:.875rem;color:#95a5a6">
+            Contact your system administrator to add LCAT rate cards.
+            LCATs define job categories and billing rates used in pricing calculations.
+        </p>
+    </div>
+    {% endif %}
+</section>
+
+<!-- FPDS Benchmarks -->
+<section class="card" style="margin-top:1.5rem">
+    <h2>FPDS Pricing Benchmarks</h2>
+    <p style="color:#7f8c8d;font-size:.85rem">Market reference rates from FPDS-NG. Use as a sanity check against your rate cards.</p>
+    {% if benchmarks %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Labor Category</th>
+                <th>NAICS</th>
+                <th>Agency</th>
+                <th>Avg Rate</th>
+                <th>Median</th>
+                <th>25th pct</th>
+                <th>75th pct</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in benchmarks %}
+            <tr>
+                <td>{{ b['labor_category'] }}</td>
+                <td><small>{{ b['naics_code'] or '—' }}</small></td>
+                <td><small>{{ b['agency'] or '—' }}</small></td>
+                <td>${{ "%.2f"|format(b['average_rate']) }}</td>
+                <td>${{ "%.2f"|format(b['median_rate']) }}</td>
+                <td>${{ "%.2f"|format(b['percentile_25']) }}</td>
+                <td>${{ "%.2f"|format(b['percentile_75']) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No FPDS benchmarks loaded.
+        Run the FPDS scanner to populate pricing data.</p>
+    {% endif %}
+</section>
+{% endblock %}

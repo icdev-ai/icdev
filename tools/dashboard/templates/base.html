@@ -441,6 +441,16 @@
                     <li><a href="/proposals">Proposals</a></li>
                     <li><a href="/govcon">Intelligence</a></li>
                     {% endif %}
+                    {% if gov_proposal_enabled %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">GovProposal</li>
+                    <li><a href="/gov-proposal">Dashboard</a></li>
+                    <li><a href="/gov-proposal/opportunities">Opportunities</a></li>
+                    <li><a href="/gov-proposal/rfx/documents">RFx AI Engine</a></li>
+                    <li><a href="/gov-proposal/proposals">Proposals</a></li>
+                    <li><a href="/gov-proposal/crm">CRM</a></li>
+                    <li><a href="/gov-proposal/team">Team / ERP</a></li>
+                    {% endif %}
                     {% if gameday_enabled or academy_enabled %}
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Training</li>
@@ -811,6 +821,7 @@
             [/^\/ai-observatory/, 'ai_observatory'],
             [/^\/ontology/, 'ontology'],
             [/^\/cache-savings/, 'cache_savings'],
+            [/^\/gov-proposal/, 'gov_proposal'],
         ];
 
         function detectCanvas() {

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Base — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>Knowledge Base</h1>
+
+<section class="card">
+    <form method="GET" class="filter-form">
+        <label>Search: <input type="text" name="q" value="{{ search_query or '' }}" placeholder="Search knowledge base..."></label>
+        <label>Type:
+            <select name="type">
+                <option value="">All Types</option>
+                {% for t in ['capability','boilerplate','case_study','win_theme','solution_architecture','methodology','certification','tool_technology','domain_expertise','corporate_overview','management_approach'] %}
+                <option value="{{ t }}" {% if entry_type == t %}selected{% endif %}>{{ t|replace('_',' ')|title }} ({{ type_counts.get(t, 0) }})</option>
+                {% endfor %}
+            </select>
+        </label>
+        <button type="submit" class="btn btn-primary">Search</button>
+        <a href="{{ url_for('knowledge') }}" class="btn btn-secondary">Clear</a>
+    </form>
+</section>
+
+<section class="card">
+    <table class="data-table">
+        <thead>
+            <tr><th>Title</th><th>Type</th><th>Uses</th><th>Win Rate</th><th>Updated</th></tr>
+        </thead>
+        <tbody>
+            {% for entry in entries %}
+            <tr>
+                <td>{{ entry['title'] }}</td>
+                <td><span class="badge">{{ entry['entry_type']|replace('_',' ') }}</span></td>
+                <td>{{ entry['usage_count'] or 0 }}</td>
+                <td>{% if entry['win_rate'] %}{{ (entry['win_rate'] * 100)|round(0)|int }}%{% else %}—{% endif %}</td>
+                <td>{{ entry['updated_at'][:10] if entry['updated_at'] else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% if not entries %}
+    <div style="text-align:center;padding:2rem">
+        <p style="color:#7f8c8d;margin-bottom:.5rem">
+            No knowledge base entries{% if search_query %} matching "{{ search_query }}"{% endif %}.
+        </p>
+        {% if not search_query %}
+        <p style="font-size:.875rem;color:#95a5a6;margin-bottom:1.25rem">
+            Your knowledge base stores capabilities, past performance, boilerplate, and win themes that the AI uses when drafting proposals.
+        </p>
+        <a href="mailto:?subject=Request%20KB%20Content&body=Please%20add%20entries%20to%20the%20GovProposal%20Knowledge%20Base."
+           style="display:inline-block;background:#2980b9;color:#fff;padding:.45rem 1rem;border-radius:4px;font-size:.875rem;text-decoration:none">
+            + Request KB Content
+        </a>
+        {% else %}
+        <a href="{{ url_for('knowledge') }}" style="font-size:.875rem;color:#2980b9">Clear search and view all entries</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
+{% endblock %}

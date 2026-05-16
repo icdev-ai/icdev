@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}{{ recompete['title'][:40] }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<nav style="font-size:.85rem;margin-bottom:1rem;color:#7f8c8d">
+    <a href="{{ url_for('recompetes') }}" style="color:#2980b9;text-decoration:none">Recompetes</a>
+    &rsaquo; {{ recompete['title'][:60] }}
+</nav>
+
+<h1 style="margin-bottom:1.5rem">{{ recompete['title'][:80] }}</h1>
+
+<!-- Two-column top: Recompete Info + Displacement Assessment -->
+<div style="display:grid;grid-template-columns:1fr 300px;gap:1.5rem;margin-bottom:1.5rem">
+    <!-- Left: Recompete Information -->
+    <div class="card" style="padding:1.2rem">
+        <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Recompete Information</h3>
+        <dl style="display:grid;grid-template-columns:160px 1fr;gap:.4rem .8rem;margin:0;font-size:.88rem">
+            <dt style="font-weight:600;color:#555">Contract #</dt>
+            <dd style="margin:0">{{ recompete['contract_number'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Title</dt>
+            <dd style="margin:0">{{ recompete['title'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Agency</dt>
+            <dd style="margin:0">{{ recompete['agency'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Set-Aside</dt>
+            <dd style="margin:0">{{ recompete['set_aside'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">NAICS</dt>
+            <dd style="margin:0">{{ recompete['naics'] or '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Current Value</dt>
+            <dd style="margin:0">{% if recompete['current_value'] %}${{ '{:,.0f}'.format(recompete['current_value']) }}{% else %}—{% endif %}</dd>
+            <dt style="font-weight:600;color:#555">Recompete Date</dt>
+            <dd style="margin:0">{{ recompete['anticipated_recompete_date'][:10] if recompete['anticipated_recompete_date'] else '—' }}</dd>
+            <dt style="font-weight:600;color:#555">Our Decision</dt>
+            <dd style="margin:0">
+                {% if recompete['our_decision'] == 'pursue' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#e8f8f0;color:#27ae60">pursue</span>
+                {% elif recompete['our_decision'] == 'no_bid' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#f0f0f0;color:#7f8c8d">no bid</span>
+                {% elif recompete['our_decision'] == 'undecided' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#fef9e7;color:#f39c12">undecided</span>
+                {% else %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#f0f0f0;color:#7f8c8d">{{ (recompete['our_decision'] or '—')|replace('_',' ') }}</span>
+                {% endif %}
+            </dd>
+            <dt style="font-weight:600;color:#555">Status</dt>
+            <dd style="margin:0">
+                {% if recompete['status'] == 'monitoring' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#eaf4fb;color:#2980b9">monitoring</span>
+                {% elif recompete['status'] == 'pursuing' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#e8f8f0;color:#27ae60">pursuing</span>
+                {% elif recompete['status'] == 'proposal_submitted' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#eaf4fb;color:#2980b9">proposal submitted</span>
+                {% elif recompete['status'] == 'won' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#e8f8f0;color:#27ae60">won</span>
+                {% elif recompete['status'] == 'lost' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#fde8e8;color:#e74c3c">lost</span>
+                {% elif recompete['status'] == 'cancelled' %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#f0f0f0;color:#7f8c8d">cancelled</span>
+                {% else %}
+                <span style="padding:.15rem .5rem;border-radius:3px;font-size:.78rem;font-weight:600;background:#f0f0f0;color:#7f8c8d">{{ (recompete['status'] or '—')|replace('_',' ') }}</span>
+                {% endif %}
+            </dd>
+        </dl>
+    </div>
+
+    <!-- Right: Displacement Assessment -->
+    <div class="card" style="padding:1.2rem;text-align:center">
+        <h3 style="margin-top:0;margin-bottom:.5rem;font-size:1rem;color:#2c3e50">Displacement Assessment</h3>
+        {% set score = recompete['displacement_score'] or 0.0 %}
+        <div style="font-size:3rem;font-weight:700;margin:.5rem 0;
+            color:{% if score >= 0.7 %}#e74c3c{% elif score >= 0.4 %}#f39c12{% else %}#27ae60{% endif %}">
+            {{ '%.2f'|format(score) }}
+        </div>
+        <span style="padding:.3rem .8rem;border-radius:4px;font-size:.85rem;font-weight:600;text-transform:uppercase;
+            {% if score >= 0.7 %}background:#fde8e8;color:#e74c3c
+            {% elif score >= 0.4 %}background:#fef9e7;color:#f39c12
+            {% else %}background:#e8f8f0;color:#27ae60{% endif %}">
+            {% if score >= 0.7 %}Hard{% elif score >= 0.4 %}Moderate{% else %}Easy{% endif %}
+        </span>
+        <div style="margin-top:1rem;font-size:.8rem;color:#7f8c8d">
+            Higher = harder to displace
+        </div>
+    </div>
+</div>
+
+<!-- Incumbent Profile -->
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Incumbent Profile</h3>
+    <dl style="display:grid;grid-template-columns:180px 1fr;gap:.4rem .8rem;margin:0;font-size:.88rem">
+        <dt style="font-weight:600;color:#555">Incumbent Name</dt>
+        <dd style="margin:0">{{ recompete['incumbent_name'] or '—' }}</dd>
+        <dt style="font-weight:600;color:#555">Contract Start</dt>
+        <dd style="margin:0">{{ recompete['incumbent_contract_start'][:10] if recompete['incumbent_contract_start'] else '—' }}</dd>
+        <dt style="font-weight:600;color:#555">Years on Contract</dt>
+        <dd style="margin:0">
+            {% if recompete['incumbent_contract_start'] %}
+                {% set start_year = recompete['incumbent_contract_start'][:4]|int %}
+                {% set current_year = now[:4]|int %}
+                {{ current_year - start_year }}
+            {% else %}—{% endif %}
+        </dd>
+        <dt style="font-weight:600;color:#555">Performance Rating</dt>
+        <dd style="margin:0">{{ recompete['incumbent_performance_rating'] or '—' }}</dd>
+        <dt style="font-weight:600;color:#555">Key Strengths</dt>
+        <dd style="margin:0">
+            {% if recompete['incumbent_strengths'] %}
+            <div style="white-space:pre-wrap;line-height:1.5">{{ recompete['incumbent_strengths'] }}</div>
+            {% else %}—{% endif %}
+        </dd>
+        <dt style="font-weight:600;color:#555">Known Weaknesses</dt>
+        <dd style="margin:0">
+            {% if recompete['incumbent_weaknesses'] %}
+            <div style="white-space:pre-wrap;line-height:1.5">{{ recompete['incumbent_weaknesses'] }}</div>
+            {% else %}—{% endif %}
+        </dd>
+    </dl>
+</section>
+
+<!-- Win Strategy -->
+{% if strategy %}
+<section class="card" style="margin-bottom:1.5rem;padding:1.2rem">
+    <h3 style="margin-top:0;margin-bottom:.8rem;font-size:1rem;color:#2c3e50">Win Strategy</h3>
+    <ul style="margin:0;padding-left:1.5rem;font-size:.88rem;line-height:1.8">
+        {% for item in strategy %}
+        <li>{{ item }}</li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+{% endblock %}

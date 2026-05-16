@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block title %}Analytics — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>Win/Loss Analytics</h1>
+<p class="subtitle">Track proposal outcomes, identify patterns, and improve win rates.</p>
+
+{# ── Empty-state banner when no outcomes recorded yet ─────────────────────── #}
+{% if stats.wins == 0 and stats.losses == 0 %}
+<div style="background:#fff8e1;border-left:4px solid #f39c12;border-radius:4px;padding:1rem 1.25rem;margin-bottom:1.25rem">
+    <div style="display:flex;gap:.7rem;align-items:flex-start">
+        <span style="font-size:1.4rem;line-height:1">📊</span>
+        <div>
+            <strong style="color:#7d5a00">No win/loss data yet — here's how to get started</strong>
+            <p style="margin:.4rem 0 0;color:#4a3500;font-size:.88rem;line-height:1.6">
+                Analytics populate automatically once proposals are marked as <strong>Awarded</strong> or <strong>Lost</strong>.
+                To record an outcome:
+            </p>
+            <ol style="margin:.4rem 0 0 1.2rem;color:#4a3500;font-size:.86rem;line-height:1.8">
+                <li>Open any proposal from the <a href="{{ url_for('proposals') }}" style="color:#2980b9">Proposals</a> page.</li>
+                <li>Scroll to the <strong>Status</strong> field and change it to <em>Awarded</em> or <em>Lost</em>.</li>
+                <li>Optionally complete a <strong>Debrief</strong> on the proposal detail page — this unlocks pattern analysis below.</li>
+            </ol>
+            <p style="margin:.5rem 0 0;color:#7d5a00;font-size:.82rem">
+                💡 Your pipeline value of <strong>${{ "{:,.0f}".format(pipeline_value) }}</strong> is already tracked — win/loss data will add win-rate context as proposals close.
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Summary Cards -->
+<div class="analytics-summary">
+    <div class="analytics-card analytics-card-win">
+        <div class="analytics-value">{{ stats.wins }}</div>
+        <div class="analytics-label">Wins</div>
+    </div>
+    <div class="analytics-card analytics-card-loss">
+        <div class="analytics-value">{{ stats.losses }}</div>
+        <div class="analytics-label">Losses</div>
+    </div>
+    <div class="analytics-card analytics-card-rate">
+        <div class="analytics-value">{{ stats.win_rate }}%</div>
+        <div class="analytics-label">Win Rate</div>
+    </div>
+    <div class="analytics-card analytics-card-pipeline">
+        <div class="analytics-value">${{ "{:,.0f}".format(pipeline_value) }}</div>
+        <div class="analytics-label">Pipeline Value</div>
+    </div>
+</div>
+
+<!-- Win Rate Gauge -->
+<section class="card">
+    <h2>Win Rate Performance</h2>
+    <div class="gauge-container">
+        {% set gauge_color = '#2ecc71' if stats.win_rate >= 50 else ('#f39c12' if stats.win_rate >= 30 else '#e74c3c') %}
+        {% set dash_len = stats.win_rate / 100 * 251 %}
+        <svg class="gauge" viewBox="0 0 200 120" role="img" aria-label="Win rate gauge showing {{ stats.win_rate }}%">
+            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none" stroke="#e0e0e0" stroke-width="12" stroke-linecap="round"/>
+            <path d="M 20 100 A 80 80 0 0 1 180 100" fill="none"
+                  stroke="{{ gauge_color }}"
+                  stroke-width="12" stroke-linecap="round"
+                  stroke-dasharray="{{ dash_len }} 251"/>
+            <text x="100" y="90" text-anchor="middle" font-size="28" font-weight="bold"
+                  fill="{{ gauge_color }}">
+                {{ stats.win_rate }}%
+            </text>
+            <text x="100" y="115" text-anchor="middle" font-size="10" fill="#666">
+                Industry avg: 20-40%
+            </text>
+        </svg>
+    </div>
+</section>
+
+<!-- Win/Loss Patterns -->
+<section class="card">
+    <h2>Identified Patterns</h2>
+    {% if patterns %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Pattern</th>
+                <th>Type</th>
+                <th>Confidence</th>
+                <th>Occurrences</th>
+                <th>Recommendation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in patterns %}
+            <tr>
+                <td><strong>{{ p['pattern_description'] }}</strong></td>
+                <td>
+                    <span class="badge badge-{{ 'success' if p['pattern_type'] == 'win' else 'danger' }}">
+                        {{ p['pattern_type']|upper }}
+                    </span>
+                </td>
+                <td>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" style="width: {{ (p['confidence'] * 100)|int }}%"></div>
+                        <span>{{ (p['confidence'] * 100)|int }}%</span>
+                    </div>
+                </td>
+                <td>{{ p['occurrences'] }}</td>
+                <td>{{ p['recommendation'] or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div style="text-align:center;padding:2rem 1rem;color:#7f8c8d">
+        <div style="font-size:2rem;margin-bottom:.5rem">🔍</div>
+        <p style="font-weight:600;color:#555;margin-bottom:.35rem">No patterns yet</p>
+        <p style="font-size:.85rem;line-height:1.6;max-width:420px;margin:0 auto">
+            After you record outcomes on several proposals and complete a <strong>debrief</strong>
+            on each one, the system will automatically surface win/loss patterns —
+            like "proposals with CAG GREEN win at 2× the rate" or "DoD proposals due in Q1
+            have higher success rates."
+        </p>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Pipeline Breakdown -->
+<section class="card">
+    <h2>Pipeline Health</h2>
+    <p>Total active pipeline value: <strong>${{ "{:,.0f}".format(pipeline_value) }}</strong></p>
+    <p class="text-muted">Pipeline value includes all opportunities not marked as no_bid, archived, or lost.</p>
+</section>
+{% endblock %}

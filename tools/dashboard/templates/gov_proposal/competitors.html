@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Competitive Intelligence — {{ app_name }}{% endblock %}
+
+{% block content %}
+<h1>Competitive Intelligence</h1>
+<p class="subtitle">Track competitor capabilities, wins, and market positioning.</p>
+
+<!-- Competitor Profiles -->
+<section class="card">
+    <h2>Active Competitors</h2>
+    {% if competitors %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Competitor</th>
+                <th>Cage Code</th>
+                <th>Primary NAICS</th>
+                <th>Set-Aside</th>
+                <th>Win Count</th>
+                <th>Threat Level</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for comp in competitors %}
+            <tr>
+                <td><strong>{{ comp['name'] }}</strong></td>
+                <td><code>{{ comp['cage_code'] or '—' }}</code></td>
+                <td>{{ comp['primary_naics'] or '—' }}</td>
+                <td>{{ comp['set_aside_status'] or 'Full & Open' }}</td>
+                <td>{{ comp['win_count'] }}</td>
+                <td>
+                    {% if comp['win_count'] >= 10 %}
+                    <span class="badge badge-critical">HIGH</span>
+                    {% elif comp['win_count'] >= 5 %}
+                    <span class="badge badge-high">MEDIUM</span>
+                    {% else %}
+                    <span class="badge badge-low">LOW</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% if comp['strengths'] or comp['weaknesses'] %}
+            <tr class="detail-row">
+                <td colspan="6">
+                    {% if comp['strengths'] %}
+                    <span class="label">Strengths:</span> {{ comp['strengths'] }}
+                    {% endif %}
+                    {% if comp['weaknesses'] %}
+                    <br><span class="label">Weaknesses:</span> {{ comp['weaknesses'] }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No competitors tracked yet. Use the competitive intelligence tools to begin monitoring.</p>
+    {% endif %}
+</section>
+
+<!-- Recent Competitor Wins -->
+<section class="card">
+    <h2>Recent Competitor Wins (FPDS)</h2>
+    {% if recent_wins %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Competitor</th>
+                <th>Contract</th>
+                <th>Agency</th>
+                <th>Value</th>
+                <th>Award Date</th>
+                <th>NAICS</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for win in recent_wins %}
+            <tr>
+                <td>{{ win['competitor_name'] or '—' }}</td>
+                <td><code>{{ win['contract_number'] or '—' }}</code></td>
+                <td>{{ win['agency'] or '—' }}</td>
+                <td>{{ "${:,.0f}".format(win['award_amount']) if win['award_amount'] else '—' }}</td>
+                <td>{{ win['award_date'][:10] if win['award_date'] else '—' }}</td>
+                <td>{{ win['naics_code'] or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No competitor wins recorded. Run FPDS analysis to populate.</p>
+    {% endif %}
+</section>
+{% endblock %}

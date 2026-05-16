@@ -1,0 +1,139 @@
+{% extends "base.html" %}
+{% block title %}{{ prop['title'][:50] }} — {{ app_name }}{% endblock %}
+
+{% block content %}
+<nav class="breadcrumb"><a href="{{ url_for('proposals') }}">Proposals</a> &rsaquo; {{ prop['title'][:60] }}</nav>
+
+<h1>{{ prop['title'] }}</h1>
+
+<div class="two-col">
+    <section class="card">
+        <h2>Proposal Info</h2>
+        <dl class="detail-list">
+            <dt>Opportunity</dt><dd>{{ prop['opp_title'] or '—' }}</dd>
+            <dt>Agency</dt><dd>{{ prop['agency'] or '—' }}</dd>
+            <dt>Version</dt><dd>v{{ prop['version'] }}</dd>
+            <dt>Due Date</dt><dd>{{ prop['due_date'][:10] if prop['due_date'] else prop['response_deadline'][:10] if prop['response_deadline'] else '—' }}</dd>
+            <dt>Status</dt><dd><span class="badge badge-{{ prop['status'] }}">{{ prop['status']|replace('_',' ') }}</span></dd>
+            <dt>Classification</dt><dd>{{ prop['classification'] }}</dd>
+            <dt>PM</dt><dd>{{ prop['assigned_pm'] or '—' }}</dd>
+        </dl>
+    </section>
+
+    <section class="card {% if prop['cag_status'] == 'blocked' or prop['cag_status'] == 'quarantined' %}card-danger{% elif prop['cag_status'] == 'alert' %}card-warning{% endif %}">
+        <h2>CAG Status</h2>
+        <div class="cag-status-large cag-{{ prop['cag_status'] }}">
+            {{ prop['cag_status']|upper if prop['cag_status'] else 'PENDING' }}
+        </div>
+        {% if prop['cag_last_scan'] %}
+        <p>Last scan: {{ prop['cag_last_scan'][:16] }}</p>
+        {% endif %}
+        {% if alerts %}
+        <h3>Open Alerts ({{ alerts|length }})</h3>
+        {% for alert in alerts %}
+        <div class="alert-item alert-{{ alert['severity']|lower }}">
+            <strong>{{ alert['severity'] }}</strong> — {{ alert['categories_triggered'] }}
+            <br>Result: {{ alert['resulting_classification'] }}
+            {% if alert['remediation_suggestion'] %}<br><em>Fix: {{ alert['remediation_suggestion'] }}</em>{% endif %}
+        </div>
+        {% endfor %}
+        {% endif %}
+    </section>
+</div>
+
+<!-- Win Themes -->
+{% if themes %}
+<section class="card">
+    <h2>Win Themes</h2>
+    {% for theme in themes %}
+    <div class="theme-item">
+        <span class="badge badge-{{ theme['discriminator_type'] or 'general' }}">{{ theme['discriminator_type'] or 'General' }}</span>
+        {{ theme['theme_text'] }}
+    </div>
+    {% endfor %}
+</section>
+{% endif %}
+
+<!-- Compliance Matrix Summary -->
+{% if compliance %}
+<section class="card">
+    <h2>Compliance Coverage</h2>
+    <div class="compliance-bar">
+        {% set total = compliance|sum(attribute='cnt') %}
+        {% for c in compliance %}
+        <div class="compliance-segment compliance-{{ c['compliance_status'] }}"
+             style="width: {{ (c['cnt'] / total * 100)|round(1) }}%"
+             title="{{ c['compliance_status']|replace('_',' ')|title }}: {{ c['cnt'] }}">
+            {{ c['cnt'] }}
+        </div>
+        {% endfor %}
+    </div>
+    <div class="compliance-legend">
+        {% for c in compliance %}
+        <span class="legend-item">
+            <span class="legend-dot compliance-{{ c['compliance_status'] }}"></span>
+            {{ c['compliance_status']|replace('_',' ')|title }}: {{ c['cnt'] }}
+        </span>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Sections by Volume -->
+<section class="card">
+    <h2>Sections</h2>
+    {% set volumes = {} %}
+    {% for s in sections %}
+        {% set vol = s['volume'] %}
+        {% if vol not in volumes %}{% set _ = volumes.update({vol: []}) %}{% endif %}
+        {% set _ = volumes[vol].append(s) %}
+    {% endfor %}
+
+    {% for vol_name in ['technical','management','past_performance','cost','executive_summary','attachments'] %}
+    {% set vol_sections = sections|selectattr('volume', 'equalto', vol_name)|list %}
+    {% if vol_sections %}
+    <h3>Volume: {{ vol_name|replace('_',' ')|title }}</h3>
+    <table class="data-table">
+        <thead><tr><th>#</th><th>Title</th><th>Words</th><th>Pages</th><th>Limit</th><th>Status</th></tr></thead>
+        <tbody>
+            {% for s in vol_sections %}
+            <tr>
+                <td>{{ s['section_number'] }}</td>
+                <td>{{ s['section_title'] }}</td>
+                <td>{{ s['word_count'] or 0 }}</td>
+                <td>{{ s['page_count']|round(1) if s['page_count'] else '—' }}</td>
+                <td>{{ s['page_limit']|round(0)|int if s['page_limit'] else '—' }}</td>
+                <td><span class="badge badge-{{ s['status'] }}">{{ s['status'] }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+    {% endfor %}
+
+    {% if not sections %}
+    <p class="empty-state">No sections created yet.</p>
+    {% endif %}
+</section>
+
+<!-- Reviews -->
+{% if reviews %}
+<section class="card">
+    <h2>Reviews</h2>
+    <table class="data-table">
+        <thead><tr><th>Type</th><th>Score</th><th>Status</th><th>Reviewer</th><th>Date</th></tr></thead>
+        <tbody>
+            {% for r in reviews %}
+            <tr>
+                <td><span class="badge badge-{{ r['review_type'] }}">{{ r['review_type']|title }} Team</span></td>
+                <td>{% if r['overall_score'] %}{{ (r['overall_score'] * 100)|round(0)|int }}%{% else %}—{% endif %}</td>
+                <td>{{ r['review_status'] }}</td>
+                <td>{{ r['reviewer'] or '—' }}</td>
+                <td>{{ r['reviewed_at'][:10] if r['reviewed_at'] else '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+{% endif %}
+{% endblock %}

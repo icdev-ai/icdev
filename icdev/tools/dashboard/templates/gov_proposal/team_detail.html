@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}{{ employee['full_name'] }} — Team — {{ app_name }}{% endblock %}
+
+{% block content %}
+<div style="margin-bottom:1rem">
+    <a href="{{ url_for('team') }}" style="color:#7f8c8d;text-decoration:none">&larr; Team Directory</a>
+</div>
+
+<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem">
+    <div>
+        <h1>{{ employee['full_name'] }}</h1>
+        <p class="subtitle">{{ employee['job_title'] or 'No title' }} &nbsp;|&nbsp;
+            {% if employee['company_type'] == 'own' %}Own Company
+            {% elif employee['company_type'] == 'sub' %}Subcontractor
+            {% else %}Teaming Partner{% endif %}
+            {% if employee['location'] %} &nbsp;|&nbsp; {{ employee['location'] }}{% endif %}
+        </p>
+    </div>
+    <div>
+        {% if employee['availability'] == 'available' %}
+        <span class="badge badge-low" style="font-size:.9rem;padding:.3rem .7rem">Available</span>
+        {% elif employee['availability'] == 'partial' %}
+        <span class="badge" style="background:#e67e22;color:white;font-size:.9rem;padding:.3rem .7rem;border-radius:3px">Partial</span>
+        {% else %}
+        <span class="badge badge-critical" style="font-size:.9rem;padding:.3rem .7rem">Committed</span>
+        {% endif %}
+    </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+
+    <!-- Left column -->
+    <div>
+        <!-- Profile -->
+        <section class="card">
+            <h2>Profile</h2>
+            <table style="width:100%;border-collapse:collapse">
+                <tr><td class="label" style="width:40%;padding:.35rem 0;color:#7f8c8d;font-size:.85rem">Email</td>
+                    <td>{{ employee['email'] or '—' }}</td></tr>
+                <tr><td class="label" style="color:#7f8c8d;font-size:.85rem">Phone</td>
+                    <td>{{ employee['phone'] or '—' }}</td></tr>
+                <tr><td class="label" style="color:#7f8c8d;font-size:.85rem">Experience</td>
+                    <td>{{ employee['years_experience'] or '—' }} yrs</td></tr>
+                <tr><td class="label" style="color:#7f8c8d;font-size:.85rem">Education</td>
+                    <td>{{ employee['education'] or '—' }}</td></tr>
+                {% if employee['linkedin_url'] %}
+                <tr><td class="label" style="color:#7f8c8d;font-size:.85rem">LinkedIn</td>
+                    <td><a href="{{ employee['linkedin_url'] }}" target="_blank">Profile</a></td></tr>
+                {% endif %}
+            </table>
+        </section>
+
+        <!-- Clearance -->
+        <section class="card" style="margin-top:1rem">
+            <h2>Security Clearance</h2>
+            {% if employee['clearance_level'] and employee['clearance_level'] != 'none' %}
+            <div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+                <span class="badge {% if employee['clearance_level'] in ['ts_sci','ts_sci_poly'] %}badge-critical{% elif employee['clearance_level'] == 'top_secret' %}badge-high{% else %}badge-low{% endif %}"
+                      style="font-size:1rem;padding:.3rem .8rem">
+                    {{ employee['clearance_level']|upper|replace('_',' ') }}
+                </span>
+                <span>Status:
+                    <strong>{{ (employee['clearance_status'] or 'unknown')|title }}</strong>
+                </span>
+                {% if employee['clearance_expiry'] %}
+                <span>Expires: <strong>{{ employee['clearance_expiry'] }}</strong></span>
+                {% endif %}
+            </div>
+            {% else %}
+            <p style="color:#7f8c8d">No clearance on file</p>
+            {% endif %}
+        </section>
+
+        <!-- LCAT History -->
+        <section class="card" style="margin-top:1rem">
+            <h2>LCAT Assignments</h2>
+            {% if lcat_history %}
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>LCAT</th>
+                        <th>Effective</th>
+                        <th>DLR</th>
+                        <th>Wrap</th>
+                        <th>Primary</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for lcat in lcat_history %}
+                    <tr {% if lcat['end_date'] %}style="opacity:.55"{% endif %}>
+                        <td>
+                            <code>{{ lcat['lcat_code'] }}</code>
+                            <br><small>{{ lcat['lcat_name'] }}</small>
+                        </td>
+                        <td>{{ lcat['effective_date'] or '—' }}</td>
+                        <td>{% if lcat['direct_labor_rate'] %}${{ "%.2f"|format(lcat['direct_labor_rate']) }}/hr{% else %}—{% endif %}</td>
+                        <td>{% if lcat['wrap_rate'] %}{{ "%.2f"|format(lcat['wrap_rate']) }}x{% else %}—{% endif %}</td>
+                        <td>{% if lcat['is_primary'] %}<span style="color:#27ae60">&#10003;</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-state">No Labor Category (LCAT) assigned. Contact your system administrator to assign this team member's billing rate.</p>
+            {% endif %}
+
+            <!-- FPDS benchmark suggestions -->
+            {% if benchmarks %}
+            <div style="margin-top:1rem">
+                <h3 style="font-size:.9rem;color:#7f8c8d;text-transform:uppercase;letter-spacing:.05em">
+                    FPDS Rate Benchmarks (suggested)
+                </h3>
+                <table class="data-table">
+                    <thead>
+                        <tr><th>FPDS Category</th><th>Avg</th><th>Median</th><th>75th pct</th><th>Agency</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for b in benchmarks %}
+                        <tr>
+                            <td><small>{{ b['labor_category'] }}</small></td>
+                            <td>${{ "%.2f"|format(b['average_rate']) }}</td>
+                            <td>${{ "%.2f"|format(b['median_rate']) }}</td>
+                            <td>${{ "%.2f"|format(b['percentile_75']) }}</td>
+                            <td><small>{{ b['agency'] or '—' }}</small></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </section>
+    </div>
+
+    <!-- Right column -->
+    <div>
+        <!-- Skills -->
+        <section class="card">
+            <h2>Skills Matrix</h2>
+            {% if skills %}
+            {% set categories = skills|map(attribute='category')|unique|list %}
+            {% for cat in categories %}
+            <div style="margin-bottom:1rem">
+                <h3 style="font-size:.8rem;text-transform:uppercase;letter-spacing:.05em;color:#7f8c8d;margin-bottom:.5rem">
+                    {{ cat or 'Other' }}
+                </h3>
+                <div style="display:flex;flex-wrap:wrap;gap:.35rem">
+                    {% for skill in skills if skill['category'] == cat %}
+                    <span style="
+                        padding:.2rem .55rem;border-radius:12px;font-size:.8rem;
+                        {% if skill['proficiency'] == 'expert' %}background:#1abc9c;color:white
+                        {% elif skill['proficiency'] == 'advanced' %}background:#2980b9;color:white
+                        {% elif skill['proficiency'] == 'intermediate' %}background:#ecf0f1;color:#2c3e50
+                        {% else %}background:#f8f9fa;color:#7f8c8d;border:1px solid #dee2e6{% endif %}">
+                        {{ skill['skill_name'] }}
+                        <span style="opacity:.65;font-size:.7rem">({{ skill['proficiency'][:3] }})</span>
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="empty-state">No skills on file. Contact your system administrator to add this team member's skill profile.</p>
+            {% endif %}
+        </section>
+
+        <!-- Certifications -->
+        <section class="card" style="margin-top:1rem">
+            <h2>Certifications</h2>
+            {% if certifications %}
+            <table class="data-table">
+                <thead>
+                    <tr><th>Certification</th><th>Issuer</th><th>Expires</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for cert in certifications %}
+                    <tr>
+                        <td><strong>{{ cert['cert_name'] }}</strong>
+                            {% if cert['cert_number'] %}
+                            <br><small style="color:#7f8c8d">{{ cert['cert_number'] }}</small>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ cert['issuing_body'] or '—' }}</small></td>
+                        <td>{{ cert['expiry_date'] or 'No expiry' }}</td>
+                        <td>
+                            {% if cert['status'] == 'active' %}
+                            <span style="color:#27ae60">Active</span>
+                            {% elif cert['status'] == 'renewal_due' %}
+                            <span class="badge badge-high">Renewal Due</span>
+                            {% else %}
+                            <span class="badge badge-critical">{{ cert['status']|title }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty-state">No certifications on file.</p>
+            {% endif %}
+        </section>
+
+        <!-- Notes -->
+        {% if employee['notes'] %}
+        <section class="card" style="margin-top:1rem">
+            <h2>Notes</h2>
+            <p style="white-space:pre-wrap;color:#555">{{ employee['notes'] }}</p>
+        </section>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

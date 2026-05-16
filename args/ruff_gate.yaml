@@ -21,4 +21,8 @@
 #   tools/legacy/old_module.py:
 #     - F401  # import kept for back-compat re-export (task-xxxxxxxxxx)
 
-whitelist: {}
+whitelist:
+  tools/dashboard/chat_manager.py:
+    - F841  # pre-existing: router assigned but unused in error-handler path (GovProposal migration 2026-05-16)
+  tools/migration_canvas/migration_chat_advisor.py:
+    - F401  # pre-existing: LLMRouter/LLMRequest imported in try block for conditional use (GovProposal migration 2026-05-16)
