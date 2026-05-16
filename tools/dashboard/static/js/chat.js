@@ -1254,8 +1254,10 @@
             var added = data.added || 0;
             var newPct = data.new_score ? Math.round(data.new_score * 100) : null;
             var msg = added + ' requirement' + (added !== 1 ? 's' : '') + ' generated';
-            if (data.missing_types_filled && data.missing_types_filled.length > 0) {
+            if (added > 0 && data.missing_types_filled && data.missing_types_filled.length > 0) {
                 msg += ' covering: ' + data.missing_types_filled.join(', ');
+            } else if (added === 0) {
+                msg += ' — no gaps found or LLM response could not be parsed';
             }
             if (newPct !== null) msg += '. New score: ' + newPct + '%';
             if (statusEl) { statusEl.textContent = msg; }
