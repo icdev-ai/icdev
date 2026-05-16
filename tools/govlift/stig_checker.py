@@ -271,3 +271,39 @@ def run_quick_scan(workload_id: str) -> list[dict]:
             print(f"stig_checker.run_quick_scan check {check_id} error: {exc}", file=sys.stderr)
 
     return created
+
+
+def validate_workload_checklist(
+    workload_id: str,
+    timeout_seconds: float = 300.0,
+    benchmark: str | None = None,
+) -> dict:
+    """Run a timed STIG checklist validation for a workload.
+
+    Returns a dict with workload_id, benchmark, check_count, elapsed_seconds,
+    within_budget, summary, cat1_open, gate_passed, and checks.
+    Gate passes when elapsed < timeout AND zero open CAT1 findings.
+    """
+    import time as _time
+    _start = _time.monotonic()
+
+    checks = run_quick_scan(workload_id)
+    summary = get_stig_summary(workload_id)
+
+    elapsed = _time.monotonic() - _start
+    within_budget = elapsed < timeout_seconds
+    by_severity = summary.get("by_severity", {})
+    cat1_open = by_severity.get("cat1", {}).get("open", 0)
+    gate_passed = within_budget and cat1_open == 0
+
+    return {
+        "workload_id": workload_id,
+        "benchmark": benchmark if benchmark is not None else _STIG_BENCHMARK,
+        "check_count": len(checks),
+        "elapsed_seconds": elapsed,
+        "within_budget": within_budget,
+        "summary": by_severity,
+        "cat1_open": cat1_open,
+        "gate_passed": gate_passed,
+        "checks": checks,
+    }
