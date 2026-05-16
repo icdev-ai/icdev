@@ -212,6 +212,96 @@ def process_intake_turn():
         return jsonify({"error": str(exc)}), 500
 
 
+@intake_api.route("/api/intake/panel-turn", methods=["POST"])
+def process_panel_turn():
+    """Process a message with multiple personas firing in parallel.
+
+    Body: {session_id, message, personas: ["developer", "analyst", ...]}
+    Returns: {panel_responses: [...], merged_requirements: [...], total_requirements, panel_question}
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get("session_id")
+    message = (data.get("message") or "").strip()
+    personas = data.get("personas") or ["developer", "analyst"]
+
+    if not session_id or not message:
+        return jsonify({"error": "session_id and message are required"}), 400
+
+    conn = _get_db()
+    try:
+        session = conn.execute(
+            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = dict(session)
+
+        from tools.requirements.multi_persona_panel import run_panel, persist_panel_requirements
+
+        panel = run_panel(
+            session_data=session_data,
+            message=message,
+            conn=conn,
+            personas=personas,
+        )
+
+        # Persist merged requirements
+        turn_number = conn.execute(
+            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()[0]
+
+        written = persist_panel_requirements(panel, turn_number, db_path=DB_PATH)
+
+        # Store the panel turn in conversation history so session context is preserved
+        conn.execute(
+            """INSERT INTO intake_conversation
+               (session_id, turn_number, role, content, content_type, classification)
+               VALUES (?, ?, 'customer', ?, 'text', ?)""",
+            (session_id, turn_number, message, session_data.get("classification", "CUI")),
+        )
+        analyst_summary = (
+            f"[Panel] {len(personas)} experts reviewed your message. "
+            f"{written} requirement(s) captured."
+            + (f" Follow-up: {panel.panel_question}" if panel.panel_question else "")
+        )
+        conn.execute(
+            """INSERT INTO intake_conversation
+               (session_id, turn_number, role, content, content_type, classification)
+               VALUES (?, ?, 'analyst', ?, 'text', ?)""",
+            (session_id, turn_number + 1, analyst_summary, session_data.get("classification", "CUI")),
+        )
+        conn.commit()
+
+        return jsonify({
+            "status": "ok",
+            "session_id": session_id,
+            "panel_responses": [
+                {
+                    "persona": r.persona,
+                    "display_name": r.display_name,
+                    "color": r.color,
+                    "response": r.response,
+                    "requirements": r.requirements,
+                    "question": r.question,
+                    "error": r.error,
+                    "duration_ms": r.duration_ms,
+                }
+                for r in panel.results
+            ],
+            "merged_requirements": panel.merged_requirements,
+            "total_requirements": panel.total_requirements,
+            "panel_question": panel.panel_question,
+            "requirements_written": written,
+        })
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 @intake_api.route("/api/intake/upload", methods=["POST"])
 def upload_intake_file():
     """Upload a document or image for requirement extraction."""

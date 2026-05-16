@@ -45,6 +45,8 @@
     var _testTimer = null;
     var _turnCount = 0;
     var _activeTechniqueId = null;
+    var _isPanelMode = false;
+    var _panelPersonas = ['developer', 'analyst'];
 
     // Framework display name mapping
     var FRAMEWORK_NAMES = {
@@ -515,6 +517,10 @@
     }
 
     function sendIntakeMessage(content) {
+        if (_isPanelMode && _activeIntakeSessionId) {
+            sendPanelMessage(content);
+            return;
+        }
         // Append user message immediately
         appendMessage({ role: 'user', content: content });
 
@@ -1244,6 +1250,138 @@
             if (forceBtn) forceBtn.style.display = 'none';
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
+    }
+
+    // ===================================================================
+    // SECTION 10b: Multi-Persona Panel
+    // ===================================================================
+
+    function chatTogglePanel(enabled) {
+        _isPanelMode = enabled;
+        var picker = document.getElementById('panel-persona-picker');
+        var stream = document.getElementById('message-stream');
+        if (picker) picker.style.display = enabled ? 'block' : 'none';
+        if (stream) stream.classList.toggle('panel-mode-active', enabled);
+
+        // Sync _panelPersonas from checked chips
+        if (enabled) _syncPanelPersonas();
+
+        // Wire chip clicks to update _panelPersonas
+        var chips = document.querySelectorAll('#panel-persona-chips input[type="checkbox"]');
+        chips.forEach(function (cb) {
+            cb.onchange = function () {
+                var chip = cb.closest('.panel-chip');
+                if (chip) chip.classList.toggle('panel-chip--active', cb.checked);
+                _syncPanelPersonas();
+            };
+        });
+    }
+
+    function _syncPanelPersonas() {
+        var checked = document.querySelectorAll('#panel-persona-chips input[type="checkbox"]:checked');
+        _panelPersonas = [];
+        checked.forEach(function (cb) { _panelPersonas.push(cb.value); });
+        if (_panelPersonas.length === 0) _panelPersonas = ['developer', 'analyst'];
+    }
+
+    function sendPanelMessage(content) {
+        appendMessage({ role: 'user', content: content });
+
+        var typingId = 'typing-' + Date.now();
+        var stream = document.getElementById('message-stream');
+        var names = _panelPersonas.map(function (p) {
+            return p.replace('_', ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+        }).join(', ');
+        if (stream) {
+            stream.innerHTML += '<div id="' + typingId + '" style="padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:4px;">'
+                + '<div style="font-size:0.72rem;font-weight:700;color:#4a90d9;margin-bottom:3px;">Panel [' + escHtml(names) + ']</div>'
+                + '<div style="font-size:0.85rem;opacity:0.6;">Experts thinking in parallel…</div></div>';
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        fetch(INTAKE_API + '/panel-turn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: _activeIntakeSessionId,
+                message: content,
+                personas: _panelPersonas,
+            })
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            var typing = document.getElementById(typingId);
+            if (typing) typing.remove();
+
+            if (data.error) {
+                appendMessage({ role: 'system', content: 'Panel error: ' + data.error });
+                return;
+            }
+
+            _renderPanelResponse(data);
+
+            // Update stats
+            if (data.total_requirements !== undefined) setText('stat-requirements', data.total_requirements);
+            refreshReadiness();
+            refreshComplexity();
+        })
+        .catch(function (err) {
+            var typing = document.getElementById(typingId);
+            if (typing) typing.remove();
+            appendMessage({ role: 'system', content: 'Panel error: ' + err.message });
+        });
+    }
+
+    function _renderPanelResponse(data) {
+        var stream = document.getElementById('message-stream');
+        if (!stream) return;
+
+        var responses = data.panel_responses || [];
+        var merged = data.merged_requirements || [];
+
+        var html = '<div class="panel-response">';
+
+        responses.forEach(function (r) {
+            var color = r.color || '#4a90d9';
+            html += '<div class="panel-persona-bubble" style="--panel-color:' + escHtml(color) + '">';
+            html += '<div class="panel-persona-bubble__label">' + escHtml(r.display_name || r.persona) + '</div>';
+            if (r.error) {
+                html += '<div class="panel-persona-bubble__body" style="color:#f87171;font-size:0.8rem;">Error: ' + escHtml(r.error) + '</div>';
+            } else {
+                // Strip REQ: lines from body — show them separately as pills
+                var bodyText = (r.response || '').replace(/^REQ:.*$/gm, '').replace(/\n{3,}/g, '\n\n').trim();
+                html += '<div class="panel-persona-bubble__body">' + escHtml(bodyText) + '</div>';
+                if (r.requirements && r.requirements.length > 0) {
+                    html += '<div class="panel-persona-bubble__reqs">';
+                    r.requirements.forEach(function (req) {
+                        html += '<span class="panel-req-pill" title="' + escHtml(req.type || '') + '">' + escHtml(req.text) + '</span>';
+                    });
+                    html += '</div>';
+                }
+            }
+            html += '</div>';
+        });
+
+        // Consensus footer
+        html += '<div class="panel-consensus">';
+        if (merged.length > 0) {
+            html += '<strong>' + merged.length + ' requirement' + (merged.length !== 1 ? 's' : '') + ' captured</strong>';
+        } else {
+            html += 'No requirements extracted this turn.';
+        }
+        if (data.panel_question) {
+            html += ' &mdash; <em>' + escHtml(data.panel_question) + '</em>';
+        }
+        html += '</div>';
+        html += '</div>';
+
+        stream.innerHTML += html;
+        stream.scrollTop = stream.scrollHeight;
+
+        // Inject inline QA widget for the panel question
+        if (data.panel_question) {
+            _injectQAWidget(stream, data.panel_question);
+        }
     }
 
     function chatExport() {
@@ -2408,6 +2546,7 @@
 
     ns.chatGeneratePlan = chatGeneratePlan;
     ns.chatForceStartBuild = chatForceStartBuild;
+    ns.chatTogglePanel = chatTogglePanel;
     ns.chatExport = chatExport;
     ns.chatTriggerBuild = chatTriggerBuild;
     ns.chatRunSimulation = chatRunSimulation;

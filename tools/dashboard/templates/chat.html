@@ -7,6 +7,69 @@
 <style>
   html, body { height: 100vh; overflow: hidden; }
   .main-content { display: flex; flex-direction: column; overflow: hidden; min-height: 0; padding-bottom: 0; }
+
+  /* ---- Panel mode toggle pill ---- */
+  .panel-toggle-label { display:inline-flex; align-items:center; cursor:pointer; }
+  .panel-toggle-label input { display:none; }
+  .panel-toggle-pill {
+    width:34px; height:18px; background:var(--border-color,#2a2a40);
+    border-radius:9px; position:relative; transition:background .2s;
+  }
+  .panel-toggle-pill::after {
+    content:''; position:absolute; top:2px; left:2px;
+    width:14px; height:14px; border-radius:50%;
+    background:#fff; transition:transform .2s;
+  }
+  .panel-toggle-label input:checked + .panel-toggle-pill { background:#4a90d9; }
+  .panel-toggle-label input:checked + .panel-toggle-pill::after { transform:translateX(16px); }
+
+  /* ---- Persona selector chips ---- */
+  .panel-persona-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
+  .panel-chip {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:3px 8px; border-radius:12px; font-size:0.72rem; font-weight:600;
+    cursor:pointer; border:1px solid transparent;
+    background:var(--bg-secondary,#1a1a2e); color:var(--text-muted,#888);
+    transition:all .15s;
+  }
+  .panel-chip input { display:none; }
+  .panel-chip--active { color:#fff !important; }
+  .panel-chip--developer.panel-chip--active  { background:#4a90d9; border-color:#4a90d9; }
+  .panel-chip--analyst.panel-chip--active    { background:#7c3aed; border-color:#7c3aed; }
+  .panel-chip--pm.panel-chip--active         { background:#0891b2; border-color:#0891b2; }
+  .panel-chip--isso.panel-chip--active       { background:#dc2626; border-color:#dc2626; }
+  .panel-chip--architect.panel-chip--active  { background:#059669; border-color:#059669; }
+
+  /* ---- Panel response bubbles ---- */
+  .panel-response { margin-bottom:8px; }
+  .panel-persona-bubble {
+    border-left:3px solid var(--panel-color,#4a90d9);
+    background:var(--bg-secondary,#1a1a2e);
+    border-radius:0 8px 8px 0;
+    padding:10px 14px; margin-bottom:6px;
+  }
+  .panel-persona-bubble__label {
+    font-size:0.7rem; font-weight:700; text-transform:uppercase;
+    color:var(--panel-color,#4a90d9); margin-bottom:4px; letter-spacing:.04em;
+  }
+  .panel-persona-bubble__body { font-size:0.87rem; white-space:pre-wrap; word-break:break-word; }
+  .panel-persona-bubble__reqs { margin-top:8px; }
+  .panel-req-pill {
+    display:inline-block; font-size:0.72rem;
+    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
+    border-radius:6px; padding:3px 8px; margin:2px 4px 2px 0;
+    color:var(--text-secondary,#aaa);
+  }
+  .panel-consensus {
+    border-top:1px solid var(--border-color,#2a2a40);
+    padding-top:8px; margin-top:4px;
+    font-size:0.8rem; color:var(--text-muted,#888);
+  }
+  .panel-mode-indicator {
+    display:none; font-size:0.7rem; font-weight:700; color:#4a90d9;
+    padding:2px 7px; border:1px solid #4a90d9; border-radius:10px; margin-left:6px;
+  }
+  .panel-mode-active .panel-mode-indicator { display:inline; }
 </style>
 {% endblock %}
 
@@ -202,6 +265,27 @@
                 <div class="chat-stat"><span class="chat-stat-label">Requirements</span> <span class="chat-stat-value" id="stat-requirements">0</span></div>
                 <div class="chat-stat"><span class="chat-stat-label">Documents</span> <span class="chat-stat-value" id="stat-documents">0</span></div>
                 <div class="chat-stat"><span class="chat-stat-label">Turns</span> <span class="chat-stat-value" id="stat-turns">0</span></div>
+            </div>
+
+            <!-- Multi-Persona Panel -->
+            <div class="sidebar-section" id="panel-section">
+                <h4 class="chat-sidebar-heading" style="display:flex;align-items:center;justify-content:space-between;">
+                    Expert Panel
+                    <label class="panel-toggle-label" title="Fire multiple AI personas in parallel for faster, richer requirement generation">
+                        <input type="checkbox" id="panel-mode-toggle" onchange="ICDEV.chatTogglePanel(this.checked)">
+                        <span class="panel-toggle-pill"></span>
+                    </label>
+                </h4>
+                <div id="panel-persona-picker" style="display:none;">
+                    <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">Select experts for each turn:</div>
+                    <div class="panel-persona-chips" id="panel-persona-chips">
+                        <label class="panel-chip panel-chip--developer panel-chip--active" data-persona="developer"><input type="checkbox" value="developer" checked> Developer</label>
+                        <label class="panel-chip panel-chip--analyst panel-chip--active" data-persona="analyst"><input type="checkbox" value="analyst" checked> Analyst</label>
+                        <label class="panel-chip panel-chip--pm" data-persona="pm"><input type="checkbox" value="pm"> PM</label>
+                        <label class="panel-chip panel-chip--isso" data-persona="isso"><input type="checkbox" value="isso"> ISSO</label>
+                        <label class="panel-chip panel-chip--architect" data-persona="solutions_architect"><input type="checkbox" value="solutions_architect"> Architect</label>
+                    </div>
+                </div>
             </div>
 
             <!-- Elicitation Techniques -->
