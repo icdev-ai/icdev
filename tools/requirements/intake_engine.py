@@ -528,16 +528,37 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
         })),
     )
 
-    welcome_message = _generate_welcome_message(params, classification)
-
+    # Use a static placeholder immediately so context creation is instant.
+    # The real LLM welcome is generated in a background thread and written to DB.
+    placeholder = (
+        f"Welcome, {params.customer_name}. I'm your ICDEV™ Requirements Analyst. "
+        f"Tell me about the system you want to build — what problem does it need to solve?"
+    )
     conn.execute(
         """INSERT INTO intake_conversation
            (session_id, turn_number, role, content, content_type, classification)
            VALUES (?, 1, 'analyst', ?, 'text', ?)""",
-        (session_id, welcome_message, classification or "CUI"),
+        (session_id, placeholder, classification or "CUI"),
     )
     conn.commit()
     conn.close()
+
+    # Fire LLM welcome in background — updates the DB row when ready
+    import threading as _threading
+    def _async_welcome():
+        try:
+            real_welcome = _generate_welcome_message(params, classification)
+            if real_welcome and real_welcome != placeholder:
+                _conn2 = _get_connection(params.db_path)
+                _conn2.execute(
+                    "UPDATE intake_conversation SET content = ? WHERE session_id = ? AND turn_number = 1",
+                    (real_welcome, session_id),
+                )
+                _conn2.commit()
+                _conn2.close()
+        except Exception:
+            pass
+    _threading.Thread(target=_async_welcome, daemon=True).start()
 
     if _HAS_AUDIT:
         log_event(

@@ -511,10 +511,11 @@
     <div class="chat-modal chat-modal--scrollable">
         <h3 class="chat-modal__title">New Chat Context</h3>
 
-        <!-- Title -->
+        <!-- Title with recent history datalist -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Title</label>
-            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title...">
+            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title..." list="ctx-title-history" autocomplete="off">
+            <datalist id="ctx-title-history"></datalist>
         </div>
 
         <!-- Agent Model -->
@@ -549,6 +550,11 @@
         <div class="chat-modal__field" id="ctx-preset-row">
             <label class="chat-modal__label">Persona <span class="chat-modal__label-sub">— click to pre-fill system prompt</span></label>
             <div class="ctx-preset-chips" id="ctx-preset-chips"></div>
+            <div class="ctx-custom-persona-row" style="display:flex;gap:6px;margin-top:6px;">
+                <input type="text" id="ctx-custom-persona-name" class="chat-modal__input" placeholder="Custom persona name…" style="flex:1;font-size:0.8rem;padding:4px 8px;">
+                <textarea id="ctx-custom-persona-prompt" class="chat-modal__input" placeholder="System prompt for this persona…" rows="2" style="flex:2;font-size:0.8rem;padding:4px 8px;resize:vertical;"></textarea>
+                <button type="button" id="btn-add-custom-persona" class="chat-modal__btn chat-modal__btn--cancel" style="align-self:flex-start;padding:4px 12px;font-size:0.75rem;">+ Add</button>
+            </div>
         </div>
 
         <!-- Compliance context -->
@@ -602,17 +608,17 @@
             </label>
         </div>
 
-        <!-- Expert Panel (intake canvas only) -->
+        <!-- Expert Panel (intake canvas only) — ON by default -->
         <div class="chat-modal__field" id="panel-mode-row" style="display:none;">
             <label class="chat-modal__label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
                 Expert Panel
                 <label class="panel-toggle-label" title="Multiple AI personas respond each turn in parallel">
-                    <input type="checkbox" id="modal-panel-enabled">
+                    <input type="checkbox" id="modal-panel-enabled" checked>
                     <span class="panel-toggle-pill"></span>
                 </label>
             </label>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">Fire multiple AI experts per turn — Developer, Analyst, PM, ISSO, Architect respond in parallel</div>
-            <div id="modal-panel-personas" class="panel-persona-chips" style="display:none;">
+            <div id="modal-panel-personas" class="panel-persona-chips" style="display:flex;flex-wrap:wrap;gap:5px;">
                 <label class="panel-chip panel-chip--developer panel-chip--active"><input type="checkbox" value="developer" checked> Developer</label>
                 <label class="panel-chip panel-chip--analyst panel-chip--active"><input type="checkbox" value="analyst" checked> Analyst</label>
                 <label class="panel-chip panel-chip--pm"><input type="checkbox" value="pm"> PM</label>

@@ -1053,7 +1053,8 @@ def _get_chat_models() -> tuple[list[dict], str]:
             "provider": provider,
         })
 
-    # Determine default from chat_response routing chain
+    # Prefer kimi-cloud as default; fall back to chat_response chain first entry
+    _preferred = "kimi-cloud"
     default_model = result[0]["value"] if result else "default"
     try:
         chain = cfg.get("routing", {}).get("chat_response", {}).get("chain", [])
@@ -1061,6 +1062,8 @@ def _get_chat_models() -> tuple[list[dict], str]:
             default_model = chain[0]
     except Exception:
         pass
+    if any(m["value"] == _preferred for m in result):
+        default_model = _preferred
 
     return result, default_model
 
