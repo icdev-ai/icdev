@@ -176,6 +176,8 @@ class BedrockLLMProvider(LLMProvider):
         usage = response_body.get("usage", {})
         resp.input_tokens = usage.get("input_tokens", 0)
         resp.output_tokens = usage.get("output_tokens", 0)
+        resp.cache_creation_input_tokens = usage.get("cache_creation_input_tokens", 0)
+        resp.cache_read_input_tokens = usage.get("cache_read_input_tokens", 0)
 
         content_blocks = response_body.get("content", [])
         text_parts = []

@@ -97,12 +97,11 @@ def judge_response(
     try:
         from tools.llm.router import LLMRequest
         req = LLMRequest(
-            function="ttx_judge",
+            messages=[{"role": "user", "content": user_msg}],
             system_prompt=system_prompt,
-            user_message=user_msg,
             max_tokens=512,
         )
-        resp = router.invoke(req)
+        resp = router.invoke("ttx_judge", req)
         raw = resp.content.strip()
         if raw.startswith("```"):
             raw = raw.split("```")[1]

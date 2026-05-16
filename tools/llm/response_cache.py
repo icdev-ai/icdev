@@ -62,6 +62,8 @@ CREATE UNLOGGED TABLE IF NOT EXISTS llm_response_cache (
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     thinking_tokens INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER DEFAULT 0,
+    cache_read_input_tokens INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
     stop_reason TEXT,
     hit_count INTEGER DEFAULT 1,
@@ -84,6 +86,8 @@ CREATE TABLE IF NOT EXISTS llm_response_cache (
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     thinking_tokens INTEGER DEFAULT 0,
+    cache_creation_input_tokens INTEGER DEFAULT 0,
+    cache_read_input_tokens INTEGER DEFAULT 0,
     duration_ms INTEGER DEFAULT 0,
     stop_reason TEXT,
     hit_count INTEGER DEFAULT 1,
@@ -93,6 +97,18 @@ CREATE TABLE IF NOT EXISTS llm_response_cache (
 CREATE INDEX IF NOT EXISTS idx_llm_cache_expires ON llm_response_cache (expires_at);
 CREATE INDEX IF NOT EXISTS idx_llm_cache_function ON llm_response_cache (function);
 """
+
+# D-CACHE-10: ALTER TABLE for upgrading existing installs that lack cache token columns.
+_UPGRADE_STMTS = {
+    "pg": [
+        "ALTER TABLE llm_response_cache ADD COLUMN IF NOT EXISTS cache_creation_input_tokens INTEGER DEFAULT 0",
+        "ALTER TABLE llm_response_cache ADD COLUMN IF NOT EXISTS cache_read_input_tokens INTEGER DEFAULT 0",
+    ],
+    "sqlite": [
+        "ALTER TABLE llm_response_cache ADD COLUMN cache_creation_input_tokens INTEGER DEFAULT 0",
+        "ALTER TABLE llm_response_cache ADD COLUMN cache_read_input_tokens INTEGER DEFAULT 0",
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Config loader
@@ -214,6 +230,8 @@ def _response_to_row(response: Any, function: str, model_id: str) -> dict:
             "input_tokens": response.input_tokens or 0,
             "output_tokens": response.output_tokens or 0,
             "thinking_tokens": response.thinking_tokens or 0,
+            "cache_creation_input_tokens": response.cache_creation_input_tokens or 0,
+            "cache_read_input_tokens": response.cache_read_input_tokens or 0,
             "duration_ms": response.duration_ms or 0,
             "stop_reason": response.stop_reason or "",
         }
@@ -229,6 +247,8 @@ def _response_to_row(response: Any, function: str, model_id: str) -> dict:
         "input_tokens": getattr(response, "input_tokens", 0) or 0,
         "output_tokens": getattr(response, "output_tokens", 0) or 0,
         "thinking_tokens": getattr(response, "thinking_tokens", 0) or 0,
+        "cache_creation_input_tokens": getattr(response, "cache_creation_input_tokens", 0) or 0,
+        "cache_read_input_tokens": getattr(response, "cache_read_input_tokens", 0) or 0,
         "duration_ms": getattr(response, "duration_ms", 0) or 0,
         "stop_reason": getattr(response, "stop_reason", "") or "",
     }
@@ -246,6 +266,14 @@ def _row_to_response(row: Any) -> Any:
     resp.input_tokens = row["input_tokens"] or 0
     resp.output_tokens = row["output_tokens"] or 0
     resp.thinking_tokens = row["thinking_tokens"] or 0
+    try:
+        resp.cache_creation_input_tokens = row["cache_creation_input_tokens"] or 0
+    except (KeyError, IndexError):
+        resp.cache_creation_input_tokens = 0
+    try:
+        resp.cache_read_input_tokens = row["cache_read_input_tokens"] or 0
+    except (KeyError, IndexError):
+        resp.cache_read_input_tokens = 0
     resp.duration_ms = row["duration_ms"] or 0
     resp.stop_reason = row["stop_reason"] or ""
 
@@ -326,6 +354,13 @@ class LLMResponseCache:
                     stmt = stmt.strip()
                     if stmt:
                         conn.execute(stmt)
+            # D-CACHE-10: Upgrade existing tables — add cache token columns if missing
+            backend_key = "pg" if is_pg() else "sqlite"
+            for stmt in _UPGRADE_STMTS[backend_key]:
+                try:
+                    conn.execute(stmt)
+                except Exception:
+                    pass  # Column already exists — safe to ignore
             conn.commit()
         finally:
             conn.close()
@@ -417,9 +452,9 @@ class LLMResponseCache:
                     INSERT INTO llm_response_cache
                         (cache_key, function, model_id, content, tool_calls_json,
                          structured_output_json, provider, input_tokens, output_tokens,
-                         thinking_tokens, duration_ms, stop_reason, hit_count,
-                         created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         thinking_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+                         duration_ms, stop_reason, hit_count, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT (cache_key) DO UPDATE SET
                         content = EXCLUDED.content,
                         tool_calls_json = EXCLUDED.tool_calls_json,
@@ -428,6 +463,8 @@ class LLMResponseCache:
                         input_tokens = EXCLUDED.input_tokens,
                         output_tokens = EXCLUDED.output_tokens,
                         thinking_tokens = EXCLUDED.thinking_tokens,
+                        cache_creation_input_tokens = EXCLUDED.cache_creation_input_tokens,
+                        cache_read_input_tokens = EXCLUDED.cache_read_input_tokens,
                         duration_ms = EXCLUDED.duration_ms,
                         stop_reason = EXCLUDED.stop_reason,
                         hit_count = EXCLUDED.hit_count,
@@ -439,7 +476,9 @@ class LLMResponseCache:
                         row["tool_calls_json"] or "null",
                         row["structured_output_json"] or "null",
                         row["provider"], row["input_tokens"], row["output_tokens"],
-                        row["thinking_tokens"], row["duration_ms"], row["stop_reason"],
+                        row["thinking_tokens"],
+                        row["cache_creation_input_tokens"], row["cache_read_input_tokens"],
+                        row["duration_ms"], row["stop_reason"],
                         1, row["created_at"], row["expires_at"],
                     ),
                 )
@@ -449,15 +488,17 @@ class LLMResponseCache:
                     INSERT OR REPLACE INTO llm_response_cache
                         (cache_key, function, model_id, content, tool_calls_json,
                          structured_output_json, provider, input_tokens, output_tokens,
-                         thinking_tokens, duration_ms, stop_reason, hit_count,
-                         created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                         thinking_tokens, cache_creation_input_tokens, cache_read_input_tokens,
+                         duration_ms, stop_reason, hit_count, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         row["cache_key"], row["function"], row["model_id"], row["content"],
                         row["tool_calls_json"], row["structured_output_json"],
                         row["provider"], row["input_tokens"], row["output_tokens"],
-                        row["thinking_tokens"], row["duration_ms"], row["stop_reason"],
+                        row["thinking_tokens"],
+                        row["cache_creation_input_tokens"], row["cache_read_input_tokens"],
+                        row["duration_ms"], row["stop_reason"],
                         1, row["created_at"], row["expires_at"],
                     ),
                 )

@@ -163,6 +163,8 @@ class AnthropicLLMProvider(LLMProvider):
         if usage:
             resp.input_tokens = getattr(usage, "input_tokens", 0)
             resp.output_tokens = getattr(usage, "output_tokens", 0)
+            resp.cache_creation_input_tokens = getattr(usage, "cache_creation_input_tokens", 0)
+            resp.cache_read_input_tokens = getattr(usage, "cache_read_input_tokens", 0)
 
         text_parts = []
         tool_calls = []

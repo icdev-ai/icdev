@@ -899,6 +899,12 @@ response_cache:
       ttl_seconds: 1800
     recommendation:
       ttl_seconds: 3600
+    ttx_judge:
+      ttl_seconds: 300
+      context_cache: true
+    persona_gen:
+      ttl_seconds: 3600
+      context_cache: true
   per_canvas:
     ndc:
       ttl_seconds: 7200
