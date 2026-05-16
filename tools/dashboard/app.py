@@ -1920,15 +1920,30 @@ def create_app() -> Flask:
                                 open_f = total_threats
                                 closed_f = 0
                             elif canvas_name in ("Network", "Pipeline"):
-                                tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
-                                open_f = cconn.execute(
-                                    f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status = 'open'"  # nosec B608
-                                ).fetchone()["cnt"]
-                                closed_f = cconn.execute(
-                                    f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status != 'open'"  # nosec B608
-                                ).fetchone()["cnt"]
-                                total_f = open_f + closed_f
-                                score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
+                                checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
+                                findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
+                                try:
+                                    r = cconn.execute(
+                                        f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
+                                    ).fetchone()
+                                    passed_c = int(r["p"] or 0)
+                                    failed_c = int(r["f"] or 0)
+                                    total_c = passed_c + failed_c
+                                    if total_c == 0:
+                                        raise ValueError("no checks")
+                                    score = round(passed_c / total_c * 100, 1)
+                                    open_f = failed_c
+                                    closed_f = passed_c
+                                except Exception:
+                                    # Fall back to findings table if checks table absent
+                                    open_f = cconn.execute(
+                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
+                                    ).fetchone()["cnt"]
+                                    closed_f = cconn.execute(
+                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
+                                    ).fetchone()["cnt"]
+                                    total_f = open_f + closed_f
+                                    score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
                             elif canvas_name in ("Infra", "Data"):
                                 tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
                                 score = round(_latest_per_design_avg(cconn, tbl), 1)
