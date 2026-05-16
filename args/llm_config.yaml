@@ -58,6 +58,12 @@ providers:
     base_url: ${MISTRAL_VLLM_BASE_URL:-http://localhost:8100/v1}
     api_key_env: MISTRAL_VLLM_API_KEY
 
+  # Ollama cloud endpoint — authenticated, falls back to local ollama
+  ollama_cloud:
+    type: ollama
+    base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+    api_key_env: OLLAMA_API_KEY
+
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
@@ -202,9 +208,38 @@ models:
 
   qwen3-local:
     provider: ollama
-    model_id: "qwen3.5:9b"
+    model_id: "qwen3.5:latest"
     max_output_tokens: 32768
     supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  kimi-local:
+    provider: ollama
+    model_id: "kimi-k2.6:cloud"
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  gemma4-local:
+    provider: ollama
+    model_id: "gemma4:e4b"
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Ollama cloud — requires OLLAMA_API_KEY; primary for large-context tasks
+  gpt-oss-cloud:
+    provider: ollama_cloud
+    model_id: "gpt-oss:120b"
+    max_output_tokens: 32768
+    supports_thinking: false
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
@@ -365,7 +400,7 @@ routing:
     effort: high
 
   task_decomposition:
-    chain: [qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
+    chain: [qwen3-local, gpt-oss-cloud, kimi-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
   collaboration:
@@ -429,7 +464,7 @@ routing:
     effort: low
 
   intake_persona_response:
-    chain: [qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [qwen3-local, gpt-oss-cloud, kimi-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
     effort: medium
 
   bdd_preview:
@@ -502,7 +537,7 @@ routing:
     effort: medium
 
   requirement_extraction:
-    chain: [qwen3-local, llama-local]
+    chain: [qwen3-local, gpt-oss-cloud, kimi-local]
     effort: medium
 
   bid_scoring:
