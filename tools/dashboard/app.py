@@ -1143,6 +1143,7 @@ def create_app() -> Flask:
             staleness = "active"
 
         conn = _gc()
+        pending_count = 0
         try:
             rows = conn.execute(
                 "SELECT id, title, priority, task_type, failure_count, status, "
@@ -1153,6 +1154,13 @@ def create_app() -> Flask:
             # kv-viz: add attempt_count, current_attempt_started_at, last_reaped_reason
             from tools.dashboard.api.kanban import _annotate_in_progress_tasks
             _annotate_in_progress_tasks(conn, tasks)
+            # Count queued (scheduled + backlog) tasks so the Projects in Flight
+            # section stays visible even when no tasks are actively in_progress.
+            prow = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_tasks "
+                "WHERE status IN ('scheduled', 'backlog')"
+            ).fetchone()
+            pending_count = int((prow or {}).get("n") or 0)
         except Exception:
             tasks = []
         finally:
@@ -1183,6 +1191,7 @@ def create_app() -> Flask:
             "scheduler_last_seen_secs": sched_secs,
             "staleness": staleness,
             "tasks": tasks,
+            "pending_tasks_count": pending_count,
         })
 
     @app.route("/api/kanban/recent-events")

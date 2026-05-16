@@ -437,6 +437,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "govlift_audit_log",
         # AI Traceability (migration 121 — cross-canvas AI decision audit log, NIST AU-2/AU-3)
         "canvas_ai_decisions",
+        # Cross-Agency Data Transfer (NIST AU-2, AU-9 — append-only transfer audit log)
+        "cross_agency_transfers",
     ]
 
     if tool_name == "Bash":
