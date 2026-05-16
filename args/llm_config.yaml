@@ -696,7 +696,7 @@ redaction:
 
 two_tier:
   enabled: true
-  tier1_model: gpt-oss-cloud   # Worker — cloud Ollama first; qwen3-local as fallback via chain
+  tier1_model: kimi-cloud       # Worker — kimi-k2.6 cloud first; qwen3-local (no-think) fallback
   tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
 
   # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
