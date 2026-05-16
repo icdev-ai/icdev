@@ -76,6 +76,7 @@ import logging
 import re
 import textwrap
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import TYPE_CHECKING, Any
 
@@ -435,8 +436,11 @@ def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) ->
     """GET `base_url + path`; infer schema from JSON payload; return schema or None."""
     if "{" in path:
         return None
+    full_url = base_url.rstrip("/") + path
+    if urllib.parse.urlparse(full_url).scheme not in ("http", "https"):
+        return None
     try:
-        with urllib.request.urlopen(base_url.rstrip("/") + path, timeout=timeout) as resp:
+        with urllib.request.urlopen(full_url, timeout=timeout) as resp:  # nosec B310
             if resp.status // 100 != 2:
                 return None
             ctype = resp.headers.get("Content-Type", "")
@@ -456,8 +460,10 @@ def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) ->
 
 def sample_get_route(url: str, *, timeout: float = 2.0) -> dict | None:
     """GET url; return decoded JSON body or None on any failure."""
+    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
+        return None
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:  # nosec B310
             body = resp.read()
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
         return None
