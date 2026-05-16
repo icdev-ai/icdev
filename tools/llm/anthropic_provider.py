@@ -200,11 +200,12 @@ class AnthropicLLMProvider(LLMProvider):
             return False
         try:
             client = self._get_client()
-            # Minimal request to verify credentials
+            # Minimal request — hard 8-second timeout to prevent dashboard hangs
             client.messages.create(
                 model=model_id,
                 max_tokens=1,
                 messages=[{"role": "user", "content": "ping"}],
+                timeout=8.0,
             )
             return True
         except Exception:
