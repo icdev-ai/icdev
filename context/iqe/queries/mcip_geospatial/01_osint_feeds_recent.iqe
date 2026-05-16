@@ -1,0 +1,7 @@
+# IQE-GEO-001: Recent OSINT signals from the MCIP geospatial intelligence feed
+# Shows the latest raw signals harvested across INTERNET, GITLAB, and FILE_INBOX
+# tiers, ordered by collection date for situational awareness review.
+# Use: analyst triage, source coverage assessment, NIST SI-4 evidence.
+
+foreach s in geospatial.raw_signals
+select s.id, s.title, s.source, s.geo_hint, s.signal_date, s.tier_used, s.created_at
