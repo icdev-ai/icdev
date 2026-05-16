@@ -1252,15 +1252,16 @@ window._loadCharts = function() {
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            // Compliance posture — multi-canvas bar chart (7 canvas scores + Oracle count)
+            // Compliance posture — multi-canvas bar chart (canvas scores only, no Oracle)
             if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
-                // Separate Oracle entry from canvas entries for per-entry handling
+                // Separate Oracle entry — it tracks CAT prediction counts, not a 0-100 score
                 var _oracleEntry = null;
                 d.compliance.canvases.forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
+                var _chartCanvases = d.compliance.canvases.filter(function(c) { return !c.is_oracle; });
                 ICDEV.barChart('chart-compliance', {
-                    labels: d.compliance.canvases.map(function(c) { return c.name; }),
+                    labels: _chartCanvases.map(function(c) { return c.name; }),
                     series: [
-                        { name: 'Score', data: d.compliance.canvases.map(function(c) { return c.score; }), color: '#4a90d9' },
+                        { name: 'Score', data: _chartCanvases.map(function(c) { return c.score; }), color: '#4a90d9' },
                     ],
                     height: 160, showLegend: false, showValues: true,
                 });
