@@ -1097,6 +1097,13 @@ def create_app() -> Flask:
     # Initialize WebSocket (D170 — optional, graceful fallback)
     init_socketio(app)
 
+    # Register geospatial dashboard SocketIO handlers (task-a866147c27-d4)
+    try:
+        from src.routes.dashboard import register_socketio_handlers as _register_geo_ws
+        _register_geo_ws()
+    except Exception as _exc:
+        app.logger.warning("Geospatial SocketIO handlers skipped: %s", _exc)
+
     # Correlation ID middleware (D149)
     try:
         from tools.resilience.correlation import register_correlation_middleware
@@ -1478,6 +1485,14 @@ def create_app() -> Flask:
     # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
+
+    # ---- Geospatial Dashboard (task-a866147c27-d4) ----
+    try:
+        from src.routes.dashboard import bp as _geo_bp
+        app.register_blueprint(_geo_bp)
+        app.logger.info("Geospatial dashboard registered at /geospatial")
+    except Exception as _exc:
+        app.logger.warning("Geospatial dashboard blueprint skipped: %s", _exc)
 
     # ---- SRE Dashboard Page ----
     @app.route("/sre")
@@ -9517,9 +9532,9 @@ if __name__ == "__main__":
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
         if _ssl_context is not None:
-            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
         else:
-            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
         _extra_files = [str(BASE_DIR / "args" / "llm_config.yaml")]
