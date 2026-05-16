@@ -1,0 +1,173 @@
+# CUI // SP-CTI
+"""Ontology Explorer Flask blueprint.
+
+Routes:
+    GET  /ontology          — Explorer page (class hierarchy + stats)
+    GET  /api/ontology/classes  — JSON list of all ontology classes
+    GET  /api/ontology/closure  — JSON transitive closure for a class
+    POST /api/ontology/rebuild  — Re-run build_federation()
+    POST /api/iqe-query     — IQE natural-language query (registered below)
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from pathlib import Path
+
+from flask import Blueprint, jsonify, render_template, request
+
+from tools.ontology.constants import CANVAS_KEY, DOMAIN_LABELS
+
+bp = Blueprint("ontology", __name__)
+
+_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+_ICDEV_DB = _DATA_DIR / "icdev.db"
+
+
+def _sqlite() -> sqlite3.Connection:
+    conn = sqlite3.connect(str(_ICDEV_DB))
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _table_exists(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
+
+
+# ---------------------------------------------------------------------------
+# Pages
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/ontology")
+def ontology_page():
+    conn = _sqlite()
+    try:
+        stats: dict = {}
+        if _table_exists(conn, "ontology_classes"):
+            stats["class_count"] = conn.execute(
+                "SELECT COUNT(*) FROM ontology_classes"
+            ).fetchone()[0]
+            stats["domain_count"] = conn.execute(
+                "SELECT COUNT(DISTINCT domain) FROM ontology_classes"
+            ).fetchone()[0]
+        else:
+            stats["class_count"] = 0
+            stats["domain_count"] = 0
+
+        if _table_exists(conn, "ontology_subclass_closure"):
+            stats["closure_pairs"] = conn.execute(
+                "SELECT COUNT(*) FROM ontology_subclass_closure"
+            ).fetchone()[0]
+        else:
+            stats["closure_pairs"] = 0
+
+        if _table_exists(conn, "ontology_alignments"):
+            stats["alignment_count"] = conn.execute(
+                "SELECT COUNT(*) FROM ontology_alignments"
+            ).fetchone()[0]
+        else:
+            stats["alignment_count"] = 0
+
+        # Domain breakdown
+        domains: list[dict] = []
+        if _table_exists(conn, "ontology_classes"):
+            for row in conn.execute(
+                "SELECT domain, COUNT(*) as cnt FROM ontology_classes GROUP BY domain ORDER BY cnt DESC"
+            ).fetchall():
+                domains.append({
+                    "domain": row["domain"],
+                    "label": DOMAIN_LABELS.get(row["domain"], row["domain"].replace("_", " ").title()),
+                    "count": row["cnt"],
+                })
+
+    finally:
+        conn.close()
+
+    return render_template(
+        "ontology/page.html",
+        stats=stats,
+        domains=domains,
+        canvas_key=CANVAS_KEY,
+    )
+
+
+# ---------------------------------------------------------------------------
+# API
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/api/ontology/classes")
+def api_ontology_classes():
+    domain = request.args.get("domain", "")
+    conn = _sqlite()
+    try:
+        if not _table_exists(conn, "ontology_classes"):
+            return jsonify({"classes": [], "total": 0})
+        if domain:
+            rows = conn.execute(
+                "SELECT id, domain, label, superclasses, canonical_id FROM ontology_classes WHERE domain=? ORDER BY domain, label",
+                (domain,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, domain, label, superclasses, canonical_id FROM ontology_classes ORDER BY domain, label"
+            ).fetchall()
+        classes = []
+        for r in rows:
+            try:
+                supers = json.loads(r["superclasses"] or "[]")
+            except Exception:
+                supers = []
+            classes.append({
+                "id": r["id"],
+                "domain": r["domain"],
+                "label": r["label"],
+                "superclasses": supers,
+                "canonical_id": r["canonical_id"],
+            })
+    finally:
+        conn.close()
+    return jsonify({"classes": classes, "total": len(classes)})
+
+
+@bp.route("/api/ontology/closure")
+def api_ontology_closure():
+    class_id = request.args.get("class_id", "")
+    if not class_id:
+        return jsonify({"error": "class_id required"}), 400
+    conn = _sqlite()
+    try:
+        if not _table_exists(conn, "ontology_subclass_closure"):
+            return jsonify({"superclasses": [], "subclasses": []})
+        superclasses = [
+            {"id": r["superclass"], "distance": r["distance"]}
+            for r in conn.execute(
+                "SELECT superclass, distance FROM ontology_subclass_closure WHERE subclass=? ORDER BY distance",
+                (class_id,),
+            ).fetchall()
+        ]
+        subclasses = [
+            {"id": r["subclass"], "distance": r["distance"]}
+            for r in conn.execute(
+                "SELECT subclass, distance FROM ontology_subclass_closure WHERE superclass=? ORDER BY distance",
+                (class_id,),
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+    return jsonify({"class_id": class_id, "superclasses": superclasses, "subclasses": subclasses})
+
+
+@bp.route("/api/ontology/rebuild", methods=["POST"])
+def api_ontology_rebuild():
+    try:
+        from tools.ontology.federation import build_federation
+        result = build_federation()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"status": "error", "error": str(exc)}), 500

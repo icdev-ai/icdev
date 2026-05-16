@@ -1,0 +1,6 @@
+# IQE-ONT-001: All ontology classes grouped by domain
+# Returns every registered ontology class with its label and domain.
+# Use: full catalog audit, ontology coverage review.
+
+foreach class in ontology.classes
+select class.id, class.domain, class.label, class.canonical_id
