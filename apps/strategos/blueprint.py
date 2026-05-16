@@ -4289,6 +4289,157 @@ def api_sources_all_reports():
 
 
 # ---------------------------------------------------------------------------
+# Diplomatic Activity Tracker (DAT)
+# ---------------------------------------------------------------------------
+
+
+def _dat():
+    from tools.strategos.dat import (
+        get_cables, get_unsc_events, get_backchannels,
+        get_latest_dti, get_dti_history,
+        ingest_cable, ingest_unsc_event, ingest_backchannel,
+        refresh_dti, compute_dti,
+    )
+    return (
+        get_cables, get_unsc_events, get_backchannels,
+        get_latest_dti, get_dti_history,
+        ingest_cable, ingest_unsc_event, ingest_backchannel,
+        refresh_dti, compute_dti,
+    )
+
+
+@_bp.route("/dat")
+@_bp.route("/dat/")
+def strategos_dat_page():
+    (get_cables, get_unsc_events, get_backchannels,
+     get_latest_dti, get_dti_history, *_) = _dat()
+    theater = request.args.get("theater", "global")
+    latest = get_latest_dti(theater) or {}
+    history = list(reversed(get_dti_history(theater, limit=48)))
+    cables = get_cables(theater, limit=20)
+    unsc_events = get_unsc_events(theater, limit=15)
+    backchannels = get_backchannels(theater, limit=15)
+    return render_template(
+        "strategos/dat.html",
+        theater=theater,
+        latest=latest,
+        history=history,
+        cables=cables,
+        unsc_events=unsc_events,
+        backchannels=backchannels,
+        history_json=json.dumps(history),
+    )
+
+
+@_api.route("/dat/score")
+def api_dat_score():
+    (_, _, _, get_latest_dti, _, _, _, _, _, compute_dti) = _dat()
+    theater = request.args.get("theater", "global")
+    live = request.args.get("live", "false").lower() == "true"
+    if live:
+        result = compute_dti(theater)
+    else:
+        result = get_latest_dti(theater) or compute_dti(theater)
+    resp = make_response(jsonify(result))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/dat/history")
+def api_dat_history():
+    (_, _, _, _, get_dti_history, *_) = _dat()
+    theater = request.args.get("theater", "global")
+    limit = min(int(request.args.get("limit", 48)), 200)
+    history = get_dti_history(theater, limit=limit)
+    resp = make_response(jsonify({"theater": theater, "history": history, "total": len(history)}))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/dat/ingest/cable", methods=["POST"])
+def api_dat_ingest_cable():
+    (_, _, _, _, _, ingest_cable, *_) = _dat()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ingest_cable(
+            theater_id=data.get("theater_id", "global"),
+            cable_ref=data.get("cable_ref"),
+            origin=data.get("origin"),
+            subject=data.get("subject"),
+            tension_level=data.get("tension_level", "low"),
+            keywords=data.get("keywords"),
+            summary=data.get("summary"),
+            received_at=data.get("received_at"),
+            classification=data.get("classification", "CUI"),
+        )
+        resp = make_response(jsonify({"status": "ok", "cable": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/dat/ingest/unsc", methods=["POST"])
+def api_dat_ingest_unsc():
+    (_, _, _, _, _, _, ingest_unsc_event, *_) = _dat()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ingest_unsc_event(
+            theater_id=data.get("theater_id", "global"),
+            event_type=data.get("event_type", "scheduled"),
+            topic=data.get("topic"),
+            agenda_item=data.get("agenda_item"),
+            emergency=bool(data.get("emergency", False)),
+            veto_cast=bool(data.get("veto_cast", False)),
+            walkout=bool(data.get("walkout", False)),
+            participating_states=data.get("participating_states"),
+            scheduled_at=data.get("scheduled_at"),
+            outcome=data.get("outcome"),
+        )
+        resp = make_response(jsonify({"status": "ok", "event": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/dat/ingest/backchannel", methods=["POST"])
+def api_dat_ingest_backchannel():
+    (_, _, _, _, _, _, _, ingest_backchannel, *_) = _dat()
+    data = request.get_json(silent=True) or {}
+    try:
+        result = ingest_backchannel(
+            theater_id=data.get("theater_id", "global"),
+            channel_type=data.get("channel_type", "diplomatic"),
+            parties=data.get("parties"),
+            frequency_delta=float(data.get("frequency_delta", 0.0)),
+            escalation_flag=bool(data.get("escalation_flag", False)),
+            communication_breakdown=bool(data.get("communication_breakdown", False)),
+            metadata=data.get("metadata"),
+            observed_at=data.get("observed_at"),
+        )
+        resp = make_response(jsonify({"status": "ok", "backchannel": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/dat/refresh", methods=["POST"])
+def api_dat_refresh():
+    (_, _, _, _, _, _, _, _, refresh_dti, _) = _dat()
+    data = request.get_json(silent=True) or {}
+    theater = data.get("theater_id", request.args.get("theater", "global"))
+    try:
+        result = refresh_dti(theater)
+        resp = make_response(jsonify({"status": "ok", "snapshot": result}), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Factory functions called from tools/dashboard/app.py
 # ---------------------------------------------------------------------------
 
