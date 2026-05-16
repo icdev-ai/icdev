@@ -1312,14 +1312,22 @@
 
     function chatGeneratePlan() {
         if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('generate-plan-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
         appendMessage({ role: 'system', content: 'Readiness threshold reached! Exporting requirements for plan generation...' });
         chatExport();
+        // Re-enable after a short delay since chatExport is async
+        setTimeout(function() {
+            if (btn) { btn.disabled = false; btn.innerHTML = 'Generate Plan →'; }
+        }, 2000);
     }
 
     function chatForceStartBuild() {
         if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('force-build-btn');
         var pct = Math.round(_lastReadinessScore * 100);
         if (!confirm('Your readiness is ' + pct + '% (recommended: 70%).\n\nGaps in the requirements may lead to rework. Proceed anyway?')) return;
+        if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
         fetch(INTAKE_API + '/force-build/' + _activeIntakeSessionId, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1327,6 +1335,7 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            if (btn) { btn.disabled = false; btn.innerHTML = '⚠ Start Building Now'; }
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             appendMessage({ role: 'system', content: '⚠ ' + data.message });
             var panel = document.getElementById('post-export-actions');
@@ -1655,31 +1664,63 @@
 
     function chatTriggerBuild() {
         if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('trigger-build-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
         appendMessage({ role: 'system', content: 'Starting build pipeline...' });
         fetch(INTAKE_API + '/build/' + _activeIntakeSessionId + '/start', { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate Application'; }
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             appendMessage({ role: 'system', content: 'Build pipeline started. Track progress in the sidebar.' });
             showBuildPipeline(data.phases || []);
             startBuildPolling();
         })
-        .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
+        .catch(function (err) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Generate Application'; }
+            appendMessage({ role: 'system', content: 'Error: ' + err.message });
+        });
+    }
+
+    function chatPreviewBuild() {
+        if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('preview-build-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Previewing…'; }
+        fetch(INTAKE_API + '/build/' + _activeIntakeSessionId + '/start?dry_run=1', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Preview Build'; }
+            if (data.error) { appendMessage({ role: 'system', content: 'Preview error: ' + data.error }); return; }
+            var phases = data.phases || [];
+            var preview = phases.map(function(p, i) { return (i+1) + '. ' + p.name + (p.description ? ' — ' + p.description : ''); }).join('\n');
+            appendMessage({ role: 'system', content: '🔍 Build Preview (' + phases.length + ' phases):\n' + preview });
+        })
+        .catch(function (err) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Preview Build'; }
+            appendMessage({ role: 'system', content: 'Preview error: ' + err.message });
+        });
     }
 
     function chatRunSimulation() {
         if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('run-simulation-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Simulating…'; }
         var thinkingId = _appendThinkingBubble('Generating COAs with simulation...');
         fetch(INTAKE_API + '/coas/' + _activeIntakeSessionId + '/generate', { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
             _removeThinkingBubble(thinkingId);
+            if (btn) { btn.disabled = false; btn.textContent = 'Run Simulation (COAs)'; }
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             var count = data.coas ? data.coas.length : 0;
             appendMessage({ role: 'system', content: count + ' COAs generated. Select one in the sidebar.' });
             if (data.coas) renderCoaCards(data.coas);
         })
-        .catch(function (err) { _removeThinkingBubble(thinkingId); appendMessage({ role: 'system', content: 'Simulation error: ' + err.message }); });
+        .catch(function (err) {
+            _removeThinkingBubble(thinkingId);
+            if (btn) { btn.disabled = false; btn.textContent = 'Run Simulation (COAs)'; }
+            appendMessage({ role: 'system', content: 'Simulation error: ' + err.message });
+        });
     }
 
     function _escHtml(s) {
@@ -1846,27 +1887,66 @@
     // SECTION 11b: Send to Kanban — decompose plan into backlog tasks
     // ===================================================================
 
-    function chatSendToKanban() {
-        // Get the last assistant message content from the active context
-        var contextId = _activeContextId;
-        if (!contextId) {
-            alert("No active chat context");
-            return;
-        }
-
-        // Collect all assistant messages from the chat to build the plan
+    function _getPlanMarkdownForKanban() {
+        // Prefer last assistant message, then fall back to PRD
         var messages = document.querySelectorAll("#chat-messages .chat-msg-assistant .chat-msg-content");
-        if (!messages.length) {
-            alert("No assistant messages found");
+        if (messages.length) {
+            return messages[messages.length - 1].innerText || messages[messages.length - 1].textContent || "";
+        }
+        // Fallback: try to read from the requirements sidebar table
+        var reqTable = document.querySelector("#req-section .reqs-table tbody");
+        if (reqTable) {
+            var rows = reqTable.querySelectorAll("tr");
+            var lines = [];
+            rows.forEach(function(row) {
+                var cells = row.querySelectorAll("td");
+                if (cells.length > 1) {
+                    lines.push("- " + (cells[1].textContent || "").trim());
+                }
+            });
+            if (lines.length) return "## Requirements\n" + lines.join("\n");
+        }
+        return "";
+    }
+
+    function chatPreviewKanban() {
+        if (!_activeIntakeSessionId) return;
+        var btn = document.getElementById('preview-kanban-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Previewing…'; }
+        var planMarkdown = _getPlanMarkdownForKanban();
+        if (!planMarkdown.trim()) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Preview Kanban'; }
+            alert("No plan content found. Generate requirements or a PRD first.");
             return;
         }
+        ICDEV.fetchJSON("/api/kanban/preview-plan", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({markdown: planMarkdown})
+        }).then(function(data) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Preview Kanban'; }
+            if (!data || !data.count) {
+                appendMessage({ role: 'system', content: 'Preview: No tasks could be extracted from the plan.' });
+                return;
+            }
+            var taskList = data.tasks.map(function(t, i) {
+                return (i + 1) + ". [" + t.priority + "] " + t.title;
+            }).join("\n");
+            appendMessage({ role: 'system', content: '🔍 Kanban Preview (' + data.count + ' tasks):\n' + taskList });
+        }).catch(function(err) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Preview Kanban'; }
+            appendMessage({ role: 'system', content: 'Preview error: ' + err.message });
+        });
+    }
 
-        // Use the last assistant message as the plan (most recent plan output)
-        var lastMsg = messages[messages.length - 1];
-        var planMarkdown = lastMsg.innerText || lastMsg.textContent || "";
+    function chatSendToKanban() {
+        var btn = document.getElementById('send-kanban-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
+        var planMarkdown = _getPlanMarkdownForKanban();
         if (!planMarkdown.trim()) {
-            alert("No plan content found in chat");
+            if (btn) { btn.disabled = false; btn.textContent = 'Send to Kanban'; }
+            alert("No plan content found. Generate requirements or a PRD first.");
             return;
         }
 
@@ -1877,6 +1957,7 @@
             body: JSON.stringify({markdown: planMarkdown})
         }).then(function(data) {
             if (!data || !data.count) {
+                if (btn) { btn.disabled = false; btn.textContent = 'Send to Kanban'; }
                 alert("Could not extract tasks from the plan. Try a more structured format (## Phase 1, ## Step 2, etc.)");
                 return;
             }
@@ -1891,15 +1972,23 @@
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({markdown: planMarkdown})
                 }).then(function(result) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Send to Kanban'; }
                     if (result && result.tasks_created) {
                         alert(result.tasks_created + " tasks added to Kanban backlog!");
-                        // Refresh kanban if on that page
                         if (typeof ICDEV.refreshKanban === "function") {
                             ICDEV.refreshKanban();
                         }
                     }
+                }).catch(function(err) {
+                    if (btn) { btn.disabled = false; btn.textContent = 'Send to Kanban'; }
+                    appendMessage({ role: 'system', content: 'Kanban error: ' + err.message });
                 });
+            } else {
+                if (btn) { btn.disabled = false; btn.textContent = 'Send to Kanban'; }
             }
+        }).catch(function(err) {
+            if (btn) { btn.disabled = false; btn.textContent = 'Send to Kanban'; }
+            appendMessage({ role: 'system', content: 'Kanban preview error: ' + err.message });
         });
     }
 
@@ -2150,8 +2239,15 @@
         fetch(INTAKE_API + '/build/' + _activeIntakeSessionId + '/project')
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            if (data.project_id) window.open('/projects/' + data.project_id, '_blank');
-            else appendMessage({ role: 'system', content: 'No project found for this session.' });
+            if (!data.project_id) {
+                appendMessage({ role: 'system', content: 'No project found for this session.' });
+                return;
+            }
+            if (!data.has_activity) {
+                alert('No build activity yet for this project. Run Generate Application first.');
+                return;
+            }
+            window.open('/projects/' + data.project_id, '_blank');
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
     }
@@ -2197,6 +2293,18 @@
                     var doneActions = document.getElementById('build-done-actions');
                     if (doneActions) doneActions.style.display = 'block';
                     if (data.status === 'done') appendMessage({ role: 'system', content: 'Test pipeline complete!' });
+                    // Remediation hints for failing phases
+                    var failing = (data.phases || []).filter(function(p) { return p.status === 'error' || p.status === 'warning'; });
+                    if (failing.length > 0) {
+                        var hints = failing.map(function(p) {
+                            if (p.id === 'unit') return '❗ ' + p.name + ' failed. Run `pytest tests/ -v` locally for details, or check the test output above.';
+                            if (p.id === 'lint') return '⚠️ ' + p.name + ' has findings. Run `ruff check . --fix` to auto-fix style issues.';
+                            if (p.id === 'syntax') return '❗ ' + p.name + ' failed. Look for syntax errors in recently edited files.';
+                            if (p.id === 'sast') return '❗ ' + p.name + ' found issues. Review security scan output above.';
+                            return '⚠️ ' + p.name + ': ' + (p.detail || 'Review the output above.');
+                        }).join('\n');
+                        appendMessage({ role: 'system', content: '**Remediation suggestions:**\n' + hints });
+                    }
                 }
             })
             .catch(function () {});
@@ -3152,11 +3260,13 @@
     ns.chatExport = chatExport;
     ns.chatAiBoost = chatAiBoost;
     ns.chatTriggerBuild = chatTriggerBuild;
+    ns.chatPreviewBuild = chatPreviewBuild;
     ns.chatRunSimulation = chatRunSimulation;
     ns.chatViewRequirements = chatViewRequirements;
     ns.chatGeneratePRD = chatGeneratePRD;
     ns.chatValidatePRD = chatValidatePRD;
     ns.chatSendToKanban = chatSendToKanban;
+    ns.chatPreviewKanban = chatPreviewKanban;
     ns.chatSelectCoa = chatSelectCoa;
     ns.chatUnselectCoa = chatUnselectCoa;
     ns.chatViewProject = chatViewProject;
