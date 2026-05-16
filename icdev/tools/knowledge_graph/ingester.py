@@ -367,20 +367,41 @@ def _persist_graph(
         ),
     )
 
+    # Pre-load ontology class lookup once per graph (best-effort enrichment)
+    _ont_cache: Dict[str, str] = {}
+    try:
+        rows = conn.execute(
+            "SELECT id, LOWER(label) as lbl, LOWER(REPLACE(id, ':', '_')) as id_key "
+            "FROM ontology_classes"
+        ).fetchall()
+        for r in rows:
+            _ont_cache[r["lbl"]] = r["id"]
+            _ont_cache[r["id_key"]] = r["id"]
+    except Exception:
+        pass  # ontology tables not yet built
+
+    def _resolve_ontology_id(entity_type: str) -> str:
+        if not _ont_cache:
+            return None
+        key = entity_type.lower().replace("-", "_").replace(" ", "_")
+        return _ont_cache.get(key) or _ont_cache.get(entity_type.lower())
+
     # Build label → node_id map
     label_to_id: Dict[str, str] = {}
     for ent in entities:
         node_id = _gen_id("kn")
         label_to_id[ent["label"].lower()] = node_id
+        ontology_id = _resolve_ontology_id(ent.get("entity_type", ""))
         conn.execute(
             """INSERT INTO kg_nodes
-               (id, graph_id, label, entity_type, properties, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               (id, graph_id, label, entity_type, ontology_id, properties, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 node_id,
                 graph_id,
                 ent["label"],
                 ent["entity_type"],
+                ontology_id,
                 json.dumps(ent.get("properties", {})),
                 now,
             ),

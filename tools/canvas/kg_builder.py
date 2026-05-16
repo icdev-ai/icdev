@@ -169,6 +169,12 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
             (canvas_key, design_id),
         )
 
+        # Lazy-import ontology_bridge to avoid circular deps at module load
+        try:
+            from tools.canvas.ontology_bridge import get_ontology_id as _get_onto_id
+        except Exception:
+            _get_onto_id = None  # type: ignore[assignment]
+
         # Insert nodes
         for node in nodes_raw:
             node_id = node.get("id", str(uuid.uuid4()))
@@ -179,10 +185,16 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
                 for k, v in node.items()
                 if k not in ("id", "type", "node_type", "label", "name")
             }
+            ontology_id = None
+            if _get_onto_id and node_type:
+                try:
+                    ontology_id = _get_onto_id(canvas_key, node_type)
+                except Exception:
+                    pass
             raw_conn.execute(
                 "INSERT INTO canvas_kg_nodes "
-                "(id, canvas, design_id, node_id, node_type, label, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "(id, canvas, design_id, node_id, node_type, label, ontology_id, metadata_json, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     str(uuid.uuid4()),
                     canvas_key,
@@ -190,6 +202,7 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
                     node_id,
                     node_type,
                     label,
+                    ontology_id,
                     json.dumps(metadata, default=str),
                     now_iso,
                 ),
