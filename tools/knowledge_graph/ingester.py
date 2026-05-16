@@ -26,7 +26,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
-ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 
 sys.path.insert(0, str(BASE_DIR))
 
@@ -36,9 +35,7 @@ sys.path.insert(0, str(BASE_DIR))
 # ---------------------------------------------------------------------------
 
 
-def _get_db() -> sqlite3.Connection:
-    """Return a sqlite3 connection to icdev.db with Row factory."""
-    os.environ.get("ICDEV_DB_PATH", str(ICDEV_DB))
+def _get_db():
     conn = get_connection()
     conn.execute("PRAGMA busy_timeout=5000")
     return conn
@@ -337,8 +334,87 @@ def _merge_edges(
 # ---------------------------------------------------------------------------
 
 
+def _populate_kg_ontology(
+    conn,
+    graph_id: str,
+    onto_id_to_entity_type: Dict[str, str],
+) -> int:
+    """Materialise ontology_subclass_closure rows into kg_ontology for this graph.
+
+    Maps each node's ontology_id (a CURIE like "network:LoadBalancer") through
+    the closure table and stores the resulting subject_type / object_type pairs
+    using the actual entity_type strings from kg_nodes so that
+    _load_ontology_relations() can match them during retrieval.
+
+    Returns the number of rows inserted.
+    """
+    if not onto_id_to_entity_type:
+        return 0
+
+    try:
+        closure_rows = conn.execute(
+            "SELECT subclass, superclass, distance FROM ontology_subclass_closure"
+        ).fetchall()
+    except Exception:
+        return 0
+
+    # Lower-case reverse index: curie_lower → entity_type
+    onto_lower_to_et: Dict[str, str] = {
+        k.lower(): v for k, v in onto_id_to_entity_type.items()
+    }
+
+    # Delete stale rows for this graph
+    try:
+        conn.execute("DELETE FROM kg_ontology WHERE graph_id = ?", (graph_id,))
+    except Exception:
+        return 0
+
+    rows_to_insert: List[Tuple] = []
+    seen: set = set()
+    now = _utcnow_iso()
+
+    for row in closure_rows:
+        sub_curie = row["subclass"] if hasattr(row, "__getitem__") else row[0]
+        sup_curie = row["superclass"] if hasattr(row, "__getitem__") else row[1]
+        dist = row["distance"] if hasattr(row, "__getitem__") else row[2]
+
+        sub_lower = sub_curie.lower()
+        if sub_lower not in onto_lower_to_et:
+            continue  # this class isn't in our graph — skip
+
+        subject_type = onto_lower_to_et[sub_lower]
+        # Map superclass back to an entity_type if a node has it; else use normalised CURIE
+        sup_lower = sup_curie.lower()
+        object_type = onto_lower_to_et.get(sup_lower, sup_lower.replace(":", "_"))
+
+        key = (subject_type, "rdfs:subClassOf", object_type)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        rows_to_insert.append((
+            _gen_id("ko"),
+            graph_id,
+            subject_type,
+            "rdfs:subClassOf",
+            object_type,
+            max(int(dist or 1), 1),
+            now,
+        ))
+
+    if rows_to_insert:
+        conn.executemany(
+            "INSERT INTO kg_ontology "
+            "(id, graph_id, subject_type, predicate, object_type, path_distance, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            rows_to_insert,
+        )
+
+    return len(rows_to_insert)
+
+
 def _persist_graph(
-    conn: sqlite3.Connection,
+    conn,
     graph_id: str,
     project_id: str,
     graph_name: str,
@@ -386,12 +462,16 @@ def _persist_graph(
         key = entity_type.lower().replace("-", "_").replace(" ", "_")
         return _ont_cache.get(key) or _ont_cache.get(entity_type.lower())
 
-    # Build label → node_id map
+    # Build label → node_id map; collect ontology_id → entity_type for kg_ontology
     label_to_id: Dict[str, str] = {}
+    onto_id_to_et: Dict[str, str] = {}
     for ent in entities:
         node_id = _gen_id("kn")
         label_to_id[ent["label"].lower()] = node_id
-        ontology_id = _resolve_ontology_id(ent.get("entity_type", ""))
+        entity_type = ent.get("entity_type", "")
+        ontology_id = _resolve_ontology_id(entity_type)
+        if ontology_id and entity_type:
+            onto_id_to_et[ontology_id] = entity_type
         conn.execute(
             """INSERT INTO kg_nodes
                (id, graph_id, label, entity_type, ontology_id, properties, created_at)
@@ -400,7 +480,7 @@ def _persist_graph(
                 node_id,
                 graph_id,
                 ent["label"],
-                ent["entity_type"],
+                entity_type,
                 ontology_id,
                 json.dumps(ent.get("properties", {})),
                 now,
@@ -428,6 +508,9 @@ def _persist_graph(
                 now,
             ),
         )
+
+    # Materialise ontology relations for this graph into kg_ontology
+    _populate_kg_ontology(conn, graph_id, onto_id_to_et)
 
     conn.commit()
 
