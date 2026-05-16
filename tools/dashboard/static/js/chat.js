@@ -1367,12 +1367,36 @@
         if (merged.length > 0) {
             html += '<strong>' + merged.length + ' requirement' + (merged.length !== 1 ? 's' : '') + ' captured</strong>';
         } else {
-            html += 'No requirements extracted this turn.';
+            html += 'No new requirements extracted this turn.';
         }
         if (data.panel_question) {
             html += ' &mdash; <em>' + escHtml(data.panel_question) + '</em>';
         }
         html += '</div>';
+
+        // Next-step guidance bar (shown when no follow-up question and score is below threshold)
+        var _curScore = typeof _lastReadinessScore === 'number' ? _lastReadinessScore : 0;
+        if (!data.panel_question) {
+            var _pct = Math.round(_curScore * 100);
+            var _needed = 70 - _pct;
+            if (_curScore < 0.7) {
+                html += '<div class="panel-next-step">';
+                html += '<span class="panel-next-step__score">Score: <strong>' + _pct + '%</strong> / 70% needed</span>';
+                html += '<span class="panel-next-step__hint">';
+                if (_pct < 20) {
+                    html += 'Keep describing your requirements — add functional, security, and data requirements.';
+                } else if (_pct < 40) {
+                    html += 'Good start! Add acceptance criteria, timeline, and compliance details to raise your score.';
+                } else {
+                    html += 'Almost there! ' + _needed + '% more — mention budget, team size, or add testability criteria.';
+                }
+                html += '</span></div>';
+            } else {
+                html += '<div class="panel-next-step panel-next-step--ready">';
+                html += 'Requirements ready — use <strong>Generate Plan</strong> or <strong>Export</strong> in the sidebar.';
+                html += '</div>';
+            }
+        }
         html += '</div>';
 
         stream.innerHTML += html;
@@ -1381,6 +1405,13 @@
         // Inject inline QA widget for the panel question
         if (data.panel_question) {
             _injectQAWidget(stream, data.panel_question);
+        }
+
+        // Re-focus message input so the user can keep typing
+        var _inp = document.getElementById('message-input');
+        if (_inp && !_inp.disabled) {
+            _inp.placeholder = 'Add more requirements, describe use cases, mention constraints…';
+            _inp.focus();
         }
     }
 

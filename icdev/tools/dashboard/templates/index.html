@@ -886,7 +886,28 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
+    <!-- Cache Savings tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Cache Savings
+            <span class="help-icon" title="LLM response and context cache hit rate, token savings, cost avoided">?</span>
+        </div>
+        <div id="tile-cache" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
 </div>
+
+{# ── Recent Task Events — rendered below monitor cards by refreshProjectsInFlight() ── #}
+<details id="pif-events-section" style="margin-bottom:24px; display:none;">
+  <summary style="cursor:pointer; list-style:none; display:flex; align-items:center; gap:0.5rem;
+                  padding:0.6rem 0.8rem; background:var(--bg-card,#1e293b); border-radius:8px;
+                  border:1px solid var(--border-color,#2a2a40);">
+    <span style="font-size:0.9rem; font-weight:600; color:var(--text-primary);">Recent Task Events</span>
+    <span id="pif-events-count" style="font-size:0.72rem; color:var(--text-muted); margin-left:0.25rem;"></span>
+    <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);">last 24h</span>
+  </summary>
+  <div id="pif-events-list" style="margin-top:0.5rem;"></div>
+</details>
 
 <script>
 // OPT-57: Sandbox liveness tile renderer
@@ -1028,6 +1049,37 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     document.addEventListener('DOMContentLoaded', renderMcpTile);
+})();
+
+// Cache Savings tile renderer
+(function () {
+    function renderCacheTile() {
+        fetch('/api/cache-savings/tile').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-cache');
+            if (!el) return;
+            var statusColor = d.enabled ? '#22c55e' : '#ef4444';
+            var statusLabel = d.enabled ? 'Enabled' : 'Disabled';
+            var hitColor = (d.hit_rate_pct >= 50) ? '#22c55e' : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
+                + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + (d.hit_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Hit Rate</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:#f59e0b;">$' + (d.cost_usd_saved || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Saved (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.total_entries || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Entries</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
+                + '</div>'
+                + '<div style="margin-top:4px;"><a href="/cache-savings" class="btn" style="font-size:11px;padding:3px 10px;">View dashboard</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-cache');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cache stats unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderCacheTile);
 })();
 </script>
 
@@ -1240,15 +1292,16 @@ window._loadCharts = function() {
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            // Compliance posture — multi-canvas bar chart (7 canvas scores + Oracle count)
+            // Compliance posture — multi-canvas bar chart (canvas scores only, no Oracle)
             if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
-                // Separate Oracle entry from canvas entries for per-entry handling
+                // Separate Oracle entry — it tracks CAT prediction counts, not a 0-100 score
                 var _oracleEntry = null;
                 d.compliance.canvases.forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
+                var _chartCanvases = d.compliance.canvases.filter(function(c) { return !c.is_oracle; });
                 ICDEV.barChart('chart-compliance', {
-                    labels: d.compliance.canvases.map(function(c) { return c.name; }),
+                    labels: _chartCanvases.map(function(c) { return c.name; }),
                     series: [
-                        { name: 'Score', data: d.compliance.canvases.map(function(c) { return c.score; }), color: '#4a90d9' },
+                        { name: 'Score', data: _chartCanvases.map(function(c) { return c.score; }), color: '#4a90d9' },
                     ],
                     height: 160, showLegend: false, showValues: true,
                 });

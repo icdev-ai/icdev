@@ -1707,6 +1707,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Ontology Explorer blueprint failed to register: %s", _exc)
 
+    # ---- Cache Savings Blueprint ----
+    try:
+        from tools.cache_savings.blueprint import bp as _cache_savings_bp
+        app.register_blueprint(_cache_savings_bp)
+        app.logger.info("Cache Savings blueprint registered at /cache-savings")
+    except Exception as _exc:
+        app.logger.warning("Cache Savings blueprint failed to register: %s", _exc)
+
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -2469,6 +2477,7 @@ def create_app() -> Flask:
             "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
+            "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
