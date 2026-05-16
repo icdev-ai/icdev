@@ -7,6 +7,7 @@ Components:
 - PIP (Policy Information Point): attribute lookup
 - PDP (Policy Decision Point): decision evaluation with 60-second LRU cache
 - PEP (Policy Enforcement Point): decorator for Flask routes
+- CrossDomainABACEnforcer: ABAC + mandatory classification markings for cross-domain data pulls (MCIP)
 
 Policies are loaded from ``args/security_config.yaml`` under the
 ``abac_policies`` key.
@@ -17,13 +18,17 @@ Supported operators:
 Public API:
     evaluate(subject_attrs, resource_attrs, action, env_attrs) -> Decision
     abac_protect(resource_attr_fn, action) -> decorator
+    enforce_cross_domain_pull(subject, resource, data_objects) -> CrossDomainPullResult
+
+NIST 800-53 controls: AC-3, AC-4, AC-4(4), AU-2, SC-7(5).
 """
 
+import copy
 import functools
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
@@ -336,6 +341,219 @@ def log_abac_decision(
         conn.commit()
     except Exception as exc:
         logger.debug("Could not log ABAC decision: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Cross-domain data pull: ABAC + mandatory classification markings (MCIP)
+# NIST 800-53: AC-3, AC-4, AC-4(4), AU-2, SC-7(5)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CrossDomainPullResult:
+    """Result of an ABAC-enforced cross-domain data pull.
+
+    Attributes:
+        permitted: True if the pull was approved by ABAC; False otherwise.
+        policy_name: Name of the matching ABAC policy (or "default_deny").
+        reason: Human-readable explanation of the decision.
+        data_objects: List of data objects with mandatory classification markings applied.
+                      Always empty when permitted is False — no data leak on deny.
+    """
+
+    permitted: bool
+    policy_name: str = ""
+    reason: str = ""
+    data_objects: List[Dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "permitted": self.permitted,
+            "policy_name": self.policy_name,
+            "reason": self.reason,
+            "data_objects": self.data_objects,
+        }
+
+
+class CrossDomainABACEnforcer:
+    """ABAC enforcement for cross-domain data pulls with mandatory classification markings.
+
+    Decision logic (all conditions must be satisfied for PERMIT):
+    1. Subject must hold the ``cross_domain_pull`` entitlement.
+    2. Subject's clearance_level must be >= the resource classification's clearance order.
+    3. All resource compartments must be a subset of the subject's compartments.
+
+    On PERMIT, applies mandatory classification markings to each returned data object
+    (copies the dict and sets ``classification_marking`` = resource classification string).
+    On DENY, returns an empty data_objects list to prevent information leakage.
+    """
+
+    # Clearance ordering for numeric comparison
+    _CLEARANCE_ORDER: Dict[str, int] = {
+        "PUBLIC": 0,
+        "CUI": 1,
+        "SECRET": 2,
+        "TOP SECRET": 3,
+        "TOP SECRET//SCI": 4,
+    }
+
+    def _clearance_order(self, classification: str) -> int:
+        """Return numeric clearance order for a classification string."""
+        try:
+            from tools.compliance.classification_manager import get_clearance_order
+            return get_clearance_order(classification)
+        except Exception:
+            # Normalize: strip leading/trailing spaces, take the base level token
+            normalized = classification.strip().upper()
+            # Match longest prefix first
+            for key in ("TOP SECRET//SCI", "TOP SECRET", "SECRET", "CUI", "PUBLIC"):
+                if normalized.startswith(key):
+                    return self._CLEARANCE_ORDER[key]
+            return self._CLEARANCE_ORDER.get(normalized, 1)
+
+    def _check_entitlement(self, subject: Dict[str, Any]) -> bool:
+        """Subject must have the cross_domain_pull entitlement."""
+        entitlements = subject.get("entitlements", [])
+        return "cross_domain_pull" in entitlements
+
+    def _check_clearance(self, subject: Dict[str, Any], resource: Dict[str, Any]) -> bool:
+        """Subject clearance_level must meet or exceed the resource classification order."""
+        resource_cls = resource.get("classification", "CUI")
+        required_order = self._clearance_order(resource_cls)
+        subject_clearance = subject.get("clearance_level", 0)
+        return int(subject_clearance) >= required_order
+
+    def _check_compartments(self, subject: Dict[str, Any], resource: Dict[str, Any]) -> bool:
+        """All resource compartments must be a subset of the subject's compartments."""
+        resource_compartments = set(resource.get("compartments", []))
+        if not resource_compartments:
+            return True
+        subject_compartments = set(subject.get("compartments", []))
+        return resource_compartments.issubset(subject_compartments)
+
+    def apply_classification_markings(
+        self,
+        data_objects: List[Dict[str, Any]],
+        source_classification: str,
+    ) -> List[Dict[str, Any]]:
+        """Apply mandatory classification markings to each data object.
+
+        Returns a new list of dicts with all original fields preserved and
+        ``classification_marking`` set to ``source_classification``.
+        """
+        marked: List[Dict[str, Any]] = []
+        for obj in data_objects:
+            marked_obj = copy.copy(obj)
+            marked_obj["classification_marking"] = source_classification
+            marked.append(marked_obj)
+        return marked
+
+    def enforce(
+        self,
+        subject: Dict[str, Any],
+        resource: Dict[str, Any],
+        data_objects: List[Dict[str, Any]],
+        action: str = "cross_domain_pull",
+    ) -> CrossDomainPullResult:
+        """Enforce ABAC on a cross-domain data pull request.
+
+        Evaluates three conditions in order:
+        1. Entitlement check — subject must hold ``cross_domain_pull``.
+        2. Clearance check — subject clearance_level >= resource classification order.
+        3. Compartment check — resource compartments ⊆ subject compartments.
+
+        On PERMIT, applies classification markings to all data objects.
+        On DENY, returns an empty data_objects list (no data leak).
+
+        Args:
+            subject: Dict of subject attributes (user_id, clearance_level, entitlements, compartments, …).
+            resource: Dict of resource attributes (classification, compartments, source_il, …).
+            data_objects: Raw data objects to transfer (will receive classification_marking on permit).
+            action: Action string (default "cross_domain_pull").
+
+        Returns:
+            CrossDomainPullResult with permit decision, policy name, reason, and marked data objects.
+        """
+        # 1. Entitlement check
+        if not self._check_entitlement(subject):
+            logger.warning(
+                "ABAC cross-domain deny: user=%s missing cross_domain_pull entitlement",
+                subject.get("user_id"),
+            )
+            return CrossDomainPullResult(
+                permitted=False,
+                policy_name="deny_missing_entitlement",
+                reason="Subject lacks 'cross_domain_pull' entitlement",
+                data_objects=[],
+            )
+
+        # 2. Clearance check
+        if not self._check_clearance(subject, resource):
+            resource_cls = resource.get("classification", "CUI")
+            logger.warning(
+                "ABAC cross-domain deny: user=%s clearance=%s insufficient for classification=%s",
+                subject.get("user_id"),
+                subject.get("clearance_level"),
+                resource_cls,
+            )
+            return CrossDomainPullResult(
+                permitted=False,
+                policy_name="deny_insufficient_clearance",
+                reason=f"Subject clearance_level {subject.get('clearance_level')} insufficient for '{resource_cls}'",
+                data_objects=[],
+            )
+
+        # 3. Compartment check
+        if not self._check_compartments(subject, resource):
+            logger.warning(
+                "ABAC cross-domain deny: user=%s missing required compartments for resource compartments=%s",
+                subject.get("user_id"),
+                resource.get("compartments"),
+            )
+            return CrossDomainPullResult(
+                permitted=False,
+                policy_name="deny_missing_compartment",
+                reason=f"Subject missing required compartments: {resource.get('compartments')}",
+                data_objects=[],
+            )
+
+        # All checks passed — PERMIT and apply mandatory classification markings
+        resource_cls = resource.get("classification", "CUI")
+        marked_objects = self.apply_classification_markings(data_objects, resource_cls)
+
+        logger.info(
+            "ABAC cross-domain permit: user=%s action=%s resource_classification=%s objects=%d",
+            subject.get("user_id"),
+            action,
+            resource_cls,
+            len(marked_objects),
+        )
+        return CrossDomainPullResult(
+            permitted=True,
+            policy_name="permit_cross_domain_pull",
+            reason=f"ABAC permit for cross-domain pull; classification_marking='{resource_cls}' applied",
+            data_objects=marked_objects,
+        )
+
+
+def enforce_cross_domain_pull(
+    subject: Dict[str, Any],
+    resource: Dict[str, Any],
+    data_objects: List[Dict[str, Any]],
+) -> "CrossDomainPullResult":
+    """Public API: enforce ABAC on a cross-domain data pull and apply mandatory classification markings.
+
+    Args:
+        subject: Subject attribute dict (user_id, clearance_level, entitlements, compartments).
+        resource: Resource attribute dict (classification, compartments, source_il, target_il).
+        data_objects: List of raw data objects to transfer.
+
+    Returns:
+        CrossDomainPullResult — permitted with marked objects, or denied with empty data_objects.
+
+    NIST 800-53: AC-3, AC-4, AC-4(4), AU-2, SC-7(5).
+    """
+    enforcer = CrossDomainABACEnforcer()
+    return enforcer.enforce(subject=subject, resource=resource, data_objects=data_objects)
 
 
 # ---------------------------------------------------------------------------
