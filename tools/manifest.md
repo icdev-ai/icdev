@@ -654,3 +654,10 @@
 |------|------|-------------|-------|--------|
 | Multi Persona Panel | tools\requirements\multi_persona_panel.py | Auto-registered: requirements/multi_persona_panel.py | --json | JSON |
 | Govchain Anchor | tools\genesis\reflexes\govchain_anchor.py | Auto-registered: reflexes/govchain_anchor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Il5 Display Service | tools\il5\il5_display_service.py | Auto-registered: il5/il5_display_service.py | --json | JSON |
+| Il5 Ingestion Service | tools\il5\il5_ingestion_service.py | Auto-registered: il5/il5_ingestion_service.py | --json | JSON |

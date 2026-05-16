@@ -373,7 +373,7 @@ def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
             auto_close_parent_if_all_children_done,
         )
         row = conn.execute(
-            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (child_task_id,)
+            "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (child_task_id,)
         ).fetchone()
         parent_id = (dict(row).get("depends_on_task_id") if hasattr(row, "keys") else row[0]) if row else None
 
@@ -390,7 +390,7 @@ def _maybe_auto_close_parent(conn, child_task_id: str) -> None:
         if naming_result and naming_result.applied:
             naming_parent = naming_result.task_id
             np_row = conn.execute(
-                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = %s", (naming_parent,)
+                "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?", (naming_parent,)
             ).fetchone()
             np_parent = (dict(np_row).get("depends_on_task_id") if hasattr(np_row, "keys") else np_row[0]) if np_row else None
             if np_parent:
@@ -422,7 +422,7 @@ def _check_dependency_cycle_dfs(task_id: str, new_deps: list, conn) -> tuple:
             return False
         visited.add(node)
         rows = conn.execute(
-            "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = %s",
+            "SELECT depends_on_id FROM kanban_task_deps WHERE task_id = ?",
             (node,),
         ).fetchall()
         for r in rows:
@@ -432,7 +432,7 @@ def _check_dependency_cycle_dfs(task_id: str, new_deps: list, conn) -> tuple:
         return False
 
     for dep_id in new_deps:
-        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (dep_id,)).fetchone()
+        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (dep_id,)).fetchone()
         if not row:
             return False, f"depends_on_task_id {dep_id!r} not found"
         if _dfs(dep_id):
@@ -515,7 +515,7 @@ def create_task():
         for dep_id in dep_ids:
             conn.execute(
                 "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
-                "VALUES (%s, %s, %s) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
+                "VALUES (?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
                 (task_id, dep_id, now),
             )
         conn.commit()
@@ -612,11 +612,11 @@ def update_task(task_id):
         # Multi-parent: update junction table when depends_on_task_ids provided
         if new_dep_ids:
             now_ts = _utcnow()
-            conn.execute("DELETE FROM kanban_task_deps WHERE task_id = %s", (task_id,))
+            conn.execute("DELETE FROM kanban_task_deps WHERE task_id = ?", (task_id,))
             for dep_id in new_dep_ids:
                 conn.execute(
                     "INSERT INTO kanban_task_deps (task_id, depends_on_id, created_at) "
-                    "VALUES (%s, %s, %s) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
+                    "VALUES (?, ?, ?) ON CONFLICT (task_id, depends_on_id) DO NOTHING",
                     (task_id, dep_id, now_ts),
                 )
             conn.commit()
