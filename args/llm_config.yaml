@@ -576,7 +576,7 @@ routing:
     effort: medium
 
   chat_response:
-    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
     effort: low
     disable_thinking: true
 
