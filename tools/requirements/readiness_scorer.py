@@ -92,6 +92,16 @@ def _load_weights():
     return {"completeness": 0.25, "clarity": 0.25, "feasibility": 0.20, "compliance": 0.15, "testability": 0.15}
 
 
+def _detect_frameworks_from_requirements(reqs: list) -> list:
+    """Scan requirement text for framework keywords and return detected framework keys."""
+    detected: set = set()
+    all_text = " ".join((r.get("raw_text") or "") for r in reqs).lower()
+    for framework, keywords in FRAMEWORK_KEYWORDS.items():
+        if any(kw in all_text for kw in keywords):
+            detected.add(framework)
+    return sorted(detected)
+
+
 def score_readiness(session_id: str, db_path=None) -> dict:
     """Calculate multi-dimensional readiness score for a session."""
     conn = _get_connection(db_path)
@@ -150,6 +160,21 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     # --- Compliance ---
     selected_frameworks = context.get("selected_frameworks", [])
+
+    # Auto-detect frameworks from requirement text when none explicitly selected
+    if not selected_frameworks:
+        detected = _detect_frameworks_from_requirements(reqs)
+        if detected:
+            selected_frameworks = detected
+            context["selected_frameworks"] = detected
+            # Persist detected frameworks back to session context
+            try:
+                conn.execute(
+                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    (json.dumps(context), session_id),
+                )
+            except Exception:
+                pass
 
     sec_reqs = sum(1 for r in reqs if r["requirement_type"] in ("security", "compliance"))
 

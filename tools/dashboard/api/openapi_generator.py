@@ -45,7 +45,7 @@ and layer hand-written description overrides on top.
 OpenAPI 3.0.3 → 3.1.0 diff (what matters for us)
 ================================================
 - Version string: `"openapi": "3.1.0"` (vs `"3.0.3"`).
-- Nullability: 3.1 drops `nullable: true`; use JSON Schema `type: ["string", "null"]`.
+- Nullability: 3.1 drops `nullable: true`; use JSON Schema `type": ["string", "null"]`.
   Swagger UI 5 accepts both; openapi-typescript (Phase H2) prefers 3.1.
 - JSON Schema: 3.1 aligns with JSON Schema 2020-12 — better interop with
   zod/openapi-typescript/schemathesis on the frontend + contract-test side.
@@ -71,14 +71,13 @@ from __future__ import annotations
 import ast
 import copy
 import inspect
-import json
 import logging
 import re
 import textwrap
-import urllib.error
 import urllib.parse
-import urllib.request
 from typing import TYPE_CHECKING, Any
+
+import requests
 
 if TYPE_CHECKING:
     from flask import Flask
@@ -92,16 +91,16 @@ logger = logging.getLogger("icdev.dashboard.api.openapi_generator")
 OPENAPI_BASE: dict = {
     "openapi": "3.1.0",
     "info": {
-        "title": "ICDEV\u2122 Dashboard API",
+        "title": "ICDEV™ Dashboard API",
         "version": "1.0.0",
         "description": (
-            "CUI // SP-CTI \u2014 ICDEV\u2122 Intelligent Certified Development dashboard "
+            "CUI // SP-CTI — ICDEV™ Intelligent Certified Development dashboard "
             "REST API. 57 blueprints, all mounted under /api/v1/. Primary consumer "
             "is the Next.js frontend (Phase H); also consumed by schemathesis "
             "contract tests (Phase G1) and openapi-typescript codegen (Phase H2). "
             "Legacy /api/* alias paths are retained for one release."
         ),
-        "contact": {"name": "ICDEV\u2122 System Administrator"},
+        "contact": {"name": "ICDEV™ System Administrator"},
         "license": {"name": "Government Purpose Rights"},
     },
     "servers": [
@@ -448,52 +447,31 @@ def sample_response_schema(path: str, base_url: str, *, timeout: float = 2.0) ->
     """GET `base_url + path`; infer schema from JSON payload; return schema or None."""
     if "{" in path:
         return None
-<<<<<<< Updated upstream
-    full_url = base_url.rstrip("/") + path
-    if urllib.parse.urlparse(full_url).scheme not in ("http", "https"):
-        return None
-    try:
-        with urllib.request.urlopen(full_url, timeout=timeout) as resp:  # nosec B310
-=======
     url = base_url.rstrip("/") + path
     if not _is_safe_url(url):
         return None
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:
->>>>>>> Stashed changes
-            if resp.status // 100 != 2:
-                return None
-            ctype = resp.headers.get("Content-Type", "")
-            if "application/json" not in ctype:
-                return None
-            body = resp.read()
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+        resp = requests.get(url, timeout=timeout)
+        if resp.status_code // 100 != 2:
+            return None
+        if "application/json" not in resp.headers.get("Content-Type", ""):
+            return None
+        payload = resp.json()
+    except Exception as exc:
         logger.debug("sample_response_schema(%s): %s", path, exc)
-        return None
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        logger.debug("sample_response_schema(%s): non-JSON body: %s", path, exc)
         return None
     return infer_schema_from_json(payload)
 
 
 def sample_get_route(url: str, *, timeout: float = 2.0) -> dict | None:
     """GET url; return decoded JSON body or None on any failure."""
-<<<<<<< Updated upstream
-    if urllib.parse.urlparse(url).scheme not in ("http", "https"):
-=======
     if not _is_safe_url(url):
->>>>>>> Stashed changes
         return None
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as resp:  # nosec B310
-            body = resp.read()
-    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError):
-        return None
-    try:
-        return json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception:
         return None
 
 

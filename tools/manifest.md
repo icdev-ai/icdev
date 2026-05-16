@@ -662,3 +662,11 @@
 |------|------|-------------|-------|--------|
 | Il5 Display Service | tools\il5\il5_display_service.py | Auto-registered: il5/il5_display_service.py | --json | JSON |
 | Il5 Ingestion Service | tools\il5\il5_ingestion_service.py | Auto-registered: il5/il5_ingestion_service.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Generate Compliance Report | tools\generate_compliance_report.py | Auto-registered: tools/generate_compliance_report.py | --json | JSON |
+| Dti Calculator | tools\dat\dti_calculator.py | Auto-registered: dat/dti_calculator.py | --json | JSON |
+| Jise Portal | tools\intelligence\jise_portal.py | Auto-registered: intelligence/jise_portal.py | --json | JSON |

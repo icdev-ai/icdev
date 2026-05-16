@@ -293,44 +293,44 @@ class TestSampleGetRoute:
         from unittest.mock import MagicMock, patch
 
         mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps({"ok": True}).encode()
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.json.return_value = {"ok": True}
+        mock_resp.status_code = 200
+        mock_resp.headers = {"Content-Type": "application/json"}
 
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch("requests.get", return_value=mock_resp):
             result = sample_get_route("http://localhost:5050/api/v1/projects")
 
         assert result == {"ok": True}
 
     def test_returns_none_on_connection_error(self):
-        import urllib.error
+        import requests
 
         with patch(
-            "urllib.request.urlopen",
-            side_effect=urllib.error.URLError("connection refused"),
+            "requests.get",
+            side_effect=requests.exceptions.ConnectionError("connection refused"),
         ):
             result = sample_get_route("http://localhost:5050/api/v1/projects")
 
         assert result is None
 
     def test_returns_none_on_timeout(self):
-        import socket
+        import requests
 
         with patch(
-            "urllib.request.urlopen",
-            side_effect=socket.timeout("timed out"),
+            "requests.get",
+            side_effect=requests.exceptions.Timeout("timed out"),
         ):
             result = sample_get_route("http://localhost:5050/api/v1/projects")
 
         assert result is None
 
     def test_rejects_file_scheme(self):
-        """B310: file:// URLs must be rejected before urlopen is called."""
+        """B310: file:// URLs must be rejected before requests.get is called."""
         result = sample_get_route("file:///etc/passwd")
         assert result is None
 
     def test_rejects_ftp_scheme(self):
-        """B310: ftp:// URLs must be rejected before urlopen is called."""
+        """B310: ftp:// URLs must be rejected before requests.get is called."""
         result = sample_get_route("ftp://example.com/data.json")
         assert result is None
 
@@ -511,16 +511,16 @@ class TestGenerateOpenAPISpec:
 
         payload = {"projects": [{"id": 1}], "total": 1}
         mock_resp = MagicMock()
-        mock_resp.read.return_value = json.dumps(payload).encode()
-        mock_resp.__enter__ = lambda s: s
-        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_resp.json.return_value = payload
+        mock_resp.status_code = 200
+        mock_resp.headers = {"Content-Type": "application/json"}
 
         def list_handler():
             """List projects."""
 
         app = _make_app([("/api/v1/projects", {"GET"}, list_handler)])
 
-        with patch("urllib.request.urlopen", return_value=mock_resp):
+        with patch("requests.get", return_value=mock_resp):
             spec = generate_openapi_spec(app, sample_get=True)
 
         op = spec["paths"]["/api/v1/projects"]["get"]
@@ -530,7 +530,7 @@ class TestGenerateOpenAPISpec:
         assert "projects" in schema["properties"]
 
     def test_sampling_failure_leaves_ok_description(self):
-        import urllib.error
+        import requests
 
         def list_handler():
             """List items."""
@@ -538,8 +538,8 @@ class TestGenerateOpenAPISpec:
         app = _make_app([("/api/v1/items", {"GET"}, list_handler)])
 
         with patch(
-            "urllib.request.urlopen",
-            side_effect=urllib.error.URLError("refused"),
+            "requests.get",
+            side_effect=requests.exceptions.ConnectionError("refused"),
         ):
             spec = generate_openapi_spec(app, sample_get=True)
 
