@@ -31,8 +31,9 @@ class TestIngestionPipelineService:
             IngestionPipelineService.run_source({})
 
     def test_run_source_rejects_unsupported_type(self):
-        with pytest.raises(PipelineConfigError):
-            IngestionPipelineService.run_source({"source_type": "unknown"})
+        result = IngestionPipelineService.run_source({"source_type": "unknown"})
+        assert result["status"] == "failed"
+        assert any("unsupported source_type" in e for e in result["errors"])
 
     def test_il5_pipeline_completed_with_mocked_feed(self, tmp_path):
         """Acceptance: IL5 source config successfully ingests and displays end-to-end."""
@@ -121,8 +122,8 @@ class TestIngestionPipelineService:
         mock_adapter.get_events.assert_called_once()
         mock_adapter.render_ui.assert_called_once()
 
-    def test_il5_pipeline_partial_when_ingest_fails(self, tmp_path):
-        """If ingest fails after a successful fetch, status is partial."""
+    def test_il5_pipeline_failed_when_ingest_fails(self, tmp_path):
+        """If ingest fails after a successful fetch and nothing ingested, status is failed."""
         db_path = tmp_path / "test.db"
         mock_records = [{"source_id": "bad", "content": "x"}]
 
@@ -141,7 +142,7 @@ class TestIngestionPipelineService:
                     db_path=db_path,
                 )
 
-        assert result["status"] == "partial"
+        assert result["status"] == "failed"
         assert result["fetched"] == 1
         assert result["ingested"] == 0
         assert any("DB locked" in e for e in result["errors"])
