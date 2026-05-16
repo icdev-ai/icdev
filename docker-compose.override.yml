@@ -1,0 +1,122 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ Docker Compose Security Hardening Override
+#
+# Automatically merged by Docker Compose with docker-compose.yml.
+# Adds defense-in-depth security controls at the Compose layer on top of
+# the per-image STIG hardening already present in each Dockerfile:
+#
+#   user            — enforce UID:GID at runtime (defense-in-depth over Dockerfile USER)
+#   security_opt    — prevent privilege escalation via no-new-privileges
+#   cap_drop        — drop all Linux capabilities; add back only what each service needs
+#
+# Usage:
+#   docker compose up -d                            # uses both files automatically
+#   docker compose -f docker-compose.yml up -d      # base only (skips hardening)
+
+# ======================================================================
+# ICDEV Agents — UID 1000 (icdev), all capabilities dropped
+# ======================================================================
+
+x-icdev-security: &icdev-security
+  user: "1000:1000"
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+
+services:
+
+  icdev-init:
+    <<: *icdev-security
+
+  icdev-orchestrator:
+    <<: *icdev-security
+
+  icdev-architect:
+    <<: *icdev-security
+
+  icdev-builder:
+    <<: *icdev-security
+
+  icdev-compliance:
+    <<: *icdev-security
+
+  icdev-security:
+    <<: *icdev-security
+
+  icdev-infrastructure:
+    <<: *icdev-security
+
+  icdev-mbse:
+    <<: *icdev-security
+
+  icdev-modernization:
+    <<: *icdev-security
+
+  icdev-requirements:
+    <<: *icdev-security
+
+  icdev-supply-chain:
+    <<: *icdev-security
+
+  icdev-simulation:
+    <<: *icdev-security
+
+  icdev-integration:
+    <<: *icdev-security
+
+  icdev-devsecops:
+    <<: *icdev-security
+
+  icdev-gateway:
+    <<: *icdev-security
+
+  icdev-knowledge:
+    <<: *icdev-security
+
+  icdev-monitor:
+    <<: *icdev-security
+
+  icdev-dashboard:
+    <<: *icdev-security
+
+  icdev-api-gateway:
+    <<: *icdev-security
+
+  # ======================================================================
+  # IaC Tools — UID 1001 (iac), all capabilities dropped
+  # ======================================================================
+  iac-tools:
+    user: "1001:1001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # ======================================================================
+  # PostgreSQL — no user override (postgres manages its own uid);
+  # no-new-privileges still applies
+  # ======================================================================
+  icdev-postgres:
+    security_opt:
+      - no-new-privileges:true
+
+  # ======================================================================
+  # GNS3 Server — requires NET_ADMIN, NET_RAW, SYS_PTRACE for QEMU/KVM;
+  # drop ALL first then add back only the minimum required caps
+  # ======================================================================
+  gns3-server:
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # cap_add from docker-compose.yml (NET_ADMIN, NET_RAW, SYS_PTRACE) is merged in
+
+  # ======================================================================
+  # GNS3 Registry — alpine/git one-shot container, no caps needed
+  # ======================================================================
+  gns3-registry:
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
