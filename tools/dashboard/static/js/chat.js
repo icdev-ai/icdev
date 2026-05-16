@@ -1236,6 +1236,15 @@
         if (btn) { btn.disabled = true; btn.textContent = '⚡ Generating…'; }
         if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = 'AI is analyzing your session and drafting missing requirements…'; }
 
+        var boostTypingId = 'boost-typing-' + Date.now();
+        var _boostStream = document.getElementById('message-stream');
+        if (_boostStream) {
+            _boostStream.innerHTML += '<div id="' + boostTypingId + '" style="padding:8px 12px;margin-bottom:4px;background:var(--bg-secondary);border-radius:4px;">'
+                + '<div style="font-size:0.72rem;font-weight:700;color:#7c3aed;margin-bottom:3px;">AI Boost</div>'
+                + '<div style="font-size:0.85rem;opacity:0.6;">&#8987; Analyzing gaps and drafting requirements…</div></div>';
+            _boostStream.scrollTop = _boostStream.scrollHeight;
+        }
+
         fetch(INTAKE_API + '/ai-boost/' + _activeIntakeSessionId, { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -1601,11 +1610,12 @@
                     '.</div>'
                 );
             }
-            refreshReadiness();
             if (result.new_score !== null && result.new_score !== undefined) {
+                updateReadinessDisplay({ overall_score: result.new_score });
                 var pct = Math.round(result.new_score * 100);
                 appendMessage({ role: 'system', content: '✓ HITL confirmed. Readiness score: ' + pct + '%.' });
             }
+            refreshReadiness();
         })
         .catch(function (err) {
             if (statusEl) statusEl.textContent = 'Error: ' + err.message;

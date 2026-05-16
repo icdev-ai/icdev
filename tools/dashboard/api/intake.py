@@ -368,7 +368,7 @@ def hitl_confirm(session_id):
         new_score = None
         try:
             from tools.requirements.readiness_scorer import score_readiness
-            result = score_readiness(session_id)
+            result = score_readiness(session_id, db_path=DB_PATH)
             new_score = result.get("overall_score") if isinstance(result, dict) else None
         except Exception:
             pass
@@ -634,7 +634,7 @@ Generate only the requirements block. No preamble, no explanations."""
         if _HAS_SCORER:
             try:
                 from tools.requirements.readiness_scorer import score_readiness
-                result = score_readiness(session_id)
+                result = score_readiness(session_id, db_path=DB_PATH)
                 new_score = result.get("overall_score")
             except Exception:
                 pass
@@ -678,6 +678,8 @@ def get_complexity(session_id):
     try:
         result = _score_complexity(session_id, db_path=DB_PATH)
         return jsonify(result)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
