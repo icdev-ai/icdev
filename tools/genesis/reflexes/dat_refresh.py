@@ -137,7 +137,6 @@ def run(args: dict, _ctx) -> dict:
 
 
 if __name__ == "__main__":
-    import sys as _sys
     logging.basicConfig(level=logging.INFO)
     out = run({}, None)
     print(json.dumps(out, indent=2))

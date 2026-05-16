@@ -52,52 +52,53 @@ def oracle_summary():
         "severity": {"critical": 0, "high": 0, "medium": 0, "low": 0},
     }
     try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT COUNT(*) AS n FROM oracle_predictions "
-            "WHERE created_at::timestamptz > NOW() - INTERVAL '24 hours'"
-        )
-        row = cur.fetchone()
-        out["total_24h"] = int(dict(row).get("n", 0) or 0)
+        cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
 
-        cur.execute(
-            "SELECT COUNT(*) AS n FROM oracle_predictions "
-            "WHERE confidence >= 0.85 AND (outcome IS NULL OR outcome = 'pending')"
-        )
-        out["high_conf_pending"] = int(dict(cur.fetchone()).get("n", 0) or 0)
+        with get_connection() as conn:
+            # Oracle summary aggregates counts — not raw rows — so RLS
+            # classification filtering would exclude CTI-marked predictions
+            # from admins who hold plain CUI clearance.  Clear the security
+            # context so inject_row_predicate doesn't add a classification
+            # WHERE clause that silently zeroes out the stats.
+            conn.set_security_context(None)
+            r = conn.execute(
+                "SELECT COUNT(*) AS n FROM oracle_predictions WHERE created_at >= %s",
+                (cutoff_24h,),
+            ).fetchone()
+            out["total_24h"] = int((r.get("n", 0) if r else 0) or 0)
 
-        cur.execute(
-            "SELECT severity, COUNT(*) AS n FROM oracle_predictions "
-            "WHERE created_at::timestamptz > NOW() - INTERVAL '24 hours' "
-            "GROUP BY severity"
-        )
-        for r in cur.fetchall():
-            d = dict(r)
-            sev = (d.get("severity") or "").lower()
-            if sev in out["severity"]:
-                out["severity"][sev] = int(d.get("n", 0) or 0)
+            r = conn.execute(
+                "SELECT COUNT(*) AS n FROM oracle_predictions "
+                "WHERE confidence >= 0.85 AND (outcome IS NULL OR outcome = 'pending')"
+            ).fetchone()
+            out["high_conf_pending"] = int((r.get("n", 0) if r else 0) or 0)
 
-        # Unresolved convergence: predictions flagged as convergence and
-        # not yet outcome-resolved. The scoring_weights JSON carries a
-        # `convergence` boost when multiple lenses agree on a subject.
-        cur.execute(
-            "SELECT COUNT(*) AS n FROM oracle_predictions "
-            "WHERE (outcome IS NULL OR outcome = 'pending') "
-            "AND scoring_weights::text ILIKE %s",
-            ("%convergence%",),
-        )
-        out["unresolved_convergence"] = int(dict(cur.fetchone()).get("n", 0) or 0)
+            for row in conn.execute(
+                "SELECT severity, COUNT(*) AS n FROM oracle_predictions "
+                "WHERE created_at >= %s GROUP BY severity",
+                (cutoff_24h,),
+            ).fetchall():
+                sev = (row.get("severity") or "").lower()
+                if sev in out["severity"]:
+                    out["severity"][sev] = int((row.get("n", 0) or 0))
 
-        cur.execute(
-            "SELECT AVG(horizon_days) AS avg_h FROM oracle_predictions "
-            "WHERE horizon_days IS NOT NULL "
-            "AND created_at::timestamptz > NOW() - INTERVAL '30 days'"
-        )
-        avg_h = dict(cur.fetchone()).get("avg_h")
-        if avg_h is not None:
-            out["median_horizon_days"] = round(float(avg_h), 1)
-        conn.close()
+            r = conn.execute(
+                "SELECT COUNT(*) AS n FROM oracle_predictions "
+                "WHERE (outcome IS NULL OR outcome = 'pending') "
+                "AND scoring_weights::text ILIKE %s",
+                ("%convergence%",),
+            ).fetchone()
+            out["unresolved_convergence"] = int((r.get("n", 0) if r else 0) or 0)
+
+            r = conn.execute(
+                "SELECT AVG(horizon_days) AS avg_h FROM oracle_predictions "
+                "WHERE horizon_days IS NOT NULL AND created_at >= %s",
+                (cutoff_30d,),
+            ).fetchone()
+            avg_h = r.get("avg_h") if r else None
+            if avg_h is not None:
+                out["median_horizon_days"] = round(float(avg_h), 1)
     except Exception as exc:
         out["error"] = str(exc)
     return jsonify(out)

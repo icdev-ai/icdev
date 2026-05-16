@@ -275,7 +275,6 @@ class ChainAnchor:
                 payload_hash = row["payload_hash"]
 
                 # operation_type may encode metadata as "op_name:{json}"
-                op_type = row["operation_type"].split(":{")[0]
                 metadata = {"source": "flush", "original_operation": row["operation_type"][:200]}
 
                 try:
