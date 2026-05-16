@@ -46,8 +46,14 @@
   </div>
 </div>
 
+{# ── View Tabs ── #}
+<div style="margin-bottom:1rem;border-bottom:1px solid var(--border,#2d3347);display:flex;gap:0;">
+  <button id="tab-table" class="view-tab active" onclick="switchTab('table')">Table</button>
+  <button id="tab-tree" class="view-tab" onclick="switchTab('tree')">Hierarchy Tree</button>
+</div>
+
 {# ── Class Table ── #}
-<div class="card" style="margin-bottom:1.5rem;">
+<div id="view-table" class="card" style="margin-bottom:1.5rem;">
   <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
     <h3 class="card-title" style="margin:0;">Classes</h3>
     <input id="class-search" type="text" class="form-control form-control-sm" style="width:250px;"
@@ -71,6 +77,27 @@
         </tbody>
       </table>
     </div>
+  </div>
+</div>
+
+{# ── Hierarchy Tree ── #}
+<div id="view-tree" class="card" style="margin-bottom:1.5rem;display:none;">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;">
+    <h3 class="card-title" style="margin:0;">Class Hierarchy Tree</h3>
+    <div style="display:flex;gap:.5rem;align-items:center;">
+      <input id="tree-search" type="text" class="form-control form-control-sm" style="width:200px;"
+             placeholder="Highlight class…" oninput="highlightNode()">
+      <button class="btn btn-sm btn-secondary" onclick="resetTree()">Reset</button>
+      <button class="btn btn-sm btn-secondary" onclick="collapseAll()">Collapse All</button>
+      <button class="btn btn-sm btn-secondary" onclick="expandAll()">Expand All</button>
+    </div>
+  </div>
+  <div class="card-body" style="padding:0;overflow:auto;">
+    <div id="tree-legend" style="padding:.75rem 1rem;border-bottom:1px solid var(--border,#2d3347);display:flex;gap:.5rem;flex-wrap:wrap;font-size:.75rem;"></div>
+    <div id="tree-container" style="width:100%;min-height:500px;overflow:auto;position:relative;">
+      <svg id="tree-svg" style="display:block;"></svg>
+    </div>
+    <div id="tree-status" style="padding:.5rem 1rem;font-size:.75rem;color:var(--text-muted,#8892a4);">Loading hierarchy…</div>
   </div>
 </div>
 
@@ -107,6 +134,17 @@
 #class-table tbody tr:hover{cursor:pointer;}
 #class-table .btn-link{background:none;border:none;color:var(--accent,#4a9eff);cursor:pointer;padding:0;font-size:.8rem;}
 .dist-badge{display:inline-block;padding:.1rem .4rem;border-radius:4px;font-size:.75rem;background:var(--card-bg,#1e2130);border:1px solid var(--border,#2d3347);margin:.1rem;}
+/* View tabs */
+.view-tab{background:transparent;border:none;border-bottom:3px solid transparent;color:var(--text-muted,#8892a4);padding:.5rem 1.25rem;cursor:pointer;font-size:.9rem;transition:all .15s;}
+.view-tab:hover{color:var(--text,#cdd6f4);}
+.view-tab.active{border-bottom-color:var(--accent,#4a9eff);color:var(--text,#cdd6f4);font-weight:600;}
+/* D3 tree */
+#tree-svg .link{fill:none;stroke:#2d3347;stroke-width:1.5px;}
+#tree-svg .node circle{stroke-width:2px;cursor:pointer;transition:r .1s;}
+#tree-svg .node text{font-size:11px;fill:#cdd6f4;pointer-events:none;}
+#tree-svg .node.collapsed circle{stroke-dasharray:4,2;}
+#tree-svg .node.highlighted circle{stroke:#fff !important;stroke-width:3px;}
+#tree-svg .node.dimmed{opacity:.3;}
 </style>
 
 <script>
