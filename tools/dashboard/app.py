@@ -8021,7 +8021,7 @@ def create_app() -> Flask:
             result = analyze(url, canvas_type)
             return jsonify(result)
         except Exception as exc:
-            logger.warning("url_analyzer error: %s", exc)
+            app.logger.warning("url_analyzer error: %s", exc)
             return jsonify({"reply": f"[Analyze error: {exc}]", "error": str(exc)}), 500
 
     # ================================================================
@@ -8044,7 +8044,7 @@ def create_app() -> Flask:
             result = classify(message)
             return jsonify(result)
         except Exception as exc:
-            logger.warning("intent_classifier error: %s", exc)
+            app.logger.warning("intent_classifier error: %s", exc)
             return jsonify({"mode": "intake", "canvas_type": None, "confidence": 0.5, "reason": "classifier unavailable"})
 
     @app.route("/api/chat/personas")
