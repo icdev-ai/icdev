@@ -1,0 +1,69 @@
+# CUI // SP-CTI
+# ICDEV™ Compliance Validation Configuration
+# Defines two compliance requirements and authorized environment settings for
+# the BDD compliance validation suite (features/compliance_requirement_validation.feature).
+# Classification: CUI // SP-CTI  |  Impact Level: IL4/IL5
+
+_schema_version: 1
+
+# ============================================================
+# Authorized environment settings
+# ============================================================
+authorized_environment:
+  enabled: true
+  description: "System is deployed within the ICDEV™ authorized project environment"
+  validation:
+    require_project_root: true
+    require_artifacts_present: true
+  classification: cui_sp_cti
+  impact_level: IL4
+  cloud_environment: aws_govcloud
+
+# ============================================================
+# Compliance requirements (2 required for this validation suite)
+# ============================================================
+requirements:
+  REQ-COMP-001:
+    name: "Environment Setup and CI/CD Pipeline Compliance"
+    description: >
+      Validates that the authorized environment contains all required infrastructure
+      artifacts for environment setup and CI/CD pipeline security compliance.
+      Covers: runtime environment baseline (.env.example, requirements.txt),
+      health check tooling, pipeline configuration generation, CI/CD config,
+      and DevSecOps pipeline security generation.
+    enabled: true
+    artifacts:
+      - .env.example
+      - requirements.txt
+      - tools/testing/health_check.py
+      - tools/ci/pipeline_config_generator.py
+      - args/cicd_config.yaml
+      - tools/devsecops/pipeline_security_generator.py
+    frameworks:
+      - nist_800_171
+      - cmmc_l2
+    gate:
+      block_on_missing: true
+      severity: high
+
+  REQ-COMP-002:
+    name: "Security Hardening and Compliance Scaffolding"
+    description: >
+      Validates that security hardening controls and compliance scaffolding tools
+      are present and operational within the authorized environment.
+      Covers: security gate configuration, CUI classification management,
+      NIST 800-53 control mapping, SSP generation, and the compliance config baseline.
+    enabled: true
+    artifacts:
+      - args/security_gates.yaml
+      - tools/compliance/classification_manager.py
+      - tools/compliance/control_mapper.py
+      - tools/compliance/ssp_generator.py
+      - args/compliance_config.yaml
+    frameworks:
+      - nist_800_171
+      - fedramp_moderate
+      - cmmc_l2
+    gate:
+      block_on_missing: true
+      severity: critical
