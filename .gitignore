@@ -67,6 +67,16 @@ _pdb_b64_*.txt
 playwright/
 .playwright-mcp/
 
+# Screenshots (root-level)
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Generated reports and planning tasks
+reports/
+tasks/
+
 # Vendored binaries (downloaded via setup, not committed)
 # Use layered rules so vendor/drivers README + .gitkeep + CHECKSUMS manifest
 # can be tracked while actual binary executables (.exe, bare binaries) are not.

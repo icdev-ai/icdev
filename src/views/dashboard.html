@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geospatial Aggregation Table — ICDEV™</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/ux.css">
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg-page: #0b1120;
+      --bg-card: #0f1e35;
+      --bg-code: #0d1b30;
+      --border: #1e3a6e;
+      --text-primary: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent-blue: #4a90d9;
+      --accent-blue-light: #7bb3f0;
+      --status-green: #22c55e;
+      --status-amber: #f59e0b;
+      --status-red: #ef4444;
+      --font-sans: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .page-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .page-header h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+    }
+    .status-bar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      background: var(--status-amber);
+    }
+    .status-dot.connected { background: var(--status-green); }
+    .status-dot.error { background: var(--status-red); }
+    .status-label {
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    .btn:hover { background: var(--bg-code); }
+    .btn-primary {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+    .btn-primary:hover { background: #3a7bc8; }
+    .source-badges {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+    .badge .count {
+      color: var(--text-primary);
+      font-weight: 600;
+      margin-left: 4px;
+    }
+    .table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: var(--bg-code);
+      color: var(--text-dim);
+      font-weight: 500;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(74, 144, 217, 0.06); }
+    .source-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .source-osint { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .source-satellite { background: rgba(74, 144, 217, 0.15); color: #7bb3f0; }
+    .source-diplomatic { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+    .source-demo { background: rgba(107, 114, 128, 0.15); color: #9ca3af; }
+    .meta-pill {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: var(--bg-code);
+      color: var(--text-dim);
+      margin-right: 4px;
+      display: inline-block;
+    }
+    .empty-row td {
+      text-align: center;
+      color: var(--text-dim);
+      padding: 40px 12px;
+    }
+    .timestamp {
+      color: var(--text-dim);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .error-banner {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+      padding: 10px 14px;
+      border-radius: 6px;
+      margin-bottom: 16px;
+      font-size: 13px;
+      display: none;
+    }
+    .last-updated {
+      font-size: 12px;
+      color: var(--text-dim);
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-header">
+    <h1>Geospatial Aggregation Feed</h1>
+    <div class="status-bar">
+      <span id="conn-dot" class="status-dot"></span>
+      <span id="conn-label" class="status-label">Connecting…</span>
+      <span id="last-updated" class="last-updated"></span>
+    </div>
+  </div>
+
+  <div id="error-banner" class="error-banner"></div>
+
+  <div class="controls">
+    <button class="btn btn-primary" id="btn-refresh" onclick="triggerAggregation()">Refresh Now</button>
+    <button class="btn" id="btn-toggle-polling" onclick="togglePolling()">Enable Polling Fallback</button>
+    <span id="mode-label" class="status-label">Mode: auto</span>
+  </div>
+
+  <div id="source-badges" class="source-badges">
+    <div class="badge">OSINT<span class="count" id="cnt-osint">—</span></div>
+    <div class="badge">Satellite<span class="count" id="cnt-satellite">—</span></div>
+    <div class="badge">Diplomatic<span class="count" id="cnt-diplomatic">—</span></div>
+    <div class="badge">Total<span class="count" id="cnt-total">—</span></div>
+  </div>
+
+  <div class="table-container">
+    <table id="events-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Source</th>
+          <th>Title</th>
+          <th>Content</th>
+          <th>Timestamp</th>
+          <th>Metadata</th>
+        </tr>
+      </thead>
+      <tbody id="events-body">
+        <tr class="empty-row"><td colspan="6">Waiting for data…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    (function () {
+      var socket = null;
+      var pollingInterval = null;
+      var isPolling = false;
+      var lastPayload = null;
+
+      function setConnectionStatus(state, msg) {
+        var dot = document.getElementById('conn-dot');
+        var label = document.getElementById('conn-label');
+        dot.className = 'status-dot ' + (state === 'connected' ? 'connected' : state === 'error' ? 'error' : '');
+        label.textContent = msg || state;
+      }
+
+      function showError(msg) {
+        var el = document.getElementById('error-banner');
+        if (!msg) {
+          el.style.display = 'none';
+          el.textContent = '';
+          return;
+        }
+        el.textContent = msg;
+        el.style.display = 'block';
+        setTimeout(function () { if (el.textContent === msg) { el.style.display = 'none'; } }, 8000);
+      }
+
+      function escapeHtml(s) {
+        return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      function formatTimestamp(iso) {
+        if (!iso) return '—';
+        var d = new Date(iso);
+        return isNaN(d.getTime()) ? iso : d.toLocaleString();
+      }
+
+      function renderMeta(meta) {
+        if (!meta || typeof meta !== 'object') return '—';
+        var pills = [];
+        var keys = Object.keys(meta).slice(0, 6);
+        keys.forEach(function (k) {
+          var v = meta[k];
+          var display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          if (display.length > 30) display = display.slice(0, 30) + '…';
+          pills.push('<span class="meta-pill">' + escapeHtml(k) + ': ' + escapeHtml(display) + '</span>');
+        });
+        return pills.join('') || '—';
+      }
+
+      function renderPayload(payload) {
+        lastPayload = payload;
+        var events = (payload && payload.events) || [];
+        var counts = (payload && payload.source_counts) || {};
+        var generated = payload && payload.generated_at;
+
+        document.getElementById('cnt-osint').textContent = counts.osint != null ? counts.osint : '—';
+        document.getElementById('cnt-satellite').textContent = counts.satellite != null ? counts.satellite : '—';
+        document.getElementById('cnt-diplomatic').textContent = counts.diplomatic != null ? counts.diplomatic : '—';
+        document.getElementById('cnt-total').textContent = payload && payload.event_count != null ? payload.event_count : events.length;
+
+        var updatedEl = document.getElementById('last-updated');
+        updatedEl.textContent = generated ? 'Updated ' + formatTimestamp(generated) : '';
+
+        var tbody = document.getElementById('events-body');
+        if (events.length === 0) {
+          tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No events</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = events.map(function (ev) {
+          var source = (ev.source || 'unknown').toLowerCase();
+          var tagClass = 'source-' + (['osint', 'satellite', 'diplomatic', 'demo'].indexOf(source) >= 0 ? source : 'demo');
+          return '<tr>'
+            + '<td>' + escapeHtml(ev.id) + '</td>'
+            + '<td><span class="source-tag ' + tagClass + '">' + escapeHtml(ev.source) + '</span></td>'
+            + '<td>' + escapeHtml(ev.title) + '</td>'
+            + '<td>' + escapeHtml(ev.content) + '</td>'
+            + '<td class="timestamp">' + escapeHtml(formatTimestamp(ev.timestamp)) + '</td>'
+            + '<td>' + renderMeta(ev.metadata) + '</td>'
+            + '</tr>';
+        }).join('');
+      }
+
+      function fetchViaHttp() {
+        fetch('/api/geospatial/aggregate', { method: 'GET' })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(function (data) {
+            var features = data.features || [];
+            var payload = {
+              generated_at: data.properties && data.properties.generated_at ? data.properties.generated_at : new Date().toISOString(),
+              event_count: features.length,
+              events: features.map(function (f) {
+                var p = f.properties || {};
+                return {
+                  id: p.id,
+                  source: p.source,
+                  title: p.title,
+                  content: p.content,
+                  timestamp: p.timestamp,
+                  url: p.url,
+                  metadata: p.metadata
+                };
+              }),
+              source_counts: (data.properties && data.properties.sources) || {}
+            };
+            renderPayload(payload);
+            showError(null);
+          })
+          .catch(function (e) {
+            showError('HTTP fetch failed: ' + e.message);
+            setConnectionStatus('error', 'HTTP failed');
+          });
+      }
+
+      function startPolling() {
+        if (pollingInterval) clearInterval(pollingInterval);
+        isPolling = true;
+        document.getElementById('btn-toggle-polling').textContent = 'Disable Polling Fallback';
+        document.getElementById('mode-label').textContent = 'Mode: polling';
+        fetchViaHttp();
+        pollingInterval = setInterval(fetchViaHttp, 10000);
+      }
+
+      function stopPolling() {
+        if (pollingInterval) { clearInterval(pollingInterval); pollingInterval = null; }
+        isPolling = false;
+        document.getElementById('btn-toggle-polling').textContent = 'Enable Polling Fallback';
+        document.getElementById('mode-label').textContent = socket && socket.connected ? 'Mode: websocket' : 'Mode: idle';
+      }
+
+      window.togglePolling = function () {
+        if (isPolling) { stopPolling(); }
+        else { startPolling(); }
+      };
+
+      window.triggerAggregation = function () {
+        if (socket && socket.connected) {
+          socket.emit('aggregate_request');
+          setConnectionStatus('connected', 'Requested update…');
+        } else {
+          fetchViaHttp();
+        }
+      };
+
+      function initWebSocket() {
+        try {
+          socket = io('/geospatial', { path: '/socket.io' });
+
+          socket.on('connect', function () {
+            setConnectionStatus('connected', 'WebSocket connected');
+            showError(null);
+            socket.emit('subscribe_geo_stream');
+            if (!isPolling) {
+              document.getElementById('mode-label').textContent = 'Mode: websocket';
+            }
+            if (lastPayload === null) {
+              socket.emit('aggregate_request');
+            }
+          });
+
+          socket.on('disconnect', function () {
+            setConnectionStatus('disconnected', 'WebSocket disconnected');
+            if (!isPolling) {
+              document.getElementById('mode-label').textContent = 'Mode: disconnected';
+            }
+          });
+
+          socket.on('connect_error', function () {
+            setConnectionStatus('error', 'WebSocket error');
+            if (!isPolling) {
+              showError('WebSocket unavailable — enable polling fallback for updates');
+            }
+          });
+
+          socket.on('table_update', function (payload) {
+            renderPayload(payload);
+            setConnectionStatus('connected', 'Live · ' + (payload.event_count || 0) + ' events');
+          });
+
+          socket.on('aggregate_update', function (data) {
+            var features = data.features || [];
+            var payload = {
+              generated_at: data.properties && data.properties.generated_at ? data.properties.generated_at : new Date().toISOString(),
+              event_count: features.length,
+              events: features.map(function (f) {
+                var p = f.properties || {};
+                return { id: p.id, source: p.source, title: p.title, content: p.content, timestamp: p.timestamp, url: p.url, metadata: p.metadata };
+              }),
+              source_counts: (data.properties && data.properties.sources) || {}
+            };
+            renderPayload(payload);
+            setConnectionStatus('connected', 'Live · ' + features.length + ' events');
+          });
+        } catch (e) {
+          setConnectionStatus('error', 'Socket.IO unavailable');
+          showError('Socket.IO client failed to load');
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', function () {
+        initWebSocket();
+        if (lastPayload === null) {
+          fetchViaHttp();
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
