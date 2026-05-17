@@ -64,6 +64,26 @@ def _dispatch_hook(hook_name: str, context: dict) -> dict:
         return context
 
 
+def _fire_intake_hook(context_id: str, content: str) -> None:
+    """Run the requirement intake hook in a background daemon thread (non-blocking)."""
+    def _run() -> None:
+        try:
+            from tools.chat.requirement_intake_hook import process_message_for_intake
+            result = process_message_for_intake(context_id, content)
+            if result.get("hitl_instance_id"):
+                logger.info(
+                    "Intake hook: %d requirement(s) queued for HITL review "
+                    "(instance=%s) context=%s",
+                    result.get("requirements_found", 0),
+                    result["hitl_instance_id"],
+                    context_id,
+                )
+        except Exception as exc:
+            logger.debug("Intake hook error for context %s: %s", context_id, exc)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
     """Mark context dirty on state tracker if available (Feature 4)."""
     try:
@@ -102,44 +122,6 @@ def _rag_retrieve(query: str, project_id: str = "", tenant_id: str = "") -> list
         ]
     except (ImportError, Exception) as exc:
         logger.debug("RAG retrieval unavailable: %s", exc)
-        return []
-
-
-# ---------------------------------------------------------------------------
-# KG context retrieval
-# ---------------------------------------------------------------------------
-
-
-def _kg_retrieve(query: str, project_id: str = "") -> list:
-    """Retrieve relevant Knowledge Graph nodes for a chat message.
-
-    Returns list of dicts with 'label', 'entity_type', 'summary', 'score' keys.
-    Gracefully returns empty list if KG is unavailable or has no indexed data.
-    """
-    try:
-        from tools.knowledge_graph.graph_rag import retrieve as kg_retrieve
-
-        result = kg_retrieve(
-            query=query,
-            project_id=project_id or None,
-            top_k=5,
-            compress=False,
-        )
-        if result.get("status") != "ok":
-            return []
-        nodes = result.get("nodes", [])
-        return [
-            {
-                "label": n.get("label", ""),
-                "entity_type": n.get("entity_type", "unknown"),
-                "summary": (n.get("summary") or n.get("properties", {}).get("summary", ""))[:300],
-                "score": round(float(n.get("score", 0.0)), 3),
-            }
-            for n in nodes[:5]
-            if n.get("label") and float(n.get("score", 0.0)) >= 0.1
-        ]
-    except (ImportError, Exception) as exc:
-        logger.debug("KG retrieval unavailable: %s", exc)
         return []
 
 
@@ -266,8 +248,6 @@ class ChatContext:
             "title": self.title,
             "project_id": self.project_id,
             "agent_model": self.agent_model,
-            "system_prompt": self.system_prompt,
-            "intake_session_id": getattr(self, "_intake_session_id", ""),
             "status": self.status,
             "message_count": self.turn_number,
             "dirty_version": self.dirty_version,
@@ -293,7 +273,6 @@ class ChatManager:
         self._contexts: Dict[str, ChatContext] = {}
         self._lock = threading.Lock()
         self._last_rag_sources: Dict[str, list] = {}  # context_id -> last RAG results
-        self._last_kg_sources: Dict[str, list] = {}   # context_id -> last KG nodes
 
     # ------------------------------------------------------------------
     # Context CRUD
@@ -356,9 +335,8 @@ class ChatManager:
         tenant_id: str = "",
         include_closed: bool = False,
     ) -> List[dict]:
-        """List chat contexts — merges in-memory with DB (handles server restarts)."""
+        """List chat contexts, optionally filtered."""
         with self._lock:
-            in_memory_ids = set(self._contexts.keys())
             results = []
             for ctx in self._contexts.values():
                 if user_id and ctx.user_id != user_id:
@@ -368,63 +346,13 @@ class ChatManager:
                 if not include_closed and ctx.status in ("completed", "archived"):
                     continue
                 results.append(ctx.to_dict())
-
-        # Also pull DB contexts not in memory (server restart recovery)
-        try:
-            conn = self._get_db()
-            conn.rollback()
-            status_clause = "" if include_closed else "AND status = 'active'"
-            uid_clause = "AND user_id = ?" if user_id else ""
-            params = [p for p in [user_id if user_id else None] if p]
-            rows = conn.execute(
-                f"SELECT * FROM chat_contexts WHERE 1=1 {status_clause} {uid_clause} ORDER BY created_at DESC LIMIT 50",
-                params,
-            ).fetchall()
-            conn.close()
-            for row in rows:
-                rid = row["id"]
-                if rid not in in_memory_ids:
-                    ctx = self._db_restore_context(rid, row=dict(row))
-                    if ctx:
-                        results.append(ctx.to_dict())
-        except Exception:
-            pass
-
-        return results
+            return results
 
     def get_context(self, context_id: str) -> Optional[dict]:
-        """Get a single context by ID, lazy-loading from DB if not in memory."""
+        """Get a single context by ID."""
         with self._lock:
             ctx = self._contexts.get(context_id)
-            if ctx:
-                return ctx.to_dict()
-        # Not in memory — try DB (handles server restarts)
-        restored = self._db_restore_context(context_id)
-        if restored:
-            return restored.to_dict()
-        return None
-
-    def link_intake_session(self, context_id: str, intake_session_id: str) -> dict:
-        """Link an intake session to a chat context (activates RICOAS extension hooks)."""
-        with self._lock:
-            ctx = self._contexts.get(context_id)
-            if not ctx:
-                return {"error": "Context not found"}
-            ctx._intake_session_id = intake_session_id
-
-        # Persist to DB
-        try:
-            conn = self._get_db()
-            conn.execute(
-                "UPDATE chat_contexts SET intake_session_id=? WHERE id=?",
-                (intake_session_id, context_id),
-            )
-            conn.commit()
-        except Exception:
-            pass  # in-memory state already updated; DB update is best-effort
-
-        _mark_dirty(context_id, "intake_linked", {"intake_session_id": intake_session_id})
-        return {"context_id": context_id, "intake_session_id": intake_session_id}
+            return ctx.to_dict() if ctx else None
 
     def close_context(self, context_id: str) -> dict:
         """Close/archive a chat context."""
@@ -486,6 +414,9 @@ class ChatManager:
             }
         )
         ctx.last_activity_at = datetime.now(timezone.utc).isoformat()
+
+        if role == "user":
+            _fire_intake_hook(context_id, content)
 
         _mark_dirty(
             context_id,
@@ -738,10 +669,9 @@ class ChatManager:
             conversation = []
             system_content = ctx.system_prompt or ""
 
-            # --- RAG + KG context injection (D-RAG-2) ---
+            # --- RAG context injection (D-RAG-2) ---
             user_content = msg.get("content", "")
             rag_results = []
-            kg_results = []
             if user_content and msg.get("role") == "user":
                 rag_results = _rag_retrieve(
                     query=user_content,
@@ -753,16 +683,6 @@ class ChatManager:
                     for i, r in enumerate(rag_results, 1):
                         rag_context += f"  [{i}] ({r['source_type']}, score={r['score']}): {r['content'][:400]}\n"
                     system_content += rag_context
-
-                kg_results = _kg_retrieve(
-                    query=user_content,
-                    project_id=ctx.project_id,
-                )
-                if kg_results:
-                    kg_context = "\n\n[Knowledge Graph Context]\n"
-                    for i, n in enumerate(kg_results, 1):
-                        kg_context += f"  [{i}] {n['label']} ({n['entity_type']}, score={n['score']}): {n['summary']}\n"
-                    system_content += kg_context
 
             if system_content:
                 conversation.append({"role": "system", "content": system_content})
@@ -793,16 +713,9 @@ class ChatManager:
             response = router.invoke("chat_response", request)
             result = response.content if response.content else str(response)
 
-            # Store RAG + KG sources for attribution display
+            # Store RAG sources in metadata for attribution display
             if rag_results:
                 self._last_rag_sources[ctx.context_id] = rag_results
-            if kg_results:
-                self._last_kg_sources[ctx.context_id] = kg_results
-                _mark_dirty(
-                    ctx.context_id,
-                    "kg_attribution",
-                    {"node_count": len(kg_results), "nodes": kg_results},
-                )
 
             return result
 
@@ -824,7 +737,7 @@ class ChatManager:
         "code_quality_advisory": ("[Code Quality]", "code_quality_advisory", "code_quality_advisory"),
         "genesis_advisory": ("[Genesis Insight]", "genesis_advisory", "genesis_advisory"),
         "intake_advisory": ("[Intake Enrichment]", "intake_advisory", "intake_advisory"),
-        "migration_advisory": ("[Migration Status]", "migration_advisory", "migration_advisory"),
+        "migration_advisory": ("[Modernization Advisory]", "migration_advisory", "migration_advisory"),
     }
 
     def _inject_advisories(self, ctx: "ChatContext", context_id: str, hook_result: dict) -> None:
@@ -898,41 +811,6 @@ class ChatManager:
     def _get_db(self) -> sqlite3.Connection:
         conn = get_connection(db_path=str(DB_PATH))
         return conn
-
-    def _db_restore_context(self, context_id: str, row: dict = None) -> Optional["ChatContext"]:
-        """Load a context from DB into memory and start its agent loop."""
-        try:
-            if row is None:
-                conn = self._get_db()
-                conn.rollback()
-                r = conn.execute("SELECT * FROM chat_contexts WHERE id = ?", (context_id,)).fetchone()
-                conn.close()
-                if not r:
-                    return None
-                row = dict(r)
-            ctx = ChatContext(
-                context_id=row["id"],
-                user_id=row.get("user_id", ""),
-                tenant_id=row.get("tenant_id", ""),
-                title=row.get("title", ""),
-                project_id=row.get("project_id", ""),
-                agent_model=row.get("agent_model", "sonnet"),
-                system_prompt=row.get("system_prompt", ""),
-            )
-            ctx.status = row.get("status", "active")
-            ctx.message_count = row.get("message_count", 0)
-            ctx.turn_number = row.get("message_count", 0)
-            ctx._intake_session_id = row.get("intake_session_id", "") or ""
-            with self._lock:
-                self._contexts[context_id] = ctx
-            # Restart agent loop if still active
-            if ctx.status == "active":
-                ctx._thread = threading.Thread(target=self._agent_loop, args=(context_id,), daemon=True)
-                ctx._thread.start()
-            return ctx
-        except Exception as exc:
-            logger.debug("Could not restore context %s from DB: %s", context_id, exc)
-            return None
 
     def _db_create_context(self, ctx: ChatContext) -> None:
         try:

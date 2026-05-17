@@ -4,208 +4,32 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
-<style>
-  html, body { height: 100vh; overflow: hidden; }
-  .main-content { display: flex; flex-direction: column; overflow: hidden; min-height: 0; padding-bottom: 0; }
-
-  /* ---- Panel mode toggle pill ---- */
-  .panel-toggle-label { display:inline-flex; align-items:center; cursor:pointer; }
-  .panel-toggle-label input { display:none; }
-  .panel-toggle-pill {
-    width:34px; height:18px; background:var(--border-color,#2a2a40);
-    border-radius:9px; position:relative; transition:background .2s;
-  }
-  .panel-toggle-pill::after {
-    content:''; position:absolute; top:2px; left:2px;
-    width:14px; height:14px; border-radius:50%;
-    background:#fff; transition:transform .2s;
-  }
-  .panel-toggle-label input:checked + .panel-toggle-pill { background:#4a90d9; }
-  .panel-toggle-label input:checked + .panel-toggle-pill::after { transform:translateX(16px); }
-
-  /* ---- Persona selector chips ---- */
-  .panel-persona-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px; }
-  .panel-chip {
-    display:inline-flex; align-items:center; gap:4px;
-    padding:3px 8px; border-radius:12px; font-size:0.72rem; font-weight:600;
-    cursor:pointer; border:1px solid transparent;
-    background:var(--bg-secondary,#1a1a2e); color:var(--text-muted,#888);
-    transition:all .15s;
-  }
-  .panel-chip input { display:none; }
-  .panel-chip--active { color:#fff !important; }
-  .panel-chip--developer.panel-chip--active  { background:#4a90d9; border-color:#4a90d9; }
-  .panel-chip--analyst.panel-chip--active    { background:#7c3aed; border-color:#7c3aed; }
-  .panel-chip--pm.panel-chip--active         { background:#0891b2; border-color:#0891b2; }
-  .panel-chip--isso.panel-chip--active       { background:#dc2626; border-color:#dc2626; }
-  .panel-chip--architect.panel-chip--active  { background:#059669; border-color:#059669; }
-
-  /* ---- Panel response bubbles ---- */
-  .panel-response { margin-bottom:6px; }
-  .panel-persona-bubble {
-    border-left:3px solid var(--panel-color,#4a90d9);
-    background:var(--bg-secondary,#1a1a2e);
-    border-radius:0 6px 6px 0;
-    padding:7px 12px; margin-bottom:4px;
-  }
-  .panel-persona-bubble__label {
-    font-size:0.68rem; font-weight:700; text-transform:uppercase;
-    color:var(--panel-color,#4a90d9); margin-bottom:3px; letter-spacing:.04em;
-  }
-  .panel-persona-bubble__body { font-size:0.84rem; white-space:pre-wrap; word-break:break-word; line-height:1.4; }
-  .panel-persona-bubble__reqs { margin-top:6px; }
-  .panel-req-pill {
-    display:inline-block; font-size:0.7rem;
-    background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12);
-    border-radius:5px; padding:2px 7px; margin:2px 3px 2px 0;
-    color:var(--text-secondary,#aaa);
-  }
-  .panel-consensus {
-    border-top:1px solid var(--border-color,#2a2a40);
-    padding-top:6px; margin-top:4px;
-    font-size:0.78rem; color:var(--text-muted,#888);
-  }
-  /* Next-step guidance bar */
-  .panel-next-step {
-    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
-    margin-top:6px; padding:6px 10px;
-    background:rgba(74,144,217,.08); border:1px solid rgba(74,144,217,.2);
-    border-radius:6px; font-size:0.78rem;
-  }
-  .panel-next-step__score { color:var(--accent-blue,#4a90d9); font-size:0.76rem; white-space:nowrap; }
-  .panel-next-step__hint  { color:var(--text-secondary,#bbb); flex:1; }
-  .panel-next-step--ready { background:rgba(5,150,105,.08); border-color:rgba(5,150,105,.25); color:#34d399; }
-  .panel-mode-indicator {
-    display:none; font-size:0.7rem; font-weight:700; color:#4a90d9;
-    padding:2px 7px; border:1px solid #4a90d9; border-radius:10px; margin-left:6px;
-  }
-  .panel-mode-active .panel-mode-indicator { display:inline; }
-
-  /* ---- PRD / Requirements viewer modals ---- */
-  .chat-modal--wide { width: min(860px, 92vw); }
-  .chat-modal__header { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
-  .chat-modal__close { background:none; border:none; color:var(--text-muted,#888); font-size:1.5rem; cursor:pointer; line-height:1; padding:0 4px; }
-  .chat-modal__close:hover { color:var(--text-primary,#e0e0e0); }
-  .chat-modal__meta { font-size:0.75rem; color:var(--text-muted,#888); margin-bottom:12px; }
-  .prd-viewer-body {
-    font-size:0.88rem; line-height:1.65; color:var(--text-primary,#e0e0e0);
-    padding:16px; background:var(--bg-secondary,#1a1a2e);
-    border:1px solid var(--border-color,#2a2a40); border-radius:6px; margin-bottom:4px;
-  }
-  .prd-viewer-body h1,.prd-viewer-body h2,.prd-viewer-body h3,.prd-viewer-body h4 { color:var(--accent-blue,#4a90d9); margin-top:1.2em; margin-bottom:0.4em; }
-  .prd-viewer-body h1 { font-size:1.2rem; }
-  .prd-viewer-body h2 { font-size:1.05rem; border-bottom:1px solid var(--border-color,#2a2a40); padding-bottom:4px; }
-  .prd-viewer-body h3 { font-size:0.95rem; }
-  .prd-viewer-body table { width:100%; border-collapse:collapse; font-size:0.82rem; }
-  .prd-viewer-body th { background:var(--bg-card,#12121f); padding:6px 10px; text-align:left; border:1px solid var(--border-color,#2a2a40); }
-  .prd-viewer-body td { padding:5px 10px; border:1px solid var(--border-color,#2a2a40); vertical-align:top; }
-  .prd-viewer-body code { background:rgba(255,255,255,.07); padding:1px 5px; border-radius:3px; font-size:0.83em; }
-  .prd-viewer-body pre { background:rgba(0,0,0,.3); padding:10px; border-radius:5px; overflow-x:auto; }
-  .prd-viewer-body pre code { background:none; padding:0; }
-  .prd-viewer-body ul,.prd-viewer-body ol { padding-left:1.4em; }
-  .prd-viewer-body li { margin-bottom:3px; }
-  .prd-viewer-body blockquote { border-left:3px solid var(--border-color,#2a2a40); padding-left:10px; color:var(--text-muted,#888); margin:0; }
-  .prd-viewer-body strong { color:var(--text-primary,#e0e0e0); }
-  .reqs-viewer-body { font-size:0.84rem; }
-  .reqs-table { width:100%; border-collapse:collapse; }
-  .reqs-table th { background:var(--bg-card,#12121f); padding:8px 12px; text-align:left; border:1px solid var(--border-color,#2a2a40); font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted,#888); white-space:nowrap; }
-  .reqs-table td { padding:8px 12px; border:1px solid var(--border-color,#2a2a40); vertical-align:top; }
-  .reqs-table tr:hover td { background:rgba(255,255,255,.02); }
-  .req-type-badge,.req-priority-badge { display:inline-block; font-size:0.68rem; font-weight:700; padding:2px 8px; border-radius:10px; white-space:nowrap; }
-  .req-type--functional    { background:rgba(74,144,217,.15); color:#4a90d9; }
-  .req-type--security      { background:rgba(220,38,38,.15);  color:#f87171; }
-  .req-type--compliance    { background:rgba(217,119,6,.15);  color:#fbbf24; }
-  .req-type--performance   { background:rgba(5,150,105,.15);  color:#34d399; }
-  .req-type--integration   { background:rgba(99,102,241,.15); color:#a5b4fc; }
-  .req-type--data          { background:rgba(219,39,119,.15); color:#f472b6; }
-  .req-type--non_functional{ background:rgba(75,85,99,.25);   color:#9ca3af; }
-  .req-priority--high   { background:rgba(220,38,38,.12);  color:#f87171; }
-  .req-priority--medium { background:rgba(217,119,6,.12);  color:#fbbf24; }
-  .req-priority--low    { background:rgba(74,144,217,.12); color:#93c5fd; }
-  .chat-modal__btn--export { background:var(--accent-blue,#4a90d9); color:#fff; border:none; padding:8px 18px; border-radius:5px; cursor:pointer; font-size:0.84rem; font-weight:600; }
-  .chat-modal__btn--export:hover { opacity:0.85; }
-
-  /* ---- HITL Review Section ---- */
-  .panel-hitl-section {
-    margin-top:8px; border:1px solid rgba(74,144,217,.25);
-    border-radius:8px; padding:10px 12px; background:rgba(74,144,217,.04);
-  }
-  .panel-hitl-header { margin-bottom:8px; }
-  .panel-hitl-title { font-size:0.8rem; font-weight:700; color:var(--accent-blue,#4a90d9); }
-  .panel-hitl-subtitle { display:block; font-size:0.72rem; color:var(--text-muted,#888); margin-top:2px; }
-  .panel-hitl-cards { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
-  .panel-hitl-card {
-    border-radius:6px; padding:8px 10px;
-    border:1px solid rgba(255,255,255,.1);
-    background:var(--bg-secondary,#1a1a2e);
-    transition:border-color .2s, opacity .2s;
-  }
-  .panel-hitl-card--pending  { border-color:rgba(255,200,50,.3); }
-  .panel-hitl-card--approved { border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.04); }
-  .panel-hitl-card--rejected { opacity:.45; border-color:rgba(248,113,113,.3); text-decoration:line-through; }
-  .panel-hitl-card--custom   { border-color:rgba(139,92,246,.35); background:rgba(139,92,246,.04); }
-  .panel-hitl-card__meta { display:flex; gap:5px; margin-bottom:4px; align-items:center; }
-  .panel-hitl-card__text {
-    font-size:0.82rem; line-height:1.45; color:var(--text-primary,#e0e0e0);
-    outline:none; min-height:1.4em;
-    border-bottom:1px dashed transparent; transition:border-color .2s;
-  }
-  .panel-hitl-card__text:focus { border-bottom-color:rgba(74,144,217,.5); }
-  .panel-hitl-card__actions { display:flex; gap:6px; margin-top:6px; }
-  .panel-req-type-badge {
-    font-size:0.62rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em;
-    padding:1px 6px; border-radius:10px;
-    background:rgba(74,144,217,.18); color:#93c5fd;
-  }
-  .panel-req-type-badge--security    { background:rgba(220,38,38,.18); color:#fca5a5; }
-  .panel-req-type-badge--compliance  { background:rgba(245,158,11,.18); color:#fcd34d; }
-  .panel-req-type-badge--performance { background:rgba(5,150,105,.18);  color:#6ee7b7; }
-  .panel-req-priority-badge {
-    font-size:0.62rem; padding:1px 6px; border-radius:10px;
-    background:rgba(255,255,255,.07); color:var(--text-muted,#888);
-  }
-  .panel-hitl-btn {
-    font-size:0.72rem; padding:3px 10px; border-radius:5px; border:none;
-    cursor:pointer; font-weight:600; transition:background .15s, opacity .15s;
-  }
-  .panel-hitl-btn--approve { background:rgba(52,211,153,.2); color:#34d399; }
-  .panel-hitl-btn--approve:hover { background:rgba(52,211,153,.35); }
-  .panel-hitl-btn--approve:disabled { background:rgba(52,211,153,.08); color:#34d399; opacity:.45; cursor:default; }
-  .panel-hitl-btn--reject  { background:rgba(248,113,113,.2); color:#f87171; }
-  .panel-hitl-btn--reject:hover  { background:rgba(248,113,113,.35); }
-  .panel-hitl-btn--reject:disabled { background:rgba(248,113,113,.08); color:#f87171; opacity:.45; cursor:default; }
-  .panel-hitl-btn--add     { background:rgba(139,92,246,.2); color:#a78bfa; }
-  .panel-hitl-btn--add:hover     { background:rgba(139,92,246,.35); }
-  .panel-hitl-btn--confirm { background:rgba(52,211,153,.25); color:#34d399; padding:5px 16px; font-size:0.78rem; }
-  .panel-hitl-btn--confirm:hover { background:rgba(52,211,153,.45); }
-  .panel-hitl-btn:disabled { opacity:.5; cursor:not-allowed; }
-  .panel-hitl-custom { margin:6px 0 10px; }
-  .panel-hitl-custom__label { font-size:0.72rem; color:var(--text-muted,#888); display:block; margin-bottom:4px; }
-  .panel-hitl-custom__row { display:flex; gap:6px; }
-  .panel-hitl-custom__input {
-    flex:1; font-size:0.8rem; padding:4px 8px; border-radius:5px;
-    border:1px solid rgba(255,255,255,.12); background:var(--bg-primary,#0f0f1a);
-    color:var(--text-primary,#e0e0e0); outline:none;
-  }
-  .panel-hitl-custom__input:focus { border-color:rgba(74,144,217,.5); }
-  .panel-hitl-footer { display:flex; align-items:center; gap:10px; }
-  .panel-hitl-status { font-size:0.75rem; color:var(--text-muted,#888); }
-  .panel-hitl-confirmed {
-    padding:8px 12px; background:rgba(52,211,153,.08);
-    border:1px solid rgba(52,211,153,.25); border-radius:6px;
-    font-size:0.8rem; color:#34d399;
-  }
-</style>
 {% endblock %}
 
 {% block content %}
-<!-- Compact status strip (replaces tall stat cards + page header) -->
-<div id="chat-top-stats" style="display:flex;align-items:center;gap:16px;padding:4px 16px 4px;border-bottom:1px solid var(--border-color,#2a2a40);font-size:0.75rem;color:var(--text-muted,#888);flex-shrink:0;">
-    <strong style="color:var(--text-primary,#e0e0e0);font-size:0.82rem;">ICDEV™ Chat</strong>
-    <span>Active: <span id="stat-active" style="color:var(--accent-blue,#4a90d9);font-weight:700;">0</span></span>
-    <span>Processing: <span id="stat-processing" style="font-weight:700;">0</span></span>
-    <span>Queued: <span id="stat-queued" style="font-weight:700;">0</span></span>
-    <span>Contexts: <span id="stat-total" style="font-weight:700;">0</span></span>
+<div class="page-header">
+    <h1>Chat</h1>
+    <p class="text-muted">Multi-stream agent chat with requirements intake, COA generation, and build pipeline.</p>
+</div>
+
+<!-- Stats bar -->
+<div class="stat-grid" id="chat-top-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-active">0</div>
+        <div class="stat-label">Active Chats</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-processing">0</div>
+        <div class="stat-label">Processing</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-queued">0</div>
+        <div class="stat-label">Queued Messages</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-total">0</div>
+        <div class="stat-label">Total Contexts</div>
+    </div>
 </div>
 
 <!-- Main layout: CSS Grid with resize handles (D-CU-5) -->
@@ -214,12 +38,25 @@
     <div class="chat-sidebar" id="chat-sidebar">
         <div class="chat-sidebar__header">
             <strong>Contexts</strong>
-            <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><line x1="5" y1="1" x2="5" y2="9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-                New
-            </button>
+            <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">+ New</button>
         </div>
         <div id="context-list" class="chat-sidebar__list"></div>
+
+        <!-- Common Use Cases -->
+        <div class="chat-sidebar__uc-section">
+            <div class="chat-sidebar__uc-header">
+                <strong>Common Use Cases</strong>
+                <button id="btn-uc-collapse" class="chat-uc-collapse-btn" title="Collapse" aria-label="Toggle use cases">&#x25BE;</button>
+            </div>
+            <div id="uc-panel" class="chat-uc-panel">
+                <div class="chat-uc-search-wrap">
+                    <input type="text" id="usecase-search" class="chat-uc-search" placeholder="Search use cases..." autocomplete="off">
+                </div>
+                <div id="usecase-list" class="chat-uc-list">
+                    <div class="chat-uc-loading">Loading...</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Left resize handle -->
@@ -229,9 +66,7 @@
     <div class="chat-main">
         <!-- Chat header -->
         <div id="chat-header" class="chat-header">
-            <span id="chat-title" class="chat-header__title">Start a new conversation</span>
-            <span id="chat-model-chip" class="chat-model-chip" style="display:none;"></span>
-            <span id="chat-mode-chip" class="chat-model-chip" style="display:none;cursor:pointer;" title="Click to change canvas mode"></span>
+            <span id="chat-title" class="chat-header__title">Select or create a context</span>
             <div class="chat-header__actions">
                 <span id="chat-status" class="badge chat-header__status"></span>
                 <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle RICOAS sidebar">RICOAS</button>
@@ -243,18 +78,7 @@
         </div>
 
         <!-- Message stream -->
-        <div id="message-stream" class="chat-messages">
-          <div class='chat-welcome' id='chat-welcome-banner'>
-            <div class='chat-welcome__title'>Hello! How can I help you today?</div>
-            <div class='chat-welcome__subtitle'>I can help you capture requirements, design systems, review security, and build government or commercial applications. Just describe what you want to accomplish.</div>
-            <div class='chat-welcome__prompts'>
-              <span class='chat-welcome__prompt-chip' data-prompt='I want to build a new application'>I want to build an app</span>
-              <span class='chat-welcome__prompt-chip' data-prompt='Help me capture requirements for my project'>Capture requirements</span>
-              <span class='chat-welcome__prompt-chip' data-prompt='Review my security architecture'>Review security</span>
-              <span class='chat-welcome__prompt-chip' data-prompt='Explain the compliance requirements for a DoD system'>DoD compliance guidance</span>
-            </div>
-          </div>
-        </div>
+        <div id="message-stream" class="chat-messages"></div>
 
         <!-- Typing indicator (D-CU-1) -->
         <div id="typing-indicator" class="typing-indicator">
@@ -270,33 +94,20 @@
         <!-- Intervention bar (visible during processing) -->
         <div id="intervention-bar" class="chat-intervention">
             <div class="chat-intervention__inner">
-                <span class="chat-intervention__label">AI is thinking…</span>
-                <input type="text" id="intervention-input" class="chat-intervention__input" placeholder="Send a new direction or clarification…">
-                <button id="btn-intervene" class="chat-intervention__btn" title="Send a new direction to the AI">Redirect</button>
+                <span class="chat-intervention__label">Agent is processing...</span>
+                <input type="text" id="intervention-input" class="chat-intervention__input" placeholder="Type to intervene...">
+                <button id="btn-intervene" class="chat-intervention__btn">Intervene</button>
             </div>
         </div>
 
-    </div>
-
-    <!-- Input area spans main pane + right sidebar all the way to the right edge -->
-    <div id="input-area" class="chat-input-area">
-        <div class="chat-input-area__inner">
-            <input type="file" id="chat-file-input" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" accept=".txt,.md,.rst,.pdf,.docx,.doc,.yaml,.yml,.json,.png,.jpg,.jpeg,.gif,.webp,.svg,.csv,.xml" multiple>
-            <button id="chat-upload-btn" class="chat-upload-btn" type="button" onclick="document.getElementById('chat-file-input').click()" title="Attach a file (PDF, Word, image, CSV, JSON, YAML, Markdown)" aria-label="Attach file" style="padding:0 8px;">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true" style="flex-shrink:0"><path d="M7 9V2M4 5l3-3 3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2 10v1.5A0.5 0.5 0 002.5 12h9a0.5 0.5 0 00.5-.5V10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
-            </button>
-            <textarea id="message-input" class="chat-message-input" placeholder="Type a message… or drag &amp; drop a file" rows="1" disabled></textarea>
-            <button id="btn-send" class="chat-send-btn" type="button" disabled title="Send message (Enter)" aria-label="Send">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-        </div>
-        <div id="chat-slash-bar" style="display:none;padding:0.35rem 0.75rem;font-size:0.82rem;color:var(--text-secondary);background:var(--bg-secondary);border-radius:6px;margin-top:0.35rem;position:relative;">
-            <span id="chat-slash-hint"></span>
-            <div id="chat-slash-dropdown" style="display:none;position:absolute;left:0;bottom:100%;z-index:200;background:var(--bg-card);border:1px solid var(--border-color);border-radius:6px;min-width:180px;box-shadow:0 4px 12px rgba(0,0,0,0.4);"></div>
-        </div>
-        <div class="chat-input-footer">
-            <span class="chat-input-shortcut">Enter to send &nbsp;·&nbsp; Shift+Enter for new line</span>
-            <span class="chat-char-counter" id="chat-char-counter"></span>
+        <!-- Input area with file upload -->
+        <div id="input-area" class="chat-input-area">
+            <div class="chat-input-area__inner">
+                <button id="chat-upload-btn" class="chat-upload-btn" title="Upload document or image" aria-label="Upload file">&#x1F4CE;</button>
+                <input type="text" id="message-input" class="chat-message-input" placeholder="Type a message..." disabled>
+                <button id="btn-send" class="chat-send-btn" disabled>Send</button>
+                <input type="file" id="chat-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.png,.jpg,.jpeg,.gif,.webp">
+            </div>
         </div>
     </div>
 
@@ -307,22 +118,9 @@
     <div id="right-sidebar" class="chat-right-panel">
         <!-- Tabs -->
         <div class="chat-right-tabs" id="right-sidebar-tabs">
-            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas" title="Requirements Intake — readiness score, test scenarios, and recommended next steps">
-                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="2" y="1" width="10" height="12" rx="1.5" stroke="currentColor" stroke-width="1.3"/><line x1="4.5" y1="4.5" x2="9.5" y2="4.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><line x1="4.5" y1="7" x2="9.5" y2="7" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><line x1="4.5" y1="9.5" x2="7.5" y2="9.5" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
-                RICOAS
-            </button>
-            <button class="chat-right-tab" data-tab="gov" id="tab-gov" title="AI Governance — transparency and accountability status">
-                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M7 1.5L2 4v2c0 3.3 2.1 5.8 5 6.5 2.9-.7 5-3.2 5-6.5V4L7 1.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
-                Gov
-            </button>
-            <button class="chat-right-tab" data-tab="intel" id="tab-intel" title="Knowledge — documents, knowledge graph, and AI learning status">
-                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><circle cx="6" cy="6" r="4" stroke="currentColor" stroke-width="1.3"/><line x1="9" y1="9" x2="12" y2="12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
-                Intel
-            </button>
-            <button class="chat-right-tab" data-tab="tasks" id="tab-tasks" title="Kanban Tasks — build visibility">
-                <svg class="chat-tab-icon" viewBox="0 0 14 14" fill="none" aria-hidden="true"><rect x="1.5" y="2" width="11" height="2.5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="5.75" width="11" height="2.5" rx="1" stroke="currentColor" stroke-width="1.2"/><rect x="1.5" y="9.5" width="7" height="2.5" rx="1" stroke="currentColor" stroke-width="1.2"/></svg>
-                Tasks <span id="tasks-badge" class="chat-tasks-badge" style="display:none;"></span>
-            </button>
+            <button class="chat-right-tab chat-right-tab--active" data-tab="ricoas" id="tab-ricoas">RICOAS</button>
+            <button class="chat-right-tab" data-tab="gov" id="tab-gov">Gov</button>
+            <button class="chat-right-tab" data-tab="intel" id="tab-intel">Intel</button>
         </div>
 
         <!-- RICOAS Tab Content -->
@@ -346,8 +144,7 @@
 
             <!-- Readiness Score -->
             <h4 class="chat-sidebar-heading">Readiness Score</h4>
-            <div id="readiness-placeholder" style="font-size:0.82rem;color:var(--text-muted);padding:0.5rem 0 0.75rem;">Start chatting to track your requirements readiness.</div>
-            <div class="readiness-gauge-container" id="readiness-gauge" style="display:none;text-align:center;">
+            <div class="readiness-gauge-container" id="readiness-gauge" style="text-align: center;">
                 <svg viewBox="0 0 120 120" class="readiness-gauge-svg" style="width: 100px; height: 100px;">
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--border-color)" stroke-width="10"/>
                     <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent-blue)" stroke-width="10"
@@ -358,7 +155,7 @@
                 </svg>
             </div>
 
-            <div class="readiness-dimensions" id="readiness-dimensions" style="display:none;">
+            <div class="readiness-dimensions" id="readiness-dimensions">
                 <div class="readiness-dim"><span class="readiness-dim-label">Completeness</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-completeness" style="width:0%"></div></div><span class="readiness-dim-value" id="val-completeness">0%</span></div>
                 <div class="readiness-dim"><span class="readiness-dim-label">Clarity</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-clarity" style="width:0%"></div></div><span class="readiness-dim-value" id="val-clarity">0%</span></div>
                 <div class="readiness-dim"><span class="readiness-dim-label">Feasibility</span><div class="readiness-bar"><div class="readiness-bar-fill" id="bar-feasibility" style="width:0%"></div></div><span class="readiness-dim-value" id="val-feasibility">0%</span></div>
@@ -375,30 +172,9 @@
                 <div class="chat-stat"><span class="chat-stat-label">Turns</span> <span class="chat-stat-value" id="stat-turns">0</span></div>
             </div>
 
-            <!-- Multi-Persona Panel -->
-            <div class="sidebar-section" id="panel-section">
-                <h4 class="chat-sidebar-heading" style="display:flex;align-items:center;justify-content:space-between;">
-                    Expert Panel
-                    <label class="panel-toggle-label" title="Fire multiple AI personas in parallel for faster, richer requirement generation">
-                        <input type="checkbox" id="panel-mode-toggle" onchange="ICDEV.chatTogglePanel(this.checked)">
-                        <span class="panel-toggle-pill"></span>
-                    </label>
-                </h4>
-                <div id="panel-persona-picker" style="display:none;">
-                    <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:6px;">Select experts for each turn:</div>
-                    <div class="panel-persona-chips" id="panel-persona-chips">
-                        <label class="panel-chip panel-chip--developer panel-chip--active" data-persona="developer"><input type="checkbox" value="developer" checked> Developer</label>
-                        <label class="panel-chip panel-chip--analyst panel-chip--active" data-persona="analyst"><input type="checkbox" value="analyst" checked> Analyst</label>
-                        <label class="panel-chip panel-chip--pm" data-persona="pm"><input type="checkbox" value="pm"> PM</label>
-                        <label class="panel-chip panel-chip--isso" data-persona="isso"><input type="checkbox" value="isso"> ISSO</label>
-                        <label class="panel-chip panel-chip--architect" data-persona="solutions_architect"><input type="checkbox" value="solutions_architect"> Architect</label>
-                    </div>
-                </div>
-            </div>
-
             <!-- Elicitation Techniques -->
             <div class="sidebar-section" id="techniques-section">
-                <h4 class="chat-sidebar-heading">Ways to Explore Requirements</h4>
+                <h4 class="chat-sidebar-heading">Elicitation Techniques</h4>
                 <div id="technique-active" class="technique-active-banner" style="display:none;">
                     <span id="technique-active-name"></span>
                     <button class="technique-deactivate-btn" onclick="ICDEV.chatDeactivateTechnique()" title="Deactivate">&times;</button>
@@ -408,45 +184,28 @@
 
             <!-- BDD Preview -->
             <div class="sidebar-section" id="bdd-preview-section" style="display:none;">
-                <h4 class="chat-sidebar-heading">Test Scenarios (Draft)</h4>
+                <h4 class="chat-sidebar-heading">BDD Scenarios (Draft)</h4>
                 <div id="bdd-preview-list" class="bdd-preview-list"></div>
             </div>
 
             <!-- Courses of Action -->
             <div class="sidebar-section" id="coa-section" style="display:none;">
-                <h4 class="chat-sidebar-heading">Options to Consider</h4>
+                <h4 class="chat-sidebar-heading">Courses of Action</h4>
                 <div id="coa-list"></div>
                 <div id="coa-selected-banner" class="coa-selected-banner" style="display:none;">&#x2713; <span id="coa-selected-name"></span> selected</div>
             </div>
 
-            <!-- AI Boost — fills missing requirement types automatically -->
-            <div id="ai-boost-section" style="display:none;margin-bottom:8px;">
-                <button id="ai-boost-btn" class="btn btn-primary" style="width:100%;font-size:0.8rem;padding:7px 10px;" onclick="ICDEV.chatAiBoost()">
-                    &#x26A1; AI Boost &mdash; Fill Gaps Automatically
-                </button>
-                <div id="ai-boost-status" style="font-size:0.74rem;color:var(--text-muted);margin-top:4px;display:none;"></div>
-            </div>
-
-            <!-- Pre-export review -->
-            <div id="pre-export-actions" style="display:none;margin-bottom:8px;">
-                <button class="btn btn-secondary" style="width:100%;font-size:0.8rem;padding:6px 10px;margin-bottom:4px;" onclick="ICDEV.chatViewRequirements()">&#x1F441; View Requirements</button>
-                <button class="btn btn-secondary" style="width:100%;font-size:0.8rem;padding:6px 10px;" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
-            </div>
-
             <div id="chat-actions" class="chat-actions">
                 <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
-                <button class="btn btn-warning btn-sm" id="force-build-btn" style="display:none;margin-top:4px;" onclick="ICDEV.chatForceStartBuild()" title="Start building below the 70% readiness threshold">&#x26A0; Start Building Now</button>
                 <button class="btn btn-secondary" id="export-btn" style="display:none;" onclick="ICDEV.chatExport()">Export Requirements</button>
             </div>
 
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
                 <h4 class="chat-sidebar-heading">What's next?</h4>
-                <button class="btn btn-primary" id="trigger-build-btn" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
-                <button class="btn btn-outline-primary" id="preview-build-btn" onclick="ICDEV.chatPreviewBuild()">&#x1F441; Preview Build</button>
-                <button class="btn btn-warning" id="send-kanban-btn" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
-                <button class="btn btn-outline-warning" id="preview-kanban-btn" onclick="ICDEV.chatPreviewKanban()">&#x1F441; Preview Kanban</button>
-                <button class="btn btn-secondary" id="run-simulation-btn" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
+                <button class="btn btn-primary" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
+                <button class="btn btn-warning" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
+                <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatGeneratePRD()">&#x1F4C4; Generate PRD</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatValidatePRD()">&#x2714; Validate PRD</button>
@@ -471,7 +230,7 @@
                 <strong class="gov-sidebar-title">AI Governance</strong>
             </div>
             <div id="gov-sidebar-content">
-                <p class="gov-sidebar-placeholder">Loading AI Governance status...</p>
+                <p class="gov-sidebar-placeholder">Loading governance status...</p>
             </div>
         </div>
 
@@ -479,19 +238,7 @@
         <div id="intel-sidebar" class="chat-right-tab-content" data-tab-content="intel">
             <div class="intel-sidebar-header">
                 <strong class="intel-sidebar-title">Intelligence</strong>
-                <span class="intel-sidebar-subtitle">Documents · Learning · Research</span>
-            </div>
-
-            <!-- Document Upload & Index -->
-            <div class="intel-section" id="intel-docs">
-                <h4 class="intel-section-heading intel-section-heading--docs">
-                    Documents
-                    <button id="intel-upload-btn" class="intel-upload-btn" title="Upload document to index into RAG + KG">+ Upload</button>
-                    <input type="file" id="intel-file-input" style="display:none" accept=".txt,.md,.pdf,.docx,.yaml,.json,.rst">
-                </h4>
-                <div id="intel-docs-content" class="intel-section-content">
-                    No documents indexed. Upload a file to chat with your documents.
-                </div>
+                <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>
             </div>
 
             <!-- RAG Knowledge Sources -->
@@ -499,14 +246,6 @@
                 <h4 class="intel-section-heading intel-section-heading--rag">Knowledge Sources (RAG)</h4>
                 <div id="intel-rag-content" class="intel-section-content">
                     No sources retrieved yet. RAG context is automatically injected when you ask questions.
-                </div>
-            </div>
-
-            <!-- Knowledge Graph -->
-            <div class="intel-section" id="intel-kg">
-                <h4 class="intel-section-heading intel-section-heading--kg">Knowledge Graph</h4>
-                <div id="intel-kg-content" class="intel-section-content">
-                    No KG nodes retrieved yet. KG context is injected automatically when relevant nodes are found.
                 </div>
             </div>
 
@@ -542,155 +281,35 @@
                 </div>
             </div>
         </div>
-
-        <!-- Tasks Tab Content — Kanban build visibility -->
-        <div id="tasks-sidebar" class="chat-right-tab-content" data-tab-content="tasks">
-            <div class="chat-tasks-header">
-                <strong class="chat-tasks-title">Build Tasks</strong>
-                <button id="btn-vv-chain" class="chat-tasks-vv-btn" title="Queue CodeLens + Coherence + E2E V&V chain">
-                    + V&amp;V Chain
-                </button>
-            </div>
-            <div id="tasks-empty" class="chat-tasks-empty" style="display:none;">
-                No tasks linked to this context yet.<br>
-                <span style="font-size:11px;color:var(--text-muted);">Build completion signals auto-create a V&amp;V chain.</span>
-            </div>
-            <div id="tasks-list" class="chat-tasks-list"></div>
-        </div>
     </div>
 </div>
 
 <!-- New Context Modal -->
 <div id="new-context-modal" class="chat-modal-overlay">
-    <div class="chat-modal chat-modal--scrollable">
+    <div class="chat-modal">
         <h3 class="chat-modal__title">New Chat Context</h3>
-
-        <!-- Title -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Title</label>
-            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title..." list="ctx-title-history" autocomplete="off">
-            <datalist id="ctx-title-history"></datalist>
+            <input type="text" id="new-ctx-title" class="chat-modal__input" placeholder="Chat title...">
         </div>
-
-        <!-- Agent Model -->
         <div class="chat-modal__field">
             <label class="chat-modal__label">Agent Model</label>
             <select id="new-ctx-model" class="chat-modal__select">
-                {% for m in llm_models %}
-                <option value="{{ m.value }}"{% if m.value == llm_default_model %} selected{% endif %}>{{ m.label }}</option>
-                {% else %}
-                <option value="default" selected>Default</option>
-                {% endfor %}
+                <option value="sonnet">Sonnet (Default)</option>
+                <option value="opus">Opus</option>
+                <option value="haiku">Haiku</option>
             </select>
         </div>
-
-        <!-- Canvas Mode -->
         <div class="chat-modal__field">
-            <label class="chat-modal__label">Canvas Mode</label>
-            <select id="new-ctx-canvas" class="chat-modal__select">
-                <option value="intake">Requirements Intake (default)</option>
-                <option value="cam">Migration Analysis (CAM)</option>
-                <option value="ndc">Network Design (NDC)</option>
-                <option value="sdc">Security Design (SDC)</option>
-                <option value="eda">Data Architecture (EDA)</option>
-                <option value="ddc">Database Design (DDC)</option>
-                <option value="pdc">Process Design (PDC)</option>
-                <option value="odc">Observability Design (ODC)</option>
-                <option value="idc">Infrastructure Design (IDC)</option>
-            </select>
-        </div>
-
-        <!-- Persona / system prompt presets (change with canvas) -->
-        <div class="chat-modal__field" id="ctx-preset-row">
-            <label class="chat-modal__label">Persona <span class="chat-modal__label-sub">— click to pre-fill system prompt</span></label>
-            <div class="ctx-preset-chips" id="ctx-preset-chips"></div>
-            <div class="ctx-custom-persona-row" style="display:flex;gap:6px;margin-top:6px;">
-                <input type="text" id="ctx-custom-persona-name" class="chat-modal__input" placeholder="Custom persona name…" style="flex:1;font-size:0.8rem;padding:4px 8px;">
-                <textarea id="ctx-custom-persona-prompt" class="chat-modal__input" placeholder="System prompt for this persona…" rows="2" style="flex:2;font-size:0.8rem;padding:4px 8px;resize:vertical;"></textarea>
-                <button type="button" id="btn-add-custom-persona" class="chat-modal__btn chat-modal__btn--cancel" style="align-self:flex-start;padding:4px 12px;font-size:0.75rem;">+ Add</button>
-            </div>
-        </div>
-
-        <!-- Compliance context -->
-        <div class="chat-modal__field">
-            <label class="chat-modal__label">Compliance Context</label>
-            <div class="ctx-env-radios">
-                <label class="ctx-env-radio ctx-env-radio--selected" id="ctx-env-commercial-label">
-                    <input type="radio" name="ctx-env" value="commercial" id="ctx-env-commercial" checked>
-                    <span>Commercial</span>
-                </label>
-                <label class="ctx-env-radio" id="ctx-env-gov-label">
-                    <input type="radio" name="ctx-env" value="gov" id="ctx-env-gov">
-                    <span>Government / DoD</span>
-                </label>
-            </div>
-            <!-- Gov sub-options (hidden by default) -->
-            <div id="ctx-gov-rows" style="display:none; margin-top:10px;">
-                <div style="margin-bottom:8px;">
-                    <div class="chat-modal__label" style="margin-bottom:6px;">Impact Level</div>
-                    <div class="ctx-il-chips">
-                        <label class="ctx-il-chip"><input type="radio" name="ctx-il" value="il2"><span>IL2</span></label>
-                        <label class="ctx-il-chip ctx-il-chip--selected"><input type="radio" name="ctx-il" value="il4" checked><span>IL4</span></label>
-                        <label class="ctx-il-chip"><input type="radio" name="ctx-il" value="il5"><span>IL5</span></label>
-                        <label class="ctx-il-chip"><input type="radio" name="ctx-il" value="il6"><span>IL6</span></label>
-                    </div>
-                </div>
-                <div>
-                    <div class="chat-modal__label" style="margin-bottom:6px;">Compliance Regimes <span class="chat-modal__label-sub">— select all that apply</span></div>
-                    <div class="ctx-regime-grid">
-                        <label class="ctx-regime-chip"><input type="checkbox" value="fedramp-low"><span>FedRAMP Low</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="fedramp-mod"><span>FedRAMP Moderate</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="fedramp-high"><span>FedRAMP High</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="cmmc1"><span>CMMC 1</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="cmmc2"><span>CMMC 2</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="cmmc3"><span>CMMC 3</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="nist-800-53"><span>NIST 800-53</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="stig"><span>DoD STIG</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="rmf"><span>RMF</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="stateramp"><span>StateRAMP</span></label>
-                        <label class="ctx-regime-chip"><input type="checkbox" value="itar"><span>ITAR</span></label>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Intake RICOAS checkbox (intake canvas only) -->
-        <div class="chat-modal__field" id="intake-checkbox-row">
             <label class="chat-modal__label chat-modal__label--inline">
-                <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox" checked>
+                <input type="checkbox" id="new-ctx-intake" class="chat-modal__checkbox">
                 Link to Requirements Intake (RICOAS)
             </label>
         </div>
-
-        <!-- Expert Panel (intake canvas only) -->
-        <div class="chat-modal__field" id="panel-mode-row" style="display:none;">
-            <label class="chat-modal__label" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
-                Expert Panel
-                <label class="panel-toggle-label" title="Multiple AI personas respond each turn in parallel">
-                    <input type="checkbox" id="modal-panel-enabled" checked>
-                    <span class="panel-toggle-pill"></span>
-                </label>
-            </label>
-            <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">Fire multiple AI experts per turn — Developer, Analyst, PM, ISSO, Architect respond in parallel</div>
-            <div id="modal-panel-personas" class="panel-persona-chips" style="display:flex;flex-wrap:wrap;gap:5px;">
-                <label class="panel-chip panel-chip--developer panel-chip--active"><input type="checkbox" value="developer" checked> Developer</label>
-                <label class="panel-chip panel-chip--analyst panel-chip--active"><input type="checkbox" value="analyst" checked> Analyst</label>
-                <label class="panel-chip panel-chip--pm"><input type="checkbox" value="pm"> PM</label>
-                <label class="panel-chip panel-chip--isso"><input type="checkbox" value="isso"> ISSO</label>
-                <label class="panel-chip panel-chip--architect"><input type="checkbox" value="solutions_architect"> Architect</label>
-            </div>
-            <div style="display:flex;gap:6px;margin-top:7px;align-items:center;">
-                <input type="text" id="modal-panel-custom-name" class="chat-modal__input" placeholder="Custom expert name…" style="flex:1;font-size:0.78rem;padding:3px 8px;">
-                <button type="button" id="btn-add-panel-expert" class="chat-modal__btn chat-modal__btn--cancel" style="padding:3px 12px;font-size:0.75rem;white-space:nowrap;">+ Add Expert</button>
-            </div>
-        </div>
-
-        <!-- System Prompt textarea -->
         <div class="chat-modal__field">
-            <label class="chat-modal__label">System Prompt <span class="chat-modal__label-sub">— optional, presets above auto-fill</span></label>
+            <label class="chat-modal__label">System Prompt (optional)</label>
             <textarea id="new-ctx-prompt" class="chat-modal__textarea" placeholder="Custom system prompt..." rows="3"></textarea>
         </div>
-
         <div class="chat-modal__actions">
             <button id="btn-cancel-modal" class="chat-modal__btn chat-modal__btn--cancel">Cancel</button>
             <button id="btn-create-context" class="chat-modal__btn chat-modal__btn--create">Create</button>
@@ -698,55 +317,18 @@
     </div>
 </div>
 
-<!-- PRD Viewer Modal -->
-<div id="prd-viewer-modal" class="chat-modal-overlay">
-    <div class="chat-modal chat-modal--scrollable chat-modal--wide">
-        <div class="chat-modal__header">
-            <h3 class="chat-modal__title" id="prd-modal-title">Product Requirements Document</h3>
-            <button class="chat-modal__close" id="prd-modal-close" title="Close">&times;</button>
-        </div>
-        <div class="chat-modal__meta" id="prd-modal-meta"></div>
-        <div id="prd-modal-body" class="prd-viewer-body"></div>
-        <div class="chat-modal__actions" style="margin-top:12px;">
-            <button class="chat-modal__btn chat-modal__btn--cancel" id="prd-modal-cancel">Close</button>
-            <button class="chat-modal__btn chat-modal__btn--export" id="prd-download-btn">&#x2B07; Download .md</button>
-        </div>
-    </div>
-</div>
-
-<!-- Requirements Viewer Modal -->
-<div id="reqs-viewer-modal" class="chat-modal-overlay">
-    <div class="chat-modal chat-modal--scrollable chat-modal--wide">
-        <div class="chat-modal__header">
-            <h3 class="chat-modal__title">Requirements</h3>
-            <button class="chat-modal__close" id="reqs-modal-close" title="Close">&times;</button>
-        </div>
-        <div class="chat-modal__meta" id="reqs-modal-meta"></div>
-        <div id="reqs-modal-body" class="reqs-viewer-body"></div>
-        <div class="chat-modal__actions" style="margin-top:12px;">
-            <button class="chat-modal__btn chat-modal__btn--cancel" id="reqs-modal-cancel">Close</button>
-            <button class="chat-modal__btn chat-modal__btn--export" id="reqs-download-btn">&#x2B07; Export JSON</button>
-        </div>
-    </div>
-</div>
-
 <!-- Pass config to JS -->
-{% autoescape false %}
 <script>
     window._CHAT_CONFIG = {
         sessionId: {{ session_id|tojson if session_id is defined else 'null' }},
-        autoContextId: {{ auto_context_id|tojson if auto_context_id is defined and auto_context_id else 'null' }},
         wizardGoal: {{ (wizard_goal or '')|tojson if wizard_goal is defined else '""' }},
         wizardRole: {{ (wizard_role or '')|tojson if wizard_role is defined else '""' }},
         wizardClassification: {{ (wizard_classification or '')|tojson if wizard_classification is defined else '""' }},
         wizardFrameworks: {{ (wizard_frameworks or '')|tojson if wizard_frameworks is defined else '""' }},
         customRoleName: {{ (wizard_custom_role_name or '')|tojson if wizard_custom_role_name is defined else '""' }},
-        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }},
-        wizardCanvas: {{ (wizard_canvas or '')|tojson if wizard_canvas is defined else '""' }},
-        defaultModel: {{ llm_default_model|tojson if llm_default_model is defined else '"default"' }}
+        customRoleDesc: {{ (wizard_custom_role_desc or '')|tojson if wizard_custom_role_desc is defined else '""' }}
     };
 </script>
-{% endautoescape %}
 {% endblock %}
 
 {% block scripts %}
@@ -809,26 +391,8 @@
     var btnRicoas = document.getElementById('btn-ricoas-toggle');
 
     if (btnGov) btnGov.addEventListener('click', function() { toggleTab('gov'); });
-    if (btnIntel) btnIntel.addEventListener('click', function() {
-        toggleTab('intel');
-        if (window.ICDEV_Chat && window.ICDEV_Chat.refreshDocumentList) {
-            window.ICDEV_Chat.refreshDocumentList();
-        }
-    });
+    if (btnIntel) btnIntel.addEventListener('click', function() { toggleTab('intel'); });
     if (btnRicoas) btnRicoas.addEventListener('click', function() { toggleTab('ricoas'); });
-
-    // Intel tab upload button
-    var intelUploadBtn = document.getElementById('intel-upload-btn');
-    var intelFileInput = document.getElementById('intel-file-input');
-    if (intelUploadBtn && intelFileInput) {
-        intelUploadBtn.addEventListener('click', function() { intelFileInput.click(); });
-        intelFileInput.addEventListener('change', function() {
-            if (intelFileInput.files.length && window.ICDEV_Chat && window.ICDEV_Chat.uploadFiles) {
-                window.ICDEV_Chat.uploadFiles(intelFileInput.files);
-                intelFileInput.value = '';
-            }
-        });
-    }
 
     // Focus mode
     var btnFocus = document.getElementById('btn-focus-mode');
@@ -969,36 +533,6 @@
     });
 })();
 
-// Model chip: exposed for chat.js to call on context selection
-window.ICDEV_setModelChip = function(modelName) {
-    var chip = document.getElementById('chat-model-chip');
-    if (!chip) return;
-    if (modelName) { chip.textContent = modelName; chip.style.display = ''; }
-    else           { chip.textContent = ''; chip.style.display = 'none'; }
-};
-
-// Textarea auto-resize + character counter
-(function() {
-    document.addEventListener('DOMContentLoaded', function() {
-        var ta = document.getElementById('message-input');
-        var counter = document.getElementById('chat-char-counter');
-        if (!ta) return;
-        function resize() {
-            ta.style.height = 'auto';
-            ta.style.height = Math.min(ta.scrollHeight, 120) + 'px';
-        }
-        ta.addEventListener('input', function() {
-            resize();
-            if (!counter) return;
-            var len = ta.value.length;
-            if (len === 0) { counter.textContent = ''; return; }
-            counter.textContent = len.toLocaleString();
-            counter.className = 'chat-char-counter' +
-                (len >= 4000 ? ' chat-char-counter--limit' : len >= 3600 ? ' chat-char-counter--warn' : '');
-        });
-    });
-})();
-
 // Resize handles
 (function() {
     function initResize(handleId, targetId, side) {
@@ -1044,20 +578,6 @@ window.ICDEV_setModelChip = function(modelName) {
         var leftW = localStorage.getItem('icdev_chat_left_w');
         if (leftW) document.getElementById('chat-sidebar').style.width = leftW + 'px';
     } catch(ex) {}
-})();
-</script>
-<script>
-(function () {
-    var PREFIX = 'view-role--';
-    function applyRole(val) {
-        document.body.className = document.body.className.replace(/\bview-role--\S+/g, '').trim();
-        if (val) document.body.classList.add(PREFIX + val);
-    }
-    var sel = document.getElementById('role-select');
-    if (sel) {
-        applyRole(sel.value);
-        sel.addEventListener('change', function () { applyRole(this.value); });
-    }
 })();
 </script>
 {% endblock %}

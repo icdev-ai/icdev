@@ -984,3 +984,145 @@
         display: none;
     }
 }
+
+/* ===================================================================
+   Common Use Cases — Left Sidebar Section
+   =================================================================== */
+
+.chat-sidebar__uc-section {
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.chat-sidebar__uc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px 8px;
+    background: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.chat-sidebar__uc-header strong {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.chat-uc-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px 4px;
+    line-height: 1;
+    transition: transform 0.2s ease;
+}
+
+.chat-uc-collapse-btn.collapsed {
+    transform: rotate(-90deg);
+}
+
+.chat-uc-panel {
+    overflow: hidden;
+    transition: max-height 0.25s ease;
+}
+
+.chat-uc-panel.collapsed {
+    max-height: 0 !important;
+}
+
+.chat-uc-search-wrap {
+    padding: 6px 10px;
+}
+
+.chat-uc-search {
+    width: 100%;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 0.78rem;
+    box-sizing: border-box;
+    outline: none;
+}
+
+.chat-uc-search:focus {
+    border-color: var(--accent-blue);
+}
+
+.chat-uc-list {
+    padding: 0 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.chat-uc-loading {
+    padding: 12px;
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.chat-uc-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    user-select: none;
+}
+
+.chat-uc-card:hover {
+    border-color: var(--accent-blue);
+    background: var(--bg-tertiary, #1a2233);
+}
+
+.chat-uc-card__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+}
+
+.chat-uc-card__label {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.chat-uc-card__icon {
+    font-size: 0.9rem;
+    flex-shrink: 0;
+}
+
+.chat-uc-card__badge {
+    font-size: 0.65rem;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--accent-blue);
+    color: #fff;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.chat-uc-card__desc {
+    font-size: 0.73rem;
+    color: var(--text-muted);
+    margin-top: 3px;
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}

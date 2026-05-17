@@ -1577,7 +1577,121 @@
     }
 
     // ===================================================================
-    // SECTION 18: Namespace exports
+    // SECTION 18: Common Use Cases
+    // ===================================================================
+
+    var _allUseCases = [];
+
+    function loadUseCases() {
+        fetch(CHAT_API + '/use-cases')
+            .then(function (r) { return r.ok ? r.json() : { use_cases: [] }; })
+            .then(function (data) {
+                _allUseCases = data.use_cases || [];
+                renderUseCases(_allUseCases);
+            })
+            .catch(function () { renderUseCases([]); });
+    }
+
+    function renderUseCases(cases) {
+        var list = document.getElementById('usecase-list');
+        if (!list) return;
+
+        if (!cases.length) {
+            list.innerHTML = '<div class="chat-uc-loading">No use cases found.</div>';
+            return;
+        }
+
+        var html = '';
+        for (var i = 0; i < cases.length; i++) {
+            var uc = cases[i];
+            var badge = uc.badge ? '<span class="chat-uc-card__badge">' + escHtml(uc.badge) + '</span>' : '';
+            html += '<div class="chat-uc-card" data-uc-id="' + escHtml(uc.id) + '" tabindex="0" role="button" aria-label="Start ' + escHtml(uc.label) + '">'
+                + '<div class="chat-uc-card__top">'
+                + '<span class="chat-uc-card__label"><span class="chat-uc-card__icon">' + escHtml(uc.icon || '') + '</span>' + escHtml(uc.label) + '</span>'
+                + badge
+                + '</div>'
+                + '<div class="chat-uc-card__desc">' + escHtml(uc.description || '') + '</div>'
+                + '</div>';
+        }
+        list.innerHTML = html;
+
+        var cards = list.querySelectorAll('.chat-uc-card');
+        for (var j = 0; j < cards.length; j++) {
+            (function (card) {
+                card.addEventListener('click', function () { startUseCase(card.dataset.ucId); });
+                card.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startUseCase(card.dataset.ucId); }
+                });
+            })(cards[j]);
+        }
+    }
+
+    function startUseCase(ucId) {
+        fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId))
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (uc) {
+                if (!uc || uc.error) { if (ns.notify) ns.notify('Use case not found', 'error'); return; }
+
+                var opts = {
+                    title: uc.label || ucId,
+                    agent_model: uc.agent_model || 'sonnet',
+                    system_prompt: uc.system_prompt || ''
+                };
+
+                if (uc.ricoas) {
+                    createIntakeContext(opts).then(function (ctx) {
+                        if (ctx && !ctx.error && uc.seed_message) {
+                            setTimeout(function () { sendMessage(uc.seed_message.trim()); }, 600);
+                        }
+                    });
+                } else {
+                    createContext(opts).then(function (ctx) {
+                        if (ctx && !ctx.error && uc.seed_message) {
+                            setTimeout(function () { sendMessage(uc.seed_message.trim()); }, 600);
+                        }
+                    });
+                }
+            })
+            .catch(function (err) { if (ns.notify) ns.notify('Failed to load use case', 'error'); });
+    }
+
+    function initUseCasesPanel() {
+        var collapseBtn = document.getElementById('btn-uc-collapse');
+        var panel = document.getElementById('uc-panel');
+        var searchInput = document.getElementById('usecase-search');
+
+        if (collapseBtn && panel) {
+            collapseBtn.addEventListener('click', function () {
+                var collapsed = panel.classList.toggle('collapsed');
+                collapseBtn.classList.toggle('collapsed', collapsed);
+                try { localStorage.setItem('icdev_uc_collapsed', collapsed ? '1' : '0'); } catch (e) {}
+            });
+            try {
+                if (localStorage.getItem('icdev_uc_collapsed') === '1') {
+                    panel.classList.add('collapsed');
+                    collapseBtn.classList.add('collapsed');
+                }
+            } catch (e) {}
+        }
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                var q = this.value.trim().toLowerCase();
+                if (!q) { renderUseCases(_allUseCases); return; }
+                var filtered = _allUseCases.filter(function (uc) {
+                    return uc.label.toLowerCase().indexOf(q) !== -1
+                        || (uc.description || '').toLowerCase().indexOf(q) !== -1
+                        || (uc.category || '').toLowerCase().indexOf(q) !== -1;
+                });
+                renderUseCases(filtered);
+            });
+        }
+
+        loadUseCases();
+    }
+
+    // ===================================================================
+    // SECTION 19: Namespace exports
     // ===================================================================
 
     ns.chatGeneratePlan = chatGeneratePlan;
@@ -1606,12 +1720,16 @@
         closeContext: closeContext
     };
 
+    ns.chatStartUseCase = startUseCase;
+    ns.chatLoadUseCases = loadUseCases;
+
     window.ICDEV = ns;
 
     // Init on DOM ready
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
+        document.addEventListener('DOMContentLoaded', function () { init(); initUseCasesPanel(); });
     } else {
         init();
+        initUseCasesPanel();
     }
 })();

@@ -46,15 +46,14 @@
         }
         var html = '';
         events.forEach(function (e) {
-            var rawMet = e.sla_met;
-            var statusLabel = rawMet === 1 ? 'MET' : (rawMet === 0 ? 'VIOLATED' : 'UNKNOWN');
+            var statusLabel = e.sla_status || (e.sla_met === 1 ? 'MET' : (e.sla_met === 0 ? 'VIOLATED' : 'UNKNOWN'));
             html += '<tr>' +
                 '<td>' + (e.id || '').substring(0, 8) + '…</td>' +
                 '<td>' + (e.source_id || '-') + '</td>' +
                 '<td>' + (e.classification || 'CUI') + ' // ' + (e.impact_level || 'IL5') + '</td>' +
                 '<td>' + formatDate(e.ingested_at) + '</td>' +
                 '<td>' + formatDate(e.source_published_at) + '</td>' +
-                '<td>' + (e.display_latency_s !== null && e.display_latency_s !== undefined ? e.display_latency_s.toFixed(3) : '-') + '</td>' +
+                '<td>' + (e.display_latency_s !== null && e.display_latency_s !== undefined ? e.display_latency_s : '-') + '</td>' +
                 '<td>' + slaBadge(statusLabel) + '</td>' +
                 '</tr>';
         });

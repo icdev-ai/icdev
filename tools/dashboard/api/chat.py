@@ -5,8 +5,9 @@ Provides endpoints for creating/managing chat contexts, sending messages,
 mid-stream intervention, and dirty-tracking state queries.
 """
 
-import json
 import sys
+from pathlib import Path
+
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -38,48 +39,11 @@ except ImportError:
 chat_api = Blueprint("chat_api", __name__, url_prefix="/api/chat")
 
 
-_CANVAS_MODES = {"intake", "cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
-
-
 def _require_chat():
     """Check that chat manager is available."""
     if not _HAS_CHAT or chat_manager is None:
         return jsonify({"error": "Chat manager not available"}), 503
     return None
-
-
-def _get_db():
-    try:
-        from tools.dashboard.config import DB_PATH
-        from tools.db.storage import get_connection
-        return get_connection(db_path=str(DB_PATH))
-    except Exception:
-        return None
-
-
-def _read_canvas_type(context_id: str) -> str:
-    """Read canvas_type from context_config JSON in DB. Defaults to 'intake'."""
-    try:
-        conn = _get_db()
-        if conn is None:
-            return "intake"
-        row = conn.execute(
-            "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
-        ).fetchone()
-        conn.close()
-        if row and row[0]:
-            cfg = json.loads(row[0])
-            return cfg.get("canvas_type", "intake")
-    except Exception:
-        pass
-    return "intake"
-
-
-def _inject_canvas_type(ctx: dict) -> dict:
-    """Add canvas_type to a context dict."""
-    ctx_id = ctx.get("context_id") or ctx.get("id", "")
-    ctx["canvas_type"] = _read_canvas_type(ctx_id)
-    return ctx
 
 
 # ---------------------------------------------------------------------------
@@ -135,7 +99,6 @@ def list_contexts():
         tenant_id=tenant_id,
         include_closed=include_closed,
     )
-    contexts = [_inject_canvas_type(c) for c in contexts]
     return jsonify({"contexts": contexts, "total": len(contexts)})
 
 
@@ -150,7 +113,7 @@ def get_context(context_id):
     if not ctx:
         return jsonify({"error": "Context not found"}), 404
 
-    ctx = _inject_canvas_type(ctx)
+    # Include recent messages
     messages = chat_manager.get_messages(context_id, since_turn=0, limit=50)
     ctx["messages"] = messages
     return jsonify(ctx)
@@ -228,68 +191,6 @@ def get_messages(context_id):
 # ---------------------------------------------------------------------------
 
 
-@chat_api.route("/<context_id>/link-intake", methods=["PATCH"])
-def link_intake(context_id):
-    """Link an intake session to a chat context (activates RICOAS extension hooks).
-
-    Body: {intake_session_id}
-    """
-    err = _require_chat()
-    if err:
-        return err
-
-    data = request.get_json(force=True, silent=True) or {}
-    intake_session_id = data.get("intake_session_id", "").strip()
-    if not intake_session_id:
-        return jsonify({"error": "intake_session_id required"}), 400
-
-    result = chat_manager.link_intake_session(context_id, intake_session_id)
-    if "error" in result:
-        return jsonify(result), 404
-    return jsonify(result)
-
-
-@chat_api.route("/<context_id>/mode", methods=["PATCH"])
-def update_context_mode(context_id):
-    """Set the canvas mode for a chat context.
-
-    Body: {canvas_type: "intake"|"cam"|"ndc"|"sdc"|"eda"|"ddc"|"pdc"|"bdc"|"odc"|"idc"}
-    Persists to context_config JSON column in chat_contexts.
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    canvas_type = (data.get("canvas_type") or "intake").strip().lower()
-    if canvas_type not in _CANVAS_MODES:
-        return jsonify({"error": f"Invalid canvas_type '{canvas_type}'. Must be one of: {sorted(_CANVAS_MODES)}"}), 400
-
-    conn = _get_db()
-    if conn is None:
-        return jsonify({"error": "Database unavailable"}), 503
-    try:
-        row = conn.execute(
-            "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
-        ).fetchone()
-        if row is None:
-            conn.close()
-            return jsonify({"error": "Context not found"}), 404
-        existing = {}
-        if row[0]:
-            try:
-                existing = json.loads(row[0])
-            except Exception:
-                pass
-        existing["canvas_type"] = canvas_type
-        conn.execute(
-            "UPDATE chat_contexts SET context_config = ?, updated_at = datetime('now') WHERE id = ?",
-            (json.dumps(existing), context_id),
-        )
-        conn.commit()
-        conn.close()
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
-
-    return jsonify({"context_id": context_id, "canvas_type": canvas_type})
-
-
 @chat_api.route("/<context_id>/state", methods=["GET"])
 def get_state(context_id):
     """Get context state with dirty-tracking (Feature 4).
@@ -333,62 +234,80 @@ def close_context(context_id):
 
 
 # ---------------------------------------------------------------------------
-# Kanban task routes (Chat-Kanban integration)
+# Use Cases catalog (FORGE-pattern: reads args/use_cases.yaml)
 # ---------------------------------------------------------------------------
 
+_USE_CASES_PATH = BASE_DIR / "args" / "use_cases.yaml"
 
-@chat_api.route("/<context_id>/tasks", methods=["GET"])
-def list_context_tasks(context_id):
-    """List kanban tasks linked to this chat context.
 
-    Returns tasks tagged with dispatch_source='chat:{context_id}'.
+@chat_api.route("/use-cases", methods=["GET"])
+def list_use_cases():
+    """Return the seeded use case catalog from args/use_cases.yaml.
+
+    Query params: category? (filter by category), q? (search label/description)
     """
     try:
-        from tools.chat.kanban_bridge import list_context_tasks as _list
-        tasks = _list(context_id)
-        return jsonify({"tasks": tasks, "total": len(tasks), "context_id": context_id})
-    except Exception as exc:
-        return jsonify({"error": str(exc), "tasks": [], "total": 0}), 500
+        import yaml
+    except ImportError:
+        return jsonify({"error": "pyyaml not installed"}), 503
 
-
-@chat_api.route("/<context_id>/tasks", methods=["POST"])
-def create_context_task(context_id):
-    """Create a kanban task linked to this chat context.
-
-    Body: {title, description?, task_type?, priority?, depends_on?}
-    """
-    data = request.get_json(force=True, silent=True) or {}
-    title = data.get("title", "").strip()
-    if not title:
-        return jsonify({"error": "title required"}), 400
     try:
-        from tools.chat.kanban_bridge import create_context_task as _create
-        task = _create(
-            context_id,
-            title=title,
-            description=data.get("description", ""),
-            task_type=data.get("task_type", "build"),
-            priority=data.get("priority", "medium"),
-            depends_on=data.get("depends_on"),
-        )
-        return jsonify(task), 201
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        with open(_USE_CASES_PATH, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return jsonify({"use_cases": [], "total": 0})
+
+    cases = data.get("use_cases", [])
+
+    category = request.args.get("category", "").strip().lower()
+    query = request.args.get("q", "").strip().lower()
+
+    if category:
+        cases = [c for c in cases if c.get("category", "").lower() == category]
+    if query:
+        cases = [
+            c for c in cases
+            if query in c.get("label", "").lower() or query in c.get("description", "").lower()
+        ]
+
+    # Strip system_prompt and seed_message from list response (returned on demand)
+    summary = []
+    for c in cases:
+        summary.append({
+            "id": c.get("id", ""),
+            "label": c.get("label", ""),
+            "category": c.get("category", ""),
+            "icon": c.get("icon", ""),
+            "description": c.get("description", "").strip(),
+            "badge": c.get("badge", ""),
+            "agent_model": c.get("agent_model", "sonnet"),
+            "ricoas": c.get("ricoas", False),
+            "boost_threshold": c.get("boost_threshold", 70),
+            "canvas_wiring": c.get("canvas_wiring", []),
+        })
+
+    return jsonify({"use_cases": summary, "total": len(summary)})
 
 
-@chat_api.route("/<context_id>/vv-chain", methods=["POST"])
-def create_vv_chain(context_id):
-    """Auto-create CodeLens + Coherence + E2E tasks linked to this context.
-
-    Body: {canvas?}
-    """
-    data = request.get_json(force=True, silent=True) or {}
+@chat_api.route("/use-cases/<use_case_id>", methods=["GET"])
+def get_use_case(use_case_id):
+    """Return full use case definition including system_prompt and seed_message."""
     try:
-        from tools.chat.kanban_bridge import create_vv_chain as _chain
-        tasks = _chain(context_id, canvas=data.get("canvas", ""))
-        return jsonify({"tasks": tasks, "total": len(tasks)}), 201
-    except Exception as exc:
-        return jsonify({"error": str(exc)}), 500
+        import yaml
+    except ImportError:
+        return jsonify({"error": "pyyaml not installed"}), 503
+
+    try:
+        with open(_USE_CASES_PATH, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return jsonify({"error": "Use case catalog not found"}), 404
+
+    for c in data.get("use_cases", []):
+        if c.get("id") == use_case_id:
+            return jsonify(c)
+
+    return jsonify({"error": "Use case not found"}), 404
 
 
 # ---------------------------------------------------------------------------

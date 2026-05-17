@@ -22,6 +22,8 @@ from tools.il5.ingestion import (
     get_sla_summary,
     ingest_il5_event,
 )
+from tools.il5.il5_ingestion_service import parse_il5_payload
+from tools.il5.il5_display_service import _format_row
 from tools.db.storage import get_connection
 from tools.dashboard.config import DB_PATH
 
@@ -83,6 +85,7 @@ def list_events():
         limit = 25
 
     events = get_il5_events(since=since, limit=limit)
+    events = [_format_row(ev) for ev in events]
     return jsonify({
         "classification": _CUI_HEADER,
         "impact_level": IL5_IMPACT_LEVEL,
@@ -113,27 +116,17 @@ def ingest_event():
     """
     _ensure_schema()
     body: Dict[str, Any] = request.get_json(silent=True) or {}
-    source_id = body.get("source_id") or body.get("id")
-    content = body.get("content")
 
-    if not source_id or not content:
-        return jsonify({"error": "source_id and content are required"}), 400
-
-    published_raw = body.get("published_at") or body.get("source_published_at")
-    source_published_at = None
-    if published_raw:
-        try:
-            source_published_at = datetime.fromisoformat(
-                str(published_raw).replace("Z", "+00:00")
-            )
-        except ValueError:
-            pass
+    try:
+        parsed = parse_il5_payload(body)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
 
     event_id = ingest_il5_event(
-        str(source_id),
-        str(content),
-        source_published_at=source_published_at,
-        metadata=body.get("metadata"),
+        parsed["source_id"],
+        parsed["content"],
+        source_published_at=parsed["source_published_at"],
+        metadata=parsed["metadata"],
     )
     return jsonify({
         "event_id": event_id,

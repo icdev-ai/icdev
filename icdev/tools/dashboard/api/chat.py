@@ -8,6 +8,8 @@ mid-stream intervention, and dirty-tracking state queries.
 import sys
 from pathlib import Path
 
+from pathlib import Path
+
 from flask import Blueprint, jsonify, request
 
 # ---------------------------------------------------------------------------
@@ -229,6 +231,83 @@ def close_context(context_id):
     if "error" in result:
         return jsonify(result), 404
     return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Use Cases catalog (FORGE-pattern: reads args/use_cases.yaml)
+# ---------------------------------------------------------------------------
+
+_USE_CASES_PATH = BASE_DIR / "args" / "use_cases.yaml"
+
+
+@chat_api.route("/use-cases", methods=["GET"])
+def list_use_cases():
+    """Return the seeded use case catalog from args/use_cases.yaml.
+
+    Query params: category? (filter by category), q? (search label/description)
+    """
+    try:
+        import yaml
+    except ImportError:
+        return jsonify({"error": "pyyaml not installed"}), 503
+
+    try:
+        with open(_USE_CASES_PATH, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return jsonify({"use_cases": [], "total": 0})
+
+    cases = data.get("use_cases", [])
+
+    category = request.args.get("category", "").strip().lower()
+    query = request.args.get("q", "").strip().lower()
+
+    if category:
+        cases = [c for c in cases if c.get("category", "").lower() == category]
+    if query:
+        cases = [
+            c for c in cases
+            if query in c.get("label", "").lower() or query in c.get("description", "").lower()
+        ]
+
+    # Strip system_prompt and seed_message from list response (returned on demand)
+    summary = []
+    for c in cases:
+        summary.append({
+            "id": c.get("id", ""),
+            "label": c.get("label", ""),
+            "category": c.get("category", ""),
+            "icon": c.get("icon", ""),
+            "description": c.get("description", "").strip(),
+            "badge": c.get("badge", ""),
+            "agent_model": c.get("agent_model", "sonnet"),
+            "ricoas": c.get("ricoas", False),
+            "boost_threshold": c.get("boost_threshold", 70),
+            "canvas_wiring": c.get("canvas_wiring", []),
+        })
+
+    return jsonify({"use_cases": summary, "total": len(summary)})
+
+
+@chat_api.route("/use-cases/<use_case_id>", methods=["GET"])
+def get_use_case(use_case_id):
+    """Return full use case definition including system_prompt and seed_message."""
+    try:
+        import yaml
+    except ImportError:
+        return jsonify({"error": "pyyaml not installed"}), 503
+
+    try:
+        with open(_USE_CASES_PATH, "r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return jsonify({"error": "Use case catalog not found"}), 404
+
+    for c in data.get("use_cases", []):
+        if c.get("id") == use_case_id:
+            return jsonify(c)
+
+    return jsonify({"error": "Use case not found"}), 404
 
 
 # ---------------------------------------------------------------------------

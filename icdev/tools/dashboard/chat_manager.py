@@ -737,6 +737,7 @@ class ChatManager:
         "code_quality_advisory": ("[Code Quality]", "code_quality_advisory", "code_quality_advisory"),
         "genesis_advisory": ("[Genesis Insight]", "genesis_advisory", "genesis_advisory"),
         "intake_advisory": ("[Intake Enrichment]", "intake_advisory", "intake_advisory"),
+        "migration_advisory": ("[Modernization Advisory]", "migration_advisory", "migration_advisory"),
     }
 
     def _inject_advisories(self, ctx: "ChatContext", context_id: str, hook_result: dict) -> None:
