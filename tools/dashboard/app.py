@@ -3537,7 +3537,7 @@ def create_app() -> Flask:
         else:
             conn = get_connection(db_path=str(DB_PATH))
         try:
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
         except Exception:
             pass
         return conn

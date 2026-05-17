@@ -699,3 +699,10 @@
 | Data Validator | tools\data_validator.py | Auto-registered: tools/data_validator.py | --json | JSON |
 | Predictive Analysis | tools\strategos\predictive_analysis.py | Auto-registered: strategos/predictive_analysis.py | --json | JSON |
 | Osint Normalizer | tools\threat_analysis\osint_normalizer.py | Auto-registered: threat_analysis/osint_normalizer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Deploy Staging | tools\il5\deploy_staging.py | Auto-registered: il5/deploy_staging.py | --json | JSON |
+| Async Alert Writer | tools\monitor\async_alert_writer.py | Auto-registered: monitor/async_alert_writer.py | --json | JSON |

@@ -41,8 +41,9 @@ Categories:
     sre (8)
     canvas (8)
     system_graph (3)
+    intelligence (3)
 
-Total: 262 tools, 6 resources
+Total: 265 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6610,6 +6611,70 @@ RESOURCE_REGISTRY = {
         "module": "tools.llm.chain_orchestrator",
         "handler": "main",
         "description": "Return chain telemetry stats aggregated by mode.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    # ============================================================
+    # INTELLIGENCE (3 tools) — JISE Portal Data Feed
+    # NIST 800-53: SA-11, CM-3, AC-3, AU-2
+    # ============================================================
+    "jise_get_portal_data": {
+        "category": "intelligence",
+        "module": "tools.intelligence.jise_portal",
+        "handler": "get_jise_portal_data",
+        "description": "Retrieve structured intelligence records for consumption by the JISE portal.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "classification": {
+                    "type": "string",
+                    "description": "Filter by classification level (CUI, FOUO, UNCLASSIFIED, SECRET).",
+                    "enum": ["CUI", "FOUO", "UNCLASSIFIED", "SECRET"],
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Filter by collection source (SIGINT, HUMINT, OSINT, GEOINT, IMINT, FININT).",
+                    "enum": ["SIGINT", "HUMINT", "OSINT", "GEOINT", "IMINT", "FININT"],
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of records to return (default 200, max 1000).",
+                    "default": 200,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
+            },
+        },
+    },
+    "jise_get_requirements": {
+        "category": "intelligence",
+        "module": "tools.dashboard.api.jise",
+        "handler": "requirements",
+        "description": "Return ICDEV requirements feed for JISE downstream consumption.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by requirement status (open, closed, in_progress).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum records to return (default 100, max 500).",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 500,
+                },
+            },
+        },
+    },
+    "jise_get_compliance": {
+        "category": "intelligence",
+        "module": "tools.dashboard.api.jise",
+        "handler": "compliance",
+        "description": "Return ICDEV compliance posture summary (POAM counts, control status) for JISE.",
         "input_schema": {
             "type": "object",
             "properties": {},

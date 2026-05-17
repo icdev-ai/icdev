@@ -61,7 +61,7 @@ def oracle_summary():
             # from admins who hold plain CUI clearance.  Clear the security
             # context so inject_row_predicate doesn't add a classification
             # WHERE clause that silently zeroes out the stats.
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: cross-tenant aggregate stats query; tenant filter would zero out results
             r = conn.execute(
                 "SELECT COUNT(*) AS n FROM oracle_predictions WHERE created_at >= %s",
                 (cutoff_24h,),

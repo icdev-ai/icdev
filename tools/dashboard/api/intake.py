@@ -209,7 +209,7 @@ def _get_db():
     # Without this, the Flask security middleware's default CUI context
     # filters out Government sessions (classification=IL4/IL2) from SELECTs.
     try:
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
     except Exception:
         pass
     return conn
@@ -1316,7 +1316,7 @@ def _run_build_pipeline(session_id):
         else:
             conn = get_connection(db_path=str(DB_PATH))
         try:
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
         except Exception:
             pass
     except Exception as exc:

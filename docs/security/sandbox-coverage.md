@@ -245,6 +245,15 @@ When a new `tools/` module ingests user-provided content:
 - Phase 72 feature doc: [phase-72-sandbox-integration.md](../features/phase-72-sandbox-integration.md)
 - `tools/security/sandbox_executor.py` — runtime implementation
 
+## Row-Level Security Layer (D-SEC-RLS)
+
+| Module | Classification | Rationale |
+|--------|---------------|-----------|
+| `tools/security/row_security.py` | **trusted-first-party** | `inject_row_predicate()` regex-injects `tenant_id`/`classification` predicates into SQL strings. No user input reaches the regex — all values are `SecurityContext` fields set by application middleware. No `eval()`/`exec()`/subprocess. Deterministic output tested in `tests/test_row_security.py` (17 unit tests). |
+| `tools/db/storage.py` (`_inject_rls()`) | **trusted-first-party** | Calls `inject_row_predicate()` from the storage cursor layer. All inputs (`tenant_id`, `classification`) come from `flask.g.security_context` set by `tools/security/middleware.py`, never from user-supplied HTTP body fields. No code execution path. |
+
+**Revisit if:** `SecurityContext.tenant_id` or `classification` is ever populated directly from an unvalidated HTTP header or request body field without middleware enforcement.
+
 ## STRATEGOS Foundation Layer (sg-foundation, migration 118)
 
 | Module | Classification | Rationale |
