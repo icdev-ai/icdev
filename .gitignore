@@ -73,9 +73,8 @@ playwright/
 *.jpeg
 *.gif
 
-# Generated reports and planning tasks
+# Generated reports
 reports/
-tasks/
 
 # Test suite (local only)
 tests/
