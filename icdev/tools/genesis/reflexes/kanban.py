@@ -3722,6 +3722,29 @@ def _tag_task_source(task_id: str, source: str) -> None:
         logger.debug("kanban: tag dispatch_source skipped for %s: %s", task_id, exc)
 
 
+# 6 platforms that were missing Karpathy principle headings and required explicit sync.
+# Source: karpathy_sync coherence check — these files lacked the 5 canonical headings
+# (State assumptions / Enumerate interpretations / Prefer simpler /
+#  Bound your edit scope / Success criteria) when the check was introduced.
+# Used by _verify_task_specific to confirm karpathy_sync tasks actually patched the files.
+_KARPATHY_SYNC_MISSING_PLATFORMS: list[tuple[str, str]] = [
+    ("cline",    ".clinerules"),
+    ("cursor",   ".cursor/rules/icdev.mdc"),
+    ("windsurf", ".windsurf/rules/icdev.md"),
+    ("copilot",  ".github/copilot-instructions.md"),
+    ("amazonq",  ".amazonq/rules/icdev.md"),
+    ("junie",    ".junie/guidelines.md"),
+]
+
+_KARPATHY_CANONICAL_HEADINGS: list[str] = [
+    "State assumptions",
+    "Enumerate interpretations",
+    "Prefer simpler",
+    "Bound your edit scope",
+    "Success criteria",
+]
+
+
 def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
     """Task-type-specific verification based on description keywords.
 
@@ -3730,6 +3753,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
     - "route" / "page" / "start.md Pages" → grep start.md Pages line
     - "table" / "schema" / "migration" → query DB for table existence
     - "template" / ".html" → check template file exists
+    - "karpathy_sync" / "karpathy headings" → verify _KARPATHY_SYNC_MISSING_PLATFORMS
     - "[Batch]" title → reject — batch cards must be decomposed first
 
     Returns (True, reason) if specific checks pass or don't apply.
