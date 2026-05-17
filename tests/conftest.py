@@ -2119,6 +2119,29 @@ CREATE TABLE IF NOT EXISTS sg_adversarial_validation_audit (
     manipulation_score  REAL,
     details             TEXT
 );
+
+CREATE TABLE IF NOT EXISTS sg_conflict_events (
+    id          TEXT NOT NULL PRIMARY KEY,
+    event_type  TEXT NOT NULL,
+    geometry    TEXT,
+    event_date  TEXT,
+    source      TEXT,
+    metadata    TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS conflict_predictions (
+    id               TEXT NOT NULL PRIMARY KEY,
+    event_id         TEXT NOT NULL,
+    source           TEXT,
+    prediction_date  TEXT,
+    escalation_risk  REAL NOT NULL,
+    signals          TEXT,
+    model_version    TEXT NOT NULL DEFAULT 'v1.0',
+    confidence       REAL,
+    created_at       TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
