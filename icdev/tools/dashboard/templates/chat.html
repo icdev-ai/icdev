@@ -41,6 +41,22 @@
             <button id="btn-new-context" class="chat-sidebar__new-btn" title="Create new chat context">+ New</button>
         </div>
         <div id="context-list" class="chat-sidebar__list"></div>
+
+        <!-- Common Use Cases -->
+        <div class="chat-sidebar__uc-section">
+            <div class="chat-sidebar__uc-header">
+                <strong>Common Use Cases</strong>
+                <button id="btn-uc-collapse" class="chat-uc-collapse-btn" title="Collapse" aria-label="Toggle use cases">&#x25BE;</button>
+            </div>
+            <div id="uc-panel" class="chat-uc-panel">
+                <div class="chat-uc-search-wrap">
+                    <input type="text" id="usecase-search" class="chat-uc-search" placeholder="Search use cases..." autocomplete="off">
+                </div>
+                <div id="usecase-list" class="chat-uc-list">
+                    <div class="chat-uc-loading">Loading...</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Left resize handle -->
