@@ -670,3 +670,10 @@
 | Generate Compliance Report | tools\generate_compliance_report.py | Auto-registered: tools/generate_compliance_report.py | --json | JSON |
 | Dti Calculator | tools\dat\dti_calculator.py | Auto-registered: dat/dti_calculator.py | --json | JSON |
 | Jise Portal | tools\intelligence\jise_portal.py | Auto-registered: intelligence/jise_portal.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Siem Alert Forwarder | tools\siem_alert_forwarder.py | Auto-registered: tools/siem_alert_forwarder.py | --json | JSON |
+| Pir Alert Generator | tools\intelligence\pir_alert_generator.py | Auto-registered: intelligence/pir_alert_generator.py | --json | JSON |

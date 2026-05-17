@@ -616,7 +616,9 @@ class ChainOrchestrator:
         total_tokens = 0
 
         # Generate diverse positions for debaters
-        positions = self._generate_positions(user_prompt, num_debaters)
+        positions = cfg.get("positions")
+        if not positions:
+            positions = self._generate_positions(user_prompt, num_debaters)
 
         # Debate rounds
         debate_history: List[Dict[str, Any]] = []

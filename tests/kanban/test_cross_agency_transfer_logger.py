@@ -299,3 +299,187 @@ def test_cli_query_returns_valid_json(tmp_path):
     assert isinstance(data, list)
     assert len(data) >= 1
     assert data[0]["transfer_id"] == "xfr-cli"
+
+
+# ---------------------------------------------------------------------------
+# NIST AU-2 compliance — required fields & dual-write
+# ---------------------------------------------------------------------------
+
+
+def test_au2_all_required_fields_present(tmp_path):
+    """Every CAT row must contain NIST AU-2 required fields."""
+    db_path, conn = _make_db(tmp_path)
+    conn.close()
+
+    from tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
+
+    logger = CrossAgencyTransferLogger()
+    with patch(
+        "tools.audit.cross_agency_transfer_logger.get_connection",
+        return_value=sqlite3.connect(str(db_path)),
+    ):
+        event_id = logger.log_initiated(
+            transfer_id="xfr-au2-01",
+            source_agency="DHS",
+            target_agency="DOD",
+            data_type="threat_intel",
+            actor="analyst@dhs.gov",
+            data_classification="CUI//SP-CTI",
+            project_id="proj-alpha",
+        )
+
+    assert event_id != ""
+    conn2 = sqlite3.connect(str(db_path))
+    conn2.row_factory = sqlite3.Row
+    row = conn2.execute(
+        "SELECT * FROM cross_agency_transfers WHERE id=?", (event_id,)
+    ).fetchone()
+    assert row is not None
+    assert row["transfer_id"] == "xfr-au2-01"
+    assert row["source_agency"] == "DHS"
+    assert row["target_agency"] == "DOD"
+    assert row["actor"] == "analyst@dhs.gov"
+    assert row["event_type"] == "initiated"
+    assert row["data_classification"] == "CUI//SP-CTI"
+    assert row["occurred_at"]
+    from datetime import datetime
+    datetime.fromisoformat(row["occurred_at"])
+    conn2.close()
+
+
+def test_au2_dual_write_to_audit_trail(tmp_path):
+    """AU-2 completeness: CAT events are mirrored to the main audit_trail table."""
+    db_path, conn = _make_db(tmp_path)
+    conn.close()
+
+    from tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
+
+    logger = CrossAgencyTransferLogger()
+    with patch(
+        "tools.audit.cross_agency_transfer_logger.get_connection",
+        return_value=sqlite3.connect(str(db_path)),
+    ):
+        event_id = logger.log_completed(
+            transfer_id="xfr-au2-dual",
+            source_agency="NSA",
+            target_agency="CIA",
+            actor="system",
+            bytes_transferred=1024,
+            checksum="sha256:abc",
+        )
+
+    assert event_id != ""
+    conn2 = sqlite3.connect(str(db_path))
+    conn2.row_factory = sqlite3.Row
+    audit_rows = conn2.execute(
+        "SELECT * FROM audit_trail WHERE details LIKE ?",
+        (f"%{event_id}%",),
+    ).fetchall()
+    conn2.close()
+    assert len(audit_rows) == 1
+    audit = dict(audit_rows[0])
+    assert audit["event_type"] == "cross_agency_transfer_completed"
+    assert audit["actor"] == "system"
+    assert "NSA → CIA" in audit["action"]
+
+
+# ---------------------------------------------------------------------------
+# NIST AU-9 compliance — append-only guarantee
+# ---------------------------------------------------------------------------
+
+
+def test_au9_no_update_or_delete_issued(tmp_path):
+    """_insert() must only call INSERT, never UPDATE or DELETE (NIST AU-9)."""
+    db_path, conn = _make_db(tmp_path)
+    conn.close()
+
+    from tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
+
+    executed_sql: list[str] = []
+
+    class _RecordingConn:
+        def __init__(self, real):
+            self._real = real
+
+        def execute(self, sql, *args, **kwargs):
+            executed_sql.append(sql.strip().upper())
+            return self._real.execute(sql, *args, **kwargs)
+
+        def commit(self):
+            return self._real.commit()
+
+        def close(self):
+            return self._real.close()
+
+    real_conn = sqlite3.connect(str(db_path))
+    real_conn.row_factory = sqlite3.Row
+    recording_conn = _RecordingConn(real_conn)
+
+    logger = CrossAgencyTransferLogger()
+    with patch(
+        "tools.audit.cross_agency_transfer_logger.get_connection",
+        return_value=recording_conn,
+    ):
+        logger.log_initiated(
+            transfer_id="xfr-au9-01",
+            source_agency="DHS",
+            target_agency="DOD",
+            data_type="sigint",
+            actor="test-actor",
+        )
+
+    real_conn.close()
+
+    for sql in executed_sql:
+        assert not sql.startswith("UPDATE"), f"Unexpected UPDATE: {sql}"
+        assert not sql.startswith("DELETE"), f"Unexpected DELETE: {sql}"
+
+    insert_calls = [s for s in executed_sql if s.startswith("INSERT")]
+    assert len(insert_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle simulation
+# ---------------------------------------------------------------------------
+
+
+def test_lifecycle_initiated_to_completed(tmp_path):
+    """Simulate a transfer: initiated → completed; verify both events in audit."""
+    db_path, conn = _make_db(tmp_path)
+    conn.close()
+
+    from tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
+
+    logger = CrossAgencyTransferLogger()
+    with patch(
+        "tools.audit.cross_agency_transfer_logger.get_connection",
+        return_value=sqlite3.connect(str(db_path)),
+    ):
+        eid1 = logger.log_initiated(
+            "xfr-life-01", "DHS", "FBI", "threat_intel", "analyst-1", project_id="proj-life"
+        )
+        eid2 = logger.log_completed(
+            "xfr-life-01", "DHS", "FBI", "gateway",
+            bytes_transferred=4096, checksum="sha256:def", duration_ms=1200,
+        )
+
+    conn2 = sqlite3.connect(str(db_path))
+    conn2.row_factory = sqlite3.Row
+    rows = conn2.execute(
+        "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at ASC",
+        ("xfr-life-01",),
+    ).fetchall()
+    assert len(rows) == 2
+    assert dict(rows[0])["event_type"] == "initiated"
+    assert dict(rows[0])["id"] == eid1
+    assert dict(rows[1])["event_type"] == "completed"
+    assert dict(rows[1])["id"] == eid2
+
+    audit = conn2.execute(
+        "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY timestamp ASC",
+        ("%xfr-life-01%",),
+    ).fetchall()
+    conn2.close()
+    assert len(audit) == 2
+    assert dict(audit[0])["event_type"] == "cross_agency_transfer_initiated"
+    assert dict(audit[1])["event_type"] == "cross_agency_transfer_completed"

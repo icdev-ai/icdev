@@ -2057,6 +2057,59 @@ def _format_gate_status(val: Any) -> str:
     return str(val)
 
 
+def _queue_alert_locally(
+    task: dict,
+    reason: str,
+    event: str = "failed",
+    severity: str = "warning",
+    max_retries: int = 3,
+) -> bool:
+    """Persist an alert to the local kanban_alert_queue table.
+
+    Retries on DB contention so alerts are never silently discarded.
+    Returns True when the row is persisted.
+    """
+    import time
+
+    task_id = task.get("id", "")
+    title = task.get("title", task_id)
+    body = f"Task returned to backlog. Reason: {reason}"
+    for attempt in range(max_retries):
+        try:
+            conn = get_connection()
+            conn.execute(
+                "INSERT INTO kanban_alert_queue "
+                "(task_id, event, severity, title, body, reason, actor, created_at, retry_count) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task_id,
+                    event,
+                    severity,
+                    title,
+                    body,
+                    reason,
+                    "stale-cleanup",
+                    datetime.now(timezone.utc).isoformat(),
+                    attempt,
+                ),
+            )
+            conn.commit()
+            conn.close()
+            logger.info("Queued alert locally for %s (attempt %d)", task_id, attempt)
+            return True
+        except Exception as exc:
+            logger.warning(
+                "Local alert queue write attempt %d/%d failed for %s: %s",
+                attempt + 1,
+                max_retries,
+                task_id,
+                exc,
+            )
+            if attempt < max_retries - 1:
+                time.sleep(0.1 * (attempt + 1))
+    return False
+
+
 def _send_notification(task: dict, event: str = "in_progress"):
     """Send notification via dashboard DB + Telegram.
 
@@ -5393,13 +5446,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     #    subprocess died before completing), the _running dict may hold an
     #    orphaned Popen reference that blocks all future promotions forever.
     #
-    # 2026-04-17 silent-cleanup fix: previously this path cleaned up the
+    # 2026-04-17 stale-cleanup fix: previously this path cleaned up the
     # in-memory dict + worktree silently — no failure_count bump, no
-    # last_failure_reason, no Telegram alert. dt-iqe-11 became invisible
+    # last_failure_reason, no alert queued. dt-iqe-11 became invisible
     # because the agent subprocess died (or moved the task externally) and
     # neither the user nor failure_triage could tell anything had gone
     # wrong. We now treat every stale cleanup as a first-class unverified
-    # failure so the normal observability pipeline fires.
+    # failure, record it in the DB, and queue an alert locally instead of
+    # relying on fragile external notification adapters.
     if _running:
         stale_info: list[tuple[str, str]] = []
         for tid, proc in list(_running.items()):
@@ -5439,7 +5493,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             # alone (it legitimately completed and self-reported).
             if cur_status != "done":
                 reason = (
-                    f"silent-cleanup: claude CLI subprocess went stale mid-run "
+                    f"stale-cleanup: claude CLI subprocess went stale mid-run "
                     f"(DB moved to {cur_status!r} without going through the "
                     f"verification gate). Agent likely died before completion "
                     f"or self-reported via an external path."
@@ -5453,14 +5507,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     _cad(tid, reason, _sd_work_dir)
                 except Exception as _sd_exc:
                     logger.warning(
-                        "silent-cleanup self_debug call failed for %s: %s",
+                        "stale-cleanup self_debug call failed for %s: %s",
                         tid, _sd_exc,
                     )
                 new_target = _record_failure_and_maybe_flag(tid, reason)
                 if new_target == "needs_decomposition" and cur_status != "needs_decomposition":
                     _move_task(
                         tid, "needs_decomposition",
-                        actor="silent-cleanup", reason=reason,
+                        actor="stale-cleanup", reason=reason,
                     )
                 # Bump failure count + persist reason explicitly so
                 # failure_triage's recency window picks it up.
@@ -5479,11 +5533,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     _fc_conn.close()
                 except Exception as _fc_exc:
                     logger.warning(
-                        "silent-cleanup failure-write failed for %s: %s",
+                        "stale-cleanup failure-write failed for %s: %s",
                         tid, _fc_exc,
                     )
 
-                # Build a task dict for the notification channel.
+                # Build a task dict for the local alert queue.
                 task_dict = {"id": tid, "title": tid}
                 try:
                     _tc = get_connection()
@@ -5503,26 +5557,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 except Exception:
                     pass
 
-                # Fire the normal failed-task notification so Telegram
-                # surfaces it just like any other failure.
+                # Queue the alert locally instead of calling fragile external
+                # notification adapters. The local queue is drained by the
+                # dashboard or a background worker so operators still see it.
                 try:
-                    _send_notification(task_dict, event="failed")
-                except Exception as _sn_exc:
+                    _queue_alert_locally(task_dict, reason=reason)
+                except Exception as _qa_exc:
                     logger.warning(
-                        "silent-cleanup notification failed for %s: %s",
-                        tid, _sn_exc,
-                    )
-                # And emit a clear Telegram line with the reason — this is
-                # the user's visible signal that the subprocess died
-                # without completing.
-                try:
-                    from tools.notifications.adapters.telegram import (
-                        send as tg_send,
-                    )
-                    tg_send(
-                        f"SILENT-CLEANUP: {task_dict.get('title', tid)[:60]}",
-                        f"Task returned to backlog. Reason: {reason}",
-                        severity="warning",
+                        "stale-cleanup local alert queue failed for %s: %s",
+                        tid, _qa_exc,
                     )
                 except Exception:
                     pass
