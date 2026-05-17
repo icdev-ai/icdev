@@ -1102,6 +1102,53 @@
     background: var(--bg-tertiary, #1a2233);
 }
 
+.chat-uc-card--loading {
+    opacity: 0.6;
+    pointer-events: none;
+    position: relative;
+    border-color: var(--accent-blue) !important;
+}
+
+.chat-uc-card--loading::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--accent-blue);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: uc-spin 0.7s linear infinite;
+}
+
+@keyframes uc-spin {
+    to { transform: rotate(360deg); }
+}
+
+.ctx-item__delete {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    padding: 1px 4px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.ctx-item:hover .ctx-item__delete {
+    opacity: 1;
+}
+
+.ctx-item__delete:hover {
+    color: var(--accent-red, #e05);
+    opacity: 1;
+}
+
 .chat-uc-card__top {
     display: flex;
     justify-content: space-between;
