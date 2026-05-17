@@ -14,4 +14,9 @@ Feature: Compliance Requirement Validation
     When Generate Priority Intelligence Requirements (PIR) alerts when indicator scores exceed operator-defined baselines
     Then the system behaves as specified and the requirement is satisfied
 
+  Scenario: All cross-agency data transfers must be logged in the append-only audit trail
+    Given the system is deployed within the authorized environment
+    When Be logged in the append-only audit trail per NIST AU-2 and AU-9 requirements
+    Then the system behaves as specified and the requirement is satisfied
+
 # CUI // SP-CTI

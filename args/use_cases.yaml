@@ -463,3 +463,1522 @@ use_cases:
         priority: high
         text: "System shall trigger RAG and Knowledge Graph ingest automatically on section approval, updating the semantic search index with the newly approved content."
         criteria: "Acceptance: Ingest triggered within 60 seconds of approval event; knowledge graph node updated with section metadata; search returns updated content within 24 hours of ingest."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GOVERNMENT USE CASES — DoD/IC, Federal Civilian, State & Local
+# New categories: acquisition | compliance_ato | zero_trust | it_operations | state_local
+# New fields added to schema:
+#   canvas_seeds:    list of {canvas, templates[], snippets[]} — pre-instantiated on activation
+#                    (best-effort; logs warning if canvas DB absent, never fails hard)
+#   workflow_steps:  list of {step, label, description, canvas?, action} — ordered user journey
+#                    persisted in chat context extra_context.uc_workflow_step
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - id: ato_package_builder
+    label: ATO Package Builder
+    category: compliance_ato
+    icon: "🛡"
+    description: >
+      Build a complete ATO package — SSP, POAM, STIG checklist, and ConMon plan —
+      for DoD/IC RMF authorization at IL2 through IL5.
+    badge: RMF
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - compliance
+      - supply_chain
+      - kanban
+      - knowledge
+    quick_actions:
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "🔗"
+        label: Supply Chain
+        url: /network/ask
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+    canvas_seeds:
+      - canvas: security
+        templates: [ssp_baseline_v1, poam_tracker]
+        snippets: [nist_800_53_checklist]
+      - canvas: boundary
+        templates: [system_boundary_v1]
+        snippets: []
+    workflow_steps:
+      - step: 1
+        label: System Inventory & Categorization
+        description: Define boundary, categorize per FIPS 199, inventory components
+        canvas: compliance
+        action: requirement_intake
+      - step: 2
+        label: Control Selection & Inheritance
+        description: Select control baseline, map inherited controls from CSP/enterprise
+        canvas: compliance
+        action: review_requirements
+      - step: 3
+        label: POAM & Gap Analysis
+        description: Document open findings, assign CAT ratings, set remediation milestones
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: Package Assembly & ISSO Review
+        description: Assemble SSP, SAR, RAR; ISSO reviews and signs off
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: ATO Submission & ConMon Activation
+        description: Submit package to AO, activate continuous monitoring
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Defense, Intelligence Community, Federal Civilian, DoD Components]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are an Information System Security Officer (ISSO) with deep expertise in the
+      Risk Management Framework (RMF) per NIST SP 800-37 Rev 2, NIST SP 800-53 Rev 5,
+      CNSSI 1253, and DISA STIGs. You have guided systems through ATO at IL2, IL4, and IL5.
+
+      The ATO Package Builder is pre-loaded with 15 validated requirements covering SSP
+      structure, control inheritance, POAM management, STIG compliance, continuous
+      monitoring, boundary documentation, and ISSO/AO submission workflow.
+
+      Refine requirements when the user provides: system name, classification level,
+      hosting environment (on-prem, AWS GovCloud, Azure Government, hybrid), or current
+      RMF phase (Categorize/Select/Implement/Assess/Authorize/Monitor).
+
+      Focus AI Boost on: FIPS 199 impact levels, control baseline selection, inherited
+      vs. system-specific controls, POAM structure, ConMon strategy, and evidence
+      collection. Reference NIST, DISA, CNSSI sources — avoid vague recommendations.
+    seed_message: |
+      Your **ATO Package Builder** framework is loaded and ready.
+
+      15 pre-built requirements are already in place covering:
+      • SSP structure (NIST SP 800-18 format) and system characterization
+      • Control baseline selection and inheritance mapping
+      • POAM with CAT I/II/III risk ratings and remediation milestones
+      • STIG checklist generation for all applicable technology stacks
+      • Continuous monitoring plan (SIEM, vulnerability scanning cadence)
+      • Boundary diagrams, data flow documentation, and ISAs
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: system name + IL level, hosting environment, current RMF phase.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: compliance
+        priority: high
+        text: "System shall undergo FIPS 199 security categorization establishing Confidentiality, Integrity, and Availability impact levels with documented rationale signed by ISSO and AO."
+        criteria: "Acceptance: FIPS 199 worksheet completed and signed; all three impact levels assigned with rationale."
+      - type: compliance
+        priority: high
+        text: "System shall select a NIST SP 800-53 Rev 5 control baseline commensurate with system impact level, tailored per CNSSI 1253 or applicable agency overlay."
+        criteria: "Acceptance: Baseline documented in SSP; all tailored-in/out controls include written rationale."
+      - type: functional
+        priority: high
+        text: "System shall maintain a System Security Plan (SSP) per NIST SP 800-18 documenting system description, operating environment, control implementation statements, and authorization boundary."
+        criteria: "Acceptance: SSP contains all required sections; each applicable control has an implementation statement; version-controlled and signed."
+      - type: compliance
+        priority: high
+        text: "System shall produce a Plan of Action and Milestones (POAM) capturing all open findings with CAT I/II/III risk ratings, responsible parties, and remediation milestones."
+        criteria: "Acceptance: POAM maintained in eMASS or equivalent; CAT I findings have remediation milestones ≤30 days; reviewed monthly by ISSO."
+      - type: compliance
+        priority: high
+        text: "System shall complete DISA STIG compliance checks for all applicable technology stacks with zero open CAT I findings at ATO submission."
+        criteria: "Acceptance: STIG .ckl files generated for all in-scope components; zero open CAT I findings; CAT II/III documented in POAM."
+      - type: compliance
+        priority: high
+        text: "System shall produce a Security Assessment Report (SAR) documenting all assessment findings, risk determinations, and assessor's authorization recommendation."
+        criteria: "Acceptance: SAR includes methodology, findings by control family, risk summary, and assessor signature."
+      - type: functional
+        priority: high
+        text: "System shall document control inheritance, identifying controls inherited from IaaS/PaaS providers and enterprise services versus customer-specific responsibilities."
+        criteria: "Acceptance: Control inheritance matrix in SSP; each inherited control cites providing system's ATO package; customer responsibilities explicit."
+      - type: functional
+        priority: medium
+        text: "System shall maintain boundary documentation including network diagrams, data flow diagrams, and complete hardware/software/firmware component inventory."
+        criteria: "Acceptance: Diagrams updated at each re-assessment; all external connections documented as ISAs or MOUs."
+      - type: compliance
+        priority: high
+        text: "System shall implement a continuous monitoring strategy with automated vulnerability scanning, log aggregation, SIEM alerting, and quarterly control assessments."
+        criteria: "Acceptance: ConMon plan in SSP; automated scanning active before ATO; SIEM receiving log feeds from all components."
+      - type: compliance
+        priority: high
+        text: "System shall use FIPS 140-2/140-3 validated cryptographic modules for all encryption at rest and in transit with CMVP certificate numbers documented in SSP."
+        criteria: "Acceptance: All crypto implementations reference NIST CMVP certificates; non-compliant crypto on POAM with remediation timeline."
+      - type: compliance
+        priority: medium
+        text: "System shall implement least privilege and separation of duties with periodic access reviews per AC-2 and AC-6, at minimum annually for all privileged accounts."
+        criteria: "Acceptance: Access management procedures documented; privileged account justification on file; annual review records retained."
+      - type: data
+        priority: high
+        text: "System shall document all data types processed, stored, or transmitted including classification levels, CUI categories, and applicable handling requirements."
+        criteria: "Acceptance: Data inventory in SSP; all CUI categories identified with registry markings; data spillage procedures documented."
+      - type: compliance
+        priority: medium
+        text: "System shall conduct an annual tabletop or functional test of the Contingency Plan and Incident Response Plan with test results and lessons learned documented."
+        criteria: "Acceptance: Test report signed by ISSO; lessons learned incorporated within 60 days of test completion."
+      - type: functional
+        priority: medium
+        text: "System shall require security awareness training completion for all users before granting access, with completion records maintained for the life of the authorization."
+        criteria: "Acceptance: Training tracked per user; no active accounts without current completion; records available for audit."
+      - type: compliance
+        priority: high
+        text: "System shall obtain a formal Authorization to Operate (ATO) or Interim ATO from the designated Authorizing Official before operating in a production environment."
+        criteria: "Acceptance: ATO letter signed by AO; conditions and authorization boundary documented; expiration tracked with 90-day renewal trigger."
+
+  - id: cdrl_generator
+    label: CDRL Data Package Generator
+    category: acquisition
+    icon: "📋"
+    description: >
+      Generate Contract Data Requirements Lists (CDRLs) and DD Form 1423 packages.
+      Covers DI numbers, submission schedules, distribution statements, and CLIN mapping.
+    badge: FAR/DFARS
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - kanban
+      - compliance
+      - cpmp
+    quick_actions:
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📊"
+        label: CPMP Portal
+        url: /cpmp
+        target: _blank
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "📝"
+        label: Proposals
+        url: /proposals
+        target: _blank
+    canvas_seeds:
+      - canvas: pipeline
+        templates: [cdrl_package_v1, dd_form_1423]
+        snippets: [dfars_252_227_data_rights]
+    workflow_steps:
+      - step: 1
+        label: Contract Baseline & CLIN Inventory
+        description: Map contract line items and identify required data deliverables
+        canvas: kanban
+        action: requirement_intake
+      - step: 2
+        label: DI Number Assignment
+        description: Assign DI numbers (DI-MGMT, DI-SESS, DI-MISC) to each deliverable
+        canvas: compliance
+        action: review_requirements
+      - step: 3
+        label: Schedule & Distribution Statements
+        description: Define submission schedule, frequency, and distribution statements
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: Government Review of DD Form 1423
+        description: Contracting officer reviews and approves CDRL package
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: Final CDRL Package Submission
+        description: Submit approved CDRL package with contract modification
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Defense, Army, Navy, Air Force, DISA, DHS]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a senior Contracting Officer (KO) and acquisition specialist with expertise
+      in FAR Part 11, DFARS Part 227 (Technical Data), and DoD CDRL preparation per
+      DI-MGMT-81334 and MIL-STD-963. You have managed CDRLs across ACAT I-IV programs.
+
+      The CDRL Generator is pre-loaded with 12 validated requirements covering CDRL
+      structure, DD Form 1423 fields, DI number assignment, submission schedules,
+      distribution statements, tech data packages, and procurement compliance.
+
+      Refine requirements when the user provides: contract type (CPFF/FFP/T&M),
+      program phase (EMD/production/sustainment), classification requirements,
+      or specific deliverable types (software, hardware, test reports, manuals).
+
+      Focus AI Boost on: DI number selection, data rights (unlimited/limited/proprietary),
+      submission triggers (event vs. calendar), distribution statement selection
+      (A through F), and CDRL-SOW cross-reference traceability.
+    seed_message: |
+      Your **CDRL Data Package Generator** framework is loaded and ready.
+
+      12 pre-built requirements are already in place covering:
+      • CDRL structure and DD Form 1423 field requirements
+      • DI number assignment (DI-MGMT, DI-SESS, DI-MISC series)
+      • Contract line item (CLIN) mapping and submission schedules
+      • Distribution statement selection (Statements A–F)
+      • Tech data package format and software design documentation
+      • SOW cross-reference and estimated data price
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: contract type, program phase, deliverable types, data rights tier.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: functional
+        priority: high
+        text: "System shall generate a Contract Data Requirements List (CDRL) per DI-MGMT-81334, listing all required data items with assigned DI numbers, titles, and requiring activities."
+        criteria: "Acceptance: CDRL includes all in-scope data items; each item has a valid DI number; requiring activity identified per item."
+      - type: functional
+        priority: high
+        text: "System shall produce a completed DD Form 1423 for each CDRL data item, capturing all required fields including contract line item number, applicable documents, and submission schedule."
+        criteria: "Acceptance: DD Form 1423 generated per data item; all mandatory fields populated; form exportable as PDF and XLSX."
+      - type: functional
+        priority: high
+        text: "System shall map each CDRL data item to the applicable Statement of Work (SOW) paragraph, establishing bidirectional traceability between requirements and deliverables."
+        criteria: "Acceptance: SOW-to-CDRL traceability matrix generated; every deliverable references at least one SOW paragraph; gaps flagged for KO review."
+      - type: data
+        priority: high
+        text: "System shall capture submission schedule for each data item specifying trigger type (event-driven or calendar), frequency, and number of copies required."
+        criteria: "Acceptance: Submission schedule documented per item; event triggers cross-referenced to program milestones; calendar deliverables include day offset from contract award."
+      - type: compliance
+        priority: high
+        text: "System shall assign a Distribution Statement (A through F) to each data item per DoD Instruction 5230.24, with rationale documented for any statement other than A."
+        criteria: "Acceptance: Distribution statement assigned to every item; non-Statement-A selections include written rationale and approving authority."
+      - type: compliance
+        priority: high
+        text: "System shall document data rights assertions for all technical data deliverables per DFARS 252.227-7013/7014, classifying each as unlimited, limited, or proprietary."
+        criteria: "Acceptance: Data rights classification completed for all technical data items; proprietary items include IP assertion and associated CLIN."
+      - type: data
+        priority: medium
+        text: "System shall produce a Tech Data Package (TDP) requirements matrix identifying applicable MIL-STDs, drawing formats, and completeness levels per MIL-STD-31000."
+        criteria: "Acceptance: TDP matrix covers all hardware deliverables; applicable standards cited; completeness level (Type A–C) assigned per item."
+      - type: functional
+        priority: medium
+        text: "System shall support Software Development Plan (SDP) and Software Design Description (SDD) deliverable requirements per DI-IPSC series."
+        criteria: "Acceptance: SDP and SDD CDRLs generated with applicable DI-IPSC numbers; software category (COTS/custom/reuse) captured per deliverable."
+      - type: compliance
+        priority: medium
+        text: "System shall generate a CDRL estimated data price table for each deliverable, supporting cost-plus-fixed-fee data delivery pricing per FAR 15.408."
+        criteria: "Acceptance: Estimated data price table includes labor category, hours, and extended price per deliverable; total CDRL data cost rolled up."
+      - type: data
+        priority: medium
+        text: "System shall capture all government review and approval cycle times per CDRL data item, including First Article Test (FAT) reports and test and evaluation documentation."
+        criteria: "Acceptance: Review cycle defined (e.g., 30/60 days); approval authority identified per item; government review time excluded from contractor delivery period."
+      - type: interface
+        priority: medium
+        text: "System shall integrate with contract management systems to enable automatic CDRL status tracking as deliverables are submitted and approved."
+        criteria: "Acceptance: CDRL status (due/submitted/under review/approved/rejected) visible per item; automated notifications sent to KO on submission."
+      - type: compliance
+        priority: high
+        text: "System shall validate CDRL completeness against the contract SOW and applicable DFARs data clauses before submission to the contracting officer."
+        criteria: "Acceptance: Completeness check run before final export; missing DI numbers, unsigned DDs, or unmatched SOW paragraphs flagged with remediation guidance."
+
+  - id: incident_response_plan
+    label: Incident Response Plan
+    category: compliance_ato
+    icon: "🚨"
+    description: >
+      Build a NIST 800-61 and CNSSI 1300 compliant Incident Response Plan with
+      CAT 1–6 playbooks, US-CERT reporting timelines, and tabletop exercise schedule.
+    badge: NIST 800-61
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - compliance
+      - monitoring
+      - kanban
+    quick_actions:
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "📡"
+        label: Monitoring
+        url: /monitoring
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+    canvas_seeds:
+      - canvas: security
+        templates: [incident_response_plan_v1, ir_playbook_template]
+        snippets: [cisa_us_cert_notification, ir_classification_matrix]
+    workflow_steps:
+      - step: 1
+        label: IR Team Roster & Escalation Paths
+        description: Identify IR team members, roles, 24/7 contacts, and escalation chains
+        canvas: compliance
+        action: requirement_intake
+      - step: 2
+        label: Incident Classification & Playbooks
+        description: Define CAT 1–6 tiers and write containment/eradication playbooks per tier
+        canvas: compliance
+        action: review_requirements
+      - step: 3
+        label: Reporting & Evidence Procedures
+        description: Document US-CERT/CISA reporting timelines, chain-of-custody, and evidence preservation
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: Tabletop Exercise & Lessons Learned
+        description: Conduct tabletop exercise, document findings, update IRP
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: IRP Approval & Publication
+        description: ISSM/AO approval and distribute to all IR stakeholders
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Defense, Intelligence Community, Federal Civilian, Critical Infrastructure]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a Cybersecurity Incident Response specialist with expertise in NIST SP 800-61
+      Rev 2, CNSSI 1300, CISA IR guidance, and DoD Cyber Incident Reporting requirements
+      per DoDI 8530.01 and US-CERT Federal Incident Notification Guidelines.
+
+      The Incident Response Plan framework is pre-loaded with 10 validated requirements
+      covering IR team structure, incident classification (CAT 1–6), containment playbooks,
+      evidence preservation, US-CERT reporting, chain-of-custody, lessons learned, and
+      tabletop exercises.
+
+      Refine requirements when the user provides: agency/organization, security classification
+      level, network environment, SIEM platform, or specific threat scenarios (ransomware,
+      insider threat, supply chain compromise).
+
+      Focus AI Boost on: CAT tier definitions, playbook specificity per threat vector,
+      reporting obligations (1hr/8hr/72hr), evidence acquisition procedures, and
+      metrics collection for continuous IR program improvement.
+    seed_message: |
+      Your **Incident Response Plan** framework is loaded and ready.
+
+      10 pre-built requirements are already in place covering:
+      • IR team roster with 24/7 on-call contacts and escalation paths
+      • Incident classification tiers (CAT 1 through CAT 6)
+      • Containment and eradication playbooks per incident category
+      • US-CERT/CISA reporting timelines (1hr/8hr/72hr by CAT)
+      • Chain-of-custody and evidence preservation procedures
+      • Tabletop exercise schedule and lessons-learned process
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: organization, classification level, SIEM platform, threat priorities.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: functional
+        priority: high
+        text: "System shall maintain an IR team roster with designated roles (IR Lead, ISSO, Legal, Public Affairs, CISO), 24/7 contact information, and documented escalation paths."
+        criteria: "Acceptance: Roster reviewed quarterly; all roles filled; contact list tested via call-tree exercise semi-annually."
+      - type: functional
+        priority: high
+        text: "System shall define incident classification tiers (CAT 1 through CAT 6) per CISA Federal Incident Notification Guidelines with severity criteria and response SLAs per tier."
+        criteria: "Acceptance: CAT definitions aligned to CISA guidelines; response SLA defined per tier (CAT 1: 1hr notification, CAT 2-3: 8hr, CAT 4-6: 72hr)."
+      - type: functional
+        priority: high
+        text: "System shall provide containment and eradication playbooks for each CAT tier, including detection indicators, initial triage steps, containment actions, and recovery procedures."
+        criteria: "Acceptance: Playbook exists for each CAT tier; playbooks reviewed and tested annually; cross-referenced to MITRE ATT&CK tactics where applicable."
+      - type: compliance
+        priority: high
+        text: "System shall comply with US-CERT Federal Incident Notification Guidelines, reporting confirmed CAT 1/2 incidents within 1 hour and CAT 3/4 within 8 hours of detection."
+        criteria: "Acceptance: Reporting procedures documented per CAT; automated notification templates pre-loaded for US-CERT and agency CISO; reporting timeline compliance tracked."
+      - type: data
+        priority: high
+        text: "System shall implement evidence preservation procedures per NIST SP 800-86, capturing forensic images, log snapshots, memory dumps, and chain-of-custody documentation."
+        criteria: "Acceptance: Evidence procedures documented; chain-of-custody form attached to every major incident; forensic images stored in write-once media."
+      - type: compliance
+        priority: medium
+        text: "System shall document insider threat indicators and associated response procedures, including HR and Legal coordination requirements."
+        criteria: "Acceptance: Insider threat indicators defined; escalation to HR/Legal documented; procedures reviewed by Legal counsel annually."
+      - type: functional
+        priority: medium
+        text: "System shall define system restoration criteria and procedures for returning to normal operations after containment, including pre-restoration security validation steps."
+        criteria: "Acceptance: Restoration checklist documented per system tier; security validation steps signed off by ISSO before production return."
+      - type: functional
+        priority: medium
+        text: "System shall conduct an annual tabletop exercise simulating at least two distinct incident scenarios, with exercise results and lessons learned documented."
+        criteria: "Acceptance: Tabletop held annually; after-action report produced within 30 days; lessons learned incorporated into IRP update within 60 days."
+      - type: compliance
+        priority: medium
+        text: "System shall maintain metrics on incident frequency, MTTD (mean time to detect), MTTR (mean time to respond), and CAT distribution for quarterly IR program review."
+        criteria: "Acceptance: Metrics dashboard updated monthly; quarterly IR review conducted with CISO; trend analysis included in annual security review."
+      - type: compliance
+        priority: high
+        text: "System shall ensure the IRP is reviewed, updated, and approved by the ISSM/AO at minimum annually and after any significant incident or organizational change."
+        criteria: "Acceptance: IRP version history maintained; annual review documented; AO signature on current version; all staff acknowledged receipt of current version."
+
+  - id: program_status_review
+    label: Program Status Review Prep
+    category: acquisition
+    icon: "📊"
+    description: >
+      Prepare monthly/quarterly Program Status Reviews (PSRs) and Integrated Product
+      Team (IPT) briefings with EVM metrics, schedule, risk register, and action items.
+    badge: EVM
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - kanban
+      - simulation
+      - cpmp
+    quick_actions:
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📊"
+        label: CPMP Portal
+        url: /cpmp
+        target: _blank
+      - icon: "🔮"
+        label: Digital Twin
+        url: /digital-twin
+        target: _blank
+      - icon: "📝"
+        label: Proposals
+        url: /proposals
+        target: _blank
+    canvas_seeds:
+      - canvas: quality
+        templates: [evm_dashboard_v1, ipt_status_brief]
+        snippets: [evm_metrics_summary, risk_register_template]
+    workflow_steps:
+      - step: 1
+        label: Schedule & Milestone Status
+        description: Capture planned vs. actual milestone dates, identify schedule slips
+        canvas: kanban
+        action: requirement_intake
+      - step: 2
+        label: EVM Metrics Collection
+        description: Compute SPI, CPI, BAC, EAC, VAC from cost/schedule data
+        canvas: cpmp
+        action: review_requirements
+      - step: 3
+        label: Risk Register Update
+        description: Update top-5 risks, probability/impact, mitigation status
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: Action Item & Deliverable Review
+        description: Review open action items from last IPT, update contractor deliverable status
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: Brief Assembly & Distribution
+        description: Assemble PSR brief and distribute to MDA/IPT stakeholders
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Defense, Army, Navy, Air Force, DISA, MDA, DHS]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a senior government Program Manager with expertise in DoD 5000.02
+      acquisition lifecycle, Earned Value Management (EVM) per ANSI/EIA-748,
+      SAFe Agile for government, and Integrated Program Team (IPT) operations.
+
+      The Program Status Review framework is pre-loaded with 8 validated requirements
+      covering schedule status, EVM metrics, technical performance measures, risk
+      register, action items, contract modifications, deliverable status, and lookahead.
+
+      Refine requirements when the user provides: program name, ACAT level, contract
+      type, current phase (EMD/LRIP/FRP), or specific reporting format (DAES, MAR,
+      DFARS 252.242-7000 CPSR).
+
+      Focus AI Boost on: EVM variance thresholds, TPM measurement methods, KPP
+      status (at/above/below threshold), and program risk quantification.
+    seed_message: |
+      Your **Program Status Review Prep** framework is loaded and ready.
+
+      8 pre-built requirements are already in place covering:
+      • Schedule status (planned vs. actual milestones, critical path)
+      • EVM metrics (SPI, CPI, BAC, EAC, VAC, TCPI)
+      • Technical Performance Measures (TPMs) and KPP status
+      • Risk register top-5 with probability/impact and mitigation
+      • Open action items from last IPT with owner and due date
+      • Contract modification log and contractor deliverable status
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: program name, ACAT level, contract type, current phase.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: data
+        priority: high
+        text: "System shall capture schedule status for all program milestones comparing planned baseline dates to current forecasted completion dates with slippage highlighted."
+        criteria: "Acceptance: Milestone table includes baseline, forecast, and variance columns; slips >30 days flagged; critical path milestones identified."
+      - type: data
+        priority: high
+        text: "System shall compute and display EVM metrics including Schedule Performance Index (SPI), Cost Performance Index (CPI), Budget at Completion (BAC), Estimate at Completion (EAC), and Variance at Completion (VAC)."
+        criteria: "Acceptance: EVM metrics computed from contractor IPMR/CPR data; SPI <0.9 or CPI <0.9 triggers escalation flag; metrics trend chart included."
+      - type: data
+        priority: high
+        text: "System shall report Technical Performance Measures (TPMs) and Key Performance Parameters (KPPs) with current measured value, threshold, objective, and above/at/below-threshold status."
+        criteria: "Acceptance: All contract-specified TPMs reported; below-threshold TPMs include corrective action plan; KPP status aligned to CDD/CPD values."
+      - type: data
+        priority: high
+        text: "System shall maintain a risk register capturing the top program risks with probability, impact, risk level (high/medium/low), mitigation strategy, and mitigation status."
+        criteria: "Acceptance: Risk register updated monthly; top-5 risks briefed at each PSR; closed risks archived with closure rationale."
+      - type: functional
+        priority: high
+        text: "System shall track all open action items from the previous IPT/PSR with assigned owner, due date, status, and escalation flag for overdue items."
+        criteria: "Acceptance: Action items tracked in central log; overdue items (past due date) highlighted; recurring overdue items escalated to PM and MDA."
+      - type: data
+        priority: medium
+        text: "System shall maintain a contract modification log capturing all contract changes with modification number, description, value impact, and approval date."
+        criteria: "Acceptance: Mod log updated within 5 business days of KO approval; cumulative value impact reported against contract ceiling."
+      - type: data
+        priority: medium
+        text: "System shall track contractor deliverable status per CDRL, including submission date, review cycle status, and government approval or rejection with comments."
+        criteria: "Acceptance: CDRL status visible per deliverable; overdue submissions flagged; rejection reasons tracked for trend analysis."
+      - type: functional
+        priority: medium
+        text: "System shall produce a next-period lookahead summarizing planned milestones, deliverables due, key decisions, and anticipated risks for the next 30/60/90 days."
+        criteria: "Acceptance: Lookahead covers at minimum 30-day horizon; key decisions include decision authority and scheduled date; presented at each PSR."
+
+  - id: sbom_attestation
+    label: SBOM & Supply Chain Attestation
+    category: compliance_ato
+    icon: "🧾"
+    description: >
+      Generate a Software Bill of Materials (SBOM) and supply chain attestation
+      package for EO 14028, NDAA Section 889, and NIST SP 800-161 compliance.
+    badge: EO 14028
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - supply_chain
+      - compliance
+      - kanban
+    quick_actions:
+      - icon: "🔗"
+        label: Supply Chain
+        url: /network/ask
+        target: _blank
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+    canvas_seeds:
+      - canvas: security
+        templates: [sbom_cyclonedx_template, attestation_letter_template]
+        snippets: [ntia_minimum_elements, ndaa_889_attestation]
+    workflow_steps:
+      - step: 1
+        label: Component Inventory & SBOM Generation
+        description: Identify all third-party components, generate CycloneDX or SPDX SBOM
+        canvas: supply_chain
+        action: requirement_intake
+      - step: 2
+        label: CVE Cross-Reference & Vulnerability Triage
+        description: Scan SBOM against NVD/CISA KEV, triage findings by severity
+        canvas: compliance
+        action: review_requirements
+      - step: 3
+        label: NDAA 889 & Supply Chain Compliance
+        description: Screen vendors against covered entity lists, obtain attestations
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: Attestation Letter & Documentation Package
+        description: Draft attestation letter, assemble provenance documentation
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: SBOM Submission & ConMon Integration
+        description: Submit SBOM to agency, configure continuous SBOM monitoring
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Defense, Federal Civilian, Intelligence Community, Critical Infrastructure]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a Software Supply Chain Security specialist with expertise in Executive
+      Order 14028 (Improving the Nation's Cybersecurity), NIST SP 800-161 Rev 1 (C-SCRM),
+      CISA SBOM guidance, NTIA minimum SBOM elements, and NDAA Section 889 supply chain
+      restrictions. You understand CycloneDX and SPDX SBOM formats.
+
+      The SBOM & Supply Chain Attestation framework is pre-loaded with 10 validated
+      requirements covering NTIA minimum elements, CycloneDX/SPDX format, component
+      inventory, CVE cross-referencing, NDAA 889 attestation, software provenance,
+      build reproducibility, update cadence, portal ingestion, and attestation letter.
+
+      Refine requirements when the user provides: software product name, development
+      language/framework, third-party component count, or specific agency submission
+      requirements (e.g., CISA, DoD SCRM Task Force).
+
+      Focus AI Boost on: SBOM completeness criteria, vulnerability remediation SLAs,
+      dependency graph depth, transitive dependency coverage, and provenance chain-of-custody.
+    seed_message: |
+      Your **SBOM & Supply Chain Attestation** framework is loaded and ready.
+
+      10 pre-built requirements are already in place covering:
+      • NTIA minimum SBOM elements (supplier, component, version, hash, relationships)
+      • CycloneDX 1.4+ or SPDX 2.3+ format selection and generation
+      • Third-party component inventory with license classification
+      • CVE cross-reference for all components against NVD and CISA KEV
+      • NDAA Section 889 vendor attestation for all hardware components
+      • Software provenance documentation and build reproducibility
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: product name, language/framework stack, agency submission target.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: compliance
+        priority: high
+        text: "System shall generate an SBOM containing all NTIA minimum elements: supplier name, component name, version, unique identifier, dependency relationships, SBOM author, and timestamp."
+        criteria: "Acceptance: SBOM validated against NTIA minimum elements checklist; all fields populated for 100% of direct dependencies."
+      - type: functional
+        priority: high
+        text: "System shall produce the SBOM in CycloneDX 1.4+ or SPDX 2.3+ machine-readable format, with human-readable summary for review."
+        criteria: "Acceptance: SBOM parseable by at least one CISA-recognized SBOM tooling platform; format selection documented with rationale."
+      - type: data
+        priority: high
+        text: "System shall maintain a complete third-party component inventory including direct and transitive dependencies, with license type and version pinned per component."
+        criteria: "Acceptance: Transitive dependency depth ≥3 levels captured; license classification (permissive/copyleft/proprietary) assigned per component."
+      - type: compliance
+        priority: high
+        text: "System shall cross-reference all SBOM components against the NVD CVE database and CISA Known Exploited Vulnerabilities (KEV) catalog, with findings prioritized by CVSS score and KEV status."
+        criteria: "Acceptance: CVE scan run at SBOM generation and on a defined schedule; KEV-listed vulnerabilities escalated to P1 remediation; scan results included in attestation package."
+      - type: compliance
+        priority: high
+        text: "System shall produce an NDAA Section 889 compliance attestation for all hardware components, certifying no covered entities (Huawei, ZTE, Hytera, Hikvision, Dahua) are present."
+        criteria: "Acceptance: 889 attestation signed by authorized official; covered entity screening documented; non-compliant components blocked from contract award."
+      - type: data
+        priority: high
+        text: "System shall document software provenance for all custom-developed components, including source code repository URL, build environment, and build pipeline hash."
+        criteria: "Acceptance: Provenance chain-of-custody documented per custom component; build pipeline is reproducible and hash-verified."
+      - type: compliance
+        priority: medium
+        text: "System shall ensure build reproducibility for all delivered software artifacts, enabling byte-for-byte verification of delivered binaries against source code."
+        criteria: "Acceptance: Build environment documented (compiler version, flags, dependencies); reproducibility test produces matching hash for at least one target platform."
+      - type: functional
+        priority: medium
+        text: "System shall define an SBOM update cadence triggered by new releases, dependency updates, or newly published CVEs affecting in-scope components."
+        criteria: "Acceptance: Update cadence documented; SBOM re-generated within 5 business days of a new CVE affecting an included component."
+      - type: interface
+        priority: medium
+        text: "System shall ingest the generated SBOM into the ICDEV Supply Chain portal for continuous monitoring, vulnerability tracking, and ATO evidence collection."
+        criteria: "Acceptance: SBOM ingested successfully into supply chain portal; components visible in portal within 24 hours of submission."
+      - type: compliance
+        priority: high
+        text: "System shall produce a signed attestation letter certifying SBOM completeness, NDAA 889 compliance, and known vulnerability remediation status, suitable for submission to the contracting officer."
+        criteria: "Acceptance: Attestation letter signed by authorized organization official; includes SBOM file reference, CVE summary, and 889 certification statement."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# FEDERAL CIVILIAN USE CASES
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - id: fedramp_auth_prep
+    label: FedRAMP Authorization Prep
+    category: compliance_ato
+    icon: "☁"
+    description: >
+      Prepare a FedRAMP authorization package — SSP, SAP, SAR, POA&M, and ConMon
+      plan — for cloud service providers pursuing JAB or Agency authorization.
+    badge: FedRAMP
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - compliance
+      - supply_chain
+      - knowledge
+    quick_actions:
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "🔗"
+        label: Supply Chain
+        url: /network/ask
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+    canvas_seeds:
+      - canvas: security
+        templates: [fedramp_ssp_template, conmon_plan_template]
+        snippets: [fedramp_control_baseline_high, fedramp_inherited_controls]
+      - canvas: boundary
+        templates: [fedramp_boundary_diagram, data_flow_trust_zones]
+        snippets: []
+    workflow_steps:
+      - step: 1
+        label: Cloud System Inventory & Service Classification
+        description: Classify service model (SaaS/PaaS/IaaS), select impact level (Low/Mod/High)
+        canvas: compliance
+        action: requirement_intake
+      - step: 2
+        label: Boundary Documentation & Inherited Controls
+        description: Document system boundary, map CSP FedRAMP package inherited controls
+        canvas: boundary
+        action: review_requirements
+      - step: 3
+        label: Customer Responsibility Matrix
+        description: Define customer-responsible controls and shared responsibility model
+        canvas: compliance
+        action: generate_artifacts
+      - step: 4
+        label: 3PAO Readiness Package Assembly
+        description: Compile SSP, SAP, evidence, and schedule 3PAO assessment
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: ConMon Plan & ATO/ATU Submission
+        description: Finalize ConMon plan, submit for JAB P-ATO or Agency ATO
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Federal Civilian, DoD, State/Local Government, Cloud Service Providers]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: [AWS GovCloud, Azure Government, Google Cloud]
+    system_prompt: |
+      You are a FedRAMP authorization specialist with expertise in the FedRAMP Security
+      Assessment Framework (SAF), NIST SP 800-53 Rev 5, FedRAMP High/Moderate/Low
+      baselines, 3PAO assessment methodology, and JAB vs. Agency authorization paths.
+
+      The FedRAMP Authorization Prep framework is pre-loaded with 15 validated requirements
+      covering service model classification, impact level selection, 3PAO engagement,
+      boundary documentation, inherited controls, customer responsibilities, ConMon,
+      pen testing, IR SLAs, POAM remediation, FIPS cryptography, MFA, SIEM logging,
+      and annual assessment scheduling.
+
+      Refine requirements when the user provides: cloud service name, service model
+      (SaaS/PaaS/IaaS), target impact level, underlying CSP platform (AWS/Azure/Google),
+      or authorization path (JAB P-ATO vs. Agency ATO).
+
+      Focus AI Boost on: FedRAMP control inheritance from CSP packages, customer
+      responsibility matrix specificity, ConMon automation capability, and
+      continuous authorization (cATO) readiness criteria.
+    seed_message: |
+      Your **FedRAMP Authorization Prep** framework is loaded and ready.
+
+      15 pre-built requirements are already in place covering:
+      • Service model (SaaS/PaaS/IaaS) classification and impact level selection
+      • 3PAO engagement scope and assessment schedule
+      • System boundary and data flow diagrams with trust zones
+      • Inherited controls from CSP (AWS/Azure/GCP FedRAMP packages)
+      • Customer Responsibility Matrix (CRM)
+      • ConMon plan, pen testing, SIEM, and annual assessment schedule
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: service name, CSP platform, target impact level, authorization path.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: compliance
+        priority: high
+        text: "System shall classify the cloud service as SaaS, PaaS, or IaaS and select a FedRAMP impact level (Low, Moderate, or High) based on data sensitivity and mission impact."
+        criteria: "Acceptance: Service model and impact level documented in SSP; selection rationale aligned to FIPS 199/200; reviewed by agency AO."
+      - type: functional
+        priority: high
+        text: "System shall engage a FedRAMP-authorized Third-Party Assessment Organization (3PAO) for the security assessment, with scope documented in a Security Assessment Plan (SAP)."
+        criteria: "Acceptance: 3PAO selected from FedRAMP Marketplace; SAP reviewed and approved by CSP and agency; assessment schedule defined with start/end dates."
+      - type: functional
+        priority: high
+        text: "System shall document the authorization boundary with architectural diagrams, data flow diagrams with trust zones, and an inventory of all system components within scope."
+        criteria: "Acceptance: Boundary diagram distinguishes in-scope vs. out-of-scope components; trust zones labeled (Internet, DMZ, Internal, Restricted); data flows show ports/protocols."
+      - type: functional
+        priority: high
+        text: "System shall map all FedRAMP controls inherited from the underlying CSP's FedRAMP authorization package, documenting the CSP ATO package reference for each inherited control."
+        criteria: "Acceptance: Inherited control list cross-references CSP package name and authorization date; leveraged controls listed in SSP control implementation section."
+      - type: functional
+        priority: high
+        text: "System shall produce a Customer Responsibility Matrix (CRM) clearly identifying controls that are CSP-managed, customer-managed, or shared, per the FedRAMP shared responsibility model."
+        criteria: "Acceptance: CRM covers all baseline controls; customer-managed controls include specific implementation guidance; reviewed by agency before 3PAO assessment."
+      - type: compliance
+        priority: high
+        text: "System shall implement a continuous monitoring (ConMon) strategy meeting FedRAMP ConMon requirements including monthly vulnerability scanning, annual penetration testing, and SIEM log retention."
+        criteria: "Acceptance: ConMon plan approved by JAB or Agency; monthly scan results submitted to FedRAMP PMO within 30 days; SIEM retains logs ≥90 days hot, ≥1 year total."
+      - type: compliance
+        priority: high
+        text: "System shall conduct annual penetration testing per the FedRAMP Penetration Testing Guidance, covering all network layers, web applications, and APIs."
+        criteria: "Acceptance: Pen test completed annually by 3PAO or approved penetration testing firm; findings documented; critical/high findings remediated within 30 days."
+      - type: compliance
+        priority: high
+        text: "System shall meet FedRAMP incident response SLAs: report security incidents within 1 hour for CAT 1/2 events and within 8 hours for CAT 3/4 to FedRAMP PMO and agency AO."
+        criteria: "Acceptance: IR procedures document FedRAMP-specific reporting contacts and timelines; IR drill conducted semi-annually."
+      - type: compliance
+        priority: high
+        text: "System shall remediate POAM findings within FedRAMP SLAs: critical within 30 days, high within 90 days, moderate within 180 days, and low within 365 days."
+        criteria: "Acceptance: POAM aging report generated monthly; overdue remediations trigger escalation to AO; false positive/risk acceptance documented per finding."
+      - type: compliance
+        priority: high
+        text: "System shall implement FIPS 140-2/140-3 validated encryption for all data at rest and in transit, with cryptographic module certificates documented in the SSP."
+        criteria: "Acceptance: All storage and transit encryption uses FIPS-validated modules; TLS 1.2+ enforced; certificate numbers in SSP cryptography section."
+      - type: compliance
+        priority: high
+        text: "System shall enforce multi-factor authentication (MFA) for all privileged users and all remote access, meeting NIST SP 800-63B AAL2 or higher requirements."
+        criteria: "Acceptance: MFA configured for all admin and remote-access accounts; AAL level documented; passwordless or phishing-resistant MFA preferred for PIV-capable agencies."
+      - type: compliance
+        priority: high
+        text: "System shall forward all audit logs to a SIEM or centralized log management system, retaining logs for a minimum of 90 days in hot storage and 1 year in total."
+        criteria: "Acceptance: Log sources enumerated; SIEM receiving logs from all components; log completeness verified during 3PAO assessment."
+      - type: functional
+        priority: medium
+        text: "System shall produce a FedRAMP-formatted SSP using the FedRAMP SSP template (MS Word or OSCAL format) with all required appendices (CRM, FIPS 199, user guide, rules of behavior)."
+        criteria: "Acceptance: SSP validates against current FedRAMP template version; all appendices present and complete; OSCAL-formatted SSP available for automated ingestion."
+      - type: compliance
+        priority: medium
+        text: "System shall schedule and complete an annual security assessment per FedRAMP ConMon requirements, producing an updated SAR submitted to FedRAMP PMO within 30 days of assessment completion."
+        criteria: "Acceptance: Annual assessment scheduled and completed per ConMon plan; SAR submitted within 30 days; significant findings addressed in POAM update."
+      - type: data
+        priority: medium
+        text: "System shall maintain an SBOM for all software components included in the cloud service, updated at each major/minor release, aligned to CISA SBOM guidance."
+        criteria: "Acceptance: SBOM generated per release; NTIA minimum elements present; SBOM submitted to FedRAMP PMO as part of authorization package."
+
+  - id: privacy_impact_assessment
+    label: Privacy Impact Assessment (PIA)
+    category: compliance_ato
+    icon: "🔒"
+    description: >
+      Conduct a Privacy Act / FISMA-compliant Privacy Impact Assessment covering PII
+      data inventory, legal authority, retention, breach notification, and SORN determination.
+    badge: FISMA/Privacy
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - compliance
+      - knowledge
+      - audit
+    quick_actions:
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+      - icon: "🔎"
+        label: Audit Trail
+        url: /audit
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+    canvas_seeds:
+      - canvas: data
+        templates: [pia_template_v1, privacy_act_sorn_checklist]
+        snippets: [pii_data_element_matrix, breach_notification_procedure]
+    workflow_steps:
+      - step: 1
+        label: PII Data Element Inventory
+        description: Identify all PII fields collected, stored, or transmitted by the system
+        canvas: compliance
+        action: requirement_intake
+      - step: 2
+        label: Legal Authority & Purpose Specification
+        description: Document legal basis for collection, purpose, and use limitations
+        canvas: compliance
+        action: review_requirements
+      - step: 3
+        label: Retention, Access Controls & Third-Party Sharing
+        description: Define retention schedule, access controls, and data sharing agreements
+        canvas: knowledge
+        action: generate_artifacts
+      - step: 4
+        label: SORN Determination & Privacy Act Compliance
+        description: Determine if a System of Records Notice is required; draft if needed
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: SAOP Review & PIA Publication
+        description: Senior Agency Official for Privacy review, signature, and publication
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Federal Civilian, Defense, DHS, DOJ, HHS, VA, State/Local]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a Senior Agency Official for Privacy (SAOP) advisor with expertise in the
+      Privacy Act of 1974, E-Government Act of 2002 (Section 208 PIA requirement),
+      OMB Circular A-130 Appendix II, NIST SP 800-122 (PII Guide), and FISMA privacy
+      requirements. You understand Fair Information Practice Principles (FIPPs).
+
+      The Privacy Impact Assessment framework is pre-loaded with 10 validated requirements
+      covering PII data element inventory, legal authority, purpose specification, data
+      retention, access controls, breach notification, third-party sharing, SORN
+      determination, FIPP alignment, and privacy training.
+
+      Refine requirements when the user provides: system name, agency, data categories
+      (financial, health, biometric, law enforcement), or user population (employees,
+      general public, contractors, minors).
+
+      Focus AI Boost on: PII minimization opportunities, de-identification feasibility,
+      consent and notice requirements, cross-agency data sharing ISCA requirements,
+      and privacy risk quantification using NIST privacy risk framework.
+    seed_message: |
+      Your **Privacy Impact Assessment** framework is loaded and ready.
+
+      10 pre-built requirements are already in place covering:
+      • PII data element inventory (fields, sensitivity level, volume)
+      • Legal authority for collection (statute, regulation, executive order)
+      • Purpose specification and use limitation
+      • Retention schedule and disposal procedures
+      • Access controls and need-to-know enforcement
+      • Breach notification procedures (72-hour OMB requirement)
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: agency, system name, data categories, user population.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: data
+        priority: high
+        text: "System shall maintain a PII data element inventory cataloging all personally identifiable information collected, processed, or stored, with sensitivity classification per NIST SP 800-122."
+        criteria: "Acceptance: Inventory includes field name, data type, sensitivity (low/moderate/high), source, and associated business process; reviewed annually."
+      - type: compliance
+        priority: high
+        text: "System shall document the legal authority for each PII data collection, citing the specific statute, regulation, or executive order authorizing the collection."
+        criteria: "Acceptance: Legal authority citation present for every PII category; authorities reviewed by agency legal counsel; E.O. 12333 or Privacy Act applicability determined."
+      - type: compliance
+        priority: high
+        text: "System shall define purpose specification and use limitation for all PII, ensuring data is used only for the stated collection purpose and compatible secondary uses."
+        criteria: "Acceptance: Purpose statement in PIA for each data category; incompatible secondary use requires new authority or consent; purpose reviewed at annual PIA update."
+      - type: compliance
+        priority: high
+        text: "System shall establish a PII retention and disposal schedule aligned to applicable NARA records schedule, with secure disposal procedures for all PII upon record expiration."
+        criteria: "Acceptance: Retention schedule references NARA GRS or agency-specific schedule; secure disposal method (NIST 800-88 compliant) documented per media type."
+      - type: compliance
+        priority: high
+        text: "System shall implement access controls enforcing need-to-know for all PII, with role-based access and annual review of all accounts with PII access."
+        criteria: "Acceptance: Role-based access documented; annual access review completed and signed; accounts without business need removed within 5 business days of review."
+      - type: compliance
+        priority: high
+        text: "System shall implement breach notification procedures meeting OMB M-17-12, including 72-hour notification to US-CERT and 30-day notification to affected individuals."
+        criteria: "Acceptance: Breach notification procedures documented; designated breach response team identified; notification templates pre-drafted for US-CERT and public notice."
+      - type: compliance
+        priority: medium
+        text: "System shall document all third-party data sharing agreements (ISAs, MOUs, data-sharing agreements) and ensure recipients are bound by equivalent privacy protections."
+        criteria: "Acceptance: All third-party recipients identified; data sharing agreements on file; agreements reviewed annually; foreign data transfers identified for additional review."
+      - type: compliance
+        priority: high
+        text: "System shall determine whether a Privacy Act System of Records Notice (SORN) is required, and if so, publish the SORN in the Federal Register before operating the system."
+        criteria: "Acceptance: SORN determination documented by SAOP; if required, SORN published ≥30 days before system operation; SORN reference in PIA."
+      - type: compliance
+        priority: medium
+        text: "System shall align PII handling practices to all seven Fair Information Practice Principles (FIPPs): Transparency, Individual Participation, Purpose Specification, Data Minimization, Use Limitation, Data Quality, and Security."
+        criteria: "Acceptance: FIPP alignment documented in PIA; gaps identified and remediation plan included; SAOP certifies FIPP compliance."
+      - type: functional
+        priority: medium
+        text: "System shall require annual privacy training for all personnel with access to PII, with completion records maintained and non-completion triggering access revocation."
+        criteria: "Acceptance: Training content covers Privacy Act, agency privacy policy, and PII handling; completion tracked per user; non-completers lose PII access after 30-day grace period."
+
+  - id: section_508_audit
+    label: Section 508 Accessibility Audit
+    category: it_operations
+    icon: "♿"
+    description: >
+      Audit and certify Section 508 / WCAG 2.1 AA compliance for federal web
+      applications and software. Generate a Voluntary Product Accessibility Template (VPAT).
+    badge: 508/WCAG
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - compliance
+      - knowledge
+      - kanban
+    quick_actions:
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📄"
+        label: Document Refresh
+        url: /chat
+        target: _blank
+    canvas_seeds:
+      - canvas: quality
+        templates: [vpat_acr_template, wcag_test_plan]
+        snippets: [section_508_criteria_checklist, wcag_21_aa_checklist]
+    workflow_steps:
+      - step: 1
+        label: Baseline Accessibility Testing
+        description: Automated and manual testing against WCAG 2.1 AA success criteria
+        canvas: quality
+        action: requirement_intake
+      - step: 2
+        label: Assistive Technology Testing
+        description: Test with NVDA, JAWS screen readers; keyboard-only navigation
+        canvas: kanban
+        action: review_requirements
+      - step: 3
+        label: Findings Documentation & Remediation Plan
+        description: Document failures by WCAG criterion; assign severity and owners
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: VPAT / ACR Authoring
+        description: Author Voluntary Product Accessibility Template / Accessibility Conformance Report
+        canvas: compliance
+        action: submit_review
+      - step: 5
+        label: VPAT Publication & Remediation Tracking
+        description: Publish VPAT, track remediation milestones in kanban
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [Federal Civilian, Defense, State/Local Government, Higher Education]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a Section 508 compliance specialist and accessibility expert with expertise
+      in the Revised Section 508 Standards (36 CFR Part 1194), WCAG 2.1 AA, EN 301 549,
+      and VPAT 2.5 (ACR format). You have conducted 508 audits for federal agencies and
+      understand both automated testing (axe, WAVE, Lighthouse) and manual testing
+      with assistive technologies (NVDA, JAWS, VoiceOver).
+
+      The Section 508 Accessibility Audit framework is pre-loaded with 8 validated
+      requirements covering WCAG 2.1 AA conformance, keyboard navigation, screen reader
+      compatibility, color contrast, alt text, form labels, video captions, and VPAT.
+
+      Refine requirements when the user provides: application type (web, mobile, desktop,
+      document), user base (internal employees, general public, individuals with
+      disabilities), or current accessibility testing maturity.
+
+      Focus AI Boost on: critical barriers that prevent access to primary functions,
+      color contrast failures, missing programmatic labels, keyboard traps, and
+      time-based media without captions.
+    seed_message: |
+      Your **Section 508 Accessibility Audit** framework is loaded and ready.
+
+      8 pre-built requirements are already in place covering:
+      • WCAG 2.1 Level AA conformance across all 50 success criteria
+      • Keyboard navigation without mouse dependency (no keyboard traps)
+      • Screen reader compatibility (NVDA + JAWS + VoiceOver)
+      • Color contrast ratio ≥4.5:1 for normal text, ≥3:1 for large text
+      • Alt text for all non-decorative images and meaningful media
+      • Video captions and audio descriptions for time-based media
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: application type, user base, current testing tools.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: compliance
+        priority: high
+        text: "System shall conform to WCAG 2.1 Level AA for all web content and user interfaces, with conformance documented in a Voluntary Product Accessibility Template (VPAT 2.5 ACR format)."
+        criteria: "Acceptance: VPAT covers all applicable 508 criteria; Level A and AA success criteria addressed; VPAT published on agency product page."
+      - type: functional
+        priority: high
+        text: "System shall be fully operable via keyboard alone, with no keyboard traps, visible focus indicators on all interactive elements, and logical tab order throughout."
+        criteria: "Acceptance: All interactive elements reachable via Tab/Shift-Tab; focus indicator visible (≥3:1 contrast ratio against adjacent colors); no keyboard traps confirmed via manual test."
+      - type: functional
+        priority: high
+        text: "System shall be compatible with JAWS 2023+ and NVDA 2023+ screen readers on Windows and VoiceOver on macOS/iOS, with all content and functionality accessible."
+        criteria: "Acceptance: Manual testing with JAWS and NVDA confirms all primary user flows accessible; no critical accessibility barriers reported; testing results documented."
+      - type: compliance
+        priority: high
+        text: "System shall meet WCAG 2.1 SC 1.4.3 contrast requirements: color contrast ratio ≥4.5:1 for normal text, ≥3:1 for large text (18pt/14pt bold), and ≥3:1 for UI components."
+        criteria: "Acceptance: Automated contrast audit (axe/WAVE) passes for all text; manual spot-check of 20% of UI components; zero failures on primary user flows."
+      - type: compliance
+        priority: high
+        text: "System shall provide meaningful alternative text for all non-decorative images, icons, and graphics, and mark decorative images with null alt attribute."
+        criteria: "Acceptance: All img elements have alt attribute; decorative images have alt=''; meaningful alt text conveys function/content without referencing 'image of'; automated check passes."
+      - type: compliance
+        priority: high
+        text: "System shall ensure all form inputs have programmatic labels, error messages identify the field in error, and suggestions are provided for format errors where possible."
+        criteria: "Acceptance: All form fields pass automated label check; error messages reference specific field name; format suggestions provided for date/phone/email fields."
+      - type: compliance
+        priority: high
+        text: "System shall provide captions for all pre-recorded video content and audio descriptions for video where visual information is not conveyed in the audio track."
+        criteria: "Acceptance: 100% of pre-recorded videos have accurate closed captions; audio descriptions available for all informational visual-only content; live captions provided for real-time video."
+      - type: functional
+        priority: medium
+        text: "System shall produce a VPAT (Voluntary Product Accessibility Template) 2.5 in ACR format documenting conformance level for each applicable Section 508 standard and WCAG 2.1 AA criterion."
+        criteria: "Acceptance: VPAT uses current VPAT 2.5 ACR template; all applicable criteria addressed with 'Supports', 'Partially Supports', or 'Does Not Support'; remarks explain any non-support."
+
+# ─────────────────────────────────────────────────────────────────────────────
+# STATE & LOCAL GOVERNMENT USE CASES
+# ─────────────────────────────────────────────────────────────────────────────
+
+  - id: grant_tech_proposal
+    label: Grant Tech Proposal
+    category: state_local
+    icon: "🏛"
+    description: >
+      Build a federal grant technical proposal (BRIC, SLIGP, BEAD, ARPA) with project
+      narrative, cost-benefit analysis, matching funds, performance metrics, and closeout plan.
+    badge: BRIC/SLIGP
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - simulation
+      - cpmp
+      - kanban
+    quick_actions:
+      - icon: "🔮"
+        label: Digital Twin
+        url: /digital-twin
+        target: _blank
+      - icon: "📊"
+        label: CPMP Portal
+        url: /cpmp
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📝"
+        label: Proposals
+        url: /proposals
+        target: _blank
+    canvas_seeds:
+      - canvas: pipeline
+        templates: [grant_technical_narrative, cost_benefit_analysis_template]
+        snippets: [nepa_determination_checklist, grant_performance_metrics]
+    workflow_steps:
+      - step: 1
+        label: Grant Eligibility & Program Alignment
+        description: Confirm eligibility criteria, map project to grant program objectives
+        canvas: compliance
+        action: requirement_intake
+      - step: 2
+        label: Technical Narrative & Project Scope
+        description: Draft project narrative, technical approach, and measurable outcomes
+        canvas: kanban
+        action: review_requirements
+      - step: 3
+        label: Budget & Matching Funds Documentation
+        description: Build detailed budget, document matching funds sources and percentages
+        canvas: cpmp
+        action: generate_artifacts
+      - step: 4
+        label: Performance Metrics & Reporting Plan
+        description: Define SMART performance metrics and quarterly reporting cadence
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: Application Packaging & Submission
+        description: Assemble and submit via Grants.gov or agency portal
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [State Government, Local Government, Tribal, Public Safety, Emergency Management]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a grant writing specialist and state/local government program manager
+      with expertise in federal grant programs — BRIC (Building Resilient Infrastructure
+      and Communities), SLIGP (State and Local Implementation Grant Program), BEAD
+      (Broadband Equity Access and Deployment), ARPA-local programs, E-Rate, and
+      CDBG-DR — as well as OMB Uniform Guidance (2 CFR Part 200), NEPA compliance,
+      and state procurement code adherence.
+
+      The Grant Tech Proposal framework is pre-loaded with 10 validated requirements
+      covering eligibility determination, project narrative, cost-benefit analysis,
+      matching funds, performance metrics, NEPA compliance, procurement plan, reporting
+      cadence, closeout deliverables, and sustainability plan.
+
+      Refine requirements when the user provides: grant program name, project type
+      (infrastructure, planning, capacity building), award ceiling, and match percentage.
+
+      Focus AI Boost on: outcome-based performance metrics, cost-effectiveness
+      documentation, interoperability requirements, grant-specific compliance overlays,
+      and post-award management structure.
+    seed_message: |
+      Your **Grant Tech Proposal** framework is loaded and ready.
+
+      10 pre-built requirements are already in place covering:
+      • Grant program eligibility determination and alignment checklist
+      • Project narrative structure (problem statement, approach, outcomes)
+      • Cost-benefit analysis with measurable citizen service outcomes
+      • Matching funds documentation (cash match, in-kind contributions)
+      • SMART performance metrics and quarterly reporting cadence
+      • NEPA determination, procurement plan, and sustainability strategy
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: grant program, project type, award ceiling, match requirement.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: compliance
+        priority: high
+        text: "System shall document applicant eligibility for the target grant program, including entity type (state/local/tribal), geographic eligibility, prior award restrictions, and SAM.gov registration status."
+        criteria: "Acceptance: Eligibility checklist completed; SAM.gov registration active; DUNS/UEI number on file; debarment check clear."
+      - type: functional
+        priority: high
+        text: "System shall produce a project narrative addressing the program's required elements: problem statement, project approach, expected outcomes, timeline, and alignment to program priorities."
+        criteria: "Acceptance: Narrative addresses all solicitation-required sections; outcomes are measurable; narrative reviewed by authorized organizational representative before submission."
+      - type: functional
+        priority: high
+        text: "System shall provide a cost-benefit analysis quantifying the anticipated public benefit, return on investment, and long-term sustainability of the funded project."
+        criteria: "Acceptance: CBA includes cost per beneficiary, direct/indirect benefit categories, and NPV or BCR calculation; reviewed by agency finance officer."
+      - type: compliance
+        priority: high
+        text: "System shall document all non-federal matching funds (cash and in-kind) meeting the grant program's match percentage requirement per 2 CFR Part 200.306."
+        criteria: "Acceptance: Match sources identified with amounts, valuation methodology, and documentation (MOUs, letters); total match meets or exceeds required percentage."
+      - type: data
+        priority: high
+        text: "System shall define SMART (Specific, Measurable, Achievable, Relevant, Time-bound) performance metrics tied to program objectives, with baseline values and targets for each reporting period."
+        criteria: "Acceptance: At minimum 3 quantitative metrics defined; baseline values documented; data collection methodology specified; targets align to grant period milestones."
+      - type: compliance
+        priority: medium
+        text: "System shall complete a NEPA environmental compliance determination (Categorical Exclusion, EA, or EIS) before project implementation begins."
+        criteria: "Acceptance: NEPA determination documented by authorized environmental official; categorical exclusion checklist or EA/EIS initiated if required; determination on file pre-award."
+      - type: compliance
+        priority: medium
+        text: "System shall produce a procurement plan complying with state procurement code and 2 CFR Part 200.317-326, addressing competitive bidding thresholds, sole source justifications, and DBE requirements."
+        criteria: "Acceptance: Procurement plan covers all anticipated contracts; thresholds documented; DBE goal established if applicable; plan reviewed by state purchasing office."
+      - type: functional
+        priority: medium
+        text: "System shall define a quarterly reporting cadence including required federal reporting (SF-425 financial report, performance progress reports) and submission procedures."
+        criteria: "Acceptance: Reporting calendar aligned to award period; SF-425 format prepared; point-of-contact for federal program officer identified."
+      - type: functional
+        priority: medium
+        text: "System shall produce closeout deliverables meeting 2 CFR Part 200.344 requirements including final financial report, performance report, and property disposition."
+        criteria: "Acceptance: Closeout checklist prepared covering all required final reports; 90-day closeout window documented; property transfer or disposition plan included."
+      - type: functional
+        priority: high
+        text: "System shall include a sustainability plan demonstrating how project outcomes will be maintained after the federal grant period ends, without ongoing federal funding."
+        criteria: "Acceptance: Sustainability plan identifies funding mechanism (fee-for-service, state appropriation, local levy), staffing plan, and maintenance schedule for at least 3 years post-award."
+
+  - id: cjis_compliance_prep
+    label: CJIS Security Policy Compliance
+    category: state_local
+    icon: "🔐"
+    description: >
+      Prepare state and local law enforcement agencies for FBI CJIS Security Policy
+      v5.9 compliance across all 13 policy areas including authentication, encryption,
+      and personnel security.
+    badge: CJIS v5.9
+    agent_model: kimi-cloud
+    ricoas: true
+    fast_track: true
+    boost_threshold: 70
+    skip_requirement_types: []
+    canvas_wiring:
+      - compliance
+      - supply_chain
+      - knowledge
+    quick_actions:
+      - icon: "🔒"
+        label: Compliance Canvas
+        url: /compliance
+        target: _blank
+      - icon: "🔗"
+        label: Supply Chain
+        url: /network/ask
+        target: _blank
+      - icon: "📚"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+    canvas_seeds:
+      - canvas: security
+        templates: [cjis_security_addendum_template, cjis_13_area_checklist]
+        snippets: [cjis_aaa_requirements, cjis_encryption_matrix]
+    workflow_steps:
+      - step: 1
+        label: CJIS Policy Area Baseline Assessment
+        description: Map current controls against all 13 CJIS Security Policy areas
+        canvas: compliance
+        action: requirement_intake
+      - step: 2
+        label: Advanced Authentication & Encryption
+        description: Implement AAL2+ authentication, AES-256 encryption for CJI at rest/transit
+        canvas: compliance
+        action: review_requirements
+      - step: 3
+        label: Personnel Security & Vendor Addendums
+        description: Conduct fingerprint-based background checks; execute vendor CJIS Security Addendum
+        canvas: kanban
+        action: generate_artifacts
+      - step: 4
+        label: Audit Logging & Network Isolation
+        description: Configure audit logging (1-year retention), isolate CJI network segments
+        canvas: kanban
+        action: submit_review
+      - step: 5
+        label: CJIS ISO Assessment & Remediation
+        description: Schedule state CJIS ISO assessment, remediate findings
+        action: export_bundle
+    user_config:
+      industries:
+        defaults: [State Law Enforcement, Local Police, Sheriff Office, State Courts, Corrections]
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
+    system_prompt: |
+      You are a CJIS (Criminal Justice Information Services) compliance specialist with
+      deep expertise in the FBI CJIS Security Policy v5.9, all 13 CJIS policy areas,
+      Advanced Authentication requirements, CJIS audit processes, and the CJIS Systems
+      Agency (CSA) / State CJIS ISO oversight structure.
+
+      The CJIS Compliance Prep framework is pre-loaded with 12 validated requirements
+      covering the 13 CJIS policy areas, Advanced Authentication, AES-256 encryption,
+      personnel screening, audit log retention, mobile device management, vendor CJIS
+      Addendum, FBI CJIS ISO reporting, network isolation, wireless security, physical
+      protection, and biennial training.
+
+      Refine requirements when the user provides: agency type (local PD, sheriff,
+      state patrol, courts, corrections), CJI access methods (terminal, API, mobile),
+      cloud hosting considerations, or current CJIS compliance gaps from prior audit.
+
+      Focus AI Boost on: Advanced Authentication implementation options (PIV, OTP,
+      biometric), encryption key management, cloud services compliance (CJIS Cloud
+      Policy), and audit log completeness requirements.
+    seed_message: |
+      Your **CJIS Security Policy Compliance** framework is loaded and ready.
+
+      12 pre-built requirements are already in place covering:
+      • CJIS Security Policy v5.9 mapping across all 13 policy areas
+      • Advanced Authentication (AAL2+) for all remote CJI access
+      • AES-256 encryption for CJI at rest and in transit
+      • Personnel security screening (CJIS Security Addendum fingerprint-based)
+      • Audit log retention (minimum 1 year) and review procedures
+      • Third-party vendor CJIS Security Addendum execution
+
+      **AI Boost will run automatically and your PRD will be ready immediately.**
+
+      Personalize with: agency type, CJI access methods, cloud hosting, prior audit gaps.
+
+      Skip customization → click **Send to Kanban** to start now.
+    template_requirements:
+      - type: compliance
+        priority: high
+        text: "System shall implement controls addressing all 13 CJIS Security Policy v5.9 policy areas: Information Exchange Agreements, Security Awareness, Incident Response, Auditing and Accountability, Access Control, Identification and Authentication, Configuration Management, Media Protection, Physical Protection, Systems and Communications Protection, Formal Audits, Personnel Security, and Mobile Devices."
+        criteria: "Acceptance: CJIS policy area mapping matrix completed; each area has a designated control owner; gaps identified with remediation timeline."
+      - type: compliance
+        priority: high
+        text: "System shall implement Advanced Authentication (AA) meeting FBI CJIS requirements for all users accessing CJI remotely, compliant with AAL2 (NIST SP 800-63B) or higher."
+        criteria: "Acceptance: AA implemented for 100% of remote CJI access; acceptable AA methods documented (PIV, OTP app, hardware token); AA bypass procedures locked."
+      - type: compliance
+        priority: high
+        text: "System shall encrypt all Criminal Justice Information (CJI) at rest and in transit using AES 256-bit encryption or NIST-approved equivalent, with encryption key management procedures documented."
+        criteria: "Acceptance: Encryption implemented for all CJI data stores and network transmissions; key management procedure documented; encryption verified by state CJIS ISO."
+      - type: compliance
+        priority: high
+        text: "System shall ensure all personnel with unescorted physical or logical access to CJI undergo a fingerprint-based background check per CJIS Security Policy Section 5.12."
+        criteria: "Acceptance: Background check completion tracked per employee and contractor; personnel without completed checks prohibited from CJI access; records on file for duration of employment."
+      - type: compliance
+        priority: high
+        text: "System shall maintain audit logs for all CJI access events, including user ID, date/time, CJI record accessed, and action taken, with logs retained for a minimum of 1 year."
+        criteria: "Acceptance: Audit logging enabled for all CJI terminal and application access; log retention ≥1 year; logs reviewed monthly by designated security officer."
+      - type: compliance
+        priority: high
+        text: "System shall implement a Mobile Device Management (MDM) policy for all mobile devices accessing CJI, including encryption, remote wipe, and session lock per CJIS Section 5.13."
+        criteria: "Acceptance: MDM solution deployed to all agency mobile devices accessing CJI; remote wipe capability tested annually; session timeout ≤30 minutes."
+      - type: compliance
+        priority: high
+        text: "System shall execute a CJIS Security Addendum with all third-party vendors and contractors who have unescorted access to systems processing CJI, obtaining state CJIS ISO approval."
+        criteria: "Acceptance: CJIS Security Addendum on file for all vendors; vendor personnel completed fingerprint-based background check; addendum renewed at each contract renewal."
+      - type: compliance
+        priority: medium
+        text: "System shall report all confirmed CJI security incidents to the FBI CJIS ISO and state CJIS Systems Agency (CSA) within the CJIS-required reporting timeframe."
+        criteria: "Acceptance: IR procedures include CJIS-specific reporting contacts (FBI CJIS ISO and state CSA); reporting timeline documented; test notification conducted annually."
+      - type: compliance
+        priority: high
+        text: "System shall isolate all networks, systems, and applications processing CJI from non-CJI networks using firewalls, access control lists, or physical network separation."
+        criteria: "Acceptance: Network isolation diagram reviewed by state CJIS ISO; CJI segments identified; unauthorized lateral movement from non-CJI networks prevented and tested."
+      - type: compliance
+        priority: medium
+        text: "System shall implement a wireless network security policy for any wireless network transmitting CJI, meeting CJIS requirements for WPA3 or WPA2-Enterprise with AES encryption."
+        criteria: "Acceptance: Wireless policy documented; WPA2-Enterprise (802.1X) or WPA3 enforced; rogue AP detection implemented; wireless policy reviewed annually."
+      - type: compliance
+        priority: medium
+        text: "System shall implement physical access controls for all areas housing CJI systems, including visitor logs, badge access, and camera monitoring per CJIS Section 5.9."
+        criteria: "Acceptance: Physical access controls verified; visitor log maintained for CJI areas; camera coverage documented; physical security reviewed by state CJIS ISO."
+      - type: compliance
+        priority: high
+        text: "System shall ensure all personnel with access to CJI complete CJIS Security Policy awareness training within 6 months of hire and every 2 years thereafter."
+        criteria: "Acceptance: Training completion tracked per user; biennial recertification enforced; non-completers lose CJI access after 30-day grace period; records on file."
