@@ -61,6 +61,7 @@ from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
     close_canvas_connections as _close_canvas_connections,
 )
+from tools.monitor.watchcon import tier_summary as _watchcon_summary, get_alerts_by_tier as _watchcon_by_tier  # noqa: E402
 # P1.1: Centralized API blueprint registration (replaces 50+ individual imports)
 from tools.dashboard.api import register_api_blueprints  # noqa: E402
 try:
@@ -1789,6 +1790,26 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/watchcon/summary", methods=["GET"])
+    def api_watchcon_summary():
+        """Return alert counts grouped by WATCHCON tier."""
+        try:
+            return jsonify(_watchcon_summary())
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/watchcon/tier/<int:tier>", methods=["GET"])
+    def api_watchcon_tier(tier):
+        """Return alerts for a specific WATCHCON tier (2, 3, or 4)."""
+        limit = min(max(int(flask_request.args.get("limit", 50)), 1), 200)
+        try:
+            alerts = _watchcon_by_tier(tier, limit=limit)
+            return jsonify({"tier": tier, "alerts": alerts, "count": len(alerts)})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @app.route("/api/dashboard/autonomous-feed", methods=["GET"])
     def api_dashboard_autonomous_feed():
         """GET /api/dashboard/autonomous-feed — Recent autonomous agent activity."""
@@ -2598,6 +2619,7 @@ def create_app() -> Flask:
                 resolved_count=resolved,
                 unresolved_failures=unresolved_failures,
                 health_status=health,
+                watchcon_summary=_watchcon_summary(),
             )
         finally:
             conn.close()
