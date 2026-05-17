@@ -24,6 +24,17 @@ logger = logging.getLogger("icdev.siem_alert_forwarder")
 SLA_SECONDS = 5
 
 
+class SIEMLatencyExceededError(TimeoutError):
+    """Raised when a SIEM alert delivery exceeds the configured SLA."""
+
+    def __init__(self, duration_ms: float, sla_seconds: int = SLA_SECONDS):
+        self.duration_ms = duration_ms
+        self.sla_seconds = sla_seconds
+        super().__init__(
+            f"SIEM delivery latency {duration_ms:.2f} ms exceeds SLA of {sla_seconds} s"
+        )
+
+
 def forward_alert(
     alert_payload: Dict[str, Any],
     siem_endpoint: str,
@@ -47,6 +58,7 @@ def forward_alert(
         - ``error`` (str | None)
     """
     delivery_id = str(uuid.uuid4())
+    start_ts = datetime.now(timezone.utc)
     t0 = time.perf_counter()
 
     body = json.dumps(alert_payload).encode("utf-8")
@@ -86,6 +98,15 @@ def forward_alert(
 
     duration_ms = round((time.perf_counter() - t0) * 1000, 2)
     sla_met = (error is None) and (duration_ms <= SLA_SECONDS * 1000)
+
+    if error is None and duration_ms > SLA_SECONDS * 1000:
+        logger.error(
+            "SIEM latency exceeded SLA: %s ms > %s s (delivery_id=%s)",
+            duration_ms,
+            SLA_SECONDS,
+            delivery_id,
+        )
+        raise SIEMLatencyExceededError(duration_ms, SLA_SECONDS)
 
     # Persist to siem_delivery_log (append-only / immutable)
     try:

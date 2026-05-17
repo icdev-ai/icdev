@@ -21,15 +21,21 @@ Usage::
 
 from __future__ import annotations
 
+import json as _json
 import logging
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from tools.db.storage import get_connection
 from tools.il5.ingestion import (
     SLA_SECONDS,
     get_il5_events,
+    ingest_il5_event,
 )
+from tools.il5.sla_handler import IL5PipelineTimer
 
 log = logging.getLogger(__name__)
 
@@ -141,13 +147,6 @@ def _poll_feed(
 
     Returns a summary dict: {fetched, ingested, skipped, errors}.
     """
-    import json as _json
-    import urllib.request as _request
-    import urllib.error as _error
-
-    from tools.il5.ingestion import ingest_il5_event
-    from tools.il5.sla_handler import IL5PipelineTimer
-
     fetched = 0
     ingested = 0
     errors: List[str] = []
@@ -155,14 +154,14 @@ def _poll_feed(
     try:
         with IL5PipelineTimer(timeout_s=SLA_SECONDS, label="il5_poll_feed"):
             try:
-                req = _request.Request(
+                req = urllib.request.Request(
                     feed_url,
                     headers={"Accept": "application/json"},
                     method="GET",
                 )
-                with _request.urlopen(req, timeout=timeout) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     payload = _json.loads(resp.read().decode("utf-8"))
-            except _error.HTTPError as exc:
+            except urllib.error.HTTPError as exc:
                 errors.append(f"HTTP {exc.code}: {exc.reason}")
                 payload = None
             except Exception as exc:

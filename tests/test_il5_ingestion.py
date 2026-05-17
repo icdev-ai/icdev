@@ -472,24 +472,26 @@ class TestParseIL5Payload:
 class TestIL5IngestionServiceTimeout:
     def test_poll_feed_handles_timeout_error(self, mem_db):
         """If the 30-second SLA timer fires, _poll_feed catches it gracefully."""
-        with patch("tools.il5.il5_ingestion_service.IL5PipelineTimer") as mock_timer_cls:
-            mock_timer = mock_timer_cls.return_value
-            mock_timer.__enter__ = lambda self: self
-            # Simulate timer raising TimeoutError on __exit__
-            def _exit(*_):
-                raise TimeoutError("SLA breached")
-            mock_timer.__exit__ = _exit
-            result = _poll_feed(
-                feed_url="http://localhost:5050/api/il5/feed",
-                timeout=5,
-                db_path=None,
-            )
+        with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
+            mock_urlopen.return_value.__enter__.return_value.read.return_value = b"[]"
+            with patch("tools.il5.il5_ingestion_service.IL5PipelineTimer") as mock_timer_cls:
+                mock_timer = mock_timer_cls.return_value
+                mock_timer.__enter__ = lambda self: self
+                # Simulate timer raising TimeoutError on __exit__
+                def _exit(*_):
+                    raise TimeoutError("SLA breached")
+                mock_timer.__exit__ = _exit
+                result = _poll_feed(
+                    feed_url="http://localhost:5050/api/il5/feed",
+                    timeout=5,
+                    db_path=None,
+                )
         assert result["fetched"] == 0
         assert result["ingested"] == 0
         assert any("SLA timeout" in e for e in result["errors"])
 
     def test_fetch_il5_data_returns_events_after_poll(self, mem_db):
-        with patch("tools.il5.il5_ingestion_service.get_connection", return_value=_UnclosableConn(mem_db)):
+        with patch("tools.il5.ingestion.get_connection", return_value=_UnclosableConn(mem_db)):
             ingest_il5_event("src", "content")
         with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
             mock_resp = mock_urlopen.return_value.__enter__.return_value
@@ -501,7 +503,7 @@ class TestIL5IngestionServiceTimeout:
         assert isinstance(events, list)
 
     def test_poll_feed_skips_invalid_records(self, mem_db):
-        with patch("tools.il5.il5_ingestion_service.get_connection", return_value=_UnclosableConn(mem_db)):
+        with patch("tools.il5.ingestion.get_connection", return_value=_UnclosableConn(mem_db)):
             with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
                 mock_resp = mock_urlopen.return_value.__enter__.return_value
                 mock_resp.read.return_value = json.dumps([
@@ -535,7 +537,7 @@ class TestIL5IngestionServiceTimeout:
 
     def test_poll_feed_parses_published_at_iso(self, mem_db):
         pub = datetime.now(timezone.utc)
-        with patch("tools.il5.il5_ingestion_service.get_connection", return_value=_UnclosableConn(mem_db)):
+        with patch("tools.il5.ingestion.get_connection", return_value=_UnclosableConn(mem_db)):
             with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
                 mock_resp = mock_urlopen.return_value.__enter__.return_value
                 mock_resp.read.return_value = json.dumps([

@@ -96,6 +96,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     source TEXT,
     status TEXT DEFAULT 'active',
     project_id TEXT,
+    watchcon_tier INTEGER DEFAULT 4,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

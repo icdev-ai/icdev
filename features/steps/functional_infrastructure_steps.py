@@ -8,6 +8,7 @@ without subprocess or network calls for fast, dependency-free execution.
 """
 
 import os
+import sqlite3
 
 from behave import given, then, when
 
@@ -41,6 +42,18 @@ _DEPLOYMENT_ARTIFACTS = [
     'args/infra_canvas_config.yaml',
 ]
 
+_WATCHCON_ARTIFACTS = [
+    'tools/monitor/constants.py',
+    'tools/monitor/watchcon.py',
+    'tests/test_watchcon_tiers.py',
+]
+
+_WATCHCON_TIERS = {
+    4: 'routine',
+    3: 'elevated',
+    2: 'high',
+}
+
 
 @given('the system is operational and the user is authenticated')
 def step_system_operational(context):
@@ -67,6 +80,48 @@ _IL5_ARTIFACTS = [
 ]
 
 _IL5_SLA_SECONDS = 30
+
+
+@when('Support three alert tiers: WATCHCON 4 (routine), WATCHCON 3 (elevated), and WATCHCON 2 (high)')
+def step_watchcon_tiers(context):
+    context.missing = [
+        a for a in _WATCHCON_ARTIFACTS
+        if not os.path.exists(os.path.join(context.project_root, a))
+    ]
+    if context.missing:
+        return
+
+    # Verify constants module defines all three tiers
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        'watchcon_constants',
+        os.path.join(context.project_root, 'tools', 'monitor', 'constants.py'),
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for tier, label in _WATCHCON_TIERS.items():
+        if not hasattr(mod, f'WATCHCON_{tier}'):
+            context.missing.append(f"Missing constant WATCHCON_{tier}")
+            continue
+        if getattr(mod, f'WATCHCON_{tier}') != tier:
+            context.missing.append(f"WATCHCON_{tier} value mismatch")
+        if mod.WATCHCON_LABELS.get(tier) != label:
+            context.missing.append(f"WATCHCON_{tier} label mismatch: expected {label}")
+
+    # Verify watchcon.py module can classify, insert, and query by tier
+    spec2 = importlib.util.spec_from_file_location(
+        'watchcon',
+        os.path.join(context.project_root, 'tools', 'monitor', 'watchcon.py'),
+    )
+    wc_mod = importlib.util.module_from_spec(spec2)
+    spec2.loader.exec_module(wc_mod)
+    db_path = os.path.join(context.project_root, 'data', 'icdev.db')
+    if os.path.exists(db_path):
+        summary = wc_mod.tier_summary(db_path=db_path)
+        tiers = summary.get('tiers', {})
+        for tier_key in ('2', '3', '4'):
+            if tier_key not in tiers:
+                context.missing.append(f"tier_summary missing tier {tier_key}")
 
 
 @when('Support IL5 data ingestion and display within 30 seconds of source publication')

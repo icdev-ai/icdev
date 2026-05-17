@@ -38,6 +38,24 @@
     </div>
 </div>
 
+<!-- WATCHCON Tier Summary -->
+{% if watchcon_summary and watchcon_summary.tiers %}
+<div class="stat-grid mb-3">
+    <div class="stat-card">
+        <div class="stat-value text-blue">{{ watchcon_summary.tiers['4']['count'] }}</div>
+        <div class="stat-label">WATCHCON 4 (Routine)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-yellow">{{ watchcon_summary.tiers['3']['count'] }}</div>
+        <div class="stat-label">WATCHCON 3 (Elevated)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value text-red">{{ watchcon_summary.tiers['2']['count'] }}</div>
+        <div class="stat-label">WATCHCON 2 (High)</div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Self-Healing Decision Flow -->
 <h3 class="section-header">Self-Healing Decision Logic</h3>
 <div class="mermaid-container" role="img" aria-label="Self-healing confidence-based decision flow">
@@ -80,6 +98,7 @@ flowchart TD
     <table>
         <thead>
             <tr>
+                <th>WATCHCON</th>
                 <th>Severity</th>
                 <th>Title</th>
                 <th>Source</th>
@@ -91,6 +110,7 @@ flowchart TD
         <tbody>
             {% for alert in firing_alerts %}
             <tr>
+                <td><span class="badge badge-info">W{{ alert.watchcon_tier or 4 }}</span></td>
                 <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
                 <td>{{ alert.title }}</td>
                 <td>{{ alert.source }}</td>
@@ -126,6 +146,7 @@ flowchart TD
     <table>
         <thead>
             <tr>
+                <th>WATCHCON</th>
                 <th>Severity</th>
                 <th>Title</th>
                 <th>Source</th>
@@ -138,6 +159,7 @@ flowchart TD
         <tbody>
             {% for alert in alerts %}
             <tr>
+                <td><span class="badge badge-info">W{{ alert.watchcon_tier or 4 }}</span></td>
                 <td><span class="badge badge-{{ alert.severity }}">{{ alert.severity }}</span></td>
                 <td>{{ alert.title }}</td>
                 <td>{{ alert.source }}</td>
