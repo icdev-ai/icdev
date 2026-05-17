@@ -30,6 +30,7 @@ CLI::
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import sys
 import uuid
@@ -102,6 +103,94 @@ def _audit(
         )
     except Exception as exc:
         logger.debug("Audit logging failed (non-fatal): %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# DB path verification hook
+# ---------------------------------------------------------------------------
+_startup_verified: set = set()
+
+
+def verify_db_path(db_path: Path = None) -> dict:
+    """Verify the database path exists and the connection is healthy.
+
+    For SQLite: confirms the file exists, is readable/writable, and
+    responds to a simple query. For PostgreSQL: confirms the connection
+    can be established.
+
+    Args:
+        db_path: Optional database path override.
+
+    Returns:
+        Dict with keys: ok, exists, readable, writable, query_ok, error.
+    """
+    path = db_path or DB_PATH
+    result = {
+        "ok": False,
+        "exists": False,
+        "readable": False,
+        "writable": False,
+        "query_ok": False,
+        "error": None,
+    }
+
+    # Check file existence for SQLite backends
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    if backend == "sqlite":
+        if not path.exists():
+            result["error"] = f"Database file not found: {path}"
+            return result
+        result["exists"] = True
+        result["readable"] = os.access(str(path), os.R_OK)
+        result["writable"] = os.access(str(path), os.W_OK)
+    else:
+        # PostgreSQL — existence is implicit if connection works
+        result["exists"] = True
+        result["readable"] = True
+        result["writable"] = True
+
+    try:
+        conn = _get_db(db_path)
+        conn.execute("SELECT 1")
+        conn.close()
+        result["query_ok"] = True
+    except Exception as exc:
+        result["error"] = f"Database connection/query failed: {exc}"
+        return result
+
+    result["ok"] = result["exists"] and result["readable"] and result["writable"] and result["query_ok"]
+    return result
+
+
+def run_startup_verification(db_path: Path = None):
+    """Mandatory startup hook: verifies DB before dispatcher proceeds.
+
+    Raises RuntimeError if the database path does not exist or the
+    connection is not healthy. Idempotent — safe to call multiple times
+    with the same db_path.
+
+    Args:
+        db_path: Optional database path override.
+    """
+    path = db_path or DB_PATH
+    path_key = str(path.resolve()) if isinstance(path, Path) else str(path)
+
+    if path_key in _startup_verified:
+        return
+
+    verification = verify_db_path(db_path)
+    if not verification["ok"]:
+        error_msg = (
+            f"Dispatcher startup ABORTED — database verification failed: "
+            f"{verification.get('error', 'unknown error')}. "
+            f"exists={verification['exists']}, readable={verification['readable']}, "
+            f"writable={verification['writable']}, query_ok={verification['query_ok']}"
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    _startup_verified.add(path_key)
+    logger.info("Dispatcher startup DB verification passed for %s", path_key)
 
 
 # ---------------------------------------------------------------------------

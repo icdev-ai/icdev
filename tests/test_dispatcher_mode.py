@@ -29,6 +29,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.agent.dispatcher_mode import (
     _ensure_table,
     _load_dispatcher_config,
+    _startup_verified,
     disable_for_project,
     enable_for_project,
     filter_tools_for_dispatcher,
@@ -38,6 +39,8 @@ from tools.agent.dispatcher_mode import (
     get_status,
     is_dispatcher_mode,
     is_tool_allowed,
+    run_startup_verification,
+    verify_db_path,
 )
 
 
@@ -717,3 +720,72 @@ class TestEdgeCases:
             # proj-B has no override, so global (disabled) applies
             assert is_dispatcher_mode(project_id="proj-A", db_path=dispatcher_db) is True
             assert is_dispatcher_mode(project_id="proj-B", db_path=dispatcher_db) is False
+
+
+# ---------------------------------------------------------------------------
+# verify_db_path tests
+# ---------------------------------------------------------------------------
+class TestVerifyDbPath:
+    """Tests for verify_db_path."""
+
+    def test_passes_for_existing_db(self, dispatcher_db):
+        """Verification passes for an existing, healthy DB."""
+        result = verify_db_path(dispatcher_db)
+        assert result["ok"] is True
+        assert result["exists"] is True
+        assert result["readable"] is True
+        assert result["writable"] is True
+        assert result["query_ok"] is True
+        assert result["error"] is None
+
+    def test_fails_for_missing_db(self, tmp_path):
+        """Verification fails when the DB file does not exist."""
+        missing_db = tmp_path / "missing.db"
+        result = verify_db_path(missing_db)
+        assert result["ok"] is False
+        assert result["exists"] is False
+        assert result["error"] is not None
+        assert "not found" in result["error"]
+
+    def test_fails_for_unreadable_db(self, dispatcher_db):
+        """Verification fails when the DB is not readable."""
+        import os
+
+        os.chmod(str(dispatcher_db), 0o000)
+        try:
+            result = verify_db_path(dispatcher_db)
+            assert result["ok"] is False
+            assert result["readable"] is False
+        finally:
+            os.chmod(str(dispatcher_db), 0o644)
+
+
+# ---------------------------------------------------------------------------
+# run_startup_verification tests
+# ---------------------------------------------------------------------------
+class TestRunStartupVerification:
+    """Tests for run_startup_verification."""
+
+    def test_passes_for_existing_db(self, dispatcher_db):
+        """Startup verification passes for a healthy DB."""
+        # Clear cache so the test DB is re-verified
+        _startup_verified.discard(str(dispatcher_db.resolve()))
+        run_startup_verification(dispatcher_db)
+        # Should not raise
+
+    def test_raises_for_missing_db(self, tmp_path):
+        """Startup verification raises RuntimeError for missing DB."""
+        missing_db = tmp_path / "missing.db"
+        _startup_verified.discard(str(missing_db.resolve()))
+        with pytest.raises(RuntimeError) as exc_info:
+            run_startup_verification(missing_db)
+        assert "ABORTED" in str(exc_info.value)
+        assert "not found" in str(exc_info.value)
+
+    def test_idempotent(self, dispatcher_db):
+        """Multiple calls with the same path are idempotent."""
+        _startup_verified.discard(str(dispatcher_db.resolve()))
+        run_startup_verification(dispatcher_db)
+        run_startup_verification(dispatcher_db)
+        run_startup_verification(dispatcher_db)
+        # Should not raise

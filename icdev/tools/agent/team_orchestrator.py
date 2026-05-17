@@ -165,6 +165,18 @@ class TeamOrchestrator:
         self._db_path = Path(db_path) if db_path else DB_PATH
         self._llm_router = None
         self._agent_client = None
+
+        # Mandatory DB path verification before processing alerts (D-DISP-1)
+        try:
+            from tools.agent.dispatcher_mode import run_startup_verification
+
+            run_startup_verification(db_path=self._db_path)
+        except ImportError:
+            logger.warning("dispatcher_mode not available — skipping startup DB verification")
+        except RuntimeError as exc:
+            logger.error("Workflow engine startup failed DB verification: %s", exc)
+            raise
+
         _ensure_tables(self._db_path)
 
     # -------------------------------------------------------------------
