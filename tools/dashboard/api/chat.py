@@ -31,6 +31,12 @@ except ImportError:
     _HAS_CHAT = False
     chat_manager = None
 
+try:
+    from tools.requirements.intake_engine import create_session as _intake_create_session  # noqa: F401
+    _HAS_INTAKE = True
+except ImportError:
+    _HAS_INTAKE = False
+
 # ---------------------------------------------------------------------------
 # Blueprint
 # ---------------------------------------------------------------------------
@@ -259,21 +265,59 @@ def _uc_init_table(conn):
         classification TEXT DEFAULT NULL,
         fast_track INTEGER DEFAULT 0,
         skip_requirement_types TEXT,
-        user_config TEXT
+        user_config TEXT,
+        is_user_created INTEGER DEFAULT 0,
+        created_by TEXT DEFAULT NULL,
+        created_at TEXT DEFAULT NULL,
+        template_requirements TEXT DEFAULT NULL,
+        category TEXT DEFAULT NULL,
+        tenant_id TEXT DEFAULT '',
+        canvas_seeds TEXT DEFAULT NULL,
+        workflow_steps TEXT DEFAULT NULL
     )""")
     # Idempotent column migrations for existing tables
     existing = {row[1] for row in conn.execute("PRAGMA table_info(use_case_overrides)").fetchall()}
     for col_def in [
-        ("classification", "TEXT DEFAULT NULL"),
-        ("fast_track", "INTEGER DEFAULT 0"),
-        ("skip_requirement_types", "TEXT"),
-        ("user_config", "TEXT"),
+        ("classification",          "TEXT DEFAULT NULL"),
+        ("fast_track",              "INTEGER DEFAULT 0"),
+        ("skip_requirement_types",  "TEXT"),
+        ("user_config",             "TEXT"),
+        ("is_user_created",         "INTEGER DEFAULT 0"),
+        ("created_by",              "TEXT DEFAULT NULL"),
+        ("created_at",              "TEXT DEFAULT NULL"),
+        ("template_requirements",   "TEXT DEFAULT NULL"),
+        ("category",                "TEXT DEFAULT NULL"),
+        ("tenant_id",               "TEXT DEFAULT ''"),
+        ("canvas_seeds",            "TEXT DEFAULT NULL"),
+        ("workflow_steps",          "TEXT DEFAULT NULL"),
     ]:
         if col_def[0] not in existing:
             try:
                 conn.execute(f"ALTER TABLE use_case_overrides ADD COLUMN {col_def[0]} {col_def[1]}")
             except Exception:
                 pass
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_uc_overrides_tenant ON use_case_overrides(tenant_id)"
+    )
+    conn.commit()
+
+
+def _chain_init_table(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS use_case_chains (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT NOT NULL DEFAULT '',
+        name TEXT NOT NULL,
+        use_case_ids TEXT NOT NULL,
+        merged_requirements TEXT,
+        linked_session_id TEXT DEFAULT NULL,
+        status TEXT DEFAULT 'draft',
+        created_at TEXT NOT NULL,
+        created_by TEXT DEFAULT 'dashboard-user',
+        updated_at TEXT
+    )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_uc_chains_tenant ON use_case_chains(tenant_id)"
+    )
     conn.commit()
 
 
@@ -311,26 +355,190 @@ def _uc_apply_override(base, row):
                     result[jcol] = parsed
             except Exception:
                 pass
+    # Null-guard: only apply DB value if non-null AND YAML didn't already have it
+    for jcol in ("category", "template_requirements", "canvas_seeds", "workflow_steps"):
+        db_val = row[jcol] if jcol in row.keys() else None
+        if db_val is not None:
+            try:
+                parsed = _json.loads(db_val) if isinstance(db_val, str) else db_val
+                # Don't overwrite YAML-provided value with DB null/empty
+                if parsed is not None and parsed != [] and parsed != {}:
+                    result[jcol] = parsed
+            except Exception:
+                pass
+        # If YAML already has a value (e.g. category as plain string), keep it
+        if jcol == "category" and db_val is not None and not isinstance(db_val, (list, dict)):
+            result["category"] = db_val
     return result
+
+
+def _get_tenant_id() -> str:
+    """Extract tenant_id from request. Returns '' for single-instance mode."""
+    body = request.get_json(silent=True) or {}
+    return str(
+        body.get("tenant_id")
+        or request.args.get("tenant_id")
+        or ""
+    ).strip()
+
+
+def _uc_row_to_usecase(row) -> dict:
+    """Convert a DB-only user-created use_case_overrides row to a use case dict."""
+    import json as _json
+    d = dict(row) if not isinstance(row, dict) else row
+    for jcol in ("canvas_wiring", "quick_actions", "skip_requirement_types",
+                 "user_config", "template_requirements", "canvas_seeds", "workflow_steps"):
+        if d.get(jcol) and isinstance(d[jcol], str):
+            try:
+                d[jcol] = _json.loads(d[jcol])
+            except Exception:
+                d[jcol] = []
+    d["ricoas"] = bool(d.get("ricoas", 0))
+    d["fast_track"] = bool(d.get("fast_track", 0))
+    d["is_user_created"] = bool(d.get("is_user_created", 0))
+    return d
+
+
+def _uc_load_all(tenant_id: str = "") -> list:
+    """Load all use cases: YAML base + DB overrides + user-created, RLS-filtered."""
+    from tools.db.storage import get_connection as _gc
+    yaml_cases = _uc_load_yaml()
+    yaml_ids = {c["id"] for c in yaml_cases}
+    overrides = {}
+    user_created = []
+    try:
+        with _gc() as conn:
+            _uc_init_table(conn)
+            # tenant_id='' sentinel matches both tenant-specific and global overrides
+            rows = conn.execute(
+                "SELECT * FROM use_case_overrides WHERE tenant_id = ? OR tenant_id = ''",
+                (tenant_id,)
+            ).fetchall()
+            for row in rows:
+                d = dict(row)
+                if d.get("is_user_created"):
+                    if d.get("tenant_id", "") in ("", tenant_id):
+                        user_created.append(d)
+                else:
+                    overrides[d["id"]] = row
+    except Exception:
+        pass
+    merged = [_uc_apply_override(c, overrides.get(c["id"])) for c in yaml_cases]
+    for row in user_created:
+        if row.get("id") not in yaml_ids:
+            merged.append(_uc_row_to_usecase(row))
+    return merged
+
+
+_PRIORITY_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+
+
+def _merge_chain_requirements(use_cases: list) -> list:
+    """Union-merge template_requirements across use cases.
+
+    Dedup key: first 50 chars of normalized text.
+    Conflict: keep lower rank (higher priority).
+    Output: stable-sorted by priority rank, each annotated with source_uc_id.
+    """
+    seen: dict = {}  # key -> merged req dict
+    for uc in use_cases:
+        uc_id = uc.get("id", "")
+        for req in (uc.get("template_requirements") or []):
+            text = (req.get("text") or "").strip().lower()
+            dedup_key = text[:50]
+            if not dedup_key:
+                continue
+            rank = _PRIORITY_RANK.get((req.get("priority") or "medium").lower(), 2)
+            if dedup_key not in seen or rank < seen[dedup_key]["_rank"]:
+                seen[dedup_key] = dict(req, source_uc_id=uc_id, _rank=rank)
+    result = sorted(seen.values(), key=lambda r: r["_rank"])
+    for r in result:
+        r.pop("_rank", None)
+    return result
+
+
+_canvas_catalog_cache: dict = {}
+
+
+def _load_canvas_catalog() -> dict:
+    """Load canvas artifact catalog from args/cloud_vendor_policy.yaml (cached)."""
+    global _canvas_catalog_cache
+    if _canvas_catalog_cache:
+        return _canvas_catalog_cache
+    import yaml as _yaml
+    policy_path = BASE_DIR / "args" / "cloud_vendor_policy.yaml"
+    try:
+        with open(policy_path, "r", encoding="utf-8") as fh:
+            data = _yaml.safe_load(fh) or {}
+        _canvas_catalog_cache = data.get("canvas_artifact_catalog", {})
+    except Exception:
+        _canvas_catalog_cache = {}
+    return _canvas_catalog_cache
+
+
+def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> list:
+    """Pre-instantiate canvas templates/snippets for a use case.
+
+    Best-effort: logs warnings on failure but never raises.
+    Returns list of validated artifact dicts (canvas, type, name).
+    """
+    import logging
+    from tools.db.storage import get_connection as _gc
+    _log = logging.getLogger("icdev.chat")
+    seeded = []
+    canvas_seeds = use_case.get("canvas_seeds") or []
+    if not canvas_seeds:
+        return seeded
+    catalog = _load_canvas_catalog()
+    for seed in canvas_seeds:
+        canvas_key = seed.get("canvas")
+        catalog_entry = catalog.get(canvas_key)
+        if not catalog_entry:
+            _log.warning("canvas seed: unknown canvas key '%s'", canvas_key)
+            continue
+        canvas_db_rel = catalog_entry.get("db", "")
+        canvas_db_path = BASE_DIR / canvas_db_rel
+        templates_table = catalog_entry.get("templates_table", "")
+        snippets_table = catalog_entry.get("snippets_table", "")
+        for tmpl_name in (seed.get("templates") or []):
+            if not templates_table:
+                continue
+            try:
+                with _gc(db_path=str(canvas_db_path)) as cconn:
+                    cconn.set_security_context(None)  # rls-bypass: canvas seeding; tenant isolation at API boundary
+                    row = cconn.execute(
+                        f"SELECT name FROM {templates_table} WHERE name = ? LIMIT 1",
+                        (tmpl_name,)
+                    ).fetchone()
+                    if row:
+                        seeded.append({"canvas": canvas_key, "type": "template", "name": tmpl_name})
+            except Exception as exc:
+                _log.warning("canvas seed failed: %s/template/%s — %s", canvas_key, tmpl_name, exc)
+        for snip_name in (seed.get("snippets") or []):
+            if not snippets_table:
+                continue
+            try:
+                with _gc(db_path=str(canvas_db_path)) as cconn:
+                    cconn.set_security_context(None)  # rls-bypass: canvas seeding; tenant isolation at API boundary
+                    row = cconn.execute(
+                        f"SELECT name FROM {snippets_table} WHERE name = ? LIMIT 1",
+                        (snip_name,)
+                    ).fetchone()
+                    if row:
+                        seeded.append({"canvas": canvas_key, "type": "snippet", "name": snip_name})
+            except Exception as exc:
+                _log.warning("canvas seed failed: %s/snippet/%s — %s", canvas_key, snip_name, exc)
+    return seeded
 
 
 @chat_api.route("/use-cases", methods=["GET"])
 def list_use_cases():
     """Return use case catalog (YAML defaults merged with DB overrides)."""
-    from tools.db.storage import get_connection as _gc
-    cases = _uc_load_yaml()
+    tenant_id = _get_tenant_id()
     category = request.args.get("category", "").strip().lower()
     query = request.args.get("q", "").strip().lower()
 
-    overrides = {}
-    try:
-        with _gc() as conn:
-            for row in conn.execute("SELECT * FROM use_case_overrides").fetchall():
-                overrides[row["id"]] = row
-    except Exception:
-        pass
-
-    merged = [_uc_apply_override(c, overrides.get(c.get("id", ""))) for c in cases]
+    merged = _uc_load_all(tenant_id)
     if category:
         merged = [c for c in merged if c.get("category", "").lower() == category]
     if query:
@@ -353,6 +561,10 @@ def list_use_cases():
             "user_config": c.get("user_config", {}),
             "canvas_wiring": c.get("canvas_wiring", []),
             "quick_actions": c.get("quick_actions", []),
+            "is_user_created": c.get("is_user_created", False),
+            "canvas_seeds": c.get("canvas_seeds", []),
+            "workflow_steps": c.get("workflow_steps", []),
+            "template_requirements": c.get("template_requirements", []),
         }
         for c in merged
     ]
@@ -361,11 +573,9 @@ def list_use_cases():
 
 @chat_api.route("/use-cases/<use_case_id>", methods=["GET"])
 def get_use_case(use_case_id):
-    """Return full use case definition (YAML + DB override merged)."""
+    """Return full use case definition (YAML + DB override merged, or DB-only user-created)."""
     from tools.db.storage import get_connection as _gc
     base = next((c for c in _uc_load_yaml() if c.get("id") == use_case_id), None)
-    if not base:
-        return jsonify({"error": "Use case not found"}), 404
     row = None
     try:
         with _gc() as conn:
@@ -375,6 +585,11 @@ def get_use_case(use_case_id):
             ).fetchone()
     except Exception:
         pass
+    if not base:
+        # Fall back to DB-only user-created use case
+        if row and dict(row).get("is_user_created"):
+            return jsonify(_uc_row_to_usecase(dict(row)))
+        return jsonify({"error": "Use case not found"}), 404
     return jsonify(_uc_apply_override(dict(base), row))
 
 
@@ -390,6 +605,7 @@ def update_use_case(use_case_id):
     qa = body.get("quick_actions")
     srt = body.get("skip_requirement_types")
     uc = body.get("user_config")
+    tid = str(body.get("tenant_id") or "").strip()
     try:
         with _gc() as conn:
             _uc_init_table(conn)
@@ -398,8 +614,8 @@ def update_use_case(use_case_id):
                     (id,label,description,icon,badge,agent_model,ricoas,
                      boost_threshold,system_prompt,seed_message,
                      canvas_wiring,quick_actions,updated_at,updated_by,
-                     fast_track,skip_requirement_types,user_config)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     fast_track,skip_requirement_types,user_config,tenant_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     label=excluded.label, description=excluded.description,
                     icon=excluded.icon, badge=excluded.badge,
@@ -413,7 +629,8 @@ def update_use_case(use_case_id):
                     updated_by=excluded.updated_by,
                     fast_track=excluded.fast_track,
                     skip_requirement_types=excluded.skip_requirement_types,
-                    user_config=excluded.user_config
+                    user_config=excluded.user_config,
+                    tenant_id=excluded.tenant_id
             """, (
                 use_case_id,
                 body.get("label"), body.get("description"), body.get("icon"),
@@ -427,6 +644,7 @@ def update_use_case(use_case_id):
                 1 if body.get("fast_track") else 0,
                 _json.dumps(srt) if srt is not None else None,
                 _json.dumps(uc) if uc is not None else None,
+                tid,
             ))
             conn.commit()
     except Exception as exc:
@@ -436,11 +654,18 @@ def update_use_case(use_case_id):
 
 @chat_api.route("/use-cases/<use_case_id>/override", methods=["DELETE"])
 def reset_use_case(use_case_id):
-    """Delete DB override — restores YAML factory defaults."""
+    """Delete DB override — restores YAML factory defaults. Refuses to delete user-created rows."""
     from tools.db.storage import get_connection as _gc
     try:
         with _gc() as conn:
             _uc_init_table(conn)
+            row = conn.execute(
+                "SELECT is_user_created FROM use_case_overrides WHERE id=?", (use_case_id,)
+            ).fetchone()
+            if row and row["is_user_created"]:
+                return jsonify({
+                    "error": "Cannot reset a user-created use case via /override — use DELETE /use-cases/<id> instead"
+                }), 400
             conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
             conn.commit()
     except Exception as exc:
@@ -458,8 +683,6 @@ def standalone_app(use_case_id):
     """Generate and return a self-contained HTML app for the use case."""
     from flask import Response as _Resp
     base = next((c for c in _uc_load_yaml() if c.get("id") == use_case_id), None)
-    if not base:
-        return jsonify({"error": "Use case not found"}), 404
     row = None
     try:
         from tools.db.storage import get_connection as _gc
@@ -470,7 +693,14 @@ def standalone_app(use_case_id):
             ).fetchone()
     except Exception:
         pass
-    uc = _uc_apply_override(dict(base), row)
+    if not base:
+        # Fall back to DB-only user-created use case
+        if row and dict(row).get("is_user_created"):
+            uc = _uc_row_to_usecase(dict(row))
+        else:
+            return jsonify({"error": "Use case not found"}), 404
+    else:
+        uc = _uc_apply_override(dict(base), row)
     html = _build_standalone_html(uc)
     filename = use_case_id.replace("_", "-") + "-standalone.html"
     return _Resp(
@@ -526,6 +756,51 @@ def _build_standalone_html(uc: dict) -> str:
         update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
+    elif category == "acquisition":
+        columns = ["Deliverable", "CLIN", "Due Date", "Status", "Notes"]
+        col_keys = ["deliverable", "clin", "due_date", "status", "notes"]
+        tier_options = ""
+        status_options = '<option value="Not Started">Not Started</option><option value="In Progress">In Progress</option><option value="Submitted">Submitted</option><option value="Accepted">Accepted</option><option value="Rejected">Rejected</option>'
+        extra_controls = ""
+        update_summary_js = ""
+        after_render_call = ""
+        input_change_call = ""
+    elif category == "compliance_ato":
+        columns = ["Control", "Family", "Status", "Evidence", "Due"]
+        col_keys = ["control", "family", "status", "evidence", "due"]
+        tier_options = ""
+        status_options = '<option value="Not Started">Not Started</option><option value="In Progress">In Progress</option><option value="Implemented">Implemented</option><option value="Inherited">Inherited</option><option value="N/A">N/A</option>'
+        extra_controls = ""
+        update_summary_js = ""
+        after_render_call = ""
+        input_change_call = ""
+    elif category == "zero_trust":
+        columns = ["Pillar", "Requirement", "Maturity Level", "Gap", "Action"]
+        col_keys = ["pillar", "requirement", "maturity", "gap", "action"]
+        tier_options = '<option value="Traditional">Traditional</option><option value="Initial">Initial</option><option value="Advanced">Advanced</option><option value="Optimal">Optimal</option>'
+        status_options = '<option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Closed">Closed</option>'
+        extra_controls = ""
+        update_summary_js = ""
+        after_render_call = ""
+        input_change_call = ""
+    elif category == "it_operations":
+        columns = ["Requirement", "Standard", "Status", "Finding", "Owner"]
+        col_keys = ["requirement", "standard", "status", "finding", "owner"]
+        tier_options = ""
+        status_options = '<option value="Compliant">Compliant</option><option value="Non-Compliant">Non-Compliant</option><option value="Partial">Partial</option><option value="N/A">N/A</option>'
+        extra_controls = ""
+        update_summary_js = ""
+        after_render_call = ""
+        input_change_call = ""
+    elif category == "state_local":
+        columns = ["Requirement", "Grant Section", "Status", "Notes", "Owner"]
+        col_keys = ["requirement", "grant_section", "status", "notes", "owner"]
+        tier_options = ""
+        status_options = '<option value="Not Started">Not Started</option><option value="In Progress">In Progress</option><option value="Complete">Complete</option><option value="N/A">N/A</option>'
+        extra_controls = ""
+        update_summary_js = ""
+        after_render_call = ""
+        input_change_call = ""
     else:  # knowledge / document_refresh / general
         columns = ["Document / Section", "Owner", "Last Review", "Staleness", "Status", "Contributor", "Notes"]
         col_keys = ["document", "owner", "last_review", "staleness", "status", "contributor", "notes"]
@@ -552,11 +827,9 @@ def _build_standalone_html(uc: dict) -> str:
 
     # Build input row cells
     def make_input(key, idx, col_name):
-        if key in ("tier", "classification_7r", "staleness"):
+        if key in ("tier", "classification_7r", "staleness", "maturity"):
             return f'<td><select class="cell-input" data-key="{key}">{tier_options}</select></td>'
-        if key == "status":
-            return f'<td><select class="cell-input" data-key="{key}">{status_options}</select></td>'
-        if key == "phase":
+        if key in ("status", "phase"):
             return f'<td><select class="cell-input" data-key="{key}">{status_options}</select></td>'
         if key == "vendor":
             return f'<td><select class="cell-input" data-key="{key}"><option value="">—</option>{vendor_opts}<option value="__custom__">Other...</option></select></td>'
@@ -566,7 +839,7 @@ def _build_standalone_html(uc: dict) -> str:
             return f'<td><input type="number" class="cell-input" data-key="{key}" min="0" step="0.01" placeholder="0.00" style="width:90px"></td>'
         if key == "total":
             return f'<td><input type="number" class="cell-input" data-key="{key}" min="0" step="0.01" placeholder="auto" style="width:90px" readonly></td>'
-        if key == "last_review":
+        if key in ("last_review", "due_date", "due"):
             return f'<td><input type="date" class="cell-input" data-key="{key}"></td>'
         return f'<td><input type="text" class="cell-input" data-key="{key}" placeholder="{_html.escape(col_name)}..."></td>'
 
@@ -725,8 +998,7 @@ function renderTable() {{
 }}
 function makeCell(key, val) {{
   var v = val ? val.replace(/"/g,'&quot;') : '';
-  if (key === 'tier' || key === 'classification_7r' || key === 'staleness') {{
-    var opts = document.createElement('select'); opts.className='cell-input'; opts.dataset={{ key: key }};
+  if (key === 'tier' || key === 'classification_7r' || key === 'staleness' || key === 'maturity') {{
     var html = '{tier_options}'.replace(/data-key="[^"]*"/, 'data-key="'+key+'"');
     return '<select class="cell-input" data-key="'+key+'">'+html+'</select>';
   }}
@@ -738,7 +1010,7 @@ function makeCell(key, val) {{
   }}
   if (key === 'total' || key === 'unit_price') return '<input type="number" class="cell-input" data-key="'+key+'" value="'+v+'" min="0" step="0.01"' + (key==='total'?' readonly':'') + '>';
   if (key === 'qty') return '<input type="number" class="cell-input" data-key="'+key+'" value="'+(v||1)+'" min="1" style="width:60px">';
-  if (key === 'last_review') return '<input type="date" class="cell-input" data-key="'+key+'" value="'+v+'">';
+  if (key === 'last_review' || key === 'due_date' || key === 'due') return '<input type="date" class="cell-input" data-key="'+key+'" value="'+v+'">';
   return '<input type="text" class="cell-input" data-key="'+key+'" value="'+v+'">';
 }}
 function addRow() {{
