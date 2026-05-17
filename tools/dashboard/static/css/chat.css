@@ -1268,6 +1268,12 @@
 /* --- Fast-track system messages --- */
 .msg--system .msg__bubble { background: var(--bg-tertiary, #1a2233); border: 1px solid var(--border-color); border-left: 3px solid var(--accent-blue, #1a56db); color: var(--text-muted); font-size: 0.8rem; padding: 7px 12px; }
 
+/* --- Use case card footer actions (Standalone button) --- */
+.chat-uc-card__actions { display: flex; gap: 6px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--border-color); }
+.chat-uc-standalone-btn { font-size: 0.68rem; padding: 2px 8px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-muted); text-decoration: none; cursor: pointer; transition: border-color 0.12s, color 0.12s; }
+.chat-uc-standalone-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); text-decoration: none; }
+.chat-uc-card__ft-badge { font-size: 0.6rem; font-weight: 700; padding: 1px 5px; border-radius: 8px; background: #1f6feb30; color: #58a6ff; border: 1px solid #1f6feb; margin-left: 4px; vertical-align: middle; }
+
 /* ===================================================================
    Use Case — Post-export action bar (deep links per active use case)
    =================================================================== */

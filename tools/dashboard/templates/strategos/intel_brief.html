@@ -321,8 +321,13 @@ async function runBrief() {
     const data = await resp.json();
     if (data.ok) {
       msg.style.color = "#22c55e";
-      msg.textContent = `✓ Brief generated — WRI: ${data.wri?.toFixed(1)}, Tier: ${data.threat_tier}, P(Esc): ${(data.p_war_posterior*100)?.toFixed(1)}%`;
-      setTimeout(() => location.reload(), 2000);
+      msg.textContent = `✓ Brief generated — WRI: ${data.wri?.toFixed(1)}, Tier: ${data.threat_tier}, P(Esc): ${(data.p_war_posterior*100)?.toFixed(1)}% — opening report…`;
+      // Show the narrative immediately in the modal
+      const narrative = data.narrative_md || "(no narrative generated)";
+      document.getElementById("narrative-body").textContent = narrative;
+      // Flag modal to reload page on close so KPIs/table refresh
+      document.getElementById("narrative-modal").dataset.reloadOnClose = "1";
+      document.getElementById("narrative-modal").style.display = "flex";
     } else {
       msg.style.color = "#ef4444";
       msg.textContent = "Error: " + (data.error || "Unknown error");
