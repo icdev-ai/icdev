@@ -235,6 +235,17 @@ def route_skill(
     """
     effective_db = db_path or DB_PATH
 
+    # Mandatory DB path verification before processing alerts (D-DISP-1)
+    try:
+        from tools.agent.dispatcher_mode import run_startup_verification
+
+        run_startup_verification(db_path=effective_db)
+    except ImportError:
+        logger.debug("dispatcher_mode not available — skipping startup DB verification")
+    except RuntimeError as exc:
+        logger.error("Skill router startup failed DB verification: %s", exc)
+        raise
+
     # Phase 61: Dispatcher mode awareness (D-DISP-1)
     # If dispatcher mode is active and the orchestrator requests a blocked skill,
     # redirect to the domain agent that owns the skill.
