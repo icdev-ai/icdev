@@ -90,8 +90,12 @@ def requirements():
         query += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
 
-        rows = conn.execute(query, params).fetchall()
-        items = [dict(r) for r in rows]
+        try:
+            rows = conn.execute(query, params).fetchall()
+            items = [dict(r) for r in rows]
+        except Exception:
+            items = []
+
         return jsonify({
             "feed": "requirements",
             "total": len(items),
