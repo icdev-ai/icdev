@@ -905,6 +905,18 @@ response_cache:
     persona_gen:
       ttl_seconds: 3600
       context_cache: true
+    requirements_generation:
+      ttl_seconds: 1800
+      context_cache: true
+    panel_persona_response:
+      ttl_seconds: 1800
+      context_cache: true
+    requirement_extraction:
+      ttl_seconds: 1800
+      context_cache: true
+    intake_persona_response:
+      ttl_seconds: 1800
+      context_cache: true
   per_canvas:
     ndc:
       ttl_seconds: 7200
