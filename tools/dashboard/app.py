@@ -61,7 +61,6 @@ from tools.dashboard.findings_aggregator import (  # noqa: E402
     aggregate_findings as _aggregate_findings,
     close_canvas_connections as _close_canvas_connections,
 )
-from tools.monitor.watchcon import tier_summary as _watchcon_summary, get_alerts_by_tier as _watchcon_by_tier  # noqa: E402
 # P1.1: Centralized API blueprint registration (replaces 50+ individual imports)
 from tools.dashboard.api import register_api_blueprints  # noqa: E402
 try:
@@ -1790,26 +1789,6 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
-    @app.route("/api/watchcon/summary", methods=["GET"])
-    def api_watchcon_summary():
-        """Return alert counts grouped by WATCHCON tier."""
-        try:
-            return jsonify(_watchcon_summary())
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/api/watchcon/tier/<int:tier>", methods=["GET"])
-    def api_watchcon_tier(tier):
-        """Return alerts for a specific WATCHCON tier (2, 3, or 4)."""
-        limit = min(max(int(flask_request.args.get("limit", 50)), 1), 200)
-        try:
-            alerts = _watchcon_by_tier(tier, limit=limit)
-            return jsonify({"tier": tier, "alerts": alerts, "count": len(alerts)})
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except Exception as exc:
-            return jsonify({"error": str(exc)}), 500
-
     @app.route("/api/dashboard/autonomous-feed", methods=["GET"])
     def api_dashboard_autonomous_feed():
         """GET /api/dashboard/autonomous-feed — Recent autonomous agent activity."""
@@ -2619,7 +2598,6 @@ def create_app() -> Flask:
                 resolved_count=resolved,
                 unresolved_failures=unresolved_failures,
                 health_status=health,
-                watchcon_summary=_watchcon_summary(),
             )
         finally:
             conn.close()
@@ -2700,17 +2678,42 @@ def create_app() -> Flask:
         """Resume an existing requirements chat session."""
         conn = _get_db()
         try:
+            session = None
+            session_err = None
             try:
                 session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
-            except Exception:
-                session = None
+            except Exception as exc:
+                session_err = str(exc)
+                app.logger.warning("chat_session: intake_sessions lookup failed for %s: %s", session_id, session_err)
             if not session:
+                # Fallback: try chat_contexts directly (session may exist as a standalone context)
+                try:
+                    ctx = conn.execute("SELECT * FROM chat_contexts WHERE id = ?", (session_id,)).fetchone()
+                    if ctx:
+                        # Fabricate a minimal session dict so the template can render
+                        ctx_d = dict(ctx)
+                        session = {
+                            "id": session_id,
+                            "session_status": ctx_d.get("status", "active"),
+                            "created_at": ctx_d.get("created_at"),
+                            "updated_at": ctx_d.get("updated_at"),
+                            "context_summary": "{}",
+                        }
+                        app.logger.info("chat_session: fell back to chat_contexts for %s", session_id)
+                except Exception as exc:
+                    app.logger.warning("chat_session: chat_contexts fallback failed for %s: %s", session_id, exc)
+            if not session:
+                app.logger.error("chat_session: returning 404 for %s (intake_sessions error: %s)", session_id, session_err or "no row")
                 return render_template("404.html", message="Session not found"), 404
-            messages = conn.execute(
-                "SELECT turn_number, role, content, content_type, created_at "
-                "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
-                (session_id,),
-            ).fetchall()
+            messages = []
+            try:
+                messages = conn.execute(
+                    "SELECT turn_number, role, content, content_type, created_at "
+                    "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+                    (session_id,),
+                ).fetchall()
+            except Exception as exc:
+                app.logger.warning("chat_session: intake_conversation query failed for %s: %s", session_id, exc)
             # Look up the linked chat context so JS can auto-select it
             auto_context_id = None
             try:
@@ -8308,6 +8311,64 @@ def create_app() -> Flask:
         except Exception as exc:
             app.logger.warning("api_chat_sources error: %s", exc)
             return jsonify({"sources": [], "total": 0})
+
+    # ================================================================
+    # Chat Use Cases catalog (FORGE-pattern — reads args/use_cases.yaml)
+    # ================================================================
+
+    @app.route("/api/chat/use-cases", methods=["GET"])
+    def api_chat_use_cases():
+        """Return the seeded use case catalog from args/use_cases.yaml."""
+        import yaml as _yaml
+        _uc_path = BASE_DIR / "args" / "use_cases.yaml"
+        try:
+            with open(_uc_path, "r", encoding="utf-8") as _fh:
+                _data = _yaml.safe_load(_fh) or {}
+        except FileNotFoundError:
+            return jsonify({"use_cases": [], "total": 0})
+        except Exception as _exc:
+            app.logger.warning("use_cases.yaml load error: %s", _exc)
+            return jsonify({"use_cases": [], "total": 0})
+
+        _cases = _data.get("use_cases", [])
+        _category = flask_request.args.get("category", "").strip().lower()
+        _q = flask_request.args.get("q", "").strip().lower()
+        if _category:
+            _cases = [c for c in _cases if c.get("category", "").lower() == _category]
+        if _q:
+            _cases = [c for c in _cases if _q in c.get("label", "").lower() or _q in c.get("description", "").lower()]
+
+        _summary = [
+            {
+                "id": c.get("id", ""),
+                "label": c.get("label", ""),
+                "category": c.get("category", ""),
+                "icon": c.get("icon", ""),
+                "description": (c.get("description") or "").strip(),
+                "badge": c.get("badge", ""),
+                "agent_model": c.get("agent_model", "sonnet"),
+                "ricoas": c.get("ricoas", False),
+                "boost_threshold": c.get("boost_threshold", 70),
+                "canvas_wiring": c.get("canvas_wiring", []),
+            }
+            for c in _cases
+        ]
+        return jsonify({"use_cases": _summary, "total": len(_summary)})
+
+    @app.route("/api/chat/use-cases/<use_case_id>", methods=["GET"])
+    def api_chat_use_case_detail(use_case_id):
+        """Return full use case definition including system_prompt and seed_message."""
+        import yaml as _yaml
+        _uc_path = BASE_DIR / "args" / "use_cases.yaml"
+        try:
+            with open(_uc_path, "r", encoding="utf-8") as _fh:
+                _data = _yaml.safe_load(_fh) or {}
+        except FileNotFoundError:
+            return jsonify({"error": "Use case catalog not found"}), 404
+        for _c in _data.get("use_cases", []):
+            if _c.get("id") == use_case_id:
+                return jsonify(_c)
+        return jsonify({"error": "Use case not found"}), 404
 
     # ================================================================
     # Phase 69: Codebase Assistant API (D-CA-5 to D-CA-8)
