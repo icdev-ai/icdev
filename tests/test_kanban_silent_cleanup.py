@@ -24,6 +24,8 @@ This test pins the corrected behavior. Stale cleanup must now:
 from __future__ import annotations
 
 import sqlite3
+import sys
+import types as _types
 
 import pytest
 

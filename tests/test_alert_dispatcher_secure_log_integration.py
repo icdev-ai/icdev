@@ -139,6 +139,7 @@ class TestAlertDispatcherSecureLogIntegration:
 
         with patch("tools.audit.audit_logger.get_connection", _test_conn):
             gw = NotificationGateway(config={"enabled": False})
+            gw.enabled = False  # override env-var if ICDEV_NOTIFICATIONS_ENABLED is set
             result = gw.send(
                 event_type="pir_alert",
                 severity="critical",
