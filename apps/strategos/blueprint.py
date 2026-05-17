@@ -4440,6 +4440,213 @@ def api_dat_refresh():
 
 
 # ---------------------------------------------------------------------------
+# Leadership Intelligence Brief — Predictive OSINT Analysis
+# ---------------------------------------------------------------------------
+
+
+@_bp.route("/leadership-brief")
+@_bp.route("/leadership-brief/")
+def strategos_leadership_brief():
+    """Leadership Intelligence Brief dashboard."""
+    return render_template("strategos/leadership_brief.html")
+
+
+@_api.route("/leadership-brief/generate", methods=["POST"])
+def api_leadership_brief_generate():
+    """Run predictive analysis on OSINT data mesh and generate leadership briefing."""
+    data = request.get_json(silent=True) or {}
+    theater = (data.get("theater") or "global").strip().lower()
+    save = bool(data.get("save", True))
+    try:
+        from tools.strategos.predictive_intel_engine import generate_leadership_brief
+        result = generate_leadership_brief(theater=theater, save=save)
+        resp = make_response(jsonify(result), 201)
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/leadership-brief/latest", methods=["GET"])
+def api_leadership_brief_list():
+    """Return recent leadership briefs."""
+    theater = request.args.get("theater", "global")
+    limit = min(int(request.args.get("limit", 20)), 100)
+    try:
+        from tools.strategos.predictive_intel_engine import list_leadership_briefs
+        briefs = list_leadership_briefs(theater=theater, limit=limit)
+        resp = make_response(jsonify({"briefs": briefs, "total": len(briefs)}))
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/leadership-brief/<brief_id>", methods=["GET"])
+def api_leadership_brief_get(brief_id: str):
+    """Return a specific leadership brief by ID."""
+    try:
+        from tools.strategos.predictive_intel_engine import get_leadership_brief
+        brief = get_leadership_brief(brief_id)
+        if brief is None:
+            resp = make_response(jsonify({"error": "brief not found"}), 404)
+        else:
+            resp = make_response(jsonify(brief))
+    except Exception as exc:
+        resp = make_response(jsonify({"error": str(exc)}), 500)
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@_api.route("/iqe-query", methods=["POST"])
+def api_strategos_iqe_query():
+    """IQE query endpoint for Strategos Intelligence canvas."""
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import parse as _parse, IQESyntaxError
+    from tools.iqe.executor import execute_query
+    import importlib
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question required"}), 400
+
+    collections = [
+        "strategos.signals",
+        "strategos.conflict_events",
+        "strategos.leadership_briefs",
+        "strategos.sio_assessments",
+    ]
+
+    iqe_str = ""
+    try:
+        importlib.import_module("tools.iqe.adapters.strategos")
+        result = nl_to_iqe(question, collections)
+        iqe_str = result.get("iqe", "")
+        explanation = result.get("explanation", "")
+        try:
+            ast = _parse(iqe_str)
+            rows, count = execute_query(ast)
+        except IQESyntaxError as exc:
+            rows, count = [], 0
+            explanation = f"IQE parse error: {exc}"
+    except Exception as exc:
+        rows, count = [], 0
+        explanation = str(exc)
+
+    resp = make_response(jsonify({
+        "ok": True,
+        "canvas": "strategos",
+        "iqe": iqe_str,
+        "explanation": explanation,
+        "results": rows,
+        "row_count": count,
+    }))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Predictive Intelligence Briefings — page + API
+# ---------------------------------------------------------------------------
+
+@_bp.route("/intel-brief")
+@_bp.route("/intel-brief/")
+def strategos_intel_brief():
+    """Leadership briefings dashboard — predictive analysis on OSINT data mesh."""
+    import json as _json
+
+    theater = request.args.get("theater", "global").strip() or "global"
+    briefs = _safe_fetch(
+        "SELECT id, theater, sio_composite_score, iw_triggered, threat_tier, "
+        "signal_count_24h, conflict_event_count, signal_velocity, p_war_posterior, "
+        "goldstein_avg, dti_score, forecast_24h_json, forecast_72h_json, forecast_7d_json, "
+        "narrative_md, generated_at "
+        "FROM sg_leadership_briefs ORDER BY generated_at DESC LIMIT 20"
+    )
+
+    # Parse forecast JSON strings to dicts so templates don't need from_json
+    for b in briefs:
+        for key in ("forecast_24h_json", "forecast_72h_json", "forecast_7d_json"):
+            raw = b.get(key)
+            if isinstance(raw, str):
+                try:
+                    b[key] = _json.loads(raw)
+                except Exception:
+                    b[key] = {}
+
+    latest_brief = briefs[0] if briefs else None
+    briefs_json = _json.dumps(briefs, default=str)
+
+    return render_template(
+        "strategos/intel_brief.html",
+        theater=theater,
+        briefs=briefs,
+        latest_brief=latest_brief,
+        briefs_json=briefs_json,
+    )
+
+
+@_api.route("/intel-brief/run", methods=["POST"])
+def api_intel_brief_run():
+    """Trigger the predictive analysis pipeline and generate a leadership brief."""
+    data = request.get_json(silent=True) or {}
+    theater = (data.get("theater") or "global").strip() or "global"
+    try:
+        from tools.strategos.predictive_analysis import PredictiveAnalysisEngine
+        engine = PredictiveAnalysisEngine()
+        result = engine.run(theater=theater)
+        return jsonify({"ok": True, **{k: v for k, v in result.items() if k != "narrative_md"}})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
+@_api.route("/intel-brief/briefs")
+def api_intel_brief_list():
+    """Return recent leadership briefs as JSON."""
+    limit = min(int(request.args.get("limit", 50)), 200)
+    theater = request.args.get("theater", "").strip()
+    clauses, params = [], []
+    if theater:
+        clauses.append("theater = ?")
+        params.append(theater)
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    ph = "%s" if is_pg() else "?"
+    sql = (
+        f"SELECT id, theater, sio_composite_score, iw_triggered, threat_tier, "
+        f"signal_count_24h, conflict_event_count, signal_velocity, p_war_posterior, "
+        f"goldstein_avg, dti_score, generated_at "
+        f"FROM sg_leadership_briefs {where} ORDER BY generated_at DESC LIMIT {limit}"  # nosec B608
+    )
+    sql = sql.replace("?", ph)
+    rows = _safe_fetch(sql, params)
+    return jsonify({"ok": True, "briefs": rows, "total": len(rows)})
+
+
+@_api.route("/intel-brief/status")
+def api_intel_brief_status():
+    """Return current WRI and escalation status from the latest leadership brief."""
+    row = _safe_fetch(
+        "SELECT sio_composite_score, threat_tier, p_war_posterior, escalation_rung, "
+        "dti_score, iw_triggered, signal_count_24h, generated_at "
+        "FROM sg_leadership_briefs ORDER BY generated_at DESC LIMIT 1"
+    )
+    if not row:
+        return jsonify({"ok": True, "status": "no_data", "wri": 0, "threat_tier": "LOW"})
+    r = row[0]
+    return jsonify({
+        "ok": True,
+        "wri": r.get("sio_composite_score", 0),
+        "threat_tier": r.get("threat_tier", "LOW"),
+        "p_war_posterior": r.get("p_war_posterior", 0.05),
+        "dti_score": r.get("dti_score"),
+        "iw_triggered": bool(r.get("iw_triggered")),
+        "signal_count_24h": r.get("signal_count_24h", 0),
+        "generated_at": r.get("generated_at"),
+    })
+
+
+# ---------------------------------------------------------------------------
 # Factory functions called from tools/dashboard/app.py
 # ---------------------------------------------------------------------------
 

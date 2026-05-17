@@ -1113,6 +1113,14 @@ def create_app() -> Flask:
     except ImportError:
         pass
 
+    # Budget monitor + throttling controller — background daemon wired into the
+    # generative intelligence and predictive analysis pipeline (services package).
+    try:
+        from services import start_budget_services
+        app.extensions["throttle_controller"] = start_budget_services()
+    except Exception as _exc:
+        app.logger.warning("Budget services skipped: %s", _exc)
+
     # Liveness probe — used by /start, container healthchecks, and uptime monitors.
     # Cheap, no DB call. For deeper checks see /api/platform/health.
     @app.route("/health", methods=["GET"])
@@ -2517,6 +2525,7 @@ def create_app() -> Flask:
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
+            "strategos":     ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

@@ -1,0 +1,10 @@
+# Intent: Show the latest SIO Oracle lens scores across all four analytical lenses
+#         to understand which domain is driving the composite threat assessment.
+# Expected: one row per lens (threat_posture, behavior_pattern, intent_assessment,
+#   convergence) with score and NATO reliability code.
+
+foreach a in strategos.sio_assessments
+  select a.id, a.lens_source, a.score, a.confidence, a.nato_reliability,
+         a.narrative, a.created_at
+  order_by a.created_at desc
+  limit 8

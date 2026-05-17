@@ -805,6 +805,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     print(f"  Strategos OSINT: {summary}")
     logger.info("OSINT harvest complete: %s", summary)
 
+    # Normalize newly ingested raw signals into the unified schema
+    norm_result: Dict[str, Any] = {"inserted": 0, "errors": 0}
+    try:
+        from tools.threat_analysis.osint_normalizer import run_normalization  # noqa: PLC0415
+        norm_result = run_normalization(limit=harvested + 100)
+        logger.info(
+            "OSINT normalization: inserted=%d errors=%d",
+            norm_result.get("inserted", 0),
+            norm_result.get("errors", 0),
+        )
+    except Exception as _norm_exc:
+        logger.warning("OSINT normalizer skipped: %s", _norm_exc)
+
     return {
         "success": True,
         "metric_value": harvested,
@@ -813,6 +826,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "signals_harvested": harvested,
             "duplicates_skipped": dupes,
             "errors": errors,
+            "normalized": norm_result.get("inserted", 0),
+            "normalization_errors": norm_result.get("errors", 0),
         },
     }
 
