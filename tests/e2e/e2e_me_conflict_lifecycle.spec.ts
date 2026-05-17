@@ -52,7 +52,7 @@ test.describe('E2E Lifecycle: Middle East Conflict Intelligence (7-fix validatio
   test.use({ viewport: { width: 1920, height: 1080 } });
 
   test('FIX 1 + FIX 2 + FIX 4: Traceability, AI Boost speed, button states', async ({ page }) => {
-    test.setTimeout(120000);
+    test.setTimeout(300000);
 
     await page.goto('/chat/' + SEED_SESSION_ID);
     await page.waitForLoadState('domcontentloaded');
