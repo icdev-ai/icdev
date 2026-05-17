@@ -232,6 +232,8 @@ def create_intake_session():
     frameworks = data.get("frameworks", [])
     custom_role_name = data.get("custom_role_name", "")
     custom_role_description = data.get("custom_role_description", "")
+    extra_context = data.get("extra_context", {})
+    template_requirements = data.get("template_requirements", [])
 
     # Map classification to impact level — empty string means no compliance framing
     il_map = {"il2": "IL2", "il4": "IL4", "il5": "IL5", "il6": "IL6"}
@@ -258,6 +260,8 @@ def create_intake_session():
             goal=goal,
             selected_frameworks=frameworks,
             custom_role_description=custom_role_description,
+            extra_context=extra_context if extra_context else None,
+            template_requirements=template_requirements if template_requirements else None,
         )
         result["wizard_context"] = {
             "goal": goal,
@@ -609,9 +613,19 @@ def ai_boost(session_id):
             f"- [{r['requirement_type']}] {r['raw_text']}" for r in existing_reqs
         ) or "(none yet)"
 
-        # All types the scorer expects
+        # Load skip_requirement_types from session context (set by use case fast_track config)
+        import json as _json
+        session_context = {}
+        try:
+            session_context = _json.loads(session_data.get("context_summary") or "{}")
+        except Exception:
+            pass
+        skip_types = set(session_context.get("skip_requirement_types", []))
+
+        # All types the scorer expects — minus any that are skipped for this use case
         all_types = ["functional", "security", "interface", "data", "performance", "compliance"]
-        missing_types = [t for t in all_types if t not in existing_types]
+        candidate_types = [t for t in all_types if t not in skip_types]
+        missing_types = [t for t in candidate_types if t not in existing_types]
 
         # Scoring gaps: check feasibility keywords
         all_text = " ".join(r["raw_text"] or "" for r in existing_reqs).lower()

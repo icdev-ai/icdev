@@ -1,22 +1,29 @@
 # CUI // SP-CTI
 # ICDEV™ Chat Use Cases — Seeded Catalog
 # FORGE-pattern: content lives here, not in code.
-# Each use case creates an intake context with a pre-configured expert persona
-# and opening seed message. AI Boost auto-fills gaps when readiness < 70%.
+# Each use case ships with pre-built template_requirements that are bulk-inserted
+# into the intake session on activation (source_turn=0, status=validated).
+# AI Boost augments them with context-specific additions. PRD is immediately ready.
+# Users can customize with industry/equipment/vendor specifics or skip straight to
+# "Send to Kanban".
 #
 # Schema per entry:
-#   id:          unique slug (snake_case)
-#   label:       display name in sidebar
-#   category:    grouping tag (modernization | budget | knowledge | compliance | general)
-#   icon:        single emoji or unicode char
-#   description: one-line summary shown in card
-#   badge:       optional tag shown on card (e.g. "AI Boost", "RICOAS")
-#   agent_model: sonnet | opus | haiku
-#   system_prompt: expert AI persona injected as system context
-#   seed_message: first user message auto-sent to kick off the conversation
-#   ricoas:      true = link to RICOAS intake session
-#   boost_threshold: readiness % below which AI Boost fires (default 70)
-#   canvas_wiring:   list of ICDEV canvases this use case integrates with
+#   id:                    unique slug (snake_case)
+#   label:                 display name in sidebar
+#   category:              grouping tag (modernization | budget | knowledge | compliance | general)
+#   icon:                  single emoji or unicode char
+#   description:           one-line summary shown in card
+#   badge:                 optional tag shown on card (e.g. "AI Boost", "RICOAS")
+#   agent_model:           kimi-cloud | sonnet | opus | haiku
+#   fast_track:            true = auto-run AI Boost + PRD on activation, no user input required
+#   skip_requirement_types: list of req types excluded from AI Boost candidates and RICOAS denominator
+#   system_prompt:         expert AI persona injected as system context
+#   seed_message:          displayed as assistant message confirming framework is loaded
+#   ricoas:                true = link to RICOAS intake session
+#   boost_threshold:       readiness % below which AI Boost fires (default 70)
+#   canvas_wiring:         list of ICDEV canvases this use case integrates with
+#   user_config:           user-extensible lists (industries, equipment_types, vendors)
+#   template_requirements: pre-built reqs bulk-inserted on activation (source_turn=0)
 
 use_cases:
 
@@ -28,9 +35,11 @@ use_cases:
       Modernize any asset — hardware, software, code, process, or infrastructure.
       Works across all sectors and industries.
     badge: AI Boost
-    agent_model: opus
+    agent_model: kimi-cloud
     ricoas: true
+    fast_track: true
     boost_threshold: 70
+    skip_requirement_types: []
     canvas_wiring:
       - migration_canvas
       - simulation
@@ -53,35 +62,112 @@ use_cases:
         label: Supply Chain
         url: /network/ask
         target: _blank
+    user_config:
+      industries:
+        defaults:
+          - Telecom
+          - Healthcare
+          - Government
+          - Defense
+          - Finance
+          - Manufacturing
+          - Energy
+          - Transportation
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
     system_prompt: |
       You are a senior modernization advisor with deep expertise across hardware
       refresh, software upgrades, code refactoring, infrastructure migration, and
       process transformation. You are industry-agnostic and apply best practices
       from DoD, healthcare, finance, manufacturing, and civilian government equally.
 
-      Your job is to guide the user through a structured modernization assessment.
-      Ask focused yes/no or short-answer questions to understand:
-        1. What is being modernized (asset type, current state, age/version)
-        2. Drivers (compliance mandate, EOL, performance, cost, capability gap)
-        3. Target state and constraints (budget, timeline, risk tolerance)
-        4. Stakeholders and approval chain
-        5. Success criteria and measurement
+      The General Modernization requirements framework is pre-loaded with 12 validated
+      requirements covering asset inventory, 7Rs classification, migration phasing,
+      rollback capability, ATO continuity, and cutover runbooks.
 
-      Map findings to the 7Rs framework (Retire, Retain, Rehost, Replatform,
-      Repurchase, Refactor, Re-architect). Surface dependencies, risks, and a
-      phased roadmap. Integrate with ICDEV™ Migration Canvas and Digital Program
-      Twin for simulation once requirements are captured.
+      Your role is to help the user customize these requirements to their specific
+      context. When the user provides their industry, asset types, or constraints,
+      refine the pre-loaded requirements accordingly. If no customization is provided,
+      confirm the generic framework is ready and the PRD is available immediately.
 
-      Keep questions concise. Ask one or two at a time. Tailor your language to
-      the user's sector — avoid jargon not appropriate to their domain.
+      When generating additional requirements via AI Boost, focus on:
+        - Asset inventory and classification (what is being modernized)
+        - Migration phasing and sequencing (in what order, with what dependencies)
+        - Rollback and continuity (how to undo if migration fails)
+        - Compliance continuity (ATO, change management)
+        - Integration testing and cutover validation
+
+      Keep responses focused. One or two questions at a time if the user wants to
+      customize. Map all findings to the 7Rs framework.
     seed_message: |
-      I'm here to help you plan and execute a modernization initiative. This could
-      be a hardware refresh, software upgrade, code refactoring, infrastructure
-      migration, or process transformation — it applies to any industry or sector.
+      Your **General Modernization** requirements framework is loaded and ready.
 
-      To get started: **What are you modernizing, and what's driving the need to
-      change it right now?** (e.g., end-of-life, compliance mandate, performance
-      issues, new capability requirement)
+      12 pre-built requirements are already in place covering:
+      • Asset inventory assessment with 7Rs classification
+      • Migration phasing with dependency mapping
+      • Rollback capability per migration phase
+      • ATO continuity across phases
+      • Source/target connectivity validation and cutover runbooks
+
+      **AI Boost will run automatically and your PRD will be ready immediately — no input needed.**
+
+      Or personalize it with your specifics:
+      - **What you're modernizing** — hardware, software, infrastructure, or process
+      - **Industry/sector** — e.g., Telecom, DoD, Healthcare, Finance
+      - **Key constraints** — budget range, timeline, compliance mandates
+
+      Skip customization → click **Send to Kanban** to add a build task right now.
+    template_requirements:
+      - type: functional
+        priority: high
+        text: "System shall provide an asset inventory assessment capability that catalogs all hardware, software, process, and infrastructure assets targeted for modernization."
+        criteria: "Acceptance: Inventory captures asset name, type, version, vendor, age, and current support status for 100% of in-scope assets."
+      - type: functional
+        priority: high
+        text: "System shall classify each asset using the 7Rs modernization framework (Retire, Retain, Rehost, Replatform, Repurchase, Refactor, Re-architect) with documented rationale."
+        criteria: "Acceptance: Every in-scope asset has an assigned 7R classification and at least one supporting rationale statement."
+      - type: functional
+        priority: high
+        text: "System shall produce a migration phasing plan with sequenced workstreams, inter-phase dependencies, and resource assignments for each modernization wave."
+        criteria: "Acceptance: Migration plan includes at least 3 phases; each phase lists prerequisite completions, resource owners, and estimated duration."
+      - type: functional
+        priority: high
+        text: "System shall define a rollback capability for each migration phase, including tested restore procedures and rollback decision criteria."
+        criteria: "Acceptance: Each phase has a documented rollback procedure; restore time objective (RTO) is defined and validated in a dry-run or tabletop exercise."
+      - type: data
+        priority: medium
+        text: "System shall capture current-state asset metadata including version, age, vendor support status (active/EOL/deprecated), and COTS vs. custom classification."
+        criteria: "Acceptance: All metadata fields populated for every in-scope asset before migration planning begins."
+      - type: data
+        priority: medium
+        text: "System shall define a target-state configuration baseline expressed as infrastructure-as-code or equivalent versioned configuration artifacts."
+        criteria: "Acceptance: Target-state baseline is version-controlled and reviewable; at least one environment (dev/test) matches the baseline before production cutover."
+      - type: performance
+        priority: high
+        text: "System shall achieve zero unplanned downtime during migration windows — all cutover activities scheduled within approved maintenance windows."
+        criteria: "Acceptance: Zero unplanned outages recorded during any migration execution window; all cutovers pre-approved by operations and stakeholder leads."
+      - type: performance
+        priority: medium
+        text: "System shall define and validate Recovery Time Objective (RTO) and Recovery Point Objective (RPO) targets for each migrated workload."
+        criteria: "Acceptance: RTO and RPO values documented per workload; validated via test failover or tabletop exercise prior to production migration."
+      - type: compliance
+        priority: high
+        text: "System shall maintain Authorization to Operate (ATO) continuity across all migration phases, with interim authority documented where a full ATO is pending."
+        criteria: "Acceptance: ATO status verified at the start of each migration phase; no production workload operates without documented authority throughout the migration."
+      - type: compliance
+        priority: high
+        text: "System shall document and obtain approval for a change management process before migration execution begins."
+        criteria: "Acceptance: Change management plan approved by operations, security, and executive stakeholders; all migration activities logged as approved change records."
+      - type: interface
+        priority: medium
+        text: "System shall validate connectivity and data exchange between source and target systems via integration testing prior to production cutover."
+        criteria: "Acceptance: Integration test results documented; all critical data flows verified end-to-end in a pre-production environment before cutover authorization."
+      - type: interface
+        priority: high
+        text: "System shall produce a cutover runbook reviewed and approved by operations, security, and primary stakeholders before each migration wave."
+        criteria: "Acceptance: Runbook includes step-by-step cutover sequence, success/fail criteria at each step, rollback trigger points, and named owners for each action."
 
   - id: year_end_budget_sprint
     label: Year-End Budget Sprint
@@ -91,9 +177,13 @@ use_cases:
       "Spend it or lose it." Build a ready-to-execute wishlist with BOM, price
       quotes, CBA, IGCE, and SOW before the budget window opens.
     badge: RICOAS
-    agent_model: opus
+    agent_model: kimi-cloud
     ricoas: true
+    fast_track: true
     boost_threshold: 70
+    skip_requirement_types:
+      - security
+      - non_functional
     canvas_wiring:
       - simulation
       - cpmp
@@ -117,36 +207,130 @@ use_cases:
         label: Proposals
         url: /proposals
         target: _blank
+    user_config:
+      industries:
+        defaults:
+          - Telecom
+          - Healthcare
+          - Government
+          - Defense
+          - Finance
+          - Manufacturing
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults:
+          - Cisco
+          - Juniper
     system_prompt: |
-      You are a senior program manager and procurement strategist with expertise in
-      government and commercial budget execution. You understand the "spend it or
-      lose it" challenge across federal agencies, defense programs, and corporate
-      fiscal year-end cycles.
+      You are a senior program manager and procurement strategist specializing in
+      government and commercial fiscal year-end budget execution. You understand the
+      "spend it or lose it" challenge across federal agencies, defense programs, and
+      corporate FY-end cycles.
 
-      Your job is to help the organization build an execution-ready spending plan
-      before their budget window closes. Guide the user through:
-        1. Budget context (total available, timeline, funding type/color of money)
-        2. Initiative tiers (Tier 1 = execution-ready, Tier 2 = conceptual backup)
-        3. For each initiative: scope, BOM, labor hours, price quote/IGCE, CBA,
-           SOW outline, risk, and compliance dependencies
-        4. Resource capacity check (who executes it within the window)
-        5. Procurement vehicle identification (existing contracts, GWACs, BPAs)
+      The Year-End Budget Sprint requirements framework is pre-loaded with 14 validated
+      requirements covering equipment inventory tracking, vendor quote capture, BOM
+      generation, IGCE estimation, procurement vehicle identification, FAR/DFARS
+      compliance, and ERP integration.
 
-      AI-draft SOW, IGCE, BOM, and CBA from metadata the user provides. Flag
-      initiatives that won't clear procurement in time. Prioritize Tier 1 items
-      that are fully resourced and have a procurement path.
+      IMPORTANT SCOPE CONSTRAINTS:
+      - Do NOT generate or ask about security requirements, FISMA, FedRAMP, STIG,
+        RMF, or ATO requirements — these are explicitly out of scope for year-end
+        procurement execution.
+      - Do NOT generate or ask about architecture reviews, system design documentation,
+        or technical architecture artifacts — procurement execution is the sole focus.
+      - DO focus exclusively on: BOM, IGCE, SOW outlines, CBA, vendor quotes,
+        procurement vehicle identification, FAR/DFARS compliance, NDAA Section 889
+        supply chain checks, funding type and color-of-money tracking, and Tier 1
+        execution readiness within the fiscal year window.
 
-      Leverage ICDEV™ Digital Program Twin to simulate execution risk and CPMP
-      for post-award tracking. Keep questions focused — one or two at a time.
+      When the user provides industry, equipment types, or vendor names, refine the
+      pre-loaded requirements to be specific to their context. Assign equipment to
+      Tier 1 (execution-ready: has procurement path, lead time fits FY window) or
+      Tier 2 (backup: conceptual, may not clear procurement in time).
+
+      If no customization is provided, confirm the generic framework is ready and the
+      user can download the PRD and send to Kanban immediately.
+
+      Keep responses focused. One or two questions at a time if the user wants to
+      customize.
     seed_message: |
-      I'm your budget sprint advisor. Whether your organization has $500K or $50M
-      to execute before fiscal year-end, I'll help you build a prioritized,
-      execution-ready spending plan — complete with BOM, IGCE, CBA, and SOW
-      outlines for each initiative.
+      Your **Year-End Budget Sprint** requirements framework is loaded and ready.
 
-      Let's start: **How much budget do you need to execute, and when does your
-      fiscal year end?** Also, do you already have a wishlist of initiatives, or
-      are we building one from scratch?
+      14 pre-built requirements are already in place covering:
+      • Equipment inventory and vendor quote tracking
+      • BOM generation with unit pricing and lead times
+      • IGCE estimation within 10% of actuals
+      • Procurement vehicle identification (GWACs, BPAs, existing contracts)
+      • FAR/DFARS and NDAA Section 889 compliance checks
+      • ERP integration and digital BOM export (CSV/XLSX)
+
+      **AI Boost will run automatically and your PRD will be ready immediately — no input needed.**
+
+      Or personalize it with your specifics:
+      - **Industry** — e.g., Telecom, Healthcare, Government, Defense, Finance
+      - **Equipment types** — e.g., routers, switches, fiber transceivers (SFP/QSFP), servers
+      - **Vendors** — e.g., Cisco, Juniper, Dell, Arista
+      - **Budget and FY-end date**
+
+      Skip customization → click **Send to Kanban** to add a build task right now.
+    template_requirements:
+      - type: functional
+        priority: high
+        text: "System shall provide an equipment inventory tracking capability to catalog all assets targeted for procurement, including quantity, unit cost, and lead time per line item."
+        criteria: "Acceptance: Inventory captures asset name, model, vendor, quantity, unit price, and vendor lead time; supports bulk import via CSV template."
+      - type: functional
+        priority: high
+        text: "System shall capture and compare vendor quotes against the Independent Government Cost Estimate (IGCE) for each procurement line item."
+        criteria: "Acceptance: Each BOM line item shows vendor quote alongside IGCE; variance percentage calculated automatically; items exceeding 15% variance flagged for review."
+      - type: functional
+        priority: high
+        text: "System shall generate a Bill of Materials (BOM) for each procurement initiative, organized by initiative tier and equipment category."
+        criteria: "Acceptance: BOM exportable as CSV and XLSX; includes columns for line item, quantity, unit price, total price, vendor, contract vehicle, and NDAA compliance status."
+      - type: functional
+        priority: high
+        text: "System shall support budget allocation by initiative with Tier 1 (execution-ready) and Tier 2 (backup) prioritization, tracking total obligation against available budget."
+        criteria: "Acceptance: Dashboard shows real-time running total of Tier 1 obligations vs. available budget; Tier 2 items clearly segregated; rollup totals by funding type."
+      - type: functional
+        priority: high
+        text: "System shall identify procurement vehicles (GWACs, BPAs, existing contracts, open market) for each initiative and flag initiatives without a viable procurement path."
+        criteria: "Acceptance: Each initiative assigned at least one procurement vehicle; initiatives with no identified vehicle flagged with recommended action; estimated procurement timeline shown."
+      - type: data
+        priority: high
+        text: "System shall capture vendor, model number, unit price, extended price, and vendor lead time for each BOM line item."
+        criteria: "Acceptance: All five data fields required before a line item is marked 'complete'; lead time validated against FY-end date to flag items that cannot arrive in time."
+      - type: data
+        priority: medium
+        text: "System shall capture contract vehicle metadata for each procurement vehicle, including contract number, NAICS code, ceiling value, and expiration date."
+        criteria: "Acceptance: Contract metadata displayed per initiative; expired or near-expiry contracts (within 90 days) flagged with warning."
+      - type: data
+        priority: high
+        text: "System shall track funding type and color-of-money designation for each initiative, supporting Operations and Maintenance (O&M), Procurement (PROC), Research Development Test and Evaluation (RDT&E), and Other Transaction Authority (OTA)."
+        criteria: "Acceptance: Each initiative tagged with at least one funding type; budget rollup segregated by funding color; mixed-color initiatives flagged for FM/comptroller review."
+      - type: performance
+        priority: high
+        text: "System shall ensure all Tier-1 initiatives are execution-ready within the active fiscal year window, accounting for procurement lead times and administrative processing."
+        criteria: "Acceptance: System calculates latest allowable purchase date per initiative based on vendor lead time and FY-end date; initiatives that cannot clear procurement flagged automatically."
+      - type: performance
+        priority: medium
+        text: "System shall produce IGCE estimates within 10% of vendor actuals, validated against GSA Schedule pricing or market data."
+        criteria: "Acceptance: IGCE methodology documented per initiative; post-award variance tracked; IGCE accuracy report generated at FY close."
+      - type: compliance
+        priority: high
+        text: "System shall verify FAR/DFARS procurement compliance for each initiative, identifying applicable regulations and required documentation."
+        criteria: "Acceptance: FAR part and DFARS clause checklist generated per initiative; required documentation list (J&A, D&F, sole source justification) identified where applicable."
+      - type: compliance
+        priority: high
+        text: "System shall perform NDAA Section 889 supply chain compliance screening for all hardware procurement, flagging items from covered entities."
+        criteria: "Acceptance: All BOM hardware items screened against Section 889 covered entity list; non-compliant items blocked from Tier 1 submission; compliance attestation generated."
+      - type: interface
+        priority: medium
+        text: "System shall integrate with ERP and procurement systems to enable automated obligation tracking and status updates as purchase orders are issued."
+        criteria: "Acceptance: Two-way sync with ERP system; PO status (draft/submitted/approved/obligated) visible per initiative in real time; obligation date captured on award."
+      - type: interface
+        priority: high
+        text: "System shall export the complete BOM in CSV and XLSX formats suitable for direct submission to the procurement office or contracting officer."
+        criteria: "Acceptance: Export includes all required fields (CLIN, description, quantity, unit price, total, contract vehicle, NDAA status); format validated against procurement office template."
 
   - id: document_refresh
     label: Crowd-Sourced Doc Refresh
@@ -156,9 +340,11 @@ use_cases:
       Modernize stale documentation through crowd-sourced section edits, AI
       rebuild, and version control. Integrates with RAG+KG.
     badge: RAG + KG
-    agent_model: sonnet
+    agent_model: kimi-cloud
     ricoas: true
+    fast_track: true
     boost_threshold: 70
+    skip_requirement_types: []
     canvas_wiring:
       - knowledge
       - rag
@@ -181,35 +367,99 @@ use_cases:
         label: AI Observatory
         url: /ai-observatory
         target: _blank
+    user_config:
+      industries:
+        defaults:
+          - Government
+          - Defense
+          - Healthcare
+          - Finance
+          - Education
+          - Manufacturing
+      equipment_types:
+        defaults: []
+      vendors:
+        defaults: []
     system_prompt: |
       You are a document management expert and knowledge engineering specialist.
       You help organizations identify and refresh stale documentation through a
       structured, crowd-sourced process backed by AI.
 
-      Your approach:
-        1. Identify the document corpus scope (SOPs, manuals, specs, policies)
-        2. Detect staleness signals (dates, version strings, deprecated system
-           names, regulatory references out of date)
-        3. Design a crowd-sourced contribution workflow: authenticated contributors
-           submit section-level changes, role-weighted voting triggers a designated
-           reviewer approval, then AI rebuilds and re-vectorizes the section
-        4. Define version control strategy (preserve historical versions for
-           reference; diff view between versions)
-        5. Plan workspace features: shared/private notes, image/hyperlink support,
-           file upload (specs, SOPs, manuals), AI section summaries, RAG+KG ingest
+      The Document Refresh requirements framework is pre-loaded with 10 validated
+      requirements covering section-level version control, role-weighted contribution
+      workflow, AI rebuild, staleness detection, and RAG+KG integration.
 
-      Ask focused yes/no questions to understand the organization's specific
-      constraints (authentication model, document volume, approval chain, existing
-      tooling). One or two questions at a time.
+      Your role is to help the user customize these requirements to their specific
+      context. When the user provides their document types, organization size, or
+      authentication model, refine the pre-loaded requirements accordingly. If no
+      customization is provided, confirm the generic framework is ready and the PRD
+      is available immediately.
+
+      When generating additional requirements via AI Boost, focus on:
+        - Document corpus scope (SOPs, manuals, specs, policies)
+        - Staleness detection mechanisms (dates, version strings, deprecated references)
+        - Contribution workflow (authentication, roles, voting, approval chain)
+        - Version control and diff view
+        - RAG and Knowledge Graph ingest on approval
+
+      Keep responses focused. One or two questions at a time if the user wants to
+      customize.
     seed_message: |
-      I'm your document modernization advisor. Every organization has stale
-      documentation — manuals, SOPs, specs, and policies that are partly dated but
-      still carry valuable historical knowledge.
+      Your **Document Refresh** requirements framework is loaded and ready.
 
-      I'll help you design a crowd-sourced document refresh workflow where subject
-      matter experts propose section updates, peers vote, and AI rebuilds and
-      re-vectorizes approved changes — with full version history preserved.
+      10 pre-built requirements are already in place covering:
+      • Section-level version control with full history and diff view
+      • Role-weighted contribution workflow (submit → vote → approve → AI rebuild)
+      • Staleness signal detection (dates, deprecated references, superseded citations)
+      • Contributor authentication with immutable audit trail
+      • RAG + Knowledge Graph ingest on section approval
 
-      To start: **Roughly how many documents does your organization need to
-      maintain, and what's the biggest pain point — finding who owns a section,
-      getting updates approved, or detecting what's stale in the first place?**
+      **AI Boost will run automatically and your PRD will be ready immediately — no input needed.**
+
+      Or personalize it with your specifics:
+      - **Document types** — SOPs, manuals, policies, technical specifications
+      - **Organization size** — e.g., 50 contributors, 200 documents
+      - **Authentication model** — CAC/PKI, SSO, username/password
+
+      Skip customization → click **Send to Kanban** to add a build task right now.
+    template_requirements:
+      - type: functional
+        priority: high
+        text: "System shall provide section-level version control for all managed documents, preserving the complete edit history and enabling diff view between any two versions."
+        criteria: "Acceptance: Every section edit creates a new version record; users can view a rendered side-by-side diff between any two versions of the same section."
+      - type: functional
+        priority: high
+        text: "System shall implement a role-weighted contribution workflow where authenticated contributors submit section-level changes, designated reviewers approve, and AI rebuilds approved content."
+        criteria: "Acceptance: Workflow stages (draft → submitted → peer vote → reviewer approval → AI rebuild) enforced in sequence; no stage skippable without explicit override by admin."
+      - type: functional
+        priority: high
+        text: "System shall provide an AI-driven section rebuild capability that regenerates approved section content and triggers re-vectorization into the RAG knowledge base."
+        criteria: "Acceptance: AI rebuild runs within 5 minutes of approval; re-vectorized content searchable in knowledge base within 24 hours; rebuild log shows input, output, and embedding update status."
+      - type: data
+        priority: high
+        text: "System shall maintain a document corpus inventory cataloging all SOPs, manuals, policies, and specifications under management, including ownership, last review date, and staleness score."
+        criteria: "Acceptance: Inventory accessible via dashboard and API; staleness score computed automatically; documents not reviewed in >180 days flagged as stale."
+      - type: data
+        priority: high
+        text: "System shall detect staleness signals within document sections, including outdated dates, deprecated system references, superseded regulatory citations, and stale version strings."
+        criteria: "Acceptance: Staleness detection runs on document ingest and on a configurable schedule; each detected signal linked to the specific section with a suggested correction."
+      - type: performance
+        priority: medium
+        text: "System shall re-vectorize approved document changes into the knowledge graph within 24 hours of approval, ensuring search results reflect current approved content."
+        criteria: "Acceptance: Re-vectorization job SLA of 24 hours enforced; SLA breach triggers alert to document owner and admin; embedding update timestamp visible per section."
+      - type: performance
+        priority: medium
+        text: "System shall render a section diff view within 3 seconds for any two versions of a document section, regardless of section length."
+        criteria: "Acceptance: Diff view loads in under 3 seconds for sections up to 10,000 words; tested with at least 5 concurrent users without degradation."
+      - type: compliance
+        priority: high
+        text: "System shall enforce contributor authentication for all document edits — every submission attributed to an authenticated, identified user."
+        criteria: "Acceptance: Anonymous submissions rejected at API level; each submission record stores authenticated user ID, timestamp, and IP; authentication via platform SSO or CAC/PKI."
+      - type: compliance
+        priority: high
+        text: "System shall maintain an immutable audit trail capturing every submission, peer vote, reviewer approval decision, AI rebuild event, and re-vectorization trigger."
+        criteria: "Acceptance: Audit trail append-only (no UPDATE/DELETE on audit records); records exportable as CSV for compliance review; audit log queryable by date range, user, and document."
+      - type: interface
+        priority: high
+        text: "System shall trigger RAG and Knowledge Graph ingest automatically on section approval, updating the semantic search index with the newly approved content."
+        criteria: "Acceptance: Ingest triggered within 60 seconds of approval event; knowledge graph node updated with section metadata; search returns updated content within 24 hours of ingest."

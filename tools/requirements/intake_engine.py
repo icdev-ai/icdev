@@ -309,6 +309,12 @@ def _build_llm_system_prompt(session_data, signals, persona, ctx, session_id, co
     if selected_fw:
         system_parts.append(f"Selected Frameworks: {', '.join(selected_fw)}")
     system_parts.append(f"Requirements captured so far: {req_count}")
+    skip_types = ctx.get("skip_requirement_types", [])
+    if skip_types:
+        system_parts.append(
+            f"OUT OF SCOPE — Do NOT ask about or generate requirements for: "
+            f"{', '.join(skip_types)}. These are explicitly excluded from this engagement."
+        )
 
     active_tech_prompt = ctx.get("active_technique_prompt")
     if active_tech_prompt:
@@ -441,6 +447,8 @@ class _NewSessionParams:
     goal: str = "build"
     selected_frameworks: Optional[List[str]] = None
     custom_role_description: str = ""
+    extra_context: Optional[dict] = None
+    template_requirements: Optional[List[dict]] = None
 
 
 def _resolve_classification(project_id, classification, conn):
@@ -520,6 +528,29 @@ def _generate_welcome_message(params: "_NewSessionParams", classification: str) 
     return persona.get("opening_question", "").strip() or default_welcome
 
 
+def _seed_template_requirements(session_id: str, template_reqs: list, classification: str, conn) -> None:
+    """Bulk-insert pre-authored template requirements (source_turn=0, status=validated)."""
+    for req in template_reqs:
+        req_type = req.get("type", "functional")
+        priority = req.get("priority", "medium")
+        raw_text = req.get("text", "").strip()
+        criteria = req.get("criteria", "").strip()
+        if not raw_text:
+            continue
+        req_id = _generate_id("req")
+        try:
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, source_turn, raw_text, requirement_type, priority,
+                    status, acceptance_criteria, classification)
+                   VALUES (?, ?, 0, ?, ?, ?, 'validated', ?, ?)""",
+                (req_id, session_id, raw_text, req_type, priority, criteria,
+                 classification or "CUI"),
+            )
+        except Exception:
+            pass
+
+
 def _create_session_impl(params: "_NewSessionParams") -> dict:
     """Core session creation; delegates from the public create_session entrypoint."""
     session_id = _generate_id("sess")
@@ -541,6 +572,9 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
         "selected_frameworks": params.selected_frameworks or [],
         "custom_role_description": params.custom_role_description,
     }
+    # Merge extra_context (e.g. fast_track config from use case)
+    if params.extra_context and isinstance(params.extra_context, dict):
+        context.update(params.extra_context)
     conn.execute("UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
                  (json.dumps(context), session_id))
     conn.execute(
@@ -552,6 +586,10 @@ def _create_session_impl(params: "_NewSessionParams") -> dict:
             "customer_name": params.customer_name, "impact_level": params.impact_level,
         })),
     )
+
+    # Bulk-insert template requirements (source_turn=0, status=validated)
+    if params.template_requirements:
+        _seed_template_requirements(session_id, params.template_requirements, classification, conn)
 
     welcome_message = _generate_welcome_message(params, classification)
 
@@ -597,6 +635,8 @@ def create_session(
     goal: str = "build",
     selected_frameworks=None,
     custom_role_description: str = "",
+    extra_context: dict = None,
+    template_requirements: list = None,
 ) -> dict:
     """Create a new intake session. Returns session data dict.
 
@@ -605,6 +645,9 @@ def create_session(
     - If None, resolve from project metadata (classification + impact_level).
     - Public / IL2 -> "PUBLIC" (no marking required).
     - IL4/IL5 -> "CUI", IL6 -> "SECRET" (backward compat per ADR D54).
+
+    extra_context: merged into context_summary (holds skip_requirement_types, user_config, fast_track).
+    template_requirements: list of {type, priority, text, criteria} — bulk-inserted as source_turn=0.
     """
     params = _NewSessionParams(
         project_id=project_id, customer_name=customer_name,
@@ -612,6 +655,8 @@ def create_session(
         classification=classification, created_by=created_by, db_path=db_path,
         role=role, goal=goal, selected_frameworks=selected_frameworks,
         custom_role_description=custom_role_description,
+        extra_context=extra_context,
+        template_requirements=template_requirements,
     )
     return _create_session_impl(params)
 
