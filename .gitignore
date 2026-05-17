@@ -77,6 +77,9 @@ playwright/
 reports/
 tasks/
 
+# Test suite (local only)
+tests/
+
 # Vendored binaries (downloaded via setup, not committed)
 # Use layered rules so vendor/drivers README + .gitkeep + CHECKSUMS manifest
 # can be tracked while actual binary executables (.exe, bare binaries) are not.
