@@ -12,7 +12,6 @@ This module is the integration point that combines both optimizations.
 """
 from __future__ import annotations
 
-import json
 import logging
 import queue
 import sqlite3
@@ -20,7 +19,6 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger("icdev.async_alert_writer")

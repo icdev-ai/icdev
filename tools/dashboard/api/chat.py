@@ -545,7 +545,6 @@ def _build_standalone_html(uc: dict) -> str:
         req_html += f'<li class="req-item"><span class="req-badge req-badge--{req_type}">{req_type}</span> <span class="req-priority req-priority--{req_priority}">{req_priority}</span> {req_text}</li>\n'
 
     vendors = user_config.get("vendors", {}).get("defaults", [])
-    industries = user_config.get("industries", {}).get("defaults", [])
     vendor_opts = "".join(f"<option>{_html.escape(v)}</option>" for v in vendors) or "<option>Custom</option>"
 
     # Build header column labels
@@ -553,7 +552,6 @@ def _build_standalone_html(uc: dict) -> str:
 
     # Build input row cells
     def make_input(key, idx, col_name):
-        col_lower = col_name.lower()
         if key in ("tier", "classification_7r", "staleness"):
             return f'<td><select class="cell-input" data-key="{key}">{tier_options}</select></td>'
         if key == "status":
