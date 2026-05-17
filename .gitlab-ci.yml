@@ -6,6 +6,7 @@ stages:
   - validate
   - lint
   - test
+  - load-test
   - security
   - sandbox
   - bdd
@@ -77,6 +78,28 @@ test:unit:
     when: always
     reports:
       junit: report.xml
+
+# ---------------------------------------------------------------------------
+# Stage: load-test — E2E alert pipeline throughput and latency gate
+# Generates 500 alerts/sec; asserts aggregate p99 latency < 5 000 ms.
+# Covers: JSON serialization + HTTP forwarding + SQLite write.
+# Reference: NIST AU-6, SI-4 — 5-second alert delivery SLA.
+# ---------------------------------------------------------------------------
+test:load-e2e:
+  stage: load-test
+  script:
+    - bash scripts/load_test.sh
+    - pytest tests/e2e_alert_test.py -v --tb=short --junitxml=load-test-report.xml
+  artifacts:
+    when: always
+    reports:
+      junit: load-test-report.xml
+    paths:
+      - load-test-report.xml
+    expire_in: 30 days
+  allow_failure: false
+  variables:
+    ICDEV_STORAGE_BACKEND: sqlite
 
 security:bandit:
   stage: security
