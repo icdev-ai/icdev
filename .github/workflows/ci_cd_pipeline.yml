@@ -1,0 +1,71 @@
+# [TEMPLATE: CUI // SP-CTI]
+# CI/CD Pipeline — Interface Deployments
+# Classification: CUI // SP-CTI
+#
+# This pipeline adds an Interface-Validation-Scan stage that runs before
+# deployment.  The build is marked as failed if the security check fails.
+
+name: CI/CD Pipeline — Interface Deployments
+
+on:
+  push:
+    branches: [main, master, develop, "feature-*"]
+    paths:
+      - "frontend/**"
+      - "tools/dashboard/**"
+      - "tools/db/**"
+      - "docker/Dockerfile.dashboard"
+      - ".github/workflows/ci_cd_pipeline.yml"
+      - ".github/workflows/interface_validation_steps.yaml"
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "frontend/**"
+      - "tools/dashboard/**"
+      - "tools/db/**"
+      - "docker/Dockerfile.dashboard"
+
+env:
+  PYTHONPATH: "."
+  ICDEV_CLASSIFICATION: "CUI"
+  ICDEV_IMPACT_LEVEL: "IL4"
+
+jobs:
+  # ── Stage: Interface-Validation-Scan ─────────────────────────────────────
+  Interface-Validation-Scan:
+    name: Interface Validation Scan
+    uses: ./.github/workflows/interface_validation_steps.yaml
+    # This stage must pass before deployment can proceed.
+    # Security findings with severity >= medium fail the build.
+
+  # ── Stage: Deploy ────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy Interface
+    runs-on: ubuntu-latest
+    needs: [Interface-Validation-Scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log deployment event
+        run: |
+          echo "Interface deployment triggered for SHA=${{ github.sha }}"
+          echo "Classification: ${ICDEV_CLASSIFICATION}"
+          echo "Impact Level: ${ICDEV_IMPACT_LEVEL}"
+
+      - name: Build dashboard image
+        run: |
+          docker build -f docker/Dockerfile.dashboard \
+            -t icdev/dashboard:${{ github.sha }} .
+
+      - name: Tag and push (GHCR)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY: ghcr.io
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+          docker tag icdev/dashboard:${{ github.sha }} \
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/icdev/dashboard:${{ github.sha }}
+          docker push ${{ env.REGISTRY }}/${{ github.repository_owner }}/icdev/dashboard:${{ github.sha }}
+# [TEMPLATE: CUI // SP-CTI]

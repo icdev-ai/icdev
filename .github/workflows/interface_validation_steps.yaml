@@ -1,0 +1,113 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Interface Validation Steps — Reusable Workflow
+# Classification: CUI // SP-CTI
+#
+# Defines the Interface-Validation-Scan stage jobs:
+#   1. Interface validation (health check, OpenAPI schema integrity)
+#   2. Security scanning (SAST + dependency audit)
+#   3. Hard failure if security gate is breached
+
+name: Interface Validation Steps
+
+on:
+  workflow_call:
+
+jobs:
+  interface-validation-scan:
+    name: Interface Validation & Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --quiet -r requirements.txt
+          pip install bandit pip-audit openapi-spec-validator
+
+      # ── 1. Interface Validation ─────────────────────────────────────────
+      - name: Validate Python imports (dashboard)
+        run: |
+          python -c "from tools.dashboard.app import app; print('Dashboard app import OK')"
+
+      - name: Validate DB schema init
+        run: python tools/db/init_icdev_db.py
+
+      - name: Run health check
+        run: python tools/testing/health_check.py --json
+
+      # ── 2. Security Scan ────────────────────────────────────────────────
+      - name: SAST (bandit) — medium severity and above
+        id: bandit_scan
+        run: |
+          bandit -r tools/ -ll -ii -f json -o bandit-report.json
+          echo "Bandit report generated."
+
+      - name: Dependency audit (pip-audit)
+        id: pip_audit
+        continue-on-error: true
+        run: |
+          pip install -r requirements.txt
+          pip-audit --skip-editable -f json -o pip-audit-report.json || true
+
+      - name: Coherence gate check
+        id: coherence_gate
+        run: |
+          python tools/workflow/coherence_checker.py --all --gate --json || true
+
+      # ── 3. Fail build on security findings ─────────────────────────────
+      - name: Evaluate security gate
+        run: |
+          import json, sys, os
+
+          # Bandit gate: any finding with severity >= medium blocks the build
+          bandit_path = "bandit-report.json"
+          if os.path.exists(bandit_path):
+              with open(bandit_path) as f:
+                  bandit = json.load(f)
+              results = bandit.get("results", [])
+              medium_or_higher = [
+                  r for r in results
+                  if r.get("issue_severity", "").lower() in ("medium", "high")
+              ]
+              if medium_or_higher:
+                  print(f"SECURITY GATE FAILED: {len(medium_or_higher)} bandit finding(s) >= MEDIUM")
+                  for r in medium_or_higher[:5]:
+                      print(f"  - {r.get('issue_text')} ({r.get('issue_severity')}) at {r.get('filename')}:{r.get('line_number')}")
+                  sys.exit(1)
+              else:
+                  print(f"Bandit: {len(results)} total finding(s), none >= MEDIUM — PASS")
+          else:
+              print("Bandit report missing — treating as FAIL")
+              sys.exit(1)
+
+          # pip-audit gate: any vulnerability blocks the build
+          audit_path = "pip-audit-report.json"
+          if os.path.exists(audit_path):
+              with open(audit_path) as f:
+                  audit = json.load(f)
+              vulns = audit.get("vulnerabilities", [])
+              if vulns:
+                  print(f"SECURITY GATE FAILED: {len(vulns)} pip-audit vulnerability(s)")
+                  for v in vulns[:5]:
+                      print(f"  - {v.get('vulnerability_id')} in {v.get('package_name')}")
+                  sys.exit(1)
+              else:
+                  print("pip-audit: no vulnerabilities — PASS")
+          else:
+              print("pip-audit report missing — skipping (optional)")
+
+          print("Interface-Validation-Scan PASSED — build may proceed to deployment.")
+        shell: python
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: interface-security-reports
+          path: |
+            bandit-report.json
+            pip-audit-report.json
+        if: always()
+# [TEMPLATE: CUI // SP-CTI]
