@@ -6615,4 +6615,54 @@ RESOURCE_REGISTRY = {
             "properties": {},
         },
     },
+    # ============================================================
+    # CONFLICT MESH (3 tools)
+    # ============================================================
+    "conflict_mesh_etl": {
+        "category": "conflict_mesh",
+        "module": "tools.conflict_mesh.etl_pipeline",
+        "handler": "main",
+        "description": "Run ETL pipeline: pull conflict events from federated providers (ACLED, GDELT, ReliefWeb), normalize, and upsert into sg_conflict_events",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "since_date": {"type": "string", "description": "Fetch events on or after this date (YYYY-MM-DD)"},
+                "limit": {"type": "integer", "default": 100, "description": "Max events per provider"},
+                "dry_run": {"type": "boolean", "default": False, "description": "Validate without writing to DB"},
+                "providers": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["acled", "gdelt", "reliefweb"]},
+                    "description": "Providers to enable (default: all three)",
+                },
+            },
+        },
+    },
+    "conflict_mesh_predict": {
+        "category": "conflict_mesh",
+        "module": "tools.conflict_mesh.escalation_predictor",
+        "handler": "main",
+        "description": "Score conflict events for escalation risk using ML pattern engine; store predictions in conflict_predictions",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "event_id": {"type": "string", "description": "Score a single event from DB by id"},
+                "batch_since": {"type": "string", "description": "Score all events since date (YYYY-MM-DD)"},
+                "threshold": {"type": "number", "default": 0.7, "description": "High-risk threshold (0–1)"},
+                "limit": {"type": "integer", "default": 20, "description": "Max results"},
+            },
+        },
+    },
+    "conflict_mesh_high_risk": {
+        "category": "conflict_mesh",
+        "module": "tools.conflict_mesh.escalation_predictor",
+        "handler": "main",
+        "description": "Return stored conflict predictions with escalation_risk >= threshold, ordered by risk descending",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "threshold": {"type": "number", "default": 0.7, "description": "Minimum risk score (0–1)"},
+                "limit": {"type": "integer", "default": 20, "description": "Max results to return"},
+            },
+        },
+    },
 }
