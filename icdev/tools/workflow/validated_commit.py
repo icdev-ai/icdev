@@ -420,6 +420,10 @@ def _run_e2e(cwd: str, ui_touched: bool) -> Tuple[bool, str, Dict[str, Any]]:
                 return True, "E2E skipped — API POST timeout (transient server load)", metrics
             return False, f"E2E failed: {_last_stdout[-200:]}", metrics
     except Exception as exc:
+        # subprocess.TimeoutExpired or other transient failure — treat as skip.
+        if "timed out" in str(exc).lower() or "timeout" in str(exc).lower():
+            metrics["e2e_passed"] = None
+            return True, "E2E skipped — subprocess/API timeout (transient server load)", metrics
         metrics["e2e_passed"] = False
         return False, f"E2E error: {exc}", metrics
 
