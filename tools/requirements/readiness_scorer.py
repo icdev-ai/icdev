@@ -340,7 +340,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
         },
         "requirement_count": total,
         "types_present": list(types_present),
-        "types_missing": list(expected_types - types_present),
+        "types_missing": list(effective_expected - types_present),
         "recommendation": recommendation,
         "threshold": threshold,
     }

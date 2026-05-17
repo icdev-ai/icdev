@@ -524,7 +524,7 @@ class PredictiveAnalysisEngine:
                 json.dumps(forecasts["7d"]),
                 narrative_md,
                 generated_at,
-                "CUI // SP-CTI",
+                "CUI",
             ),
         )
         conn.commit()

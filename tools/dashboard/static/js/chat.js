@@ -269,6 +269,9 @@
     }
 
     function closeContext(ctxId) {
+        // Reset fast-track state on context close
+        _fastTrackConfig = null;
+        _fastTrackDone = false;
         chatApi('POST', '/' + ctxId + '/close').then(function () {
             refreshContextList();
             setText('chat-title', 'Select or create a context');
@@ -1982,13 +1985,28 @@
                 var catEl = document.getElementById('uc-f-category');
                 if (catEl) catEl.value = uc.category || 'general';
                 var modelEl = document.getElementById('uc-f-model');
-                if (modelEl) modelEl.value = uc.agent_model || 'sonnet';
+                if (modelEl) modelEl.value = uc.agent_model || 'kimi-cloud';
                 var ricoasEl = document.getElementById('uc-f-ricoas');
                 if (ricoasEl) ricoasEl.checked = !!uc.ricoas;
                 document.getElementById('uc-f-desc').value = uc.description || '';
                 document.getElementById('uc-f-system').value = uc.system_prompt || '';
                 document.getElementById('uc-f-seed').value = uc.seed_message || '';
                 renderUcQaRows(uc.quick_actions || []);
+                // Fast-track user_config section
+                var ucConfigSection = document.getElementById('uc-user-config-section');
+                if (ucConfigSection) {
+                    ucConfigSection.style.display = uc.fast_track ? 'block' : 'none';
+                    if (uc.fast_track) {
+                        var userConfig = uc.user_config || {};
+                        renderUcTagList('uc-industries-list', (userConfig.industries || {}).defaults || []);
+                        renderUcTagList('uc-equipment-list', (userConfig.equipment_types || {}).defaults || []);
+                        renderUcTagList('uc-vendors-list', (userConfig.vendors || {}).defaults || []);
+                        var skipTypes = uc.skip_requirement_types || [];
+                        document.querySelectorAll('.uc-skip-type').forEach(function (cb) {
+                            cb.checked = skipTypes.indexOf(cb.value) !== -1;
+                        });
+                    }
+                }
                 document.getElementById('uc-modal-title').textContent = 'Edit — ' + (uc.label || ucId);
                 document.getElementById('uc-edit-modal').style.display = 'flex';
                 document.getElementById('uc-f-label').focus();
@@ -2032,6 +2050,43 @@
         return result;
     }
 
+    // --- Tag list helpers for user_config (industries, equipment, vendors) ---
+
+    function renderUcTagList(containerId, items) {
+        var container = document.getElementById(containerId);
+        if (!container) return;
+        container.innerHTML = '';
+        for (var i = 0; i < items.length; i++) appendUcTag(containerId, items[i]);
+    }
+
+    function appendUcTag(containerId, text) {
+        var container = document.getElementById(containerId);
+        if (!container || !text.trim()) return;
+        var tag = document.createElement('span');
+        tag.className = 'uc-config-tag';
+        tag.innerHTML = escHtml(text.trim())
+            + '<button class="uc-tag-remove" type="button" title="Remove">&#x2715;</button>';
+        tag.querySelector('.uc-tag-remove').addEventListener('click', function () { tag.remove(); });
+        container.appendChild(tag);
+    }
+
+    function collectUcTags(containerId) {
+        var tags = document.querySelectorAll('#' + containerId + ' .uc-config-tag');
+        var result = [];
+        for (var i = 0; i < tags.length; i++) {
+            var text = tags[i].textContent.replace('✕', '').trim();
+            if (text) result.push(text);
+        }
+        return result;
+    }
+
+    function collectCheckedSkipTypes() {
+        var checked = document.querySelectorAll('.uc-skip-type:checked');
+        var result = [];
+        for (var i = 0; i < checked.length; i++) result.push(checked[i].value);
+        return result;
+    }
+
     function saveUcEdit() {
         var ucId = document.getElementById('uc-f-id').value;
         if (!ucId) return;
@@ -2050,6 +2105,17 @@
             seed_message: document.getElementById('uc-f-seed').value,
             quick_actions: collectUcQaRows(),
         };
+        // Collect fast-track user_config if section is visible
+        var ucConfigSection = document.getElementById('uc-user-config-section');
+        if (ucConfigSection && ucConfigSection.style.display !== 'none') {
+            payload.user_config = {
+                industries: { defaults: collectUcTags('uc-industries-list') },
+                equipment_types: { defaults: collectUcTags('uc-equipment-list') },
+                vendors: { defaults: collectUcTags('uc-vendors-list') }
+            };
+            payload.skip_requirement_types = collectCheckedSkipTypes();
+            payload.fast_track = true;
+        }
 
         fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId), {
             method: 'PUT',
@@ -2096,6 +2162,23 @@
         if (saveBtn) saveBtn.addEventListener('click', saveUcEdit);
         if (resetBtn) resetBtn.addEventListener('click', function () { resetUcDefault(_ucEditId); });
         if (addQaBtn) addQaBtn.addEventListener('click', function () { appendUcQaRow({}); });
+        // Wire tag-add buttons for user_config lists
+        function wireTagBtn(btnId, listId, inputId) {
+            var btn = document.getElementById(btnId);
+            var input = document.getElementById(inputId);
+            if (btn && input) {
+                btn.addEventListener('click', function () {
+                    var val = input.value.trim();
+                    if (val) { appendUcTag(listId, val); input.value = ''; }
+                });
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') { e.preventDefault(); btn.click(); }
+                });
+            }
+        }
+        wireTagBtn('uc-industries-add-btn', 'uc-industries-list', 'uc-industries-input');
+        wireTagBtn('uc-equipment-add-btn', 'uc-equipment-list', 'uc-equipment-input');
+        wireTagBtn('uc-vendors-add-btn', 'uc-vendors-list', 'uc-vendors-input');
         if (overlay) {
             overlay.addEventListener('click', function (e) { if (e.target === overlay) closeUcEditModal(); });
             overlay.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeUcEditModal(); });

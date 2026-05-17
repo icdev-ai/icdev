@@ -252,7 +252,7 @@
           <td>{{ (b.dti_score or 0) | round(0) | int }}h</td>
           <td>{{ b.signal_count_24h or 0 }}</td>
           <td>{% if b.iw_triggered %}<span style="color:#ef4444">&#9888;</span>{% else %}<span style="color:#22c55e">&#10003;</span>{% endif %}</td>
-          <td style="color:var(--ib-dim);font-size:11px;font-family:monospace">{{ b.generated_at[:16] if b.generated_at else '—' }}</td>
+          <td style="color:var(--ib-dim);font-size:11px;font-family:monospace">{{ (b.generated_at | string)[:16] if b.generated_at else '—' }}</td>
           <td>
             <button onclick="showNarrative({{ loop.index0 }})"
               style="padding:3px 8px;background:var(--ib-surface);border:1px solid var(--ib-border);

@@ -30,7 +30,7 @@ def up(conn=None) -> None:
                 forecast_7d_json     TEXT,
                 narrative_md         TEXT,
                 generated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                classification       TEXT NOT NULL DEFAULT 'CUI // SP-CTI'
+                classification       TEXT NOT NULL DEFAULT 'CUI'
             )
             """
         )
@@ -54,7 +54,7 @@ def up(conn=None) -> None:
                 forecast_7d_json     TEXT,
                 narrative_md         TEXT,
                 generated_at         TEXT NOT NULL DEFAULT (datetime('now')),
-                classification       TEXT NOT NULL DEFAULT 'CUI // SP-CTI'
+                classification       TEXT NOT NULL DEFAULT 'CUI'
             )
             """
         )

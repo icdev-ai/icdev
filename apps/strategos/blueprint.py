@@ -4550,6 +4550,7 @@ def api_strategos_iqe_query():
 # Predictive Intelligence Briefings — page + API
 # ---------------------------------------------------------------------------
 
+
 @_bp.route("/intel-brief")
 @_bp.route("/intel-brief/")
 def strategos_intel_brief():
@@ -4566,6 +4567,7 @@ def strategos_intel_brief():
     )
 
     # Parse forecast JSON strings to dicts so templates don't need from_json
+    # Also normalize datetime fields to strings for template compatibility
     for b in briefs:
         for key in ("forecast_24h_json", "forecast_72h_json", "forecast_7d_json"):
             raw = b.get(key)
@@ -4574,6 +4576,8 @@ def strategos_intel_brief():
                     b[key] = _json.loads(raw)
                 except Exception:
                     b[key] = {}
+        if b.get("generated_at") and not isinstance(b["generated_at"], str):
+            b["generated_at"] = str(b["generated_at"])
 
     latest_brief = briefs[0] if briefs else None
     briefs_json = _json.dumps(briefs, default=str)
