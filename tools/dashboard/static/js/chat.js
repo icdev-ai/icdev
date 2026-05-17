@@ -1299,9 +1299,10 @@
             html += '<div class="ctx-item' + (isActive ? ' active' : '') + '" data-ctx-id="' + c.context_id + '" '
                 + 'style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); cursor: pointer;'
                 + (isActive ? ' background: var(--bg-tertiary, #223);' : '') + '">'
-                + '<div style="display: flex; justify-content: space-between; align-items: center;">'
-                + '<span style="font-size: 0.85rem; font-weight: 500;">' + escHtml(c.title || c.context_id) + titleSuffix + '</span>'
-                + '<span style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>'
+                + '<div style="display: flex; justify-content: space-between; align-items: center; gap: 4px;">'
+                + '<span style="font-size: 0.85rem; font-weight: 500; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">' + escHtml(c.title || c.context_id) + titleSuffix + '</span>'
+                + '<span style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block; flex-shrink: 0;"></span>'
+                + '<button class="ctx-item__delete" data-ctx-id="' + c.context_id + '" title="Delete context" tabindex="-1">&#x2715;</button>'
                 + '</div>'
                 + '<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 2px;">'
                 + c.message_count + ' msgs'
@@ -1316,6 +1317,16 @@
             items[j].addEventListener('click', (function (id) {
                 return function () { switchContext(id); };
             })(items[j].dataset.ctxId));
+        }
+
+        var delBtns = container.querySelectorAll('.ctx-item__delete');
+        for (var k = 0; k < delBtns.length; k++) {
+            delBtns[k].addEventListener('click', (function (id) {
+                return function (e) {
+                    e.stopPropagation();
+                    closeContext(id);
+                };
+            })(delBtns[k].dataset.ctxId));
         }
     }
 
@@ -1748,16 +1759,24 @@
     // ---- Start use case (create context + seed message) ----
 
     function startUseCase(ucId) {
+        var card = document.querySelector('.chat-uc-card[data-uc-id="' + ucId + '"]');
+        if (card) card.classList.add('chat-uc-card--loading');
+
+        function clearLoading() {
+            if (card) card.classList.remove('chat-uc-card--loading');
+        }
+
         fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId))
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (uc) {
-                if (!uc || uc.error) return;
+                if (!uc || uc.error) { clearLoading(); return; }
                 var opts = {
                     title: uc.label || ucId,
                     agent_model: uc.agent_model || 'sonnet',
                     system_prompt: uc.system_prompt || ''
                 };
                 function afterCreate(ctx) {
+                    clearLoading();
                     if (!ctx || ctx.error) return;
                     _ucContextMap[ctx.context_id] = ucId;
                     try { localStorage.setItem('icdev_uc_ctx_map', JSON.stringify(_ucContextMap)); } catch (e) {}
@@ -1771,7 +1790,8 @@
                 } else {
                     createContext(opts).then(afterCreate);
                 }
-            });
+            })
+            .catch(function () { clearLoading(); });
     }
 
     // ---- Active use case action bar ----
