@@ -164,7 +164,7 @@
         hideRicoasSidebar();
         stopRicoasTimers();
 
-        chatApi('GET', '/' + ctxId).then(function (ctx) {
+        chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
             if (ctx.error) return;
             setText('chat-title', ctx.title || ctxId);
             var statusEl = document.getElementById('chat-status');
@@ -197,7 +197,7 @@
         showRicoasSidebar();
 
         // Load context header from chat API
-        chatApi('GET', '/' + ctxId).then(function (ctx) {
+        chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
             if (ctx.error) return;
             setText('chat-title', ctx.title || 'Requirements Intake');
             var statusEl = document.getElementById('chat-status');
@@ -217,7 +217,7 @@
         });
 
         // Load messages from intake API
-        fetch(INTAKE_API + '/conversation/' + intakeSessionId)
+        fetch(INTAKE_API + '/session/' + intakeSessionId)
             .then(function (r) { return r.json(); })
             .then(function (data) {
                 if (data.error) {
@@ -846,23 +846,24 @@
 
         // If nothing in DOM and we have an intake session, fetch conversation from API
         if (!planMarkdown && _activeIntakeSessionId) {
-            ICDEV.fetchJSON(INTAKE_API + '/session/' + _activeIntakeSessionId, { method: 'GET' })
+            fetch(INTAKE_API + '/session/' + _activeIntakeSessionId)
+                .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data && data.messages && data.messages.length) {
                         var parts = [];
                         for (var i = 0; i < data.messages.length; i++) {
                             var m = data.messages[i];
-                            if (m.role === 'assistant' && m.content) parts.push(m.content.trim());
+                            if ((m.role === 'assistant' || m.role === 'analyst') && m.content) parts.push(m.content.trim());
                         }
                         if (parts.length) {
-                            _sendPlanToKanban(parts.join("\n\n"));
+                            _sendPlanToKanban(parts.join("\n\n"), true);
                             return;
                         }
                     }
-                    alert("No plan content found. Export requirements or generate a PRD first.");
+                    _sendRequirementsToKanban();
                 })
                 .catch(function(err) {
-                    alert("No plan content found. Export requirements or generate a PRD first.");
+                    _sendRequirementsToKanban();
                 });
             return;
         }
@@ -872,17 +873,43 @@
             return;
         }
 
-        _sendPlanToKanban(planMarkdown);
+        _sendPlanToKanban(planMarkdown, true);
     }
 
-    function _sendPlanToKanban(planMarkdown) {
+    function _sendRequirementsToKanban() {
+        if (!_activeIntakeSessionId) {
+            alert("No plan content found. Export requirements or generate a PRD first.");
+            return;
+        }
+        fetch(INTAKE_API + '/export/' + _activeIntakeSessionId, { method: 'POST' })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data || !data.requirements || !data.requirements.length) {
+                    alert("No requirements found. Have a conversation first to capture requirements.");
+                    return;
+                }
+                var md = data.requirements.map(function(req, i) {
+                    return (i + 1) + ". " + (req.raw_text || req.text || "Requirement");
+                }).join("\n");
+                _sendPlanToKanban(md, false);
+            })
+            .catch(function(err) {
+                alert("Failed to load requirements: " + err.message);
+            });
+    }
+
+    function _sendPlanToKanban(planMarkdown, allowRequirementsFallback) {
         // Preview first
-        ICDEV.fetchJSON("/api/kanban/preview-plan", {
+        fetch("/api/kanban/preview-plan", {
             method: "POST",
             headers: {"Content-Type": "application/json"},
             body: JSON.stringify({markdown: planMarkdown})
-        }).then(function(data) {
+        }).then(function(r) { return r.json(); }).then(function(data) {
             if (!data || !data.count) {
+                if (allowRequirementsFallback && _activeIntakeSessionId) {
+                    _sendRequirementsToKanban();
+                    return;
+                }
                 alert("Could not extract tasks from the plan. Try a more structured format (## Phase 1, ## Step 2, etc.)");
                 return;
             }
@@ -892,11 +919,11 @@
             }).join("\n");
 
             if (confirm("Send " + data.count + " tasks to Kanban backlog?\n\n" + taskList)) {
-                ICDEV.fetchJSON("/api/kanban/from-plan", {
+                fetch("/api/kanban/from-plan", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({markdown: planMarkdown})
-                }).then(function(result) {
+                }).then(function(r) { return r.json(); }).then(function(result) {
                     if (result && result.tasks_created) {
                         alert(result.tasks_created + " tasks added to Kanban backlog!");
                         // Refresh kanban if on that page
