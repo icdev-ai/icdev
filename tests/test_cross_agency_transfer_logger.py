@@ -338,3 +338,252 @@ class TestAppendOnly:
             cat = CrossAgencyTransferLogger()
             result = cat.log_initiated("t-x", "A", "B", "d", "u")
         assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# NIST AU-2 compliance — required fields & dual-write
+# ---------------------------------------------------------------------------
+
+class TestNistAu2Compliance:
+    """NIST 800-53 AU-2 (Audit Events) — verify audit records are comprehensive."""
+
+    def test_initiated_has_all_required_fields(self, logger):
+        cat, db, _ = logger
+        eid = cat.log_initiated(
+            transfer_id="t-au2-001",
+            source_agency="DoD",
+            target_agency="DHS",
+            data_type="intelligence",
+            actor="alice@dod.mil",
+            data_classification="CUI//SP-CTI",
+            project_id="proj-alpha",
+            details={"priority": "high"},
+        )
+        row = _fetch_row(db, eid)
+        assert row["id"] and len(row["id"]) == 36
+        assert row["transfer_id"] == "t-au2-001"
+        assert row["event_type"] == "initiated"
+        assert row["source_agency"] == "DoD"
+        assert row["target_agency"] == "DHS"
+        assert row["actor"] == "alice@dod.mil"
+        assert row["data_classification"] == "CUI//SP-CTI"
+        assert row["occurred_at"]
+        from datetime import datetime
+        datetime.fromisoformat(row["occurred_at"])
+        assert json.loads(row["details"]) == {"priority": "high"}
+
+    def test_completed_has_all_required_fields(self, logger):
+        cat, db, _ = logger
+        eid = cat.log_completed(
+            transfer_id="t-au2-002",
+            source_agency="NSA",
+            target_agency="CIA",
+            actor="system",
+            bytes_transferred=204800,
+            checksum="sha256:abc123",
+            duration_ms=850,
+        )
+        row = _fetch_row(db, eid)
+        assert row["transfer_id"] == "t-au2-002"
+        assert row["event_type"] == "completed"
+        assert row["bytes_transferred"] == 204800
+        assert row["checksum"] == "sha256:abc123"
+        assert row["duration_ms"] == 850
+        assert row["occurred_at"]
+        assert row["actor"] == "system"
+        assert row["data_classification"] == "CUI"
+
+    def test_failed_has_all_required_fields(self, logger):
+        cat, db, _ = logger
+        eid = cat.log_failed(
+            transfer_id="t-au2-003",
+            source_agency="FBI",
+            target_agency="DEA",
+            actor="gateway",
+            rejection_reason="auth failure",
+            error_code="ERR_401",
+        )
+        row = _fetch_row(db, eid)
+        assert row["event_type"] == "failed"
+        assert row["rejection_reason"] == "auth failure"
+        assert row["error_code"] == "ERR_401"
+        assert row["occurred_at"]
+        assert row["actor"] == "gateway"
+
+    def test_rejected_has_all_required_fields(self, logger):
+        cat, db, _ = logger
+        eid = cat.log_rejected(
+            transfer_id="t-au2-004",
+            source_agency="CISA",
+            target_agency="NCSC",
+            reviewed_by="security-officer",
+            rejection_reason="policy violation",
+            data_classification="SECRET",
+        )
+        row = _fetch_row(db, eid)
+        assert row["event_type"] == "rejected"
+        assert row["actor"] == "security-officer"
+        assert row["data_classification"] == "SECRET"
+        assert row["occurred_at"]
+        assert row["rejection_reason"] == "policy violation"
+
+    def test_dual_write_to_audit_trail(self, logger):
+        """AU-2 completeness: cross_agency_transfers events are mirrored to audit_trail."""
+        cat, db, make_conn = logger
+        eid = cat.log_completed(
+            transfer_id="t-au2-dual",
+            source_agency="DIA",
+            target_agency="NRO",
+            actor="system",
+            bytes_transferred=1024,
+            data_classification="CUI",
+        )
+        conn = make_conn()
+        rows = conn.execute(
+            "SELECT * FROM audit_trail WHERE details LIKE ?",
+            (f"%{eid}%",),
+        ).fetchall()
+        conn.close()
+        assert len(rows) == 1
+        audit = dict(rows[0])
+        assert audit["event_type"] == "cross_agency_transfer_completed"
+        assert audit["actor"] == "system"
+        assert "DIA → NRO" in audit["action"]
+        assert audit["classification"] == "CUI"
+        assert "t-au2-dual" in audit["details"]
+
+
+# ---------------------------------------------------------------------------
+# NIST AU-9 compliance — protection of audit information
+# ---------------------------------------------------------------------------
+
+class TestNistAu9Compliance:
+    """NIST 800-53 AU-9 (Protection of Audit Information) — append-only guarantee."""
+
+    def test_append_only_no_update_delete_surface(self, logger):
+        """The logger must expose no methods that mutate or remove audit rows."""
+        cat, db, _ = logger
+        for attr in dir(cat):
+            assert "update" not in attr.lower()
+            assert "delete" not in attr.lower()
+            assert "remove" not in attr.lower()
+            assert "patch" not in attr.lower()
+
+    def test_sql_executed_never_updates_or_deletes(self, logger):
+        """All SQL issued by the logger must be INSERT or SELECT only."""
+        cat, db, make_conn = logger
+        executed_sql: list[str] = []
+
+        class _RecordingConn:
+            def __init__(self, real):
+                self._real = real
+
+            def execute(self, sql, *args, **kwargs):
+                executed_sql.append(sql.strip().upper())
+                return self._real.execute(sql, *args, **kwargs)
+
+            def commit(self):
+                return self._real.commit()
+
+        conn = make_conn()
+        recording = _RecordingConn(conn)
+        with patch(f"{_MODULE}.get_connection", return_value=recording):
+            cat.log_initiated("t-au9-sql", "A", "B", "d", "u")
+            cat.log_completed("t-au9-sql", "A", "B", "u")
+        conn.close()
+
+        for sql in executed_sql:
+            assert not sql.startswith("UPDATE"), f"AU-9 violation: {sql}"
+            assert not sql.startswith("DELETE"), f"AU-9 violation: {sql}"
+            assert not sql.startswith("DROP"), f"AU-9 violation: {sql}"
+        insert_calls = [s for s in executed_sql if s.startswith("INSERT")]
+        assert len(insert_calls) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Cross-agency transfer lifecycle simulation
+# ---------------------------------------------------------------------------
+
+class TestTransferLifecycle:
+    """End-to-end simulation of a cross-agency data transfer."""
+
+    def test_initiated_to_completed_lifecycle(self, logger):
+        """A transfer is initiated then completed; both events are auditable."""
+        cat, db, make_conn = logger
+        tid = "lifecycle-001"
+
+        eid1 = cat.log_initiated(
+            tid, "DHS", "FBI", "threat_intel", "analyst-1", project_id="proj-lifecycle"
+        )
+        eid2 = cat.log_completed(
+            tid, "DHS", "FBI", "gateway",
+            bytes_transferred=4096, checksum="sha256:def", duration_ms=1200,
+        )
+
+        conn = make_conn()
+        rows = conn.execute(
+            "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at ASC",
+            (tid,),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert dict(rows[0])["event_type"] == "initiated"
+        assert dict(rows[0])["id"] == eid1
+        assert dict(rows[1])["event_type"] == "completed"
+        assert dict(rows[1])["id"] == eid2
+
+        conn = make_conn()
+        audit_rows = conn.execute(
+            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY timestamp ASC",
+            (f"%{tid}%",),
+        ).fetchall()
+        conn.close()
+        assert len(audit_rows) == 2
+        assert dict(audit_rows[0])["event_type"] == "cross_agency_transfer_initiated"
+        assert dict(audit_rows[1])["event_type"] == "cross_agency_transfer_completed"
+
+    def test_initiated_to_failed_lifecycle(self, logger):
+        """A transfer is initiated then fails; both events are auditable."""
+        cat, db, make_conn = logger
+        tid = "lifecycle-002"
+
+        eid1 = cat.log_initiated(tid, "CIA", "DIA", "sigint", "operator-x")
+        eid2 = cat.log_failed(
+            tid, "CIA", "DIA", "gateway",
+            rejection_reason="Network timeout", error_code="ERR_NET",
+        )
+
+        conn = make_conn()
+        rows = conn.execute(
+            "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at ASC",
+            (tid,),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert dict(rows[0])["event_type"] == "initiated"
+        assert dict(rows[1])["event_type"] == "failed"
+        assert dict(rows[1])["rejection_reason"] == "Network timeout"
+
+    def test_initiated_to_rejected_lifecycle(self, logger):
+        """A transfer is initiated then rejected by a reviewer."""
+        cat, db, make_conn = logger
+        tid = "lifecycle-003"
+
+        eid1 = cat.log_initiated(tid, "DEA", "ATF", "case_file", "agent-y")
+        eid2 = cat.log_rejected(
+            tid, "DEA", "ATF", "reviewer-z", "Classification mismatch",
+        )
+
+        conn = make_conn()
+        rows = conn.execute(
+            "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at ASC",
+            (tid,),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert dict(rows[0])["event_type"] == "initiated"
+        assert dict(rows[1])["event_type"] == "rejected"
+        assert dict(rows[1])["actor"] == "reviewer-z"

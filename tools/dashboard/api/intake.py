@@ -103,6 +103,19 @@ except ImportError:
     _HAS_PRD_VALIDATOR = False
 
 try:
+    from tools.requirements.multi_persona_panel import _auto_generate_ac
+except Exception:
+    def _auto_generate_ac(text: str) -> str:
+        return "Acceptance criteria shall validate that: " + text
+
+try:
+    from tools.requirements.decomposition_engine import decompose_requirements
+
+    _HAS_DECOMP = True
+except ImportError:
+    _HAS_DECOMP = False
+
+try:
     from tools.requirements.complexity_scorer import score_complexity as _score_complexity
 
     _HAS_COMPLEXITY = True

@@ -1429,3 +1429,109 @@ def kanban_iqe_query():
         _log.getLogger(__name__).warning("kanban IQE error: %s", exc)
         return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
+
+# ---------------------------------------------------------------------------
+# Plan ingestion helpers — preview and create from markdown PRD / plan text
+# ---------------------------------------------------------------------------
+
+def _parse_plan_markdown(markdown: str):
+    """Extract candidate task titles from markdown headings and list items."""
+    tasks = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        title = None
+        if stripped.startswith("## ") or stripped.startswith("### "):
+            title = stripped.lstrip("#").strip()
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            title = stripped[2:].strip().strip("*_").strip()
+        elif len(stripped) > 3 and stripped[0].isdigit() and ". " in stripped[:4]:
+            title = stripped.split(". ", 1)[1].strip().strip("*_").strip()
+        if title and len(title) > 3:
+            tasks.append(title)
+    seen = set()
+    unique = []
+    for t in tasks:
+        key = t.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(t)
+    return unique
+
+
+def _plan_priority(title: str) -> str:
+    """Heuristic priority based on keywords."""
+    lowered = title.lower()
+    if any(k in lowered for k in ("critical", "security", "compliance", "sast", "timeline", "budget", "deadline")):
+        return "high"
+    return "medium"
+
+
+@kanban_api.route("/preview-plan", methods=["POST"])
+def preview_plan():
+    """Return a preview of tasks that would be created from a markdown plan."""
+    data = request.get_json(silent=True) or {}
+    markdown = (data.get("markdown") or "").strip()
+    if not markdown:
+        return jsonify({"error": "markdown is required"}), 400
+    titles = _parse_plan_markdown(markdown)
+    tasks = [{"title": t, "priority": _plan_priority(t)} for t in titles]
+    return jsonify({"count": len(tasks), "tasks": tasks})
+
+
+@kanban_api.route("/from-plan", methods=["POST"])
+def create_from_plan():
+    """Create Kanban backlog tasks extracted from a markdown plan."""
+    data = request.get_json(silent=True) or {}
+    markdown = (data.get("markdown") or "").strip()
+    if not markdown:
+        return jsonify({"error": "markdown is required"}), 400
+    titles = _parse_plan_markdown(markdown)
+    if not titles:
+        return jsonify({"error": "No tasks could be extracted from the plan"}), 400
+    conn = get_connection()
+    now = _utcnow()
+    created = 0
+    try:
+        for t in titles:
+            task_id = f"task-plan-{uuid.uuid4().hex[:12]}"
+            priority = _plan_priority(t)
+            conn.execute(
+                "INSERT INTO kanban_tasks "
+                "(id, title, description, task_type, priority, "
+                "status, scheduled_at, executor_type, depends_on_task_id, "
+                "start_date, target_date, "
+                "created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    task_id,
+                    t,
+                    "",
+                    "build",
+                    priority,
+                    "backlog",
+                    None,
+                    "claude_cli",
+                    None,
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            created += 1
+        conn.commit()
+        try:
+            sse_manager.broadcast(
+                {"action": "plan_imported", "tasks_created": created},
+                "kanban",
+            )
+        except Exception:
+            pass
+        return jsonify({"tasks_created": created})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+

@@ -418,6 +418,15 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  # INTaaS / FathomDesk intelligence functions (Phase INT-COT)
+  news_reasoning:
+    chain: [qwen3-local, claude-sonnet, gpt-4o]
+    effort: high
+
+  intaas_multiperspectivity:
+    chain: [qwen3-local, claude-sonnet, gpt-4o]
+    effort: high
+
   nlq_sql:
     chain: [qwen3-local, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
     effort: low
@@ -845,6 +854,13 @@ chain_orchestration:
       code_generation:
         max_rounds: 5
         self_consistency_runs: 3
+      # INTaaS cluster-level reasoning: local-only CoT to preserve scanner-tier cost model
+      news_reasoning:
+        max_rounds: 2
+        self_consistency_runs: 1
+        reasoner_model: qwen3-local
+        critic_model: qwen3-local
+        synthesizer_model: qwen3-local
   cod:
     enabled: true
     num_debaters: 3
@@ -859,6 +875,19 @@ chain_orchestration:
     per_function:
       architecture_review:
         num_debaters: 5
+      # INTaaS perspective scoring: bull/bear/neutral debate with local debaters + Claude judge
+      intaas_multiperspectivity:
+        num_debaters: 3
+        debate_rounds: 2
+        judge_model: claude-sonnet
+        debater_models:
+          - qwen3-local
+          - qwen3-local
+          - qwen3-local
+        positions:
+          - Bull case (strong buy / buy)
+          - Bear case (sell / strong sell)
+          - Neutral case (hold / wait)
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)

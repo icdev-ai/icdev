@@ -974,6 +974,22 @@ CREATE INDEX IF NOT EXISTS idx_kanban_depends ON kanban_tasks(depends_on_task_id
 CREATE INDEX IF NOT EXISTS idx_kanban_failure_count ON kanban_tasks(failure_count);
 CREATE INDEX IF NOT EXISTS idx_kanban_dispatch_source ON kanban_tasks(dispatch_source);
 
+CREATE TABLE IF NOT EXISTS kanban_alert_queue (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id       TEXT NOT NULL,
+    event         TEXT NOT NULL DEFAULT 'failed',
+    severity      TEXT NOT NULL DEFAULT 'warning',
+    title         TEXT,
+    body          TEXT,
+    reason        TEXT,
+    actor         TEXT NOT NULL DEFAULT 'stale-cleanup',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    dispatched_at TEXT,
+    retry_count   INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_kanban_alert_queue_task ON kanban_alert_queue(task_id);
+CREATE INDEX IF NOT EXISTS idx_kanban_alert_queue_created ON kanban_alert_queue(created_at);
+
 CREATE TABLE IF NOT EXISTS chat_intake_sessions (
     context_id  TEXT PRIMARY KEY,
     session_id  TEXT NOT NULL,

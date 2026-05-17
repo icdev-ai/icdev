@@ -2,14 +2,14 @@
 """Regression — the 'stale _running cleanup' path must NOT be silent.
 
 On 2026-04-17 dt-iqe-11 (an IQE Selenium E2E task) disappeared from
-in_progress without any Telegram alert. The scheduler's claude CLI
-subprocess died (or self-reported externally) and the in-memory
-_running entry became stale. The existing cleanup code removed the
-Popen + worktree silently — zero signal to operators or
-failure_triage. The task ended up back in 'backlog' with
-failure_count=0 and last_failure_reason=NULL, so:
+in_progress without any alert. The scheduler's claude CLI subprocess
+died (or self-reported externally) and the in-memory _running entry
+became stale. The existing cleanup code removed the Popen + worktree
+silently — zero signal to operators or failure_triage. The task ended
+up back in 'backlog' with failure_count=0 and last_failure_reason=NULL,
+so:
 
-    * Telegram showed no alert → operator thinks nothing is wrong
+    * No alert landed in the queue → operator thinks nothing is wrong
     * failure_triage can't see it → no LLM diagnosis fires
     * self_debug can't increment its signature count → quarantine never
       reached on recurrence
@@ -18,7 +18,7 @@ This test pins the corrected behavior. Stale cleanup must now:
 
     * bump failure_count via _record_failure_and_maybe_flag
     * set last_failure_reason + last_failure_at
-    * emit _send_notification(event='failed') + a Telegram message
+    * queue an alert locally in kanban_alert_queue (not rely on Telegram)
     * invoke self_debug.check_and_diagnose for recurrence tracking
 """
 from __future__ import annotations
@@ -59,6 +59,19 @@ CREATE TABLE kanban_status_transitions (
     actor              TEXT,
     reason             TEXT,
     created_at         TEXT
+);
+CREATE TABLE kanban_alert_queue (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id       TEXT NOT NULL,
+    event         TEXT NOT NULL DEFAULT 'failed',
+    severity      TEXT NOT NULL DEFAULT 'warning',
+    title         TEXT,
+    body          TEXT,
+    reason        TEXT,
+    actor         TEXT NOT NULL DEFAULT 'stale-cleanup',
+    created_at    TEXT NOT NULL,
+    dispatched_at TEXT,
+    retry_count   INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE audit_trail (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,37 +126,25 @@ def kanban_ctx(tmp_path, monkeypatch):
     monkeypatch.setattr(kanban_mod, "_poll_telegram", lambda: [])
     monkeypatch.setattr(kanban_mod, "_get_due_tasks", lambda: [])
 
-    # Capture side effects
-    notifications: list = []
-    monkeypatch.setattr(
-        kanban_mod, "_send_notification",
-        lambda task, event: notifications.append((task.get("id"), event)),
-    )
-
-    tg_calls: list = []
-    class _FakeTG:
-        @staticmethod
-        def send(title, body, severity=None):
-            tg_calls.append((title, body, severity))
-    # The import inside the function body is what we need to patch.
-    import sys
-    import types as _types
-    fake_tg_mod = _types.ModuleType("tools.notifications.adapters.telegram")
-    fake_tg_mod.send = _FakeTG.send
-    monkeypatch.setitem(sys.modules, "tools.notifications.adapters.telegram",
-                        fake_tg_mod)
-
     diag_calls: list = []
     fake_sd = _types.ModuleType("tools.workflow.self_debug")
     fake_sd.check_and_diagnose = lambda tid, reason, cwd: diag_calls.append((tid, reason))
     monkeypatch.setitem(sys.modules, "tools.workflow.self_debug", fake_sd)
 
+    def _read_alert_queue():
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT * FROM kanban_alert_queue ORDER BY created_at"
+        ).fetchall()
+        con.close()
+        return [dict(r) for r in rows]
+
     return {
         "db_path": db_path,
         "kanban": kanban_mod,
-        "notifications": notifications,
-        "tg_calls": tg_calls,
         "diag_calls": diag_calls,
+        "read_alert_queue": _read_alert_queue,
     }
 
 
@@ -179,28 +180,23 @@ class TestSilentCleanup:
         km.run({}, None)
         t = _read_task(kanban_ctx["db_path"], "dt-test-11")
         assert t["last_failure_reason"] is not None
-        assert "silent-cleanup" in t["last_failure_reason"]
+        assert "stale-cleanup" in t["last_failure_reason"]
         assert t["last_failure_at"] is not None
 
-    def test_stale_cleanup_sends_notification(self, kanban_ctx):
+    def test_stale_cleanup_queues_alert_locally(self, kanban_ctx):
         km = kanban_ctx["kanban"]
         self._prime_running(km)
         km.run({}, None)
-        notifs = kanban_ctx["notifications"]
-        assert any(n == ("dt-test-11", "failed") for n in notifs), (
-            f"expected ('dt-test-11','failed') in notifications, got {notifs}"
+        alerts = kanban_ctx["read_alert_queue"]()
+        assert len(alerts) >= 1, (
+            f"expected at least one local alert, got {alerts}"
         )
-
-    def test_stale_cleanup_emits_telegram(self, kanban_ctx):
-        km = kanban_ctx["kanban"]
-        self._prime_running(km)
-        km.run({}, None)
-        tg = kanban_ctx["tg_calls"]
-        assert len(tg) >= 1, f"expected Telegram call, got {tg}"
-        title, body, sev = tg[0]
-        assert "SILENT-CLEANUP" in title
-        assert "dt-test-11" in title or "Selenium" in title
-        assert sev == "warning"
+        a = alerts[0]
+        assert a["task_id"] == "dt-test-11"
+        assert a["event"] == "failed"
+        assert a["severity"] == "warning"
+        assert "stale-cleanup" in a["reason"]
+        assert a["actor"] == "stale-cleanup"
 
     def test_stale_cleanup_calls_self_debug(self, kanban_ctx):
         km = kanban_ctx["kanban"]
@@ -209,7 +205,7 @@ class TestSilentCleanup:
         calls = kanban_ctx["diag_calls"]
         assert len(calls) >= 1, f"expected self_debug call, got {calls}"
         assert calls[0][0] == "dt-test-11"
-        assert "silent-cleanup" in calls[0][1]
+        assert "stale-cleanup" in calls[0][1]
 
     def test_stale_cleanup_removes_running_entry(self, kanban_ctx):
         km = kanban_ctx["kanban"]
@@ -222,7 +218,7 @@ class TestSilentCleanup:
 
     def test_done_task_not_treated_as_failure(self, kanban_ctx):
         """If the task is in 'done' status when cleanup fires, it
-        legitimately self-reported. No failure notification should fire."""
+        legitimately self-reported. No local alert should be queued."""
         db = kanban_ctx["db_path"]
         con = sqlite3.connect(str(db))
         con.execute("UPDATE kanban_tasks SET status='done' WHERE id='dt-test-11'")
@@ -233,11 +229,9 @@ class TestSilentCleanup:
         self._prime_running(km)
         km.run({}, None)
 
-        notifs = kanban_ctx["notifications"]
-        assert not any(n[1] == "failed" for n in notifs), (
-            f"done tasks must not trigger 'failed' notification: {notifs}"
+        alerts = kanban_ctx["read_alert_queue"]()
+        assert not alerts, (
+            f"done tasks must not queue local alerts: {alerts}"
         )
-        tg = kanban_ctx["tg_calls"]
-        assert not tg, f"done tasks must not trigger SILENT-CLEANUP Telegram: {tg}"
         t = _read_task(db, "dt-test-11")
         assert t["last_failure_reason"] is None
