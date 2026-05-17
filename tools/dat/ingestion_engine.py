@@ -263,16 +263,21 @@ def build_manifest(
 # ---------------------------------------------------------------------------
 
 
+_ALLOWED_AUDIT_TABLES = {"dat_ingestion_log"}
+
+
 def _persist_audit(manifest: dict, db_path: Path, audit_table: str, dry_run: bool) -> None:
     if dry_run:
         logger.debug("dry-run: skipping DB write")
         return
+    if audit_table not in _ALLOWED_AUDIT_TABLES:
+        raise ValueError(f"audit_table '{audit_table}' is not in the allowlist")
     try:
         conn = get_connection(str(db_path))
         _ensure_schema(conn)
         src = manifest["sources"]
         conn.execute(
-            f"INSERT INTO {audit_table} "
+            f"INSERT INTO {audit_table} "  # nosec B608 — table name validated against allowlist above
             "(id, run_at, config_path, state_dept_count, unsc_count, "
             "backchannel_count, total_count, status, manifest_path, detail_json) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
