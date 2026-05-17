@@ -1145,6 +1145,313 @@
 }
 
 /* ===================================================================
+   Use Case — Edit button + quick action chips on card
+   =================================================================== */
+
+.chat-uc-edit-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    padding: 1px 3px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    opacity: 0.5;
+    transition: opacity 0.15s, color 0.15s;
+    line-height: 1;
+}
+
+.chat-uc-card:hover .chat-uc-edit-btn,
+.chat-uc-edit-btn:focus {
+    opacity: 1;
+    color: var(--accent-blue);
+}
+
+.chat-uc-card__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 5px;
+}
+
+.chat-uc-qa-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: var(--bg-tertiary, #1a2233);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: border-color 0.12s, color 0.12s;
+}
+
+.chat-uc-qa-chip:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    text-decoration: none;
+}
+
+/* ===================================================================
+   Use Case — Post-export action bar (deep links per active use case)
+   =================================================================== */
+
+.uc-specific-actions {
+    background: var(--bg-tertiary, #1a2233);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+}
+
+.uc-action-bar__label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 6px;
+}
+
+.uc-action-btn {
+    display: block;
+    width: 100%;
+    margin-bottom: 4px;
+    text-align: left;
+    font-size: 0.75rem;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    background: transparent;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+
+.uc-action-btn:hover {
+    border-color: var(--accent-blue);
+    color: var(--accent-blue);
+    background: rgba(59,130,246,0.06);
+    text-decoration: none;
+}
+
+/* ===================================================================
+   Use Case — Edit Modal
+   =================================================================== */
+
+.uc-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    z-index: 9000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.uc-modal {
+    background: var(--bg-secondary, #111827);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 720px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+.uc-modal__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.uc-modal__header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.uc-modal__header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.uc-reset-btn {
+    font-size: 0.72rem;
+    padding: 3px 8px;
+    color: var(--text-muted);
+    border-color: var(--border-color);
+}
+
+.uc-reset-btn:hover {
+    color: #f87171;
+    border-color: #f87171;
+}
+
+.uc-modal__close {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    transition: color 0.12s;
+}
+
+.uc-modal__close:hover { color: var(--text-primary); }
+
+.uc-modal__body {
+    overflow-y: auto;
+    padding: 16px 18px;
+    flex: 1;
+}
+
+.uc-modal__footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+/* Form grid */
+
+.uc-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px 14px;
+}
+
+.uc-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.uc-form-group label {
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.uc-form-group--full  { grid-column: 1 / -1; }
+.uc-form-group--half  { grid-column: span 2; }
+.uc-form-group--third { grid-column: span 1; }
+.uc-form-group--icon  { grid-column: span 1; max-width: 90px; }
+.uc-form-group--badge { grid-column: span 1; }
+
+.uc-form-group--vcenter {
+    justify-content: center;
+    align-items: flex-start;
+}
+
+.uc-label-hint {
+    font-size: 0.65rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.uc-textarea--large {
+    resize: vertical;
+    font-family: 'Fira Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+/* Toggle switch */
+
+.uc-toggle {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    width: 38px;
+    height: 20px;
+}
+
+.uc-toggle input { opacity: 0; width: 0; height: 0; }
+
+.uc-toggle__slider {
+    position: absolute;
+    inset: 0;
+    background: var(--border-color);
+    border-radius: 20px;
+    transition: background 0.2s;
+}
+
+.uc-toggle__slider::before {
+    content: '';
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    left: 3px;
+    top: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+}
+
+.uc-toggle input:checked + .uc-toggle__slider { background: var(--accent-blue); }
+.uc-toggle input:checked + .uc-toggle__slider::before { transform: translateX(18px); }
+
+.uc-toggle-label {
+    font-size: 0.73rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    display: block;
+    margin-bottom: 4px;
+}
+
+/* Quick actions rows */
+
+.uc-qa-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+
+.uc-qa-row {
+    display: grid;
+    grid-template-columns: 60px 1fr 1.6fr 90px 32px;
+    gap: 6px;
+    align-items: center;
+}
+
+.uc-qa-row .form-control {
+    font-size: 0.78rem;
+    padding: 4px 7px;
+    height: auto;
+}
+
+.uc-qa-remove {
+    padding: 3px 6px;
+    font-size: 0.7rem;
+    line-height: 1;
+}
+
+/* ===================================================================
    Professional Design Enhancements — Phase 70
    =================================================================== */
 

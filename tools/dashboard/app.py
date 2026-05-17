@@ -8316,27 +8316,71 @@ def create_app() -> Flask:
     # Chat Use Cases catalog (FORGE-pattern — reads args/use_cases.yaml)
     # ================================================================
 
-    @app.route("/api/chat/use-cases", methods=["GET"])
-    def api_chat_use_cases():
-        """Return the seeded use case catalog from args/use_cases.yaml."""
+    # ---- Use Case catalog helpers (YAML defaults + DB overrides) ----
+
+    def _uc_load_yaml_cases():
         import yaml as _yaml
         _uc_path = BASE_DIR / "args" / "use_cases.yaml"
         try:
             with open(_uc_path, "r", encoding="utf-8") as _fh:
-                _data = _yaml.safe_load(_fh) or {}
-        except FileNotFoundError:
-            return jsonify({"use_cases": [], "total": 0})
-        except Exception as _exc:
-            app.logger.warning("use_cases.yaml load error: %s", _exc)
-            return jsonify({"use_cases": [], "total": 0})
+                return (_yaml.safe_load(_fh) or {}).get("use_cases", [])
+        except Exception:
+            return []
 
-        _cases = _data.get("use_cases", [])
+    def _uc_init_table(_conn):
+        _conn.execute("""CREATE TABLE IF NOT EXISTS use_case_overrides (
+            id TEXT PRIMARY KEY,
+            label TEXT, description TEXT, icon TEXT, badge TEXT,
+            agent_model TEXT, ricoas INTEGER, boost_threshold INTEGER,
+            system_prompt TEXT, seed_message TEXT,
+            canvas_wiring TEXT, quick_actions TEXT,
+            updated_at TEXT, updated_by TEXT
+        )""")
+        _conn.commit()
+
+    def _uc_apply_override(_base, _row):
+        import json as _json
+        if not _row:
+            return _base
+        _result = dict(_base)
+        for _col in ("label", "description", "icon", "badge", "agent_model",
+                     "system_prompt", "seed_message"):
+            if _row[_col] is not None:
+                _result[_col] = _row[_col]
+        if _row["ricoas"] is not None:
+            _result["ricoas"] = bool(_row["ricoas"])
+        if _row["boost_threshold"] is not None:
+            _result["boost_threshold"] = _row["boost_threshold"]
+        for _jcol in ("canvas_wiring", "quick_actions"):
+            if _row[_jcol] is not None:
+                try:
+                    _result[_jcol] = _json.loads(_row[_jcol])
+                except Exception:
+                    pass
+        return _result
+
+    @app.route("/api/chat/use-cases", methods=["GET"])
+    def api_chat_use_cases():
+        """Return use case catalog (YAML defaults merged with DB overrides)."""
+        _cases = _uc_load_yaml_cases()
         _category = flask_request.args.get("category", "").strip().lower()
         _q = flask_request.args.get("q", "").strip().lower()
+
+        _overrides = {}
+        try:
+            with get_connection() as _conn:
+                _uc_init_table(_conn)
+                for _r in _conn.execute("SELECT * FROM use_case_overrides").fetchall():
+                    _overrides[_r["id"]] = _r
+        except Exception as _exc:
+            app.logger.debug("use_case_overrides load: %s", _exc)
+
+        _merged = [_uc_apply_override(c, _overrides.get(c.get("id", ""))) for c in _cases]
         if _category:
-            _cases = [c for c in _cases if c.get("category", "").lower() == _category]
+            _merged = [c for c in _merged if c.get("category", "").lower() == _category]
         if _q:
-            _cases = [c for c in _cases if _q in c.get("label", "").lower() or _q in c.get("description", "").lower()]
+            _merged = [c for c in _merged if _q in c.get("label", "").lower()
+                       or _q in (c.get("description") or "").lower()]
 
         _summary = [
             {
@@ -8350,25 +8394,85 @@ def create_app() -> Flask:
                 "ricoas": c.get("ricoas", False),
                 "boost_threshold": c.get("boost_threshold", 70),
                 "canvas_wiring": c.get("canvas_wiring", []),
+                "quick_actions": c.get("quick_actions", []),
             }
-            for c in _cases
+            for c in _merged
         ]
         return jsonify({"use_cases": _summary, "total": len(_summary)})
 
     @app.route("/api/chat/use-cases/<use_case_id>", methods=["GET"])
     def api_chat_use_case_detail(use_case_id):
-        """Return full use case definition including system_prompt and seed_message."""
-        import yaml as _yaml
-        _uc_path = BASE_DIR / "args" / "use_cases.yaml"
+        """Return full use case definition (YAML + DB override merged)."""
+        _base = next((c for c in _uc_load_yaml_cases() if c.get("id") == use_case_id), None)
+        if not _base:
+            return jsonify({"error": "Use case not found"}), 404
         try:
-            with open(_uc_path, "r", encoding="utf-8") as _fh:
-                _data = _yaml.safe_load(_fh) or {}
-        except FileNotFoundError:
-            return jsonify({"error": "Use case catalog not found"}), 404
-        for _c in _data.get("use_cases", []):
-            if _c.get("id") == use_case_id:
-                return jsonify(_c)
-        return jsonify({"error": "Use case not found"}), 404
+            with get_connection() as _conn:
+                _uc_init_table(_conn)
+                _row = _conn.execute(
+                    "SELECT * FROM use_case_overrides WHERE id=?", (use_case_id,)
+                ).fetchone()
+        except Exception:
+            _row = None
+        return jsonify(_uc_apply_override(dict(_base), _row))
+
+    @app.route("/api/chat/use-cases/<use_case_id>", methods=["PUT"])
+    def api_chat_use_case_update(use_case_id):
+        """Persist user overrides for a use case (YAML unchanged, overrides in DB)."""
+        import json as _json
+        from datetime import datetime, timezone
+        _body = flask_request.get_json(silent=True) or {}
+        _now = datetime.now(timezone.utc).isoformat()
+        _cw = _body.get("canvas_wiring")
+        _qa = _body.get("quick_actions")
+        try:
+            with get_connection() as _conn:
+                _uc_init_table(_conn)
+                _conn.execute("""
+                    INSERT INTO use_case_overrides
+                        (id,label,description,icon,badge,agent_model,ricoas,
+                         boost_threshold,system_prompt,seed_message,
+                         canvas_wiring,quick_actions,updated_at,updated_by)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        label=excluded.label, description=excluded.description,
+                        icon=excluded.icon, badge=excluded.badge,
+                        agent_model=excluded.agent_model, ricoas=excluded.ricoas,
+                        boost_threshold=excluded.boost_threshold,
+                        system_prompt=excluded.system_prompt,
+                        seed_message=excluded.seed_message,
+                        canvas_wiring=excluded.canvas_wiring,
+                        quick_actions=excluded.quick_actions,
+                        updated_at=excluded.updated_at,
+                        updated_by=excluded.updated_by
+                """, (
+                    use_case_id,
+                    _body.get("label"), _body.get("description"), _body.get("icon"),
+                    _body.get("badge"), _body.get("agent_model"),
+                    1 if _body.get("ricoas") else 0,
+                    _body.get("boost_threshold"),
+                    _body.get("system_prompt"), _body.get("seed_message"),
+                    _json.dumps(_cw) if _cw is not None else None,
+                    _json.dumps(_qa) if _qa is not None else None,
+                    _now, _body.get("updated_by", "dashboard-user"),
+                ))
+                _conn.commit()
+        except Exception as _exc:
+            app.logger.error("use_case_overrides save: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+        return jsonify({"ok": True, "id": use_case_id, "updated_at": _now})
+
+    @app.route("/api/chat/use-cases/<use_case_id>/override", methods=["DELETE"])
+    def api_chat_use_case_reset(use_case_id):
+        """Delete DB override — restores YAML factory defaults."""
+        try:
+            with get_connection() as _conn:
+                _uc_init_table(_conn)
+                _conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+                _conn.commit()
+        except Exception as _exc:
+            return jsonify({"error": str(_exc)}), 500
+        return jsonify({"ok": True, "id": use_case_id, "reset": True})
 
     # ================================================================
     # Phase 69: Codebase Assistant API (D-CA-5 to D-CA-8)

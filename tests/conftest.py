@@ -568,6 +568,37 @@ CREATE TABLE IF NOT EXISTS agent_token_budgets (
     UNIQUE(agent_id, month)
 );
 
+CREATE TABLE IF NOT EXISTS module_budget_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    function_name TEXT,
+    resource_type TEXT NOT NULL DEFAULT 'usd' CHECK(resource_type IN ('usd', 'tokens', 'operations')),
+    amount REAL NOT NULL DEFAULT 0.0,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    operations INTEGER NOT NULL DEFAULT 0,
+    project_id TEXT,
+    model_id TEXT,
+    details_json TEXT,
+    created_at TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS module_budget_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    budget_tokens INTEGER NOT NULL DEFAULT 0,
+    budget_operations INTEGER NOT NULL DEFAULT 0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    spent_tokens INTEGER NOT NULL DEFAULT 0,
+    spent_operations INTEGER NOT NULL DEFAULT 0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT '',
+    UNIQUE(module_name, month)
+);
+
 CREATE TABLE IF NOT EXISTS agent_task_leases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_id TEXT NOT NULL UNIQUE,
@@ -2073,6 +2104,20 @@ CREATE TABLE IF NOT EXISTS il5_ingestion_log (
     display_latency_s   REAL,
     sla_met             INTEGER,
     metadata            TEXT NOT NULL DEFAULT '{}'
+);
+
+-- Adversarial Data Validation Audit (NIST AU-9 — append-only)
+CREATE TABLE IF NOT EXISTS sg_adversarial_validation_audit (
+    id                  TEXT PRIMARY KEY,
+    timestamp           TEXT NOT NULL,
+    signal_id           TEXT NOT NULL,
+    source_type         TEXT,
+    status              TEXT NOT NULL,
+    issues              TEXT,
+    bias_score          REAL,
+    deepfake_score      REAL,
+    manipulation_score  REAL,
+    details             TEXT
 );
 """
 

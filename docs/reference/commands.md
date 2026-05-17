@@ -2342,3 +2342,14 @@ python -c "from tools.system_graph.graph_builder import get_node_detail; print(g
 #   system_graph_stats       — source counts + timing
 ```
 
+## STRATEGOS Commands
+```bash
+# Adversarial Data Validation Pipeline (bias / deepfake / manipulation detection)
+python icdev/tools/strategos/adversarial_validator.py --signal '{"id":"s1","source_type":"social_media","content":"..."}' --json
+python icdev/tools/strategos/adversarial_validator.py --signals-file signals.json --json --gate
+python icdev/tools/strategos/adversarial_validator.py --health --json
+
+# Batch validation (Python API)
+python -c "from icdev.tools.strategos.adversarial_validator import validate_signals; print(validate_signals([...]))"
+```
+

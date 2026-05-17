@@ -36,6 +36,23 @@ use_cases:
       - simulation
       - supply_chain
       - compliance
+    quick_actions:
+      - icon: "🗺"
+        label: Migration Canvas
+        url: /migration-canvas/network-migration/
+        target: _blank
+      - icon: "🔮"
+        label: Digital Twin
+        url: /digital-twin
+        target: _blank
+      - icon: "▶"
+        label: Run Simulation
+        url: /simulate/chat?canvas=mdc
+        target: _blank
+      - icon: "🔗"
+        label: Supply Chain
+        url: /network/ask
+        target: _blank
     system_prompt: |
       You are a senior modernization advisor with deep expertise across hardware
       refresh, software upgrades, code refactoring, infrastructure migration, and
@@ -83,6 +100,23 @@ use_cases:
       - supply_chain
       - compliance
       - kanban
+    quick_actions:
+      - icon: "📋"
+        label: Kanban Board
+        url: /kanban
+        target: _blank
+      - icon: "📊"
+        label: CPMP Portal
+        url: /cpmp
+        target: _blank
+      - icon: "🔮"
+        label: Digital Twin
+        url: /digital-twin
+        target: _blank
+      - icon: "📝"
+        label: Proposals
+        url: /proposals
+        target: _blank
     system_prompt: |
       You are a senior program manager and procurement strategist with expertise in
       government and commercial budget execution. You understand the "spend it or
@@ -130,6 +164,23 @@ use_cases:
       - rag
       - compliance
       - audit
+    quick_actions:
+      - icon: "🕸"
+        label: Knowledge Graph
+        url: /knowledge-graph
+        target: _blank
+      - icon: "🔍"
+        label: Knowledge Search
+        url: /knowledge-search
+        target: _blank
+      - icon: "📚"
+        label: Research Hub
+        url: /research
+        target: _blank
+      - icon: "🔭"
+        label: AI Observatory
+        url: /ai-observatory
+        target: _blank
     system_prompt: |
       You are a document management expert and knowledge engineering specialist.
       You help organizations identify and refresh stale documentation through a
