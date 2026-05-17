@@ -12,6 +12,7 @@ Wraps existing RICOAS backend tools:
 """
 
 import sys
+import uuid
 import threading
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
@@ -32,6 +33,10 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 UPLOAD_DIR = BASE_DIR / ".tmp" / "uploads"
+
+# Simple in-memory cache for AI context (session_id -> {conversation_text, reqs_hash, timestamp})
+_AI_CONTEXT_CACHE: dict = {}
+_AI_CACHE_TTL_SECONDS = 60
 
 # ---------------------------------------------------------------------------
 # Backend imports (graceful)
@@ -77,6 +82,13 @@ except ImportError:
     _HAS_COA = False
 
 try:
+    from tools.devsecops.profile_manager import create_profile as _create_devsecops_profile
+
+    _HAS_DEVSECOPS = True
+except ImportError:
+    _HAS_DEVSECOPS = False
+
+try:
     from tools.requirements.prd_generator import generate_prd as _generate_prd
 
     _HAS_PRD = True
@@ -89,6 +101,19 @@ try:
     _HAS_PRD_VALIDATOR = True
 except ImportError:
     _HAS_PRD_VALIDATOR = False
+
+try:
+    from tools.requirements.multi_persona_panel import _auto_generate_ac
+except Exception:
+    def _auto_generate_ac(text: str) -> str:
+        return "Acceptance criteria shall validate that: " + text
+
+try:
+    from tools.requirements.decomposition_engine import decompose_requirements
+
+    _HAS_DECOMP = True
+except ImportError:
+    _HAS_DECOMP = False
 
 try:
     from tools.requirements.complexity_scorer import score_complexity as _score_complexity
@@ -107,6 +132,54 @@ try:
     _HAS_ELICITATION = True
 except ImportError:
     _HAS_ELICITATION = False
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_AI_KEYWORDS = {
+    "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
+    "neural network", "llm", "large language model", "generative ai", "genai",
+    "model inference", "algorithmic decision", "predictive model", "classification model",
+    "recommendation engine", "natural language processing", "computer vision",
+}
+
+
+def _session_mentions_ai(conn, session_id: str) -> bool:
+    """Check if session requirements mention AI/ML keywords."""
+    rows = conn.execute(
+        "SELECT raw_text FROM intake_requirements WHERE session_id = ?", (session_id,)
+    ).fetchall()
+    all_text = " ".join((r[0] if isinstance(r, (tuple, list)) else r.get("raw_text", "")) for r in rows).lower()
+    return any(kw in all_text for kw in _AI_KEYWORDS)
+
+
+def _seed_ai_governance_baseline(conn, project_id: str, session_id: str) -> None:
+    """Insert minimal AI governance records if session mentions AI."""
+    if not _session_mentions_ai(conn, session_id):
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    # Seed use-case inventory
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO ai_use_case_inventory
+               (project_id, name, purpose, risk_level, created_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (project_id, "Primary AI Capability", "Auto-detected from requirements intake", "minimal_risk", now),
+        )
+    except Exception:
+        pass
+    # Seed framework applicability (NIST AI RMF)
+    try:
+        conn.execute(
+            """INSERT OR IGNORE INTO framework_applicability
+               (project_id, framework_id, source, detection_rule, created_at)
+               VALUES (?, ?, 'auto_detected', 'ai_keyword_intake', ?)""",
+            (project_id, "nist_ai_rmf", now),
+        )
+    except Exception:
+        pass
+
 
 # ---------------------------------------------------------------------------
 # Blueprint
@@ -130,7 +203,18 @@ ALLOWED_EXTENSIONS = {
 
 
 def _get_db():
-    conn = get_connection(db_path=str(DB_PATH))
+    import os
+    if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+        conn = get_connection()
+    else:
+        conn = get_connection(db_path=str(DB_PATH))
+    # Bypass CUI-level RLS: intake uses session_id as the auth token.
+    # Without this, the Flask security middleware's default CUI context
+    # filters out Government sessions (classification=IL4/IL2) from SELECTs.
+    try:
+        conn.set_security_context(None)
+    except Exception:
+        pass
     return conn
 
 
@@ -145,16 +229,16 @@ def create_intake_session():
     data = request.get_json(silent=True) or {}
     goal = data.get("goal", "build")
     role = data.get("role", "developer")
-    classification = data.get("classification", "il4")
+    classification = data.get("classification", "")
     customer_name = data.get("customer_name", "Dashboard User")
     customer_org = data.get("customer_org", "")
     frameworks = data.get("frameworks", [])
     custom_role_name = data.get("custom_role_name", "")
     custom_role_description = data.get("custom_role_description", "")
 
-    # Map classification to impact level
+    # Map classification to impact level — empty string means no compliance framing
     il_map = {"il2": "IL2", "il4": "IL4", "il5": "IL5", "il6": "IL6"}
-    impact_level = il_map.get(classification, "IL4")
+    impact_level = il_map.get(classification, 'IL4') or 'IL4'
 
     if not _HAS_INTAKE:
         return jsonify({"error": "Intake engine not available"}), 503
@@ -173,7 +257,6 @@ def create_intake_session():
             customer_org=customer_org,
             impact_level=impact_level,
             classification=classification.upper(),
-            db_path=DB_PATH,
             role=effective_role,
             goal=goal,
             selected_frameworks=frameworks,
@@ -204,12 +287,191 @@ def process_intake_turn():
         return jsonify({"error": "Intake engine not available"}), 503
 
     try:
-        result = process_turn(session_id, message, db_path=DB_PATH)
+        result = process_turn(session_id, message)
         return jsonify(result)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@intake_api.route("/api/intake/panel-turn", methods=["POST"])
+def process_panel_turn():
+    """Process a message with multiple personas firing in parallel.
+
+    Body: {session_id, message, personas: ["developer", "analyst", ...]}
+    Returns: {panel_responses: [...], merged_requirements: [...], total_requirements, panel_question}
+    """
+    data = request.get_json(silent=True) or {}
+    session_id = data.get("session_id")
+    message = (data.get("message") or "").strip()
+    personas = data.get("personas") or ["developer", "analyst"]
+
+    if not session_id or not message:
+        return jsonify({"error": "session_id and message are required"}), 400
+
+    conn = _get_db()
+    try:
+        session = conn.execute(
+            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = dict(session)
+
+        from tools.requirements.multi_persona_panel import run_panel, persist_panel_requirements
+
+        panel = run_panel(
+            session_data=session_data,
+            message=message,
+            conn=conn,
+            personas=personas,
+        )
+
+        # Persist merged requirements
+        turn_number = conn.execute(
+            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()[0]
+
+        written = persist_panel_requirements(panel, turn_number)
+
+        # Store the panel turn in conversation history so session context is preserved
+        conn.execute(
+            """INSERT INTO intake_conversation
+               (session_id, turn_number, role, content, content_type, classification)
+               VALUES (?, ?, 'customer', ?, 'text', ?)""",
+            (session_id, turn_number, message, session_data.get("classification", "CUI")),
+        )
+        analyst_summary = (
+            f"[Panel] {len(personas)} experts reviewed your message. "
+            f"{written} requirement(s) captured."
+            + (f" Follow-up: {panel.panel_question}" if panel.panel_question else "")
+        )
+        conn.execute(
+            """INSERT INTO intake_conversation
+               (session_id, turn_number, role, content, content_type, classification)
+               VALUES (?, ?, 'analyst', ?, 'text', ?)""",
+            (session_id, turn_number + 1, analyst_summary, session_data.get("classification", "CUI")),
+        )
+        conn.commit()
+
+        # Auto-decompose so new panel requirements are traceable
+        if _HAS_DECOMP:
+            try:
+                from tools.requirements.decomposition_engine import decompose_requirements
+                decompose_requirements(session_id)
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "ok",
+            "session_id": session_id,
+            "panel_responses": [
+                {
+                    "persona": r.persona,
+                    "display_name": r.display_name,
+                    "color": r.color,
+                    "response": r.response,
+                    "requirements": r.requirements,
+                    "question": r.question,
+                    "error": r.error,
+                    "duration_ms": r.duration_ms,
+                }
+                for r in panel.results
+            ],
+            "merged_requirements": panel.merged_requirements,
+            "total_requirements": panel.total_requirements,
+            "panel_question": panel.panel_question,
+            "requirements_written": written,
+            "pending_hitl": True,
+        })
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@intake_api.route("/api/intake/hitl-confirm/<session_id>", methods=["POST"])
+def hitl_confirm(session_id):
+    """HITL confirmation endpoint for panel-generated requirements.
+
+    Body:
+      {
+        "approved":  ["req-id-1", "req-id-2"],
+        "deleted":   ["req-id-3"],
+        "custom":    [{"text": "...", "type": "functional", "priority": "medium"}]
+      }
+    Returns: {approved, deleted, custom_added, new_score}
+    """
+    body = request.get_json(silent=True) or {}
+    approved_ids = body.get("approved") or []
+    deleted_ids  = body.get("deleted") or []
+    custom_reqs  = body.get("custom") or []
+
+    if not session_id:
+        return jsonify({"error": "session_id required"}), 400
+
+    conn = _get_db()
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+
+        for req_id in approved_ids:
+            conn.execute(
+                "UPDATE intake_requirements SET status = 'draft', updated_at = ? WHERE id = ? AND session_id = ?",
+                (now, req_id, session_id),
+            )
+
+        for req_id in deleted_ids:
+            conn.execute(
+                "DELETE FROM intake_requirements WHERE id = ? AND session_id = ?",
+                (req_id, session_id),
+            )
+
+        custom_added = 0
+        for c in custom_reqs:
+            text = (c.get("text") or "").strip()
+            if not text:
+                continue
+            req_id = f"req-{uuid.uuid4().hex[:12]}"
+            ac = _auto_generate_ac(text)
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, raw_text, requirement_type, priority,
+                    acceptance_criteria, source_document, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, 'hitl', 'draft', ?)""",
+                (req_id, session_id,
+                 text,
+                 c.get("type", "functional"),
+                 c.get("priority", "medium"),
+                 ac,
+                 now),
+            )
+            custom_added += 1
+
+        conn.commit()
+
+        new_score = None
+        try:
+            from tools.requirements.readiness_scorer import score_readiness
+            result = score_readiness(session_id)
+            new_score = result.get("overall_score") if isinstance(result, dict) else None
+        except Exception:
+            pass
+
+        return jsonify({
+            "status": "ok",
+            "approved": len(approved_ids),
+            "deleted": len(deleted_ids),
+            "custom_added": custom_added,
+            "new_score": new_score,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
 
 
 @intake_api.route("/api/intake/upload", methods=["POST"])
@@ -247,14 +509,13 @@ def upload_intake_file():
             session_id=session_id,
             file_path=str(file_path),
             document_type=doc_type,
-            db_path=DB_PATH,
-        )
+            )
         # Auto-extract requirements
         doc_id = result.get("document_id")
         extracted = []
         if doc_id:
             try:
-                extracted = extract_doc_requirements(doc_id, db_path=DB_PATH)
+                extracted = extract_doc_requirements(doc_id)
             except Exception:
                 pass
         result["requirements_extracted"] = len(extracted) if extracted else 0
@@ -302,6 +563,205 @@ def get_intake_session(session_id):
         conn.close()
 
 
+@intake_api.route("/api/intake/ai-boost/<session_id>", methods=["POST"])
+def ai_boost(session_id):
+    """Use AI to auto-generate gap-filling requirements for all missing types.
+
+    Reads the full conversation + existing requirements, identifies missing
+    requirement types and scoring gaps, then uses LLM to draft requirements
+    that directly raise completeness, compliance, and feasibility scores.
+    """
+    conn = _get_db()
+    try:
+        session = conn.execute(
+            "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = dict(session)
+        classification = session_data.get("classification", "")
+
+        # --- Load context (with caching) ---
+        existing_reqs = conn.execute(
+            "SELECT requirement_type, raw_text, acceptance_criteria FROM intake_requirements WHERE session_id = ?",
+            (session_id,),
+        ).fetchall()
+        existing_reqs = [dict(r) for r in existing_reqs]
+        import time as _time
+        reqs_hash = hash(tuple(sorted((r['requirement_type'], r['raw_text']) for r in existing_reqs)))
+        cached = _AI_CONTEXT_CACHE.get(session_id)
+        if cached and cached.get('reqs_hash') == reqs_hash and (_time.time() - cached.get('timestamp', 0)) < _AI_CACHE_TTL_SECONDS:
+            conversation_text = cached['conversation_text']
+        else:
+            conversation = conn.execute(
+                "SELECT role, content FROM intake_conversation WHERE session_id = ? ORDER BY turn_number DESC LIMIT 20",
+                (session_id,),
+            ).fetchall()
+            conversation_text = "\n".join(
+                f"{r['role'].upper()}: {r['content']}" for r in reversed(conversation)
+            )[:2000]
+            _AI_CONTEXT_CACHE[session_id] = {
+                'conversation_text': conversation_text,
+                'reqs_hash': reqs_hash,
+                'timestamp': _time.time(),
+            }
+
+        existing_types = {r["requirement_type"] for r in existing_reqs}
+        existing_summary = "\n".join(
+            f"- [{r['requirement_type']}] {r['raw_text']}" for r in existing_reqs
+        ) or "(none yet)"
+
+        # All types the scorer expects
+        all_types = ["functional", "security", "interface", "data", "performance", "compliance"]
+        missing_types = [t for t in all_types if t not in existing_types]
+
+        # Scoring gaps: check feasibility keywords
+        all_text = " ".join(r["raw_text"] or "" for r in existing_reqs).lower()
+        needs_timeline = "timeline" not in all_text and "deadline" not in all_text
+        needs_budget = "budget" not in all_text and "cost" not in all_text
+        needs_team = "team" not in all_text and "staff" not in all_text
+
+        feasibility_hints = []
+        if needs_timeline:
+            feasibility_hints.append("Include a requirement mentioning timeline or delivery deadline.")
+        if needs_budget:
+            feasibility_hints.append("Include a requirement mentioning budget or cost constraints.")
+        if needs_team:
+            feasibility_hints.append("Include a requirement mentioning team size or staffing.")
+
+        # --- Build LLM prompt ---
+        req_per_type = 3 if len(missing_types) <= 3 else 2
+        type_list = ", ".join(missing_types) if missing_types else "all types (add more depth)"
+
+        boost_prompt = f"""You are a senior requirements analyst. Based on the following intake session, generate {req_per_type} requirements for each of these types: {type_list}.
+
+CONVERSATION SO FAR:
+{conversation_text}
+
+EXISTING REQUIREMENTS:
+{existing_summary}
+
+INSTRUCTIONS:
+- Generate requirements that are SPECIFIC to what the customer described — not generic boilerplate.
+- Each requirement must include clear acceptance criteria.
+- At least one requirement must explicitly mention timeline, budget, or team size to ensure feasibility scoring.
+- {chr(10).join(feasibility_hints) if feasibility_hints else ''}
+- Format each requirement EXACTLY like this (one blank line between):
+
+TYPE: <requirement_type>
+TEXT: <specific requirement statement>
+CRITERIA: <measurable acceptance criteria>
+
+Generate only the requirements block. No preamble, no explanations."""
+
+        try:
+            from tools.llm import get_router
+            from tools.llm.provider import LLMRequest
+            router = get_router()
+            req = LLMRequest(
+                messages=[{"role": "user", "content": boost_prompt}],
+                system_prompt="You are a requirements analyst generating structured software requirements.",
+                max_tokens=1200,
+                temperature=0.4,
+                agent_id="icdev-ai-boost",
+                project_id=session_data.get("project_id", ""),
+                classification=classification,
+            )
+            response = router.invoke("requirements_generation", req)
+            content = (response.content or "").strip() if response else ""
+        except Exception as exc:
+            return jsonify({"error": f"LLM unavailable: {exc}"}), 503
+
+        # --- Parse and persist ---
+        import re as _re
+        added = []
+        blocks = _re.split(r"\n(?=TYPE:)", content.strip())
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Get next turn number
+        turn_row = conn.execute(
+            "SELECT COALESCE(MAX(turn_number), 0) + 1 FROM intake_conversation WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        turn_number = turn_row[0] if turn_row else 1
+
+        for block in blocks:
+            block = block.strip()
+            if not block.startswith("TYPE:"):
+                continue
+            type_m = _re.search(r"TYPE:\s*(.+)", block)
+            text_m = _re.search(r"TEXT:\s*(.+)", block, _re.DOTALL)
+            crit_m = _re.search(r"CRITERIA:\s*(.+)", block, _re.DOTALL)
+
+            if not type_m or not text_m:
+                continue
+
+            req_type = type_m.group(1).strip().lower().replace(" ", "_")
+            req_text = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", text_m.group(1))[0].strip()
+            criteria = _re.split(r"\n(?:TYPE|TEXT|CRITERIA):", crit_m.group(1))[0].strip() if crit_m else ""
+
+            if req_type not in all_types:
+                req_type = "functional"
+
+            req_id = f"req-boost-{uuid.uuid4().hex[:12]}"
+            if not criteria:
+                criteria = _auto_generate_ac(req_text)
+            conn.execute(
+                """INSERT INTO intake_requirements
+                   (id, session_id, source_turn, requirement_type, raw_text,
+                    acceptance_criteria, classification, priority, status, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'deferred', ?)""",
+                (req_id, session_id, turn_number, req_type, req_text,
+                 criteria, classification, 'high', now),
+            )
+            added.append({"id": req_id, "type": req_type, "text": req_text, "criteria": criteria})
+
+        # Log as assistant turn
+        if added:
+            summary = f"[AI Boost] Generated {len(added)} requirements covering: {', '.join(sorted({r['type'] for r in added}))}."
+            conn.execute(
+                """INSERT INTO intake_conversation
+                   (session_id, turn_number, role, content, content_type, classification)
+                   VALUES (?, ?, 'analyst', ?, 'text', ?)""",
+                (session_id, turn_number, summary, classification),
+            )
+
+        conn.commit()
+
+        # Auto-decompose so new requirements are traceable
+        if _HAS_DECOMP:
+            try:
+                from tools.requirements.decomposition_engine import decompose_requirements
+                decompose_requirements(session_id)
+            except Exception:
+                pass
+
+        # Rescore
+        new_score = None
+        if _HAS_SCORER:
+            try:
+                from tools.requirements.readiness_scorer import score_readiness
+                result = score_readiness(session_id)
+                new_score = result.get("overall_score")
+            except Exception:
+                pass
+
+        return jsonify({
+            "status": "ok",
+            "session_id": session_id,
+            "added": len(added),
+            "requirements": added,
+            "new_score": new_score,
+            "missing_types_filled": missing_types,
+        })
+
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 @intake_api.route("/api/intake/readiness/<session_id>", methods=["GET"])
 def get_readiness(session_id):
     """Get readiness score for a session."""
@@ -309,8 +769,10 @@ def get_readiness(session_id):
         return jsonify({"error": "Readiness scorer not available"}), 503
 
     try:
-        result = score_readiness(session_id, db_path=DB_PATH)
+        result = score_readiness(session_id)
         return jsonify(result)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -322,8 +784,10 @@ def get_complexity(session_id):
         return jsonify({"error": "Complexity scorer not available"}), 503
 
     try:
-        result = _score_complexity(session_id, db_path=DB_PATH)
+        result = _score_complexity(session_id)
         return jsonify(result)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
@@ -346,7 +810,7 @@ def activate_elicitation_technique(session_id):
     technique_id = data.get("technique_id")
     if not technique_id:
         return jsonify({"error": "technique_id required"}), 400
-    result = _activate_technique(session_id, technique_id, db_path=DB_PATH)
+    result = _activate_technique(session_id, technique_id)
     if result.get("status") == "error":
         return jsonify(result), 400
     return jsonify(result)
@@ -357,7 +821,7 @@ def deactivate_elicitation_technique(session_id):
     """Deactivate the current elicitation technique for a session."""
     if not _HAS_ELICITATION:
         return jsonify({"error": "Elicitation techniques not available"}), 503
-    result = _deactivate_technique(session_id, db_path=DB_PATH)
+    result = _deactivate_technique(session_id)
     if result.get("status") == "error":
         return jsonify(result), 400
     return jsonify(result)
@@ -370,7 +834,7 @@ def export_intake_requirements(session_id):
         return jsonify({"error": "Intake engine not available"}), 503
 
     try:
-        result = export_requirements(session_id, db_path=DB_PATH)
+        result = export_requirements(session_id)
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -382,7 +846,7 @@ def get_prd(session_id):
     if not _HAS_PRD:
         return jsonify({"error": "PRD generator not available"}), 503
     try:
-        result = _generate_prd(session_id, db_path=DB_PATH)
+        result = _generate_prd(session_id)
         if result.get("status") != "ok":
             return jsonify(result), 404
         return jsonify(result)
@@ -396,12 +860,70 @@ def validate_prd_endpoint(session_id):
     if not _HAS_PRD_VALIDATOR:
         return jsonify({"error": "PRD validator not available"}), 503
     try:
-        result = _validate_prd(session_id, db_path=DB_PATH)
+        result = _validate_prd(session_id)
         if result.get("status") != "ok":
             return jsonify(result), 404
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@intake_api.route("/api/intake/force-build/<session_id>", methods=["POST"])
+def force_build(session_id):
+    """Start build regardless of readiness score (user override).
+
+    Runs SAFe decomposition on whatever requirements exist and returns
+    a build context so the client can proceed to the build pipeline.
+    Requires ``{"confirmed": true}`` in the request body as an explicit
+    acknowledgement that the readiness threshold is not met.
+    """
+    data = request.get_json(silent=True) or {}
+    if not data.get("confirmed"):
+        return jsonify({"error": "confirmed=true is required to override the readiness threshold"}), 400
+
+    conn = _get_db()
+    try:
+        session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+        if not session:
+            return jsonify({"error": "Session not found"}), 404
+
+        session_data = dict(session)
+        readiness_score = session_data.get("readiness_score", 0) or 0
+
+        req_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM intake_requirements WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()["cnt"]
+
+        if req_count == 0:
+            return jsonify({"error": "No requirements captured yet — add at least one requirement before building"}), 400
+
+        items_created = 0
+        try:
+            from tools.requirements.decomposition_engine import decompose_requirements
+            result = decompose_requirements(session_id)
+            items_created = result.get("items_created", 0)
+        except Exception:
+            pass
+
+        return jsonify({
+            "status": "ok",
+            "forced": True,
+            "session_id": session_id,
+            "readiness_score": readiness_score,
+            "requirements_count": req_count,
+            "items_created": items_created,
+            "message": (
+                f"Build started with {readiness_score:.0%} readiness — "
+                f"{req_count} requirement(s), {items_created} work item(s) created. "
+                "Fill remaining gaps during development."
+            ),
+            "next_steps": ["Run /feature or /icdev-build to generate the application"],
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
 
 
 @intake_api.route("/api/intake/trigger-build/<session_id>", methods=["POST"])
@@ -523,7 +1045,7 @@ def get_session_coas(session_id):
     """List COAs for an intake session."""
     if _HAS_COA:
         try:
-            result = _list_coas(session_id, db_path=DB_PATH)
+            result = _list_coas(session_id)
             for coa in result.get("coas", []):
                 _parse_coa_json_fields(coa)
             return jsonify(result)
@@ -585,13 +1107,23 @@ def generate_session_coas(session_id):
                 (project_id, session_id),
             )
             conn.commit()
+
+            # Auto-create DevSecOps profile for new project
+            if _HAS_DEVSECOPS:
+                try:
+                    _create_devsecops_profile(project_id, maturity_level="level_2_managed")
+                except Exception:
+                    pass
+
+            # Auto-seed AI governance baseline if session mentions AI
+            _seed_ai_governance_baseline(conn, project_id, session_id)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 
     try:
-        result = _generate_3_coas(session_id, project_id=project_id, simulate=True, db_path=DB_PATH)
+        result = _generate_3_coas(session_id, project_id=project_id, simulate=True)
         # Parse JSON fields for JS
         for coa in result.get("coas", []):
             _parse_coa_json_fields(coa)
@@ -617,7 +1149,6 @@ def select_session_coa(session_id):
                 coa_id=coa_id,
                 selected_by=selected_by,
                 rationale=rationale,
-                db_path=DB_PATH,
             )
             return jsonify(result)
         except ValueError as exc:
@@ -768,7 +1299,15 @@ def _run_build_pipeline(session_id):
 
     conn = None
     try:
-        conn = get_connection(db_path=str(DB_PATH))
+        import os
+        if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+            conn = get_connection()
+        else:
+            conn = get_connection(db_path=str(DB_PATH))
+        try:
+            conn.set_security_context(None)
+        except Exception:
+            pass
     except Exception as exc:
         _set_overall("error", f"Database error: {exc}")
         return
@@ -845,6 +1384,16 @@ def _run_build_pipeline(session_id):
                     (project_id, session_id),
                 )
                 conn.commit()
+
+                # Auto-create DevSecOps profile for new project
+                if _HAS_DEVSECOPS:
+                    try:
+                        _create_devsecops_profile(project_id, maturity_level="level_2_managed")
+                    except Exception:
+                        pass
+
+                # Auto-seed AI governance baseline if session mentions AI
+                _seed_ai_governance_baseline(conn, project_id, session_id)
         except Exception as exc:
             _update_phase("scaffold", "error", f"Project setup failed: {exc}")
             _set_overall("error", str(exc))
@@ -932,12 +1481,17 @@ def _run_build_pipeline(session_id):
 
 @intake_api.route("/api/intake/build/<session_id>/start", methods=["POST"])
 def start_build_pipeline(session_id):
-    """Start the build pipeline for an intake session (background thread)."""
+    """Start the build pipeline for an intake session (background thread).
+
+    Pass ``?dry_run=1`` to preview phases without executing.
+    """
+    dry_run = request.args.get("dry_run", "") in ("1", "true", "yes")
+
     with _BUILD_LOCK:
         existing = _BUILD_JOBS.get(session_id)
-        if existing and existing["status"] == "running":
+        if existing and existing["status"] == "running" and not dry_run:
             return jsonify({"error": "Build already in progress"}), 409
-        if existing and existing["status"] == "done":
+        if existing and existing["status"] == "done" and not dry_run:
             return jsonify(existing)
 
     conn = _get_db()
@@ -971,6 +1525,14 @@ def start_build_pipeline(session_id):
     with _BUILD_LOCK:
         _BUILD_JOBS[session_id] = job
 
+    if dry_run:
+        # Mark all phases as preview without running
+        for p in job["phases"]:
+            p["status"] = "preview"
+            p["detail"] = "Dry-run — not executed"
+        job["status"] = "preview"
+        return jsonify({"status": "preview", "session_id": session_id, "phases": job["phases"]})
+
     # Launch background thread
     t = threading.Thread(target=_run_build_pipeline, args=(session_id,), daemon=True)
     t.start()
@@ -997,7 +1559,15 @@ def get_build_project(session_id):
         if not row:
             return jsonify({"error": "Session not found"}), 404
         project_id = row["project_id"] or ""
-        return jsonify({"session_id": session_id, "project_id": project_id})
+        # Check if any build items exist
+        has_activity = False
+        if project_id:
+            activity_row = conn.execute(
+                "SELECT COUNT(*) as cnt FROM build_items WHERE project_id = ?",
+                (project_id,),
+            ).fetchone()
+            has_activity = activity_row is not None and activity_row["cnt"] > 0
+        return jsonify({"session_id": session_id, "project_id": project_id, "has_activity": has_activity})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

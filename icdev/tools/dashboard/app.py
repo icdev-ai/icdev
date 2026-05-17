@@ -52,6 +52,7 @@ from tools.dashboard.config import (  # noqa: E402
     DEFAULT_CLASSIFICATION,
     BYOK_ENABLED,
     PORT,
+    HOST,
     DEBUG,
 )
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event  # noqa: E402
@@ -104,6 +105,13 @@ if _CANVAS_KG_ENABLED:
         _HAS_CANVAS_KG = True
     except ImportError:
         _HAS_CANVAS_KG = False
+
+# RAG-KG hybrid search blueprint (always enabled)
+try:
+    from tools.knowledge_graph.blueprint import rag_kg_api as _rag_kg_api  # noqa: E402
+    _HAS_RAG_KG_API = True
+except ImportError:
+    _HAS_RAG_KG_API = False
 # D-CHILD-6: GovProposal/CPMP/GovCon conditionally loaded.
 # Opt-in: default is OFF. Operators set ICDEV_GOVCON_ENABLED=true to enable.
 # Air-gap installs (ICDEV_AIRGAP=true) force this off regardless so the
@@ -147,6 +155,9 @@ _CANVAS_DEFS = [
     ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
     ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
     ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
+    ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
+    ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
+    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
     ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
 ]
 
@@ -177,6 +188,7 @@ _APP_DEFS = [
     ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
     ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
     ("gameday",       "ICDEV_GAMEDAY_ENABLED",         "apps.ai_gameday.blueprint",     "bp"),
+    ("innovation",    "ICDEV_INNOVATION_ENABLED",      "apps.innovation.blueprint",     "innovation_bp"),
 ]
 
 for _key, _env, _mod, _attr in _APP_DEFS:
@@ -986,6 +998,74 @@ def _enrich_chart_patterns(patterns: list[dict]) -> list[dict]:
     return enriched
 
 
+def _get_chat_models() -> tuple[list[dict], str]:
+    """Read available chat models from args/llm_config.yaml.
+
+    Returns (models_list, default_model_key) where models_list is
+    [{value, label, provider}] and default_model_key is the first entry
+    in the chat_response routing chain.
+    """
+    import yaml
+    from pathlib import Path
+
+    config_path = Path("args/llm_config.yaml")
+    try:
+        with open(config_path, encoding="utf-8") as _f:
+            cfg = yaml.safe_load(_f)
+    except Exception:
+        return [{"value": "default", "label": "Default", "provider": ""}], "default"
+
+    _PROVIDER_LABELS = {
+        "ollama": "Local (Ollama)",
+        "anthropic": "Anthropic",
+        "openai": "OpenAI",
+        "gemini": "Google Gemini",
+        "bedrock": "AWS Bedrock",
+        "azure_openai": "Azure OpenAI",
+        "ibm_watsonx": "IBM watsonx",
+        "mistral": "Mistral",
+        "mistral_vllm": "Mistral (vLLM)",
+        "vllm": "vLLM",
+    }
+
+    # Collect embedding model IDs so we can skip them
+    embed_ids: set[str] = set()
+    try:
+        for _v in cfg.get("embedding", {}).get("models", {}).values():
+            if isinstance(_v, dict):
+                embed_ids.add(_v.get("model_id", ""))
+    except Exception:
+        pass
+
+    result: list[dict] = []
+    for key, mcfg in (cfg.get("models") or {}).items():
+        if not isinstance(mcfg, dict):
+            continue
+        if key.startswith("agent_"):
+            continue
+        provider = mcfg.get("provider", "")
+        model_id = mcfg.get("model_id", key)
+        if model_id in embed_ids:
+            continue
+        provider_label = _PROVIDER_LABELS.get(provider, provider.replace("_", " ").title())
+        result.append({
+            "value": key,
+            "label": f"{key}  [{provider_label}]",
+            "provider": provider,
+        })
+
+    # Determine default from chat_response routing chain
+    default_model = result[0]["value"] if result else "default"
+    try:
+        chain = cfg.get("routing", {}).get("chat_response", {}).get("chain", [])
+        if chain:
+            default_model = chain[0]
+    except Exception:
+        pass
+
+    return result, default_model
+
+
 def create_app() -> Flask:
     app = Flask(
         __name__,
@@ -1008,8 +1088,22 @@ def create_app() -> Flask:
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
 
+    # Register field-level security middleware (CUI enforcement on JSON responses)
+    try:
+        from tools.security.middleware import init_security
+        init_security(app, classification="CUI")
+    except ImportError:
+        pass
+
     # Initialize WebSocket (D170 — optional, graceful fallback)
     init_socketio(app)
+
+    # Register geospatial dashboard SocketIO handlers (task-a866147c27-d4)
+    try:
+        from src.routes.dashboard import register_socketio_handlers as _register_geo_ws
+        _register_geo_ws()
+    except Exception as _exc:
+        app.logger.warning("Geospatial SocketIO handlers skipped: %s", _exc)
 
     # Correlation ID middleware (D149)
     try:
@@ -1035,13 +1129,12 @@ def create_app() -> Flask:
     @app.route("/api/live-check", methods=["GET"])
     def api_live_check():
         """Scheduler heartbeat + in_progress task count for the Live Activity panel."""
-        import pathlib
         import time as _t
         from flask import jsonify as _j
         from tools.db.storage import get_connection as _gc
 
-        hb_path = pathlib.Path(".tmp/kanban_scheduler.heartbeat")
-        log_path = pathlib.Path(".tmp/kanban_scheduler.log")
+        hb_path = BASE_DIR / ".tmp" / "kanban_scheduler.heartbeat"
+        log_path = BASE_DIR / ".tmp" / "kanban_scheduler.log"
         sched_secs = None
         for _p in (hb_path, log_path):
             if _p.exists():
@@ -1058,6 +1151,7 @@ def create_app() -> Flask:
             staleness = "active"
 
         conn = _gc()
+        pending_count = 0
         try:
             rows = conn.execute(
                 "SELECT id, title, priority, task_type, failure_count, status, "
@@ -1068,6 +1162,13 @@ def create_app() -> Flask:
             # kv-viz: add attempt_count, current_attempt_started_at, last_reaped_reason
             from tools.dashboard.api.kanban import _annotate_in_progress_tasks
             _annotate_in_progress_tasks(conn, tasks)
+            # Count queued (scheduled + backlog) tasks so the Projects in Flight
+            # section stays visible even when no tasks are actively in_progress.
+            prow = conn.execute(
+                "SELECT COUNT(*) AS n FROM kanban_tasks "
+                "WHERE status IN ('scheduled', 'backlog')"
+            ).fetchone()
+            pending_count = int((prow or {}).get("n") or 0)
         except Exception:
             tasks = []
         finally:
@@ -1098,6 +1199,7 @@ def create_app() -> Flask:
             "scheduler_last_seen_secs": sched_secs,
             "staleness": staleness,
             "tasks": tasks,
+            "pending_tasks_count": pending_count,
         })
 
     @app.route("/api/kanban/recent-events")
@@ -1302,6 +1404,10 @@ def create_app() -> Flask:
             "qdc_enabled": _CANVAS_FLAGS.get("qdc", False),
             "migration_canvas_enabled": _CANVAS_FLAGS.get("mdc", False),
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
+            "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
+            "ohc_enabled": _CANVAS_FLAGS.get("ohc", False),
+            "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
+            "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
             "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
             "canvas_flags": _CANVAS_FLAGS,
             "hitl_enabled": _APP_FLAGS.get("hitl_workflow", False),
@@ -1342,10 +1448,52 @@ def create_app() -> Flask:
     except Exception as exc:
         app.logger.debug("Agent auto-registration skipped: %s", exc)
 
+    # ---- Studio Artifact Download — standalone route outside blueprint namespace ----
+    @app.route("/api/artifacts/<path:filepath>", methods=["GET"])
+    def studio_artifact_download(filepath: str):
+        import mimetypes
+        from flask import send_file as _sf, jsonify as _jf, request as _req
+        _artifacts_root = BASE_DIR / "data" / "studio_artifacts"
+        safe = (BASE_DIR / Path(filepath.replace("\\", "/"))).resolve()
+        if not str(safe).startswith(str(_artifacts_root.resolve())):
+            return _jf({"error": "Access denied"}), 403
+        if not safe.exists():
+            return _jf({"error": "Artifact not found", "path": str(safe)}), 404
+        mime, _ = mimetypes.guess_type(str(safe))
+        as_attachment = _req.args.get("download", "0") == "1"
+        return _sf(safe, mimetype=mime or "text/plain", as_attachment=as_attachment,
+                   download_name=safe.name)
+
+    # ---- Studio Run History Delete — standalone routes (blueprint legacy drops DELETE) ----
+    @app.route("/api/studio/workflows/runs/<run_id>", methods=["DELETE"])
+    def studio_delete_run(run_id: str):
+        from tools.studio.workflow_runner import delete_run as _delete_run
+        from flask import jsonify as _jf
+        deleted = _delete_run(run_id)
+        if not deleted:
+            return _jf({"error": "Run not found"}), 404
+        return _jf({"status": "deleted", "run_id": run_id})
+
+    @app.route("/api/studio/workflows/runs", methods=["DELETE"])
+    def studio_delete_all_runs():
+        from tools.studio.workflow_runner import delete_all_runs as _delete_all_runs
+        from flask import jsonify as _jf, request as _req
+        workflow_id = _req.args.get("workflow_id")
+        count = _delete_all_runs(workflow_id=workflow_id or None)
+        return _jf({"status": "deleted", "count": count})
+
     # ---- Register API blueprints (P1.1: centralized via register_api_blueprints) ----
     # All 55+ blueprints are mounted under /api/v1/* with /api/* legacy aliases.
     # See tools/dashboard/api/__init__.py for the full registration sequence.
     register_api_blueprints(app)
+
+    # ---- Geospatial Dashboard (task-a866147c27-d4) ----
+    try:
+        from src.routes.dashboard import bp as _geo_bp
+        app.register_blueprint(_geo_bp)
+        app.logger.info("Geospatial dashboard registered at /geospatial")
+    except Exception as _exc:
+        app.logger.warning("Geospatial dashboard blueprint skipped: %s", _exc)
 
     # ---- SRE Dashboard Page ----
     @app.route("/sre")
@@ -1356,6 +1504,14 @@ def create_app() -> Flask:
     @app.route("/ndc/sops")
     def ndc_sops_page():
         return render_template("ndc_sops.html")
+
+    # ---- RAG-KG Hybrid Search Blueprint ----
+    if _HAS_RAG_KG_API:
+        try:
+            app.register_blueprint(_rag_kg_api, url_prefix="/api/rag-kg")
+            app.logger.info("RAG-KG hybrid search registered at /api/rag-kg")
+        except Exception as exc:
+            app.logger.warning("RAG-KG blueprint failed to register: %s", exc)
 
     # ---- Canvas Knowledge Graph Blueprint ----
     if _HAS_CANVAS_KG:
@@ -1390,6 +1546,9 @@ def create_app() -> Flask:
         "ddc": "/data",
         "qdc": "/quality",
         "mdc": "/migration-canvas",
+        "aimc": "/ai-ml",
+        "ohc": "",
+        "iop": "/info-ops",
         "mission_canvas": "/mission-canvas",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
@@ -1450,6 +1609,40 @@ def create_app() -> Flask:
     else:
         app.logger.info("Strategos disabled (ICDEV_STRATEGOS_ENABLED=false)")
 
+    # ---- GeoSIGINT Blueprint ----
+    try:
+        import importlib.util as _ilu
+        import sys as _sys
+        _geo_bp_path = BASE_DIR / "apps" / "geosigint" / "blueprint.py"
+        if not _geo_bp_path.exists():
+            raise FileNotFoundError(f"GeoSIGINT blueprint not found at {_geo_bp_path}")
+        # Ensure apps and apps.geosigint are in sys.modules for intra-package imports.
+        # __path__ must be set so that sub-module imports (e.g. from apps.geosigint.a2ad_mapper)
+        # resolve correctly at request time.
+        for _pkg, _pkg_path, _pkg_dir in [
+            ("apps", BASE_DIR / "apps" / "__init__.py", BASE_DIR / "apps"),
+            ("apps.geosigint", BASE_DIR / "apps" / "geosigint" / "__init__.py", BASE_DIR / "apps" / "geosigint"),
+        ]:
+            if _pkg not in _sys.modules:
+                _spec = _ilu.spec_from_file_location(_pkg, str(_pkg_path))
+                _mod = _ilu.module_from_spec(_spec)
+                _mod.__path__ = [str(_pkg_dir)]
+                _mod.__package__ = _pkg
+                _sys.modules[_pkg] = _mod
+                _spec.loader.exec_module(_mod)
+        _spec = _ilu.spec_from_file_location("apps.geosigint.blueprint", str(_geo_bp_path))
+        _geo_mod = _ilu.module_from_spec(_spec)
+        _sys.modules["apps.geosigint.blueprint"] = _geo_mod
+        _spec.loader.exec_module(_geo_mod)
+        _geo_bp = _geo_mod.create_geosigint_blueprint()
+        _geo_api_bp = _geo_mod.create_geosigint_api_blueprint()
+        app.register_blueprint(_geo_bp)
+        app.register_blueprint(_geo_api_bp)
+        app.logger.info("GeoSIGINT blueprints registered at /geosigint and /api/geosigint")
+    except Exception as _exc:
+        import traceback as _tb
+        app.logger.warning("GeoSIGINT blueprint failed to register: %s\n%s", _exc, _tb.format_exc())
+
     # ---- TA Patterns Blueprint ----
     try:
         from tools.trading.ta.blueprint import create_ta_blueprint
@@ -1496,6 +1689,56 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Autonomous Coder blueprint failed to register: %s", _exc)
 
+    # ---- System Graph (Unified Sigma.js graph) ----
+    try:
+        from tools.system_graph.blueprint import bp as _sysgraph_bp
+        app.register_blueprint(_sysgraph_bp)
+        app.logger.info("System Graph blueprint registered at /system-graph")
+    except Exception as _exc:
+        app.logger.warning("System Graph blueprint failed to register: %s", _exc)
+
+    # ---- GovLift Cloud Migration Tool ----
+    try:
+        from tools.govlift.blueprint import create_govlift_blueprint as _gv_factory
+        from tools.govlift.db.init_db import init_govlift_db as _gv_init
+        _gv_init()
+        _gv_bp = _gv_factory()
+        app.register_blueprint(_gv_bp)
+        _CANVAS_FLAGS["govlift"] = True
+        app.logger.info("GovLift blueprint registered at /govlift")
+    except Exception as _exc:
+        app.logger.warning("GovLift blueprint failed to register: %s", _exc)
+
+    # ---- AI Observatory (cross-canvas AI decision traceability) ----
+    try:
+        from tools.ai_observatory.blueprint import bp as _ao_bp
+        app.register_blueprint(_ao_bp)
+        app.logger.info("AI Observatory blueprint registered at /ai-observatory")
+    except Exception as _exc:
+        app.logger.warning("AI Observatory blueprint failed to register: %s", _exc)
+
+    try:
+        from tools.ontology.blueprint import bp as _ont_bp
+        app.register_blueprint(_ont_bp)
+        app.logger.info("Ontology Explorer blueprint registered at /ontology")
+    except Exception as _exc:
+        app.logger.warning("Ontology Explorer blueprint failed to register: %s", _exc)
+
+    # ---- Cache Savings Blueprint ----
+    try:
+        from tools.cache_savings.blueprint import bp as _cache_savings_bp
+        app.register_blueprint(_cache_savings_bp)
+        app.logger.info("Cache Savings blueprint registered at /cache-savings")
+    except Exception as _exc:
+        app.logger.warning("Cache Savings blueprint failed to register: %s", _exc)
+
+    # ---- JISE Portal Blueprint ----
+    try:
+        from tools.intelligence.jise_portal import jise_bp as _jise_bp
+        app.register_blueprint(_jise_bp)
+        app.logger.info("JISE Portal blueprint registered at /api/v1/jise")
+    except Exception as _exc:
+        app.logger.warning("JISE Portal blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -1693,15 +1936,30 @@ def create_app() -> Flask:
                                 open_f = total_threats
                                 closed_f = 0
                             elif canvas_name in ("Network", "Pipeline"):
-                                tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
-                                open_f = cconn.execute(
-                                    f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status = 'open'"  # nosec B608
-                                ).fetchone()["cnt"]
-                                closed_f = cconn.execute(
-                                    f"SELECT COUNT(*) as cnt FROM {tbl} WHERE status != 'open'"  # nosec B608
-                                ).fetchone()["cnt"]
-                                total_f = open_f + closed_f
-                                score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
+                                checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
+                                findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
+                                try:
+                                    r = cconn.execute(
+                                        f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
+                                    ).fetchone()
+                                    passed_c = int(r["p"] or 0)
+                                    failed_c = int(r["f"] or 0)
+                                    total_c = passed_c + failed_c
+                                    if total_c == 0:
+                                        raise ValueError("no checks")
+                                    score = round(passed_c / total_c * 100, 1)
+                                    open_f = failed_c
+                                    closed_f = passed_c
+                                except Exception:
+                                    # Fall back to findings table if checks table absent
+                                    open_f = cconn.execute(
+                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
+                                    ).fetchone()["cnt"]
+                                    closed_f = cconn.execute(
+                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
+                                    ).fetchone()["cnt"]
+                                    total_f = open_f + closed_f
+                                    score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
                             elif canvas_name in ("Infra", "Data"):
                                 tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
                                 score = round(_latest_per_design_avg(cconn, tbl), 1)
@@ -2198,6 +2456,97 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    @app.route("/api/core/iqe-query", methods=["POST"])
+    def core_iqe_query():
+        """Natural-language IQE query against agents and projects collections."""
+        import logging as _log
+        import tools.iqe.adapters.core_agents  # noqa: F401 — registers agents.* + projects.* collections
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import Parser
+        from tools.iqe.executor import execute_query
+
+        data = flask_request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = ["agents.registry", "projects.list"]
+        iqe_str = ""
+        try:
+            result = nl_to_iqe(question, collections)
+            iqe_str = result.get("iqe", "")
+            explanation = result.get("explanation", "")
+            ast = Parser().parse(iqe_str)
+            conn = _get_db()
+            try:
+                rows = execute_query(ast, conn)
+            finally:
+                conn.close()
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                            "results": rows, "row_count": len(rows)})
+        except Exception as exc:
+            _log.getLogger(__name__).warning("core IQE error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    @app.route("/api/iqe/dispatch", methods=["POST"])
+    def iqe_dispatch():
+        """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name."""
+        import logging as _dlog
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
+        from tools.iqe.executor import execute_query
+
+        _CANVAS_MAP = {
+            "ndc":        ("tools.iqe.adapters.ndc",         ["network.topologies", "network.devices", "network.objects", "network.circuits", "network.sites", "network.ai_decisions"]),
+            "sdc":        ("tools.iqe.adapters.security",    ["attack.nodes", "attack.edges", "attack.paths", "security.ai_decisions"]),
+            "pdc":        ("tools.iqe.adapters.pipeline",    ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges", "pipeline.ai_decisions"]),
+            "ddc":        ("tools.iqe.adapters.data",        ["data.lineage.edges", "data.classifications", "data.ai_decisions"]),
+            "idc":        ("tools.iqe.adapters.infra",       ["infra.resources", "infra.snapshots", "infra.ai_decisions"]),
+            "odc":        ("tools.iqe.adapters.observability", ["mitre.techniques", "mitre.coverage", "mitre.gaps", "observability.ai_decisions"]),
+            "bdc":        ("tools.iqe.adapters.bdc",         ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts", "bdc.ai_decisions"]),
+            "cam":        ("tools.iqe.adapters.cam",          ["cam.projects", "cam.phases", "cam.app_components", "cam.ai_opportunities"]),
+            "mc":         ("tools.iqe.adapters.mc",          ["mc.designs", "mc.waves", "mc.assessments", "mc.ai_decisions"]),
+            "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts", "aadc.ai_decisions"]),
+            "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts", "aimc.ai_decisions"]),
+            "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
+            "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
+            "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
+            "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
+            "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
+            "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
+            "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
+            "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
+            "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
+        }
+
+        data = flask_request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        canvas = (data.get("canvas") or "").strip().lower()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        if canvas not in _CANVAS_MAP:
+            return jsonify({"error": f"unknown canvas '{canvas}'. Valid: {sorted(_CANVAS_MAP)}"}), 400
+
+        adapter_module, collections = _CANVAS_MAP[canvas]
+        iqe_str = ""
+        try:
+            import importlib
+            importlib.import_module(adapter_module)
+            result = nl_to_iqe(question, collections)
+            iqe_str = result.get("iqe", "")
+            explanation = result.get("explanation", "")
+            try:
+                ast = _iqe_parse(iqe_str)
+                rows = execute_query(ast, conn=None)
+            except _IQESyntaxError:
+                rows = []
+            return jsonify({"ok": True, "canvas": canvas, "iqe": iqe_str,
+                            "explanation": explanation, "results": rows, "row_count": len(rows)})
+        except Exception as exc:
+            _dlog.getLogger(__name__).warning("IQE dispatch error [%s]: %s", canvas, exc)
+            return jsonify({"error": str(exc), "canvas": canvas, "iqe": iqe_str}), 500
+
     @app.route("/monitoring")
     def monitoring_overview():
         """Monitoring overview page."""
@@ -2285,6 +2634,11 @@ def create_app() -> Flask:
         """Usage tracking + cost dashboard."""
         return render_template("usage.html")
 
+    @app.route("/il5")
+    def il5_page():
+        """IL5 data ingestion — parsed records and SLA compliance."""
+        return render_template("il5/page.html")
+
     @app.route("/wizard")
     def wizard_page():
         """Getting Started wizard — guides new users to the right workflow."""
@@ -2293,12 +2647,17 @@ def create_app() -> Flask:
     @app.route("/chat")
     def chat_new():
         """Start a new requirements chat — wizard params set context."""
-        goal = flask_request.args.get("goal", "build")
-        role = flask_request.args.get("role", "developer")
-        classification = flask_request.args.get("classification", "il4")
+        goal = flask_request.args.get("goal", "")
+        role = flask_request.args.get("role", "")
+        classification = flask_request.args.get("classification", "")
         frameworks = flask_request.args.get("frameworks", "")
         custom_role_name = flask_request.args.get("custom_role_name", "")
         custom_role_desc = flask_request.args.get("custom_role_desc", "")
+        # ?canvas= deep link — pre-selects canvas mode (forwarded from /simulate/chat redirect)
+        canvas = flask_request.args.get("canvas", "") or flask_request.args.get("canvas_type", "")
+        _allowed = {"cam", "ndc", "sdc", "eda", "ddc", "pdc", "bdc", "odc", "idc"}
+        wizard_canvas = canvas if canvas in _allowed else ""
+        llm_models, llm_default_model = _get_chat_models()
         return render_template(
             "chat.html",
             session_id=None,
@@ -2309,6 +2668,9 @@ def create_app() -> Flask:
             wizard_frameworks=frameworks,
             wizard_custom_role_name=custom_role_name,
             wizard_custom_role_desc=custom_role_desc,
+            wizard_canvas=wizard_canvas,
+            llm_models=llm_models,
+            llm_default_model=llm_default_model,
         )
 
     @app.route("/chat/<session_id>")
@@ -2327,6 +2689,17 @@ def create_app() -> Flask:
                 "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
                 (session_id,),
             ).fetchall()
+            # Look up the linked chat context so JS can auto-select it
+            auto_context_id = None
+            try:
+                ctx_row = conn.execute(
+                    "SELECT id FROM chat_contexts WHERE intake_session_id = ? LIMIT 1",
+                    (session_id,),
+                ).fetchone()
+                if ctx_row:
+                    auto_context_id = ctx_row["id"]
+            except Exception:
+                pass
             # Extract context for sidebar display
             import json as _json
 
@@ -2336,9 +2709,11 @@ def create_app() -> Flask:
                 ctx = _json.loads(session_dict.get("context_summary") or "{}")
             except (ValueError, TypeError):
                 pass
+            llm_models, llm_default_model = _get_chat_models()
             return render_template(
                 "chat.html",
                 session_id=session_id,
+                auto_context_id=auto_context_id,
                 session=session_dict,
                 messages=[dict(m) for m in messages],
                 wizard_goal=None,
@@ -2348,6 +2723,8 @@ def create_app() -> Flask:
                 wizard_custom_role_name="",
                 wizard_custom_role_desc="",
                 session_context=ctx,
+                llm_models=llm_models,
+                llm_default_model=llm_default_model,
             )
         finally:
             conn.close()
@@ -3120,7 +3497,15 @@ def create_app() -> Flask:
 
     # ---- Database helper ----
     def _get_db():
-        conn = get_connection(db_path=str(DB_PATH))
+        import os
+        if os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+            conn = get_connection()
+        else:
+            conn = get_connection(db_path=str(DB_PATH))
+        try:
+            conn.set_security_context(None)
+        except Exception:
+            pass
         return conn
 
     # ---- CPMP / Proposals / GovCon Pages (D-CHILD-6: guarded) ----
@@ -4611,6 +4996,8 @@ def create_app() -> Flask:
                 "nodes": kg_result.get("nodes", []) if isinstance(kg_result, dict) else [],
                 "edges": kg_result.get("edges", []) if isinstance(kg_result, dict) else [],
                 "profile": kg_result.get("profile", "internal_awareness") if isinstance(kg_result, dict) else "internal_awareness",
+                "rrf_fusion": kg_result.get("rrf_fusion", False) if isinstance(kg_result, dict) else False,
+                "neighbor_count": kg_result.get("neighbor_count", 0) if isinstance(kg_result, dict) else 0,
             },
             "health_hits": health_hits,
             "suggested_next_actions": suggested,
@@ -6389,13 +6776,19 @@ def create_app() -> Flask:
         }
         jobs = []
         log_entries = []
-        conn = _get_db()
+        # Open with a short timeout so lock contention fails fast rather than
+        # blocking for 30+ seconds (sync_log has millions of rows and the DB
+        # is often under write load from the Kanban scheduler).
+        import sqlite3 as _sq
         try:
-            # Ensure indexes exist for sync_log queries (table can have millions of rows)
-            try:
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_sync_log_action ON sync_log(action)")
-            except Exception:
-                pass
+            conn = _sq.connect(str(DB_PATH), timeout=3)
+            conn.row_factory = _sq.Row
+            conn.execute("PRAGMA busy_timeout=3000")
+        except Exception:
+            conn = None
+        if conn is None:
+            return render_template("filesync.html", stats=stats, jobs=jobs, log_entries=log_entries)
+        try:
             try:
                 row = conn.execute("SELECT COUNT(*) as cnt FROM sync_jobs").fetchone()
                 stats["total_jobs"] = row["cnt"]
@@ -7652,8 +8045,51 @@ def create_app() -> Flask:
             return jsonify({"experiments": []})
 
     # ================================================================
+    # Chat: /analyze command — URL fetch + LLM analysis
+    # ================================================================
+
+    @app.route("/api/chat/analyze", methods=["POST"])
+    def api_chat_analyze():
+        """Fetch a URL and return a structured LLM analysis.
+
+        Body: {url: str, canvas_type?: str}
+        Returns: {reply, url, source_type, error}
+        """
+        data = flask_request.get_json(silent=True) or {}
+        url = (data.get("url") or "").strip()
+        if not url:
+            return jsonify({"error": "url required"}), 400
+        canvas_type = (data.get("canvas_type") or "intake").strip().lower()
+        try:
+            from tools.chat_router.url_analyzer import analyze
+            result = analyze(url, canvas_type)
+            return jsonify(result)
+        except Exception as exc:
+            app.logger.warning("url_analyzer error: %s", exc)
+            return jsonify({"reply": f"[Analyze error: {exc}]", "error": str(exc)}), 500
+
+    # ================================================================
     # Phase 69: Chat Personas API (D-CU-3)
     # ================================================================
+
+    @app.route("/api/chat/route-intent", methods=["POST"])
+    def api_chat_route_intent():
+        """Classify a user message to a canvas mode for intent-based routing.
+
+        Body: {message: str, context_id: str (optional)}
+        Returns: {mode, canvas_type, confidence, reason}
+        """
+        data = flask_request.get_json(silent=True) or {}
+        message = (data.get("message") or "").strip()
+        if not message:
+            return jsonify({"mode": "intake", "canvas_type": None, "confidence": 1.0, "reason": "empty message"})
+        try:
+            from tools.chat_router.intent_classifier import classify
+            result = classify(message)
+            return jsonify(result)
+        except Exception as exc:
+            app.logger.warning("intent_classifier error: %s", exc)
+            return jsonify({"mode": "intake", "canvas_type": None, "confidence": 0.5, "reason": "classifier unavailable"})
 
     @app.route("/api/chat/personas")
     def api_chat_personas():
@@ -7669,6 +8105,187 @@ def create_app() -> Flask:
             return jsonify({"personas": {}})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/chat/upload", methods=["POST"])
+    def api_chat_upload():
+        """Ingest an uploaded document into RAG vector store and Knowledge Graph.
+
+        Multipart form fields:
+            file        — the document (txt, md, pdf, docx)
+            context_id  — chat context (used to tag chunks with project_id)
+            project_id  — optional project scope
+            tenant_id   — optional tenant scope
+        """
+        import hashlib
+        import tempfile
+        import uuid as _uuid
+
+        file = flask_request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"error": "No file provided"}), 400
+
+        context_id = flask_request.form.get("context_id", "")
+        project_id = flask_request.form.get("project_id", "")
+        tenant_id = flask_request.form.get("tenant_id", "")
+        filename = file.filename
+
+        # --- Extract text ---
+        _IMAGE_EXTS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp", ".tiff"})
+        try:
+            ext = Path(filename).suffix.lower()
+            raw_bytes = file.read()
+            file_size_kb = round(len(raw_bytes) / 1024, 1)
+            is_image = ext in _IMAGE_EXTS
+
+            if is_image:
+                # Images: synthesise a searchable text stub so they appear in RAG + KG
+                stem = Path(filename).stem.replace("_", " ").replace("-", " ")
+                text = (
+                    f"Image document: {filename}\n"
+                    f"Type: {ext.lstrip('.')} image\n"
+                    f"Size: {file_size_kb} KB\n"
+                    f"Description: {stem}\n"
+                    f"This is a diagram, figure, or image file uploaded to the chat context."
+                )
+            elif ext in (".txt", ".md", ".rst", ".yaml", ".yml", ".json", ".xml", ".csv"):
+                text = raw_bytes.decode("utf-8", errors="replace")
+            elif ext == ".pdf":
+                try:
+                    from tools.rag.pdf_provider import extract_text
+                    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                        tmp.write(raw_bytes)
+                        tmp_path = tmp.name
+                    text = extract_text(tmp_path)
+                    Path(tmp_path).unlink(missing_ok=True)
+                except Exception as exc:
+                    return jsonify({"error": f"PDF extraction failed: {exc}"}), 422
+            elif ext in (".docx", ".doc"):
+                try:
+                    import io
+                    import docx as _docx
+                    doc = _docx.Document(io.BytesIO(raw_bytes))
+                    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                    # Also extract table content
+                    for tbl in doc.tables:
+                        for row in tbl.rows:
+                            row_text = " | ".join(c.text.strip() for c in row.cells if c.text.strip())
+                            if row_text:
+                                paragraphs.append(row_text)
+                    text = "\n".join(paragraphs)
+                except Exception as exc:
+                    return jsonify({"error": f"DOCX extraction failed: {exc}"}), 422
+            else:
+                # Generic fallback: try UTF-8, mark as unknown type
+                text = raw_bytes.decode("utf-8", errors="replace")
+
+            if not text.strip():
+                return jsonify({"error": "Document contains no extractable text"}), 422
+        except Exception as exc:
+            return jsonify({"error": f"Text extraction error: {exc}"}), 500
+
+        doc_id = hashlib.sha256(text[:512].encode()).hexdigest()[:16]
+        rag_chunks_stored = 0
+        kg_result = {}
+
+        # --- RAG ingestion: chunk + embed + upsert ---
+        try:
+            from tools.rag.chunker import chunk_content
+            from tools.rag.vector_store_factory import VectorStoreFactory
+
+            chunks = chunk_content(
+                content=text,
+                source_type="chat_upload",
+                source_id=doc_id,
+                source_table="chat_uploads",
+                metadata={"filename": filename, "context_id": context_id},
+                tenant_id=tenant_id,
+                project_id=project_id,
+                classification="CUI",
+            )
+
+            try:
+                from tools.llm import get_embedding_provider
+                emb_provider = get_embedding_provider()
+            except Exception:
+                emb_provider = None
+
+            store = VectorStoreFactory.create(tenant_id=tenant_id)
+            for chunk in chunks:
+                if not chunk.chunk_id:
+                    chunk.chunk_id = str(_uuid.uuid4())
+                chunk.compute_content_hash()
+                if emb_provider:
+                    try:
+                        chunk.embedding = emb_provider.embed(chunk.content)
+                    except Exception:
+                        pass
+            rag_chunks_stored = store.upsert(chunks)
+        except Exception as exc:
+            app.logger.warning("RAG ingestion failed for upload %s: %s", filename, exc)
+
+        # --- KG ingestion: entity + relationship extraction ---
+        try:
+            from tools.knowledge_graph.ingester import ingest_file as kg_ingest_file
+            with tempfile.NamedTemporaryFile(
+                suffix=Path(filename).suffix or ".txt",
+                mode="w",
+                encoding="utf-8",
+                delete=False,
+            ) as tmp:
+                tmp.write(text)
+                tmp_path = tmp.name
+            kg_result = kg_ingest_file(
+                file_path=tmp_path,
+                project_id=project_id or context_id or "chat",
+                graph_name=Path(filename).stem,
+            )
+            Path(tmp_path).unlink(missing_ok=True)
+        except Exception as exc:
+            app.logger.warning("KG ingestion failed for upload %s: %s", filename, exc)
+            kg_result = {"status": "unavailable", "error": str(exc)}
+
+        return jsonify({
+            "status": "ok",
+            "filename": filename,
+            "doc_id": doc_id,
+            "file_type": "image" if is_image else ext.lstrip("."),
+            "file_size_kb": file_size_kb,
+            "rag_chunks": rag_chunks_stored,
+            "kg": kg_result,
+            "text_length": len(text),
+        })
+
+    @app.route("/api/chat/sources")
+    def api_chat_sources():
+        """List documents indexed into RAG from chat uploads."""
+        tenant_id = flask_request.args.get("tenant_id", "")
+        context_id = flask_request.args.get("context_id", "")
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT source_id,
+                           MAX(json_extract(metadata, '$.filename')) AS filename,
+                           MAX(json_extract(metadata, '$.context_id')) AS context_id,
+                           COUNT(*) AS chunk_count,
+                           MAX(created_at) AS indexed_at
+                    FROM rag_chunks
+                    WHERE source_type = 'chat_upload'
+                      AND (? = '' OR tenant_id = ?)
+                      AND (? = '' OR json_extract(metadata, '$.context_id') = ?)
+                    GROUP BY source_id
+                    ORDER BY indexed_at DESC
+                    LIMIT 50
+                    """,
+                    (tenant_id, tenant_id, context_id, context_id),
+                ).fetchall()
+                return jsonify({
+                    "sources": [dict(r) for r in rows],
+                    "total": len(rows),
+                })
+        except Exception as exc:
+            app.logger.warning("api_chat_sources error: %s", exc)
+            return jsonify({"sources": [], "total": 0})
 
     # ================================================================
     # Phase 69: Codebase Assistant API (D-CA-5 to D-CA-8)
@@ -8617,6 +9234,11 @@ def create_app() -> Flask:
         ticker = flask_request.args.get("ticker", "SPY").upper()
         return render_template("fathomdesk.html", ticker=ticker)
 
+    @app.route("/fathomdesk/trap-events")
+    def fathomdesk_trap_events():
+        """FathomDesk — full trap event history with filters."""
+        return render_template("fathomdesk_trap_events.html")
+
     @app.route("/analysis")
     def analysis_page():
         """Market Analysis — Macro Intelligence, IV Skew & Term Structure."""
@@ -8911,12 +9533,13 @@ if __name__ == "__main__":
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
         if _ssl_context is not None:
-            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
         else:
-            socketio.run(app, host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
+        _extra_files = [str(BASE_DIR / "args" / "llm_config.yaml")]
         if _ssl_context is not None:
-            app.run(host="0.0.0.0", port=args.port, debug=args.debug, ssl_context=_ssl_context)  # nosec B104
+            app.run(host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, extra_files=_extra_files)  # nosec B104
         else:
-            app.run(host="0.0.0.0", port=args.port, debug=args.debug)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            app.run(host=HOST, port=args.port, debug=args.debug, extra_files=_extra_files)  # nosec B104 -- intentional bind-all for containerized/dev deployment
