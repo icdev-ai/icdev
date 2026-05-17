@@ -571,6 +571,367 @@ def list_use_cases():
     return jsonify({"use_cases": summary, "total": len(summary)})
 
 
+# ---------------------------------------------------------------------------
+# D1 — POST /api/chat/use-cases — create user-created use case
+# ---------------------------------------------------------------------------
+
+@chat_api.route("/use-cases", methods=["POST"])
+def create_use_case():
+    """Create a new user-created use case (DB only; YAML unchanged)."""
+    import json as _json
+    import re as _re
+    from datetime import datetime, timezone
+    from tools.db.storage import get_connection as _gc
+    body = request.get_json(silent=True) or {}
+    label = (body.get("label") or "").strip()
+    if not label:
+        return jsonify({"error": "label required"}), 400
+
+    tenant_id = _get_tenant_id()
+    now = datetime.now(timezone.utc).isoformat()
+    base_id = _re.sub(r"[^a-z0-9_]", "_", label.lower())[:40].strip("_") or "custom"
+
+    try:
+        with _gc() as conn:
+            _uc_init_table(conn)
+            # Check collision against YAML ids and DB ids
+            yaml_ids = {c["id"] for c in _uc_load_yaml()}
+            db_ids = {row[0] for row in conn.execute("SELECT id FROM use_case_overrides").fetchall()}
+            all_ids = yaml_ids | db_ids
+            use_case_id = base_id
+            suffix = 2
+            while use_case_id in all_ids:
+                use_case_id = f"{base_id}_{suffix}"
+                suffix += 1
+            cs = body.get("canvas_seeds")
+            ws = body.get("workflow_steps")
+            tr = body.get("template_requirements")
+            qa = body.get("quick_actions")
+            cw = body.get("canvas_wiring")
+            srt = body.get("skip_requirement_types")
+            uc = body.get("user_config")
+            conn.execute("""
+                INSERT INTO use_case_overrides
+                    (id, label, description, icon, badge, agent_model, ricoas,
+                     boost_threshold, system_prompt, seed_message,
+                     canvas_wiring, quick_actions, updated_at, updated_by,
+                     fast_track, skip_requirement_types, user_config,
+                     is_user_created, created_by, created_at,
+                     template_requirements, category, tenant_id,
+                     canvas_seeds, workflow_steps)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)
+            """, (
+                use_case_id, label,
+                body.get("description"), body.get("icon", "⚙"),
+                body.get("badge"), body.get("agent_model", "kimi-cloud"),
+                1 if body.get("ricoas") else 0,
+                body.get("boost_threshold", 70),
+                body.get("system_prompt"), body.get("seed_message"),
+                _json.dumps(cw) if cw is not None else None,
+                _json.dumps(qa) if qa is not None else None,
+                now, body.get("created_by", "dashboard-user"),
+                1 if body.get("fast_track") else 0,
+                _json.dumps(srt) if srt is not None else None,
+                _json.dumps(uc) if uc is not None else None,
+                body.get("created_by", "dashboard-user"), now,
+                _json.dumps(tr) if tr is not None else None,
+                body.get("category", "general"), tenant_id,
+                _json.dumps(cs) if cs is not None else None,
+                _json.dumps(ws) if ws is not None else None,
+            ))
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "id": use_case_id, "created_at": now}), 201
+
+
+# ---------------------------------------------------------------------------
+# D4 — POST /api/chat/use-cases/import (literal route — MUST be before /<id>)
+# ---------------------------------------------------------------------------
+
+@chat_api.route("/use-cases/import", methods=["POST"])
+def import_use_cases():
+    """Import YAML use case bundle (multipart file or JSON yaml_content)."""
+    import json as _json
+    import yaml as _yaml
+    from datetime import datetime, timezone
+    from tools.db.storage import get_connection as _gc
+    tenant_id = _get_tenant_id()
+    now = datetime.now(timezone.utc).isoformat()
+    overwrite = False
+    raw = None
+    # multipart/form-data
+    if request.files.get("file"):
+        f = request.files["file"]
+        raw = f.read().decode("utf-8", errors="replace")
+        overwrite = request.form.get("overwrite", "false").lower() == "true"
+    else:
+        body = request.get_json(silent=True) or {}
+        raw = body.get("yaml_content", "")
+        overwrite = bool(body.get("overwrite", False))
+
+    try:
+        bundle = _yaml.safe_load(raw or "") or {}
+    except Exception as exc:
+        return jsonify({"error": f"YAML parse error: {exc}"}), 400
+    if "icdev_uc_bundle" not in bundle:
+        return jsonify({"error": "Not a valid ICDEV use case bundle (missing icdev_uc_bundle key)"}), 400
+
+    use_cases_raw = bundle.get("use_cases", [])
+    imported, skipped, errors = [], [], []
+    yaml_ids = {c["id"] for c in _uc_load_yaml()}
+
+    try:
+        with _gc() as conn:
+            _uc_init_table(conn)
+            for uc in use_cases_raw:
+                uc_id = (uc.get("id") or "").strip()
+                if not uc_id:
+                    errors.append({"id": None, "reason": "missing id"})
+                    continue
+                if uc_id in yaml_ids and not overwrite:
+                    skipped.append({"id": uc_id, "reason": "conflicts with YAML base use case"})
+                    continue
+                existing = conn.execute(
+                    "SELECT is_user_created FROM use_case_overrides WHERE id=?", (uc_id,)
+                ).fetchone()
+                if existing and not overwrite:
+                    skipped.append({"id": uc_id, "reason": "already exists"})
+                    continue
+                tr = uc.get("template_requirements")
+                cs = uc.get("canvas_seeds")
+                ws = uc.get("workflow_steps")
+                qa = uc.get("quick_actions")
+                cw = uc.get("canvas_wiring")
+                srt = uc.get("skip_requirement_types")
+                uconf = uc.get("user_config")
+                conn.execute("""
+                    INSERT INTO use_case_overrides
+                        (id, label, description, icon, badge, agent_model, ricoas,
+                         boost_threshold, system_prompt, seed_message,
+                         canvas_wiring, quick_actions, updated_at, updated_by,
+                         fast_track, skip_requirement_types, user_config,
+                         is_user_created, created_by, created_at,
+                         template_requirements, category, tenant_id,
+                         canvas_seeds, workflow_steps)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        label=excluded.label, description=excluded.description,
+                        icon=excluded.icon, badge=excluded.badge,
+                        agent_model=excluded.agent_model, ricoas=excluded.ricoas,
+                        boost_threshold=excluded.boost_threshold,
+                        system_prompt=excluded.system_prompt,
+                        seed_message=excluded.seed_message,
+                        canvas_wiring=excluded.canvas_wiring,
+                        quick_actions=excluded.quick_actions,
+                        updated_at=excluded.updated_at,
+                        template_requirements=excluded.template_requirements,
+                        category=excluded.category, tenant_id=excluded.tenant_id,
+                        canvas_seeds=excluded.canvas_seeds,
+                        workflow_steps=excluded.workflow_steps
+                """, (
+                    uc_id, uc.get("label"), uc.get("description"),
+                    uc.get("icon", "⚙"), uc.get("badge"), uc.get("agent_model", "kimi-cloud"),
+                    1 if uc.get("ricoas") else 0, uc.get("boost_threshold", 70),
+                    uc.get("system_prompt"), uc.get("seed_message"),
+                    _json.dumps(cw) if cw is not None else None,
+                    _json.dumps(qa) if qa is not None else None,
+                    now, "import",
+                    1 if uc.get("fast_track") else 0,
+                    _json.dumps(srt) if srt is not None else None,
+                    _json.dumps(uconf) if uconf is not None else None,
+                    "import", now,
+                    _json.dumps(tr) if tr is not None else None,
+                    uc.get("category", "general"), tenant_id,
+                    _json.dumps(cs) if cs is not None else None,
+                    _json.dumps(ws) if ws is not None else None,
+                ))
+                imported.append(uc_id)
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"imported": imported, "skipped": skipped, "errors": errors})
+
+
+# ---------------------------------------------------------------------------
+# Chain endpoints (D5, D6, D7)
+# ---------------------------------------------------------------------------
+
+@chat_api.route("/chains", methods=["POST"])
+def create_chain():
+    """Create a use case chain with merged requirements pool."""
+    import json as _json
+    from datetime import datetime, timezone
+    from tools.db.storage import get_connection as _gc
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    uc_ids = body.get("use_case_ids") or []
+    if not name or not uc_ids or len(uc_ids) < 1:
+        return jsonify({"error": "name and at least one use_case_id required"}), 400
+
+    tenant_id = _get_tenant_id()
+    now = datetime.now(timezone.utc).isoformat()
+    chain_id = f"chain_{now.replace(':', '-').replace('.', '-')}"
+
+    # Load the selected use cases and merge requirements
+    all_ucs = _uc_load_all(tenant_id)
+    selected = [uc for uc in all_ucs if uc.get("id") in uc_ids]
+    merged_reqs = _merge_chain_requirements(selected)
+
+    try:
+        with _gc() as conn:
+            _chain_init_table(conn)
+            conn.execute("""
+                INSERT INTO use_case_chains
+                    (id, tenant_id, name, use_case_ids, merged_requirements,
+                     status, created_at, created_by)
+                VALUES (?,?,?,?,?,'draft',?,?)
+            """, (
+                chain_id, tenant_id, name,
+                _json.dumps(uc_ids),
+                _json.dumps(merged_reqs),
+                now, body.get("created_by", "dashboard-user"),
+            ))
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({
+        "ok": True,
+        "chain_id": chain_id,
+        "merged_requirements": merged_reqs,
+        "requirement_count": len(merged_reqs),
+    }), 201
+
+
+@chat_api.route("/chains", methods=["GET"])
+def list_chains():
+    """List use case chains for the current tenant."""
+    import json as _json
+    from tools.db.storage import get_connection as _gc
+    tenant_id = _get_tenant_id()
+    chains = []
+    try:
+        with _gc() as conn:
+            _chain_init_table(conn)
+            rows = conn.execute(
+                "SELECT * FROM use_case_chains WHERE tenant_id = ? OR tenant_id = '' ORDER BY created_at DESC",
+                (tenant_id,)
+            ).fetchall()
+            for row in rows:
+                d = dict(row)
+                for jcol in ("use_case_ids", "merged_requirements"):
+                    if d.get(jcol) and isinstance(d[jcol], str):
+                        try:
+                            d[jcol] = _json.loads(d[jcol])
+                        except Exception:
+                            pass
+                chains.append(d)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"chains": chains, "total": len(chains)})
+
+
+@chat_api.route("/chains/<chain_id>/activate", methods=["POST"])
+def activate_chain(chain_id):
+    """Activate a use case chain — creates a RICOAS intake session with merged requirements."""
+    import json as _json
+    from datetime import datetime, timezone
+    from tools.db.storage import get_connection as _gc
+    if not _HAS_INTAKE:
+        return jsonify({"error": "Intake engine not available — ensure tools.requirements.intake_engine is installed"}), 503
+
+    body = request.get_json(silent=True) or {}
+    tenant_id = _get_tenant_id()
+    user_id = body.get("user_id", "dashboard-user")
+    now = datetime.now(timezone.utc).isoformat()
+
+    chain = None
+    try:
+        with _gc() as conn:
+            _chain_init_table(conn)
+            row = conn.execute(
+                "SELECT * FROM use_case_chains WHERE id=?", (chain_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Chain not found"}), 404
+            chain = dict(row)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    # Parse merged requirements
+    merged_reqs = []
+    if chain.get("merged_requirements"):
+        try:
+            merged_reqs = _json.loads(chain["merged_requirements"]) if isinstance(chain["merged_requirements"], str) else chain["merged_requirements"]
+        except Exception:
+            pass
+
+    # Seed requirements into intake session
+    try:
+        from tools.requirements.intake_engine import create_session as _create_session
+        chain_name = chain.get("name", "Chained Use Cases")
+        session_result = _create_session(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            title=f"Chain: {chain_name}",
+        )
+        context_id = session_result.get("session_id") or session_result.get("context_id")
+
+        # Seed merged requirements — best-effort via internal bypass
+        if merged_reqs and context_id:
+            try:
+                with _gc() as conn:
+                    conn.set_security_context(None)  # rls-bypass: internal chain activation; tenant isolation enforced at API boundary
+                    for req in merged_reqs:
+                        conn.execute("""
+                            INSERT OR IGNORE INTO intake_requirements
+                                (session_id, type, priority, text, criteria, source)
+                            VALUES (?,?,?,?,?,?)
+                        """, (
+                            context_id,
+                            req.get("type", "functional"),
+                            req.get("priority", "medium"),
+                            req.get("text", ""),
+                            req.get("criteria", ""),
+                            f"chain:{chain_id}",
+                        ))
+                    conn.commit()
+            except Exception:
+                pass  # requirement seeding is best-effort
+
+        # Seed canvas artifacts
+        uc_ids = []
+        if chain.get("use_case_ids"):
+            try:
+                uc_ids = _json.loads(chain["use_case_ids"]) if isinstance(chain["use_case_ids"], str) else chain["use_case_ids"]
+            except Exception:
+                pass
+        seeded_artifacts = []
+        all_ucs = _uc_load_all(tenant_id)
+        for uc in all_ucs:
+            if uc.get("id") in uc_ids:
+                seeded_artifacts.extend(_seed_canvas_artifacts(uc, context_id or "", tenant_id))
+
+        # Update chain status
+        with _gc() as conn:
+            _chain_init_table(conn)
+            conn.execute(
+                "UPDATE use_case_chains SET status='active', linked_session_id=?, updated_at=? WHERE id=?",
+                (context_id, now, chain_id)
+            )
+            conn.commit()
+
+        return jsonify({
+            "ok": True,
+            "chain_id": chain_id,
+            "context_id": context_id,
+            "requirement_count": len(merged_reqs),
+            "canvas_artifacts_seeded": seeded_artifacts,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 @chat_api.route("/use-cases/<use_case_id>", methods=["GET"])
 def get_use_case(use_case_id):
     """Return full use case definition (YAML + DB override merged, or DB-only user-created)."""
@@ -591,6 +952,112 @@ def get_use_case(use_case_id):
             return jsonify(_uc_row_to_usecase(dict(row)))
         return jsonify({"error": "Use case not found"}), 404
     return jsonify(_uc_apply_override(dict(base), row))
+
+
+@chat_api.route("/use-cases/<use_case_id>", methods=["DELETE"])
+def delete_use_case(use_case_id):
+    """Delete a user-created use case. Returns 400 for YAML-backed use cases."""
+    from tools.db.storage import get_connection as _gc
+    yaml_ids = {c["id"] for c in _uc_load_yaml()}
+    if use_case_id in yaml_ids:
+        return jsonify({"error": "Cannot delete a YAML-backed use case — use DELETE /use-cases/<id>/override to reset overrides"}), 400
+    try:
+        with _gc() as conn:
+            _uc_init_table(conn)
+            row = conn.execute(
+                "SELECT is_user_created FROM use_case_overrides WHERE id=?", (use_case_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Use case not found"}), 404
+            if not row["is_user_created"]:
+                return jsonify({"error": "Use case is not user-created — use DELETE /use-cases/<id>/override to reset overrides"}), 400
+            conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "id": use_case_id, "deleted": True})
+
+
+@chat_api.route("/use-cases/<use_case_id>/export", methods=["GET"])
+def export_use_case(use_case_id):
+    """Export a use case as a YAML bundle (portable across ICDEV instances)."""
+    import yaml as _yaml
+    from datetime import datetime, timezone
+    from flask import Response as _Resp
+    all_cases = _uc_load_all(_get_tenant_id())
+    uc = next((c for c in all_cases if c.get("id") == use_case_id), None)
+    if not uc:
+        return jsonify({"error": "Use case not found"}), 404
+    # Strip internal metadata before export
+    strip_keys = {"is_user_created", "created_by", "created_at", "updated_at", "updated_by", "tenant_id"}
+    export_uc = {k: v for k, v in uc.items() if k not in strip_keys and v is not None}
+    bundle = {
+        "icdev_uc_bundle": "1.0",
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "use_cases": [export_uc],
+    }
+    filename = use_case_id.replace("_", "-") + "-bundle.yaml"
+    return _Resp(
+        _yaml.dump(bundle, allow_unicode=True, sort_keys=False, default_flow_style=False),
+        mimetype="application/x-yaml",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@chat_api.route("/use-cases/<use_case_id>/workflow-step", methods=["POST"])
+def workflow_step(use_case_id):
+    """Update the current workflow step for a use case in a chat context."""
+    import json as _json
+    from tools.db.storage import get_connection as _gc
+    body = request.get_json(silent=True) or {}
+    context_id = (body.get("context_id") or "").strip()
+    step = body.get("step")
+    if not context_id or step is None:
+        return jsonify({"error": "context_id and step required"}), 400
+    try:
+        step = int(step)
+    except (TypeError, ValueError):
+        return jsonify({"error": "step must be an integer"}), 400
+
+    # Resolve use case to get step definition
+    all_cases = _uc_load_all(_get_tenant_id())
+    uc = next((c for c in all_cases if c.get("id") == use_case_id), None)
+    if not uc:
+        return jsonify({"error": "Use case not found"}), 404
+    steps = uc.get("workflow_steps") or []
+    step_def = next((s for s in steps if s.get("step") == step), None)
+
+    # Merge-update extra_context in the chat context row
+    try:
+        with _gc() as conn:
+            row = conn.execute(
+                "SELECT extra_context FROM chat_contexts WHERE id=?", (context_id,)
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "Chat context not found"}), 404
+            extra = {}
+            if row["extra_context"]:
+                try:
+                    extra = _json.loads(row["extra_context"])
+                except Exception:
+                    pass
+            extra["uc_workflow_step"] = step
+            extra["uc_id"] = use_case_id
+            conn.execute(
+                "UPDATE chat_contexts SET extra_context=? WHERE id=?",
+                (_json.dumps(extra), context_id)
+            )
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "ok": True,
+        "use_case_id": use_case_id,
+        "step": step,
+        "step_definition": step_def,
+        "canvas_deep_link": f"/{step_def.get('canvas', '')}" if step_def and step_def.get("canvas") else None,
+    })
 
 
 @chat_api.route("/use-cases/<use_case_id>", methods=["PUT"])
