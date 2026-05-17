@@ -334,8 +334,9 @@ def list_baselines(
             sql += " WHERE " + " AND ".join(clauses)
         sql += " ORDER BY indicator_name, scope, created_at DESC"
 
-        rows = conn.execute(sql, params).fetchall()
-        cols = [d[0] for d in conn.execute(sql, params).description]  # type: ignore[arg-type]
+        cursor = conn.execute(sql, params)
+        rows = cursor.fetchall()
+        cols = [d[0] for d in cursor.description]  # type: ignore[arg-type]
         return [dict(zip(cols, r)) for r in rows]
     finally:
         conn.close()
