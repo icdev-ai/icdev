@@ -6,11 +6,15 @@ and escalates incidents when necessary."""
 
 import argparse
 import json
+import logging
+import os
 import re
 import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
@@ -324,6 +328,31 @@ def escalate(incident: dict, db_path: Path = None) -> dict:
         escalation["error"] = str(e)
     finally:
         conn.close()
+
+    siem_endpoint = os.getenv("SIEM_ENDPOINT", "")
+    if siem_endpoint:
+        try:
+            from tools.siem_alert_forwarder import forward_alert
+            forward_alert(
+                alert_payload={
+                    "title": escalation["title"],
+                    "severity": escalation["severity"],
+                    "source": "alert_correlator",
+                    "incident_id": escalation["incident_id"],
+                    "escalation_reason": escalation["escalation_reason"],
+                    "services": escalation["services"],
+                    "alert_count": escalation["alert_count"],
+                },
+                siem_endpoint=siem_endpoint,
+                siem_token=os.getenv("SIEM_TOKEN", ""),
+                db_path=str(db_path) if db_path else None,
+            )
+        except Exception as exc:
+            logger.warning(
+                "SIEM forwarding failed for escalation '%s': %s",
+                escalation["incident_id"],
+                exc,
+            )
 
     return escalation
 
