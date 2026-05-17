@@ -66,6 +66,10 @@ def _safe_query(conn, sql: str, params=()) -> list[dict]:
         rows = conn.execute(sql, params).fetchall()
         return [dict(r) for r in rows]
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return []
 
 
@@ -74,6 +78,10 @@ def _safe_scalar(conn, sql: str, params=(), default=0):
         row = conn.execute(sql, params).fetchone()
         return row[0] if row and row[0] is not None else default
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return default
 
 
@@ -128,16 +136,17 @@ class PredictiveAnalysisEngine:
         now = _now_utc()
         cutoff_24h = _iso(now - timedelta(hours=24))
         cutoff_48h = _iso(now - timedelta(hours=48))
+        ph = _ph()
 
         # 1. Signal counts (data mesh volume metrics)
         sig_24h = _safe_scalar(
             conn,
-            "SELECT COUNT(*) FROM sg_raw_signals WHERE created_at >= ?",
+            f"SELECT COUNT(*) FROM sg_raw_signals WHERE created_at >= {ph}",
             (cutoff_24h,),
         )
         sig_48h = _safe_scalar(
             conn,
-            "SELECT COUNT(*) FROM sg_raw_signals WHERE created_at >= ? AND created_at < ?",
+            f"SELECT COUNT(*) FROM sg_raw_signals WHERE created_at >= {ph} AND created_at < {ph}",
             (cutoff_48h, cutoff_24h),
         )
         signal_velocity = round(
@@ -147,12 +156,12 @@ class PredictiveAnalysisEngine:
         # 2. Conflict event metrics
         conflict_count = _safe_scalar(
             conn,
-            "SELECT COUNT(*) FROM sg_conflict_events WHERE date >= ?",
+            f"SELECT COUNT(*) FROM sg_conflict_events WHERE date >= {ph}",
             (cutoff_24h[:10],),
         )
         goldstein_avg = _safe_scalar(
             conn,
-            "SELECT AVG(goldstein_scale) FROM sg_conflict_events WHERE date >= ?",
+            f"SELECT AVG(goldstein_scale) FROM sg_conflict_events WHERE date >= {ph}",
             (cutoff_24h[:10],),
             default=0.0,
         ) or 0.0
@@ -191,11 +200,11 @@ class PredictiveAnalysisEngine:
         # 8. Top signals for narrative context
         top_signals = _safe_query(
             conn,
-            "SELECT r.title, r.source, r.signal_date, p.composite_score "
-            "FROM sg_prioritized_signals p "
-            "LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
-            "WHERE p.created_at >= ? "
-            "ORDER BY p.composite_score DESC LIMIT 5",
+            f"SELECT r.title, r.source, r.signal_date, p.composite_score "
+            f"FROM sg_prioritized_signals p "
+            f"LEFT JOIN sg_raw_signals r ON r.id = p.raw_signal_id "
+            f"WHERE p.created_at >= {ph} "
+            f"ORDER BY p.composite_score DESC LIMIT 5",
             (cutoff_24h,),
         )
 

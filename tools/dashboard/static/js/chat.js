@@ -35,6 +35,10 @@
     var _turnCount = 0;
     var _activeTechniqueId = null;
 
+    // Fast-track use case state
+    var _fastTrackConfig = null;   // {skip_requirement_types, user_config, uc_label} when active
+    var _fastTrackDone = false;    // prevents re-triggering on subsequent messages
+
     // Framework display name mapping
     var FRAMEWORK_NAMES = {
         fedramp_moderate: 'FedRAMP Moderate',
@@ -142,6 +146,10 @@
     function switchContext(ctxId) {
         _activeContextId = ctxId;
         if (!_contextVersions[ctxId]) _contextVersions[ctxId] = 0;
+
+        // Reset fast-track state on context switch
+        _fastTrackConfig = null;
+        _fastTrackDone = false;
 
         // Highlight active in sidebar
         var items = document.querySelectorAll('.ctx-item');
@@ -1493,18 +1501,28 @@
         var frameworks = (options.frameworks || cfg.wizardFrameworks || '').split(',').filter(function (f) { return f.trim(); });
 
         // Step 1: Create intake session — pass use case context so RICOAS starts informed
+        var sessionBody = {
+            goal: goal,
+            role: role,
+            classification: classification,
+            customer_name: 'Dashboard User',
+            frameworks: frameworks,
+            custom_role_name: options.uc_label || cfg.customRoleName || '',
+            custom_role_description: options.system_prompt || cfg.customRoleDesc || ''
+        };
+        // Pass fast-track context and template requirements if provided
+        if (options.fast_track) {
+            sessionBody.extra_context = {
+                skip_requirement_types: options.skip_requirement_types || [],
+                user_config: options.user_config || {},
+                fast_track: true
+            };
+            sessionBody.template_requirements = options.template_requirements || [];
+        }
         return fetch(INTAKE_API + '/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                goal: goal,
-                role: role,
-                classification: classification,
-                customer_name: 'Dashboard User',
-                frameworks: frameworks,
-                custom_role_name: options.uc_label || cfg.customRoleName || '',
-                custom_role_description: options.system_prompt || cfg.customRoleDesc || ''
-            })
+            body: JSON.stringify(sessionBody)
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
@@ -1521,7 +1539,7 @@
                 tenant_id: '',
                 title: title,
                 project_id: '',
-                agent_model: options.agent_model || 'sonnet',
+                agent_model: options.agent_model || 'kimi-cloud',
                 system_prompt: 'RICOAS intake session: ' + intakeSessionId
             }).then(function (ctx) {
                 if (ctx.error) {
@@ -1544,6 +1562,8 @@
                 // Update URL for backward compat
                 history.replaceState(null, '', '/chat/' + intakeSessionId);
 
+                // Expose intake_session_id on the returned ctx for fast-track trigger
+                ctx.intake_session_id = intakeSessionId;
                 return ctx;
             });
         })
@@ -1778,13 +1798,27 @@
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (uc) {
                 if (!uc || uc.error) { clearLoading(); return; }
+                // Store fast-track config before context creation
+                _fastTrackConfig = null;
+                _fastTrackDone = false;
+                if (uc.fast_track) {
+                    _fastTrackConfig = {
+                        skip_requirement_types: uc.skip_requirement_types || [],
+                        user_config: uc.user_config || {},
+                        uc_label: uc.label || ucId
+                    };
+                }
                 var opts = {
                     title: uc.label || ucId,
-                    agent_model: uc.agent_model || 'sonnet',
+                    agent_model: uc.agent_model || 'kimi-cloud',
                     system_prompt: uc.system_prompt || '',
                     uc_category: uc.category || '',
                     uc_label: uc.label || '',
-                    suppress_intake_welcome: !!uc.seed_message
+                    suppress_intake_welcome: !!uc.seed_message,
+                    fast_track: !!uc.fast_track,
+                    skip_requirement_types: uc.skip_requirement_types || [],
+                    user_config: uc.user_config || {},
+                    template_requirements: uc.template_requirements || []
                 };
                 function afterCreate(ctx) {
                     clearLoading();
@@ -1796,6 +1830,11 @@
                     if (uc.seed_message) {
                         var stream = document.getElementById('message-stream');
                         if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: uc.seed_message.trim() });
+                    }
+                    // Trigger fast-track sequence if applicable
+                    if (_fastTrackConfig && !_fastTrackDone && ctx.intake_session_id) {
+                        _fastTrackDone = true;
+                        runFastTrackSequence(ctx.intake_session_id, uc.label || ucId);
                     }
                 }
                 if (uc.ricoas) {
@@ -1843,6 +1882,83 @@
         _activeUseCase = null;
         renderUcActionBar(null);
     }
+
+    // ===================================================================
+    // Fast-track sequence: AI Boost → PRD → Send to Kanban
+    // ===================================================================
+
+    function runFastTrackSequence(sessionId, ucLabel) {
+        var label = ucLabel || 'Use Case';
+
+        appendMessage({ role: 'system', content: 'Running AI Boost — augmenting pre-loaded requirements framework...' });
+
+        fetch(INTAKE_API + '/ai-boost/' + encodeURIComponent(sessionId), { method: 'POST' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (boost) {
+            var reqCount = (boost && boost.requirements_added != null) ? boost.requirements_added : '?';
+            appendMessage({ role: 'system', content: 'AI Boost complete — ' + reqCount + ' additional requirements generated. Producing PRD...' });
+
+            return fetch(INTAKE_API + '/prd/' + encodeURIComponent(sessionId))
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (prd) {
+                if (!prd || prd.error) {
+                    appendMessage({ role: 'system', content: 'PRD generation failed — you can still download it manually from the Requirements panel.' });
+                    return;
+                }
+                // Trigger PRD download
+                var markdown = prd.prd_markdown || prd.content || '';
+                var totalReqs = prd.requirement_count || '';
+                var blob = new Blob([markdown], { type: 'text/markdown' });
+                var url = URL.createObjectURL(blob);
+                var a = document.createElement('a');
+                a.href = url;
+                a.download = label.replace(/\s+/g, '_') + '_PRD.md';
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+
+                var reqSummary = totalReqs ? ' (' + totalReqs + ' requirements)' : '';
+                appendMessage({
+                    role: 'system',
+                    content: 'PRD ready' + reqSummary + '. <a href="' + url + '" download="' + escHtml(label.replace(/\s+/g, '_') + '_PRD.md') + '">[Download PRD]</a>'
+                        + '<br><button class="uc-send-kanban-btn" onclick="window._sendToKanban(' + JSON.stringify(sessionId) + ',' + JSON.stringify(label) + ',' + JSON.stringify(markdown.slice(0, 2000)) + ')">Send to Kanban</button>'
+                });
+
+                refreshReadiness();
+            });
+        })
+        .catch(function (err) {
+            appendMessage({ role: 'system', content: 'Fast-track error: ' + (err.message || 'unknown') + '. You can run AI Boost manually.' });
+        });
+    }
+
+    // Exposed globally so inline onclick can call it
+    window._sendToKanban = function sendToKanban(sessionId, ucLabel, prdExcerpt) {
+        var today = new Date().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        fetch('/api/kanban/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title: (ucLabel || 'Use Case') + ' — ' + today,
+                description: prdExcerpt || '',
+                task_type: 'build',
+                priority: 'medium',
+                status: 'backlog'
+            })
+        })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) {
+            if (data && !data.error) {
+                appendMessage({ role: 'system', content: 'Task added to Kanban backlog. <a href="/kanban" target="_blank">[View Kanban →]</a>' });
+            } else {
+                appendMessage({ role: 'system', content: 'Kanban task creation failed — open <a href="/kanban" target="_blank">Kanban</a> and create manually.' });
+            }
+        })
+        .catch(function () {
+            appendMessage({ role: 'system', content: 'Could not reach Kanban API.' });
+        });
+    };
 
     // Wrap switchContext to keep action bar in sync on context switches
     var _origSwitchContext = switchContext;

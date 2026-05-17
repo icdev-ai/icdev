@@ -1244,6 +1244,30 @@
     text-decoration: none;
 }
 
+/* --- Fast-track tag lists (user_config: industries, equipment, vendors) --- */
+.uc-user-config-header { display: flex; align-items: center; margin-bottom: 10px; }
+.uc-badge { font-size: 0.65rem; font-weight: 600; padding: 2px 7px; border-radius: 10px; }
+.uc-badge--blue { background: var(--accent-blue, #1a56db); color: #fff; }
+.uc-user-config-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 12px; }
+.uc-user-config-col { display: flex; flex-direction: column; gap: 4px; }
+.uc-config-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 2px; }
+.uc-tag-list { display: flex; flex-wrap: wrap; gap: 4px; min-height: 28px; padding: 4px 0; }
+.uc-config-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; padding: 2px 8px; background: var(--bg-tertiary, #1a2233); border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); }
+.uc-tag-remove { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 0.7rem; padding: 0; line-height: 1; }
+.uc-tag-remove:hover { color: var(--accent-red, #e05); }
+.uc-tag-add-row { display: flex; gap: 4px; margin-top: 4px; }
+.uc-tag-input { flex: 1; font-size: 0.78rem; padding: 3px 7px; border: 1px solid var(--border-color); border-radius: 4px; background: var(--bg-secondary); color: var(--text-primary); }
+.uc-skip-types-section { margin-top: 8px; }
+.uc-skip-checkboxes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; }
+.uc-skip-check { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; cursor: pointer; }
+
+/* --- Send to Kanban button --- */
+.uc-send-kanban-btn { margin-top: 8px; padding: 7px 16px; background: var(--accent-blue, #1a56db); color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 0.82rem; font-weight: 600; }
+.uc-send-kanban-btn:hover { opacity: 0.88; }
+
+/* --- Fast-track system messages --- */
+.msg--system .msg__bubble { background: var(--bg-tertiary, #1a2233); border: 1px solid var(--border-color); border-left: 3px solid var(--accent-blue, #1a56db); color: var(--text-muted); font-size: 0.8rem; padding: 7px 12px; }
+
 /* ===================================================================
    Use Case — Post-export action bar (deep links per active use case)
    =================================================================== */

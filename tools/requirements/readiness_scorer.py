@@ -130,7 +130,12 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     # --- Completeness ---
     types_present = set(r["requirement_type"] for r in reqs)
     expected_types = {"functional", "security", "interface", "data", "performance", "compliance"}
-    type_coverage = len(types_present & expected_types) / len(expected_types)
+    # Respect skip_requirement_types from session context (set by use case fast_track config)
+    skip_types = set(context.get("skip_requirement_types", []))
+    effective_expected = expected_types - skip_types
+    if not effective_expected:
+        effective_expected = expected_types
+    type_coverage = len(types_present & effective_expected) / len(effective_expected)
     count_factor = min(1.0, total / 15.0)  # expect ~15 requirements minimum
     completeness = type_coverage * 0.6 + count_factor * 0.4
 

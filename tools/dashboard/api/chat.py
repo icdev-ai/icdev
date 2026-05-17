@@ -256,13 +256,24 @@ def _uc_init_table(conn):
         system_prompt TEXT, seed_message TEXT,
         canvas_wiring TEXT, quick_actions TEXT,
         updated_at TEXT, updated_by TEXT,
-        classification TEXT DEFAULT NULL
+        classification TEXT DEFAULT NULL,
+        fast_track INTEGER DEFAULT 0,
+        skip_requirement_types TEXT,
+        user_config TEXT
     )""")
-    # Add classification column to existing tables (migration)
-    try:
-        conn.execute("ALTER TABLE use_case_overrides ADD COLUMN classification TEXT DEFAULT NULL")
-    except Exception:
-        pass  # Column already exists
+    # Idempotent column migrations for existing tables
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(use_case_overrides)").fetchall()}
+    for col_def in [
+        ("classification", "TEXT DEFAULT NULL"),
+        ("fast_track", "INTEGER DEFAULT 0"),
+        ("skip_requirement_types", "TEXT"),
+        ("user_config", "TEXT"),
+    ]:
+        if col_def[0] not in existing:
+            try:
+                conn.execute(f"ALTER TABLE use_case_overrides ADD COLUMN {col_def[0]} {col_def[1]}")
+            except Exception:
+                pass
     conn.commit()
 
 
@@ -279,10 +290,25 @@ def _uc_apply_override(base, row):
         result["ricoas"] = bool(row["ricoas"])
     if row["boost_threshold"] is not None:
         result["boost_threshold"] = row["boost_threshold"]
-    for jcol in ("canvas_wiring", "quick_actions"):
+    if row["fast_track"] is not None:
+        result["fast_track"] = bool(row["fast_track"])
+    for jcol in ("canvas_wiring", "quick_actions", "skip_requirement_types", "user_config"):
         if row[jcol] is not None:
             try:
-                result[jcol] = _json.loads(row[jcol])
+                parsed = _json.loads(row[jcol])
+                # For user_config, merge DB additions on top of YAML defaults (union, not replace)
+                if jcol == "user_config" and isinstance(parsed, dict) and isinstance(result.get("user_config"), dict):
+                    merged_uc = dict(result["user_config"])
+                    for k, v in parsed.items():
+                        if k in merged_uc and isinstance(merged_uc[k], dict) and isinstance(v, dict):
+                            base_defaults = merged_uc[k].get("defaults", [])
+                            db_defaults = v.get("defaults", [])
+                            merged_uc[k] = {"defaults": list(dict.fromkeys(base_defaults + db_defaults))}
+                        else:
+                            merged_uc[k] = v
+                    result["user_config"] = merged_uc
+                else:
+                    result[jcol] = parsed
             except Exception:
                 pass
     return result
@@ -319,9 +345,12 @@ def list_use_cases():
             "icon": c.get("icon", ""),
             "description": (c.get("description") or "").strip(),
             "badge": c.get("badge", ""),
-            "agent_model": c.get("agent_model", "sonnet"),
+            "agent_model": c.get("agent_model", "kimi-cloud"),
             "ricoas": c.get("ricoas", False),
+            "fast_track": c.get("fast_track", False),
             "boost_threshold": c.get("boost_threshold", 70),
+            "skip_requirement_types": c.get("skip_requirement_types", []),
+            "user_config": c.get("user_config", {}),
             "canvas_wiring": c.get("canvas_wiring", []),
             "quick_actions": c.get("quick_actions", []),
         }
@@ -359,6 +388,8 @@ def update_use_case(use_case_id):
     now = datetime.now(timezone.utc).isoformat()
     cw = body.get("canvas_wiring")
     qa = body.get("quick_actions")
+    srt = body.get("skip_requirement_types")
+    uc = body.get("user_config")
     try:
         with _gc() as conn:
             _uc_init_table(conn)
@@ -366,8 +397,9 @@ def update_use_case(use_case_id):
                 INSERT INTO use_case_overrides
                     (id,label,description,icon,badge,agent_model,ricoas,
                      boost_threshold,system_prompt,seed_message,
-                     canvas_wiring,quick_actions,updated_at,updated_by)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     canvas_wiring,quick_actions,updated_at,updated_by,
+                     fast_track,skip_requirement_types,user_config)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(id) DO UPDATE SET
                     label=excluded.label, description=excluded.description,
                     icon=excluded.icon, badge=excluded.badge,
@@ -378,7 +410,10 @@ def update_use_case(use_case_id):
                     canvas_wiring=excluded.canvas_wiring,
                     quick_actions=excluded.quick_actions,
                     updated_at=excluded.updated_at,
-                    updated_by=excluded.updated_by
+                    updated_by=excluded.updated_by,
+                    fast_track=excluded.fast_track,
+                    skip_requirement_types=excluded.skip_requirement_types,
+                    user_config=excluded.user_config
             """, (
                 use_case_id,
                 body.get("label"), body.get("description"), body.get("icon"),
@@ -389,6 +424,9 @@ def update_use_case(use_case_id):
                 _json.dumps(cw) if cw is not None else None,
                 _json.dumps(qa) if qa is not None else None,
                 now, body.get("updated_by", "dashboard-user"),
+                1 if body.get("fast_track") else 0,
+                _json.dumps(srt) if srt is not None else None,
+                _json.dumps(uc) if uc is not None else None,
             ))
             conn.commit()
     except Exception as exc:

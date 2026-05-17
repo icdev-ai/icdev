@@ -295,7 +295,8 @@
         <div class="chat-modal__field">
             <label class="chat-modal__label">Agent Model</label>
             <select id="new-ctx-model" class="chat-modal__select">
-                <option value="sonnet">Sonnet (Default)</option>
+                <option value="kimi-cloud" selected>Kimi Cloud (Default)</option>
+                <option value="sonnet">Sonnet</option>
                 <option value="opus">Opus</option>
                 <option value="haiku">Haiku</option>
             </select>
@@ -620,9 +621,10 @@
                 <div class="uc-form-group uc-form-group--third">
                     <label for="uc-f-model">Agent Model</label>
                     <select id="uc-f-model" class="form-control">
-                        <option value="opus">Opus (most capable)</option>
-                        <option value="sonnet">Sonnet (balanced)</option>
-                        <option value="haiku">Haiku (fast)</option>
+                        <option value="kimi-cloud">Kimi Cloud (Default)</option>
+                        <option value="sonnet">Sonnet</option>
+                        <option value="opus">Opus</option>
+                        <option value="haiku">Haiku</option>
                     </select>
                 </div>
                 <div class="uc-form-group uc-form-group--third uc-form-group--vcenter">
@@ -646,6 +648,50 @@
                     <label>Quick Actions <span class="uc-label-hint">Deep links shown on card and in the post-export action bar</span></label>
                     <div id="uc-f-qa-list" class="uc-qa-list"></div>
                     <button type="button" class="btn btn-sm btn-secondary" id="uc-qa-add-btn">+ Add Action</button>
+                </div>
+                <!-- Fast-track user_config section — shown only when use case has fast_track:true -->
+                <div id="uc-user-config-section" class="uc-form-group uc-form-group--full" style="display:none;">
+                    <div class="uc-user-config-header">
+                        <span class="uc-badge uc-badge--blue">Fast Track</span>
+                        <span class="uc-label-hint" style="margin-left:6px;">Customize the pre-loaded requirements framework for this use case</span>
+                    </div>
+                    <div class="uc-user-config-grid">
+                        <div class="uc-user-config-col">
+                            <label class="uc-config-label">Industries</label>
+                            <div id="uc-industries-list" class="uc-tag-list"></div>
+                            <div class="uc-tag-add-row">
+                                <input type="text" id="uc-industries-input" class="uc-tag-input" placeholder="Add industry...">
+                                <button type="button" class="btn btn-sm btn-secondary" id="uc-industries-add-btn">+</button>
+                            </div>
+                        </div>
+                        <div class="uc-user-config-col">
+                            <label class="uc-config-label">Equipment Types</label>
+                            <div id="uc-equipment-list" class="uc-tag-list"></div>
+                            <div class="uc-tag-add-row">
+                                <input type="text" id="uc-equipment-input" class="uc-tag-input" placeholder="Add equipment type...">
+                                <button type="button" class="btn btn-sm btn-secondary" id="uc-equipment-add-btn">+</button>
+                            </div>
+                        </div>
+                        <div class="uc-user-config-col">
+                            <label class="uc-config-label">Vendors</label>
+                            <div id="uc-vendors-list" class="uc-tag-list"></div>
+                            <div class="uc-tag-add-row">
+                                <input type="text" id="uc-vendors-input" class="uc-tag-input" placeholder="Add vendor...">
+                                <button type="button" class="btn btn-sm btn-secondary" id="uc-vendors-add-btn">+</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="uc-skip-types-section">
+                        <label class="uc-config-label">Skip Requirement Types <span class="uc-label-hint">(excluded from AI Boost and RICOAS score)</span></label>
+                        <div class="uc-skip-checkboxes">
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="security"> Security</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="non_functional"> Non-Functional</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="compliance"> Compliance</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="interface"> Interface</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="data"> Data</label>
+                            <label class="uc-skip-check"><input type="checkbox" class="uc-skip-type" value="performance"> Performance</label>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
