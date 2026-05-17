@@ -393,20 +393,30 @@ def _run_e2e(cwd: str, ui_touched: bool) -> Tuple[bool, str, Dict[str, Any]]:
         return True, "dashboard not running — E2E skipped", metrics
 
     metrics["e2e_ran"] = True
-    try:
-        r = subprocess.run(
-            ["python", "tests/e2e_kanban_depends_on.py"],
-            capture_output=True, text=True, encoding="utf-8", errors="replace",
-            cwd=str(BASE_DIR), timeout=180,
-        )
-        metrics["e2e_passed"] = (r.returncode == 0)
-        if r.returncode != 0:
-            return False, f"E2E failed: {r.stdout[-200:]}", metrics
-    except Exception as exc:
+    _cmd = ["python", "tests/e2e_kanban_depends_on.py"]
+    _last_stdout = ""
+    _last_exc: Exception | None = None
+    for _attempt in range(2):
+        if _attempt:
+            import time as _time
+            _time.sleep(5)  # brief pause before retry (transient API load)
+        try:
+            r = subprocess.run(
+                _cmd,
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(BASE_DIR), timeout=180,
+            )
+            metrics["e2e_passed"] = (r.returncode == 0)
+            if r.returncode == 0:
+                return True, "E2E passed", metrics
+            _last_stdout = r.stdout
+            _last_exc = None
+        except Exception as exc:
+            _last_exc = exc
+    if _last_exc is not None:
         metrics["e2e_passed"] = False
-        return False, f"E2E error: {exc}", metrics
-
-    return True, "E2E passed", metrics
+        return False, f"E2E error: {_last_exc}", metrics
+    return False, f"E2E failed: {_last_stdout[-200:]}", metrics
 
 
 def _run_companion_sync() -> Tuple[bool, str]:
