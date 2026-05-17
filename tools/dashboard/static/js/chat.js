@@ -919,13 +919,15 @@
             }).join("\n");
 
             if (confirm("Send " + data.count + " tasks to Kanban backlog?\n\n" + taskList)) {
+                var payload = {markdown: planMarkdown};
+                if (_activeIntakeSessionId) payload.session_id = _activeIntakeSessionId;
                 fetch("/api/kanban/from-plan", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({markdown: planMarkdown})
+                    body: JSON.stringify(payload)
                 }).then(function(r) { return r.json(); }).then(function(result) {
                     if (result && result.tasks_created) {
-                        alert(result.tasks_created + " tasks added to Kanban backlog!");
+                        alert(result.tasks_created + " tasks added to Kanban backlog! Automated decomposition will begin shortly.");
                         // Refresh kanban if on that page
                         if (typeof ICDEV.refreshKanban === "function") {
                             ICDEV.refreshKanban();
@@ -1660,10 +1662,16 @@
     }
 
     // ===================================================================
-    // SECTION 18: Common Use Cases
+    // SECTION 18: Common Use Cases — catalog, deep links, edit modal
     // ===================================================================
 
     var _allUseCases = [];
+    var _activeUseCase = null;
+    var _ucContextMap = {};
+    try { _ucContextMap = JSON.parse(localStorage.getItem('icdev_uc_ctx_map') || '{}'); } catch (e) {}
+    var _ucEditId = null;
+
+    // ---- Catalog load / render ----
 
     function loadUseCases() {
         fetch(CHAT_API + '/use-cases')
@@ -1688,12 +1696,24 @@
         for (var i = 0; i < cases.length; i++) {
             var uc = cases[i];
             var badge = uc.badge ? '<span class="chat-uc-card__badge">' + escHtml(uc.badge) + '</span>' : '';
+
+            var chips = '';
+            var qa = uc.quick_actions || [];
+            for (var qi = 0; qi < qa.length; qi++) {
+                chips += '<a href="' + escHtml(qa[qi].url) + '" target="' + escHtml(qa[qi].target || '_blank') + '"'
+                    + ' class="chat-uc-qa-chip" title="' + escHtml(qa[qi].label) + '"'
+                    + ' onclick="event.stopPropagation()">'
+                    + escHtml(qa[qi].icon || '') + ' ' + escHtml(qa[qi].label) + '</a>';
+            }
+
             html += '<div class="chat-uc-card" data-uc-id="' + escHtml(uc.id) + '" tabindex="0" role="button" aria-label="Start ' + escHtml(uc.label) + '">'
                 + '<div class="chat-uc-card__top">'
                 + '<span class="chat-uc-card__label"><span class="chat-uc-card__icon">' + escHtml(uc.icon || '') + '</span>' + escHtml(uc.label) + '</span>'
+                + '<button class="chat-uc-edit-btn" data-uc-id="' + escHtml(uc.id) + '" title="View / edit use case" tabindex="0">&#x270F;</button>'
                 + badge
                 + '</div>'
                 + '<div class="chat-uc-card__desc">' + escHtml(uc.description || '') + '</div>'
+                + (chips ? '<div class="chat-uc-card__chips">' + chips + '</div>' : '')
                 + '</div>';
         }
         list.innerHTML = html;
@@ -1701,42 +1721,236 @@
         var cards = list.querySelectorAll('.chat-uc-card');
         for (var j = 0; j < cards.length; j++) {
             (function (card) {
-                card.addEventListener('click', function () { startUseCase(card.dataset.ucId); });
+                card.addEventListener('click', function (e) {
+                    if (e.target.closest && (e.target.closest('.chat-uc-edit-btn') || e.target.closest('.chat-uc-qa-chip'))) return;
+                    startUseCase(card.dataset.ucId);
+                });
                 card.addEventListener('keydown', function (e) {
                     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startUseCase(card.dataset.ucId); }
                 });
             })(cards[j]);
         }
+
+        var editBtns = list.querySelectorAll('.chat-uc-edit-btn');
+        for (var k = 0; k < editBtns.length; k++) {
+            (function (btn) {
+                btn.addEventListener('click', function (e) {
+                    e.stopPropagation();
+                    openUcEditModal(btn.dataset.ucId);
+                });
+            })(editBtns[k]);
+        }
     }
+
+    // ---- Start use case (create context + seed message) ----
 
     function startUseCase(ucId) {
         fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId))
             .then(function (r) { return r.ok ? r.json() : null; })
             .then(function (uc) {
-                if (!uc || uc.error) { if (ns.notify) ns.notify('Use case not found', 'error'); return; }
-
+                if (!uc || uc.error) return;
                 var opts = {
                     title: uc.label || ucId,
                     agent_model: uc.agent_model || 'sonnet',
                     system_prompt: uc.system_prompt || ''
                 };
-
-                if (uc.ricoas) {
-                    createIntakeContext(opts).then(function (ctx) {
-                        if (ctx && !ctx.error && uc.seed_message) {
-                            setTimeout(function () { sendMessage(uc.seed_message.trim()); }, 600);
-                        }
-                    });
-                } else {
-                    createContext(opts).then(function (ctx) {
-                        if (ctx && !ctx.error && uc.seed_message) {
-                            setTimeout(function () { sendMessage(uc.seed_message.trim()); }, 600);
-                        }
-                    });
+                function afterCreate(ctx) {
+                    if (!ctx || ctx.error) return;
+                    _ucContextMap[ctx.context_id] = ucId;
+                    try { localStorage.setItem('icdev_uc_ctx_map', JSON.stringify(_ucContextMap)); } catch (e) {}
+                    _activeUseCase = uc;
+                    if (uc.seed_message) {
+                        setTimeout(function () { sendMessage(uc.seed_message.trim()); }, 600);
+                    }
                 }
-            })
-            .catch(function (err) { if (ns.notify) ns.notify('Failed to load use case', 'error'); });
+                if (uc.ricoas) {
+                    createIntakeContext(opts).then(afterCreate);
+                } else {
+                    createContext(opts).then(afterCreate);
+                }
+            });
     }
+
+    // ---- Active use case action bar ----
+
+    function renderUcActionBar(uc) {
+        var container = document.getElementById('uc-specific-actions');
+        if (!container) return;
+        var qa = (uc && uc.quick_actions) ? uc.quick_actions : [];
+        if (!qa.length) {
+            container.innerHTML = '';
+            container.style.display = 'none';
+            return;
+        }
+        container.style.display = 'block';
+        var html = '<div class="uc-action-bar__label">'
+            + escHtml((uc.icon || '') + ' ' + (uc.label || '')) + ' — Canvas &amp; Tools</div>';
+        for (var i = 0; i < qa.length; i++) {
+            html += '<a href="' + escHtml(qa[i].url) + '" target="' + escHtml(qa[i].target || '_blank') + '"'
+                + ' class="btn btn-sm btn-outline uc-action-btn">'
+                + escHtml(qa[i].icon || '') + ' ' + escHtml(qa[i].label) + '</a>';
+        }
+        container.innerHTML = html;
+    }
+
+    function syncUcStateForContext(ctxId) {
+        var ucId = _ucContextMap[ctxId];
+        if (ucId) {
+            for (var i = 0; i < _allUseCases.length; i++) {
+                if (_allUseCases[i].id === ucId) {
+                    _activeUseCase = _allUseCases[i];
+                    renderUcActionBar(_allUseCases[i]);
+                    return;
+                }
+            }
+        }
+        _activeUseCase = null;
+        renderUcActionBar(null);
+    }
+
+    // Wrap switchContext to keep action bar in sync on context switches
+    var _origSwitchContext = switchContext;
+    switchContext = function (ctxId) {
+        _origSwitchContext(ctxId);
+        syncUcStateForContext(ctxId);
+    };
+
+    // ---- Edit modal ----
+
+    function openUcEditModal(ucId) {
+        fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId))
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (uc) {
+                if (!uc || uc.error) return;
+                _ucEditId = ucId;
+                document.getElementById('uc-f-id').value = ucId;
+                document.getElementById('uc-f-label').value = uc.label || '';
+                document.getElementById('uc-f-icon').value = uc.icon || '';
+                document.getElementById('uc-f-badge').value = uc.badge || '';
+                var catEl = document.getElementById('uc-f-category');
+                if (catEl) catEl.value = uc.category || 'general';
+                var modelEl = document.getElementById('uc-f-model');
+                if (modelEl) modelEl.value = uc.agent_model || 'sonnet';
+                var ricoasEl = document.getElementById('uc-f-ricoas');
+                if (ricoasEl) ricoasEl.checked = !!uc.ricoas;
+                document.getElementById('uc-f-desc').value = uc.description || '';
+                document.getElementById('uc-f-system').value = uc.system_prompt || '';
+                document.getElementById('uc-f-seed').value = uc.seed_message || '';
+                renderUcQaRows(uc.quick_actions || []);
+                document.getElementById('uc-modal-title').textContent = 'Edit — ' + (uc.label || ucId);
+                document.getElementById('uc-edit-modal').style.display = 'flex';
+                document.getElementById('uc-f-label').focus();
+            });
+    }
+
+    function renderUcQaRows(qaList) {
+        var container = document.getElementById('uc-f-qa-list');
+        if (!container) return;
+        container.innerHTML = '';
+        for (var i = 0; i < qaList.length; i++) appendUcQaRow(qaList[i]);
+    }
+
+    function appendUcQaRow(qa) {
+        qa = qa || {};
+        var container = document.getElementById('uc-f-qa-list');
+        if (!container) return;
+        var row = document.createElement('div');
+        row.className = 'uc-qa-row';
+        row.innerHTML = '<input type="text" class="form-control uc-qa-icon" placeholder="Icon" value="' + escHtml(qa.icon || '') + '" maxlength="8">'
+            + '<input type="text" class="form-control uc-qa-label" placeholder="Label" value="' + escHtml(qa.label || '') + '">'
+            + '<input type="text" class="form-control uc-qa-url" placeholder="/path or https://..." value="' + escHtml(qa.url || '') + '">'
+            + '<select class="form-control uc-qa-target"><option value="_blank">New tab</option><option value="_self">Same tab</option></select>'
+            + '<button type="button" class="btn btn-sm btn-danger uc-qa-remove" title="Remove">&#x2715;</button>';
+        var targetEl = row.querySelector('.uc-qa-target');
+        if (targetEl) targetEl.value = qa.target || '_blank';
+        row.querySelector('.uc-qa-remove').addEventListener('click', function () { row.remove(); });
+        container.appendChild(row);
+    }
+
+    function collectUcQaRows() {
+        var rows = document.querySelectorAll('#uc-f-qa-list .uc-qa-row');
+        var result = [];
+        for (var i = 0; i < rows.length; i++) {
+            var icon = rows[i].querySelector('.uc-qa-icon').value.trim();
+            var label = rows[i].querySelector('.uc-qa-label').value.trim();
+            var url = rows[i].querySelector('.uc-qa-url').value.trim();
+            var target = rows[i].querySelector('.uc-qa-target').value;
+            if (label && url) result.push({ icon: icon, label: label, url: url, target: target });
+        }
+        return result;
+    }
+
+    function saveUcEdit() {
+        var ucId = document.getElementById('uc-f-id').value;
+        if (!ucId) return;
+        var saveBtn = document.getElementById('uc-modal-save');
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
+        var payload = {
+            label: document.getElementById('uc-f-label').value.trim(),
+            icon: document.getElementById('uc-f-icon').value.trim(),
+            badge: document.getElementById('uc-f-badge').value.trim(),
+            category: document.getElementById('uc-f-category').value,
+            agent_model: document.getElementById('uc-f-model').value,
+            ricoas: document.getElementById('uc-f-ricoas').checked,
+            description: document.getElementById('uc-f-desc').value.trim(),
+            system_prompt: document.getElementById('uc-f-system').value,
+            seed_message: document.getElementById('uc-f-seed').value,
+            quick_actions: collectUcQaRows(),
+        };
+
+        fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (result) {
+                if (result.error) { alert('Save failed: ' + result.error); return; }
+                closeUcEditModal();
+                loadUseCases();
+            })
+            .catch(function () { alert('Network error saving use case.'); })
+            .then(function () {
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save Changes'; }
+            });
+    }
+
+    function resetUcDefault(ucId) {
+        if (!ucId) return;
+        if (!confirm('Reset "' + ucId + '" to factory defaults? Your customizations will be deleted.')) return;
+        fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId) + '/override', { method: 'DELETE' })
+            .then(function (r) { return r.json(); })
+            .then(function () { closeUcEditModal(); loadUseCases(); })
+            .catch(function () { alert('Reset failed.'); });
+    }
+
+    function closeUcEditModal() {
+        var modal = document.getElementById('uc-edit-modal');
+        if (modal) modal.style.display = 'none';
+        _ucEditId = null;
+    }
+
+    function initUcEditModal() {
+        var closeBtn = document.getElementById('uc-modal-close');
+        var cancelBtn = document.getElementById('uc-modal-cancel');
+        var saveBtn = document.getElementById('uc-modal-save');
+        var resetBtn = document.getElementById('uc-reset-btn');
+        var addQaBtn = document.getElementById('uc-qa-add-btn');
+        var overlay = document.getElementById('uc-edit-modal');
+
+        if (closeBtn) closeBtn.addEventListener('click', closeUcEditModal);
+        if (cancelBtn) cancelBtn.addEventListener('click', closeUcEditModal);
+        if (saveBtn) saveBtn.addEventListener('click', saveUcEdit);
+        if (resetBtn) resetBtn.addEventListener('click', function () { resetUcDefault(_ucEditId); });
+        if (addQaBtn) addQaBtn.addEventListener('click', function () { appendUcQaRow({}); });
+        if (overlay) {
+            overlay.addEventListener('click', function (e) { if (e.target === overlay) closeUcEditModal(); });
+            overlay.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeUcEditModal(); });
+        }
+    }
+
+    // ---- Panel init ----
 
     function initUseCasesPanel() {
         var collapseBtn = document.getElementById('btn-uc-collapse');
@@ -1770,6 +1984,7 @@
             });
         }
 
+        initUcEditModal();
         loadUseCases();
     }
 

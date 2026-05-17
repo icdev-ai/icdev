@@ -2135,6 +2135,40 @@ CREATE TABLE IF NOT EXISTS agent_token_budgets (
     UNIQUE(agent_id, month)
 );
 
+-- Module-level budget tracking (generative_intelligence + predictive_analysis)
+CREATE TABLE IF NOT EXISTS module_budget_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    function_name TEXT,
+    resource_type TEXT NOT NULL DEFAULT 'usd' CHECK(resource_type IN ('usd', 'tokens', 'operations')),
+    amount REAL NOT NULL DEFAULT 0.0,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    operations INTEGER NOT NULL DEFAULT 0,
+    project_id TEXT,
+    model_id TEXT,
+    details_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_module_usage_module ON module_budget_usage(module_name);
+CREATE INDEX IF NOT EXISTS idx_module_usage_created ON module_budget_usage(created_at);
+
+CREATE TABLE IF NOT EXISTS module_budget_periods (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module_name TEXT NOT NULL CHECK(module_name IN ('generative_intelligence', 'predictive_analysis')),
+    month TEXT NOT NULL,
+    budget_usd REAL NOT NULL DEFAULT 0.0,
+    budget_tokens INTEGER NOT NULL DEFAULT 0,
+    budget_operations INTEGER NOT NULL DEFAULT 0,
+    spent_usd REAL NOT NULL DEFAULT 0.0,
+    spent_tokens INTEGER NOT NULL DEFAULT 0,
+    spent_operations INTEGER NOT NULL DEFAULT 0,
+    warning_threshold REAL NOT NULL DEFAULT 0.8,
+    hard_stop INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(module_name, month)
+);
+
 -- Atomic task checkout — lease-based single-assignee enforcement
 CREATE TABLE IF NOT EXISTS agent_task_leases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

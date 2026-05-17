@@ -201,6 +201,8 @@
 
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
+                <!-- Use case deep links — populated by JS when a use case context is active -->
+                <div id="uc-specific-actions" class="uc-specific-actions" style="display:none;"></div>
                 <h4 class="chat-sidebar-heading">What's next?</h4>
                 <button class="btn btn-warning" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
@@ -571,6 +573,7 @@
     initResize('resize-left', 'chat-sidebar', 'left');
     initResize('resize-right', 'right-sidebar', 'right');
 
+
     // Restore saved widths
     try {
         var leftW = localStorage.getItem('icdev_chat_left_w');
@@ -578,4 +581,78 @@
     } catch(ex) {}
 })();
 </script>
+
+<!-- Use Case Edit Modal -->
+<div id="uc-edit-modal" class="uc-modal-overlay" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="uc-modal-title">
+    <div class="uc-modal">
+        <div class="uc-modal__header">
+            <h3 id="uc-modal-title">Edit Use Case</h3>
+            <div class="uc-modal__header-actions">
+                <button class="btn btn-sm btn-outline uc-reset-btn" id="uc-reset-btn" title="Discard overrides and restore factory defaults">&#x21BA; Reset to Default</button>
+                <button class="uc-modal__close" id="uc-modal-close" aria-label="Close">&#x2715;</button>
+            </div>
+        </div>
+        <div class="uc-modal__body">
+            <input type="hidden" id="uc-f-id">
+            <div class="uc-form-grid">
+                <div class="uc-form-group uc-form-group--half">
+                    <label for="uc-f-label">Label</label>
+                    <input type="text" id="uc-f-label" class="form-control" placeholder="Display name">
+                </div>
+                <div class="uc-form-group uc-form-group--icon">
+                    <label for="uc-f-icon">Icon</label>
+                    <input type="text" id="uc-f-icon" class="form-control" placeholder="⚙" maxlength="8">
+                </div>
+                <div class="uc-form-group uc-form-group--badge">
+                    <label for="uc-f-badge">Badge</label>
+                    <input type="text" id="uc-f-badge" class="form-control" placeholder="AI Boost">
+                </div>
+                <div class="uc-form-group uc-form-group--third">
+                    <label for="uc-f-category">Category</label>
+                    <select id="uc-f-category" class="form-control">
+                        <option value="modernization">Modernization</option>
+                        <option value="budget">Budget</option>
+                        <option value="knowledge">Knowledge</option>
+                        <option value="compliance">Compliance</option>
+                        <option value="general">General</option>
+                    </select>
+                </div>
+                <div class="uc-form-group uc-form-group--third">
+                    <label for="uc-f-model">Agent Model</label>
+                    <select id="uc-f-model" class="form-control">
+                        <option value="opus">Opus (most capable)</option>
+                        <option value="sonnet">Sonnet (balanced)</option>
+                        <option value="haiku">Haiku (fast)</option>
+                    </select>
+                </div>
+                <div class="uc-form-group uc-form-group--third uc-form-group--vcenter">
+                    <label class="uc-toggle-label">RICOAS Intake</label>
+                    <label class="uc-toggle"><input type="checkbox" id="uc-f-ricoas"><span class="uc-toggle__slider"></span></label>
+                    <span class="uc-label-hint">Links to intake session</span>
+                </div>
+                <div class="uc-form-group uc-form-group--full">
+                    <label for="uc-f-desc">Description <span class="uc-label-hint">Shown in sidebar card</span></label>
+                    <textarea id="uc-f-desc" class="form-control" rows="2" placeholder="One-line summary of what this use case helps with"></textarea>
+                </div>
+                <div class="uc-form-group uc-form-group--full">
+                    <label for="uc-f-system">System Prompt <span class="uc-label-hint">Expert AI persona — injected as system context at conversation start</span></label>
+                    <textarea id="uc-f-system" class="form-control uc-textarea--large" rows="9" placeholder="You are a senior advisor with expertise in..."></textarea>
+                </div>
+                <div class="uc-form-group uc-form-group--full">
+                    <label for="uc-f-seed">Seed Message <span class="uc-label-hint">First message auto-sent to open the conversation</span></label>
+                    <textarea id="uc-f-seed" class="form-control uc-textarea--large" rows="6" placeholder="I'm here to help you plan..."></textarea>
+                </div>
+                <div class="uc-form-group uc-form-group--full">
+                    <label>Quick Actions <span class="uc-label-hint">Deep links shown on card and in the post-export action bar</span></label>
+                    <div id="uc-f-qa-list" class="uc-qa-list"></div>
+                    <button type="button" class="btn btn-sm btn-secondary" id="uc-qa-add-btn">+ Add Action</button>
+                </div>
+            </div>
+        </div>
+        <div class="uc-modal__footer">
+            <button class="btn btn-secondary" id="uc-modal-cancel">Cancel</button>
+            <button class="btn btn-primary" id="uc-modal-save">Save Changes</button>
+        </div>
+    </div>
+</div>
 {% endblock %}

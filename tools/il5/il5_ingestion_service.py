@@ -29,7 +29,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from tools.db.storage import get_connection
 from tools.il5.ingestion import (
     SLA_SECONDS,
     get_il5_events,

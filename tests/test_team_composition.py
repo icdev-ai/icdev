@@ -15,6 +15,7 @@ from tools.workforce.team_composition import (
     Role,
     Squad,
     TeamComposition,
+    data_mesh_conflict_monitoring_team,
     default_engineering_team,
     validate_composition,
 )
@@ -112,3 +113,56 @@ def test_team_serializes_to_json():
     assert '"total_members": 18' in json_str
     assert "Squad Alpha" in json_str
     assert "Squad Bravo" in json_str
+
+
+# ---------------------------------------------------------------------------
+# Data-Mesh Conflict-Monitoring Team (5 experts)
+# ---------------------------------------------------------------------------
+
+
+def test_data_mesh_team_has_two_data_engineers():
+    """Scenario: Team includes 2 data engineers for continuous data-mesh operation."""
+    team = data_mesh_conflict_monitoring_team()
+    de = [s for s in team.squads if s.role == "data_engineer"]
+    assert len(de) == 1
+    assert de[0].count == 2
+
+
+def test_data_mesh_team_has_two_ml_specialists():
+    """Scenario: Team includes 2 ML specialists for conflict-monitoring accuracy."""
+    team = data_mesh_conflict_monitoring_team()
+    ml = [s for s in team.squads if s.role == "ml_specialist"]
+    assert len(ml) == 1
+    assert ml[0].count == 2
+
+
+def test_data_mesh_team_has_one_security_analyst():
+    """Scenario: Team includes 1 security analyst."""
+    team = data_mesh_conflict_monitoring_team()
+    sa = [r for r in team.specialists if r.name == "security_analyst"]
+    assert len(sa) == 1
+    assert sa[0].count == 1
+
+
+def test_data_mesh_team_total_is_five():
+    """Scenario: Total dedicated team size is 5 experts."""
+    team = data_mesh_conflict_monitoring_team()
+    assert team.total_members == 5
+
+
+def test_data_mesh_team_passes_validation():
+    """Scenario: Validating the data-mesh team returns valid with expected total 5."""
+    team = data_mesh_conflict_monitoring_team()
+    result = validate_composition(team, expected_total=5)
+    assert result.valid is True
+    assert result.actual_total == 5
+    assert result.expected_total == 5
+    assert result.errors == []
+
+
+def test_data_mesh_team_serializes_to_dict():
+    team = data_mesh_conflict_monitoring_team()
+    d = team.to_dict()
+    assert d["total_members"] == 5
+    assert len(d["squads"]) == 2
+    assert len(d["specialists"]) == 1

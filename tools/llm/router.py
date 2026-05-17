@@ -1331,6 +1331,48 @@ class LLMRouter:
             except Exception as exc:
                 logger.debug("Budget check failed (non-blocking): %s", exc)
 
+        # Module-level budget enforcement for generative_intelligence and predictive_analysis
+        try:
+            from tools.budget.module_budget_tracker import (
+                PREDICTIVE_ANALYSIS_FUNCTIONS,
+                check_module_budget,
+                ModuleBudgetExceededError,
+            )
+
+            _estimated_tokens = sum(
+                len(m.get("content", "")) for m in (request.messages or []) if isinstance(m, dict)
+            ) // 4  # rough token estimate for pre-check
+
+            mod_budget = check_module_budget(
+                "generative_intelligence",
+                function=function,
+                estimated_cost_usd=0.0,  # actual cost recorded post-invoke
+                estimated_tokens=_estimated_tokens,
+            )
+            if mod_budget["action"] == "block":
+                raise ModuleBudgetExceededError("generative_intelligence", mod_budget)
+            if mod_budget["action"] == "warn":
+                logger.warning("Module budget warning: %s", mod_budget["message"])
+
+            # Also enforce predictive_analysis budget when invoking simulation functions
+            if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+                pa_budget = check_module_budget(
+                    "predictive_analysis",
+                    function=function,
+                    estimated_cost_usd=0.0,
+                    estimated_tokens=_estimated_tokens,
+                )
+                if pa_budget["action"] == "block":
+                    raise ModuleBudgetExceededError("predictive_analysis", pa_budget)
+                if pa_budget["action"] == "warn":
+                    logger.warning("Predictive analysis budget warning: %s", pa_budget["message"])
+        except ImportError:
+            pass
+        except ModuleBudgetExceededError:
+            raise
+        except Exception as exc:
+            logger.debug("Module budget check failed (non-blocking): %s", exc)
+
         # Scan for prompt injection before invoking (D217)
         # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
         if not request.skip_injection_scan:
@@ -1445,6 +1487,40 @@ class LLMRouter:
                     )
                 except Exception:
                     pass  # Best-effort — never block on telemetry
+
+                # Record module-level budget usage for generative_intelligence
+                try:
+                    from tools.budget.module_budget_tracker import (
+                        PREDICTIVE_ANALYSIS_FUNCTIONS,
+                        record_module_usage,
+                    )
+
+                    _resp_cost = getattr(response, "cost_usd", 0.0) or 0.0
+                    _resp_tokens = (getattr(response, "input_tokens", 0) or 0) + (
+                        getattr(response, "output_tokens", 0) or 0
+                    )
+
+                    record_module_usage(
+                        "generative_intelligence",
+                        cost_usd=_resp_cost,
+                        tokens=_resp_tokens,
+                        function=function,
+                        project_id=getattr(request, "project_id", None),
+                        model_id=getattr(response, "model_id", model_id),
+                    )
+
+                    # Also record predictive_analysis usage for simulation functions
+                    if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+                        record_module_usage(
+                            "predictive_analysis",
+                            cost_usd=_resp_cost,
+                            tokens=_resp_tokens,
+                            function=function,
+                            project_id=getattr(request, "project_id", None),
+                            model_id=getattr(response, "model_id", model_id),
+                        )
+                except Exception:
+                    pass  # Best-effort — never block on budget recording
 
                 # D-CACHE-5: Store successful response in cache
                 self._cache_store(function, request, response, model_id)

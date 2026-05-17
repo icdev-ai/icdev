@@ -677,3 +677,17 @@
 |------|------|-------------|-------|--------|
 | Siem Alert Forwarder | tools\siem_alert_forwarder.py | Auto-registered: tools/siem_alert_forwarder.py | --json | JSON |
 | Pir Alert Generator | tools\intelligence\pir_alert_generator.py | Auto-registered: intelligence/pir_alert_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
+| Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
+| Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |

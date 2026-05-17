@@ -831,6 +831,29 @@ token_budgets:
       monthly_usd: 5.00
 
 # -----------------------------------------------------------------------
+# Module Budget Enforcement (generative_intelligence + predictive_analysis)
+# -----------------------------------------------------------------------
+# Limits aggregate computational resources per high-cost module.
+# Enforced in addition to per-agent token_budgets above.
+module_budgets:
+  enabled: true
+  default_monthly_usd: 200.00
+  default_monthly_tokens: 500000
+  default_monthly_operations: 1000
+  warning_threshold: 0.8
+  hard_stop: true
+
+  per_module:
+    generative_intelligence:
+      monthly_usd: 150.00         # LLM calls, embeddings, chain orchestration
+      monthly_tokens: 400000
+      monthly_operations: 0       # not used for generative
+    predictive_analysis:
+      monthly_usd: 50.00          # simulation runs, Monte Carlo, COA generation
+      monthly_tokens: 100000       # LLM use inside simulations
+      monthly_operations: 500      # simulation scenario runs
+
+# -----------------------------------------------------------------------
 # Chain Orchestration (CoT / CoD)
 # -----------------------------------------------------------------------
 chain_orchestration:

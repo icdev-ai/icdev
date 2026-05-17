@@ -254,6 +254,20 @@ class ChainOrchestrator:
             conn.close()
         except Exception as exc:
             logger.debug("Chain telemetry write failed (non-blocking): %s", exc)
+
+        # Record module-level budget usage for generative_intelligence
+        try:
+            from tools.budget.module_budget_tracker import record_module_usage
+
+            record_module_usage(
+                "generative_intelligence",
+                cost_usd=result.total_cost_usd,
+                tokens=result.total_input_tokens + result.total_output_tokens,
+                function=function,
+            )
+        except Exception:
+            pass  # Best-effort — never block on budget recording
+
         self._publish_reasoning_event(result, function)
 
     def _publish_reasoning_event(self, result: ChainResult, function: str) -> None:
@@ -278,6 +292,28 @@ class ChainOrchestrator:
         except Exception as exc:
             logger.debug("Event bus publish failed (non-blocking): %s", exc)
 
+    def _check_module_budget(self, function: str, estimated_cost: float = 0.0, estimated_tokens: int = 0) -> None:
+        """Check generative_intelligence module budget before expensive chain work."""
+        try:
+            from tools.budget.module_budget_tracker import check_module_budget, ModuleBudgetExceededError
+
+            status = check_module_budget(
+                "generative_intelligence",
+                function=function,
+                estimated_cost_usd=estimated_cost,
+                estimated_tokens=estimated_tokens,
+            )
+            if status["action"] == "block":
+                raise ModuleBudgetExceededError("generative_intelligence", status)
+            if status["action"] == "warn":
+                logger.warning("Module budget warning for %s: %s", function, status["message"])
+        except ImportError:
+            pass
+        except ModuleBudgetExceededError:
+            raise
+        except Exception as exc:
+            logger.debug("Module budget check failed (non-blocking): %s", exc)
+
     def invoke_chain_of_thought(
         self,
         function: str,
@@ -301,6 +337,8 @@ class ChainOrchestrator:
 
         if self._is_excluded(function, "cot"):
             raise RuntimeError(f"Function '{function}' is excluded from CoT")
+
+        self._check_module_budget(function, estimated_cost=cfg.get("cost_cap_usd", 0.0))
 
         # Self-consistency: run CoT N times in parallel
         runs = cfg.get("self_consistency_runs", 1)
@@ -598,6 +636,8 @@ class ChainOrchestrator:
 
         if self._is_excluded(function, "cod"):
             raise RuntimeError(f"Function '{function}' is excluded from CoD")
+
+        self._check_module_budget(function, estimated_cost=cfg.get("cost_cap_usd", 0.0))
 
         num_debaters = cfg["num_debaters"]
         debate_rounds = cfg["debate_rounds"]

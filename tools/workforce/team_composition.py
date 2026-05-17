@@ -125,3 +125,22 @@ def default_engineering_team() -> TeamComposition:
             Role(name="ISSO", count=1),
         ],
     )
+
+
+def data_mesh_conflict_monitoring_team() -> TeamComposition:
+    """Return the dedicated data-mesh conflict-monitoring team composition.
+
+    2 data engineers,
+    2 ML specialists,
+    1 security analyst.
+    Total team size 5 experts.
+    """
+    return TeamComposition(
+        squads=[
+            Squad(role="data_engineer", count=2, name="Data Mesh Ops"),
+            Squad(role="ml_specialist", count=2, name="ML Conflict Monitoring"),
+        ],
+        specialists=[
+            Role(name="security_analyst", count=1),
+        ],
+    )

@@ -428,6 +428,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "mc_net_ai_sessions",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
         "sg_war_readiness_events",
+        # STRATEGOS — adversarial data validation audit (NIST AU-9 — append-only)
+        "sg_adversarial_validation_audit",
         # NDC↔Migration — topology snapshots (NIST AU; phase-completion history must be immutable)
         "nc_topology_snapshots",
         # Phase 71 — OHC Ops Hub Canvas (migration 120, NIST AU — adapter health log + drift events append-only)

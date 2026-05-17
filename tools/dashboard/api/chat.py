@@ -8,7 +8,6 @@ mid-stream intervention, and dirty-tracking state queries.
 import sys
 from pathlib import Path
 
-from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
@@ -240,74 +239,173 @@ def close_context(context_id):
 _USE_CASES_PATH = BASE_DIR / "args" / "use_cases.yaml"
 
 
-@chat_api.route("/use-cases", methods=["GET"])
-def list_use_cases():
-    """Return the seeded use case catalog from args/use_cases.yaml.
-
-    Query params: category? (filter by category), q? (search label/description)
-    """
-    try:
-        import yaml
-    except ImportError:
-        return jsonify({"error": "pyyaml not installed"}), 503
-
+def _uc_load_yaml():
+    import yaml as _yaml
     try:
         with open(_USE_CASES_PATH, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-    except FileNotFoundError:
-        return jsonify({"use_cases": [], "total": 0})
+            return (_yaml.safe_load(fh) or {}).get("use_cases", [])
+    except Exception:
+        return []
 
-    cases = data.get("use_cases", [])
 
+def _uc_init_table(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS use_case_overrides (
+        id TEXT PRIMARY KEY,
+        label TEXT, description TEXT, icon TEXT, badge TEXT,
+        agent_model TEXT, ricoas INTEGER, boost_threshold INTEGER,
+        system_prompt TEXT, seed_message TEXT,
+        canvas_wiring TEXT, quick_actions TEXT,
+        updated_at TEXT, updated_by TEXT
+    )""")
+    conn.commit()
+
+
+def _uc_apply_override(base, row):
+    import json as _json
+    if not row:
+        return base
+    result = dict(base)
+    for col in ("label", "description", "icon", "badge", "agent_model",
+                "system_prompt", "seed_message"):
+        if row[col] is not None:
+            result[col] = row[col]
+    if row["ricoas"] is not None:
+        result["ricoas"] = bool(row["ricoas"])
+    if row["boost_threshold"] is not None:
+        result["boost_threshold"] = row["boost_threshold"]
+    for jcol in ("canvas_wiring", "quick_actions"):
+        if row[jcol] is not None:
+            try:
+                result[jcol] = _json.loads(row[jcol])
+            except Exception:
+                pass
+    return result
+
+
+@chat_api.route("/use-cases", methods=["GET"])
+def list_use_cases():
+    """Return use case catalog (YAML defaults merged with DB overrides)."""
+    from tools.db.storage import get_connection as _gc
+    cases = _uc_load_yaml()
     category = request.args.get("category", "").strip().lower()
     query = request.args.get("q", "").strip().lower()
 
-    if category:
-        cases = [c for c in cases if c.get("category", "").lower() == category]
-    if query:
-        cases = [
-            c for c in cases
-            if query in c.get("label", "").lower() or query in c.get("description", "").lower()
-        ]
+    overrides = {}
+    try:
+        with _gc() as conn:
+            for row in conn.execute("SELECT * FROM use_case_overrides").fetchall():
+                overrides[row["id"]] = row
+    except Exception:
+        pass
 
-    # Strip system_prompt and seed_message from list response (returned on demand)
-    summary = []
-    for c in cases:
-        summary.append({
+    merged = [_uc_apply_override(c, overrides.get(c.get("id", ""))) for c in cases]
+    if category:
+        merged = [c for c in merged if c.get("category", "").lower() == category]
+    if query:
+        merged = [c for c in merged if query in c.get("label", "").lower()
+                  or query in (c.get("description") or "").lower()]
+
+    summary = [
+        {
             "id": c.get("id", ""),
             "label": c.get("label", ""),
             "category": c.get("category", ""),
             "icon": c.get("icon", ""),
-            "description": c.get("description", "").strip(),
+            "description": (c.get("description") or "").strip(),
             "badge": c.get("badge", ""),
             "agent_model": c.get("agent_model", "sonnet"),
             "ricoas": c.get("ricoas", False),
             "boost_threshold": c.get("boost_threshold", 70),
             "canvas_wiring": c.get("canvas_wiring", []),
-        })
-
+            "quick_actions": c.get("quick_actions", []),
+        }
+        for c in merged
+    ]
     return jsonify({"use_cases": summary, "total": len(summary)})
 
 
 @chat_api.route("/use-cases/<use_case_id>", methods=["GET"])
 def get_use_case(use_case_id):
-    """Return full use case definition including system_prompt and seed_message."""
+    """Return full use case definition (YAML + DB override merged)."""
+    from tools.db.storage import get_connection as _gc
+    base = next((c for c in _uc_load_yaml() if c.get("id") == use_case_id), None)
+    if not base:
+        return jsonify({"error": "Use case not found"}), 404
+    row = None
+    _exc_info = None
     try:
-        import yaml
-    except ImportError:
-        return jsonify({"error": "pyyaml not installed"}), 503
+        with _gc() as conn:
+            row = conn.execute(
+                "SELECT * FROM use_case_overrides WHERE id = ?", (use_case_id,)
+            ).fetchone()
+    except Exception as _e:
+        _exc_info = str(_e)
+    import logging as _log
+    _log.getLogger("icdev.uc").warning(
+        "get_use_case %s: row=%r exc=%r", use_case_id, bool(row), _exc_info
+    )
+    return jsonify(_uc_apply_override(dict(base), row))
 
+
+@chat_api.route("/use-cases/<use_case_id>", methods=["PUT"])
+def update_use_case(use_case_id):
+    """Persist user overrides for a use case (YAML unchanged, overrides in DB)."""
+    import json as _json
+    from datetime import datetime, timezone
+    from tools.db.storage import get_connection as _gc
+    body = request.get_json(silent=True) or {}
+    now = datetime.now(timezone.utc).isoformat()
+    cw = body.get("canvas_wiring")
+    qa = body.get("quick_actions")
     try:
-        with open(_USE_CASES_PATH, "r", encoding="utf-8") as fh:
-            data = yaml.safe_load(fh) or {}
-    except FileNotFoundError:
-        return jsonify({"error": "Use case catalog not found"}), 404
+        with _gc() as conn:
+            _uc_init_table(conn)
+            conn.execute("""
+                INSERT INTO use_case_overrides
+                    (id,label,description,icon,badge,agent_model,ricoas,
+                     boost_threshold,system_prompt,seed_message,
+                     canvas_wiring,quick_actions,updated_at,updated_by)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(id) DO UPDATE SET
+                    label=excluded.label, description=excluded.description,
+                    icon=excluded.icon, badge=excluded.badge,
+                    agent_model=excluded.agent_model, ricoas=excluded.ricoas,
+                    boost_threshold=excluded.boost_threshold,
+                    system_prompt=excluded.system_prompt,
+                    seed_message=excluded.seed_message,
+                    canvas_wiring=excluded.canvas_wiring,
+                    quick_actions=excluded.quick_actions,
+                    updated_at=excluded.updated_at,
+                    updated_by=excluded.updated_by
+            """, (
+                use_case_id,
+                body.get("label"), body.get("description"), body.get("icon"),
+                body.get("badge"), body.get("agent_model"),
+                1 if body.get("ricoas") else 0,
+                body.get("boost_threshold"),
+                body.get("system_prompt"), body.get("seed_message"),
+                _json.dumps(cw) if cw is not None else None,
+                _json.dumps(qa) if qa is not None else None,
+                now, body.get("updated_by", "dashboard-user"),
+            ))
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "id": use_case_id, "updated_at": now})
 
-    for c in data.get("use_cases", []):
-        if c.get("id") == use_case_id:
-            return jsonify(c)
 
-    return jsonify({"error": "Use case not found"}), 404
+@chat_api.route("/use-cases/<use_case_id>/override", methods=["DELETE"])
+def reset_use_case(use_case_id):
+    """Delete DB override — restores YAML factory defaults."""
+    from tools.db.storage import get_connection as _gc
+    try:
+        with _gc() as conn:
+            _uc_init_table(conn)
+            conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"ok": True, "id": use_case_id, "reset": True})
 
 
 # ---------------------------------------------------------------------------

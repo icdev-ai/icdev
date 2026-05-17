@@ -185,3 +185,114 @@ class TestIngestionPipelineService:
             )
 
             MockFetcher.assert_called_once_with(feed_url=custom_url)
+
+    def test_osint_stream_pipeline_completed(self, tmp_path):
+        """Acceptance: osint_stream config successfully buffers signals to disk."""
+        db_path = tmp_path / "test.db"
+        buffer_dir = tmp_path / "stream_buffer"
+
+        with patch(
+            "src.ingestion.pipeline.IngestionPipelineService.StreamBufferService"
+        ) as MockBuf:
+            mock_buf = MagicMock()
+            mock_buf.poll_osint.return_value = {
+                "source": "osint_stream",
+                "fetched": 3,
+                "buffered": 3,
+                "file": str(buffer_dir / "osint_stream_test.json"),
+                "cursor": "c1",
+            }
+            MockBuf.return_value = mock_buf
+
+            result = IngestionPipelineService.run_source(
+                {"source_type": "osint_stream", "query": "ukraine", "limit": 50},
+                db_path=db_path,
+            )
+
+        assert result["source_type"] == "osint_stream"
+        assert result["status"] == "completed"
+        assert result["fetched"] == 3
+        assert result["ingested"] == 3
+        assert result["display_payload"] == str(buffer_dir / "osint_stream_test.json")
+        assert result["errors"] == []
+
+    def test_satellite_stream_pipeline_completed(self, tmp_path):
+        """Acceptance: satellite_stream config successfully buffers scenes to disk."""
+        db_path = tmp_path / "test.db"
+        buffer_dir = tmp_path / "stream_buffer"
+
+        with patch(
+            "src.ingestion.pipeline.IngestionPipelineService.StreamBufferService"
+        ) as MockBuf:
+            mock_buf = MagicMock()
+            mock_buf.poll_satellite.return_value = {
+                "source": "satellite_stream",
+                "fetched": 5,
+                "buffered": 5,
+                "file": str(buffer_dir / "satellite_stream_test.json"),
+                "cursor": "2026-05-16T10:00:00Z",
+            }
+            MockBuf.return_value = mock_buf
+
+            result = IngestionPipelineService.run_source(
+                {"source_type": "satellite_stream", "collection": "SENTINEL-2", "limit": 25},
+                db_path=db_path,
+            )
+
+        assert result["source_type"] == "satellite_stream"
+        assert result["status"] == "completed"
+        assert result["fetched"] == 5
+        assert result["ingested"] == 5
+        assert result["display_payload"] == str(buffer_dir / "satellite_stream_test.json")
+
+    def test_news_stream_pipeline_completed(self, tmp_path):
+        """Acceptance: news_stream config successfully buffers articles to disk."""
+        db_path = tmp_path / "test.db"
+        buffer_dir = tmp_path / "stream_buffer"
+
+        with patch(
+            "src.ingestion.pipeline.IngestionPipelineService.StreamBufferService"
+        ) as MockBuf:
+            mock_buf = MagicMock()
+            mock_buf.poll_news.return_value = {
+                "source": "news_stream",
+                "fetched": 10,
+                "buffered": 10,
+                "file": str(buffer_dir / "news_stream_test.json"),
+                "cursor": "2026-05-16T12:00:00Z",
+            }
+            MockBuf.return_value = mock_buf
+
+            result = IngestionPipelineService.run_source(
+                {"source_type": "news_stream", "query": "cyber", "limit": 100},
+                db_path=db_path,
+            )
+
+        assert result["source_type"] == "news_stream"
+        assert result["status"] == "completed"
+        assert result["fetched"] == 10
+        assert result["ingested"] == 10
+        assert result["display_payload"] == str(buffer_dir / "news_stream_test.json")
+
+    def test_osint_stream_pipeline_failed_on_fetch_error(self, tmp_path):
+        """If stream fetch fails, status is failed and display_payload is None."""
+        db_path = tmp_path / "test.db"
+
+        with patch(
+            "src.ingestion.pipeline.IngestionPipelineService.StreamBufferService"
+        ) as MockBuf:
+            mock_buf = MagicMock()
+            from src.ingestion.fetchers.osint_stream_fetcher import OSINTStreamFetchError
+            mock_buf.poll_osint.side_effect = OSINTStreamFetchError("rate limited")
+            MockBuf.return_value = mock_buf
+
+            result = IngestionPipelineService.run_source(
+                {"source_type": "osint_stream"},
+                db_path=db_path,
+            )
+
+        assert result["status"] == "failed"
+        assert result["fetched"] == 0
+        assert result["ingested"] == 0
+        assert result["display_payload"] is None
+        assert any("rate limited" in e for e in result["errors"])
