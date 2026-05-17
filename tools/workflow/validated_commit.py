@@ -568,8 +568,16 @@ def validate_working_tree(
         return False, f"BUDGET EXHAUSTED after CodeLens+Coherence ({budget:.0f}s)", metrics
 
     # 3. E2E
+    # Only trigger E2E for actual UI surface changes: templates, JS/CSS/TS assets,
+    # or the kanban API blueprint itself. Pure Python utility files in tools/dashboard/
+    # (e.g. openapi_generator.py, report generators) don't affect board rendering.
+    _UI_EXTS = (".html", ".js", ".ts", ".css", ".jinja", ".jinja2")
+    _KANBAN_API = ("tools/dashboard/api/kanban.py", "icdev/tools/dashboard/api/kanban.py")
     ui_touched = any(
-        f.startswith(("tools/dashboard/", "tools/saas/portal/"))
+        (f.startswith(("tools/dashboard/", "tools/saas/portal/")) and
+         (any(f.endswith(ext) for ext in _UI_EXTS)
+          or "/templates/" in f
+          or f in _KANBAN_API))
         for f in modified_files
     )
     if run_e2e:
