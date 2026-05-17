@@ -374,6 +374,14 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("JISE portal API skipped: %s", exc)
 
+    # Cross-Agency Transfer Audit API — NIST AU-2/AU-9 (append-only logging)
+    try:
+        from tools.dashboard.api.cross_agency_transfer import cross_agency_transfer_api
+        _mount(cross_agency_transfer_api, v1_prefix="/api/v1/cross-agency-transfer")
+        logger.info("cross_agency_transfer_api registered at /api/v1/cross-agency-transfer/")
+    except Exception as exc:
+        logger.warning("cross_agency_transfer_api skipped: %s", exc)
+
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook
@@ -459,4 +467,5 @@ ALL_BLUEPRINTS = [
     ("cpmp_api", "/api/v1/cpmp", True),
     ("proposal_genesis_api", "/api/v1/proposal-genesis", True),
     ("jise_api", "/api/v1/jise", False),
+    ("cross_agency_transfer_api", "/api/v1/cross-agency-transfer", False),
 ]
