@@ -173,7 +173,7 @@ def persist_panel_requirements(panel: PanelResult, turn_number: int, db_path=Non
 
     # Always get a connection — for PostgreSQL backend db_path is ignored by get_connection
     conn = get_connection(db_path=str(db_path)) if db_path else get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
 
     try:
         written = 0

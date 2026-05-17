@@ -72,7 +72,7 @@ def _get_connection(db_path=None):
     # Internal tool — clear any Flask request-scoped RLS context so UPDATE/INSERT
     # statements are not filtered or param-corrupted by the security middleware.
     try:
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
     except Exception:
         pass
     return conn

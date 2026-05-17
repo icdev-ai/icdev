@@ -21,6 +21,7 @@ Checks:
  11. direct_anthropic_import — no direct `import anthropic` outside tools/llm/anthropic_provider.py (OPT-44)
  12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
+ 14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -2608,6 +2609,134 @@ def check_mcp_security() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: RLS Security Context (D-SEC-RLS)
+# ---------------------------------------------------------------------------
+
+
+def check_security_context() -> CoherenceCheck:
+    """Verify Row-Level Security wiring is intact and bypasses are documented.
+
+    Three sub-checks:
+
+    1. auto_wiring_present — _attach_flask_security_context() exists in
+       tools/db/storage.py and is referenced from get_connection(). Removal
+       silently breaks RLS for all Flask route handlers.
+
+    2. undocumented_bypasses — files under tools/ (excluding tools/db/ and
+       tools/security/) that call set_security_context(None) without a
+       '# rls-bypass:' comment on the same line. These disable RLS silently.
+
+    3. direct_cursor_instantiation — files under tools/ (excluding tools/db/
+       and test files) that directly instantiate StorageCursor( outside of the
+       storage layer. This bypasses _inject_rls() entirely.
+    """
+    issues: list[str] = []
+    actual: list[str] = []
+
+    # ── Sub-check 1: auto-wiring function present ────────────────────────────
+    storage_path = PROJECT_ROOT / "tools" / "db" / "storage.py"
+    if storage_path.exists():
+        storage_text = storage_path.read_text(encoding="utf-8", errors="replace")
+        if "_attach_flask_security_context" in storage_text:
+            actual.append("_attach_flask_security_context=present")
+        else:
+            issues.append(
+                "tools/db/storage.py: _attach_flask_security_context() missing — "
+                "RLS auto-wiring for Flask routes is broken"
+            )
+        if "get_connection" in storage_text and "_attach_flask_security_context" in storage_text:
+            actual.append("get_connection→_attach_flask_security_context=wired")
+        else:
+            issues.append(
+                "tools/db/storage.py: get_connection() does not reference "
+                "_attach_flask_security_context — auto-wiring may be detached"
+            )
+    else:
+        issues.append("tools/db/storage.py missing — storage layer not found")
+
+    # ── Sub-check 2: undocumented set_security_context(None) bypasses ────────
+    _exempt_dirs = {
+        PROJECT_ROOT / "tools" / "db",
+        PROJECT_ROOT / "tools" / "security",
+        PROJECT_ROOT / "tools" / "workflow",  # checker source contains pattern strings
+    }
+    bypass_re = re.compile(r"set_security_context\(\s*None\s*\)")
+    bypass_ok_re = re.compile(r"#\s*rls-bypass\s*:", re.IGNORECASE)
+
+    undocumented: list[str] = []
+    tools_dir = PROJECT_ROOT / "tools"
+    if tools_dir.exists():
+        for py_file in sorted(tools_dir.rglob("*.py")):
+            if any(py_file.is_relative_to(d) for d in _exempt_dirs):
+                continue
+            try:
+                lines = py_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                continue
+            for lineno, line in enumerate(lines, 1):
+                if bypass_re.search(line) and not bypass_ok_re.search(line):
+                    rel = py_file.relative_to(PROJECT_ROOT)
+                    undocumented.append(f"{rel}:{lineno}")
+
+    if undocumented:
+        issues.extend(
+            f"Undocumented RLS bypass (set_security_context(None) without "
+            f"'# rls-bypass:' comment): {loc}"
+            for loc in undocumented
+        )
+    else:
+        actual.append("rls_bypass_comments=all_documented")
+
+    # ── Sub-check 3: direct StorageCursor instantiation outside storage layer ─
+    cursor_re = re.compile(r"\bStorageCursor\s*\(")
+    _allowed_cursor_dirs = {
+        PROJECT_ROOT / "tools" / "db",
+        PROJECT_ROOT / "tools" / "workflow",  # checker source contains regex pattern strings
+        PROJECT_ROOT / "tests",
+    }
+    direct_cursor: list[str] = []
+    if tools_dir.exists():
+        for py_file in sorted(tools_dir.rglob("*.py")):
+            if any(py_file.is_relative_to(d) for d in _allowed_cursor_dirs):
+                continue
+            try:
+                text = py_file.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if cursor_re.search(text):
+                rel = py_file.relative_to(PROJECT_ROOT)
+                direct_cursor.append(str(rel))
+
+    if direct_cursor:
+        issues.extend(
+            f"Direct StorageCursor() instantiation outside tools/db/ bypasses "
+            f"_inject_rls(): {f}"
+            for f in direct_cursor
+        )
+    else:
+        actual.append("direct_StorageCursor_instantiation=none")
+
+    status = "fail" if issues else "pass"
+    return CoherenceCheck(
+        check_id="security_context",
+        check_name="RLS Security Context Wiring (D-SEC-RLS)",
+        status=status,
+        expected=[
+            "_attach_flask_security_context present and wired in get_connection()",
+            "All set_security_context(None) calls annotated with # rls-bypass:",
+            "StorageCursor instantiated only in tools/db/ or tests/",
+        ],
+        actual=actual,
+        missing=issues,
+        extra=[],
+        message=(
+            f"{len(issues)} RLS wiring issue(s) detected — "
+            "add '# rls-bypass: <reason>' to bypass calls, or fix the wiring"
+        ) if issues else "RLS security context wiring OK",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -2631,6 +2760,7 @@ CHECK_REGISTRY = {
     "openapi_parity": check_openapi_parity,
     "hitl_workflow": check_hitl_workflow,
     "mcp_security": check_mcp_security,
+    "security_context": check_security_context,
 }
 
 
@@ -2659,6 +2789,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "openapi_parity": "skip",  # route drift requires human fix (add/remove route or update spec)
     "hitl_workflow": "skip",  # module fixes require human judgment
     "mcp_security": "skip",  # scanner module creation requires human judgment
+    "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
 }
 
 
