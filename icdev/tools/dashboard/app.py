@@ -8334,8 +8334,13 @@ def create_app() -> Flask:
             agent_model TEXT, ricoas INTEGER, boost_threshold INTEGER,
             system_prompt TEXT, seed_message TEXT,
             canvas_wiring TEXT, quick_actions TEXT,
-            updated_at TEXT, updated_by TEXT
+            updated_at TEXT, updated_by TEXT,
+            classification TEXT DEFAULT NULL
         )""")
+        try:
+            _conn.execute("ALTER TABLE use_case_overrides ADD COLUMN classification TEXT DEFAULT NULL")
+        except Exception:
+            pass
         _conn.commit()
 
     def _uc_apply_override(_base, _row):

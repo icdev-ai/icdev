@@ -255,8 +255,14 @@ def _uc_init_table(conn):
         agent_model TEXT, ricoas INTEGER, boost_threshold INTEGER,
         system_prompt TEXT, seed_message TEXT,
         canvas_wiring TEXT, quick_actions TEXT,
-        updated_at TEXT, updated_by TEXT
+        updated_at TEXT, updated_by TEXT,
+        classification TEXT DEFAULT NULL
     )""")
+    # Add classification column to existing tables (migration)
+    try:
+        conn.execute("ALTER TABLE use_case_overrides ADD COLUMN classification TEXT DEFAULT NULL")
+    except Exception:
+        pass  # Column already exists
     conn.commit()
 
 
@@ -332,18 +338,14 @@ def get_use_case(use_case_id):
     if not base:
         return jsonify({"error": "Use case not found"}), 404
     row = None
-    _exc_info = None
     try:
         with _gc() as conn:
+            _uc_init_table(conn)
             row = conn.execute(
                 "SELECT * FROM use_case_overrides WHERE id = ?", (use_case_id,)
             ).fetchone()
-    except Exception as _e:
-        _exc_info = str(_e)
-    import logging as _log
-    _log.getLogger("icdev.uc").warning(
-        "get_use_case %s: row=%r exc=%r", use_case_id, bool(row), _exc_info
-    )
+    except Exception:
+        pass
     return jsonify(_uc_apply_override(dict(base), row))
 
 
