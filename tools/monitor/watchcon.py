@@ -10,7 +10,11 @@ Three tiers:
 
 import argparse
 import json
+import logging
+import os
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from tools.db.storage import get_connection
 from tools.monitor.constants import (
@@ -120,7 +124,8 @@ def insert_alert(
         (project_id, severity.lower(), source, title, description, tier),
     )
     conn.commit()
-    return {
+
+    alert = {
         "id": cur.lastrowid,
         "project_id": project_id,
         "severity": severity.lower(),
@@ -130,6 +135,28 @@ def insert_alert(
         "watchcon_tier": tier,
         "watchcon_label": tier_label(tier),
     }
+
+    siem_endpoint = os.getenv("SIEM_ENDPOINT", "")
+    if siem_endpoint:
+        try:
+            from tools.siem_alert_forwarder import forward_alert
+            forward_alert(
+                alert_payload={
+                    "title": title,
+                    "severity": severity.lower(),
+                    "source": source,
+                    "description": description,
+                    "project_id": project_id,
+                    "watchcon_tier": tier,
+                },
+                siem_endpoint=siem_endpoint,
+                siem_token=os.getenv("SIEM_TOKEN", ""),
+                db_path=str(db_path or DB_PATH),
+            )
+        except Exception as exc:
+            logger.warning("SIEM forwarding failed for alert '%s': %s", title, exc)
+
+    return alert
 
 
 def tier_summary(db_path: Path = None) -> dict:
