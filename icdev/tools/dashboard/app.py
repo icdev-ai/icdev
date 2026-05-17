@@ -9533,13 +9533,13 @@ if __name__ == "__main__":
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
         if _ssl_context is not None:
-            socketio.run(app, host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, allow_unsafe_werkzeug=True, threaded=True)  # nosec B104
         else:
-            socketio.run(app, host=HOST, port=args.port, debug=args.debug, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, allow_unsafe_werkzeug=True, threaded=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
         _extra_files = [str(BASE_DIR / "args" / "llm_config.yaml")]
         if _ssl_context is not None:
-            app.run(host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, extra_files=_extra_files)  # nosec B104
+            app.run(host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, extra_files=_extra_files, threaded=True)  # nosec B104
         else:
-            app.run(host=HOST, port=args.port, debug=args.debug, extra_files=_extra_files)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            app.run(host=HOST, port=args.port, debug=args.debug, extra_files=_extra_files, threaded=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
