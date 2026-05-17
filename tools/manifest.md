@@ -691,3 +691,9 @@
 |------|------|-------------|-------|--------|
 | Module Budget Tracker | tools\budget\module_budget_tracker.py | Auto-registered: budget/module_budget_tracker.py | --json | JSON |
 | Osint Privacy Sanitizer | tools\strategos\osint_privacy_sanitizer.py | Auto-registered: strategos/osint_privacy_sanitizer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Data Validator | tools\data_validator.py | Auto-registered: tools/data_validator.py | --json | JSON |

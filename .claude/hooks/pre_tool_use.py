@@ -443,6 +443,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cross_agency_transfers",
         # IL5 data ingestion audit (NIST AU-2, AU-12 — 30-second SLA display pipeline)
         "il5_ingestion_log",
+        # Conflict Mesh — ML escalation predictions (migration 158, NIST AU-2, AU-12 — append-only)
+        "conflict_predictions",
     ]
 
     if tool_name == "Bash":
