@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+"""Application factory — instantiates and starts background services at startup."""
+
+from __future__ import annotations
+
+import logging
+
+from services import BudgetMonitor, ThrottleController, start_budget_services
+
+logger = logging.getLogger("icdev.app_factory")
+
+_budget_monitor: BudgetMonitor | None = None
+_throttle_controller: ThrottleController | None = None
+
+
+def create_app() -> dict:
+    """Initialize and start budget monitor and throttle controller as background tasks."""
+    global _budget_monitor, _throttle_controller
+
+    _throttle_controller = start_budget_services()
+    _budget_monitor = _throttle_controller._monitor
+
+    logger.info("App factory: budget monitor and throttle controller started")
+    return {
+        "budget_monitor": _budget_monitor,
+        "throttle_controller": _throttle_controller,
+    }
+
+
+def get_budget_monitor() -> BudgetMonitor | None:
+    return _budget_monitor
+
+
+def get_throttle_controller() -> ThrottleController | None:
+    return _throttle_controller
