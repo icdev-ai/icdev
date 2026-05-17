@@ -70,6 +70,22 @@
 }
 .ib-rung-tip { font-size:9px; }
 #ib-run-result { display:none;margin-top:8px; }
+
+/* Narrative modal prose styles */
+#narrative-body h1,#narrative-body h2,#narrative-body h3 {
+  color:var(--ib-amber);font-weight:700;margin:.9em 0 .4em;
+}
+#narrative-body h1 { font-size:15px; }
+#narrative-body h2 { font-size:13px;border-bottom:1px solid var(--ib-border);padding-bottom:4px; }
+#narrative-body h3 { font-size:12px; }
+#narrative-body p  { margin:.35em 0;line-height:1.65; }
+#narrative-body ul,#narrative-body ol { padding-left:18px;margin:.35em 0; }
+#narrative-body li { margin:.2em 0; }
+#narrative-body strong { color:#e2e8f0; }
+#narrative-body em    { color:#94a3b8; }
+#narrative-body hr    { border:none;border-top:1px solid var(--ib-border);margin:.8em 0; }
+#narrative-body code  { background:#0d1f2d;padding:1px 5px;border-radius:3px;font-size:11px; }
+#narrative-body pre   { background:#0d1f2d;padding:10px 14px;border-radius:6px;overflow-x:auto; }
 </style>
 {% endblock %}
 
@@ -285,20 +301,30 @@
         style="margin-left:auto;background:none;border:none;color:var(--ib-dim);font-size:18px;cursor:pointer">&#10005;</button>
     </div>
     <div id="narrative-body"
-         style="padding:16px 20px;overflow-y:auto;font-size:12px;font-family:monospace;
-                white-space:pre-wrap;color:var(--ib-text);line-height:1.6">
+         style="padding:16px 20px;overflow-y:auto;font-size:12px;font-family:inherit;
+                color:var(--ib-text);line-height:1.6">
     </div>
   </div>
 </div>
 
 {# Brief data for JS ── #}
+<script src="/static/vendor/marked/marked.min.js"></script>
 <script>
 const BRIEFS_DATA = {{ briefs_json | safe }};
+
+function renderMarkdown(md) {
+  if (typeof marked !== "undefined") {
+    try { return marked.parse(md); } catch(e) {}
+  }
+  // Fallback: escape HTML and wrap in pre
+  const escaped = md.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  return `<pre style="white-space:pre-wrap">${escaped}</pre>`;
+}
 
 function showNarrative(idx) {
   const b = BRIEFS_DATA[idx];
   if (!b) return;
-  document.getElementById("narrative-body").textContent = b.narrative_md || "(no narrative)";
+  document.getElementById("narrative-body").innerHTML = renderMarkdown(b.narrative_md || "(no narrative)");
   document.getElementById("narrative-modal").style.display = "flex";
 }
 
@@ -324,7 +350,7 @@ async function runBrief() {
       msg.textContent = `✓ Brief generated — WRI: ${data.wri?.toFixed(1)}, Tier: ${data.threat_tier}, P(Esc): ${(data.p_war_posterior*100)?.toFixed(1)}% — opening report…`;
       // Show the narrative immediately in the modal
       const narrative = data.narrative_md || "(no narrative generated)";
-      document.getElementById("narrative-body").textContent = narrative;
+      document.getElementById("narrative-body").innerHTML = renderMarkdown(narrative);
       // Flag modal to reload page on close so KPIs/table refresh
       document.getElementById("narrative-modal").dataset.reloadOnClose = "1";
       document.getElementById("narrative-modal").style.display = "flex";
