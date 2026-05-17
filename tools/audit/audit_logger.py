@@ -5,11 +5,14 @@ No UPDATE or DELETE operations — all entries are immutable."""
 
 import argparse
 import json
-from tools.db.storage import get_connection
+from datetime import datetime, timezone
 from pathlib import Path
+
+from tools.db.storage import get_connection
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"
+ATOMIC_FALLBACK_PATH = BASE_DIR / "data" / "failed_audit_entries.jsonl"
 
 try:
     from tools.compat.db_utils import get_db_connection
@@ -267,8 +270,19 @@ def log_event(
     ip_address: str = None,
     session_id: str = None,
     db_path: Path = None,
+    conn=None,
+    raise_on_error: bool = False,
 ) -> int:
-    """Write an immutable audit trail entry. Returns the entry ID."""
+    """Write an immutable audit trail entry. Returns the entry ID.
+
+    Args:
+        conn: Optional existing DB connection. When provided, the connection
+            is NOT closed by this function, allowing the caller to manage
+            the transaction scope (e.g. atomic blocks).
+        raise_on_error: When True, re-raise database errors instead of
+            silently returning -1. Use for critical-path writes (e.g. PIR
+            alerts) where silent loss violates data integrity.
+    """
     if event_type not in VALID_EVENT_TYPES:
         raise ValueError(f"Invalid event_type '{event_type}'. Valid: {VALID_EVENT_TYPES}")
 
@@ -281,14 +295,19 @@ def log_event(
         except ImportError:
             pass
 
-    if db_path is not None:
-        # Explicit db_path provided (e.g. test isolation): use SQLite directly
-        import sqlite3 as _sqlite3
-        conn = _sqlite3.connect(str(db_path))
-        conn.row_factory = _sqlite3.Row
-        placeholder = "?"
+    close_conn = conn is None
+    if close_conn:
+        if db_path is not None:
+            # Explicit db_path provided (e.g. test isolation): use SQLite directly
+            import sqlite3 as _sqlite3
+            conn = _sqlite3.connect(str(db_path))
+            conn.row_factory = _sqlite3.Row
+            placeholder = "?"
+        else:
+            conn = get_connection()
+            from tools.db.storage import sql_placeholder as _ph
+            placeholder = _ph(conn)
     else:
-        conn = get_connection()
         from tools.db.storage import sql_placeholder as _ph
         placeholder = _ph(conn)
 
@@ -314,16 +333,98 @@ def log_event(
         conn.commit()
         entry_id = c.lastrowid
     except Exception:
-        # Audit logging is non-fatal — never let an audit write failure break
-        # business logic (e.g. FK violation when project_id not in projects table).
+        # Audit logging is non-fatal by default — never let an audit write
+        # failure break business logic (e.g. FK violation when project_id not
+        # in projects table).  For critical-path writes raise_on_error=True
+        # surfaces the failure so alerts are not silently lost.
         try:
             conn.rollback()
         except Exception:
             pass
+        if raise_on_error:
+            raise
         entry_id = -1
     finally:
-        conn.close()
+        if close_conn:
+            conn.close()
     return entry_id
+
+
+def atomic_log_event(
+    event_type: str,
+    actor: str,
+    action: str,
+    project_id: str = None,
+    details: dict = None,
+    affected_files: list = None,
+    classification: str = "CUI",
+    ip_address: str = None,
+    session_id: str = None,
+    db_path: Path = None,
+    fallback_path: Path = None,
+) -> dict:
+    """Atomically write an audit trail entry with durable fallback.
+
+    For SQLite, opens the connection with BEGIN IMMEDIATE to prevent
+    writer starvation and ensure the write is truly atomic.  If the
+    database write fails after rollback, the event payload is appended
+    to a dead-letter JSONL file so alerts are never silently lost.
+
+    Returns:
+        {"status": "persisted", "entry_id": int} on success,
+        {"status": "fallback", "fallback_path": str, "error": str} on failure.
+    """
+    fallback_path = fallback_path or ATOMIC_FALLBACK_PATH
+    payload = {
+        "event_type": event_type,
+        "actor": actor,
+        "action": action,
+        "project_id": project_id,
+        "details": details,
+        "affected_files": affected_files,
+        "classification": classification,
+        "ip_address": ip_address,
+        "session_id": session_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    conn = None
+    try:
+        if db_path is not None:
+            import sqlite3 as _sqlite3
+            conn = _sqlite3.connect(str(db_path))
+            conn.row_factory = _sqlite3.Row
+            conn.execute("BEGIN IMMEDIATE")
+        entry_id = log_event(
+            event_type=event_type,
+            actor=actor,
+            action=action,
+            project_id=project_id,
+            details=details,
+            affected_files=affected_files,
+            classification=classification,
+            ip_address=ip_address,
+            session_id=session_id,
+            db_path=None,
+            conn=conn,
+            raise_on_error=True,
+        )
+        return {"status": "persisted", "entry_id": entry_id}
+    except Exception as exc:
+        error = str(exc)
+        try:
+            fallback_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(fallback_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(payload, default=str) + "\n")
+        except Exception as write_err:
+            error += f" | fallback_write_failed: {write_err}"
+        return {"status": "fallback", "fallback_path": str(fallback_path), "error": error}
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
 def main():

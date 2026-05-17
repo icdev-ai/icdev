@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import logging
 import os
 import sys
 import time
@@ -22,11 +23,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+logger = logging.getLogger("icdev.notification_gateway")
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.audit.audit_logger import atomic_log_event  # noqa: E402
 
 
 def _utcnow_iso() -> str:
@@ -180,6 +184,13 @@ class NotificationGateway:
             "deliveries": {},
         }
 
+        # Write PIR alerts to the secure log store (audit_trail) regardless
+        # of whether external notification delivery is enabled.
+        if event_type == "pir_alert":
+            result["secure_log"] = self._secure_log(
+                event_type, severity, title, metadata
+            )
+
         if not self.enabled:
             result["skipped"] = "notifications_disabled"
             return result
@@ -264,6 +275,54 @@ class NotificationGateway:
             conn.close()
         except Exception:
             pass  # Best-effort — never block on audit
+
+    def _secure_log(
+        self,
+        event_type: str,
+        severity: str,
+        title: str,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Write PIR alert to the secure audit trail (audit_trail) atomically.
+
+        Satisfies NIST 800-53 AU-2/AU-9 by persisting alert generation
+        events to the immutable append-only audit store.
+        atomic_log_event wraps each write in BEGIN IMMEDIATE (SQLite)
+        or an explicit transaction block, and guarantees that if the DB
+        write fails the payload is captured to a dead-letter JSONL file
+        so alerts are never silently discarded.
+        """
+        last_result = None
+        for attempt in range(3):
+            result = atomic_log_event(
+                event_type="pir_alert_generated",
+                actor="notification_gateway",
+                action=title,
+                details={
+                    "severity": severity,
+                    "event_type": event_type,
+                    **(metadata or {}),
+                },
+                classification="CUI",
+            )
+            last_result = result
+            if result.get("status") == "persisted":
+                return result
+            logger.warning(
+                "Secure log write attempt %d/%d failed: %s",
+                attempt + 1,
+                3,
+                result.get("error", "unknown"),
+            )
+            if attempt < 2:
+                time.sleep(0.1 * (attempt + 1))
+        logger.error(
+            "Secure log write FAILED after 3 attempts for event_type=%s title=%s: %s",
+            event_type,
+            title,
+            last_result.get("error", "unknown"),
+        )
+        return last_result
 
 
 # ---------------------------------------------------------------------------

@@ -24,6 +24,7 @@ from services.ingestion.hook_transfer import (  # noqa: E402
     complete_transfer,
     fail_transfer,
     intercept_transfer_request,
+    run_transfer,
 )
 
 # ---------------------------------------------------------------------------
@@ -298,3 +299,117 @@ class TestFailTransfer:
             error_code="AUTH_401",
             data_classification="CUI",
         )
+
+
+# ---------------------------------------------------------------------------
+# End-to-end pipeline tests — audit entry created before transfer completes
+# ---------------------------------------------------------------------------
+
+
+class TestRunTransfer:
+    """Verify that run_transfer invokes the audit trail writer before the
+    transfer completes and that the audit entry is created."""
+
+    def test_valid_request_logs_completed_before_returning(self, valid_request):
+        """A valid request runs the pipeline and logs completed before return."""
+        with patch("services.ingestion.hook_transfer.CrossAgencyTransferLogger") as MockLogger:
+            mock_instance = MockLogger.return_value
+            mock_instance.log_initiated.return_value = "evt-init-001"
+            mock_instance.log_completed.return_value = "evt-comp-001"
+
+            result = run_transfer(valid_request)
+
+        assert result["success"] is True
+        assert result["transfer_id"] == "xfer-001"
+        assert result["initiated_event_id"] == "evt-init-001"
+        assert result["event_id"] == "evt-comp-001"
+        assert result["error"] is None
+
+        # log_initiated called first (validation)
+        mock_instance.log_initiated.assert_called_once()
+        # log_completed called before returning
+        mock_instance.log_completed.assert_called_once_with(
+            transfer_id="xfer-001",
+            source_agency="DoD",
+            target_agency="DHS",
+            actor="alice",
+            bytes_transferred=None,
+            checksum=None,
+            duration_ms=None,
+            data_classification="CUI",
+        )
+        mock_instance.log_failed.assert_not_called()
+
+    def test_valid_request_with_custom_transfer_fn(self, valid_request):
+        """Custom transfer_fn metrics are forwarded to log_completed."""
+        def _fake_transfer(req):
+            return {"bytes_transferred": 4096, "checksum": "sha256:deadbeef", "duration_ms": 42}
+
+        with patch("services.ingestion.hook_transfer.CrossAgencyTransferLogger") as MockLogger:
+            mock_instance = MockLogger.return_value
+            mock_instance.log_initiated.return_value = "evt-init-002"
+            mock_instance.log_completed.return_value = "evt-comp-002"
+
+            result = run_transfer(valid_request, transfer_fn=_fake_transfer)
+
+        assert result["success"] is True
+        assert result["event_id"] == "evt-comp-002"
+        mock_instance.log_completed.assert_called_once_with(
+            transfer_id="xfer-001",
+            source_agency="DoD",
+            target_agency="DHS",
+            actor="alice",
+            bytes_transferred=4096,
+            checksum="sha256:deadbeef",
+            duration_ms=42,
+            data_classification="CUI",
+        )
+
+    def test_invalid_request_rejected_without_running_transfer(self, valid_request):
+        """Validation failure aborts before transfer execution and logs failed."""
+        del valid_request["actor"]
+
+        with patch("services.ingestion.hook_transfer.CrossAgencyTransferLogger") as MockLogger:
+            mock_instance = MockLogger.return_value
+            mock_instance.log_failed.return_value = "evt-fail-003"
+
+            result = run_transfer(valid_request)
+
+        assert result["success"] is False
+        assert result["transfer_id"] == "xfer-001"
+        assert result["event_id"] == "evt-fail-003"
+        assert "Missing required fields" in result["error"]
+        # log_initiated is NOT called for rejected requests; log_failed is
+        mock_instance.log_initiated.assert_not_called()
+        mock_instance.log_failed.assert_called_once()
+        mock_instance.log_completed.assert_not_called()
+
+    def test_transfer_fn_exception_logs_failed(self, valid_request):
+        """When transfer_fn raises, a failed audit entry is created."""
+        def _explosive_transfer(req):
+            raise RuntimeError("network partition")
+
+        with patch("services.ingestion.hook_transfer.CrossAgencyTransferLogger") as MockLogger:
+            mock_instance = MockLogger.return_value
+            mock_instance.log_initiated.return_value = "evt-init-004"
+            mock_instance.log_failed.return_value = "evt-fail-004"
+
+            result = run_transfer(valid_request, transfer_fn=_explosive_transfer)
+
+        assert result["success"] is False
+        assert result["transfer_id"] == "xfer-001"
+        assert result["initiated_event_id"] == "evt-init-004"
+        assert result["event_id"] == "evt-fail-004"
+        assert "network partition" in result["error"]
+
+        mock_instance.log_initiated.assert_called_once()
+        mock_instance.log_failed.assert_called_once_with(
+            transfer_id="xfer-001",
+            source_agency="DoD",
+            target_agency="DHS",
+            actor="alice",
+            rejection_reason="network partition",
+            error_code="TRANSFER_EXEC_ERROR",
+            data_classification="CUI",
+        )
+        mock_instance.log_completed.assert_not_called()
