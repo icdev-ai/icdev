@@ -77,23 +77,82 @@ def _poll_feed(
 ) -> Dict[str, Any]:
     """Fetch items from the publication feed and persist new ones.
 
-    Delegates the full fetch → adapter → display flow to
-    ``IngestionPipelineService`` so IL5 ingestion runs through the
-    canonical pipeline rather than bypassing it.
+    Uses ``urllib.request`` (stdlib) to poll the feed endpoint, parses
+    the JSON response, and delegates persistence to
+    ``ingest_il5_event`` so IL5 ingestion is self-contained.
 
     Returns a summary dict: {fetched, ingested, skipped, errors}.
     """
-    from src.ingestion.pipeline.IngestionPipelineService import IngestionPipelineService
+    import json as _json
+    import urllib.request as _request
+    import urllib.error as _error
 
-    result = IngestionPipelineService.trigger_il5(
-        feed_url=feed_url,
-        limit=_DEFAULT_LIMIT,
-        db_path=db_path,
-    )
+    from tools.il5.ingestion import ingest_il5_event
+
+    fetched = 0
+    ingested = 0
+    errors: List[str] = []
+
+    try:
+        req = _request.Request(
+            feed_url,
+            headers={"Accept": "application/json"},
+            method="GET",
+        )
+        with _request.urlopen(req, timeout=timeout) as resp:
+            payload = _json.loads(resp.read().decode("utf-8"))
+    except _error.HTTPError as exc:
+        errors.append(f"HTTP {exc.code}: {exc.reason}")
+        return {
+            "fetched": 0,
+            "ingested": 0,
+            "skipped": 0,
+            "errors": errors,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    except Exception as exc:
+        errors.append(str(exc))
+        return {
+            "fetched": 0,
+            "ingested": 0,
+            "skipped": 0,
+            "errors": errors,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+    records: List[Dict[str, Any]] = payload if isinstance(payload, list) else []
+    fetched = len(records)
+
+    for rec in records:
+        source_id = rec.get("source_id") or rec.get("id")
+        content = rec.get("content") or rec.get("payload") or ""
+        if not source_id or not content:
+            continue
+        published_raw = rec.get("source_published_at") or rec.get("published_at")
+        source_published_at = None
+        if published_raw:
+            try:
+                source_published_at = datetime.fromisoformat(
+                    str(published_raw).replace("Z", "+00:00")
+                )
+            except ValueError:
+                pass
+        try:
+            ingest_il5_event(
+                str(source_id),
+                str(content),
+                source_published_at=source_published_at,
+                metadata=rec.get("metadata"),
+                db_path=db_path,
+            )
+            ingested += 1
+        except Exception as exc:
+            errors.append(str(exc))
+
     return {
-        "fetched": result.get("fetched", 0),
-        "ingested": result.get("ingested", 0),
-        "skipped": 0,
-        "errors": result.get("errors", []),
+        "fetched": fetched,
+        "ingested": ingested,
+        "skipped": fetched - ingested,
+        "errors": errors,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
