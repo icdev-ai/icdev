@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Predictive Intelligence Briefings — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Intel Brief Dashboard — dark military theme ── */
+:root {
+  --ib-bg:      #0a1014;
+  --ib-surface: #111820;
+  --ib-card:    #162030;
+  --ib-border:  #1e3040;
+  --ib-amber:   #f59e0b;
+  --ib-red:     #ef4444;
+  --ib-green:   #22c55e;
+  --ib-cyan:    #22d3ee;
+  --ib-text:    #d1e8ff;
+  --ib-dim:     #6b8fb0;
+}
+.ib-header {
+  display:flex;align-items:center;gap:12px;padding:14px 20px;
+  background:var(--ib-bg);border-bottom:1px solid var(--ib-border);
+}
+.ib-title { font-size:15px;font-weight:700;color:var(--ib-amber);text-transform:uppercase;letter-spacing:.08em; }
+.ib-badge { background:#c8960c;color:#000;font-size:10px;font-weight:800;padding:2px 8px;border-radius:2px; }
+.ib-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;padding:16px; }
+.ib-kpi {
+  background:var(--ib-card);border:1px solid var(--ib-border);border-radius:8px;
+  padding:14px 16px;display:flex;flex-direction:column;gap:4px;
+}
+.ib-kpi-label { font-size:10px;font-weight:700;color:var(--ib-dim);text-transform:uppercase;letter-spacing:.07em; }
+.ib-kpi-value { font-size:26px;font-weight:800;color:var(--ib-text);font-variant-numeric:tabular-nums; }
+.ib-kpi-sub { font-size:11px;color:var(--ib-dim); }
+.ib-section { padding:0 16px 16px; }
+.ib-section-title {
+  font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
+  color:var(--ib-amber);margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--ib-border);
+}
+.ib-table { width:100%;border-collapse:collapse;font-size:12px; }
+.ib-table th {
+  background:rgba(0,0,0,.3);padding:7px 12px;text-align:left;
+  color:var(--ib-dim);font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+}
+.ib-table td { padding:8px 12px;border-bottom:1px solid var(--ib-border);color:var(--ib-text); }
+.ib-table tr:last-child td { border-bottom:none; }
+.ib-table tr:hover td { background:rgba(255,255,255,.03); }
+.tier-LOW      { color:#22c55e; }
+.tier-MEDIUM   { color:#f59e0b; }
+.tier-HIGH     { color:#f97316; }
+.tier-CRITICAL { color:#ef4444;font-weight:700; }
+.ib-bar-bg { background:var(--ib-border);border-radius:3px;height:6px;margin-top:4px; }
+.ib-bar    { height:6px;border-radius:3px;transition:width .4s; }
+.ib-btn {
+  padding:.45rem 1rem;border:none;border-radius:6px;cursor:pointer;
+  font-size:13px;font-weight:600;letter-spacing:.02em;transition:opacity .15s;
+}
+.ib-btn:hover { opacity:.85; }
+.ib-btn-primary { background:var(--ib-amber);color:#000; }
+.ib-btn-secondary { background:var(--ib-surface);border:1px solid var(--ib-border);color:var(--ib-text); }
+.ib-forecast-card {
+  background:var(--ib-card);border:1px solid var(--ib-border);border-radius:8px;
+  padding:12px 16px;flex:1;min-width:140px;
+}
+.ib-forecast-horizon { font-size:10px;font-weight:700;text-transform:uppercase;color:var(--ib-dim);letter-spacing:.08em; }
+.ib-forecast-wri { font-size:22px;font-weight:800;color:var(--ib-text);margin:4px 0; }
+.ib-escalation-ladder { display:flex;gap:6px;align-items:center;margin:8px 0; }
+.ib-rung {
+  flex:1;height:8px;border-radius:2px;
+  position:relative;cursor:default;
+}
+.ib-rung-tip { font-size:9px; }
+#ib-run-result { display:none;margin-top:8px; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+{# ── Header ── #}
+<div class="ib-header">
+  <span class="ib-title">&#9670; Predictive Intelligence Briefings</span>
+  <span class="ib-badge">CUI // SP-CTI</span>
+  <span style="font-size:11px;color:var(--ib-dim);margin-left:4px">OSINT Data Mesh · Real-Time Conflict Monitoring</span>
+  <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+    <button class="ib-btn ib-btn-secondary" onclick="location.reload()">&#8635; Refresh</button>
+    <button class="ib-btn ib-btn-primary" id="btn-run-brief" onclick="runBrief()">
+      &#9889; Generate Brief
+    </button>
+  </div>
+</div>
+
+{# ── Run result banner ── #}
+<div id="ib-run-result" class="card" style="border-radius:0;border:none;border-bottom:1px solid var(--ib-border);padding:10px 20px;background:#162030">
+  <span id="ib-run-msg" style="font-size:13px;color:var(--ib-text)"></span>
+</div>
+
+{# ── KPI Grid ── #}
+<div class="ib-grid">
+
+  <div class="ib-kpi">
+    <span class="ib-kpi-label">PMESII-PT WRI</span>
+    <span class="ib-kpi-value" id="kpi-wri">
+      {% if latest_brief %}{{ latest_brief.sio_composite_score | round(1) }}{% else %}—{% endif %}
+    </span>
+    <span class="ib-kpi-sub">Weighted Risk Index (0–100)</span>
+    <div class="ib-bar-bg" style="margin-top:8px">
+      <div class="ib-bar" id="wri-bar"
+           style="width:{% if latest_brief %}{{ [latest_brief.sio_composite_score,100]|min }}%{% else %}0%{% endif %};
+                  background:{% if latest_brief and latest_brief.sio_composite_score >= 75 %}#ef4444{% elif latest_brief and latest_brief.sio_composite_score >= 55 %}#f97316{% elif latest_brief and latest_brief.sio_composite_score >= 30 %}#f59e0b{% else %}#22c55e{% endif %}">
+      </div>
+    </div>
+  </div>
+
+  <div class="ib-kpi">
+    <span class="ib-kpi-label">Threat Tier</span>
+    <span class="ib-kpi-value tier-{% if latest_brief %}{{ latest_brief.threat_tier }}{% else %}LOW{% endif %}" style="font-size:20px">
+      {% if latest_brief %}{{ latest_brief.threat_tier }}{% else %}—{% endif %}
+    </span>
+    <span class="ib-kpi-sub">
+      {% if latest_brief %}
+        IW: {% if latest_brief.iw_triggered %}<span style="color:#ef4444">ACTIVE</span>{% else %}<span style="color:#22c55e">Clear</span>{% endif %}
+      {% else %}No data{% endif %}
+    </span>
+  </div>
+
+  <div class="ib-kpi">
+    <span class="ib-kpi-label">P(Escalation)</span>
+    <span class="ib-kpi-value">
+      {% if latest_brief %}{{ (latest_brief.p_war_posterior * 100) | round(1) }}%{% else %}—{% endif %}
+    </span>
+    <span class="ib-kpi-sub">Bayesian posterior</span>
+  </div>
+
+  <div class="ib-kpi">
+    <span class="ib-kpi-label">Decision-to-Impact</span>
+    <span class="ib-kpi-value">
+      {% if latest_brief and latest_brief.dti_score %}{{ latest_brief.dti_score | round(0) | int }}h{% else %}—{% endif %}
+    </span>
+    <span class="ib-kpi-sub">Estimated action window</span>
+  </div>
+
+  <div class="ib-kpi">
+    <span class="ib-kpi-label">Signals (24h)</span>
+    <span class="ib-kpi-value">
+      {% if latest_brief %}{{ latest_brief.signal_count_24h }}{% else %}—{% endif %}
+    </span>
+    <span class="ib-kpi-sub">
+      Velocity:
+      {% if latest_brief and latest_brief.signal_velocity > 0 %}
+        <span style="color:#22c55e">+{{ latest_brief.signal_velocity | round(1) }}%</span>
+      {% elif latest_brief %}
+        <span style="color:#ef4444">{{ latest_brief.signal_velocity | round(1) }}%</span>
+      {% else %}—{% endif %}
+    </span>
+  </div>
+
+  <div class="ib-kpi">
+    <span class="ib-kpi-label">Goldstein Avg</span>
+    <span class="ib-kpi-value" style="font-size:22px">
+      {% if latest_brief %}{{ latest_brief.goldstein_avg | round(2) }}{% else %}—{% endif %}
+    </span>
+    <span class="ib-kpi-sub">Conflict tone (neg = hostile)</span>
+  </div>
+
+</div>
+
+{# ── Escalation Ladder ── #}
+<div class="ib-section">
+  <div class="ib-section-title">Escalation Ladder</div>
+  <div style="display:flex;gap:4px;align-items:stretch">
+    {% set rungs = [
+      ("Routine",    "#10b981", 1),
+      ("Elevated",   "#22d3ee", 2),
+      ("Heightened", "#f59e0b", 3),
+      ("Crisis",     "#f97316", 4),
+      ("Imminent",   "#ef4444", 5)
+    ] %}
+    {% for label, color, rung in rungs %}
+    <div style="flex:1;background:{{ color }}{% if not latest_brief or latest_brief.iw_triggered == 0 %}22{% else %}{% if loop.index <= (latest_brief.sio_composite_score / 25 | int + 1) %}55{% else %}22{% endif %}{% endif %};
+                border:1px solid {{ color }}{% if latest_brief and (loop.index * 20) <= latest_brief.sio_composite_score %}99{% else %}44{% endif %};
+                border-radius:4px;padding:8px;text-align:center;">
+      <div style="font-size:10px;font-weight:700;color:{{ color }};text-transform:uppercase;letter-spacing:.06em">{{ label }}</div>
+      <div style="font-size:9px;color:#ffffff66">Rung {{ rung }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── Multi-Horizon Forecasts ── #}
+{% if latest_brief and (latest_brief.forecast_24h_json or latest_brief.forecast_72h_json or latest_brief.forecast_7d_json) %}
+<div class="ib-section">
+  <div class="ib-section-title">Multi-Horizon Forecasts</div>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    {% set horizons = [
+      ("24h",  latest_brief.forecast_24h_json),
+      ("72h",  latest_brief.forecast_72h_json),
+      ("7d",   latest_brief.forecast_7d_json)
+    ] %}
+    {% for label, fc_json in horizons %}
+    {% if fc_json %}
+    {% set fc = fc_json if fc_json is mapping else {} %}
+    <div class="ib-forecast-card">
+      <div class="ib-forecast-horizon">{{ label }} Forecast</div>
+      <div class="ib-forecast-wri">{{ (fc.wri or 0) | round(1) }}</div>
+      <div style="font-size:11px;margin-bottom:4px">
+        <span class="tier-{{ fc.tier or 'LOW' }}">{{ fc.tier or '—' }}</span>
+        &nbsp;&middot;&nbsp;
+        <span style="color:var(--ib-dim)">{{ ((fc.p_war or 0) * 100) | round(1) }}% P(Esc)</span>
+      </div>
+      <div style="font-size:11px;color:var(--ib-dim)">
+        Trend: <span style="color:{% if fc.trend == 'escalating' %}#ef4444{% elif fc.trend == 'de-escalating' %}#22c55e{% else %}#f59e0b{% endif %}">
+          {{ fc.trend or 'stable' }}
+        </span>
+      </div>
+      <div style="font-size:10px;color:var(--ib-dim);margin-top:4px">Confidence: {{ ((fc.confidence or 0.5) * 100) | round(0) | int }}%</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Recent Leadership Briefs ── #}
+<div class="ib-section">
+  <div class="ib-section-title" style="display:flex;align-items:center;gap:8px">
+    Recent Leadership Briefs
+    <a href="/strategos/briefs" style="font-size:10px;color:var(--ib-dim);margin-left:auto">View all intelligence briefs &#8594;</a>
+  </div>
+
+  {% if briefs %}
+  <div style="background:var(--ib-card);border:1px solid var(--ib-border);border-radius:8px;overflow:hidden">
+    <table class="ib-table">
+      <thead>
+        <tr>
+          <th>Theater</th>
+          <th>WRI</th>
+          <th>Tier</th>
+          <th>P(Esc)</th>
+          <th>DTI</th>
+          <th>Signals</th>
+          <th>IW</th>
+          <th>Generated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in briefs %}
+        <tr>
+          <td>{{ b.theater | upper }}</td>
+          <td style="font-weight:600">{{ (b.sio_composite_score or 0) | round(1) }}</td>
+          <td class="tier-{{ b.threat_tier or 'LOW' }}">{{ b.threat_tier or '—' }}</td>
+          <td>{{ ((b.p_war_posterior or 0) * 100) | round(1) }}%</td>
+          <td>{{ (b.dti_score or 0) | round(0) | int }}h</td>
+          <td>{{ b.signal_count_24h or 0 }}</td>
+          <td>{% if b.iw_triggered %}<span style="color:#ef4444">&#9888;</span>{% else %}<span style="color:#22c55e">&#10003;</span>{% endif %}</td>
+          <td style="color:var(--ib-dim);font-size:11px;font-family:monospace">{{ b.generated_at[:16] if b.generated_at else '—' }}</td>
+          <td>
+            <button onclick="showNarrative({{ loop.index0 }})"
+              style="padding:3px 8px;background:var(--ib-surface);border:1px solid var(--ib-border);
+                     border-radius:4px;color:var(--ib-text);font-size:10px;cursor:pointer">
+              View
+            </button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="background:var(--ib-card);border:1px solid var(--ib-border);border-radius:8px;
+              padding:32px;text-align:center;color:var(--ib-dim)">
+    No leadership briefs generated yet.
+    Click <strong style="color:var(--ib-amber)">Generate Brief</strong> to run the predictive pipeline.
+  </div>
+  {% endif %}
+</div>
+
+{# ── Narrative Modal ── #}
+<div id="narrative-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:1000;
+     align-items:center;justify-content:center">
+  <div style="background:var(--ib-surface);border:1px solid var(--ib-border);border-radius:10px;
+              width:min(800px,95vw);max-height:85vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid var(--ib-border)">
+      <span style="font-weight:700;color:var(--ib-amber)">Leadership Brief — Narrative</span>
+      <button onclick="document.getElementById('narrative-modal').style.display='none'"
+        style="margin-left:auto;background:none;border:none;color:var(--ib-dim);font-size:18px;cursor:pointer">&#10005;</button>
+    </div>
+    <div id="narrative-body"
+         style="padding:16px 20px;overflow-y:auto;font-size:12px;font-family:monospace;
+                white-space:pre-wrap;color:var(--ib-text);line-height:1.6">
+    </div>
+  </div>
+</div>
+
+{# Brief data for JS ── #}
+<script>
+const BRIEFS_DATA = {{ briefs_json | safe }};
+
+function showNarrative(idx) {
+  const b = BRIEFS_DATA[idx];
+  if (!b) return;
+  document.getElementById("narrative-body").textContent = b.narrative_md || "(no narrative)";
+  document.getElementById("narrative-modal").style.display = "flex";
+}
+
+async function runBrief() {
+  const btn = document.getElementById("btn-run-brief");
+  const banner = document.getElementById("ib-run-result");
+  const msg = document.getElementById("ib-run-msg");
+  btn.disabled = true;
+  btn.textContent = "Running…";
+  banner.style.display = "block";
+  msg.style.color = "#f59e0b";
+  msg.textContent = "Executing predictive pipeline — analyzing OSINT data mesh…";
+  try {
+    const theater = "{{ theater | default('global') }}";
+    const resp = await fetch("/api/strategos/intel-brief/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({theater}),
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      msg.style.color = "#22c55e";
+      msg.textContent = `✓ Brief generated — WRI: ${data.wri?.toFixed(1)}, Tier: ${data.threat_tier}, P(Esc): ${(data.p_war_posterior*100)?.toFixed(1)}%`;
+      setTimeout(() => location.reload(), 2000);
+    } else {
+      msg.style.color = "#ef4444";
+      msg.textContent = "Error: " + (data.error || "Unknown error");
+    }
+  } catch (e) {
+    msg.style.color = "#ef4444";
+    msg.textContent = "Request failed: " + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "⚡ Generate Brief";
+  }
+}
+
+// Close modal on backdrop click
+document.getElementById("narrative-modal").addEventListener("click", function(e) {
+  if (e.target === this) this.style.display = "none";
+});
+</script>
+
+{% endblock %}

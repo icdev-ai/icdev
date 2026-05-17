@@ -1474,7 +1474,7 @@
         var frameworks = (options.frameworks || cfg.wizardFrameworks || '').split(',').filter(function (f) { return f.trim(); });
 
         // Step 1: Create intake session
-        fetch(INTAKE_API + '/session', {
+        return fetch(INTAKE_API + '/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1491,13 +1491,13 @@
         .then(function (data) {
             if (data.error) {
                 appendMessage({ role: 'system', content: 'Error creating intake session: ' + data.error });
-                return;
+                return null;
             }
             var intakeSessionId = data.session_id;
             var title = options.title || 'Intake: ' + goal;
 
             // Step 2: Create chat context
-            chatApi('POST', '/contexts', {
+            return chatApi('POST', '/contexts', {
                 user_id: _userId,
                 tenant_id: '',
                 title: title,
@@ -1507,7 +1507,7 @@
             }).then(function (ctx) {
                 if (ctx.error) {
                     appendMessage({ role: 'system', content: 'Error creating chat context: ' + ctx.error });
-                    return;
+                    return null;
                 }
                 // Step 3: Store mapping
                 _intakeMap[ctx.context_id] = intakeSessionId;
@@ -1524,10 +1524,13 @@
 
                 // Update URL for backward compat
                 history.replaceState(null, '', '/chat/' + intakeSessionId);
+
+                return ctx;
             });
         })
         .catch(function (err) {
             appendMessage({ role: 'system', content: 'Connection error: ' + err.message });
+            return null;
         });
     }
 
