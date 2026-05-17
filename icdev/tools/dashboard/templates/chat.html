@@ -196,14 +196,12 @@
             </div>
 
             <div id="chat-actions" class="chat-actions">
-                <button class="btn btn-success btn-lg" id="generate-plan-btn" style="display:none;" onclick="ICDEV.chatGeneratePlan()">Generate Plan &#x2192;</button>
                 <button class="btn btn-secondary" id="export-btn" style="display:none;" onclick="ICDEV.chatExport()">Export Requirements</button>
             </div>
 
             <!-- Post-export actions -->
             <div id="post-export-actions" class="post-export-actions" style="display:none;">
                 <h4 class="chat-sidebar-heading">What's next?</h4>
-                <button class="btn btn-primary" onclick="ICDEV.chatTriggerBuild()">Generate Application</button>
                 <button class="btn btn-warning" onclick="ICDEV.chatSendToKanban()">&#x1F4CB; Send to Kanban</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatRunSimulation()">Run Simulation (COAs)</button>
                 <button class="btn btn-secondary" onclick="ICDEV.chatViewRequirements()">View Requirements</button>
