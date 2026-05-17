@@ -303,19 +303,28 @@
             });
     }
 
+    function _setSendProcessing(isProcessing) {
+        var btn = document.getElementById('btn-send');
+        var inp = document.getElementById('message-input');
+        if (btn) {
+            btn.disabled = isProcessing;
+            if (isProcessing) {
+                btn.dataset.originalText = btn.innerText || btn.textContent || 'Send';
+                btn.innerHTML = '<span class="send-spinner"></span>';
+            } else {
+                btn.innerText = btn.dataset.originalText || 'Send';
+            }
+        }
+        if (inp) inp.disabled = isProcessing;
+    }
+
     function sendIntakeMessage(content) {
         // Append user message immediately
         appendMessage({ role: 'user', content: content });
 
-        // Show typing indicator
-        var typingId = 'typing-' + Date.now();
-        var stream = document.getElementById('message-stream');
-        if (stream) {
-            stream.innerHTML += '<div id="' + typingId + '" style="padding: 8px 12px; margin-bottom: 4px; background: var(--bg-secondary); border-radius: 4px;">'
-                + '<div style="font-size: 0.75rem; font-weight: 600; color: var(--accent-blue); margin-bottom: 4px;">Agent</div>'
-                + '<div style="font-size: 0.85rem; opacity: 0.6;">Thinking...</div></div>';
-            stream.scrollTop = stream.scrollHeight;
-        }
+        // Use the styled typing indicator instead of an inline static div
+        showTypingIndicator(true);
+        _setSendProcessing(true);
 
         fetch(INTAKE_API + '/turn', {
             method: 'POST',
@@ -324,9 +333,8 @@
         })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-            // Remove typing indicator
-            var typing = document.getElementById(typingId);
-            if (typing) typing.remove();
+            showTypingIndicator(false);
+            _setSendProcessing(false);
 
             if (data.error) {
                 appendMessage({ role: 'system', content: 'Error: ' + data.error });
@@ -350,8 +358,8 @@
             refreshComplexity();
         })
         .catch(function (err) {
-            var typing = document.getElementById(typingId);
-            if (typing) typing.remove();
+            showTypingIndicator(false);
+            _setSendProcessing(false);
             appendMessage({ role: 'system', content: 'Connection error: ' + err.message });
         });
     }
@@ -802,30 +810,72 @@
     // SECTION 11b: Send to Kanban — decompose plan into backlog tasks
     // ===================================================================
 
+    // Shared selector constant so DOM drift is easier to detect
+    var _AGENT_MSG_SELECTOR = "#message-stream .msg-bubble--agent .msg-markdown";
+
+    function _extractPlanMarkdown() {
+        // Try the live DOM first
+        var messages = document.querySelectorAll(_AGENT_MSG_SELECTOR);
+        if (messages.length) {
+            var lastMsg = messages[messages.length - 1];
+            var text = lastMsg.innerText || lastMsg.textContent || "";
+            if (text.trim()) return text.trim();
+        }
+        // Fallback: concatenate all assistant messages in the DOM
+        var all = document.querySelectorAll("#message-stream .msg-bubble--agent");
+        var parts = [];
+        for (var i = 0; i < all.length; i++) {
+            var md = all[i].querySelector(".msg-markdown");
+            if (md) {
+                var t = (md.innerText || md.textContent || "").trim();
+                if (t) parts.push(t);
+            }
+        }
+        if (parts.length) return parts.join("\n\n");
+        return null;
+    }
+
     function chatSendToKanban() {
-        // Get the last assistant message content from the active context
         var contextId = _activeContextId;
         if (!contextId) {
             alert("No active chat context");
             return;
         }
 
-        // Collect all assistant messages from the chat to build the plan
-        var messages = document.querySelectorAll("#chat-messages .chat-msg-assistant .chat-msg-content");
-        if (!messages.length) {
-            alert("No assistant messages found");
+        var planMarkdown = _extractPlanMarkdown();
+
+        // If nothing in DOM and we have an intake session, fetch conversation from API
+        if (!planMarkdown && _activeIntakeSessionId) {
+            ICDEV.fetchJSON(INTAKE_API + '/session/' + _activeIntakeSessionId, { method: 'GET' })
+                .then(function(data) {
+                    if (data && data.messages && data.messages.length) {
+                        var parts = [];
+                        for (var i = 0; i < data.messages.length; i++) {
+                            var m = data.messages[i];
+                            if (m.role === 'assistant' && m.content) parts.push(m.content.trim());
+                        }
+                        if (parts.length) {
+                            _sendPlanToKanban(parts.join("\n\n"));
+                            return;
+                        }
+                    }
+                    alert("No plan content found. Export requirements or generate a PRD first.");
+                })
+                .catch(function(err) {
+                    alert("No plan content found. Export requirements or generate a PRD first.");
+                });
             return;
         }
 
-        // Use the last assistant message as the plan (most recent plan output)
-        var lastMsg = messages[messages.length - 1];
-        var planMarkdown = lastMsg.innerText || lastMsg.textContent || "";
-
-        if (!planMarkdown.trim()) {
-            alert("No plan content found in chat");
+        if (!planMarkdown) {
+            alert("No plan content found. Export requirements or generate a PRD first.");
             return;
         }
 
+        _sendPlanToKanban(planMarkdown);
+    }
+
+    function _sendPlanToKanban(planMarkdown) {
         // Preview first
         ICDEV.fetchJSON("/api/kanban/preview-plan", {
             method: "POST",
@@ -1167,7 +1217,10 @@
         var rightSidebar = document.getElementById('right-sidebar');
         var layout = document.getElementById('chat-layout');
         var ricoasBtn = document.getElementById('btn-ricoas-toggle');
-        if (rightSidebar) rightSidebar.classList.add('chat-right-panel--visible');
+        if (rightSidebar) {
+            rightSidebar.classList.add('chat-right-panel--visible');
+            rightSidebar.classList.add('chat-right-panel--open');
+        }
         if (layout) layout.classList.add('chat-layout--right-open');
         if (ricoasBtn) ricoasBtn.style.display = 'inline-block';
         // Switch to RICOAS tab
@@ -1180,7 +1233,10 @@
         if (ricoasBtn) ricoasBtn.style.display = 'none';
         var rightSidebar = document.getElementById('right-sidebar');
         var layout = document.getElementById('chat-layout');
-        if (rightSidebar) rightSidebar.classList.remove('chat-right-panel--visible');
+        if (rightSidebar) {
+            rightSidebar.classList.remove('chat-right-panel--visible');
+            rightSidebar.classList.remove('chat-right-panel--open');
+        }
         if (layout) layout.classList.remove('chat-layout--right-open');
     }
 
