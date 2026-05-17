@@ -358,11 +358,11 @@ class ChatManager:
         """Close/archive a chat context."""
         with self._lock:
             ctx = self._contexts.get(context_id)
-            if not ctx:
-                return {"error": "Context not found"}
-            ctx.status = "completed"
-            ctx._stop_event.set()
+            if ctx:
+                ctx.status = "completed"
+                ctx._stop_event.set()
 
+        # Always persist to DB — handles contexts not in memory (e.g. after restart)
         self._db_update_status(context_id, "completed")
         _dispatch_hook("agent_end", {"context_id": context_id})
         _mark_dirty(context_id, "context_closed")

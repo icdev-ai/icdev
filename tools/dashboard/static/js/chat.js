@@ -1324,7 +1324,15 @@
             delBtns[k].addEventListener('click', (function (id) {
                 return function (e) {
                     e.stopPropagation();
-                    closeContext(id);
+                    // Remove from DOM immediately
+                    var item = container.querySelector('.ctx-item[data-ctx-id="' + id + '"]');
+                    if (item) item.remove();
+                    // Only clear active-context UI if this was the active context
+                    if (id === _activeContextId) {
+                        closeContext(id);
+                    } else {
+                        chatApi('POST', '/' + id + '/close');
+                    }
                 };
             })(delBtns[k].dataset.ctxId));
         }
