@@ -910,9 +910,11 @@ def _get_pg_pool():
         db_url = os.environ.get("ICDEV_DATABASE_URL")
         minconn = int(os.environ.get("ICDEV_PG_POOL_MIN", "2"))
         maxconn = int(os.environ.get("ICDEV_PG_POOL_MAX", "20"))
+        _pg_timeout = int(os.environ.get("ICDEV_PG_CONNECT_TIMEOUT", "10"))
         if db_url:
             _pg_pool = psycopg2.pool.ThreadedConnectionPool(
                 minconn, maxconn, db_url,
+                connect_timeout=_pg_timeout,
                 cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs,
             )
         else:
@@ -923,6 +925,7 @@ def _get_pg_pool():
                 user=os.environ.get("ICDEV_PG_USER", "icdev"),
                 password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
                 dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+                connect_timeout=_pg_timeout,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 **ssl_kwargs,
             )
@@ -966,9 +969,11 @@ def _get_pg_connection(db_url: str = None):
         import psycopg2
         import psycopg2.extras
         ssl_kwargs = _pg_ssl_kwargs()
+        _pg_timeout = int(os.environ.get("ICDEV_PG_CONNECT_TIMEOUT", "10"))
         if db_url:
             conn = psycopg2.connect(
-                db_url, cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs
+                db_url, connect_timeout=_pg_timeout,
+                cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs
             )
         else:
             conn = psycopg2.connect(
@@ -977,6 +982,7 @@ def _get_pg_connection(db_url: str = None):
                 user=os.environ.get("ICDEV_PG_USER", "icdev"),
                 password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
                 dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+                connect_timeout=_pg_timeout,
                 cursor_factory=psycopg2.extras.RealDictCursor,
                 **ssl_kwargs,
             )
