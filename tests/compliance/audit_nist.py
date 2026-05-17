@@ -26,7 +26,6 @@ from tools.audit.cross_agency_transfer_logger import (  # noqa: E402
     CrossAgencyTransferLogger,
     query_by_transfer_id,
 )
-from tools.audit.audit_logger import log_event, VALID_EVENT_TYPES  # noqa: E402
 
 _MODULE = "tools.audit.cross_agency_transfer_logger"
 

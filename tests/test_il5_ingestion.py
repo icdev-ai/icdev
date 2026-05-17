@@ -12,6 +12,7 @@ Run: pytest tests/test_il5_ingestion.py -v
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 import uuid
@@ -35,6 +36,12 @@ from tools.il5.ingestion import (
     get_il5_events,
     check_sla_compliance,
     get_sla_summary,
+)
+from tools.il5.il5_ingestion_service import (
+    parse_il5_payload,
+    IL5ValidationError,
+    _poll_feed,
+    fetch_il5_data,
 )
 
 
@@ -384,3 +391,170 @@ class TestGetSLASummary:
             summary = get_sla_summary()
         assert summary["total"] == 0
         assert summary["compliance_pct"] == 100.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestParseIL5Payload
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestParseIL5Payload:
+    def test_valid_payload(self):
+        rec = parse_il5_payload({
+            "source_id": "src-001",
+            "content": "raw data",
+            "published_at": "2026-05-16T12:00:00Z",
+            "metadata": {"key": "val"},
+        })
+        assert rec["source_id"] == "src-001"
+        assert rec["content"] == "raw data"
+        assert rec["source_published_at"] is not None
+        assert rec["metadata"] == {"key": "val"}
+
+    def test_uses_id_when_source_id_missing(self):
+        rec = parse_il5_payload({
+            "id": "src-002",
+            "content": "data",
+        })
+        assert rec["source_id"] == "src-002"
+
+    def test_uses_payload_when_content_missing(self):
+        rec = parse_il5_payload({
+            "source_id": "src-003",
+            "payload": "data",
+        })
+        assert rec["content"] == "data"
+
+    def test_missing_source_id_raises(self):
+        with pytest.raises(IL5ValidationError, match="source_id"):
+            parse_il5_payload({"content": "data"})
+
+    def test_missing_content_raises(self):
+        with pytest.raises(IL5ValidationError, match="content"):
+            parse_il5_payload({"source_id": "src"})
+
+    def test_empty_content_raises(self):
+        with pytest.raises(IL5ValidationError, match="content"):
+            parse_il5_payload({"source_id": "src", "content": ""})
+
+    def test_non_dict_payload_raises(self):
+        with pytest.raises(IL5ValidationError, match="JSON object"):
+            parse_il5_payload("not-a-dict")
+
+    def test_invalid_timestamp_raises(self):
+        with pytest.raises(IL5ValidationError, match="Invalid source_published_at"):
+            parse_il5_payload({
+                "source_id": "src",
+                "content": "data",
+                "published_at": "not-a-date",
+            })
+
+    def test_optional_timestamp_none(self):
+        rec = parse_il5_payload({
+            "source_id": "src",
+            "content": "data",
+        })
+        assert rec["source_published_at"] is None
+
+    def test_metadata_defaults_to_empty_dict(self):
+        rec = parse_il5_payload({
+            "source_id": "src",
+            "content": "data",
+        })
+        assert rec["metadata"] == {}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# TestIL5IngestionServiceTimeout
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestIL5IngestionServiceTimeout:
+    def test_poll_feed_handles_timeout_error(self, mem_db):
+        """If the 30-second SLA timer fires, _poll_feed catches it gracefully."""
+        with patch("tools.il5.il5_ingestion_service.IL5PipelineTimer") as mock_timer_cls:
+            mock_timer = mock_timer_cls.return_value
+            mock_timer.__enter__ = lambda self: self
+            # Simulate timer raising TimeoutError on __exit__
+            def _exit(*_):
+                raise TimeoutError("SLA breached")
+            mock_timer.__exit__ = _exit
+            result = _poll_feed(
+                feed_url="http://localhost:5050/api/il5/feed",
+                timeout=5,
+                db_path=None,
+            )
+        assert result["fetched"] == 0
+        assert result["ingested"] == 0
+        assert any("SLA timeout" in e for e in result["errors"])
+
+    def test_fetch_il5_data_returns_events_after_poll(self, mem_db):
+        with patch("tools.il5.il5_ingestion_service.get_connection", return_value=_UnclosableConn(mem_db)):
+            ingest_il5_event("src", "content")
+        with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
+            mock_resp = mock_urlopen.return_value.__enter__.return_value
+            mock_resp.read.return_value = b'[]'
+            events = fetch_il5_data(
+                feed_url="http://localhost:5050/api/il5/feed",
+                db_path=None,
+            )
+        assert isinstance(events, list)
+
+    def test_poll_feed_skips_invalid_records(self, mem_db):
+        with patch("tools.il5.il5_ingestion_service.get_connection", return_value=_UnclosableConn(mem_db)):
+            with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
+                mock_resp = mock_urlopen.return_value.__enter__.return_value
+                mock_resp.read.return_value = json.dumps([
+                    {"source_id": "ok", "content": "valid"},
+                    {"content": "missing source_id"},
+                    {"source_id": "ok2", "content": "valid2"},
+                ]).encode("utf-8")
+                result = _poll_feed(
+                    feed_url="http://localhost:5050/api/il5/feed",
+                    timeout=5,
+                    db_path=None,
+                )
+        assert result["fetched"] == 3
+        assert result["ingested"] == 2
+        assert result["skipped"] == 1
+        assert any("source_id" in e for e in result["errors"])
+
+    def test_poll_feed_handles_http_error(self):
+        with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
+            from urllib.error import HTTPError
+            mock_urlopen.side_effect = HTTPError(
+                "http://localhost:5050/api/il5/feed", 503, "Unavailable", {}, None
+            )
+            result = _poll_feed(
+                feed_url="http://localhost:5050/api/il5/feed",
+                timeout=5,
+                db_path=None,
+            )
+        assert result["fetched"] == 0
+        assert any("HTTP 503" in e for e in result["errors"])
+
+    def test_poll_feed_parses_published_at_iso(self, mem_db):
+        pub = datetime.now(timezone.utc)
+        with patch("tools.il5.il5_ingestion_service.get_connection", return_value=_UnclosableConn(mem_db)):
+            with patch("tools.il5.il5_ingestion_service.urllib.request.urlopen") as mock_urlopen:
+                mock_resp = mock_urlopen.return_value.__enter__.return_value
+                mock_resp.read.return_value = json.dumps([
+                    {
+                        "source_id": "timed",
+                        "content": "c",
+                        "published_at": pub.isoformat().replace("+00:00", "Z"),
+                    },
+                ]).encode("utf-8")
+                result = _poll_feed(
+                    feed_url="http://localhost:5050/api/il5/feed",
+                    timeout=5,
+                    db_path=None,
+                )
+        assert result["fetched"] == 1
+        assert result["ingested"] == 1
+        rows = mem_db.execute(
+            "SELECT source_published_at FROM il5_ingestion_log WHERE source_id=?",
+            ("timed",),
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["source_published_at"] is not None

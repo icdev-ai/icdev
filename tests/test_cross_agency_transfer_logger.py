@@ -548,8 +548,8 @@ class TestTransferLifecycle:
         cat, db, make_conn = logger
         tid = "lifecycle-002"
 
-        eid1 = cat.log_initiated(tid, "CIA", "DIA", "sigint", "operator-x")
-        eid2 = cat.log_failed(
+        cat.log_initiated(tid, "CIA", "DIA", "sigint", "operator-x")
+        cat.log_failed(
             tid, "CIA", "DIA", "gateway",
             rejection_reason="Network timeout", error_code="ERR_NET",
         )
@@ -571,8 +571,8 @@ class TestTransferLifecycle:
         cat, db, make_conn = logger
         tid = "lifecycle-003"
 
-        eid1 = cat.log_initiated(tid, "DEA", "ATF", "case_file", "agent-y")
-        eid2 = cat.log_rejected(
+        cat.log_initiated(tid, "DEA", "ATF", "case_file", "agent-y")
+        cat.log_rejected(
             tid, "DEA", "ATF", "reviewer-z", "Classification mismatch",
         )
 

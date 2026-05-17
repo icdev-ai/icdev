@@ -12,7 +12,6 @@ import json
 import sqlite3
 from unittest.mock import patch
 
-import pytest
 
 from tools.notifications.gateway import NotificationGateway
 
@@ -85,6 +84,15 @@ class TestAlertDispatcherSecureLogIntegration:
                 metadata={"ccir_id": "ccir-ukr-1", "event_id": "evt-001"},
             )
 
+        # Verification: assert exactly N alerts exist in local mock store before cleanup
+        conn_verify = _connect(db_path)
+        count = conn_verify.execute(
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE event_type = ?", ("pir_alert_generated",)
+        ).fetchone()["cnt"]
+        conn_verify.close()
+        assert count == 1, f"Expected exactly 1 pir_alert in local mock store, got {count}"
+        print(f"[VERIFICATION] Local mock store contains exactly {count} alert(s) prior to finalization")
+
         assert result["event_type"] == "pir_alert"
 
         conn = _connect(db_path)
@@ -125,6 +133,15 @@ class TestAlertDispatcherSecureLogIntegration:
                 body="No findings.",
             )
 
+        # Verification: assert exactly 0 alerts exist in local mock store before cleanup
+        conn_verify = _connect(db_path)
+        count = conn_verify.execute(
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE event_type = ?", ("pir_alert_generated",)
+        ).fetchone()["cnt"]
+        conn_verify.close()
+        assert count == 0, f"Expected exactly 0 pir_alert in local mock store, got {count}"
+        print(f"[VERIFICATION] Local mock store contains exactly {count} alert(s) prior to finalization")
+
         conn = _connect(db_path)
         row = conn.execute("SELECT * FROM audit_trail").fetchone()
         conn.close()
@@ -146,6 +163,15 @@ class TestAlertDispatcherSecureLogIntegration:
                 title="Test disabled notification",
                 body="Body text.",
             )
+
+        # Verification: assert exactly N alerts exist in local mock store before cleanup
+        conn_verify = _connect(db_path)
+        count = conn_verify.execute(
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE event_type = ?", ("pir_alert_generated",)
+        ).fetchone()["cnt"]
+        conn_verify.close()
+        assert count == 1, f"Expected exactly 1 pir_alert in local mock store, got {count}"
+        print(f"[VERIFICATION] Local mock store contains exactly {count} alert(s) prior to finalization")
 
         assert result["skipped"] == "notifications_disabled"
 
