@@ -15,6 +15,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 logger = logging.getLogger("icdev.siem_alert_forwarder")
@@ -56,11 +57,21 @@ def forward_alert(
     if siem_token:
         headers["Authorization"] = f"Bearer {siem_token}"
 
+    parsed = urlparse(siem_endpoint)
+    if parsed.scheme not in {"http", "https"}:
+        return {
+            "delivery_id": delivery_id,
+            "delivered": False,
+            "duration_ms": 0.0,
+            "sla_met": False,
+            "error": f"Unsupported URL scheme: {parsed.scheme}",
+        }
+
     error = None
     status_code = None
     try:
         req = Request(siem_endpoint, data=body, headers=headers, method="POST")
-        with urlopen(req, timeout=SLA_SECONDS) as resp:
+        with urlopen(req, timeout=SLA_SECONDS) as resp:  # nosec B310 — scheme validated above to http/https only
             status_code = resp.status
             resp.read()
     except HTTPError as exc:

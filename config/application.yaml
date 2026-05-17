@@ -31,6 +31,13 @@ application:
     db_table: audit_trail
 
   # ============================================================
+  # IL5 Data Ingestion Connector
+  # ============================================================
+  il5_connector:
+    source_url: "http://localhost:5050/api/il5/feed"
+    timeout_seconds: 30
+
+  # ============================================================
   # Runtime Security Flags
   # ============================================================
   security:

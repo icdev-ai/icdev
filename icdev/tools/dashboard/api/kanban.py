@@ -190,6 +190,34 @@ def _annotate_in_progress_tasks(conn, tasks: list) -> None:
         pass
 
 
+def _annotate_task_tags(conn, tasks: list) -> None:
+    """Tier 2: attach tags list to each task. Falls back gracefully if table absent."""
+    for t in tasks:
+        t["tags"] = []
+    if not tasks:
+        return
+    task_ids = [t["id"] for t in tasks]
+    ph = ",".join(["?" for _ in task_ids])
+    try:
+        rows = conn.execute(
+            f"SELECT tt.task_id, tg.id, tg.name, tg.color "  # nosec B608
+            f"FROM kanban_task_tags tt "
+            f"JOIN kanban_tags tg ON tg.id = tt.tag_id "
+            f"WHERE tt.task_id IN ({ph}) "
+            f"ORDER BY tg.name",
+            task_ids,
+        ).fetchall()
+        tag_map: dict = {}
+        for r in rows:
+            d = dict(r)
+            tid = d["task_id"]
+            tag_map.setdefault(tid, []).append({"id": d["id"], "name": d["name"], "color": d["color"]})
+        for t in tasks:
+            t["tags"] = tag_map.get(t["id"], [])
+    except Exception:
+        pass  # table may not exist on older DBs — degrade gracefully
+
+
 @kanban_api.route("/tasks", methods=["GET"])
 def list_tasks():
     """Return all kanban tasks, optionally filtered by status.
@@ -235,12 +263,19 @@ def list_tasks():
             "op.lens_name AS oracle_lens, "
             "op.prediction_type AS oracle_prediction_type, "
             "dep.title  AS depends_on_title, "
-            "dep.status AS depends_on_status "
+            "dep.status AS depends_on_status, "
+            "kv.phantom_ratio AS phantom_ratio "
             "FROM kanban_tasks kt "
             "LEFT JOIN oracle_predictions op "
             "ON kt.source_prediction_id = op.id "
             "LEFT JOIN kanban_tasks dep "
             "ON kt.depends_on_task_id = dep.id "
+            "LEFT JOIN kanban_verifications kv "
+            "ON kv.id = ("
+            "  SELECT id FROM kanban_verifications "
+            "  WHERE task_id = kt.id "
+            "  ORDER BY verified_at DESC LIMIT 1"
+            ") "
         )
         if status_filter:
             rows = conn.execute(
@@ -322,6 +357,7 @@ def list_tasks():
         # status filter.
         annotate_tasks_with_value(tasks)
         _annotate_in_progress_tasks(conn, tasks)
+        _annotate_task_tags(conn, tasks)
 
         # Apply sort override if requested. SQL-side ORDER BY can't drive
         # these cleanly because value is computed in Python and
@@ -495,8 +531,9 @@ def create_task():
             "INSERT INTO kanban_tasks "
             "(id, title, description, task_type, priority, "
             "status, scheduled_at, executor_type, depends_on_task_id, "
+            "start_date, target_date, "
             "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 task_id,
                 data["title"],
@@ -507,6 +544,8 @@ def create_task():
                 data.get("scheduled_at"),
                 data.get("executor_type", "claude_cli"),
                 depends_on or (dep_ids[0] if dep_ids else None),
+                data.get("start_date"),
+                data.get("target_date"),
                 now,
                 now,
             ),
@@ -564,6 +603,8 @@ def update_task(task_id):
             "scheduled_at",
             "executor_type",
             "depends_on_task_id",
+            "start_date",
+            "target_date",
         )
         # Multi-parent deps: validate via DFS before any DB writes
         new_dep_ids: list = data.get("depends_on_task_ids") or []
@@ -1025,6 +1066,29 @@ def move_task(task_id):
         vals.append(task_id)
 
         conn.execute(sql, tuple(vals))
+
+        # Record transition for kv-viz reaper-bar / TIF counter.
+        # state_machine.py does this for scheduler-driven transitions; the
+        # HTTP move path previously skipped it, leaving current_attempt_started_at=None.
+        try:
+            import secrets as _sec
+            conn.execute(
+                "INSERT INTO kanban_status_transitions "
+                "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "kst-" + _sec.token_hex(6),
+                    task_id,
+                    existing["status"],
+                    new_status,
+                    "dashboard",
+                    bypass_reason or None,
+                    now,
+                ),
+            )
+        except Exception:
+            pass  # Best-effort; annotator degrades gracefully if row absent
+
         conn.commit()
 
         # Notify on done transitions (matches genesis scheduler behavior)
@@ -1043,6 +1107,52 @@ def move_task(task_id):
         except Exception:
             pass  # SSE is best-effort
         return jsonify({"status": "moved", "id": task_id, "new_status": new_status})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/comments", methods=["GET"])
+def list_comments(task_id):
+    """Return comments for a task, oldest first."""
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+            return jsonify({"error": "Task not found"}), 404
+        try:
+            rows = conn.execute(
+                "SELECT id, author, body, created_at FROM kanban_task_comments "
+                "WHERE task_id = ? ORDER BY created_at ASC",
+                (task_id,),
+            ).fetchall()
+            return jsonify({"comments": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"comments": []})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/comments", methods=["POST"])
+def add_comment(task_id):
+    """Add a comment to a task."""
+    data = request.get_json(force=True, silent=True) or {}
+    body = (data.get("body") or "").strip()
+    author = (data.get("author") or "user").strip() or "user"
+    if not body:
+        return jsonify({"error": "body is required"}), 400
+
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+            return jsonify({"error": "Task not found"}), 404
+        comment_id = f"kc-{uuid.uuid4().hex[:12]}"
+        now = _utcnow()
+        conn.execute(
+            "INSERT INTO kanban_task_comments (id, task_id, author, body, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (comment_id, task_id, author[:64], body[:2000], now),
+        )
+        conn.commit()
+        return jsonify({"status": "created", "id": comment_id, "created_at": now}), 201
     finally:
         conn.close()
 
@@ -1068,15 +1178,360 @@ def last_update():
             "SELECT COUNT(*) AS cnt FROM kanban_tasks WHERE status = 'done'"
         ).fetchone()
         count = count_row["cnt"] if count_row else 0
+
+        # Include latest notification as a change signal so the 15-second poller
+        # also fires on in_progress transitions, not only on task completion.
+        notif_row = conn.execute(
+            "SELECT MAX(created_at) AS latest FROM notifications WHERE source = 'genesis.kanban'"
+        ).fetchone()
+        latest_notif = str(notif_row["latest"]) if notif_row and notif_row["latest"] else None
+
+        task_ts = None
+        task_id = None
+        task_title = None
         if row:
             row = dict(row)
-            return jsonify({
-                "last_update": row["completed_at"],
-                "task_id": row["id"],
-                "task_title": row["title"],
-                "completed_count": count,
-            })
-        return jsonify({"last_update": None, "task_id": None, "task_title": None, "completed_count": 0})
+            ca = row["completed_at"]
+            task_ts = ca.isoformat() if hasattr(ca, "isoformat") else str(ca) if ca else None
+            task_id = row["id"]
+            task_title = row["title"]
+
+        # Use whichever timestamp is more recent
+        candidates = [t for t in (task_ts, latest_notif) if t]
+        last_update = max(candidates) if candidates else None
+
+        return jsonify({
+            "last_update": last_update,
+            "task_id": task_id,
+            "task_title": task_title,
+            "completed_count": count,
+        })
+    finally:
+        conn.close()
+
+
+# ── Tier 2: Dependency DAG ────────────────────────────────────────────────
+
+@kanban_api.route("/deps-graph", methods=["GET"])
+def deps_graph():
+    """Return the full dependency graph as nodes + edges for Mermaid rendering.
+
+    Nodes: all tasks that appear in at least one edge (or requested via ?all=1).
+    Edges: rows from kanban_task_deps junction table.
+    """
+    include_all = request.args.get("all", "0") == "1"
+    conn = get_connection()
+    try:
+        edges = []
+        node_ids = set()
+        try:
+            rows = conn.execute(
+                "SELECT task_id, depends_on_id FROM kanban_task_deps"
+            ).fetchall()
+            for r in rows:
+                d = dict(r)
+                edges.append({"from": d["task_id"], "to": d["depends_on_id"]})
+                node_ids.add(d["task_id"])
+                node_ids.add(d["depends_on_id"])
+        except Exception:
+            pass
+
+        # Also include scalar depends_on_task_id links not in junction table
+        try:
+            scalar_rows = conn.execute(
+                "SELECT id, depends_on_task_id FROM kanban_tasks "
+                "WHERE depends_on_task_id IS NOT NULL"
+            ).fetchall()
+            for r in scalar_rows:
+                d = dict(r)
+                edge = {"from": d["id"], "to": d["depends_on_task_id"]}
+                if edge not in edges:
+                    edges.append(edge)
+                node_ids.add(d["id"])
+                node_ids.add(d["depends_on_task_id"])
+        except Exception:
+            pass
+
+        if include_all:
+            all_ids = conn.execute("SELECT id FROM kanban_tasks").fetchall()
+            for r in all_ids:
+                node_ids.add(dict(r)["id"] if hasattr(r, "keys") else r[0])
+
+        nodes = []
+        if node_ids:
+            ph = ",".join(["?" for _ in node_ids])
+            task_rows = conn.execute(
+                f"SELECT id, title, status, priority FROM kanban_tasks WHERE id IN ({ph})",  # nosec B608
+                list(node_ids),
+            ).fetchall()
+            nodes = [dict(r) for r in task_rows]
+
+        return jsonify({"nodes": nodes, "edges": edges})
+    finally:
+        conn.close()
+
+
+# ── Tier 2: Tag System ────────────────────────────────────────────────────
+
+@kanban_api.route("/tags", methods=["GET"])
+def list_tags():
+    """Return all available tags."""
+    conn = get_connection()
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT id, name, color, created_at FROM kanban_tags ORDER BY name"
+            ).fetchall()
+            return jsonify({"tags": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"tags": []})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tags", methods=["POST"])
+def create_tag():
+    """Create a new tag. Body: {name, color?}"""
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()[:64]
+    color = (data.get("color") or "#6b7280").strip()[:16]
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    tag_id = f"tag-{uuid.uuid4().hex[:10]}"
+    conn = get_connection()
+    try:
+        try:
+            conn.execute(
+                "INSERT INTO kanban_tags (id, name, color, created_at) VALUES (?, ?, ?, ?)",
+                (tag_id, name, color, _utcnow()),
+            )
+            conn.commit()
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                return jsonify({"error": f"Tag '{name}' already exists"}), 409
+            raise
+        try:
+            sse_manager.broadcast({"action": "tag_created", "tag": {"id": tag_id, "name": name, "color": color}}, "kanban")
+        except Exception:
+            pass
+        return jsonify({"status": "created", "id": tag_id}), 201
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tags/<tag_id>", methods=["DELETE"])
+def delete_tag(tag_id):
+    """Delete a tag and its task associations."""
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tags WHERE id = ?", (tag_id,)).fetchone():
+            return jsonify({"error": "Tag not found"}), 404
+        conn.execute("DELETE FROM kanban_task_tags WHERE tag_id = ?", (tag_id,))
+        conn.execute("DELETE FROM kanban_tags WHERE id = ?", (tag_id,))
+        conn.commit()
+        return jsonify({"status": "deleted", "id": tag_id})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/tags", methods=["GET"])
+def list_task_tags(task_id):
+    """Return tags assigned to a task."""
+    conn = get_connection()
+    try:
+        try:
+            rows = conn.execute(
+                "SELECT t.id, t.name, t.color FROM kanban_tags t "
+                "JOIN kanban_task_tags tt ON tt.tag_id = t.id "
+                "WHERE tt.task_id = ? ORDER BY t.name",
+                (task_id,),
+            ).fetchall()
+            return jsonify({"tags": [dict(r) for r in rows]})
+        except Exception:
+            return jsonify({"tags": []})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/tags", methods=["POST"])
+def add_task_tag(task_id):
+    """Assign a tag to a task. Body: {tag_id}"""
+    data = request.get_json(force=True, silent=True) or {}
+    tag_id = (data.get("tag_id") or "").strip()
+    if not tag_id:
+        return jsonify({"error": "tag_id is required"}), 400
+    conn = get_connection()
+    try:
+        if not conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone():
+            return jsonify({"error": "Task not found"}), 404
+        if not conn.execute("SELECT id FROM kanban_tags WHERE id = ?", (tag_id,)).fetchone():
+            return jsonify({"error": "Tag not found"}), 404
+        try:
+            conn.execute(
+                "INSERT INTO kanban_task_tags (task_id, tag_id, created_at) VALUES (?, ?, ?)",
+                (task_id, tag_id, _utcnow()),
+            )
+            conn.commit()
+        except Exception as exc:
+            if "unique" in str(exc).lower() or "duplicate" in str(exc).lower():
+                return jsonify({"status": "already_assigned"}), 200
+            raise
+        return jsonify({"status": "assigned"}), 201
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/tasks/<task_id>/tags/<tag_id>", methods=["DELETE"])
+def remove_task_tag(task_id, tag_id):
+    """Remove a tag from a task."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            "DELETE FROM kanban_task_tags WHERE task_id = ? AND tag_id = ?",
+            (task_id, tag_id),
+        )
+        conn.commit()
+        return jsonify({"status": "removed"})
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/iqe-query", methods=["POST"])
+def kanban_iqe_query():
+    """Natural-language IQE query against Kanban collections."""
+    import logging as _log
+    import tools.iqe.adapters.core_kanban  # noqa: F401 — registers kanban.* collections
+    from tools.iqe.nl_to_iqe import nl_to_iqe
+    from tools.iqe.parser import Parser
+    from tools.iqe.executor import execute_query
+
+    data = request.get_json(silent=True) or {}
+    question = (data.get("question") or "").strip()
+    if not question:
+        return jsonify({"error": "question is required"}), 400
+
+    collections = ["kanban.tasks", "kanban.epics"]
+    iqe_str = ""
+    try:
+        result = nl_to_iqe(question, collections)
+        iqe_str = result.get("iqe", "")
+        explanation = result.get("explanation", "")
+        ast = Parser().parse(iqe_str)
+        conn = get_connection()
+        try:
+            rows = execute_query(ast, conn)
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
+                        "results": rows, "row_count": len(rows)})
+    except Exception as exc:
+        _log.getLogger(__name__).warning("kanban IQE error: %s", exc)
+        return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Plan ingestion helpers — preview and create from markdown PRD / plan text
+# ---------------------------------------------------------------------------
+
+def _parse_plan_markdown(markdown: str):
+    """Extract candidate task titles from markdown headings and list items."""
+    tasks = []
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        title = None
+        if stripped.startswith("## ") or stripped.startswith("### "):
+            title = stripped.lstrip("#").strip()
+        elif stripped.startswith("- ") or stripped.startswith("* "):
+            title = stripped[2:].strip().strip("*_").strip()
+        elif len(stripped) > 3 and stripped[0].isdigit() and ". " in stripped[:4]:
+            title = stripped.split(". ", 1)[1].strip().strip("*_").strip()
+        if title and len(title) > 3:
+            tasks.append(title)
+    seen = set()
+    unique = []
+    for t in tasks:
+        key = t.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(t)
+    return unique
+
+
+def _plan_priority(title: str) -> str:
+    """Heuristic priority based on keywords."""
+    lowered = title.lower()
+    if any(k in lowered for k in ("critical", "security", "compliance", "sast", "timeline", "budget", "deadline")):
+        return "high"
+    return "medium"
+
+
+@kanban_api.route("/preview-plan", methods=["POST"])
+def preview_plan():
+    """Return a preview of tasks that would be created from a markdown plan."""
+    data = request.get_json(silent=True) or {}
+    markdown = (data.get("markdown") or "").strip()
+    if not markdown:
+        return jsonify({"error": "markdown is required"}), 400
+    titles = _parse_plan_markdown(markdown)
+    tasks = [{"title": t, "priority": _plan_priority(t)} for t in titles]
+    return jsonify({"count": len(tasks), "tasks": tasks})
+
+
+@kanban_api.route("/from-plan", methods=["POST"])
+def create_from_plan():
+    """Create Kanban backlog tasks extracted from a markdown plan."""
+    data = request.get_json(silent=True) or {}
+    markdown = (data.get("markdown") or "").strip()
+    if not markdown:
+        return jsonify({"error": "markdown is required"}), 400
+    titles = _parse_plan_markdown(markdown)
+    if not titles:
+        return jsonify({"error": "No tasks could be extracted from the plan"}), 400
+    conn = get_connection()
+    now = _utcnow()
+    created = 0
+    try:
+        for t in titles:
+            task_id = f"task-plan-{uuid.uuid4().hex[:12]}"
+            priority = _plan_priority(t)
+            conn.execute(
+                "INSERT INTO kanban_tasks "
+                "(id, title, description, task_type, priority, "
+                "status, scheduled_at, executor_type, depends_on_task_id, "
+                "start_date, target_date, "
+                "created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    task_id,
+                    t,
+                    "",
+                    "build",
+                    priority,
+                    "backlog",
+                    None,
+                    "claude_cli",
+                    None,
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            created += 1
+        conn.commit()
+        try:
+            sse_manager.broadcast(
+                {"action": "plan_imported", "tasks_created": created},
+                "kanban",
+            )
+        except Exception:
+            pass
+        return jsonify({"tasks_created": created})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 

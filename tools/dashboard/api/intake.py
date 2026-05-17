@@ -108,12 +108,9 @@ except Exception:
     def _auto_generate_ac(text: str) -> str:
         return "Acceptance criteria shall validate that: " + text
 
-try:
-    from tools.requirements.decomposition_engine import decompose_requirements
+import importlib.util
 
-    _HAS_DECOMP = True
-except ImportError:
-    _HAS_DECOMP = False
+_HAS_DECOMP = importlib.util.find_spec("tools.requirements.decomposition_engine") is not None
 
 try:
     from tools.requirements.complexity_scorer import score_complexity as _score_complexity
