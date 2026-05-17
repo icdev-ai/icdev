@@ -439,6 +439,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "canvas_ai_decisions",
         # Cross-Agency Data Transfer (NIST AU-2, AU-9 — append-only transfer audit log)
         "cross_agency_transfers",
+        # IL5 data ingestion audit (NIST AU-2, AU-12 — 30-second SLA display pipeline)
+        "il5_ingestion_log",
     ]
 
     if tool_name == "Bash":
