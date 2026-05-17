@@ -1,0 +1,8 @@
+# Intent: Show the latest predictive escalation probability across theaters for strategic decision-making.
+# Expected: rows ordered by p_war_posterior desc showing most at-risk theaters.
+
+foreach b in strategos.leadership_briefs
+  where b.p_war_posterior > 0.3
+  select b.id, b.theater, b.sio_composite_score, b.p_war_posterior, b.iw_triggered, b.signal_velocity, b.generated_at
+  order_by b.p_war_posterior desc
+  limit 15

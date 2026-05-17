@@ -1,0 +1,11 @@
+# Intent: Find leadership briefings where the I&W (Indicators and Warnings) threshold
+#         was triggered, indicating convergence of threat indicators above the critical
+#         threshold (composite > 6.0 AND convergence > 7.5).
+# Expected: rows where iw_triggered == 1 with the associated composite scores.
+
+foreach b in strategos.leadership_briefs
+  where b.iw_triggered == 1
+  select b.id, b.theater, b.sio_composite_score, b.threat_tier,
+         b.signal_count_24h, b.p_war_posterior, b.generated_at
+  order_by b.generated_at desc
+  limit 10

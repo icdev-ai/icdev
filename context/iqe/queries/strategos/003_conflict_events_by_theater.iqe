@@ -1,0 +1,10 @@
+# Intent: Show recent conflict events grouped by area of interest (AOI/theater),
+#         ordered by hostility (goldstein_scale) to surface the most kinetic activity.
+# Expected: conflict events with negative goldstein_scale (hostile) listed first.
+
+foreach e in strategos.conflict_events
+  where e.goldstein_scale < 0
+  select e.id, e.event_type, e.actor1, e.actor2, e.aoi, e.goldstein_scale,
+         e.avg_tone, e.source_url, e.event_ts
+  order_by e.goldstein_scale asc
+  limit 25
