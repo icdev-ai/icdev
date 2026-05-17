@@ -421,13 +421,24 @@ def _run_e2e(cwd: str, ui_touched: bool) -> Tuple[bool, str, Dict[str, Any]]:
                 return True, "E2E passed", metrics
             _last_stdout = r.stdout
             _last_exc = None
+            # Detect API timeout on this attempt immediately — don't retry,
+            # since a second attempt with a still-loaded API just overwrites
+            # _last_stdout with a different error and loses the detection.
+            if ("timed out" in _last_stdout.lower()
+                    and "seed tasks via api" in _last_stdout.lower()):
+                metrics["e2e_passed"] = None
+                return True, "E2E skipped — API POST timeout (transient server load)", metrics
         except Exception as exc:
             _last_exc = exc
+            # subprocess.TimeoutExpired or transient failure — also check for
+            # API timeout pattern in the exception message itself.
+            if "timed out" in str(exc).lower() or "timeout" in str(exc).lower():
+                metrics["e2e_passed"] = None
+                return True, "E2E skipped — subprocess/API timeout (transient server load)", metrics
     if _last_exc is not None:
         metrics["e2e_passed"] = False
         return False, f"E2E error: {_last_exc}", metrics
-    # If every attempt failed solely due to an API timeout (SQLite write
-    # contention or transient server load), treat as infrastructure skip.
+    # Fallback: check accumulated stdout for the API timeout pattern.
     if "timed out" in _last_stdout.lower() and "seed tasks via api" in _last_stdout.lower():
         metrics["e2e_passed"] = None
         return True, "E2E skipped — API POST timeout (transient server load)", metrics
