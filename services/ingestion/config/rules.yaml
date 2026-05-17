@@ -1,0 +1,32 @@
+# CUI // SP-CTI
+# Cross-agency transfer hook validation rules
+# Classification: CUI // SP-CTI  |  Impact Level: IL4/IL5
+#
+# Satisfies NIST 800-53 Rev 5:
+#   AU-2  Audit Events — defines auditable events and audit policy
+#   AU-9  Protection of Audit Information — append-only, immutable
+
+validation:
+  # Fields that MUST be present in every transfer request
+  required_fields:
+    - transfer_id
+    - source_agency
+    - target_agency
+    - actor
+    - data_type
+
+  # Restricted agency pairings.
+  # Set to null (or omit) to allow all pairs.
+  # Example restriction:
+  #   allowed_agency_pairs:
+  #     - ["DoD", "DHS"]
+  #     - ["NSA", "CIA"]
+  allowed_agency_pairs: null
+
+classifications:
+  default: CUI
+  supported:
+    - CUI
+    - SECRET
+    - TOP_SECRET
+  require_explicit_marking: true
