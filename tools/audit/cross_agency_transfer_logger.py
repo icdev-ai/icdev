@@ -188,7 +188,12 @@ class CrossAgencyTransferLogger:
 
 
 def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) -> None:
-    """Write a summary entry to the main audit_trail for AU-2 completeness."""
+    """Write a summary entry to the main audit_trail for AU-2 completeness.
+
+    Writes directly to the audit_trail table using the caller's connection so
+    both the cross_agency_transfers insert and this mirror are visible in the
+    same transaction/connection (required for test isolation).
+    """
     event_map = {
         "initiated": "cross_agency_transfer_initiated",
         "completed": "cross_agency_transfer_completed",
@@ -199,23 +204,36 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
     if not event_type:
         return
     try:
-        from tools.audit.audit_logger import log_event
-
-        log_event(
-            event_type=event_type,
-            actor=kwargs.get("actor", "system"),
-            action=(
-                f"Cross-agency transfer {kwargs.get('event_type')}: "
-                f"{kwargs.get('source_agency')} → {kwargs.get('target_agency')}"
-            ),
-            project_id=kwargs.get("project_id"),
-            details={
+        action = (
+            f"Cross-agency transfer {kwargs.get('event_type')}: "
+            f"{kwargs.get('source_agency')} → {kwargs.get('target_agency')}"
+        )
+        details = json.dumps(
+            {
                 "transfer_id": kwargs.get("transfer_id"),
                 "data_type": kwargs.get("data_type"),
                 "event_log_id": event_id,
-            },
-            classification=kwargs.get("data_classification", "CUI"),
+            }
         )
+        audit_id = str(uuid.uuid4())
+        conn.execute(
+            """
+            INSERT INTO audit_trail
+                (id, event_type, actor, action, project_id, details, classification, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                audit_id,
+                event_type,
+                kwargs.get("actor", "system"),
+                action,
+                kwargs.get("project_id"),
+                details,
+                kwargs.get("data_classification", "CUI"),
+                occurred_at,
+            ),
+        )
+        conn.commit()
     except Exception:
         log.warning("audit_trail mirror failed — cross_agency_transfers row still committed")
 
