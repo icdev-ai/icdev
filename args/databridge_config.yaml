@@ -39,3 +39,12 @@ secret_files_root: /etc/strategos/secrets
 default_timeout_seconds: 30
 max_retries: 3
 retry_backoff_seconds: 2
+
+# ---------------------------------------------------------------------------
+# IL5 Ingestion Connector
+# ---------------------------------------------------------------------------
+il5:
+  # Source publication endpoint for IL5 data feeds
+  source_publication_endpoint: ""
+  # Per-request timeout (seconds) — 30-second SLA for IL5 display pipeline
+  timeout_seconds: 30
