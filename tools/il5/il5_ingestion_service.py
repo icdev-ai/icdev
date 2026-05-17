@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from tools.il5.ingestion import (
+    SLA_SECONDS,
     get_il5_events,
 )
 
@@ -36,6 +37,60 @@ _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_FEED_URL = "http://localhost:5050/api/il5/feed"
 _DEFAULT_TIMEOUT_S = 5
 _DEFAULT_LIMIT = 50
+
+
+class IL5ValidationError(ValueError):
+    """Raised when an IL5 payload fails structural validation."""
+    pass
+
+
+def parse_il5_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Parse and validate a single IL5 publication record.
+
+    Validates required fields, normalises timestamps, and returns a
+    canonical record dict.  Raises ``IL5ValidationError`` on failure so
+    callers can log and skip bad records without aborting the batch.
+
+    Expected payload shape::
+
+        {
+            "source_id": "feed://source-a",
+            "content":   "raw payload ...",
+            "published_at": "2026-05-16T12:00:00Z",  # optional
+            "metadata":  {"key": "value"}           # optional
+        }
+
+    Returns:
+        Dict with keys: source_id, content, source_published_at, metadata.
+    """
+    if not isinstance(payload, dict):
+        raise IL5ValidationError("Payload must be a JSON object")
+
+    source_id = payload.get("source_id") or payload.get("id")
+    if not source_id:
+        raise IL5ValidationError("Missing required field: source_id or id")
+
+    content = payload.get("content") or payload.get("payload")
+    if content is None or content == "":
+        raise IL5ValidationError("Missing required field: content or payload")
+
+    # Normalise published timestamp
+    source_published_at = None
+    published_raw = payload.get("source_published_at") or payload.get("published_at")
+    if published_raw:
+        try:
+            source_published_at = datetime.fromisoformat(
+                str(published_raw).replace("Z", "+00:00")
+            )
+        except ValueError as exc:
+            raise IL5ValidationError(f"Invalid source_published_at: {exc}")
+
+    return {
+        "source_id": str(source_id),
+        "content": str(content),
+        "source_published_at": source_published_at,
+        "metadata": payload.get("metadata") or {},
+    }
 
 
 def fetch_il5_data(
@@ -81,6 +136,9 @@ def _poll_feed(
     the JSON response, and delegates persistence to
     ``ingest_il5_event`` so IL5 ingestion is self-contained.
 
+    The entire fetch-parse-ingest cycle is guarded by ``IL5PipelineTimer``
+    so it aborts with a logged SLA breach if it exceeds 30 seconds.
+
     Returns a summary dict: {fetched, ingested, skipped, errors}.
     """
     import json as _json
@@ -88,66 +146,53 @@ def _poll_feed(
     import urllib.error as _error
 
     from tools.il5.ingestion import ingest_il5_event
+    from tools.il5.sla_handler import IL5PipelineTimer
 
     fetched = 0
     ingested = 0
     errors: List[str] = []
 
     try:
-        req = _request.Request(
-            feed_url,
-            headers={"Accept": "application/json"},
-            method="GET",
-        )
-        with _request.urlopen(req, timeout=timeout) as resp:
-            payload = _json.loads(resp.read().decode("utf-8"))
-    except _error.HTTPError as exc:
-        errors.append(f"HTTP {exc.code}: {exc.reason}")
-        return {
-            "fetched": 0,
-            "ingested": 0,
-            "skipped": 0,
-            "errors": errors,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-    except Exception as exc:
-        errors.append(str(exc))
-        return {
-            "fetched": 0,
-            "ingested": 0,
-            "skipped": 0,
-            "errors": errors,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        }
-
-    records: List[Dict[str, Any]] = payload if isinstance(payload, list) else []
-    fetched = len(records)
-
-    for rec in records:
-        source_id = rec.get("source_id") or rec.get("id")
-        content = rec.get("content") or rec.get("payload") or ""
-        if not source_id or not content:
-            continue
-        published_raw = rec.get("source_published_at") or rec.get("published_at")
-        source_published_at = None
-        if published_raw:
+        with IL5PipelineTimer(timeout_s=SLA_SECONDS, label="il5_poll_feed"):
             try:
-                source_published_at = datetime.fromisoformat(
-                    str(published_raw).replace("Z", "+00:00")
+                req = _request.Request(
+                    feed_url,
+                    headers={"Accept": "application/json"},
+                    method="GET",
                 )
-            except ValueError:
-                pass
-        try:
-            ingest_il5_event(
-                str(source_id),
-                str(content),
-                source_published_at=source_published_at,
-                metadata=rec.get("metadata"),
-                db_path=db_path,
-            )
-            ingested += 1
-        except Exception as exc:
-            errors.append(str(exc))
+                with _request.urlopen(req, timeout=timeout) as resp:
+                    payload = _json.loads(resp.read().decode("utf-8"))
+            except _error.HTTPError as exc:
+                errors.append(f"HTTP {exc.code}: {exc.reason}")
+                payload = None
+            except Exception as exc:
+                errors.append(str(exc))
+                payload = None
+
+            if payload is not None:
+                records: List[Dict[str, Any]] = (
+                    payload if isinstance(payload, list) else []
+                )
+                fetched = len(records)
+                for rec in records:
+                    try:
+                        parsed = parse_il5_payload(rec)
+                        ingest_il5_event(
+                            parsed["source_id"],
+                            parsed["content"],
+                            source_published_at=parsed["source_published_at"],
+                            metadata=parsed["metadata"],
+                            db_path=db_path,
+                        )
+                        ingested += 1
+                    except IL5ValidationError as exc:
+                        errors.append(str(exc))
+                    except Exception as exc:
+                        errors.append(str(exc))
+    except TimeoutError:
+        errors.append(
+            f"SLA timeout: fetch/parse cycle exceeded {SLA_SECONDS}s"
+        )
 
     return {
         "fetched": fetched,
