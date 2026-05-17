@@ -13,6 +13,10 @@ Routes:
   POST /api/strategos/darkweb/run            → Trigger monitor scan (async)
 
   GET  /wargame/<id>/lanchester/monte-carlo  → Monte Carlo percentile bands JSON
+
+  GET  /strategos/intel-brief               → Predictive Intelligence Briefings page
+  GET  /strategos/briefs                    → Full intelligence briefs history page
+  POST /api/strategos/intel-brief/run       → Trigger predictive pipeline → brief JSON
 """
 
 from __future__ import annotations
@@ -619,6 +623,34 @@ def strategos_intel_brief_page():
         theater=theater,
         briefs=briefs,
         latest_brief=latest_brief,
+        briefs_json=_json.dumps(briefs),
+    ))
+    resp.headers["X-Classification"] = "CUI"
+    return resp
+
+
+@bp.route("/strategos/briefs")
+@bp.route("/strategos/briefs/")
+def strategos_briefs_page():
+    """Full history listing of all leadership intelligence briefs."""
+    import json as _json
+    _, list_briefs, _ = _intel_brief_engine()
+    theater = request.args.get("theater", "global")
+    limit = min(int(request.args.get("limit", 50)), 200)
+    briefs = list_briefs(theater=theater, limit=limit)
+    for b in briefs:
+        for key in ("forecast_24h_json", "forecast_72h_json", "forecast_7d_json"):
+            if isinstance(b.get(key), str):
+                try:
+                    b[key] = _json.loads(b[key])
+                except Exception:
+                    b[key] = {}
+            elif b.get(key) is None:
+                b[key] = {}
+    resp = make_response(render_template(
+        "strategos/briefs.html",
+        theater=theater,
+        briefs=briefs,
         briefs_json=_json.dumps(briefs),
     ))
     resp.headers["X-Classification"] = "CUI"
