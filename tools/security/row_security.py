@@ -86,26 +86,35 @@ def inject_row_predicate(
     # Determine injection point
     predicate = " AND ".join(extra_clauses)
 
-    # For INSERT/UPDATE/DELETE/DDL/PRAGMA: do not modify.
-    # UPDATE/DELETE params in SQLite are ordered SET-first then WHERE-last;
-    # prepending extra WHERE params corrupts the SET slots.
-    # PostgreSQL handles UPDATE/DELETE RLS natively via its own policy engine.
+    # INSERT, DDL, PRAGMA: never modify — these have no WHERE clause and
+    # injecting anything would corrupt the statement structure.
     if (
         _RE_INSERT.match(sql)
-        or _RE_UPDATE.match(sql)
-        or _RE_DELETE.match(sql)
         or sql.strip().upper().startswith("PRAGMA")
         or sql.strip().upper().startswith("CREATE")
     ):
         return sql, ()
 
-    # Find WHERE or append before ORDER BY / GROUP BY / LIMIT
+    # UPDATE/DELETE: predicate appended to the END of the WHERE clause so that
+    # SQLite parameter binding stays correct — SET-slot params come first in
+    # the param tuple, WHERE-slot params (including the injected predicate)
+    # come after.  Callers (storage._inject_rls) must APPEND these extra_params
+    # rather than prepend them.  PostgreSQL additionally enforces this via its
+    # native policy engine.
+    if _RE_UPDATE.match(sql) or _RE_DELETE.match(sql):
+        where_match = _RE_WHERE.search(sql)
+        if where_match:
+            # Append after all existing WHERE conditions
+            new_sql = sql.rstrip().rstrip(";") + " AND " + predicate
+        else:
+            new_sql = sql.rstrip().rstrip(";") + " WHERE " + predicate
+        return new_sql, tuple(extra_params)
+
+    # SELECT (and anything else): predicate injected at the START of the WHERE
+    # clause so callers prepend extra_params before existing params.
     where_match = _RE_WHERE.search(sql)
     if where_match:
-        # Inject after WHERE
         pos = where_match.end()
-        # Ensure the first existing clause is parenthesised if complex,
-        # but simple append with AND is sufficient for well-formed SQL.
         new_sql = sql[:pos] + " " + predicate + " AND" + sql[pos:]
         return new_sql, tuple(extra_params)
 

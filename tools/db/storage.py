@@ -719,7 +719,7 @@ class StorageCursor:
         if not ctx:
             return sql, params
         try:
-            from tools.security.row_security import inject_row_predicate
+            from tools.security.row_security import inject_row_predicate, _RE_UPDATE, _RE_DELETE
             tenant_id = getattr(ctx, "tenant_id", None)
             classification = getattr(ctx, "classification", None)
             new_sql, extra = inject_row_predicate(
@@ -728,13 +728,17 @@ class StorageCursor:
                 classification=classification,
             )
             if extra:
-                # Prepend extra params to existing params
+                # UPDATE/DELETE: predicate is at the END of the WHERE clause,
+                # so extra_params must be APPENDED (not prepended) to preserve
+                # SQLite's SET-slot → WHERE-slot parameter ordering.
+                # SELECT: predicate is at the START of WHERE, so PREPEND.
+                is_write = bool(_RE_UPDATE.match(sql) or _RE_DELETE.match(sql))
                 if params is None:
                     params = extra
                 elif isinstance(params, (list, tuple)):
-                    params = tuple(extra) + tuple(params)
+                    params = (tuple(params) + tuple(extra)) if is_write else (tuple(extra) + tuple(params))
                 else:
-                    params = tuple(extra) + (params,)
+                    params = (params,) + tuple(extra) if is_write else tuple(extra) + (params,)
                 if AUDIT_RLS:
                     _write_rls_audit(
                         self._table_name or "unknown",
