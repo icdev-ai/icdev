@@ -27,8 +27,13 @@ cross_agency_transfer_api = Blueprint("cross_agency_transfer_api", __name__)
 def submit_transfer():
     """Submit a cross-agency data transfer request.
 
+    ABAC enforcement (AC-3, AC-4, AC-4(4)) is applied BEFORE audit logging.
+    Requests are denied with HTTP 403 when the subject lacks the required
+    entitlement, clearance level, or compartment access.  On permit, all
+    returned data objects carry mandatory classification markings (SC-7(5)).
+
     The audit record is written to the append-only cross_agency_transfers
-    table before the transfer proceeds (NIST AU-2 log-before-proceed).
+    table after ABAC permit (NIST AU-2 log-before-proceed).
 
     Request JSON:
         transfer_id         (str, required)
@@ -36,23 +41,66 @@ def submit_transfer():
         target_agency       (str, required)
         data_type           (str, required)
         actor               (str, required)
-        data_classification (str, optional) — CUI | SECRET | TOP_SECRET
+        subject             (dict, required) — user_id, clearance_level,
+                              entitlements, compartments
+        data_classification (str, optional) — CUI | SECRET | TOP SECRET
+        compartments        (list, optional) — resource compartment list
+        data_objects        (list, optional) — raw objects to transfer
         project_id          (str, optional)
         details             (dict, optional)
 
     Returns:
-        200/422 JSON with success, transfer_id, event_id, initiated_event_id
+        200 JSON with success, abac_permitted=True, transfer_id, event_id,
+            and data_objects (each carrying classification_marking).
+        403 JSON with permitted=False, reason, policy_name, data_objects=[].
+        400 JSON when request body is missing.
     """
     body = request.get_json(silent=True) or {}
     if not body:
         return jsonify({"error": "JSON request body required"}), 400
 
+    # ------------------------------------------------------------------
+    # ABAC enforcement — must pass before any data is returned (AC-3/AC-4)
+    # ------------------------------------------------------------------
+    from tools.security.abac_engine import enforce_cross_domain_pull
+
+    subject: dict = body.get("subject") or {}
+    resource: dict = {
+        "classification": body.get("data_classification", "CUI"),
+        "compartments": body.get("compartments", []),
+        "source_il": body.get("source_il", "IL4"),
+        "target_il": body.get("target_il", "IL2"),
+    }
+    data_objects: list = body.get("data_objects", [])
+
+    abac_result = enforce_cross_domain_pull(
+        subject=subject,
+        resource=resource,
+        data_objects=data_objects,
+    )
+
+    if not abac_result.permitted:
+        log.warning(
+            "ABAC cross-domain deny: user=%s transfer_id=%s reason=%s",
+            subject.get("user_id", "unknown"),
+            body.get("transfer_id", ""),
+            abac_result.reason,
+        )
+        return jsonify({
+            "permitted": False,
+            "abac_permitted": False,
+            "policy_name": abac_result.policy_name,
+            "reason": abac_result.reason,
+            "data_objects": [],
+        }), 403
+
+    # ------------------------------------------------------------------
+    # ABAC permit — write audit record then return marked data objects
+    # ------------------------------------------------------------------
     try:
         from services.ingestion.hook_transfer import run_transfer
         result = run_transfer(body)
     except ImportError:
-        # Fallback: call the logger directly when the ingestion service layer
-        # is unavailable (e.g. unit-test environment without services/ on path).
         log.warning("hook_transfer unavailable — logging via CrossAgencyTransferLogger directly")
         from tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
         logger = CrossAgencyTransferLogger()
@@ -74,6 +122,8 @@ def submit_transfer():
             "error": None,
         }
 
+    result["abac_permitted"] = True
+    result["data_objects"] = abac_result.data_objects
     status_code = 200 if result.get("success") else 422
     return jsonify(result), status_code
 

@@ -390,6 +390,57 @@ def step_generate_pir_alerts_on_threshold_exceeded(context):
     context.pir_result = result
 
 
+@when('Be logged in the append-only audit trail per NIST AU-2 and AU-9 requirements')
+def step_cross_agency_transfer_audit_logging(context):
+    """Verify cross-agency transfers are logged in append-only audit trail (NIST AU-2, AU-9)."""
+    import uuid as _uuid
+    from icdev.tools.audit.cross_agency_transfer_logger import CrossAgencyTransferLogger
+    from icdev.tools.db.storage import get_connection
+
+    # Ensure table exists (may not be initialised in all environments)
+    conn = get_connection()
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS cross_agency_transfers (
+            id                  TEXT PRIMARY KEY,
+            transfer_id         TEXT NOT NULL,
+            event_type          TEXT NOT NULL CHECK(event_type IN (
+                                    'initiated', 'completed', 'failed', 'rejected')),
+            source_agency       TEXT NOT NULL,
+            target_agency       TEXT NOT NULL,
+            data_type           TEXT,
+            data_classification TEXT NOT NULL DEFAULT 'CUI',
+            actor               TEXT NOT NULL DEFAULT '',
+            project_id          TEXT,
+            bytes_transferred   INTEGER,
+            checksum            TEXT,
+            duration_ms         INTEGER,
+            rejection_reason    TEXT,
+            error_code          TEXT,
+            details             TEXT,
+            occurred_at         TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
+        CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
+    """)
+    conn.commit()
+
+    logger = CrossAgencyTransferLogger()
+    transfer_id = f"bdd-test-{_uuid.uuid4()}"
+    event_id = logger.log_initiated(
+        transfer_id=transfer_id,
+        source_agency="AGENCY_A",
+        target_agency="AGENCY_B",
+        data_type="intelligence_report",
+        actor="bdd-test-actor",
+        data_classification="CUI",
+    )
+    context.transfer_audit_result = {
+        "transfer_id": transfer_id,
+        "event_id": event_id,
+        "logged": bool(event_id),
+    }
+
+
 @then('the system behaves as specified and the requirement is satisfied')
 def step_system_behaves_as_specified(context):
     """Unified acceptance check: handles infra missing-artifacts and PIR results."""
@@ -416,6 +467,22 @@ def step_system_behaves_as_specified(context):
         assert result["indicator_name"] in pir["topic"]
         assert pir["collection_priority"] <= 2, (
             f"High-severity baseline should map to priority 1 or 2, got {pir['collection_priority']}"
+        )
+
+    # Cross-agency transfer audit scenarios (NIST AU-2, AU-9)
+    if hasattr(context, 'transfer_audit_result'):
+        result = context.transfer_audit_result
+        assert result["logged"], (
+            f"Cross-agency transfer was not logged in audit trail. "
+            f"transfer_id={result['transfer_id']!r}, event_id={result['event_id']!r}"
+        )
+        from icdev.tools.audit.cross_agency_transfer_logger import query_by_transfer_id
+        events = query_by_transfer_id(result["transfer_id"])
+        assert len(events) >= 1, (
+            f"Expected ≥1 audit event for transfer {result['transfer_id']!r}, got {len(events)}"
+        )
+        assert events[0]["event_type"] == "initiated", (
+            f"Expected event_type='initiated', got {events[0]['event_type']!r}"
         )
 
 
