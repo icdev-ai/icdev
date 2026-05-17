@@ -8,6 +8,7 @@ Acceptance criterion:
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -18,6 +19,9 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from icdev.tools.audit.cross_agency_transfer_logger import (  # noqa: E402
+    CrossAgencyTransferLogger,
+)
 from services.ingestion.hook_transfer import (  # noqa: E402
     TransferValidationError,
     _validate_request,
@@ -413,3 +417,328 @@ class TestRunTransfer:
             data_classification="CUI",
         )
         mock_instance.log_completed.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Real DB integration tests — NIST AU-2 / AU-9 compliance
+# ---------------------------------------------------------------------------
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cross_agency_transfers (
+    id                  TEXT PRIMARY KEY,
+    transfer_id         TEXT NOT NULL,
+    event_type          TEXT NOT NULL CHECK(event_type IN (
+                            'initiated', 'completed', 'failed', 'rejected')),
+    source_agency       TEXT NOT NULL,
+    target_agency       TEXT NOT NULL,
+    data_type           TEXT,
+    data_classification TEXT NOT NULL DEFAULT 'CUI',
+    actor               TEXT NOT NULL DEFAULT '',
+    project_id          TEXT,
+    bytes_transferred   INTEGER,
+    checksum            TEXT,
+    duration_ms         INTEGER,
+    rejection_reason    TEXT,
+    error_code          TEXT,
+    details             TEXT,
+    occurred_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
+CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
+
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    project_id TEXT,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    details TEXT,
+    affected_files TEXT,
+    classification TEXT DEFAULT 'CUI',
+    ip_address TEXT,
+    session_id TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+"""
+
+
+@pytest.fixture()
+def real_db(tmp_path):
+    """Temporary SQLite DB with cross_agency_transfers + audit_trail schemas."""
+    path = tmp_path / "test_hook_real.db"
+    conn = sqlite3.connect(str(path))
+    conn.row_factory = sqlite3.Row
+    conn.executescript(_SCHEMA)
+    conn.commit()
+    conn.close()
+    return path
+
+
+class TestNistAu2Au9RealDb:
+    """Integration tests using a real SQLite DB (no mocks).
+
+    NIST 800-53 AU-2: Audit Events — all required fields present; dual-write
+    to audit_trail.
+    NIST 800-53 AU-9: Protection of Audit Information — append-only, no
+    UPDATE/DELETE surface, immutable rows.
+    """
+
+    @staticmethod
+    def _make_conn(db_path):
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    @staticmethod
+    def _fetch_cat_row(db_path, event_id):
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM cross_agency_transfers WHERE id=?", (event_id,)
+        ).fetchone()
+        conn.close()
+        return row
+
+    def test_intercept_valid_request_appends_audit_row(self, real_db):
+        """AU-2: a valid transfer request creates a cross-agency audit row."""
+        request = {
+            "transfer_id": "xfer-au2-001",
+            "source_agency": "DoD",
+            "target_agency": "DHS",
+            "actor": "alice",
+            "data_type": "intelligence",
+            "data_classification": "CUI",
+            "project_id": "proj-42",
+            "details": {"priority": "high"},
+        }
+
+        def _conn():
+            return self._make_conn(real_db)
+
+        with patch("icdev.tools.audit.cross_agency_transfer_logger.get_connection", side_effect=_conn), \
+             patch("tools.audit.audit_logger.get_connection", side_effect=_conn):
+            result = intercept_transfer_request(request)
+
+        assert result["allowed"] is True
+        assert result["event_id"] != ""
+
+        row = self._fetch_cat_row(real_db, result["event_id"])
+        assert row is not None
+        assert row["transfer_id"] == "xfer-au2-001"
+        assert row["event_type"] == "initiated"
+        assert row["source_agency"] == "DoD"
+        assert row["target_agency"] == "DHS"
+        assert row["actor"] == "alice"
+        assert row["data_classification"] == "CUI"
+        assert row["data_type"] == "intelligence"
+        assert row["project_id"] == "proj-42"
+        assert row["occurred_at"]
+        import json
+        assert json.loads(row["details"]) == {"priority": "high"}
+
+    def test_intercept_invalid_request_appends_failed_audit_row(self, real_db):
+        """AU-2: a rejected transfer request still appends a failed audit row."""
+        request = {
+            "transfer_id": "xfer-au2-002",
+            "source_agency": "DoD",
+            "target_agency": "DHS",
+            "data_type": "intelligence",
+            # actor missing — should trigger validation failure
+        }
+
+        def _conn():
+            return self._make_conn(real_db)
+
+        with patch("icdev.tools.audit.cross_agency_transfer_logger.get_connection", side_effect=_conn), \
+             patch("tools.audit.audit_logger.get_connection", side_effect=_conn):
+            result = intercept_transfer_request(request)
+
+        assert result["allowed"] is False
+        assert result["event_id"] != ""
+
+        row = self._fetch_cat_row(real_db, result["event_id"])
+        assert row is not None
+        assert row["event_type"] == "failed"
+        assert row["error_code"] == "VALIDATION_ERROR"
+        assert "Missing required fields" in row["rejection_reason"]
+
+    def test_run_transfer_appends_initiated_and_completed(self, real_db):
+        """AU-2: full transfer lifecycle writes initiated + completed rows."""
+        request = {
+            "transfer_id": "xfer-au2-003",
+            "source_agency": "NSA",
+            "target_agency": "CIA",
+            "actor": "bob",
+            "data_type": "signals",
+            "data_classification": "SECRET",
+            "project_id": "proj-99",
+        }
+
+        def _conn():
+            return self._make_conn(real_db)
+
+        with patch("icdev.tools.audit.cross_agency_transfer_logger.get_connection", side_effect=_conn), \
+             patch("tools.audit.audit_logger.get_connection", side_effect=_conn):
+            result = run_transfer(request)
+
+        assert result["success"] is True
+        assert result["initiated_event_id"] != ""
+        assert result["event_id"] != ""
+        assert result["event_id"] != result["initiated_event_id"]
+
+        conn = self._make_conn(real_db)
+        rows = conn.execute(
+            "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at ASC",
+            ("xfer-au2-003",),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert dict(rows[0])["event_type"] == "initiated"
+        assert dict(rows[0])["id"] == result["initiated_event_id"]
+        assert dict(rows[1])["event_type"] == "completed"
+        assert dict(rows[1])["id"] == result["event_id"]
+
+        # Verify dual-write to audit_trail (AU-2 completeness)
+        conn = self._make_conn(real_db)
+        audit_rows = conn.execute(
+            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY created_at ASC",
+            ("%xfer-au2-003%",),
+        ).fetchall()
+        conn.close()
+        assert len(audit_rows) == 2
+        assert dict(audit_rows[0])["event_type"] == "cross_agency_transfer_initiated"
+        assert dict(audit_rows[1])["event_type"] == "cross_agency_transfer_completed"
+
+    def test_run_transfer_failure_appends_initiated_and_failed(self, real_db):
+        """AU-2: transfer exception writes initiated + failed rows."""
+        request = {
+            "transfer_id": "xfer-au2-004",
+            "source_agency": "FBI",
+            "target_agency": "DEA",
+            "actor": "charlie",
+            "data_type": "case_file",
+        }
+
+        def _explode(req):
+            raise RuntimeError("network partition")
+
+        def _conn():
+            return self._make_conn(real_db)
+
+        with patch("icdev.tools.audit.cross_agency_transfer_logger.get_connection", side_effect=_conn), \
+             patch("tools.audit.audit_logger.get_connection", side_effect=_conn):
+            result = run_transfer(request, transfer_fn=_explode)
+
+        assert result["success"] is False
+        assert result["initiated_event_id"] != ""
+        assert result["event_id"] != ""
+
+        conn = self._make_conn(real_db)
+        rows = conn.execute(
+            "SELECT * FROM cross_agency_transfers WHERE transfer_id=? ORDER BY occurred_at ASC",
+            ("xfer-au2-004",),
+        ).fetchall()
+        conn.close()
+
+        assert len(rows) == 2
+        assert dict(rows[0])["event_type"] == "initiated"
+        assert dict(rows[1])["event_type"] == "failed"
+        assert "network partition" in dict(rows[1])["rejection_reason"]
+
+    def test_append_only_no_public_update_or_delete(self, real_db):
+        """AU-9: CrossAgencyTransferLogger exposes no update/delete surface."""
+        logger = CrossAgencyTransferLogger()
+        for attr in dir(logger):
+            if not attr.startswith("_"):
+                assert "update" not in attr.lower(), f"AU-9 violation: public method '{attr}'"
+                assert "delete" not in attr.lower(), f"AU-9 violation: public method '{attr}'"
+                assert "remove" not in attr.lower(), f"AU-9 violation: public method '{attr}'"
+                assert "patch" not in attr.lower(), f"AU-9 violation: public method '{attr}'"
+
+    def test_sql_issued_never_updates_or_deletes(self, real_db):
+        """AU-9: all SQL executed by the logger is INSERT or SELECT only."""
+        request = {
+            "transfer_id": "xfer-au9-001",
+            "source_agency": "DHS",
+            "target_agency": "FBI",
+            "actor": "analyst",
+            "data_type": "threat_intel",
+        }
+
+        executed_sql: list[str] = []
+
+        class _RecordingConn:
+            def __init__(self, real):
+                self._real = real
+
+            def execute(self, sql, *args, **kwargs):
+                executed_sql.append(sql.strip().upper())
+                return self._real.execute(sql, *args, **kwargs)
+
+            def commit(self):
+                return self._real.commit()
+
+            def close(self):
+                return self._real.close()
+
+        real_conn = self._make_conn(real_db)
+        recording = _RecordingConn(real_conn)
+
+        with patch("icdev.tools.audit.cross_agency_transfer_logger.get_connection", return_value=recording), \
+             patch("tools.audit.audit_logger.get_connection", return_value=recording):
+            intercept_transfer_request(request)
+
+        real_conn.close()
+
+        for sql in executed_sql:
+            assert not sql.startswith("UPDATE"), f"AU-9 violation: {sql}"
+            assert not sql.startswith("DELETE"), f"AU-9 violation: {sql}"
+            assert not sql.startswith("DROP"), f"AU-9 violation: {sql}"
+            assert not sql.startswith("ALTER"), f"AU-9 violation: {sql}"
+
+        insert_calls = [s for s in executed_sql if s.startswith("INSERT")]
+        assert len(insert_calls) >= 1
+
+    def test_audit_row_contains_all_required_nist_fields(self, real_db):
+        """AU-2: every audit row contains the mandatory NIST 800-53 fields."""
+        request = {
+            "transfer_id": "xfer-au2-req",
+            "source_agency": "DoD",
+            "target_agency": "DHS",
+            "actor": "alice@dod.mil",
+            "data_type": "intelligence",
+            "data_classification": "SECRET",
+            "project_id": "proj-alpha",
+            "details": {"protocol": "TLS1.3"},
+        }
+
+        def _conn():
+            return self._make_conn(real_db)
+
+        with patch("icdev.tools.audit.cross_agency_transfer_logger.get_connection", side_effect=_conn), \
+             patch("tools.audit.audit_logger.get_connection", side_effect=_conn):
+            result = intercept_transfer_request(request)
+
+        assert result["allowed"] is True
+        event_id = result["event_id"]
+
+        row = self._fetch_cat_row(real_db, event_id)
+        assert row is not None
+
+        # NIST AU-2 required fields: who, what, when, where, why
+        required = [
+            "id", "transfer_id", "event_type", "source_agency",
+            "target_agency", "actor", "occurred_at", "data_classification",
+        ]
+        missing = [f for f in required if row[f] is None or str(row[f]) == ""]
+        assert missing == [], f"Missing required NIST AU-2 fields: {missing}"
+
+        from datetime import datetime
+        datetime.fromisoformat(row["occurred_at"])
+
+        assert row["data_type"] == "intelligence"
+        assert row["project_id"] == "proj-alpha"
+        assert row["data_classification"] == "SECRET"
+        import json
+        assert json.loads(row["details"]) == {"protocol": "TLS1.3"}
