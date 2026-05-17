@@ -1487,12 +1487,12 @@
     function createIntakeContext(options) {
         options = options || {};
         var cfg = window._CHAT_CONFIG || {};
-        var goal = options.goal || cfg.wizardGoal || 'build';
+        var goal = options.uc_category || options.goal || cfg.wizardGoal || 'build';
         var role = options.role || cfg.wizardRole || 'developer';
         var classification = options.classification || cfg.wizardClassification || 'il4';
         var frameworks = (options.frameworks || cfg.wizardFrameworks || '').split(',').filter(function (f) { return f.trim(); });
 
-        // Step 1: Create intake session
+        // Step 1: Create intake session — pass use case context so RICOAS starts informed
         return fetch(INTAKE_API + '/session', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1502,8 +1502,8 @@
                 classification: classification,
                 customer_name: 'Dashboard User',
                 frameworks: frameworks,
-                custom_role_name: cfg.customRoleName || '',
-                custom_role_description: cfg.customRoleDesc || ''
+                custom_role_name: options.uc_label || cfg.customRoleName || '',
+                custom_role_description: options.system_prompt || cfg.customRoleDesc || ''
             })
         })
         .then(function (r) { return r.json(); })
@@ -1535,8 +1535,8 @@
                 refreshContextList();
                 switchContext(ctx.context_id);
 
-                // Show welcome message from intake
-                if (data.message) {
+                // Show intake welcome only when no use case seed_message will replace it
+                if (data.message && !options.suppress_intake_welcome) {
                     var stream = document.getElementById('message-stream');
                     if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: data.message });
                 }
@@ -1781,7 +1781,10 @@
                 var opts = {
                     title: uc.label || ucId,
                     agent_model: uc.agent_model || 'sonnet',
-                    system_prompt: uc.system_prompt || ''
+                    system_prompt: uc.system_prompt || '',
+                    uc_category: uc.category || '',
+                    uc_label: uc.label || '',
+                    suppress_intake_welcome: !!uc.seed_message
                 };
                 function afterCreate(ctx) {
                     clearLoading();
@@ -1789,8 +1792,10 @@
                     _ucContextMap[ctx.context_id] = ucId;
                     try { localStorage.setItem('icdev_uc_ctx_map', JSON.stringify(_ucContextMap)); } catch (e) {}
                     _activeUseCase = uc;
+                    // Display seed_message as the AI's opening message, not as user input
                     if (uc.seed_message) {
-                        setTimeout(function () { sendMessage(uc.seed_message.trim()); }, 600);
+                        var stream = document.getElementById('message-stream');
+                        if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: uc.seed_message.trim() });
                     }
                 }
                 if (uc.ricoas) {
