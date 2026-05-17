@@ -1,0 +1,10 @@
+{
+  "id": "158",
+  "name": "conflict_predictions",
+  "description": "ML-derived conflict escalation risk scores (append-only audit trail)",
+  "author": "icdev_builder",
+  "created_at": "2026-05-17",
+  "nist_controls": ["AU-2", "AU-12", "SI-3", "SC-28"],
+  "tables_created": ["conflict_predictions"],
+  "append_only": true
+}

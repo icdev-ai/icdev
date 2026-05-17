@@ -2342,6 +2342,23 @@ python -c "from tools.system_graph.graph_builder import get_node_detail; print(g
 #   system_graph_stats       — source counts + timing
 ```
 
+## Conflict Mesh Commands
+```bash
+# ETL — pull from all providers, normalize, and load into sg_conflict_events
+python tools/conflict_mesh/etl_pipeline.py --since 2024-01-01 --dry-run --json
+python tools/conflict_mesh/etl_pipeline.py --since 2024-01-01 --limit 50 --json
+python tools/conflict_mesh/etl_pipeline.py --providers acled gdelt --since 2024-01-01 --json
+
+# Escalation Predictor — score events and surface high-risk predictions
+python tools/conflict_mesh/escalation_predictor.py --batch-since 2024-01-01 --threshold 0.7 --json
+python tools/conflict_mesh/escalation_predictor.py --event-id acled-12345 --json
+python tools/conflict_mesh/escalation_predictor.py --threshold 0.8 --limit 10 --json
+
+# Python API
+python -c "from tools.conflict_mesh.mesh_coordinator import MeshCoordinator; from tools.conflict_mesh.providers.acled_provider import ACLEDProvider; c = MeshCoordinator([ACLEDProvider()]); print(len(c.fetch_all()))"
+python -c "from tools.conflict_mesh.ml_pattern_engine import MLPatternEngine; e = MLPatternEngine(); print(e.extract_signals('Artillery bombardment kills soldiers', {}))"
+```
+
 ## STRATEGOS Commands
 ```bash
 # Adversarial Data Validation Pipeline (bias / deepfake / manipulation detection)
