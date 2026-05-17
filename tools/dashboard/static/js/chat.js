@@ -1716,6 +1716,344 @@
     try { _ucContextMap = JSON.parse(localStorage.getItem('icdev_uc_ctx_map') || '{}'); } catch (e) {}
     var _ucEditId = null;
 
+    // New state: category filter, compact mode, chain mode
+    var _ucActiveCategory = '';
+    var _ucCompact = true;
+    var _chainMode = false;
+    var _chainSelected = {};
+
+    // Government persona archetype templates (F2a)
+    var ARCHETYPE_TEMPLATES = {
+        ko: 'You are a senior Contracting Officer (KO) with expertise in FAR/DFARS, acquisition planning, source selection, price/cost analysis, and contract administration. You assist government program offices and contractors in navigating federal procurement regulations, preparing solicitation documents, evaluating proposals, and managing contract performance. You are familiar with LPTA, best value, and other source selection methodologies, as well as streamlined acquisition authorities (SAP, OTs, BPAs).',
+        isso: 'You are an Information System Security Officer (ISSO) with deep expertise in the Risk Management Framework (RMF), NIST SP 800-53 Rev 5, DISA STIGs, DIACAP-to-RMF transition, and continuous Authorization to Operate (cATO). You help system owners, ISSMs, and program managers navigate A&A documentation, control implementation, POAM management, and STIG compliance. You are familiar with eMASS, Xacta, and automated compliance tools.',
+        zt: 'You are a Zero Trust Architecture (ZTA) specialist with expertise in NIST SP 800-207, DoD Zero Trust Strategy, CISA Zero Trust Maturity Model (ZTMM), and the 7 ZTA pillars: User, Device, Network, Application, Data, Automation & Orchestration, and Visibility & Analytics. You help organizations design identity-centric security architectures, deploy micro-segmentation, and achieve ZTA maturity levels aligned with federal mandates (EO 14028, M-22-09).',
+        ito: 'You are a senior IT Operations Manager with expertise in ITSM (ITIL v4), service desk operations, infrastructure lifecycle management, patch management, capacity planning, and IT service continuity. You help agencies optimize their IT service delivery, reduce mean time to resolution (MTTR), and align IT operations with business objectives. You are familiar with ServiceNow, Jira, and government-specific IT frameworks.',
+        sl: 'You are a program manager with deep experience in state and local government IT modernization, grant-funded programs (BEAD, SLIGP, E-Rate, ARPA, BRIC), and interoperability with federal systems. You help state and local agencies navigate federal grant requirements, procurement constraints, technology modernization, and data sharing agreements. You understand state-level legislative constraints, tribal government coordination, and regional broadband planning.',
+        pm: 'You are a senior government program manager with expertise in SAFe Agile for government, Earned Value Management (EVM/ANSI-EIA-748), Integrated Baseline Reviews (IBR), the Federal Acquisition Regulation, and DoD 5000.87 software acquisition pathway. You help program offices plan and execute technology programs from inception to delivery, managing schedule, cost, scope, and stakeholder risk. You are familiar with PPBE, color reviews, and Congressional reporting requirements.'
+    };
+
+    // Category display names
+    var CATEGORY_LABELS = {
+        '': 'All',
+        modernization: 'Modernization',
+        budget: 'Budget',
+        knowledge: 'Knowledge',
+        acquisition: 'Acquisition',
+        compliance_ato: 'Compliance/ATO',
+        zero_trust: 'Zero Trust',
+        it_operations: 'IT Ops',
+        state_local: 'State/Local',
+        general: 'General'
+    };
+
+    // ---- Category chips (F2b) ----
+
+    function renderCategoryChips(useCases) {
+        var container = document.getElementById('uc-category-chips');
+        if (!container) return;
+        var cats = {};
+        for (var i = 0; i < useCases.length; i++) {
+            var c = useCases[i].category || 'general';
+            cats[c] = (cats[c] || 0) + 1;
+        }
+        var html = '<button class="uc-cat-chip' + (_ucActiveCategory === '' ? ' uc-cat-chip--active' : '') + '" data-cat="">All (' + useCases.length + ')</button>';
+        Object.keys(cats).sort().forEach(function (cat) {
+            var label = CATEGORY_LABELS[cat] || cat;
+            html += '<button class="uc-cat-chip' + (_ucActiveCategory === cat ? ' uc-cat-chip--active' : '') + '" data-cat="' + escHtml(cat) + '">' + escHtml(label) + ' (' + cats[cat] + ')</button>';
+        });
+        container.innerHTML = html;
+        container.querySelectorAll('.uc-cat-chip').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                setActiveCategory(btn.dataset.cat);
+            });
+        });
+    }
+
+    function setActiveCategory(cat) {
+        _ucActiveCategory = cat;
+        var filtered = cat ? _allUseCases.filter(function (uc) { return (uc.category || 'general') === cat; }) : _allUseCases;
+        var q = (document.getElementById('usecase-search') || {}).value;
+        if (q) filtered = filtered.filter(function (uc) { return uc.label.toLowerCase().includes(q.toLowerCase()) || (uc.description || '').toLowerCase().includes(q.toLowerCase()); });
+        renderCategoryChips(_allUseCases);
+        renderUseCases(filtered);
+    }
+
+    // ---- Compact/expanded toggle (F2d) ----
+
+    function toggleUcCompact() {
+        _ucCompact = !_ucCompact;
+        var btn = document.getElementById('btn-uc-compact');
+        if (btn) btn.classList.toggle('chat-uc-toolbar-btn--active', _ucCompact);
+        var filtered = _ucActiveCategory
+            ? _allUseCases.filter(function (uc) { return (uc.category || 'general') === _ucActiveCategory; })
+            : _allUseCases;
+        renderUseCases(filtered);
+    }
+
+    // ---- Chain mode (F2d) ----
+
+    function enterChainMode() {
+        _chainMode = true;
+        _chainSelected = {};
+        var bar = document.getElementById('uc-chain-bar');
+        if (bar) bar.style.display = 'flex';
+        updateChainCount();
+        renderUseCases(_ucActiveCategory ? _allUseCases.filter(function (uc) { return (uc.category || 'general') === _ucActiveCategory; }) : _allUseCases);
+    }
+
+    function exitChainMode() {
+        _chainMode = false;
+        _chainSelected = {};
+        var bar = document.getElementById('uc-chain-bar');
+        if (bar) bar.style.display = 'none';
+        renderUseCases(_ucActiveCategory ? _allUseCases.filter(function (uc) { return (uc.category || 'general') === _ucActiveCategory; }) : _allUseCases);
+    }
+
+    function updateChainCount() {
+        var count = Object.keys(_chainSelected).length;
+        var el = document.getElementById('uc-chain-count');
+        if (el) el.textContent = count + ' selected';
+    }
+
+    function activateChain() {
+        var ids = Object.keys(_chainSelected);
+        if (!ids.length) { alert('Select at least one use case to chain.'); return; }
+        var name = (document.getElementById('uc-chain-name') || {}).value || 'Chained Session';
+        fetch(CHAT_API + '/chains', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name: name, use_case_ids: ids})
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (!data.ok) { alert('Chain creation failed: ' + (data.error || 'unknown error')); return; }
+            return fetch(CHAT_API + '/chains/' + data.chain_id + '/activate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({user_id: _currentUserId || 'dashboard-user'})
+            }).then(function (r) { return r.json(); }).then(function (act) {
+                if (act.context_id) {
+                    addMessage('system', '⛓ Chain activated — ' + data.requirement_count + ' merged requirements seeded into intake session.', null);
+                    loadContexts();
+                } else if (act.error) {
+                    addMessage('system', '⚠ Chain activate: ' + act.error, null);
+                }
+            });
+        })
+        .catch(function (e) { alert('Chain error: ' + e.message); })
+        .finally(function () { exitChainMode(); });
+    }
+
+    // ---- Export / Import (F2f) ----
+
+    function exportUseCase(ucId) {
+        window.location = CHAT_API + '/use-cases/' + encodeURIComponent(ucId) + '/export';
+    }
+
+    function openImportModal() {
+        var m = document.getElementById('uc-import-modal');
+        if (m) { m.style.display = 'flex'; document.getElementById('uc-import-result').textContent = ''; }
+    }
+
+    function closeImportModal() {
+        var m = document.getElementById('uc-import-modal');
+        if (m) m.style.display = 'none';
+    }
+
+    function submitImport() {
+        var file = (document.getElementById('uc-import-file') || {}).files;
+        if (!file || !file.length) { alert('Select a YAML bundle file first.'); return; }
+        var overwrite = (document.getElementById('uc-import-overwrite') || {}).checked;
+        var fd = new FormData();
+        fd.append('file', file[0]);
+        fd.append('overwrite', overwrite ? 'true' : 'false');
+        fetch(CHAT_API + '/use-cases/import', {method: 'POST', body: fd})
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                var res = document.getElementById('uc-import-result');
+                if (res) {
+                    var msg = '';
+                    if (data.imported && data.imported.length) msg += '✓ Imported: ' + data.imported.join(', ') + '. ';
+                    if (data.skipped && data.skipped.length) msg += '⚠ Skipped: ' + data.skipped.map(function(s){return s.id;}).join(', ') + '. ';
+                    if (data.errors && data.errors.length) msg += '✗ Errors: ' + data.errors.length + '.';
+                    res.textContent = msg || 'No changes.';
+                }
+                loadUseCases();
+            })
+            .catch(function (e) {
+                var res = document.getElementById('uc-import-result');
+                if (res) res.textContent = 'Import failed: ' + e.message;
+            });
+    }
+
+    // ---- Wizard (F2e) ----
+
+    var _wizStep = 1;
+    var _wizReqs = [];
+    var _wizSteps = [];
+
+    function openWizard(cloneFrom) {
+        _wizStep = 1;
+        _wizReqs = [];
+        _wizSteps = [{step: 1, label: 'Scope & Discovery', description: 'Define scope and identify key assets', action: 'requirement_intake'},
+                     {step: 2, label: 'Requirements Review', description: 'Review and validate pre-seeded requirements', action: 'review_requirements'},
+                     {step: 3, label: 'Artifact Generation', description: 'Generate artifacts and documentation', action: 'generate_artifacts'},
+                     {step: 4, label: 'Stakeholder Review', description: 'Submit for government stakeholder review', action: 'submit_review'},
+                     {step: 5, label: 'Export & Close', description: 'Export final package and close use case', action: 'export_bundle'}];
+        // Populate clone select
+        var cloneSel = document.getElementById('uc-wiz-clone-from');
+        if (cloneSel) {
+            cloneSel.innerHTML = _allUseCases.map(function (uc) {
+                return '<option value="' + escHtml(uc.id) + '">' + escHtml(uc.label) + '</option>';
+            }).join('');
+        }
+        if (cloneFrom) {
+            document.querySelector('input[name="wiz-start"][value="clone"]').checked = true;
+            document.getElementById('uc-wiz-clone-wrap').style.display = '';
+            if (cloneSel) cloneSel.value = cloneFrom;
+            var src = _allUseCases.find(function(uc){ return uc.id === cloneFrom; });
+            if (src) {
+                setTimeout(function () {
+                    var el = document.getElementById('uc-wiz-label'); if (el) el.value = src.label + ' (Copy)';
+                    var ei = document.getElementById('uc-wiz-icon'); if (ei) ei.value = src.icon || '';
+                    var ec = document.getElementById('uc-wiz-category'); if (ec) ec.value = src.category || 'general';
+                    var eb = document.getElementById('uc-wiz-badge'); if (eb) eb.value = src.badge || '';
+                    var ed = document.getElementById('uc-wiz-desc'); if (ed) ed.value = src.description || '';
+                    var es = document.getElementById('uc-wiz-system'); if (es) es.value = src.system_prompt || '';
+                    var ese = document.getElementById('uc-wiz-seed'); if (ese) ese.value = src.seed_message || '';
+                    _wizReqs = JSON.parse(JSON.stringify(src.template_requirements || []));
+                    _wizSteps = JSON.parse(JSON.stringify(src.workflow_steps || _wizSteps));
+                }, 50);
+            }
+        }
+        wizShowStep(1);
+        var m = document.getElementById('uc-create-wizard');
+        if (m) m.style.display = 'flex';
+    }
+
+    function closeWizard() {
+        var m = document.getElementById('uc-create-wizard');
+        if (m) m.style.display = 'none';
+    }
+
+    function wizShowStep(n) {
+        _wizStep = n;
+        for (var i = 1; i <= 5; i++) {
+            var s = document.getElementById('uc-wiz-s' + i);
+            if (s) s.style.display = (i === n) ? '' : 'none';
+        }
+        var stepNum = document.getElementById('uc-wiz-step-num');
+        if (stepNum) stepNum.textContent = n;
+        var prev = document.getElementById('uc-wiz-prev');
+        var next = document.getElementById('uc-wiz-next');
+        var finish = document.getElementById('uc-wiz-finish');
+        if (prev) prev.style.display = (n > 1) ? '' : 'none';
+        if (next) next.style.display = (n < 5) ? '' : 'none';
+        if (finish) finish.style.display = (n === 5) ? '' : 'none';
+        if (n === 4) renderWizReqList();
+        if (n === 5) renderWizStepsList();
+    }
+
+    function renderWizReqList() {
+        var container = document.getElementById('uc-wiz-req-list');
+        if (!container) return;
+        if (!_wizReqs.length) { container.innerHTML = '<div style="color:#8b949e;font-size:0.8rem">No requirements yet. Add some below.</div>'; return; }
+        container.innerHTML = _wizReqs.map(function (r, idx) {
+            return '<div style="display:flex;gap:6px;align-items:center">'
+                + '<select style="width:90px;font-size:0.75rem" onchange="_wizReqs[' + idx + '].priority=this.value"><option' + (r.priority==='high'?' selected':'') + '>high</option><option' + (r.priority==='medium'?' selected':'') + '>medium</option><option' + (r.priority==='critical'?' selected':'') + '>critical</option><option' + (r.priority==='low'?' selected':'') + '>low</option></select>'
+                + '<input style="flex:1;font-size:0.75rem" value="' + escHtml(r.text || '') + '" oninput="_wizReqs[' + idx + '].text=this.value" placeholder="Requirement text...">'
+                + '<button style="color:#f85149;background:none;border:none;cursor:pointer" onclick="_wizReqs.splice(' + idx + ',1);renderWizReqList()">&#x2715;</button>'
+                + '</div>';
+        }).join('');
+    }
+
+    function renderWizStepsList() {
+        var container = document.getElementById('uc-wiz-steps-list');
+        if (!container) return;
+        container.innerHTML = _wizSteps.map(function (s, idx) {
+            return '<div style="display:flex;gap:6px;align-items:center">'
+                + '<span style="font-size:0.72rem;color:#8b949e;width:20px">' + (idx+1) + '</span>'
+                + '<input style="flex:1;font-size:0.75rem" value="' + escHtml(s.label || '') + '" oninput="_wizSteps[' + idx + '].label=this.value" placeholder="Step label...">'
+                + '<input style="flex:2;font-size:0.75rem" value="' + escHtml(s.description || '') + '" oninput="_wizSteps[' + idx + '].description=this.value" placeholder="Description...">'
+                + '<button style="color:#f85149;background:none;border:none;cursor:pointer" onclick="_wizSteps.splice(' + idx + ',1);renderWizStepsList()">&#x2715;</button>'
+                + '</div>';
+        }).join('');
+    }
+
+    function applyArchetype(key) {
+        var tpl = ARCHETYPE_TEMPLATES[key];
+        if (!tpl) return;
+        var el = document.getElementById('uc-wiz-system');
+        if (el) el.value = tpl;
+    }
+
+    function wizNext() {
+        if (_wizStep === 1) {
+            var startMode = document.querySelector('input[name="wiz-start"]:checked');
+            if (startMode && startMode.value === 'clone') {
+                var sel = document.getElementById('uc-wiz-clone-from');
+                var src = sel && _allUseCases.find(function (uc) { return uc.id === sel.value; });
+                if (src) {
+                    setTimeout(function () {
+                        var el;
+                        el = document.getElementById('uc-wiz-label'); if (el && !el.value) el.value = src.label + ' (Copy)';
+                        el = document.getElementById('uc-wiz-icon'); if (el && !el.value) el.value = src.icon || '';
+                        el = document.getElementById('uc-wiz-category'); if (el) el.value = src.category || 'general';
+                        el = document.getElementById('uc-wiz-badge'); if (el && !el.value) el.value = src.badge || '';
+                        el = document.getElementById('uc-wiz-desc'); if (el && !el.value) el.value = src.description || '';
+                        el = document.getElementById('uc-wiz-system'); if (el && !el.value) el.value = src.system_prompt || '';
+                        el = document.getElementById('uc-wiz-seed'); if (el && !el.value) el.value = src.seed_message || '';
+                        if (!_wizReqs.length) _wizReqs = JSON.parse(JSON.stringify(src.template_requirements || []));
+                        if (_wizSteps.length <= 5) _wizSteps = JSON.parse(JSON.stringify(src.workflow_steps || _wizSteps));
+                    }, 0);
+                }
+            }
+        }
+        if (_wizStep < 5) wizShowStep(_wizStep + 1);
+    }
+
+    function wizPrev() {
+        if (_wizStep > 1) wizShowStep(_wizStep - 1);
+    }
+
+    function collectWizardPayload() {
+        return {
+            label: (document.getElementById('uc-wiz-label') || {}).value || '',
+            icon: (document.getElementById('uc-wiz-icon') || {}).value || '⚙',
+            category: (document.getElementById('uc-wiz-category') || {}).value || 'general',
+            badge: (document.getElementById('uc-wiz-badge') || {}).value || '',
+            description: (document.getElementById('uc-wiz-desc') || {}).value || '',
+            system_prompt: (document.getElementById('uc-wiz-system') || {}).value || '',
+            seed_message: (document.getElementById('uc-wiz-seed') || {}).value || '',
+            ricoas: (document.getElementById('uc-wiz-ricoas') || {}).checked !== false,
+            fast_track: (document.getElementById('uc-wiz-fast-track') || {}).checked !== false,
+            boost_threshold: parseInt((document.getElementById('uc-wiz-boost') || {}).value || '70', 10),
+            agent_model: (document.getElementById('uc-wiz-model') || {}).value || 'kimi-cloud',
+            template_requirements: _wizReqs.filter(function (r) { return r.text; }),
+            workflow_steps: _wizSteps.filter(function (s) { return s.label; }).map(function (s, i) { return Object.assign({}, s, {step: i+1}); }),
+        };
+    }
+
+    function submitWizard() {
+        var payload = collectWizardPayload();
+        if (!payload.label) { alert('Name is required.'); wizShowStep(2); return; }
+        fetch(CHAT_API + '/use-cases', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.ok) {
+                closeWizard();
+                loadUseCases();
+            } else {
+                alert('Create failed: ' + (data.error || 'unknown error'));
+            }
+        })
+        .catch(function (e) { alert('Error: ' + e.message); });
+    }
+
     // ---- Catalog load / render ----
 
     function loadUseCases() {
@@ -1723,6 +2061,7 @@
             .then(function (r) { return r.ok ? r.json() : { use_cases: [] }; })
             .then(function (data) {
                 _allUseCases = data.use_cases || [];
+                renderCategoryChips(_allUseCases);
                 renderUseCases(_allUseCases);
             })
             .catch(function () { renderUseCases([]); });
@@ -1732,6 +2071,9 @@
         var list = document.getElementById('usecase-list');
         if (!list) return;
 
+        list.classList.toggle('chat-uc-list--compact', _ucCompact);
+        list.classList.toggle('chat-uc-list--expanded', !_ucCompact);
+
         if (!cases.length) {
             list.innerHTML = '<div class="chat-uc-loading">No use cases found.</div>';
             return;
@@ -1740,55 +2082,134 @@
         var html = '';
         for (var i = 0; i < cases.length; i++) {
             var uc = cases[i];
-            var badge = uc.badge ? '<span class="chat-uc-card__badge">' + escHtml(uc.badge) + '</span>' : '';
+            var ucIdEsc = escAttr(uc.id);
+            var isSelected = _chainMode && !!_chainSelected[uc.id];
 
-            var chips = '';
-            var qa = uc.quick_actions || [];
-            for (var qi = 0; qi < qa.length; qi++) {
-                chips += '<a href="' + escHtml(qa[qi].url) + '" target="' + escHtml(qa[qi].target || '_blank') + '"'
-                    + ' class="chat-uc-qa-chip" title="' + escHtml(qa[qi].label) + '"'
-                    + ' onclick="event.stopPropagation()">'
-                    + escHtml(qa[qi].icon || '') + ' ' + escHtml(qa[qi].label) + '</a>';
+            var chainCb = _chainMode
+                ? '<input type="checkbox" class="uc-chain-cb" data-uc-id="' + ucIdEsc + '"'
+                    + (isSelected ? ' checked' : '') + ' onclick="event.stopPropagation()">'
+                : '';
+
+            if (_ucCompact) {
+                var ftBadge = uc.fast_track
+                    ? '<span class="chat-uc-card__ft-badge" title="Pre-loaded requirements">&#x26A1;</span>' : '';
+                var stepCount = (uc.workflow_steps && uc.workflow_steps.length)
+                    ? '<span class="uc-step-count" title="' + uc.workflow_steps.length + ' workflow steps">&#x276F;' + uc.workflow_steps.length + '</span>' : '';
+                html += '<div class="chat-uc-compact-row' + (isSelected ? ' chain-selected' : '') + '" data-uc-id="' + ucIdEsc + '" tabindex="0" role="button" aria-label="Start ' + escAttr(uc.label) + '">'
+                    + chainCb
+                    + '<span class="chat-uc-compact-row__icon">' + escHtml(uc.icon || '⚙') + '</span>'
+                    + '<span class="chat-uc-compact-row__label">' + escHtml(uc.label) + '</span>'
+                    + ftBadge + stepCount
+                    + '<span class="chat-uc-compact-row__actions">'
+                    + '<button class="chat-uc-edit-btn" data-uc-id="' + ucIdEsc + '" title="Edit" onclick="event.stopPropagation()">&#x270F;</button>'
+                    + '<button class="chat-uc-export-btn" data-uc-id="' + ucIdEsc + '" title="Export bundle" onclick="event.stopPropagation()">&#x2913;</button>'
+                    + '</span>'
+                    + '</div>';
+            } else {
+                var badge = uc.badge ? '<span class="chat-uc-card__badge">' + escHtml(uc.badge) + '</span>' : '';
+                var chips = '';
+                var qa = uc.quick_actions || [];
+                for (var qi = 0; qi < qa.length; qi++) {
+                    chips += '<a href="' + escHtml(qa[qi].url) + '" target="' + escHtml(qa[qi].target || '_blank') + '"'
+                        + ' class="chat-uc-qa-chip" title="' + escHtml(qa[qi].label) + '"'
+                        + ' onclick="event.stopPropagation()">'
+                        + escHtml(qa[qi].icon || '') + ' ' + escHtml(qa[qi].label) + '</a>';
+                }
+                var ftExpBadge = uc.fast_track
+                    ? ' <span class="chat-uc-card__ft-badge" title="Pre-loaded requirements — PRD ready immediately">&#x26A1; Ready</span>' : '';
+                var wfSteps = uc.workflow_steps || [];
+                var wfHtml = '';
+                if (wfSteps.length) {
+                    wfHtml = '<div class="chat-uc-card__workflow">'
+                        + wfSteps.map(function (s, idx) {
+                            return '<span class="uc-wf-step" title="Step ' + (idx + 1) + ': ' + escAttr(s.description || s.label || '') + '">'
+                                + escHtml(s.label || ('Step ' + (idx + 1))) + '</span>';
+                        }).join('<span class="uc-wf-arrow">&#x203A;</span>')
+                        + '</div>';
+                }
+                html += '<div class="chat-uc-card' + (isSelected ? ' chain-selected' : '') + '" data-uc-id="' + ucIdEsc + '" tabindex="0" role="button" aria-label="Start ' + escAttr(uc.label) + '">'
+                    + '<div class="chat-uc-card__top">'
+                    + chainCb
+                    + '<span class="chat-uc-card__label"><span class="chat-uc-card__icon">' + escHtml(uc.icon || '') + '</span>' + escHtml(uc.label) + ftExpBadge + '</span>'
+                    + '<button class="chat-uc-edit-btn" data-uc-id="' + ucIdEsc + '" title="View / edit use case" tabindex="0">&#x270F;</button>'
+                    + badge
+                    + '</div>'
+                    + '<div class="chat-uc-card__desc">' + escHtml(uc.description || '') + '</div>'
+                    + wfHtml
+                    + (chips ? '<div class="chat-uc-card__chips">' + chips + '</div>' : '')
+                    + '<div class="chat-uc-card__actions">'
+                    + '<a href="' + CHAT_API + '/use-cases/' + escHtml(uc.id) + '/standalone" class="chat-uc-standalone-btn" title="Download self-contained HTML app" onclick="event.stopPropagation()" download>&#x2913; Standalone</a>'
+                    + '<button class="chat-uc-export-btn" data-uc-id="' + ucIdEsc + '" title="Export YAML bundle" onclick="event.stopPropagation()">&#x2913; Export</button>'
+                    + '</div>'
+                    + '</div>';
             }
-
-            var fastTrackBadge = uc.fast_track ? ' <span class="chat-uc-card__ft-badge" title="Pre-loaded requirements — PRD ready immediately">⚡ Ready</span>' : '';
-            html += '<div class="chat-uc-card" data-uc-id="' + escHtml(uc.id) + '" tabindex="0" role="button" aria-label="Start ' + escHtml(uc.label) + '">'
-                + '<div class="chat-uc-card__top">'
-                + '<span class="chat-uc-card__label"><span class="chat-uc-card__icon">' + escHtml(uc.icon || '') + '</span>' + escHtml(uc.label) + fastTrackBadge + '</span>'
-                + '<button class="chat-uc-edit-btn" data-uc-id="' + escHtml(uc.id) + '" title="View / edit use case" tabindex="0">&#x270F;</button>'
-                + badge
-                + '</div>'
-                + '<div class="chat-uc-card__desc">' + escHtml(uc.description || '') + '</div>'
-                + (chips ? '<div class="chat-uc-card__chips">' + chips + '</div>' : '')
-                + '<div class="chat-uc-card__actions">'
-                + '<a href="' + CHAT_API + '/use-cases/' + escHtml(uc.id) + '/standalone" class="chat-uc-standalone-btn" title="Download self-contained HTML app" onclick="event.stopPropagation()" download>&#x2913; Standalone</a>'
-                + '</div>'
-                + '</div>';
         }
         list.innerHTML = html;
 
-        var cards = list.querySelectorAll('.chat-uc-card');
-        for (var j = 0; j < cards.length; j++) {
-            (function (card) {
-                card.addEventListener('click', function (e) {
-                    if (e.target.closest && (e.target.closest('.chat-uc-edit-btn') || e.target.closest('.chat-uc-qa-chip') || e.target.closest('.chat-uc-standalone-btn'))) return;
-                    startUseCase(card.dataset.ucId);
-                });
-                card.addEventListener('keydown', function (e) {
-                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startUseCase(card.dataset.ucId); }
-                });
-            })(cards[j]);
-        }
+        list.querySelectorAll('.chat-uc-compact-row').forEach(function (row) {
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('.chat-uc-edit-btn') || e.target.closest('.chat-uc-export-btn') || e.target.classList.contains('uc-chain-cb')) return;
+                if (_chainMode) {
+                    var id = row.dataset.ucId;
+                    if (_chainSelected[id]) { delete _chainSelected[id]; } else { _chainSelected[id] = true; }
+                    var cb = row.querySelector('.uc-chain-cb');
+                    if (cb) cb.checked = !!_chainSelected[id];
+                    row.classList.toggle('chain-selected', !!_chainSelected[id]);
+                    updateChainCount();
+                    return;
+                }
+                startUseCase(row.dataset.ucId);
+            });
+            row.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!_chainMode) startUseCase(row.dataset.ucId); }
+            });
+        });
 
-        var editBtns = list.querySelectorAll('.chat-uc-edit-btn');
-        for (var k = 0; k < editBtns.length; k++) {
-            (function (btn) {
-                btn.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    openUcEditModal(btn.dataset.ucId);
-                });
-            })(editBtns[k]);
-        }
+        list.querySelectorAll('.chat-uc-card').forEach(function (card) {
+            card.addEventListener('click', function (e) {
+                if (e.target.closest('.chat-uc-edit-btn') || e.target.closest('.chat-uc-qa-chip')
+                    || e.target.closest('.chat-uc-standalone-btn') || e.target.closest('.chat-uc-export-btn')
+                    || e.target.classList.contains('uc-chain-cb')) return;
+                if (_chainMode) {
+                    var id = card.dataset.ucId;
+                    if (_chainSelected[id]) { delete _chainSelected[id]; } else { _chainSelected[id] = true; }
+                    var cb = card.querySelector('.uc-chain-cb');
+                    if (cb) cb.checked = !!_chainSelected[id];
+                    card.classList.toggle('chain-selected', !!_chainSelected[id]);
+                    updateChainCount();
+                    return;
+                }
+                startUseCase(card.dataset.ucId);
+            });
+            card.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!_chainMode) startUseCase(card.dataset.ucId); }
+            });
+        });
+
+        list.querySelectorAll('.chat-uc-edit-btn').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                openUcEditModal(btn.dataset.ucId);
+            });
+        });
+
+        list.querySelectorAll('.chat-uc-export-btn').forEach(function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                exportUseCase(btn.dataset.ucId);
+            });
+        });
+
+        list.querySelectorAll('.uc-chain-cb').forEach(function (cb) {
+            cb.addEventListener('change', function (e) {
+                e.stopPropagation();
+                var id = cb.dataset.ucId;
+                if (cb.checked) { _chainSelected[id] = true; } else { delete _chainSelected[id]; }
+                var parent = cb.closest('.chat-uc-card') || cb.closest('.chat-uc-compact-row');
+                if (parent) parent.classList.toggle('chain-selected', cb.checked);
+                updateChainCount();
+            });
+        });
     }
 
     // ---- Start use case (create context + seed message) ----
@@ -1837,6 +2258,17 @@
                     if (uc.seed_message) {
                         var stream = document.getElementById('message-stream');
                         if (stream) stream.innerHTML = renderMessageHtml({ role: 'assistant', content: uc.seed_message.trim() });
+                    }
+                    // Canvas seed confirmation (F2g) — best-effort informational message
+                    var seeds = uc.canvas_seeds || [];
+                    if (seeds.length) {
+                        var totalTemplates = seeds.reduce(function (n, s) { return n + ((s.templates || []).length + (s.snippets || []).length); }, 0);
+                        if (totalTemplates > 0) {
+                            var canvasNames = seeds.map(function (s) {
+                                return (s.canvas || '').replace(/_canvas$/, '').replace(/_/g, ' ');
+                            }).filter(Boolean).join(', ');
+                            addMessage('system', '&#x1F4C1; ' + totalTemplates + ' canvas template' + (totalTemplates !== 1 ? 's' : '') + ' configured for this use case (' + canvasNames + '). Activate a chain to pre-load them into the canvas.', null);
+                        }
                     }
                     // Trigger fast-track sequence if applicable
                     if (_fastTrackConfig && !_fastTrackDone && ctx.intake_session_id) {
@@ -2213,19 +2645,98 @@
         if (searchInput) {
             searchInput.addEventListener('input', function () {
                 var q = this.value.trim().toLowerCase();
-                if (!q) { renderUseCases(_allUseCases); return; }
-                var filtered = _allUseCases.filter(function (uc) {
+                var base = _ucActiveCategory
+                    ? _allUseCases.filter(function (uc) { return (uc.category || 'general') === _ucActiveCategory; })
+                    : _allUseCases;
+                if (!q) { renderUseCases(base); return; }
+                renderUseCases(base.filter(function (uc) {
                     return uc.label.toLowerCase().indexOf(q) !== -1
                         || (uc.description || '').toLowerCase().indexOf(q) !== -1
                         || (uc.category || '').toLowerCase().indexOf(q) !== -1;
-                });
-                renderUseCases(filtered);
+                }));
             });
         }
+
+        // Toolbar buttons
+        var btnChainMode = document.getElementById('btn-uc-chain-mode');
+        if (btnChainMode) btnChainMode.addEventListener('click', function () { _chainMode ? exitChainMode() : enterChainMode(); });
+
+        var btnCreate = document.getElementById('btn-uc-create');
+        if (btnCreate) btnCreate.addEventListener('click', function () { openWizard(null); });
+
+        var btnImport = document.getElementById('btn-uc-import');
+        if (btnImport) btnImport.addEventListener('click', openImportModal);
+
+        var btnCompact = document.getElementById('btn-uc-compact');
+        if (btnCompact) btnCompact.addEventListener('click', toggleUcCompact);
+
+        // Chain bar
+        var btnChainActivate = document.getElementById('btn-chain-activate');
+        if (btnChainActivate) btnChainActivate.addEventListener('click', activateChain);
+
+        var btnChainCancel = document.getElementById('btn-chain-cancel');
+        if (btnChainCancel) btnChainCancel.addEventListener('click', exitChainMode);
+
+        // Import modal
+        var importClose = document.getElementById('uc-import-close');
+        if (importClose) importClose.addEventListener('click', closeImportModal);
+
+        var importCancel = document.getElementById('uc-import-cancel');
+        if (importCancel) importCancel.addEventListener('click', closeImportModal);
+
+        var importSubmit = document.getElementById('uc-import-submit');
+        if (importSubmit) importSubmit.addEventListener('click', submitImport);
+
+        var importOverlay = document.getElementById('uc-import-modal');
+        if (importOverlay) importOverlay.addEventListener('click', function (e) { if (e.target === importOverlay) closeImportModal(); });
+
+        // Wizard navigation
+        var wizCloseBtn = document.getElementById('uc-wiz-close');
+        if (wizCloseBtn) wizCloseBtn.addEventListener('click', closeWizard);
+
+        var wizNextBtn = document.getElementById('uc-wiz-next');
+        if (wizNextBtn) wizNextBtn.addEventListener('click', wizNext);
+
+        var wizPrevBtn = document.getElementById('uc-wiz-prev');
+        if (wizPrevBtn) wizPrevBtn.addEventListener('click', wizPrev);
+
+        var wizFinishBtn = document.getElementById('uc-wiz-finish');
+        if (wizFinishBtn) wizFinishBtn.addEventListener('click', submitWizard);
+
+        var wizOverlay = document.getElementById('uc-create-wizard');
+        if (wizOverlay) wizOverlay.addEventListener('click', function (e) { if (e.target === wizOverlay) closeWizard(); });
+
+        // Wizard step 1: clone radio toggle
+        document.querySelectorAll('input[name="wiz-start"]').forEach(function (radio) {
+            radio.addEventListener('change', function () {
+                var wrap = document.getElementById('uc-wiz-clone-wrap');
+                if (wrap) wrap.style.display = (this.value === 'clone') ? '' : 'none';
+            });
+        });
+
+        // Wizard step 4: add requirement
+        var addReq = document.getElementById('uc-wiz-add-req');
+        if (addReq) addReq.addEventListener('click', function () {
+            _wizReqs.push({ type: 'functional', priority: 'high', text: '' });
+            renderWizReqList();
+        });
+
+        // Wizard step 5: add workflow step
+        var addStep = document.getElementById('uc-wiz-add-step');
+        if (addStep) addStep.addEventListener('click', function () {
+            _wizSteps.push({ step: _wizSteps.length + 1, label: '', description: '', action: '' });
+            renderWizStepsList();
+        });
+
+        // Wizard step 3: archetype buttons
+        document.querySelectorAll('.uc-archetype-btn[data-archetype]').forEach(function (btn) {
+            btn.addEventListener('click', function () { applyArchetype(btn.dataset.archetype); });
+        });
 
         initUcEditModal();
         loadUseCases();
     }
+
 
     // ===================================================================
     // SECTION 19: Namespace exports
