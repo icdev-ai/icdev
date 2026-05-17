@@ -1103,21 +1103,22 @@
 }
 
 .chat-uc-card--loading {
-    opacity: 0.6;
+    opacity: 0.75;
     pointer-events: none;
     position: relative;
     border-color: var(--accent-blue) !important;
+    background: var(--accent-blue, #1a56db) !important;
 }
 
 .chat-uc-card--loading::after {
     content: '';
     position: absolute;
-    top: 8px;
-    right: 10px;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--accent-blue);
-    border-top-color: transparent;
+    top: 7px;
+    right: 9px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: #fff;
     border-radius: 50%;
     animation: uc-spin 0.7s linear infinite;
 }
