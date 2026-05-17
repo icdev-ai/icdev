@@ -1751,14 +1751,18 @@
                     + escHtml(qa[qi].icon || '') + ' ' + escHtml(qa[qi].label) + '</a>';
             }
 
+            var fastTrackBadge = uc.fast_track ? ' <span class="chat-uc-card__ft-badge" title="Pre-loaded requirements — PRD ready immediately">⚡ Ready</span>' : '';
             html += '<div class="chat-uc-card" data-uc-id="' + escHtml(uc.id) + '" tabindex="0" role="button" aria-label="Start ' + escHtml(uc.label) + '">'
                 + '<div class="chat-uc-card__top">'
-                + '<span class="chat-uc-card__label"><span class="chat-uc-card__icon">' + escHtml(uc.icon || '') + '</span>' + escHtml(uc.label) + '</span>'
+                + '<span class="chat-uc-card__label"><span class="chat-uc-card__icon">' + escHtml(uc.icon || '') + '</span>' + escHtml(uc.label) + fastTrackBadge + '</span>'
                 + '<button class="chat-uc-edit-btn" data-uc-id="' + escHtml(uc.id) + '" title="View / edit use case" tabindex="0">&#x270F;</button>'
                 + badge
                 + '</div>'
                 + '<div class="chat-uc-card__desc">' + escHtml(uc.description || '') + '</div>'
                 + (chips ? '<div class="chat-uc-card__chips">' + chips + '</div>' : '')
+                + '<div class="chat-uc-card__actions">'
+                + '<a href="' + CHAT_API + '/use-cases/' + escHtml(uc.id) + '/standalone" class="chat-uc-standalone-btn" title="Download self-contained HTML app" onclick="event.stopPropagation()" download>&#x2913; Standalone</a>'
+                + '</div>'
                 + '</div>';
         }
         list.innerHTML = html;
@@ -1767,7 +1771,7 @@
         for (var j = 0; j < cards.length; j++) {
             (function (card) {
                 card.addEventListener('click', function (e) {
-                    if (e.target.closest && (e.target.closest('.chat-uc-edit-btn') || e.target.closest('.chat-uc-qa-chip'))) return;
+                    if (e.target.closest && (e.target.closest('.chat-uc-edit-btn') || e.target.closest('.chat-uc-qa-chip') || e.target.closest('.chat-uc-standalone-btn'))) return;
                     startUseCase(card.dataset.ucId);
                 });
                 card.addEventListener('keydown', function (e) {

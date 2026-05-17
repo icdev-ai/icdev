@@ -81,6 +81,7 @@ def forward_alert(
 
     error = None
     status_code = None
+    _timed_out = False
     try:
         req = Request(siem_endpoint, data=body, headers=headers, method="POST")
         with urlopen(req, timeout=SLA_SECONDS) as resp:  # nosec B310 — scheme validated above to http/https only
@@ -92,6 +93,7 @@ def forward_alert(
     except URLError as exc:
         error = f"URL error: {exc.reason}"
     except TimeoutError:
+        _timed_out = True
         error = f"Delivery exceeded SLA of {SLA_SECONDS} seconds"
     except Exception as exc:
         error = str(exc)
@@ -99,14 +101,13 @@ def forward_alert(
     duration_ms = round((time.perf_counter() - t0) * 1000, 2)
     sla_met = (error is None) and (duration_ms <= SLA_SECONDS * 1000)
 
-    if error is None and duration_ms > SLA_SECONDS * 1000:
+    if _timed_out or (error is None and duration_ms > SLA_SECONDS * 1000):
         logger.error(
             "SIEM latency exceeded SLA: %s ms > %s s (delivery_id=%s)",
             duration_ms,
             SLA_SECONDS,
             delivery_id,
         )
-        raise SIEMLatencyExceededError(duration_ms, SLA_SECONDS)
 
     # Persist to siem_delivery_log (append-only / immutable)
     try:
@@ -137,10 +138,14 @@ def forward_alert(
     except Exception as exc:
         logger.warning("Failed to write siem_delivery_log: %s", exc)
 
+    if _timed_out or (error is None and duration_ms > SLA_SECONDS * 1000):
+        raise SIEMLatencyExceededError(duration_ms, SLA_SECONDS)
+
     return {
         "delivery_id": delivery_id,
         "delivered": error is None,
         "duration_ms": duration_ms,
         "sla_met": sla_met,
+        "start_ts": start_ts.isoformat(),
         "error": error,
     }

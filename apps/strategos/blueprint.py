@@ -4600,7 +4600,7 @@ def api_intel_brief_run():
         from tools.strategos.predictive_analysis import PredictiveAnalysisEngine
         engine = PredictiveAnalysisEngine()
         result = engine.run(theater=theater)
-        return jsonify({"ok": True, **{k: v for k, v in result.items() if k != "narrative_md"}})
+        return jsonify({"ok": True, **result})
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
