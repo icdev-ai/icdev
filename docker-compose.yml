@@ -641,11 +641,12 @@ services:
           memory: 256M
     command: ["tools/a2a/agent_server.py", "--agent-id", "knowledge-agent", "--port", "8449"]
 
-  # Monitor Agent — Log analysis, metrics, alerts, health checks
+  # Monitor Agent — Log analysis, metrics, SIEM alert forwarding, health checks
+  # SLA: 5-second alert delivery to downstream SIEM (NIST AU-6, SI-4)
   icdev-monitor:
     build:
       context: .
-      dockerfile: docker/Dockerfile.agent-base
+      dockerfile: docker/Dockerfile.monitor
     image: icdev/monitor:latest
     container_name: icdev-monitor
     depends_on:
@@ -656,6 +657,11 @@ services:
     environment:
       <<: *common-env
       PORT: "8450"
+      SIEM_SLA_SECONDS: "5"
+      SIEM_ENDPOINT: ${SIEM_ENDPOINT:-}
+      SIEM_TOKEN: ${SIEM_TOKEN:-}
+      ALERT_CORRELATOR_WINDOW_SECONDS: "30"
+      MONITOR_HEARTBEAT_INTERVAL: "60"
     env_file:
       - .env
     volumes:
