@@ -443,6 +443,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cross_agency_transfers",
         # IL5 data ingestion audit (NIST AU-2, AU-12 — 30-second SLA display pipeline)
         "il5_ingestion_log",
+        # Canvas Instances — seeding audit (NIST AU — append-only activation log)
+        "canvas_instances",
     ]
 
     if tool_name == "Bash":
