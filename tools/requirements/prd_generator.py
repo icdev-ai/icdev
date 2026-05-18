@@ -31,6 +31,10 @@ def _get_connection(db_path=None):
         conn = get_connection(db_path=str(db_path))
     else:
         conn = get_connection()
+    try:
+        conn.set_security_context(None)  # bypass RLS: intake uses session_id as auth token
+    except Exception:
+        pass
     return conn
 
 
