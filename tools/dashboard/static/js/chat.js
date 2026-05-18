@@ -1915,6 +1915,13 @@
             }).then(function (r) { return r.json(); }).then(function (act) {
                 if (act.context_id) {
                     addMessage('system', '⛓ Chain activated — ' + data.requirement_count + ' merged requirements seeded into intake session.', null);
+                    var cs = act.canvas_seeds;
+                    if (cs && cs.available > 0) {
+                        var instMsg = cs.instantiated < cs.available
+                            ? cs.instantiated + ' of ' + cs.available + ' templates instantiated in Canvas'
+                            : cs.instantiated + ' templates instantiated in Canvas';
+                        addMessage('system', '&#x1F4C1; ' + instMsg, null);
+                    }
                     loadContexts();
                 } else if (act.error) {
                     addMessage('system', '⚠ Chain activate: ' + act.error, null);
