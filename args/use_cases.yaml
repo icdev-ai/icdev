@@ -481,6 +481,11 @@ use_cases:
         priority: high
         text: "System shall trigger RAG and Knowledge Graph ingest automatically on section approval, updating the semantic search index with the newly approved content."
         criteria: "Acceptance: Ingest triggered within 60 seconds of approval event; knowledge graph node updated with section metadata; search returns updated content within 24 hours of ingest."
+    # Templates/snippets confirmed present in icdev/tools/data_canvas/db/init_db.py.
+    canvas_seeds:
+      - canvas: data
+        templates: [tpl-ddc-rag-pipeline, tpl-ddc-multi-classification]
+        snippets: [snp-ddc-cui-data-flow, snp-ddc-backup-retention]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GOVERNMENT USE CASES — DoD/IC, Federal Civilian, State & Local
