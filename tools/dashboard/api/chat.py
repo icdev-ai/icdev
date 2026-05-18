@@ -812,6 +812,7 @@ def list_chains():
     chains = []
     try:
         with _gc() as conn:
+            conn.set_security_context(None)  # rls-bypass: use_case_chains has no classification column
             _chain_init_table(conn)
             rows = conn.execute(
                 "SELECT * FROM use_case_chains WHERE tenant_id = ? OR tenant_id = '' ORDER BY created_at DESC",
@@ -848,6 +849,7 @@ def activate_chain(chain_id):
     chain = None
     try:
         with _gc() as conn:
+            conn.set_security_context(None)  # rls-bypass: use_case_chains has no classification column
             _chain_init_table(conn)
             row = conn.execute(
                 "SELECT * FROM use_case_chains WHERE id=?", (chain_id,)
@@ -914,6 +916,7 @@ def activate_chain(chain_id):
 
         # Update chain status
         with _gc() as conn:
+            conn.set_security_context(None)  # rls-bypass: use_case_chains has no classification column
             _chain_init_table(conn)
             conn.execute(
                 "UPDATE use_case_chains SET status='active', linked_session_id=?, updated_at=? WHERE id=?",
