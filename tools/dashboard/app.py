@@ -9895,17 +9895,18 @@ if __name__ == "__main__":
         _ssl_context = _ctx
 
     # Use SocketIO runner if available (D170), otherwise plain Flask
+    # use_reloader=False: prevents Werkzeug's stat-based reloader from spawning
+    # a second create_app() call and causing repeated restart loops on Windows.
     socketio = get_socketio()
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
         if _ssl_context is not None:
-            socketio.run(app, host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, use_reloader=False, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
         else:
-            socketio.run(app, host=HOST, port=args.port, debug=args.debug, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, use_reloader=False, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
-        _extra_files = [str(BASE_DIR / "args" / "llm_config.yaml")]
         if _ssl_context is not None:
-            app.run(host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, extra_files=_extra_files, threaded=True)  # nosec B104
+            app.run(host=HOST, port=args.port, debug=args.debug, use_reloader=False, ssl_context=_ssl_context, threaded=True)  # nosec B104
         else:
-            app.run(host=HOST, port=args.port, debug=args.debug, extra_files=_extra_files, threaded=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            app.run(host=HOST, port=args.port, debug=args.debug, use_reloader=False, threaded=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment

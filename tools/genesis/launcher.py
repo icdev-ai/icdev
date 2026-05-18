@@ -112,7 +112,7 @@ def _child_env():
 
 def _start_dashboard():
     """Start Dashboard subprocess."""
-    _kill_stale_instances("dashboard/app.py")
+    _kill_stale_instances("tools/dashboard/app.py")
     dash_log = open(os.path.join(ROOT, ".tmp", "dashboard.log"), "a", encoding="utf-8")
     proc = subprocess.Popen(
         [sys.executable, "tools/dashboard/app.py", "--port", str(DASHBOARD_PORT)],
@@ -244,40 +244,44 @@ def main():
         while True:
             time.sleep(30)
 
-            # Check dashboard
-            if dash_proc.poll() is not None:
-                _log(f"Dashboard exited (code {dash_proc.returncode}), restarting...")
-                dash_log_f.close()
-                time.sleep(2)
-                dash_proc, dash_log_f = _start_dashboard()
+            try:
+                # Check dashboard
+                if dash_proc.poll() is not None:
+                    _log(f"Dashboard exited (code {dash_proc.returncode}), restarting...")
+                    dash_log_f.close()
+                    time.sleep(2)
+                    dash_proc, dash_log_f = _start_dashboard()
 
-            # Check Genesis daemon
-            if daemon_proc.poll() is not None:
-                _log(f"Genesis Daemon exited (code {daemon_proc.returncode}), restarting...")
-                daemon_log_f.close()
-                time.sleep(5)
-                daemon_proc, daemon_log_f = _start_daemon()
+                # Check Genesis daemon
+                if daemon_proc.poll() is not None:
+                    _log(f"Genesis Daemon exited (code {daemon_proc.returncode}), restarting...")
+                    daemon_log_f.close()
+                    time.sleep(5)
+                    daemon_proc, daemon_log_f = _start_daemon()
 
-            # Check Proposal Genesis daemon
-            if pg_proc.poll() is not None:
-                _log(f"Proposal Genesis exited (code {pg_proc.returncode}), restarting...")
-                pg_log_f.close()
-                time.sleep(5)
-                pg_proc, pg_log_f = _start_proposal_genesis()
+                # Check Proposal Genesis daemon
+                if pg_proc.poll() is not None:
+                    _log(f"Proposal Genesis exited (code {pg_proc.returncode}), restarting...")
+                    pg_log_f.close()
+                    time.sleep(5)
+                    pg_proc, pg_log_f = _start_proposal_genesis()
 
-            # Check Kanban Scheduler
-            if kb_proc.poll() is not None:
-                _log(f"Kanban Scheduler exited (code {kb_proc.returncode}), restarting...")
-                kb_log_f.close()
-                time.sleep(2)
-                kb_proc, kb_log_f = _start_kanban_scheduler()
+                # Check Kanban Scheduler
+                if kb_proc.poll() is not None:
+                    _log(f"Kanban Scheduler exited (code {kb_proc.returncode}), restarting...")
+                    kb_log_f.close()
+                    time.sleep(2)
+                    kb_proc, kb_log_f = _start_kanban_scheduler()
 
-            # Check FathomDesk Trading Dashboard
-            if td_proc.poll() is not None:
-                _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
-                td_log_f.close()
-                time.sleep(2)
-                td_proc, td_log_f = _start_trading_dashboard()
+                # Check FathomDesk Trading Dashboard
+                if td_proc.poll() is not None:
+                    _log(f"FathomDesk Dashboard exited (code {td_proc.returncode}), restarting...")
+                    td_log_f.close()
+                    time.sleep(2)
+                    td_proc, td_log_f = _start_trading_dashboard()
+
+            except Exception as exc:
+                _log(f"Monitor loop error (non-fatal): {exc}")
 
     except KeyboardInterrupt:
         _log("Shutdown requested")
