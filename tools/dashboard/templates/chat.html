@@ -138,6 +138,17 @@
 
         <!-- RICOAS Tab Content -->
         <div id="ricoas-sidebar" class="chat-right-tab-content chat-right-tab-content--active" data-tab-content="ricoas">
+            <!-- Workflow Step Bar — shown when active use case has workflow_steps -->
+            <div id="workflow-step-bar" class="sidebar-section" style="display:none;">
+                <h4 class="chat-sidebar-heading">Workflow Progress</h4>
+                <div class="wf-step-progress">
+                    <div class="wf-step-indicator" id="wf-step-indicator">Step 1</div>
+                    <div class="wf-step-label" id="wf-step-label"></div>
+                    <div class="wf-step-dots" id="wf-step-dots"></div>
+                </div>
+                <button class="btn btn-sm btn-primary wf-next-btn" id="wf-next-btn" onclick="advanceWorkflowStep()">Next Step &#x2192;</button>
+            </div>
+
             <!-- Compliance Frameworks -->
             <div class="sidebar-section" id="frameworks-section" style="display:none;">
                 <h4 class="chat-sidebar-heading">Compliance Frameworks</h4>
