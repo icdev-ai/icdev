@@ -1459,7 +1459,6 @@ def _build_standalone_html(uc: dict) -> str:
         or [{"key": "item", "label": "Item", "type": "text"}, {"key": "notes", "label": "Notes", "type": "text"}]
     )
     col_keys = [c["key"] for c in default_cols]
-    columns = [c["label"] for c in default_cols]
 
     # Category-specific options and controls only — columns come from default_cols above
     extra_summary_js = ""
