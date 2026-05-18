@@ -255,25 +255,29 @@ use_cases:
       Keep responses focused. One or two questions at a time if the user wants to
       customize.
     seed_message: |
-      Your **Year-End Budget Sprint** requirements framework is loaded and ready.
+      Your **Year-End Budget Sprint** tracker is loaded and ready.
 
-      14 pre-built requirements are already in place covering:
-      • Equipment inventory and vendor quote tracking
-      • BOM generation with unit pricing and lead times
-      • IGCE estimation within 10% of actuals
-      • Procurement vehicle identification (GWACs, BPAs, existing contracts)
+      The procurement tracker is pre-configured with these columns:
+      **Vendor · Item · Qty · Estimate ($) · Quotation ($) · Expiration · POC · Description · Notes**
+
+      The summary bar auto-calculates Estimate Total, Quotation Total, and Variance.
+      Use **⚙ Columns** in the Standalone App to add, remove, or rename columns.
+
+      14 pre-built requirements are in place covering:
+      • Vendor quote capture vs. IGCE estimate
+      • BOM generation with lead times and procurement vehicle identification
       • FAR/DFARS and NDAA Section 889 compliance checks
       • ERP integration and digital BOM export (CSV/XLSX)
 
       **AI Boost will run automatically and your PRD will be ready immediately — no input needed.**
 
-      Or personalize it with your specifics:
-      - **Industry** — e.g., Telecom, Healthcare, Government, Defense, Finance
-      - **Equipment types** — e.g., routers, switches, fiber transceivers (SFP/QSFP), servers
+      Or personalize it first:
+      - **Industry** — e.g., Telecom, Healthcare, Government, Defense
+      - **Item types** — e.g., routers, switches, servers, software licenses
       - **Vendors** — e.g., Cisco, Juniper, Dell, Arista
-      - **Budget and FY-end date**
+      - **Budget ceiling and FY-end date**
 
-      Skip customization → click **Send to Kanban** to add a build task right now.
+      Skip customization → **Send to Kanban** to create a build task right now.
     template_requirements:
       - type: functional
         priority: high
