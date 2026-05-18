@@ -476,6 +476,14 @@ def _load_canvas_catalog() -> dict:
     return _canvas_catalog_cache
 
 
+def _safe_table_name(name: str) -> str:
+    """Return name unchanged if it is a safe SQL identifier, else raise ValueError."""
+    import re as _re
+    if not name or not _re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name):
+        raise ValueError(f"Unsafe table name rejected: {name!r}")
+    return name
+
+
 def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> list:
     """Pre-instantiate canvas templates/snippets for a use case.
 
@@ -506,10 +514,11 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
             if not templates_table:
                 continue
             try:
+                safe_tmpl_table = _safe_table_name(templates_table)
                 with _gc(db_path=str(canvas_db_path)) as cconn:
                     cconn.set_security_context(None)  # rls-bypass: canvas seeding; tenant isolation at API boundary
                     row = cconn.execute(
-                        f"SELECT name FROM {templates_table} WHERE name = ? LIMIT 1",
+                        f"SELECT name FROM {safe_tmpl_table} WHERE name = ? LIMIT 1",  # nosec B608 — table name validated by _safe_table_name
                         (tmpl_name,)
                     ).fetchone()
                     if row:
@@ -533,10 +542,11 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
             if not snippets_table:
                 continue
             try:
+                safe_snip_table = _safe_table_name(snippets_table)
                 with _gc(db_path=str(canvas_db_path)) as cconn:
                     cconn.set_security_context(None)  # rls-bypass: canvas seeding; tenant isolation at API boundary
                     row = cconn.execute(
-                        f"SELECT name FROM {snippets_table} WHERE name = ? LIMIT 1",
+                        f"SELECT name FROM {safe_snip_table} WHERE name = ? LIMIT 1",  # nosec B608 — table name validated by _safe_table_name
                         (snip_name,)
                     ).fetchone()
                     if row:
