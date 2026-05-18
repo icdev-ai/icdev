@@ -281,8 +281,8 @@ use_cases:
     template_requirements:
       - type: functional
         priority: high
-        text: "System shall provide an equipment inventory tracking capability to catalog all assets targeted for procurement, including quantity, unit cost, and lead time per line item."
-        criteria: "Acceptance: Inventory captures asset name, model, vendor, quantity, unit price, and vendor lead time; supports bulk import via CSV template."
+        text: "System shall provide an equipment inventory tracking capability to catalog all assets targeted for procurement, including Item, Qty, Estimate ($), Quotation ($), Expiration, POC, Description, and Notes per line item."
+        criteria: "Acceptance: Inventory captures Vendor, Item, Qty, Estimate ($) (IGCE), Quotation ($) (vendor quote), Expiration date, POC, Description, and Notes; supports bulk import via CSV template."
       - type: functional
         priority: high
         text: "System shall capture and compare vendor quotes against the Independent Government Cost Estimate (IGCE) for each procurement line item."
@@ -290,7 +290,7 @@ use_cases:
       - type: functional
         priority: high
         text: "System shall generate a Bill of Materials (BOM) for each procurement initiative, organized by initiative tier and equipment category."
-        criteria: "Acceptance: BOM exportable as CSV and XLSX; includes columns for line item, quantity, unit price, total price, vendor, contract vehicle, and NDAA compliance status."
+        criteria: "Acceptance: BOM exportable as CSV and XLSX; includes columns for Item, Qty, Estimate ($), Quotation ($), Vendor, Expiration, POC, contract vehicle, and NDAA compliance status."
       - type: functional
         priority: high
         text: "System shall support budget allocation by initiative with Tier 1 (execution-ready) and Tier 2 (backup) prioritization, tracking total obligation against available budget."
@@ -301,8 +301,8 @@ use_cases:
         criteria: "Acceptance: Each initiative assigned at least one procurement vehicle; initiatives with no identified vehicle flagged with recommended action; estimated procurement timeline shown."
       - type: data
         priority: high
-        text: "System shall capture vendor, model number, unit price, extended price, and vendor lead time for each BOM line item."
-        criteria: "Acceptance: All five data fields required before a line item is marked 'complete'; lead time validated against FY-end date to flag items that cannot arrive in time."
+        text: "System shall capture Vendor, Item, Qty, Estimate ($) (IGCE), Quotation ($) (vendor quote), Expiration, POC, Description, and Notes for each BOM line item."
+        criteria: "Acceptance: Vendor, Item, Qty, Estimate ($), and Quotation ($) required before a line item is marked 'complete'; Expiration date validated against FY-end date to flag items that cannot arrive in time."
       - type: data
         priority: medium
         text: "System shall capture contract vehicle metadata for each procurement vehicle, including contract number, NAICS code, ceiling value, and expiration date."
@@ -334,7 +334,7 @@ use_cases:
       - type: interface
         priority: high
         text: "System shall export the complete BOM in CSV and XLSX formats suitable for direct submission to the procurement office or contracting officer."
-        criteria: "Acceptance: Export includes all required fields (CLIN, description, quantity, unit price, total, contract vehicle, NDAA status); format validated against procurement office template."
+        criteria: "Acceptance: Export includes all required fields (CLIN, Item, Qty, Estimate ($), Quotation ($), Vendor, Expiration, POC, Description, Notes, contract vehicle, NDAA status); format validated against procurement office template."
 
   - id: document_refresh
     label: Crowd-Sourced Doc Refresh
