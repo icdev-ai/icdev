@@ -2047,6 +2047,16 @@
 }
 .uc-archetype-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); background: #1f6feb18; }
 
+/* Workflow Step Bar */
+.wf-step-progress { margin-bottom: 8px; }
+.wf-step-indicator { font-size: 0.85rem; font-weight: 700; color: var(--accent-blue, #58a6ff); margin-bottom: 2px; }
+.wf-step-label { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 6px; }
+.wf-step-dots { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.wf-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--border-color, #30363d); }
+.wf-dot--active { background: var(--accent-blue, #58a6ff); }
+.wf-dot--done { background: var(--success-color, #3fb950); }
+.wf-next-btn { width: 100%; margin-top: 4px; }
+
 .uc-field-label {
     display: block;
     font-size: 0.72rem;

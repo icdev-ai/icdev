@@ -1729,6 +1729,73 @@
     var _ucContextMap = {};
     try { _ucContextMap = JSON.parse(localStorage.getItem('icdev_uc_ctx_map') || '{}'); } catch (e) {}
     var _ucEditId = null;
+    var _currentWorkflowStep = 0;
+
+    var _CANVAS_URL_MAP = {
+        'compliance': '/compliance',
+        'kanban': '/kanban',
+        'migration': '/migration',
+        'knowledge-search': '/knowledge-search',
+        'network': '/network/ask',
+        'monitoring': '/monitoring',
+        'chat': '/chat'
+    };
+
+    function _getCanvasUrl(canvas) {
+        if (!canvas) return null;
+        var key = canvas.replace(/_canvas$/, '').replace(/_/g, '-');
+        return _CANVAS_URL_MAP[key] || ('/' + canvas.replace(/_canvas$/, ''));
+    }
+
+    function renderWorkflowStepBar(uc) {
+        var bar = document.getElementById('workflow-step-bar');
+        if (!bar) return;
+        var steps = uc && uc.workflow_steps;
+        if (!steps || !steps.length) { bar.style.display = 'none'; return; }
+        bar.style.display = 'block';
+        var total = steps.length;
+        var idx = _currentWorkflowStep;
+        var complete = idx >= total;
+        var displayIdx = complete ? total - 1 : idx;
+        var step = steps[displayIdx];
+        var indicator = document.getElementById('wf-step-indicator');
+        var labelEl = document.getElementById('wf-step-label');
+        var dots = document.getElementById('wf-step-dots');
+        var btn = document.getElementById('wf-next-btn');
+        if (indicator) indicator.textContent = complete ? 'Complete!' : ('Step ' + (displayIdx + 1) + ' of ' + total);
+        if (labelEl) labelEl.textContent = complete ? 'All steps done' : (step.label || '');
+        if (dots) {
+            var dotHtml = '';
+            for (var i = 0; i < total; i++) {
+                var cls = 'wf-dot';
+                if (i < idx) cls += ' wf-dot--done';
+                else if (i === idx) cls += ' wf-dot--active';
+                dotHtml += '<span class="' + cls + '" title="Step ' + (i + 1) + ': ' + escHtml((steps[i] && steps[i].label) || '') + '"></span>';
+            }
+            dots.innerHTML = dotHtml;
+        }
+        if (btn) {
+            btn.textContent = complete ? '✓ Done' : 'Next Step →';
+            btn.disabled = complete;
+        }
+    }
+
+    function advanceWorkflowStep() {
+        var uc = _activeUseCase;
+        if (!uc || !uc.workflow_steps || !uc.workflow_steps.length) return;
+        var steps = uc.workflow_steps;
+        var total = steps.length;
+        var idx = _currentWorkflowStep;
+        if (idx >= total) return;
+        var currentStep = steps[idx];
+        if (currentStep && currentStep.canvas) {
+            var url = _getCanvasUrl(currentStep.canvas);
+            if (url) window.open(url, '_blank');
+        }
+        _currentWorkflowStep++;
+        renderWorkflowStepBar(uc);
+    }
+    window.advanceWorkflowStep = advanceWorkflowStep;
 
     // New state: category filter, compact mode, chain mode
     var _ucActiveCategory = '';
@@ -2272,6 +2339,8 @@
                     _ucContextMap[ctx.context_id] = ucId;
                     try { localStorage.setItem('icdev_uc_ctx_map', JSON.stringify(_ucContextMap)); } catch (e) {}
                     _activeUseCase = uc;
+                    _currentWorkflowStep = 0;
+                    renderWorkflowStepBar(uc);
                     // Expose action buttons immediately for all use cases
                     renderUcActionBar(uc);
                     var actPanel = document.getElementById('post-export-actions');
@@ -2346,6 +2415,7 @@
             for (var i = 0; i < _allUseCases.length; i++) {
                 if (_allUseCases[i].id === ucId) {
                     _activeUseCase = _allUseCases[i];
+                    renderWorkflowStepBar(_allUseCases[i]);
                     renderUcActionBar(_allUseCases[i]);
                     if (actPanel) actPanel.style.display = 'block';
                     return;
@@ -2353,6 +2423,7 @@
             }
         }
         _activeUseCase = null;
+        renderWorkflowStepBar(null);
         renderUcActionBar(null);
     }
 
