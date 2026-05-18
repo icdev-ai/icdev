@@ -2216,10 +2216,13 @@
 
     function startUseCase(ucId) {
         var card = document.querySelector('.chat-uc-card[data-uc-id="' + ucId + '"]');
+        var compactRow = document.querySelector('.chat-uc-compact-row[data-uc-id="' + ucId + '"]');
         if (card) card.classList.add('chat-uc-card--loading');
+        if (compactRow) compactRow.classList.add('chat-uc-compact-row--loading');
 
         function clearLoading() {
             if (card) card.classList.remove('chat-uc-card--loading');
+            if (compactRow) compactRow.classList.remove('chat-uc-compact-row--loading');
         }
 
         fetch(CHAT_API + '/use-cases/' + encodeURIComponent(ucId))

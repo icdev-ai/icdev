@@ -1106,8 +1106,8 @@
     opacity: 0.75;
     pointer-events: none;
     position: relative;
-    border-color: var(--accent-blue) !important;
-    background: var(--accent-blue, #1a56db) !important;
+    border-color: var(--accent-green, #16a34a) !important;
+    background: var(--accent-green, #16a34a) !important;
 }
 
 .chat-uc-card--loading::after {
@@ -1119,6 +1119,27 @@
     height: 14px;
     border: 2px solid rgba(255,255,255,0.25);
     border-top-color: #fff;
+    border-radius: 50%;
+    animation: uc-spin 0.7s linear infinite;
+}
+
+.chat-uc-compact-row--loading {
+    opacity: 0.75;
+    pointer-events: none;
+    border-color: var(--accent-green, #16a34a) !important;
+    background: rgba(22, 163, 74, 0.12) !important;
+}
+
+.chat-uc-compact-row--loading::after {
+    content: '';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 13px;
+    height: 13px;
+    border: 2px solid rgba(22, 163, 74, 0.3);
+    border-top-color: #16a34a;
     border-radius: 50%;
     animation: uc-spin 0.7s linear infinite;
 }
