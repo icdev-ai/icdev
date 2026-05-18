@@ -217,6 +217,72 @@ def test_seed_canvas_artifacts_no_seeds_returns_empty():
     assert result == []
 
 
+def test_seed_canvas_artifacts_test_template_absent_from_db_returns_empty(tmp_path):
+    """'test_template' requested but sc_templates table is empty → empty list; no exception raised.
+
+    Exercises the parameterized WHERE-name query path (SELECT name FROM sc_templates WHERE name = ?)
+    when the row simply does not exist, confirming the function returns [] rather than raising.
+    """
+    from tools.dashboard.api.chat import _seed_canvas_artifacts
+
+    # Build an sc_canvas.db whose sc_templates table has NO rows.
+    canvas_db_path = str(tmp_path / "sc_canvas.db")
+    empty_conn = sqlite3.connect(canvas_db_path)
+    empty_conn.execute("CREATE TABLE IF NOT EXISTS sc_templates (name TEXT PRIMARY KEY)")
+    empty_conn.commit()
+    empty_conn.close()
+
+    main_db_path = str(tmp_path / "icdev.db")
+    main_conn = sqlite3.connect(main_db_path)
+    main_conn.execute("""
+        CREATE TABLE IF NOT EXISTS canvas_instances (
+            id TEXT PRIMARY KEY,
+            session_id TEXT,
+            tenant_id TEXT,
+            canvas TEXT,
+            artifact_type TEXT,
+            artifact_name TEXT,
+            created_at TEXT
+        )
+    """)
+    main_conn.commit()
+    main_conn.close()
+
+    def fake_gc(db_path=None):
+        path = canvas_db_path if (db_path and Path(db_path).name == "sc_canvas.db") else main_db_path
+        conn = sqlite3.connect(path)
+        conn.row_factory = sqlite3.Row
+        sc = StorageConnection(conn, "sqlite")
+        sc.set_security_context(None)
+        return sc
+
+    # Request 'test_template' — the name that would normally exist but is absent here.
+    use_case = {
+        "canvas_seeds": [
+            {"canvas": CANVAS_KEY, "templates": ["test_template"]}
+        ]
+    }
+
+    with (
+        patch("tools.dashboard.api.chat._load_canvas_catalog", return_value=CATALOG),
+        patch("tools.db.storage.get_connection", side_effect=fake_gc),
+    ):
+        result = _seed_canvas_artifacts(use_case, session_id="sess-5", tenant_id="tenant-1")
+
+    assert result == [], (
+        "Expected empty list when 'test_template' is absent from sc_templates, "
+        f"got {result!r}"
+    )
+
+    # Confirm no canvas_instances row was written.
+    verify_conn = sqlite3.connect(main_db_path)
+    row = verify_conn.execute(
+        "SELECT * FROM canvas_instances WHERE artifact_name = ?", ("test_template",)
+    ).fetchone()
+    verify_conn.close()
+    assert row is None, "canvas_instances must not contain a row for a template that was never found"
+
+
 def test_seed_canvas_artifacts_unknown_canvas_key_returns_empty(tmp_path):
     """Unknown canvas key → warning logged, empty list returned."""
     from tools.dashboard.api.chat import _seed_canvas_artifacts
