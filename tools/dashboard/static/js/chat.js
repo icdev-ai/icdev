@@ -824,7 +824,7 @@
             }
             appendMessage({ role: 'system', content: lines.join('\n') });
             if (overall !== 'PASS') {
-                appendMessage({ role: 'assistant', content: '<button class="btn btn-sm btn-warning mt-2" onclick="ICDEVChat.chatAutoFixPRD(' + score + ')">\uD83D\uDD27 AI Auto-Fix PRD</button>' });
+                appendMessage({ role: 'assistant', content: '<button class="btn btn-sm btn-warning mt-2" onclick="window.ICDEV.chatAutoFixPRD(' + score + ')">\uD83D\uDD27 AI Auto-Fix PRD</button>' });
             }
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Validation error: ' + err.message }); });
