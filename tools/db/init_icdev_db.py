@@ -10236,6 +10236,26 @@ CREATE TABLE IF NOT EXISTS cross_agency_transfers (
 CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
 CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
 
+-- ============================================================
+-- CANVAS INSTANCES (Append-only — NIST AU-3/AU-12)
+-- Tracks which catalog artifacts were activated per session+tenant.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS canvas_instances (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    tenant_id       TEXT NOT NULL,
+    canvas          TEXT NOT NULL,
+    artifact_type   TEXT NOT NULL CHECK (artifact_type IN ('template','snippet','sop','runbook')),
+    artifact_name   TEXT NOT NULL,
+    use_case_id     TEXT,
+    status          TEXT NOT NULL DEFAULT 'seeded' CHECK (status IN ('seeded','active','superseded')),
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    metadata_json   TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_canvas_instances_session ON canvas_instances (session_id);
+CREATE INDEX IF NOT EXISTS idx_canvas_instances_tenant_canvas ON canvas_instances (tenant_id, canvas);
+
 """
 
 

@@ -480,9 +480,11 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
     """Pre-instantiate canvas templates/snippets for a use case.
 
     Best-effort: logs warnings on failure but never raises.
-    Returns list of validated artifact dicts (canvas, type, name).
+    Returns list of validated artifact dicts (canvas, type, name, instance_id).
     """
     import logging
+    import uuid
+    from datetime import datetime, timezone
     from tools.db.storage import get_connection as _gc
     _log = logging.getLogger("icdev.chat")
     seeded = []
@@ -511,7 +513,20 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
                         (tmpl_name,)
                     ).fetchone()
                     if row:
-                        seeded.append({"canvas": canvas_key, "type": "template", "name": tmpl_name})
+                        instance_id = str(uuid.uuid4())
+                        try:
+                            with _gc() as mconn:
+                                mconn.execute(
+                                    "INSERT INTO canvas_instances "
+                                    "(id, session_id, tenant_id, canvas, artifact_type, artifact_name, created_at) "
+                                    "VALUES (?, ?, ?, ?, 'template', ?, ?)",
+                                    (instance_id, session_id, tenant_id, canvas_key, tmpl_name,
+                                     datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+                                )
+                        except Exception as ins_exc:
+                            _log.warning("canvas_instances insert failed: %s/template/%s — %s", canvas_key, tmpl_name, ins_exc)
+                            instance_id = None
+                        seeded.append({"canvas": canvas_key, "type": "template", "name": tmpl_name, "instance_id": instance_id})
             except Exception as exc:
                 _log.warning("canvas seed failed: %s/template/%s — %s", canvas_key, tmpl_name, exc)
         for snip_name in (seed.get("snippets") or []):
@@ -525,7 +540,20 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
                         (snip_name,)
                     ).fetchone()
                     if row:
-                        seeded.append({"canvas": canvas_key, "type": "snippet", "name": snip_name})
+                        instance_id = str(uuid.uuid4())
+                        try:
+                            with _gc() as mconn:
+                                mconn.execute(
+                                    "INSERT INTO canvas_instances "
+                                    "(id, session_id, tenant_id, canvas, artifact_type, artifact_name, created_at) "
+                                    "VALUES (?, ?, ?, ?, 'snippet', ?, ?)",
+                                    (instance_id, session_id, tenant_id, canvas_key, snip_name,
+                                     datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+                                )
+                        except Exception as ins_exc:
+                            _log.warning("canvas_instances insert failed: %s/snippet/%s — %s", canvas_key, snip_name, ins_exc)
+                            instance_id = None
+                        seeded.append({"canvas": canvas_key, "type": "snippet", "name": snip_name, "instance_id": instance_id})
             except Exception as exc:
                 _log.warning("canvas seed failed: %s/snippet/%s — %s", canvas_key, snip_name, exc)
     return seeded
