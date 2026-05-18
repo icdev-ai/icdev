@@ -82,6 +82,7 @@
     <a class="prd-btn prd-btn--secondary" href="/chat/{{ session_id }}">&#x1F4AC; Back to Chat</a>
     <button class="prd-btn prd-btn--secondary" id="download-btn">&#x2B07; Download .md</button>
     <button class="prd-btn prd-btn--secondary" onclick="window.print()">&#x1F5A8; Print / Save PDF</button>
+    <button class="prd-btn prd-btn--primary" id="build-app-btn" onclick="buildStandaloneApp()">&#x1F680; Build Standalone App</button>
   </div>
 
   {% if error %}
@@ -113,5 +114,26 @@
     document.body.removeChild(a); URL.revokeObjectURL(url);
   });
 })();
+
+async function buildStandaloneApp() {
+  var btn = document.getElementById('build-app-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ Initializing builder...';
+  try {
+    var resp = await fetch('/api/studio/app-builder/from-prd/{{ session_id }}', { method: 'POST' });
+    var data = await resp.json();
+    if (data.status === 'ok') {
+      window.location.href = data.preview_url;
+    } else {
+      btn.disabled = false;
+      btn.innerHTML = '&#x1F680; Build Standalone App';
+      alert('Builder init failed: ' + (data.error || 'unknown error'));
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.innerHTML = '&#x1F680; Build Standalone App';
+    alert('Network error: ' + e.message);
+  }
+}
 </script>
 {% endblock %}

@@ -879,6 +879,177 @@ def validate_prd_endpoint(session_id):
         return jsonify({"error": str(exc)}), 500
 
 
+@intake_api.route("/api/intake/prd/<session_id>/auto-remediate", methods=["POST"])
+def auto_remediate_prd(session_id):
+    """LLM auto-fixes failing PRD requirements and returns before/after readiness scores."""
+    if not _HAS_PRD_VALIDATOR:
+        return jsonify({"error": "PRD validator not available"}), 503
+    if not _HAS_SCORER:
+        return jsonify({"error": "Readiness scorer not available"}), 503
+
+    conn = _get_db()
+
+    # Capture baseline score
+    try:
+        before_result = score_readiness(session_id)
+        before_score_pct = round((before_result.get("overall_score") or 0) * 100)
+    except Exception as exc:
+        return jsonify({"error": f"Could not score session: {exc}"}), 500
+
+    # Run validator to find failing checks
+    try:
+        val_result = _validate_prd(session_id)
+    except Exception as exc:
+        return jsonify({"error": f"Validation failed: {exc}"}), 500
+
+    if val_result.get("status") != "ok":
+        return jsonify(val_result), 404
+
+    checks = val_result.get("checks") or []
+
+    # Collect actionable findings grouped by requirement_id
+    # Maps req_id -> list of (check_name, category/detail)
+    _ACTIONABLE_CHECKS = {"density", "smart", "measurability", "completeness"}
+    req_issues: dict = {}
+    for check in checks:
+        if check.get("severity") == "pass":
+            continue
+        check_name = check.get("check", "")
+        if check_name not in _ACTIONABLE_CHECKS:
+            continue
+        for finding in check.get("findings") or []:
+            rid = finding.get("requirement_id")
+            if rid is None:
+                continue
+            req_issues.setdefault(rid, []).append({
+                "check": check_name,
+                "detail": finding.get("matched") or finding.get("category") or "",
+            })
+
+    if not req_issues:
+        # Nothing to fix — re-score and return
+        return jsonify({
+            "status": "ok",
+            "fixed_count": 0,
+            "suggested_count": 0,
+            "skipped_count": 0,
+            "before_score_pct": before_score_pct,
+            "after_score_pct": before_score_pct,
+            "score_delta_pct": 0,
+            "updated": [],
+            "suggested": [],
+            "message": "No actionable findings — PRD already looks clean.",
+        })
+
+    # Load current requirement texts
+    placeholders = ",".join("?" * len(req_issues))
+    rows = conn.execute(
+        f"SELECT id, text, requirement_type FROM intake_requirements WHERE id IN ({placeholders})",
+        list(req_issues.keys()),
+    ).fetchall()
+    req_rows = {row["id"]: dict(row) for row in rows}
+
+    # Build per-check fix instructions
+    _FIX_INSTRUCTIONS = {
+        "density": "Rewrite this requirement removing filler phrases and redundant words. Keep only precise, measurable assertions.",
+        "measurability": "Rewrite this requirement adding a concrete, measurable metric (a number, percentage, or SLA target).",
+        "smart": "Rewrite this requirement to be Specific, Measurable, Achievable, Relevant, and Time-bound (SMART). Keep the same intent.",
+        "completeness": "Expand this requirement to explicitly state what the system must do, who it applies to, and under what conditions.",
+    }
+
+    updated: list[dict] = []
+    suggested: list[dict] = []
+    skipped: list[dict] = []
+
+    try:
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+        router = get_router()
+        _llm_available = True
+    except Exception:
+        _llm_available = False
+
+    for rid, issues in req_issues.items():
+        row = req_rows.get(rid)
+        if not row:
+            continue
+        original_text = (row.get("text") or "").strip()
+        if not original_text:
+            continue
+
+        # Build a combined fix instruction for all issues on this requirement
+        primary_check = issues[0]["check"]
+        instruction = _FIX_INSTRUCTIONS.get(primary_check, _FIX_INSTRUCTIONS["smart"])
+        prompt = (
+            f"You are a requirements engineer. {instruction}\n\n"
+            f"REQUIREMENT: {original_text}\n\n"
+            f"Return ONLY the rewritten requirement text. No preamble, no labels, no explanation."
+        )
+
+        if not _llm_available:
+            skipped.append({"req_id": rid, "reason": "LLM unavailable"})
+            continue
+
+        try:
+            req_obj = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt="You are a precise requirements engineer. Return only the rewritten requirement.",
+                max_tokens=400,
+                temperature=0.3,
+                agent_id="icdev-prd-remediate",
+            )
+            response = router.invoke("requirements_analysis", req_obj)
+            refined = (response.content or "").strip() if response else ""
+        except Exception:
+            skipped.append({"req_id": rid, "reason": "LLM call failed"})
+            continue
+
+        if not refined or len(refined) < 10:
+            skipped.append({"req_id": rid, "reason": "LLM returned empty response"})
+            continue
+
+        # Confidence heuristic: ratio of output length to input length
+        confidence = min(len(refined) / max(len(original_text), 1), 1.0)
+
+        if confidence >= 0.3:
+            # Write refined_text to DB
+            try:
+                conn.execute(
+                    "UPDATE intake_requirements SET refined_text = ? WHERE id = ?",
+                    (refined, rid),
+                )
+                conn.commit()
+                updated.append({
+                    "req_id": rid,
+                    "check": primary_check,
+                    "original_text": original_text,
+                    "refined_text": refined,
+                })
+            except Exception:
+                suggested.append({"req_id": rid, "check": primary_check, "suggestion": refined})
+        else:
+            suggested.append({"req_id": rid, "check": primary_check, "suggestion": refined})
+
+    # Re-score after fixes
+    try:
+        after_result = score_readiness(session_id)
+        after_score_pct = round((after_result.get("overall_score") or 0) * 100)
+    except Exception:
+        after_score_pct = before_score_pct
+
+    return jsonify({
+        "status": "ok",
+        "fixed_count": len(updated),
+        "suggested_count": len(suggested),
+        "skipped_count": len(skipped),
+        "before_score_pct": before_score_pct,
+        "after_score_pct": after_score_pct,
+        "score_delta_pct": after_score_pct - before_score_pct,
+        "updated": updated,
+        "suggested": suggested,
+    })
+
+
 @intake_api.route("/api/intake/force-build/<session_id>", methods=["POST"])
 def force_build(session_id):
     """Start build regardless of readiness score (user override).
