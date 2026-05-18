@@ -2102,7 +2102,8 @@
                     + ftBadge
                     + '<span class="chat-uc-compact-row__actions">'
                     + '<button class="chat-uc-edit-btn" data-uc-id="' + ucIdEsc + '" title="Edit" onclick="event.stopPropagation()">&#x270F;</button>'
-                    + '<button class="chat-uc-export-btn" data-uc-id="' + ucIdEsc + '" title="Export bundle" onclick="event.stopPropagation()">&#x2913;</button>'
+                    + '<a class="chat-uc-standalone-btn" href="' + CHAT_API + '/use-cases/' + escHtml(uc.id) + '/standalone" title="Download standalone HTML app" onclick="event.stopPropagation()" download>&#x2B07;</a>'
+                    + '<button class="chat-uc-export-btn" data-uc-id="' + ucIdEsc + '" title="Export YAML bundle" onclick="event.stopPropagation()">&#x2913;</button>'
                     + '</span>'
                     + '</div>';
             } else {
@@ -2257,6 +2258,10 @@
                     _ucContextMap[ctx.context_id] = ucId;
                     try { localStorage.setItem('icdev_uc_ctx_map', JSON.stringify(_ucContextMap)); } catch (e) {}
                     _activeUseCase = uc;
+                    // Expose action buttons immediately for all use cases
+                    renderUcActionBar(uc);
+                    var actPanel = document.getElementById('post-export-actions');
+                    if (actPanel) actPanel.style.display = 'block';
                     // Display seed_message as the AI's opening message, not as user input
                     if (uc.seed_message) {
                         var stream = document.getElementById('message-stream');
@@ -2292,6 +2297,16 @@
 
     function renderUcActionBar(uc) {
         var container = document.getElementById('uc-specific-actions');
+        // Update standalone link visibility
+        var standaloneLink = document.getElementById('uc-standalone-link');
+        if (standaloneLink) {
+            if (uc && uc.id) {
+                standaloneLink.href = CHAT_API + '/use-cases/' + encodeURIComponent(uc.id) + '/standalone';
+                standaloneLink.style.display = 'block';
+            } else {
+                standaloneLink.style.display = 'none';
+            }
+        }
         if (!container) return;
         var qa = (uc && uc.quick_actions) ? uc.quick_actions : [];
         if (!qa.length) {
@@ -2312,11 +2327,13 @@
 
     function syncUcStateForContext(ctxId) {
         var ucId = _ucContextMap[ctxId];
+        var actPanel = document.getElementById('post-export-actions');
         if (ucId) {
             for (var i = 0; i < _allUseCases.length; i++) {
                 if (_allUseCases[i].id === ucId) {
                     _activeUseCase = _allUseCases[i];
                     renderUcActionBar(_allUseCases[i]);
+                    if (actPanel) actPanel.style.display = 'block';
                     return;
                 }
             }
