@@ -823,8 +823,33 @@
                 lines.push(ci + ' ' + c.check.replace(/_/g, ' ') + ': ' + sev);
             }
             appendMessage({ role: 'system', content: lines.join('\n') });
+            if (overall !== 'PASS') {
+                appendMessage({ role: 'assistant', content: '<button class="btn btn-sm btn-warning mt-2" onclick="ICDEVChat.chatAutoFixPRD(' + score + ')">\uD83D\uDD27 AI Auto-Fix PRD</button>' });
+            }
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Validation error: ' + err.message }); });
+    }
+
+    function chatAutoFixPRD(beforeScore) {
+        if (!_activeIntakeSessionId) return;
+        appendMessage({ role: 'system', content: '\u23F3 Running AI auto-remediation on failing requirements...' });
+        fetch(INTAKE_API + '/prd/' + _activeIntakeSessionId + '/auto-remediate', { method: 'POST' })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+            if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
+            var fixed = data.fixed_count || 0;
+            var suggested = data.suggested_count || 0;
+            var delta = data.score_delta_pct || 0;
+            var before = data.before_score_pct || beforeScore || 0;
+            var after = data.after_score_pct || before;
+            var icon = fixed > 0 ? '\u2705' : '\u2139\uFE0F';
+            var msg = icon + ' Fixed ' + fixed + ' requirement(s). Readiness: ' + before + '% \u2192 ' + after + '%';
+            if (delta > 0) msg += ' (+' + delta + '%)';
+            if (suggested > 0) msg += '. ' + suggested + ' suggestion(s) need manual review.';
+            if (fixed === 0 && suggested === 0) msg = '\u2139\uFE0F ' + (data.message || 'No actionable findings found.');
+            appendMessage({ role: 'system', content: msg });
+        })
+        .catch(function (err) { appendMessage({ role: 'system', content: 'Auto-fix error: ' + err.message }); });
     }
 
     // ===================================================================
@@ -2863,6 +2888,7 @@
     ns.chatViewRequirements = chatViewRequirements;
     ns.chatGeneratePRD = chatGeneratePRD;
     ns.chatValidatePRD = chatValidatePRD;
+    ns.chatAutoFixPRD = chatAutoFixPRD;
     ns.chatSendToKanban = chatSendToKanban;
     ns.chatSelectCoa = chatSelectCoa;
     ns.chatUnselectCoa = chatUnselectCoa;

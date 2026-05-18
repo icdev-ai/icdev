@@ -734,6 +734,94 @@ def api_app_builder_build(session_id: str):
     return jsonify(result)
 
 
+@studio_api.route("/app-builder/from-prd/<intake_session_id>", methods=["POST"])
+def api_app_builder_from_prd(intake_session_id: str):
+    """Bootstrap an App Builder session from a completed intake PRD."""
+    import re as _re
+
+    try:
+        from tools.requirements.prd_generator import generate_prd as _gen_prd
+    except ImportError:
+        return jsonify({"error": "PRD generator not available"}), 503
+
+    try:
+        from tools.studio.nl_app_builder import create_builder_session
+    except ImportError:
+        return jsonify({"error": "App builder not available"}), 503
+
+    # Load PRD markdown
+    try:
+        prd_result = _gen_prd(intake_session_id)
+    except Exception as exc:
+        return jsonify({"error": f"PRD generation failed: {exc}"}), 500
+
+    if prd_result.get("status") != "ok":
+        return jsonify({"error": prd_result.get("error", "PRD not found")}), 404
+
+    prd_markdown = prd_result.get("prd_markdown") or prd_result.get("prd") or ""
+
+    # Extract app name from first H1 heading in the PRD
+    title_match = _re.search(r"^#\s+(.+)$", prd_markdown, _re.MULTILINE)
+    app_name = title_match.group(1).strip() if title_match else f"App {intake_session_id[:8]}"
+
+    # Load requirement types to enrich the description with capability hints
+    _REQ_TYPE_CAPABILITY_MAP = {
+        "security": "security scanning and role-based access control",
+        "compliance": "FedRAMP/CMMC compliance tracking",
+        "data": "data pipeline and storage management",
+        "performance": "performance monitoring and SLO dashboards",
+        "interface": "REST API with OpenAPI documentation",
+        "operational": "operational runbooks and alerting",
+    }
+    capability_hints: list[str] = []
+    try:
+        from tools.db.storage import get_connection
+        from pathlib import Path as _Path
+        _DB_PATH = _Path(__file__).resolve().parents[3] / "data" / "icdev.db"
+        import os as _os
+        if _os.environ.get("ICDEV_STORAGE_BACKEND", "").lower() == "postgresql":
+            conn = get_connection()
+        else:
+            conn = get_connection(db_path=str(_DB_PATH))
+        try:
+            conn.set_security_context(None)
+        except Exception:
+            pass
+        rows = conn.execute(
+            "SELECT DISTINCT requirement_type FROM intake_requirements WHERE session_id = ?",
+            (intake_session_id,),
+        ).fetchall()
+        for row in rows:
+            rt = (row[0] or "").lower()
+            if rt in _REQ_TYPE_CAPABILITY_MAP:
+                capability_hints.append(_REQ_TYPE_CAPABILITY_MAP[rt])
+    except Exception:
+        pass
+
+    # Build composite description: first 2000 chars of PRD + capability hints
+    description = prd_markdown[:2000]
+    if capability_hints:
+        description += "\n\nKey capabilities required: " + ", ".join(capability_hints) + "."
+
+    # Create builder session
+    try:
+        result = create_builder_session(description, app_name=app_name)
+    except Exception as exc:
+        return jsonify({"error": f"Builder session creation failed: {exc}"}), 500
+
+    if result.get("status") == "error":
+        return jsonify(result), 400
+
+    builder_session_id = result.get("session_id", "")
+    return jsonify({
+        "status": "ok",
+        "builder_session_id": builder_session_id,
+        "app_name": app_name,
+        "preview_url": f"/studio/app-builder?session_id={builder_session_id}",
+        "blueprint_preview": result.get("blueprint_preview"),
+    })
+
+
 # ── Workflow Execution (wex Phase 1-3) ─────────────────────
 
 
