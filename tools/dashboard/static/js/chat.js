@@ -2367,7 +2367,7 @@
                             var canvasNames = seeds.map(function (s) {
                                 return (s.canvas || '').replace(/_canvas$/, '').replace(/_/g, ' ');
                             }).filter(Boolean).join(', ');
-                            addMessage('system', '&#x1F4C1; ' + totalTemplates + ' canvas template' + (totalTemplates !== 1 ? 's' : '') + ' configured for this use case (' + canvasNames + '). Activate a chain to pre-load them into the canvas.', null);
+                            appendMessage({ role: 'system', content: '&#x1F4C1; ' + totalTemplates + ' canvas template' + (totalTemplates !== 1 ? 's' : '') + ' configured for this use case (' + canvasNames + '). Activate a chain to pre-load them into the canvas.' });
                         }
                     }
                     // Trigger fast-track sequence if applicable

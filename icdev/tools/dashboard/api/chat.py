@@ -266,6 +266,39 @@ def _uc_init_table(conn):
     conn.commit()
 
 
+_VALID_REQ_TYPES: frozenset = frozenset({
+    "functional", "non_functional", "interface", "security",
+    "performance", "compliance", "data", "constraint",
+    "operational", "transitional",
+})
+_VALID_REQ_PRIORITIES: frozenset = frozenset({"critical", "high", "medium", "low"})
+
+
+def _validate_template_requirements(reqs: list) -> list[str]:
+    """Return error strings for structurally invalid template_requirement entries.
+
+    Checks type/priority against the intake_requirements DB CHECK constraints
+    and ensures text is non-empty. Empty list means all entries are valid.
+    """
+    errors: list[str] = []
+    for i, req in enumerate(reqs or []):
+        t = req.get("type", "")
+        if t not in _VALID_REQ_TYPES:
+            errors.append(
+                f"template_requirements[{i}]: invalid type {t!r}; "
+                f"must be one of {sorted(_VALID_REQ_TYPES)}"
+            )
+        p = req.get("priority", "")
+        if p not in _VALID_REQ_PRIORITIES:
+            errors.append(
+                f"template_requirements[{i}]: invalid priority {p!r}; "
+                f"must be one of {sorted(_VALID_REQ_PRIORITIES)}"
+            )
+        if not (req.get("text") or "").strip():
+            errors.append(f"template_requirements[{i}]: text is empty or missing")
+    return errors
+
+
 def _uc_apply_override(base, row):
     import json as _json
     if not row:
@@ -464,6 +497,12 @@ def import_use_cases():
                     if existing:
                         skipped_ids.append(uc_id)
                         continue
+                    tr = uc.get("template_requirements") or []
+                    if tr:
+                        tr_errors = _validate_template_requirements(tr)
+                        if tr_errors:
+                            errors.append({"id": uc_id, "errors": tr_errors})
+                            continue
                     cw = uc.get("canvas_wiring")
                     qa = uc.get("quick_actions")
                     conn.execute(
