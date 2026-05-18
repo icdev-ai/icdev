@@ -1379,7 +1379,7 @@
         var stream = document.getElementById('message-stream');
         if (!stream) return;
         if (!messages.length) {
-            stream.innerHTML = '<div class="msg-bubble msg-bubble--system">Start a conversation by sending a message.</div>';
+            stream.innerHTML = '<div class="msg-bubble msg-bubble--system" data-placeholder="true">Start a conversation by sending a message.</div>';
             return;
         }
         var html = '';
@@ -1391,7 +1391,7 @@
     function appendMessage(msg) {
         var stream = document.getElementById('message-stream');
         if (!stream) return;
-        var placeholder = stream.querySelector('.msg-bubble--system');
+        var placeholder = stream.querySelector('.msg-bubble--system[data-placeholder]');
         if (placeholder && stream.children.length === 1) stream.innerHTML = '';
         stream.innerHTML += renderMessageHtml(msg);
         stream.scrollTop = stream.scrollHeight;
@@ -1911,20 +1911,26 @@
             return fetch(CHAT_API + '/chains/' + data.chain_id + '/activate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({user_id: _currentUserId || 'dashboard-user'})
+                body: JSON.stringify({user_id: window._currentUserId || 'dashboard-user'})
             }).then(function (r) { return r.json(); }).then(function (act) {
                 if (act.context_id) {
-                    addMessage('system', '⛓ Chain activated — ' + data.requirement_count + ' merged requirements seeded into intake session.', null);
-                    var cs = act.canvas_seeds;
-                    if (cs && cs.available > 0) {
-                        var instMsg = cs.instantiated < cs.available
-                            ? cs.instantiated + ' of ' + cs.available + ' templates instantiated in Canvas'
-                            : cs.instantiated + ' templates instantiated in Canvas';
-                        addMessage('system', '&#x1F4C1; ' + instMsg, null);
+                    appendMessage({ role: 'system', content: '⛓ Chain activated — ' + data.requirement_count + ' merged requirements seeded into intake session.' });
+                    var artifacts = act.canvas_artifacts_seeded || [];
+                    if (artifacts.length > 0) {
+                        var byCanvas = {};
+                        artifacts.forEach(function (a) {
+                            if (!byCanvas[a.canvas]) byCanvas[a.canvas] = 0;
+                            byCanvas[a.canvas]++;
+                        });
+                        Object.keys(byCanvas).forEach(function (canvas) {
+                            var n = byCanvas[canvas];
+                            var label = canvas.charAt(0).toUpperCase() + canvas.slice(1);
+                            appendMessage({ role: 'system', content: '📁 ' + n + ' template' + (n !== 1 ? 's' : '') + ' loaded in ' + label + ' Canvas' });
+                        });
                     }
-                    loadContexts();
+                    refreshContextList();
                 } else if (act.error) {
-                    addMessage('system', '⚠ Chain activate: ' + act.error, null);
+                    appendMessage({ role: 'system', content: '⚠ Chain activate: ' + act.error });
                 }
             });
         })

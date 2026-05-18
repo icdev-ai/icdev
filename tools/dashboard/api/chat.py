@@ -313,11 +313,18 @@ def _chain_init_table(conn):
         status TEXT DEFAULT 'draft',
         created_at TEXT NOT NULL,
         created_by TEXT DEFAULT 'dashboard-user',
-        updated_at TEXT
+        updated_at TEXT,
+        classification TEXT DEFAULT NULL
     )""")
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_uc_chains_tenant ON use_case_chains(tenant_id)"
     )
+    # Migrate existing tables that lack the classification column
+    try:
+        conn.execute("ALTER TABLE use_case_chains ADD COLUMN classification TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
     conn.commit()
 
 
@@ -484,6 +491,29 @@ def _safe_table_name(name: str) -> str:
     return name
 
 
+def _canvas_instances_init_table(conn):
+    conn.execute("""CREATE TABLE IF NOT EXISTS canvas_instances (
+        id              TEXT PRIMARY KEY,
+        session_id      TEXT NOT NULL,
+        tenant_id       TEXT NOT NULL,
+        canvas          TEXT NOT NULL,
+        artifact_type   TEXT NOT NULL,
+        artifact_name   TEXT NOT NULL,
+        use_case_id     TEXT,
+        status          TEXT NOT NULL DEFAULT 'seeded',
+        classification  TEXT NOT NULL DEFAULT 'CUI',
+        created_at      TEXT NOT NULL,
+        metadata_json   TEXT NOT NULL DEFAULT '{}'
+    )""")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_canvas_instances_session ON canvas_instances(session_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_canvas_instances_tenant_canvas ON canvas_instances(tenant_id, canvas)"
+    )
+    conn.commit()
+
+
 def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> list:
     """Pre-instantiate canvas templates/snippets for a use case.
 
@@ -499,6 +529,11 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
     canvas_seeds = use_case.get("canvas_seeds") or []
     if not canvas_seeds:
         return seeded
+    try:
+        with _gc() as _init_conn:
+            _canvas_instances_init_table(_init_conn)
+    except Exception as _init_exc:
+        _log.warning("canvas_instances table init failed: %s", _init_exc)
     catalog = _load_canvas_catalog()
     for seed in canvas_seeds:
         canvas_key = seed.get("canvas")
@@ -906,14 +941,24 @@ def activate_chain(chain_id):
         except Exception:
             pass
 
+    # Parse use_case_ids early so they can be stored in session context
+    uc_ids_early = []
+    if chain.get("use_case_ids"):
+        try:
+            uc_ids_early = _json.loads(chain["use_case_ids"]) if isinstance(chain["use_case_ids"], str) else chain["use_case_ids"]
+        except Exception:
+            pass
+
     # Seed requirements into intake session
     try:
         from tools.requirements.intake_engine import create_session as _create_session
         chain_name = chain.get("name", "Chained Use Cases")
         session_result = _create_session(
-            user_id=user_id,
-            tenant_id=tenant_id,
-            title=f"Chain: {chain_name}",
+            project_id=None,
+            customer_name=chain_name,
+            customer_org=tenant_id or None,
+            created_by=user_id,
+            extra_context={"use_case_ids": uc_ids_early, "chain_id": chain_id},
         )
         context_id = session_result.get("session_id") or session_result.get("context_id")
 
@@ -925,8 +970,9 @@ def activate_chain(chain_id):
                     for req in merged_reqs:
                         conn.execute("""
                             INSERT OR IGNORE INTO intake_requirements
-                                (session_id, type, priority, text, criteria, source)
-                            VALUES (?,?,?,?,?,?)
+                                (session_id, requirement_type, priority, raw_text,
+                                 acceptance_criteria, source_document, status)
+                            VALUES (?,?,?,?,?,?,?)
                         """, (
                             context_id,
                             req.get("type", "functional"),
@@ -934,6 +980,7 @@ def activate_chain(chain_id):
                             req.get("text", ""),
                             req.get("criteria", ""),
                             f"chain:{chain_id}",
+                            "validated",
                         ))
                     conn.commit()
             except Exception:

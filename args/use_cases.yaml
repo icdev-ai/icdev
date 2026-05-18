@@ -168,11 +168,10 @@ use_cases:
         priority: high
         text: "System shall produce a cutover runbook reviewed and approved by operations, security, and primary stakeholders before each migration wave."
         criteria: "Acceptance: Runbook includes step-by-step cutover sequence, success/fail criteria at each step, rollback trigger points, and named owners for each action."
-    # Templates/snippets confirmed present in data/migration_canvas.db (mc_templates / mc_snippets).
     canvas_seeds:
       - canvas: migration
-        templates: [tpl-multi-wave, tpl-lift-shift, tpl-strangler-fig]
-        snippets: [snip-wave-group, snip-rollback, snip-ato-gate]
+        templates: [Lift-and-Shift Cloud Migration, Strangler Fig Incremental Migration, Multi-Phase Staged Migration (5-Wave)]
+        snippets: [Migration Wave Group, Rollback Checkpoint, ATO Compliance Gate]
 
   - id: year_end_budget_sprint
     label: Year-End Budget Sprint
@@ -534,10 +533,10 @@ use_cases:
         target: _blank
     canvas_seeds:
       - canvas: security
-        templates: [ssp_baseline_v1, poam_tracker]
-        snippets: [nist_800_53_checklist]
+        templates: [FedRAMP Moderate Boundary, DoD IL5 Enclave]
+        snippets: [Vulnerability Management Lifecycle, SIEM Logging Pipeline]
       - canvas: boundary
-        templates: [system_boundary_v1]
+        templates: [Single System ATO Boundary]
         snippets: []
     workflow_steps:
       - step: 1
