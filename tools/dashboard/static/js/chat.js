@@ -70,6 +70,20 @@
         warning: '&#x26A0;'
     };
 
+    // Maps canvas_key (from args/cloud_vendor_policy.yaml) to its dashboard URL path.
+    // Paths verified against tools/*/blueprint.py url_prefix declarations.
+    var CANVAS_ROUTE_MAP = {
+        security_canvas:     '/security',
+        migration_canvas:    '/migration-canvas',
+        boundary_canvas:     '/boundary',
+        pipeline_canvas:     '/devops',
+        data_canvas:         '/data',
+        network_canvas:      '/network',
+        observability_canvas: '/observability',
+        quality_canvas:      '/quality',
+        infra_canvas:        '/infra'
+    };
+
     // Detect user from page if available
     try {
         var badge = document.querySelector('.user-badge-name');
