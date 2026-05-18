@@ -962,12 +962,17 @@ def activate_chain(chain_id):
             )
             conn.commit()
 
+        _instantiated = sum(1 for a in seeded_artifacts if a.get("instance_id") is not None)
         return jsonify({
             "ok": True,
             "chain_id": chain_id,
             "context_id": context_id,
             "requirement_count": len(merged_reqs),
             "canvas_artifacts_seeded": seeded_artifacts,
+            "canvas_seeds": {
+                "instantiated": _instantiated,
+                "available": len(seeded_artifacts),
+            },
         })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
