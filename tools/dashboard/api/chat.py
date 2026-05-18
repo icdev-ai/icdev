@@ -1141,6 +1141,270 @@ def reset_use_case(use_case_id):
 
 
 # ---------------------------------------------------------------------------
+# Standalone app — shared column manager assets
+# ---------------------------------------------------------------------------
+
+_COL_MANAGER_TOOLBAR_BTN = '<button class="btn btn-secondary btn-sm" onclick="toggleColManager()">&#x2699; Columns</button>'
+
+_COL_MANAGER_HTML = """    <div id="col-manager" style="display:none;padding:12px 16px;border-top:1px solid #30363d;background:#1c2128">
+  <div style="font-size:0.75rem;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px">Manage Columns</div>
+  <div id="col-list" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <input id="new-col-label" type="text" placeholder="Column name..." style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;color:#e6edf3;font-size:0.8rem;width:160px">
+    <select id="new-col-type" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;padding:4px 8px;color:#e6edf3;font-size:0.8rem">
+      <option value="text">Text</option>
+      <option value="number">Number</option>
+      <option value="date">Date</option>
+    </select>
+    <button class="btn btn-primary btn-sm" onclick="addColumn()">+ Add Column</button>
+    <button class="btn btn-secondary btn-sm" onclick="resetColumns()">Reset to Default</button>
+  </div>
+</div>"""
+
+
+def _make_col_manager_js(default_cols_json: str, extra_js: str = "") -> str:
+    return f"""
+        var DEFAULT_COLS = {default_cols_json};
+        var COL_CFG_KEY = STORAGE_KEY + '_cols';
+        function getCols() {{
+            try {{ var c = JSON.parse(localStorage.getItem(COL_CFG_KEY)); if (c && c.length) return c; }} catch(e) {{}}
+            return DEFAULT_COLS;
+        }}
+        function saveCols(cols) {{ localStorage.setItem(COL_CFG_KEY, JSON.stringify(cols)); }}
+        function slugify(s) {{ return s.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').substring(0,30) || ('col_'+Date.now()); }}
+        function renderColManager() {{
+            var cols = getCols();
+            var list = document.getElementById('col-list');
+            if (!list) return;
+            list.innerHTML = '';
+            cols.forEach(function(col, i) {{
+                var chip = document.createElement('div');
+                chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:#21262d;border:1px solid #30363d;border-radius:4px;padding:3px 8px;font-size:0.75rem;color:#c9d1d9';
+                chip.innerHTML = '<span contenteditable="true" onblur="renameCol('+i+',this.textContent.trim())" style="outline:none;min-width:20px">'+escHtml(col.label)+'</span>'
+                    + '<span style="color:#6e7681;font-size:0.65rem;margin-left:2px">['+col.type+']</span>'
+                    + (cols.length > 1 ? '<button onclick="removeCol('+i+')" style="background:none;border:none;color:#6e7681;cursor:pointer;font-size:0.7rem;padding:0 2px" title="Remove">&times;</button>' : '');
+                list.appendChild(chip);
+            }});
+        }}
+        function toggleColManager() {{
+            var p = document.getElementById('col-manager');
+            if (p) {{ p.style.display = p.style.display === 'none' ? 'block' : 'none'; if (p.style.display !== 'none') renderColManager(); }}
+        }}
+        function addColumn() {{
+            var label = (document.getElementById('new-col-label').value || '').trim();
+            if (!label) {{ document.getElementById('new-col-label').focus(); return; }}
+            var type = document.getElementById('new-col-type').value;
+            var cols = getCols();
+            var key = slugify(label);
+            if (cols.some(function(c) {{ return c.key === key; }})) key = key + '_' + Date.now();
+            cols.push({{key: key, label: label, type: type}});
+            saveCols(cols); document.getElementById('new-col-label').value = '';
+            renderTableHeader(); renderColManager(); renderTable();
+        }}
+        function removeCol(idx) {{
+            var cols = getCols(); if (cols.length <= 1) return;
+            cols.splice(idx, 1); saveCols(cols); renderTableHeader(); renderColManager(); renderTable();
+        }}
+        function renameCol(idx, newLabel) {{
+            if (!newLabel) return;
+            var cols = getCols(); if (!cols[idx]) return;
+            cols[idx].label = newLabel; saveCols(cols); renderTableHeader();
+        }}
+        function resetColumns() {{
+            if (!confirm('Reset columns to default? Existing data in removed columns will be lost.')) return;
+            localStorage.removeItem(COL_CFG_KEY); renderTableHeader(); renderColManager(); renderTable();
+        }}
+        function renderTableHeader() {{
+            var cols = getCols();
+            var thead = document.querySelector('#tracker-table thead tr');
+            if (!thead) return;
+            thead.innerHTML = cols.map(function(c) {{ return '<th>'+escHtml(c.label)+'</th>'; }}).join('') + '<th></th>';
+        }}
+        function escHtml(s) {{ return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }}
+        {extra_js}"""
+
+
+_UC_DEFAULT_COLS: dict = {
+    "ato_package_builder": [
+        {"key": "control_id",     "label": "Control ID",       "type": "text"},
+        {"key": "family",         "label": "Control Family",    "type": "text"},
+        {"key": "status",         "label": "Status",            "type": "text"},
+        {"key": "evidence",       "label": "Evidence Location", "type": "text"},
+        {"key": "inherited_from", "label": "Inherited From",    "type": "text"},
+        {"key": "due_date",       "label": "Due Date",          "type": "date"},
+        {"key": "owner",          "label": "Owner",             "type": "text"},
+        {"key": "notes",          "label": "Notes",             "type": "text"},
+    ],
+    "incident_response_plan": [
+        {"key": "playbook_item", "label": "Playbook Item", "type": "text"},
+        {"key": "ir_category",  "label": "IR Category",   "type": "text"},
+        {"key": "severity",     "label": "Severity",      "type": "text"},
+        {"key": "owner_team",   "label": "Owner / Team",  "type": "text"},
+        {"key": "poc_24_7",     "label": "POC (24/7)",    "type": "text"},
+        {"key": "last_tested",  "label": "Last Tested",   "type": "date"},
+        {"key": "status",       "label": "Status",        "type": "text"},
+        {"key": "notes",        "label": "Notes",         "type": "text"},
+    ],
+    "sbom_attestation": [
+        {"key": "component",   "label": "Component",    "type": "text"},
+        {"key": "version",     "label": "Version",      "type": "text"},
+        {"key": "supplier",    "label": "Supplier",     "type": "text"},
+        {"key": "license",     "label": "License",      "type": "text"},
+        {"key": "cve_status",  "label": "CVE Status",   "type": "text"},
+        {"key": "ndaa_889",    "label": "§889 Status", "type": "text"},
+        {"key": "attestation", "label": "Attestation",  "type": "text"},
+        {"key": "notes",       "label": "Notes",        "type": "text"},
+    ],
+    "fedramp_auth_prep": [
+        {"key": "control_id",     "label": "Control ID",     "type": "text"},
+        {"key": "family",         "label": "Family",         "type": "text"},
+        {"key": "csp_inherited",  "label": "CSP Inherited",  "type": "text"},
+        {"key": "customer_resp",  "label": "Customer Resp.", "type": "text"},
+        {"key": "implementation", "label": "Implementation", "type": "text"},
+        {"key": "evidence",       "label": "Evidence",       "type": "text"},
+        {"key": "status",         "label": "Status",         "type": "text"},
+        {"key": "notes",          "label": "Notes",          "type": "text"},
+    ],
+    "privacy_impact_assessment": [
+        {"key": "pii_element",     "label": "PII Element",     "type": "text"},
+        {"key": "legal_authority", "label": "Legal Authority", "type": "text"},
+        {"key": "purpose",         "label": "Purpose",         "type": "text"},
+        {"key": "retention",       "label": "Retention",       "type": "text"},
+        {"key": "access_controls", "label": "Access Controls", "type": "text"},
+        {"key": "risk_level",      "label": "Risk Level",      "type": "text"},
+        {"key": "status",          "label": "Status",          "type": "text"},
+        {"key": "notes",           "label": "Notes",           "type": "text"},
+    ],
+    "cdrl_generator": [
+        {"key": "cdrl_num",        "label": "CDRL #",          "type": "text"},
+        {"key": "data_item_title", "label": "Data Item Title", "type": "text"},
+        {"key": "di_number",       "label": "DI Number",       "type": "text"},
+        {"key": "clin",            "label": "CLIN",            "type": "text"},
+        {"key": "frequency",       "label": "Frequency",       "type": "text"},
+        {"key": "due_date",        "label": "Due Date",        "type": "date"},
+        {"key": "status",          "label": "Status",          "type": "text"},
+        {"key": "notes",           "label": "Notes",           "type": "text"},
+    ],
+    "program_status_review": [
+        {"key": "work_package", "label": "Work Package", "type": "text"},
+        {"key": "planned",      "label": "Planned ($)",  "type": "number"},
+        {"key": "earned",       "label": "Earned ($)",   "type": "number"},
+        {"key": "actual",       "label": "Actual ($)",   "type": "number"},
+        {"key": "spi",          "label": "SPI",          "type": "number"},
+        {"key": "cpi",          "label": "CPI",          "type": "number"},
+        {"key": "status",       "label": "Status",       "type": "text"},
+        {"key": "notes",        "label": "Notes",        "type": "text"},
+    ],
+    "section_508_audit": [
+        {"key": "requirement",    "label": "Requirement",      "type": "text"},
+        {"key": "wcag_criterion", "label": "WCAG Criterion",   "type": "text"},
+        {"key": "component_page", "label": "Component / Page", "type": "text"},
+        {"key": "conformance",    "label": "Conformance",      "type": "text"},
+        {"key": "finding",        "label": "Finding",          "type": "text"},
+        {"key": "remediation",    "label": "Remediation",      "type": "text"},
+        {"key": "owner",          "label": "Owner",            "type": "text"},
+        {"key": "notes",          "label": "Notes",            "type": "text"},
+    ],
+    "grant_tech_proposal": [
+        {"key": "requirement",    "label": "Requirement",    "type": "text"},
+        {"key": "grant_section",  "label": "Grant Section",  "type": "text"},
+        {"key": "match_pct",      "label": "Match %",        "type": "number"},
+        {"key": "funding_source", "label": "Funding Source", "type": "text"},
+        {"key": "metric",         "label": "Metric",         "type": "text"},
+        {"key": "status",         "label": "Status",         "type": "text"},
+        {"key": "due_date",       "label": "Due Date",       "type": "date"},
+        {"key": "notes",          "label": "Notes",          "type": "text"},
+    ],
+    "cjis_compliance_prep": [
+        {"key": "policy_area",       "label": "Policy Area",       "type": "text"},
+        {"key": "requirement",       "label": "Requirement",       "type": "text"},
+        {"key": "compliance_status", "label": "Compliance Status", "type": "text"},
+        {"key": "evidence",          "label": "Evidence",          "type": "text"},
+        {"key": "gap",               "label": "Gap",               "type": "text"},
+        {"key": "remediation",       "label": "Remediation",       "type": "text"},
+        {"key": "owner",             "label": "Owner",             "type": "text"},
+        {"key": "notes",             "label": "Notes",             "type": "text"},
+    ],
+}
+
+_CATEGORY_DEFAULT_COLS: dict = {
+    "budget": [
+        {"key": "vendor",      "label": "Vendor",        "type": "vendor"},
+        {"key": "item",        "label": "Item",          "type": "text"},
+        {"key": "qty",         "label": "Qty",           "type": "qty"},
+        {"key": "estimate",    "label": "Estimate ($)",  "type": "number"},
+        {"key": "quotation",   "label": "Quotation ($)", "type": "number"},
+        {"key": "expiration",  "label": "Expiration",    "type": "date"},
+        {"key": "poc",         "label": "POC",           "type": "text"},
+        {"key": "description", "label": "Description",   "type": "text"},
+        {"key": "notes",       "label": "Notes",         "type": "text"},
+    ],
+    "modernization": [
+        {"key": "asset",             "label": "Asset Name",         "type": "text"},
+        {"key": "type",              "label": "Type",               "type": "text"},
+        {"key": "version",           "label": "Version / Age",      "type": "text"},
+        {"key": "classification_7r", "label": "7Rs Classification", "type": "text"},
+        {"key": "phase",             "label": "Phase",              "type": "text"},
+        {"key": "risk",              "label": "Risk",               "type": "text"},
+        {"key": "notes",             "label": "Notes",              "type": "text"},
+    ],
+    "compliance_ato": [
+        {"key": "control",  "label": "Control",  "type": "text"},
+        {"key": "family",   "label": "Family",   "type": "text"},
+        {"key": "status",   "label": "Status",   "type": "text"},
+        {"key": "evidence", "label": "Evidence", "type": "text"},
+        {"key": "due",      "label": "Due",      "type": "date"},
+    ],
+    "acquisition": [
+        {"key": "deliverable", "label": "Deliverable", "type": "text"},
+        {"key": "clin",        "label": "CLIN",        "type": "text"},
+        {"key": "due_date",    "label": "Due Date",    "type": "date"},
+        {"key": "status",      "label": "Status",      "type": "text"},
+        {"key": "notes",       "label": "Notes",       "type": "text"},
+    ],
+    "zero_trust": [
+        {"key": "pillar",      "label": "Pillar",         "type": "text"},
+        {"key": "requirement", "label": "Requirement",    "type": "text"},
+        {"key": "maturity",    "label": "Maturity Level", "type": "text"},
+        {"key": "gap",         "label": "Gap",            "type": "text"},
+        {"key": "action",      "label": "Action",         "type": "text"},
+    ],
+    "it_operations": [
+        {"key": "requirement", "label": "Requirement", "type": "text"},
+        {"key": "standard",    "label": "Standard",    "type": "text"},
+        {"key": "status",      "label": "Status",      "type": "text"},
+        {"key": "finding",     "label": "Finding",     "type": "text"},
+        {"key": "owner",       "label": "Owner",       "type": "text"},
+    ],
+    "state_local": [
+        {"key": "requirement",   "label": "Requirement",  "type": "text"},
+        {"key": "grant_section", "label": "Grant Section","type": "text"},
+        {"key": "status",        "label": "Status",       "type": "text"},
+        {"key": "notes",         "label": "Notes",        "type": "text"},
+        {"key": "owner",         "label": "Owner",        "type": "text"},
+    ],
+    "knowledge": [
+        {"key": "document",    "label": "Document / Section", "type": "text"},
+        {"key": "owner",       "label": "Owner",              "type": "text"},
+        {"key": "last_review", "label": "Last Review",        "type": "date"},
+        {"key": "staleness",   "label": "Staleness",          "type": "text"},
+        {"key": "status",      "label": "Status",             "type": "text"},
+        {"key": "contributor", "label": "Contributor",        "type": "text"},
+        {"key": "notes",       "label": "Notes",              "type": "text"},
+    ],
+    "general": [
+        {"key": "document",    "label": "Document / Section", "type": "text"},
+        {"key": "owner",       "label": "Owner",              "type": "text"},
+        {"key": "last_review", "label": "Last Review",        "type": "date"},
+        {"key": "staleness",   "label": "Staleness",          "type": "text"},
+        {"key": "status",      "label": "Status",             "type": "text"},
+        {"key": "contributor", "label": "Contributor",        "type": "text"},
+        {"key": "notes",       "label": "Notes",              "type": "text"},
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
 # Standalone HTML app generator
 # ---------------------------------------------------------------------------
 
@@ -1180,6 +1444,7 @@ def standalone_app(use_case_id):
 def _build_standalone_html(uc: dict) -> str:
     """Build a fully self-contained, dependency-free HTML app for the given use case."""
     import html as _html
+    import json as _json
     label = uc.get("label", "Use Case")
     description = (uc.get("description") or "").strip()
     category = uc.get("category", "general")
@@ -1187,96 +1452,90 @@ def _build_standalone_html(uc: dict) -> str:
     template_reqs = uc.get("template_requirements", [])
     user_config = uc.get("user_config") or {}
 
-    # Determine column config based on category
+    uc_id = uc.get("id", "")
+    default_cols = (
+        _UC_DEFAULT_COLS.get(uc_id)
+        or _CATEGORY_DEFAULT_COLS.get(category)
+        or [{"key": "item", "label": "Item", "type": "text"}, {"key": "notes", "label": "Notes", "type": "text"}]
+    )
+    col_keys = [c["key"] for c in default_cols]
+    columns = [c["label"] for c in default_cols]
+
+    # Category-specific options and controls only — columns come from default_cols above
+    extra_summary_js = ""
     if category == "budget":
-        columns = ["Item / Description", "Vendor", "Qty", "Unit Price ($)", "Total ($)", "Tier", "Status"]
-        col_keys = ["item", "vendor", "qty", "unit_price", "total", "tier", "status"]
-        tier_options = '<option value="Tier 1">Tier 1 (Execute)</option><option value="Tier 2">Tier 2 (Backup)</option>'
-        status_options = '<option value="Draft">Draft</option><option value="Quoted">Quoted</option><option value="Approved">Approved</option><option value="Obligated">Obligated</option>'
+        tier_options = ""
+        status_options = ""
         extra_controls = """
         <div class="budget-summary" id="budget-summary">
-            <div class="summary-item"><span>Tier 1 Total:</span><strong id="tier1-total">$0.00</strong></div>
-            <div class="summary-item"><span>Tier 2 Total:</span><strong id="tier2-total">$0.00</strong></div>
-            <div class="summary-item total"><span>Grand Total:</span><strong id="grand-total">$0.00</strong></div>
+            <div class="summary-item"><span>Estimate Total:</span><strong id="est-total">$0.00</strong></div>
+            <div class="summary-item"><span>Quotation Total:</span><strong id="quot-total">$0.00</strong></div>
+            <div class="summary-item variance"><span>Variance:</span><strong id="variance-total">$0.00</strong></div>
         </div>"""
-        update_summary_js = """
+        extra_summary_js = """
         function updateSummary() {
             var items = getData();
-            var t1 = 0, t2 = 0;
+            var est = 0, quot = 0;
             items.forEach(function(it) {
-                var total = parseFloat((it.total || '').toString().replace(/[^0-9.]/g,'')) || 0;
-                if (it.tier === 'Tier 1') t1 += total; else t2 += total;
+                est += parseFloat(it.estimate || 0) || 0;
+                quot += parseFloat(it.quotation || 0) || 0;
             });
             var fmt = function(n) { return '$' + n.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ','); };
-            document.getElementById('tier1-total').textContent = fmt(t1);
-            document.getElementById('tier2-total').textContent = fmt(t2);
-            document.getElementById('grand-total').textContent = fmt(t1 + t2);
+            var varAmt = quot - est;
+            document.getElementById('est-total').textContent = fmt(est);
+            document.getElementById('quot-total').textContent = fmt(quot);
+            var varEl = document.getElementById('variance-total');
+            varEl.textContent = (varAmt > 0 ? '+' : '') + fmt(varAmt);
+            varEl.style.color = varAmt > 0 ? '#f85149' : varAmt < 0 ? '#3fb950' : '';
         }"""
         after_render_call = "updateSummary();"
         input_change_call = "updateSummary();"
     elif category == "modernization":
-        columns = ["Asset Name", "Type", "Version / Age", "7Rs Classification", "Phase", "Risk", "Notes"]
-        col_keys = ["asset", "type", "version", "classification_7r", "phase", "risk", "notes"]
         tier_options = '<option value="Retire">Retire</option><option value="Retain">Retain</option><option value="Rehost">Rehost</option><option value="Replatform">Replatform</option><option value="Repurchase">Repurchase</option><option value="Refactor">Refactor</option><option value="Re-architect">Re-architect</option>'
         status_options = '<option value="Phase 1">Phase 1</option><option value="Phase 2">Phase 2</option><option value="Phase 3">Phase 3</option><option value="Post-Go-Live">Post-Go-Live</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
     elif category == "acquisition":
-        columns = ["Deliverable", "CLIN", "Due Date", "Status", "Notes"]
-        col_keys = ["deliverable", "clin", "due_date", "status", "notes"]
         tier_options = ""
         status_options = '<option value="Not Started">Not Started</option><option value="In Progress">In Progress</option><option value="Submitted">Submitted</option><option value="Accepted">Accepted</option><option value="Rejected">Rejected</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
     elif category == "compliance_ato":
-        columns = ["Control", "Family", "Status", "Evidence", "Due"]
-        col_keys = ["control", "family", "status", "evidence", "due"]
         tier_options = ""
         status_options = '<option value="Not Started">Not Started</option><option value="In Progress">In Progress</option><option value="Implemented">Implemented</option><option value="Inherited">Inherited</option><option value="N/A">N/A</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
     elif category == "zero_trust":
-        columns = ["Pillar", "Requirement", "Maturity Level", "Gap", "Action"]
-        col_keys = ["pillar", "requirement", "maturity", "gap", "action"]
         tier_options = '<option value="Traditional">Traditional</option><option value="Initial">Initial</option><option value="Advanced">Advanced</option><option value="Optimal">Optimal</option>'
         status_options = '<option value="Open">Open</option><option value="In Progress">In Progress</option><option value="Closed">Closed</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
     elif category == "it_operations":
-        columns = ["Requirement", "Standard", "Status", "Finding", "Owner"]
-        col_keys = ["requirement", "standard", "status", "finding", "owner"]
         tier_options = ""
         status_options = '<option value="Compliant">Compliant</option><option value="Non-Compliant">Non-Compliant</option><option value="Partial">Partial</option><option value="N/A">N/A</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
     elif category == "state_local":
-        columns = ["Requirement", "Grant Section", "Status", "Notes", "Owner"]
-        col_keys = ["requirement", "grant_section", "status", "notes", "owner"]
         tier_options = ""
         status_options = '<option value="Not Started">Not Started</option><option value="In Progress">In Progress</option><option value="Complete">Complete</option><option value="N/A">N/A</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
     else:  # knowledge / document_refresh / general
-        columns = ["Document / Section", "Owner", "Last Review", "Staleness", "Status", "Contributor", "Notes"]
-        col_keys = ["document", "owner", "last_review", "staleness", "status", "contributor", "notes"]
         tier_options = '<option value="Current">Current</option><option value="Stale">Stale</option><option value="Critical">Critical (Action Required)</option>'
         status_options = '<option value="Draft">Draft Submitted</option><option value="In Review">In Review</option><option value="Approved">Approved</option><option value="Rebuilt">AI Rebuilt</option>'
         extra_controls = ""
-        update_summary_js = ""
         after_render_call = ""
         input_change_call = ""
+
+    col_manager_toolbar_btn = _COL_MANAGER_TOOLBAR_BTN
+    col_manager_html = _COL_MANAGER_HTML
+    update_summary_js = _make_col_manager_js(_json.dumps(default_cols), extra_js=extra_summary_js)
 
     # Build requirements checklist HTML
     req_html = ""
@@ -1289,8 +1548,7 @@ def _build_standalone_html(uc: dict) -> str:
     vendors = user_config.get("vendors", {}).get("defaults", [])
     vendor_opts = "".join(f"<option>{_html.escape(v)}</option>" for v in vendors) or "<option>Custom</option>"
 
-    # Build header column labels
-    th_html = "".join(f"<th>{_html.escape(c)}</th>" for c in columns) + "<th></th>"
+    th_html = "".join(f"<th>{_html.escape(c['label'])}</th>" for c in default_cols) + "<th></th>"
 
     # Build input row cells
     def make_input(key, idx, col_name):
@@ -1350,7 +1608,7 @@ tr:hover td{{background:#1c2128}}
 .delete-btn{{background:none;border:none;color:#6e7681;cursor:pointer;font-size:0.9rem;padding:2px 6px}}
 .delete-btn:hover{{color:#f85149}}
 .budget-summary{{display:flex;gap:20px;padding:12px 16px;background:#1c2128;border-top:1px solid #30363d;font-size:0.85rem;flex-wrap:wrap}}
-.summary-item{{display:flex;gap:8px;align-items:center}}.summary-item.total strong{{color:#58a6ff;font-size:1rem}}
+.summary-item{{display:flex;gap:8px;align-items:center}}.summary-item.total strong{{color:#58a6ff;font-size:1rem}}.summary-item.variance strong{{font-size:1rem}}
 .req-list{{list-style:none;display:flex;flex-direction:column;gap:6px;max-height:280px;overflow-y:auto;padding:4px 0}}
 .req-item{{display:flex;align-items:flex-start;gap:6px;font-size:0.78rem;line-height:1.45;color:#c9d1d9}}
 .req-badge{{font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:9px;white-space:nowrap;flex-shrink:0;margin-top:1px}}
@@ -1386,9 +1644,11 @@ tr:hover td{{background:#1c2128}}
         <button class="btn btn-primary btn-sm" onclick="addRow()">+ Add Row</button>
         <button class="btn btn-secondary btn-sm" onclick="exportCSV()">Export CSV</button>
         <button class="btn btn-secondary btn-sm" onclick="printApp()">Print</button>
+        {col_manager_toolbar_btn}
         <button class="btn btn-danger btn-sm" onclick="clearAll()">Clear All</button>
       </div>
     </div>
+    {col_manager_html}
     <div style="overflow-x:auto">
       <table id="tracker-table">
         <thead><tr>{th_html}</tr></thead>
@@ -1432,8 +1692,10 @@ function getData() {{
 function saveData(items) {{
   localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
 }}
+function activeCols() {{ return (typeof getCols === 'function') ? getCols() : COL_KEYS.map(function(k) {{ return {{key:k,label:k,type:'text'}}; }}); }}
 function renderTable() {{
   var items = getData();
+  var cols = activeCols();
   var tbody = document.getElementById('tracker-body');
   var empty = document.getElementById('empty-msg');
   if (!items.length) {{ tbody.innerHTML = ''; empty.style.display = 'block'; {after_render_call} return; }}
@@ -1442,29 +1704,24 @@ function renderTable() {{
   items.forEach(function(item, idx) {{
     var tr = document.createElement('tr');
     tr.dataset.idx = idx;
-    var cells = COL_KEYS.map(function(key) {{
-      var val = item[key] || '';
+    cols.forEach(function(col) {{
+      var val = item[col.key] || '';
       var cell = document.createElement('td');
-      var input = tr.querySelector ? null : null;
-      cell.innerHTML = makeCell(key, val);
-      return cell;
+      cell.innerHTML = makeCell(col.key, val, col.type);
+      tr.appendChild(cell);
     }});
-    cells.forEach(function(c) {{ tr.appendChild(c); }});
     var del = document.createElement('td');
     del.innerHTML = '<button class="delete-btn" title="Delete row" onclick="deleteRow(' + idx + ')">&#x2715;</button>';
     tr.appendChild(del);
     tbody.appendChild(tr);
     tr.querySelectorAll('.cell-input').forEach(function(inp) {{
       inp.addEventListener('change', function() {{ updateRow(idx, inp.dataset.key, inp.value); {input_change_call} }});
-      inp.addEventListener('input', function() {{
-        if (inp.dataset.key === 'qty' || inp.dataset.key === 'unit_price') autoTotal(idx);
-      }});
     }});
   }});
   {after_render_call}
 }}
-function makeCell(key, val) {{
-  var v = val ? val.replace(/"/g,'&quot;') : '';
+function makeCell(key, val, colType) {{
+  var v = (val || '').toString().replace(/"/g,'&quot;');
   if (key === 'tier' || key === 'classification_7r' || key === 'staleness' || key === 'maturity') {{
     var html = '{tier_options}'.replace(/data-key="[^"]*"/, 'data-key="'+key+'"');
     return '<select class="cell-input" data-key="'+key+'">'+html+'</select>';
@@ -1472,19 +1729,21 @@ function makeCell(key, val) {{
   if (key === 'status' || key === 'phase') {{
     return '<select class="cell-input" data-key="'+key+'">{status_options}</select>';
   }}
-  if (key === 'vendor') {{
+  if (key === 'vendor' || colType === 'vendor') {{
     return '<select class="cell-input" data-key="'+key+'"><option value="">—</option>{vendor_opts}<option value="__custom__">Other...</option></select>';
   }}
-  if (key === 'total' || key === 'unit_price') return '<input type="number" class="cell-input" data-key="'+key+'" value="'+v+'" min="0" step="0.01"' + (key==='total'?' readonly':'') + '>';
-  if (key === 'qty') return '<input type="number" class="cell-input" data-key="'+key+'" value="'+(v||1)+'" min="1" style="width:60px">';
-  if (key === 'last_review' || key === 'due_date' || key === 'due') return '<input type="date" class="cell-input" data-key="'+key+'" value="'+v+'">';
+  if (colType === 'number' || key === 'estimate' || key === 'quotation' || key === 'unit_price') {{
+    return '<input type="number" class="cell-input" data-key="'+key+'" value="'+v+'" min="0" step="0.01" placeholder="0.00">';
+  }}
+  if (colType === 'qty' || key === 'qty') return '<input type="number" class="cell-input" data-key="'+key+'" value="'+(v||1)+'" min="1" style="width:60px">';
+  if (colType === 'date' || key === 'last_review' || key === 'due_date' || key === 'due' || key === 'expiration') return '<input type="date" class="cell-input" data-key="'+key+'" value="'+v+'">';
   return '<input type="text" class="cell-input" data-key="'+key+'" value="'+v+'">';
 }}
 function addRow() {{
+  var cols = activeCols();
   var items = getData();
   var row = {{}};
-  COL_KEYS.forEach(function(k) {{ row[k] = ''; }});
-  if (row.qty !== undefined) row.qty = '1';
+  cols.forEach(function(c) {{ row[c.key] = c.type === 'qty' || c.key === 'qty' ? '1' : ''; }});
   items.push(row);
   saveData(items);
   renderTable();
@@ -1519,11 +1778,12 @@ function clearAll() {{
 function exportCSV() {{
   var items = getData();
   if (!items.length) {{ alert('No data to export.'); return; }}
-  var headers = {str(columns).replace("'", '"')};
+  var cols = activeCols();
+  var headers = cols.map(function(c) {{ return c.label; }});
   var rows = [headers.join(',')];
   items.forEach(function(it) {{
-    var vals = COL_KEYS.map(function(k) {{
-      var v = (it[k] || '').toString().replace(/"/g, '""');
+    var vals = cols.map(function(c) {{
+      var v = (it[c.key] || '').toString().replace(/"/g, '""');
       return '"' + v + '"';
     }});
     rows.push(vals.join(','));
@@ -1536,6 +1796,7 @@ function exportCSV() {{
 }}
 function printApp() {{ window.print(); }}
 {update_summary_js}
+if (typeof renderTableHeader === 'function') renderTableHeader();
 renderTable();
 </script>
 </body>
