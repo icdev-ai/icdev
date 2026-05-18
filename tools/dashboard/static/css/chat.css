@@ -1936,6 +1936,7 @@
 
 /* Compact row */
 .chat-uc-compact-row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -1949,20 +1950,24 @@
 .chat-uc-compact-row:hover { background: var(--bg-tertiary, #1a2233); border-color: var(--accent-blue); }
 .chat-uc-compact-row:focus { outline: 2px solid var(--accent-blue); outline-offset: -2px; }
 .chat-uc-compact-row__icon { font-size: 0.9rem; flex-shrink: 0; width: 18px; text-align: center; }
-.chat-uc-compact-row__label { flex: 1; font-size: 0.8rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-uc-compact-row__actions { display: flex; gap: 3px; flex-shrink: 0; opacity: 0; transition: opacity 0.12s; }
+.chat-uc-compact-row__label { flex: 1; font-size: 0.8rem; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chat-uc-compact-row__actions {
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s;
+    background: var(--bg-secondary);
+    border-radius: 3px;
+    padding: 1px 2px;
+}
 .chat-uc-compact-row:hover .chat-uc-compact-row__actions,
 .chat-uc-compact-row:focus .chat-uc-compact-row__actions { opacity: 1; }
 
-.uc-step-count {
-    font-size: 0.62rem;
-    color: var(--text-muted);
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 0px 5px;
-    flex-shrink: 0;
-}
+.uc-step-count { display: none; }
 
 /* Export button (used in both compact and expanded) */
 .chat-uc-export-btn {

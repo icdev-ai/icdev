@@ -2098,8 +2098,8 @@
                 html += '<div class="chat-uc-compact-row' + (isSelected ? ' chain-selected' : '') + '" data-uc-id="' + ucIdEsc + '" tabindex="0" role="button" aria-label="Start ' + escAttr(uc.label) + '">'
                     + chainCb
                     + '<span class="chat-uc-compact-row__icon">' + escHtml(uc.icon || '⚙') + '</span>'
-                    + '<span class="chat-uc-compact-row__label">' + escHtml(uc.label) + '</span>'
-                    + ftBadge + stepCount
+                    + '<span class="chat-uc-compact-row__label" title="' + escAttr(uc.label) + (uc.workflow_steps && uc.workflow_steps.length ? ' · ' + uc.workflow_steps.length + ' steps' : '') + '">' + escHtml(uc.label) + '</span>'
+                    + ftBadge
                     + '<span class="chat-uc-compact-row__actions">'
                     + '<button class="chat-uc-edit-btn" data-uc-id="' + ucIdEsc + '" title="Edit" onclick="event.stopPropagation()">&#x270F;</button>'
                     + '<button class="chat-uc-export-btn" data-uc-id="' + ucIdEsc + '" title="Export bundle" onclick="event.stopPropagation()">&#x2913;</button>'
