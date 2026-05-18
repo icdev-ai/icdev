@@ -2763,6 +2763,171 @@ def create_app() -> Flask:
         finally:
             conn.close()
 
+    # ── Requirements human-readable view ─────────────────────────────────
+    @app.route("/intake/requirements/<session_id>")
+    def intake_requirements_view(session_id):
+        """Professional requirements document view for an intake session."""
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        from flask import abort as _abort
+        conn = _get_db()
+        try:
+            session = conn.execute(
+                "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not session:
+                app.logger.warning("intake_requirements_view: session %s not found", session_id)
+                _abort(404, description=f"Session '{session_id}' not found.")
+            session = dict(session)
+
+            reqs = conn.execute(
+                "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY priority, created_at",
+                (session_id,),
+            ).fetchall()
+            reqs = [dict(r) for r in reqs]
+
+            readiness_row = conn.execute(
+                "SELECT readiness_score, readiness_breakdown FROM intake_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        # Build readiness dict
+        readiness = None
+        if readiness_row and readiness_row["readiness_score"] is not None:
+            breakdown = {}
+            try:
+                breakdown = _json.loads(readiness_row["readiness_breakdown"] or "{}")
+            except Exception:
+                pass
+            readiness = {
+                "overall": float(readiness_row["readiness_score"]),
+                "dimensions": {
+                    "Completeness": breakdown.get("completeness", 0),
+                    "Clarity": breakdown.get("clarity", 0),
+                    "Feasibility": breakdown.get("feasibility", 0),
+                    "Compliance": breakdown.get("compliance", 0),
+                    "Testability": breakdown.get("testability", 0),
+                },
+            }
+
+        # Group requirements by type
+        _type_order = ["functional", "performance", "interface", "data", "compliance", "security", "non_functional"]
+        _type_labels = {
+            "functional": "Functional", "performance": "Performance",
+            "interface": "Interface", "data": "Data", "compliance": "Compliance",
+            "security": "Security", "non_functional": "Non-Functional",
+        }
+        groups = {}
+        for req in reqs:
+            t = (req.get("requirement_type") or "functional").lower().replace(" ", "_")
+            groups.setdefault(t, []).append(req)
+
+        grouped = []
+        for t in _type_order:
+            if t in groups:
+                grouped.append((t, _type_labels.get(t, t.replace("_", " ").title()), groups[t]))
+        for t, items in groups.items():
+            if t not in _type_order:
+                grouped.append((t, t.replace("_", " ").title(), items))
+
+        # Frameworks
+        frameworks = []
+        try:
+            ctx = _json.loads(session.get("context_summary") or "{}")
+            raw_fw = ctx.get("selected_frameworks", [])
+            frameworks = [fw.replace("_", " ").replace("-", " ").title() for fw in raw_fw]
+        except Exception:
+            pass
+
+        req_types = list(groups.keys())
+        cui_banner = getattr(app, "_cui_banner", None) or "CUI // SP-CTI"
+        generated_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        try:
+            return render_template(
+                "intake_requirements.html",
+                session=session,
+                requirements=reqs,
+                grouped_requirements=grouped,
+                req_types=req_types,
+                readiness=readiness,
+                frameworks=frameworks,
+                classification_banner=cui_banner,
+                generated_at=generated_at,
+            )
+        except Exception as _exc:
+            app.logger.error("intake_requirements_view render error: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+
+    # ── PRD rendered HTML view ────────────────────────────────────────────
+    @app.route("/intake/prd/<session_id>/view")
+    def intake_prd_view(session_id):
+        """Render PRD as a styled HTML page instead of downloading raw markdown."""
+        import json as _json_mod
+        from datetime import datetime as _dt, timezone as _tz
+        try:
+            import markdown as _md_lib
+            _HAS_MARKDOWN_LIB = True
+        except ImportError:
+            _HAS_MARKDOWN_LIB = False
+
+        # Fetch customer name from session
+        conn = _get_db()
+        try:
+            _sess_row = conn.execute(
+                "SELECT customer_name FROM intake_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            session_customer = (_sess_row["customer_name"] if _sess_row else "") or ""
+        except Exception:
+            session_customer = ""
+        finally:
+            conn.close()
+
+        try:
+            from tools.requirements.prd_generator import generate_prd as _gen_prd
+            result = _gen_prd(session_id)
+        except Exception as exc:
+            result = {"status": "error", "error": str(exc)}
+
+        cui_banner = getattr(app, "_cui_banner", None) or "CUI // SP-CTI"
+        generated_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        if result.get("status") != "ok":
+            return render_template(
+                "intake_prd_view.html",
+                session_id=session_id,
+                session_customer=session_customer,
+                error=result.get("error", "PRD could not be generated."),
+                prd_html="",
+                prd_markdown_json="''",
+                classification_banner=cui_banner,
+                generated_at=generated_at,
+            )
+
+        raw_md = result.get("prd_markdown", "")
+
+        if _HAS_MARKDOWN_LIB:
+            prd_html = _md_lib.markdown(
+                raw_md,
+                extensions=["tables", "fenced_code", "nl2br", "toc"],
+            )
+        else:
+            import html as _html_lib
+            prd_html = "<pre style='white-space:pre-wrap'>" + _html_lib.escape(raw_md) + "</pre>"
+
+        return render_template(
+            "intake_prd_view.html",
+            session_id=session_id,
+            session_customer=session_customer,
+            error=None,
+            prd_html=prd_html,
+            prd_markdown_json=_json_mod.dumps(raw_md),
+            classification_banner=cui_banner,
+            generated_at=generated_at,
+        )
+
     @app.route("/quick-paths")
     def quick_paths_page():
         """Quick Path workflow templates — pre-built shortcuts for common tasks."""

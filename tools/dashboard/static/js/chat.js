@@ -777,7 +777,7 @@
 
     function chatViewRequirements() {
         if (!_activeIntakeSessionId) return;
-        window.open(INTAKE_API + '/session/' + _activeIntakeSessionId, '_blank');
+        window.open('/intake/requirements/' + _activeIntakeSessionId, '_blank');
     }
 
     // ===================================================================
@@ -793,16 +793,12 @@
             if (data.error) { appendMessage({ role: 'system', content: 'Error generating PRD: ' + data.error }); return; }
             var md = data.prd_markdown || '';
             if (!md) { appendMessage({ role: 'system', content: 'PRD generated but empty — add more requirements first.' }); return; }
-            var blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
-            var url = URL.createObjectURL(blob);
-            var a = document.createElement('a');
-            a.href = url; a.download = 'PRD-' + _activeIntakeSessionId + '.md';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            var summary = 'PRD generated: ' + (data.total_requirements || 0) + ' requirements';
+            // Open rendered HTML view in a new tab
+            window.open('/intake/prd/' + _activeIntakeSessionId + '/view', '_blank');
+            var summary = 'PRD ready: ' + (data.total_requirements || 0) + ' requirements';
             if (data.has_coa) summary += ', COA included';
             if (data.has_decomposition) summary += ', SAFe decomposition included';
-            summary += '. Downloaded.';
+            summary += '. Opening in new tab.';
             appendMessage({ role: 'system', content: summary });
         })
         .catch(function (err) { appendMessage({ role: 'system', content: 'Error: ' + err.message }); });
