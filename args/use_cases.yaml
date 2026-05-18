@@ -340,6 +340,15 @@ use_cases:
         priority: high
         text: "System shall export the complete BOM in CSV and XLSX formats suitable for direct submission to the procurement office or contracting officer."
         criteria: "Acceptance: Export includes all required fields (CLIN, Item, Qty, Estimate ($), Quotation ($), Vendor, Expiration, POC, Description, Notes, contract vehicle, NDAA status); format validated against procurement office template."
+    # Templates/snippets confirmed present in data/pipeline_canvas.db (pc_templates / pc_snippets).
+    # kanban has no catalog entry; templates/snippets are empty (best-effort, no hard failure).
+    canvas_seeds:
+      - canvas: pipeline
+        templates: [tpl-slsa-l3, tpl-compliance-first]
+        snippets: [snip-cncf-supply-chain, snip-ssdf-compliant]
+      - canvas: kanban
+        templates: []
+        snippets: []
 
   - id: document_refresh
     label: Crowd-Sourced Doc Refresh
