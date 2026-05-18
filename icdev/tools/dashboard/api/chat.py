@@ -410,6 +410,90 @@ def reset_use_case(use_case_id):
     return jsonify({"ok": True, "id": use_case_id, "reset": True})
 
 
+@chat_api.route("/use-cases/import", methods=["POST"])
+def import_use_cases():
+    """Import use cases from a multipart YAML bundle (icdev_uc_bundle format).
+
+    Expects multipart/form-data with a 'file' field containing a YAML document:
+        icdev_uc_bundle: '1.0'
+        use_cases:
+          - id: ...
+            label: ...
+
+    Returns: {imported: [...], skipped: [...], errors: [...]}
+    """
+    import json as _json
+    import yaml as _yaml
+    from datetime import datetime, timezone
+    from tools.db.storage import get_connection as _gc
+
+    uploaded = request.files.get("file")
+    if not uploaded:
+        return jsonify({"error": "file field required"}), 400
+
+    try:
+        raw = uploaded.read().decode("utf-8")
+        bundle = _yaml.safe_load(raw) or {}
+    except Exception as exc:
+        return jsonify({"error": f"YAML parse error: {exc}"}), 400
+
+    if not bundle.get("icdev_uc_bundle"):
+        return jsonify({"error": "Missing icdev_uc_bundle header"}), 400
+
+    cases = bundle.get("use_cases", [])
+    if not isinstance(cases, list):
+        return jsonify({"error": "use_cases must be a list"}), 400
+
+    imported_ids: list = []
+    skipped_ids: list = []
+    errors: list = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    try:
+        with _gc() as conn:
+            _uc_init_table(conn)
+            for uc in cases:
+                uc_id = (uc.get("id") or "").strip()
+                if not uc_id:
+                    errors.append({"error": "missing id", "entry": uc})
+                    continue
+                try:
+                    existing = conn.execute(
+                        "SELECT id FROM use_case_overrides WHERE id=?", (uc_id,)
+                    ).fetchone()
+                    if existing:
+                        skipped_ids.append(uc_id)
+                        continue
+                    cw = uc.get("canvas_wiring")
+                    qa = uc.get("quick_actions")
+                    conn.execute(
+                        """INSERT INTO use_case_overrides
+                               (id,label,description,icon,badge,agent_model,ricoas,
+                                boost_threshold,system_prompt,seed_message,
+                                canvas_wiring,quick_actions,updated_at,updated_by)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            uc_id,
+                            uc.get("label"), uc.get("description"), uc.get("icon"),
+                            uc.get("badge"), uc.get("agent_model"),
+                            1 if uc.get("ricoas") else 0,
+                            uc.get("boost_threshold"),
+                            uc.get("system_prompt"), uc.get("seed_message"),
+                            _json.dumps(cw) if cw is not None else None,
+                            _json.dumps(qa) if qa is not None else None,
+                            now, uc.get("updated_by", "import"),
+                        ),
+                    )
+                    imported_ids.append(uc_id)
+                except Exception as row_exc:
+                    errors.append({"id": uc_id, "error": str(row_exc)})
+            conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({"imported": imported_ids, "skipped": skipped_ids, "errors": errors})
+
+
 # ---------------------------------------------------------------------------
 # Diagnostics
 # ---------------------------------------------------------------------------
