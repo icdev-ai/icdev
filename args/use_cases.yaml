@@ -168,6 +168,11 @@ use_cases:
         priority: high
         text: "System shall produce a cutover runbook reviewed and approved by operations, security, and primary stakeholders before each migration wave."
         criteria: "Acceptance: Runbook includes step-by-step cutover sequence, success/fail criteria at each step, rollback trigger points, and named owners for each action."
+    # Templates/snippets confirmed present in data/migration_canvas.db (mc_templates / mc_snippets).
+    canvas_seeds:
+      - canvas: migration
+        templates: [tpl-multi-wave, tpl-lift-shift, tpl-strangler-fig]
+        snippets: [snip-wave-group, snip-rollback, snip-ato-gate]
 
   - id: year_end_budget_sprint
     label: Year-End Budget Sprint
