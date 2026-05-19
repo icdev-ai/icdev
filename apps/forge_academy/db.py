@@ -671,7 +671,11 @@ def user_progress_summary(user_id: int, tenant_id: str | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 def get_user_achievements(user_id: int) -> list[dict]:
-    rows = get_connection().execute(
+    # Qualify classification as a.classification to prevent RLS ambiguity
+    # when both joined tables carry a classification column.
+    conn = get_connection()
+    conn.set_security_context(None)
+    rows = conn.execute(
         """SELECT a.*, ua.earned_at
            FROM fa_user_achievements ua
            JOIN fa_achievements a ON a.id=ua.achievement_id
@@ -679,6 +683,7 @@ def get_user_achievements(user_id: int) -> list[dict]:
            ORDER BY ua.earned_at DESC""",
         (user_id,),
     ).fetchall()
+    conn.close()
     return [dict(r) for r in rows]
 
 

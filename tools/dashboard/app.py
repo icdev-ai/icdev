@@ -4175,8 +4175,8 @@ def create_app() -> Flask:
 
     @app.route("/analytics")
     def analytics_page():
-        """Compliance Funnel Analytics — ATO pipeline funnel, time-series, child app telemetry."""
-        return render_template("analytics.html")
+        """Compliance Funnel Analytics — redirects to usage dashboard (template pending)."""
+        return redirect("/usage")
 
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():
