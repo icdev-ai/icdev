@@ -1,0 +1,6 @@
+# IQE-SC-003: ISA agreements expiring or requiring review
+# Shows agreements in expiring, expired, or review status.
+
+foreach a in supply_chain.isa_agreements
+where a.status == 'expiring' or a.status == 'expired' or a.status == 'review'
+select a.partner_system, a.partner_org, a.agreement_type, a.status, a.expiry_date, a.next_review_date, a.poc_name
