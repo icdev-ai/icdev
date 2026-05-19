@@ -78,6 +78,10 @@ def _title(slide, title, sub=""):
         _box(slide, LM, Inches(1.65), CW, Inches(0.42),
              sub, size=13, color=LGRAY, italic=True)
 
+def _notes(slide, text):
+    tf = slide.notes_slide.notes_text_frame
+    tf.text = text
+
 def _card(slide, l, t, w, h, heading, body, hc=GOLD, bc=LGRAY, hs=12, bs=10, border=GOLD):
     _rect(slide, l, t, w, h, MGRAY, border)
     pad = Inches(0.12)
@@ -852,6 +856,30 @@ def s16_the_ask(prs):
     _title(s, "What We’re Asking For",
            "Three approvals. One platform. Returns from Day 90.")
     _footer(s, 16)
+    _notes(s,
+        "SPEAKER NOTE — COST ESTIMATES (not validated figures)\n\n"
+        "All dollar ranges on this slide are market-rate estimates only. "
+        "They have NOT been validated against actual vendor quotes, procurement data, "
+        "or your organization’s labor category rates. Replace before presenting to a CFO "
+        "or contracting officer.\n\n"
+        "Infrastructure ($150K–$300K)\n"
+        "  Basis: AWS GovCloud or on-prem K8s at roughly $12K–$25K/month annualized "
+        "for the specified spec (64 vCPU, 256 GB RAM, 10 TB NVMe) plus LLM API credits. "
+        "Replace with an actual AWS GovCloud / Azure Gov quote for this exact configuration.\n\n"
+        "Personnel ($300K–$400K)\n"
+        "  Basis: 4 FTEs at a blended $75K–$100K/year — assumes a mix of GS-13 equivalents "
+        "and contractor labor. Replace with your actual GS salary tables or IDIQ labor "
+        "category rates for the four roles listed.\n\n"
+        "Academy + GameDay ($120K–$160K)\n"
+        "  Basis: ~$20K–$40K per cohort × 4 cohorts, rough facilitation and compute estimate. "
+        "Adjust based on whether delivery is in-person or virtual, and whether facilitators "
+        "are internal staff or contracted.\n\n"
+        "Year-1 Return ($4M–$6M+)\n"
+        "  Basis: If one program compresses ATO from 15 months to 2 months, and burns "
+        "$500K/month in program labor during that period, the saved 13 months = $6.5M. "
+        "Replace with a real program data point from your portfolio if available. "
+        "This figure will be the most scrutinized number in the room."
+    )
 
     asks = [
         ("1.  Infrastructure",
