@@ -1000,7 +1000,7 @@ def auto_remediate_prd(session_id):
     completeness_check = checks_by_name.get("completeness", {})
     if completeness_check.get("severity") in ("warning", "critical"):
         missing_types = completeness_check.get("missing_types") or []
-        issues = completeness_check.get("issues") or []
+        type_counts_existing = completeness_check.get("type_counts") or {}
         # Load session context for better LLM prompts
         session_row = conn.execute(
             "SELECT customer_name, project_id, impact_level FROM intake_sessions WHERE id = ?",
@@ -1008,59 +1008,81 @@ def auto_remediate_prd(session_id):
         ).fetchone()
         session_ctx = dict(session_row) if session_row else {}
         customer = session_ctx.get("customer_name") or "the system"
+        impact_level = session_ctx.get("impact_level") or "IL2"
 
-        _TYPE_DESCRIPTIONS = {
-            "security": (
-                "Write a security requirement for {customer} that specifies authentication, "
-                "authorization, or data-protection controls. Include a measurable acceptance criterion."
-            ),
-            "performance": (
-                "Write a performance requirement for {customer} with specific latency, throughput, "
-                "or availability targets (e.g., p95 latency < 200ms, 99.9% uptime). "
-                "Include a measurable acceptance criterion."
-            ),
-            "interface": (
-                "Write an interface/API requirement for {customer} that specifies integration points, "
-                "protocols, or data formats. Include a measurable acceptance criterion."
-            ),
-            "data": (
-                "Write a data management requirement for {customer} covering storage, retention, "
-                "or data quality. Include a measurable acceptance criterion."
-            ),
-            "compliance": (
-                "Write a compliance requirement for {customer} referencing a specific regulation "
-                "or standard (NIST, FedRAMP, CMMC, etc.). Include a measurable acceptance criterion."
-            ),
+        # For IL4/IL5/IL6 the completeness check requires >= 3 security requirements.
+        # Determine how many of each type we need to insert to clear the issue.
+        _SECURITY_MIN = 3 if impact_level in ("IL4", "IL5", "IL6") else 1
+
+        def _needed_count(req_type: str) -> int:
+            current = type_counts_existing.get(req_type, 0)
+            if req_type == "security":
+                return max(0, _SECURITY_MIN - current)
+            return 0 if current > 0 else 1
+
+        # Templates indexed by type; {n} = sequence number for varied phrasing
+        _TYPE_TEMPLATES = {
+            "security": [
+                "The system shall enforce role-based access control for {customer}, ensuring only authenticated and authorized users can access sensitive data, with audit logs retained for 90 days.",
+                "The system shall encrypt all data in transit and at rest for {customer} using FIPS 140-2 validated cryptographic modules, with key rotation every 90 days.",
+                "The system shall implement multi-factor authentication for all privileged accounts in {customer}, with failed login attempts locked after 5 consecutive failures.",
+            ],
+            "performance": [
+                "The system shall respond to all user-initiated requests for {customer} within 200ms at the 95th percentile under normal load (up to 1,000 concurrent users).",
+            ],
+            "interface": [
+                "The system shall expose a RESTful API for {customer} with OpenAPI 3.0 documentation, supporting JSON payloads and returning HTTP status codes per RFC 7231.",
+            ],
+            "data": [
+                "The system shall retain all transaction records for {customer} for a minimum of 7 years and provide export in CSV and JSON formats within 24 hours of request.",
+            ],
+            "compliance": [
+                "The system shall comply with NIST SP 800-53 Rev 5 moderate baseline controls for {customer}, with a documented System Security Plan (SSP) updated annually.",
+            ],
         }
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        for missing_type in missing_types:
-            tmpl = _TYPE_DESCRIPTIONS.get(missing_type)
-            if not tmpl or not _llm_available:
-                suggested.append({
-                    "req_id": None,
-                    "check": "completeness",
-                    "suggestion": f"Add a {missing_type} requirement to improve coverage.",
-                })
-                continue
-            instruction = tmpl.format(customer=customer)
-            try:
-                req_obj = LLMRequest(
-                    messages=[{"role": "user", "content": (
-                        f"You are a requirements engineer. {instruction}\n\n"
-                        f"Return ONLY the requirement text (one sentence, no labels)."
-                    )}],
-                    system_prompt="Return only the requirement text. One clear sentence.",
-                    max_tokens=200,
-                    temperature=0.3,
-                    agent_id="icdev-prd-remediate",
-                )
-                response = router.invoke("requirements_analysis", req_obj)
-                new_text = (response.content or "").strip() if response else ""
-            except Exception:
-                new_text = ""
 
-            if len(new_text) >= 10:
+        # Build a combined set: missing types + types that exist but fall below minimum count
+        types_to_remediate: list[str] = list(missing_types)
+        if "security" not in types_to_remediate and _needed_count("security") > 0:
+            types_to_remediate.append("security")
+
+        for missing_type in types_to_remediate:
+            n_needed = _needed_count(missing_type)
+            if n_needed == 0:
+                continue
+            templates = _TYPE_TEMPLATES.get(missing_type, [])
+            if not templates:
+                suggested.append({"req_id": None, "check": "completeness",
+                                   "suggestion": f"Add {n_needed} {missing_type} requirement(s) to improve coverage."})
+                continue
+
+            inserted = 0
+            for i in range(n_needed):
+                tmpl = templates[i % len(templates)]
+                if _llm_available and i >= len(templates):
+                    # LLM generates variants beyond the hardcoded templates
+                    base_instruction = tmpl.format(customer=customer)
+                    try:
+                        req_obj = LLMRequest(
+                            messages=[{"role": "user", "content": (
+                                f"Write a different {missing_type} requirement for {customer}. "
+                                f"Here is an example for reference (do NOT copy it): {base_instruction}\n\n"
+                                f"Return ONLY the new requirement text. One clear sentence with a measurable criterion."
+                            )}],
+                            system_prompt="Return only the requirement text. One clear sentence.",
+                            max_tokens=200, temperature=0.5, agent_id="icdev-prd-remediate",
+                        )
+                        resp = router.invoke("requirements_analysis", req_obj)
+                        new_text = (resp.content or "").strip() if resp else ""
+                    except Exception:
+                        new_text = ""
+                else:
+                    new_text = tmpl.format(customer=customer)
+
+                if len(new_text) < 10:
+                    continue
                 try:
                     conn.execute(
                         """INSERT INTO intake_requirements
@@ -1068,31 +1090,22 @@ def auto_remediate_prd(session_id):
                             source_type, created_at, updated_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            session_id, missing_type, "medium", new_text,
-                            f"System shall satisfy {missing_type} requirement as stated.",
+                            session_id, missing_type, "high" if missing_type == "security" else "medium",
+                            new_text,
+                            f"System shall satisfy this {missing_type} requirement as stated and verified by testing.",
                             "auto_remediate", now_iso, now_iso,
                         ),
                     )
                     conn.commit()
-                    updated.append({
-                        "req_id": None,
-                        "check": "completeness",
-                        "action": f"Added new {missing_type} requirement",
-                        "refined_text": new_text,
-                    })
-                    actions_taken.append(f"completeness: inserted new {missing_type} requirement")
+                    updated.append({"req_id": None, "check": "completeness",
+                                    "action": f"Added {missing_type} requirement ({i+1}/{n_needed})",
+                                    "refined_text": new_text})
+                    inserted += 1
                 except Exception:
-                    suggested.append({
-                        "req_id": None,
-                        "check": "completeness",
-                        "suggestion": f"Add this {missing_type} requirement: {new_text}",
-                    })
-            else:
-                suggested.append({
-                    "req_id": None,
-                    "check": "completeness",
-                    "suggestion": f"Add a {missing_type} requirement to improve type coverage.",
-                })
+                    suggested.append({"req_id": None, "check": "completeness",
+                                      "suggestion": f"Add this {missing_type} requirement: {new_text}"})
+            if inserted:
+                actions_taken.append(f"completeness: inserted {inserted} {missing_type} requirement(s)")
 
     # ── 3. SMART: rewrite low-scoring requirements ──────────────────────────
     smart_check = checks_by_name.get("smart", {})
@@ -1106,7 +1119,7 @@ def auto_remediate_prd(session_id):
             "traceable": "Rewrite to include an explicit acceptance criterion (Given/When/Then) that can be tested.",
         }
         instruction = _DIM_INSTRUCTIONS.get(weakest_dim, _DIM_INSTRUCTIONS["specific"])
-        SMART_THRESHOLD = 60
+        SMART_THRESHOLD = 70  # validator WARNING fires at avg < 70; rewrite anything below PASS line
         for score_entry in (smart_check.get("scores") or []):
             if (score_entry.get("pct") or 0) >= SMART_THRESHOLD:
                 continue
