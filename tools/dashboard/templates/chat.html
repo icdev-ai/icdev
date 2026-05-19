@@ -138,6 +138,10 @@
 
         <!-- RICOAS Tab Content -->
         <div id="ricoas-sidebar" class="chat-right-tab-content chat-right-tab-content--active" data-tab-content="ricoas">
+            <div class="tab-processing-bar" id="ricoas-processing-bar">
+                <span class="tab-processing-spinner"></span>
+                <span>AI is processing&hellip;</span>
+            </div>
             <!-- Workflow Step Bar — shown when active use case has workflow_steps -->
             <div id="workflow-step-bar" class="sidebar-section" style="display:none;">
                 <h4 class="chat-sidebar-heading">Workflow Progress</h4>
@@ -251,20 +255,24 @@
 
         <!-- Governance Tab Content -->
         <div id="gov-sidebar" class="chat-right-tab-content" data-tab-content="gov">
+            <div class="tab-processing-bar" id="gov-processing-bar">
+                <span class="tab-processing-spinner"></span>
+                <span>AI is processing&hellip;</span>
+            </div>
             <div class="gov-sidebar-header">
                 <strong class="gov-sidebar-title">AI Governance</strong>
             </div>
             <div id="gov-sidebar-content">
-                <div id="gov-processing-spinner" style="display:none;align-items:center;gap:10px;padding:12px 0;">
-                    <span class="send-spinner" style="width:18px;height:18px;border-width:2px;"></span>
-                    <span style="color:var(--text-secondary,#8b949e);font-size:0.85rem;">AI is processing&hellip;</span>
-                </div>
-                <p id="gov-placeholder-text" class="gov-sidebar-placeholder">Governance status updates as the AI processes your request.</p>
+                <p class="gov-sidebar-placeholder">Governance status updates as the AI processes your request.</p>
             </div>
         </div>
 
         <!-- Intelligence Tab Content -->
         <div id="intel-sidebar" class="chat-right-tab-content" data-tab-content="intel">
+            <div class="tab-processing-bar" id="intel-processing-bar">
+                <span class="tab-processing-spinner"></span>
+                <span>AI is processing&hellip;</span>
+            </div>
             <div class="intel-sidebar-header">
                 <strong class="intel-sidebar-title">Intelligence</strong>
                 <span class="intel-sidebar-subtitle">RAG + Bayesian + Quality + Genesis</span>

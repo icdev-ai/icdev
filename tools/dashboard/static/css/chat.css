@@ -589,6 +589,38 @@
     color: var(--text-secondary);
 }
 
+/* ===================================================================
+   Tab Processing Bar — shared across RICOAS / Gov / Intel tabs
+   =================================================================== */
+
+.tab-processing-bar {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    background: var(--bg-secondary, #161b22);
+    border: 1px solid var(--accent-blue, #1f6feb);
+    border-radius: 6px;
+    font-size: 0.8rem;
+    color: var(--accent-blue, #58a6ff);
+}
+
+.tab-processing-bar--visible {
+    display: flex;
+}
+
+.tab-processing-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(88, 166, 255, 0.3);
+    border-top-color: var(--accent-blue, #58a6ff);
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: sendSpin 0.8s linear infinite;
+}
+
 .gov-stat-row {
     display: flex;
     justify-content: space-between;
