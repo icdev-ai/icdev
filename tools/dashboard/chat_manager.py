@@ -349,10 +349,42 @@ class ChatManager:
             return results
 
     def get_context(self, context_id: str) -> Optional[dict]:
-        """Get a single context by ID."""
+        """Get a single context by ID (memory-first, DB fallback for post-restart lookups)."""
         with self._lock:
             ctx = self._contexts.get(context_id)
-            return ctx.to_dict() if ctx else None
+            if ctx:
+                return ctx.to_dict()
+        return self._db_get_context(context_id)
+
+    def _db_get_context(self, context_id: str) -> Optional[dict]:
+        """Reconstruct a minimal context dict from DB for contexts not in memory."""
+        try:
+            conn = self._get_db()
+            row = conn.execute(
+                "SELECT id, user_id, tenant_id, title, status, project_id, "
+                "agent_model, system_prompt, dirty_version, message_count, "
+                "classification, created_at, updated_at "
+                "FROM chat_contexts WHERE id = ?",
+                (context_id,),
+            ).fetchone()
+            conn.close()
+            if not row:
+                return None
+            return {
+                "context_id": row["id"],
+                "user_id": row["user_id"] or "",
+                "tenant_id": row["tenant_id"] or "",
+                "title": row["title"] or "",
+                "project_id": row["project_id"] or "",
+                "agent_model": row["agent_model"] or "sonnet",
+                "status": row["status"] or "active",
+                "message_count": row["message_count"] or 0,
+                "dirty_version": row["dirty_version"] or 0,
+                "queue_depth": 0,
+                "state_updates": {"up_to_date": True, "changes": []},
+            }
+        except Exception:
+            return None
 
     def close_context(self, context_id: str) -> dict:
         """Close/archive a chat context."""
