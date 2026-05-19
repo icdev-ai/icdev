@@ -881,7 +881,14 @@ def validate_prd_endpoint(session_id):
 
 @intake_api.route("/api/intake/prd/<session_id>/auto-remediate", methods=["POST"])
 def auto_remediate_prd(session_id):
-    """LLM auto-fixes failing PRD requirements and returns before/after readiness scores."""
+    """LLM auto-fixes failing PRD requirements and returns before/after readiness scores.
+
+    Handles four distinct remediation strategies:
+      traceability  → run SAFe decomposition on orphan requirements
+      completeness  → LLM-generate new requirements for missing types
+      smart         → rewrite low-scoring requirements on weakest SMART dimension
+      density/measurability → rewrite individual findings per requirement
+    """
     if not _HAS_PRD_VALIDATOR:
         return jsonify({"error": "PRD validator not available"}), 503
     if not _HAS_SCORER:
@@ -889,14 +896,14 @@ def auto_remediate_prd(session_id):
 
     conn = _get_db()
 
-    # Capture baseline score
+    # ── Baseline score ──────────────────────────────────────────────────────
     try:
         before_result = score_readiness(session_id)
         before_score_pct = round((before_result.get("overall_score") or 0) * 100)
     except Exception as exc:
         return jsonify({"error": f"Could not score session: {exc}"}), 500
 
-    # Run validator to find failing checks
+    # ── Validator ───────────────────────────────────────────────────────────
     try:
         val_result = _validate_prd(session_id)
     except Exception as exc:
@@ -905,62 +912,13 @@ def auto_remediate_prd(session_id):
     if val_result.get("status") != "ok":
         return jsonify(val_result), 404
 
-    checks = val_result.get("checks") or []
-
-    # Collect actionable findings grouped by requirement_id
-    # Maps req_id -> list of (check_name, category/detail)
-    _ACTIONABLE_CHECKS = {"density", "smart", "measurability", "completeness"}
-    req_issues: dict = {}
-    for check in checks:
-        if check.get("severity") == "pass":
-            continue
-        check_name = check.get("check", "")
-        if check_name not in _ACTIONABLE_CHECKS:
-            continue
-        for finding in check.get("findings") or []:
-            rid = finding.get("requirement_id")
-            if rid is None:
-                continue
-            req_issues.setdefault(rid, []).append({
-                "check": check_name,
-                "detail": finding.get("matched") or finding.get("category") or "",
-            })
-
-    if not req_issues:
-        # Nothing to fix — re-score and return
-        return jsonify({
-            "status": "ok",
-            "fixed_count": 0,
-            "suggested_count": 0,
-            "skipped_count": 0,
-            "before_score_pct": before_score_pct,
-            "after_score_pct": before_score_pct,
-            "score_delta_pct": 0,
-            "updated": [],
-            "suggested": [],
-            "message": "No actionable findings — PRD already looks clean.",
-        })
-
-    # Load current requirement texts
-    placeholders = ",".join("?" * len(req_issues))
-    rows = conn.execute(
-        f"SELECT id, text, requirement_type FROM intake_requirements WHERE id IN ({placeholders})",
-        list(req_issues.keys()),
-    ).fetchall()
-    req_rows = {row["id"]: dict(row) for row in rows}
-
-    # Build per-check fix instructions
-    _FIX_INSTRUCTIONS = {
-        "density": "Rewrite this requirement removing filler phrases and redundant words. Keep only precise, measurable assertions.",
-        "measurability": "Rewrite this requirement adding a concrete, measurable metric (a number, percentage, or SLA target).",
-        "smart": "Rewrite this requirement to be Specific, Measurable, Achievable, Relevant, and Time-bound (SMART). Keep the same intent.",
-        "completeness": "Expand this requirement to explicitly state what the system must do, who it applies to, and under what conditions.",
-    }
+    checks_by_name = {c["check"]: c for c in (val_result.get("checks") or [])}
 
     updated: list[dict] = []
     suggested: list[dict] = []
-    skipped: list[dict] = []
+    actions_taken: list[str] = []
 
+    # ── LLM setup ──────────────────────────────────────────────────────────
     try:
         from tools.llm import get_router
         from tools.llm.provider import LLMRequest
@@ -969,30 +927,16 @@ def auto_remediate_prd(session_id):
     except Exception:
         _llm_available = False
 
-    for rid, issues in req_issues.items():
-        row = req_rows.get(rid)
-        if not row:
-            continue
-        original_text = (row.get("text") or "").strip()
-        if not original_text:
-            continue
-
-        # Build a combined fix instruction for all issues on this requirement
-        primary_check = issues[0]["check"]
-        instruction = _FIX_INSTRUCTIONS.get(primary_check, _FIX_INSTRUCTIONS["smart"])
-        prompt = (
-            f"You are a requirements engineer. {instruction}\n\n"
-            f"REQUIREMENT: {original_text}\n\n"
-            f"Return ONLY the rewritten requirement text. No preamble, no labels, no explanation."
-        )
-
-        if not _llm_available:
-            skipped.append({"req_id": rid, "reason": "LLM unavailable"})
-            continue
-
+    def _llm_rewrite(original_text: str, instruction: str) -> str | None:
+        if not _llm_available or not original_text.strip():
+            return None
         try:
             req_obj = LLMRequest(
-                messages=[{"role": "user", "content": prompt}],
+                messages=[{"role": "user", "content": (
+                    f"You are a requirements engineer. {instruction}\n\n"
+                    f"REQUIREMENT: {original_text}\n\n"
+                    f"Return ONLY the rewritten requirement text. No preamble, no labels."
+                )}],
                 system_prompt="You are a precise requirements engineer. Return only the rewritten requirement.",
                 max_tokens=400,
                 temperature=0.3,
@@ -1000,53 +944,233 @@ def auto_remediate_prd(session_id):
             )
             response = router.invoke("requirements_analysis", req_obj)
             refined = (response.content or "").strip() if response else ""
+            return refined if len(refined) >= 10 else None
         except Exception:
-            skipped.append({"req_id": rid, "reason": "LLM call failed"})
-            continue
+            return None
 
-        if not refined or len(refined) < 10:
-            skipped.append({"req_id": rid, "reason": "LLM returned empty response"})
-            continue
+    def _write_refined(rid, original_text: str, refined: str, check: str) -> bool:
+        try:
+            conn.execute(
+                "UPDATE intake_requirements SET refined_text = ? WHERE id = ?",
+                (refined, rid),
+            )
+            conn.commit()
+            updated.append({"req_id": rid, "check": check,
+                            "original_text": original_text, "refined_text": refined})
+            return True
+        except Exception:
+            suggested.append({"req_id": rid, "check": check, "suggestion": refined})
+            return False
 
-        # Confidence heuristic: ratio of output length to input length
-        confidence = min(len(refined) / max(len(original_text), 1), 1.0)
-
-        if confidence >= 0.3:
-            # Write refined_text to DB
+    # ── 1. TRACEABILITY: run SAFe decomposition on orphan requirements ──────
+    traceability_check = checks_by_name.get("traceability", {})
+    if traceability_check.get("severity") in ("warning", "critical"):
+        orphans = traceability_check.get("orphan_requirements") or []
+        if orphans:
             try:
-                conn.execute(
-                    "UPDATE intake_requirements SET refined_text = ? WHERE id = ?",
-                    (refined, rid),
-                )
-                conn.commit()
-                updated.append({
-                    "req_id": rid,
-                    "check": primary_check,
-                    "original_text": original_text,
-                    "refined_text": refined,
+                _HAS_DECOMP_LOCAL = _HAS_DECOMP
+                if _HAS_DECOMP_LOCAL:
+                    from tools.requirements.decomposition_engine import decompose_requirements
+                    decompose_requirements(session_id, target_level="story")
+                    actions_taken.append(
+                        f"traceability: decomposed {len(orphans)} orphan requirement(s) into SAFe epics/stories"
+                    )
+                    updated.append({
+                        "req_id": None,
+                        "check": "traceability",
+                        "action": f"SAFe decomposition created links for {len(orphans)} orphan requirement(s)",
+                    })
+                else:
+                    suggested.append({
+                        "req_id": None,
+                        "check": "traceability",
+                        "suggestion": (
+                            f"{len(orphans)} requirement(s) lack decomposition links. "
+                            "Use 'Send to Kanban' to decompose into epics/stories."
+                        ),
+                    })
+            except Exception as exc:
+                suggested.append({
+                    "req_id": None,
+                    "check": "traceability",
+                    "suggestion": f"Decomposition unavailable: {exc}. Use 'Send to Kanban' to create links.",
                 })
-            except Exception:
-                suggested.append({"req_id": rid, "check": primary_check, "suggestion": refined})
-        else:
-            suggested.append({"req_id": rid, "check": primary_check, "suggestion": refined})
 
-    # Re-score after fixes
+    # ── 2. COMPLETENESS: generate new requirements for missing types ─────────
+    completeness_check = checks_by_name.get("completeness", {})
+    if completeness_check.get("severity") in ("warning", "critical"):
+        missing_types = completeness_check.get("missing_types") or []
+        issues = completeness_check.get("issues") or []
+        # Load session context for better LLM prompts
+        session_row = conn.execute(
+            "SELECT customer_name, use_case_id, project_id FROM intake_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        session_ctx = dict(session_row) if session_row else {}
+        customer = session_ctx.get("customer_name") or "the system"
+
+        _TYPE_DESCRIPTIONS = {
+            "security": (
+                "Write a security requirement for {customer} that specifies authentication, "
+                "authorization, or data-protection controls. Include a measurable acceptance criterion."
+            ),
+            "performance": (
+                "Write a performance requirement for {customer} with specific latency, throughput, "
+                "or availability targets (e.g., p95 latency < 200ms, 99.9% uptime). "
+                "Include a measurable acceptance criterion."
+            ),
+            "interface": (
+                "Write an interface/API requirement for {customer} that specifies integration points, "
+                "protocols, or data formats. Include a measurable acceptance criterion."
+            ),
+            "data": (
+                "Write a data management requirement for {customer} covering storage, retention, "
+                "or data quality. Include a measurable acceptance criterion."
+            ),
+            "compliance": (
+                "Write a compliance requirement for {customer} referencing a specific regulation "
+                "or standard (NIST, FedRAMP, CMMC, etc.). Include a measurable acceptance criterion."
+            ),
+        }
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for missing_type in missing_types:
+            tmpl = _TYPE_DESCRIPTIONS.get(missing_type)
+            if not tmpl or not _llm_available:
+                suggested.append({
+                    "req_id": None,
+                    "check": "completeness",
+                    "suggestion": f"Add a {missing_type} requirement to improve coverage.",
+                })
+                continue
+            instruction = tmpl.format(customer=customer)
+            try:
+                req_obj = LLMRequest(
+                    messages=[{"role": "user", "content": (
+                        f"You are a requirements engineer. {instruction}\n\n"
+                        f"Return ONLY the requirement text (one sentence, no labels)."
+                    )}],
+                    system_prompt="Return only the requirement text. One clear sentence.",
+                    max_tokens=200,
+                    temperature=0.3,
+                    agent_id="icdev-prd-remediate",
+                )
+                response = router.invoke("requirements_analysis", req_obj)
+                new_text = (response.content or "").strip() if response else ""
+            except Exception:
+                new_text = ""
+
+            if len(new_text) >= 10:
+                try:
+                    conn.execute(
+                        """INSERT INTO intake_requirements
+                           (session_id, requirement_type, priority, text, criteria,
+                            source_type, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            session_id, missing_type, "medium", new_text,
+                            f"System shall satisfy {missing_type} requirement as stated.",
+                            "auto_remediate", now_iso, now_iso,
+                        ),
+                    )
+                    conn.commit()
+                    updated.append({
+                        "req_id": None,
+                        "check": "completeness",
+                        "action": f"Added new {missing_type} requirement",
+                        "refined_text": new_text,
+                    })
+                    actions_taken.append(f"completeness: inserted new {missing_type} requirement")
+                except Exception:
+                    suggested.append({
+                        "req_id": None,
+                        "check": "completeness",
+                        "suggestion": f"Add this {missing_type} requirement: {new_text}",
+                    })
+            else:
+                suggested.append({
+                    "req_id": None,
+                    "check": "completeness",
+                    "suggestion": f"Add a {missing_type} requirement to improve type coverage.",
+                })
+
+    # ── 3. SMART: rewrite low-scoring requirements ──────────────────────────
+    smart_check = checks_by_name.get("smart", {})
+    if smart_check.get("severity") in ("warning", "critical"):
+        weakest_dim = smart_check.get("weakest_dimension") or "specific"
+        _DIM_INSTRUCTIONS = {
+            "specific": "Rewrite to be more Specific — name the exact system, user role, and condition. Remove vague scope.",
+            "measurable": "Rewrite adding a concrete measurable target (number, %, SLA). Replace vague adjectives.",
+            "attainable": "Rewrite to be clearly achievable — remove impossibly broad scope, break into focused statements.",
+            "relevant": "Rewrite to clearly state the business value and who benefits. Make the relevance explicit.",
+            "traceable": "Rewrite to include an explicit acceptance criterion (Given/When/Then) that can be tested.",
+        }
+        instruction = _DIM_INSTRUCTIONS.get(weakest_dim, _DIM_INSTRUCTIONS["specific"])
+        SMART_THRESHOLD = 60
+        for score_entry in (smart_check.get("scores") or []):
+            if (score_entry.get("pct") or 0) >= SMART_THRESHOLD:
+                continue
+            rid = score_entry.get("requirement_id")
+            if rid is None:
+                continue
+            row = conn.execute(
+                "SELECT id, text FROM intake_requirements WHERE id = ?", (rid,)
+            ).fetchone()
+            if not row:
+                continue
+            original_text = (row["text"] or "").strip()
+            refined = _llm_rewrite(original_text, instruction)
+            if refined:
+                _write_refined(rid, original_text, refined, f"smart/{weakest_dim}")
+            else:
+                suggested.append({"req_id": rid, "check": "smart",
+                                   "suggestion": f"Improve the '{weakest_dim}' dimension of this requirement."})
+
+    # ── 4. DENSITY + MEASURABILITY: per-finding rewrites ───────────────────
+    _FIX_INSTRUCTIONS = {
+        "density": "Rewrite removing filler phrases and redundant words. Keep only precise, measurable assertions.",
+        "measurability": "Rewrite adding a concrete, measurable metric (number, percentage, or SLA target).",
+    }
+    for check_name, fix_instruction in _FIX_INSTRUCTIONS.items():
+        check = checks_by_name.get(check_name, {})
+        if check.get("severity") == "pass":
+            continue
+        for finding in check.get("findings") or []:
+            rid = finding.get("requirement_id")
+            if rid is None:
+                continue
+            row = conn.execute(
+                "SELECT id, text FROM intake_requirements WHERE id = ?", (rid,)
+            ).fetchone()
+            if not row:
+                continue
+            original_text = (row["text"] or "").strip()
+            refined = _llm_rewrite(original_text, fix_instruction)
+            if refined:
+                _write_refined(rid, original_text, refined, check_name)
+            else:
+                suggested.append({"req_id": rid, "check": check_name,
+                                   "suggestion": "Manual review needed."})
+
+    # ── Re-score ────────────────────────────────────────────────────────────
     try:
         after_result = score_readiness(session_id)
         after_score_pct = round((after_result.get("overall_score") or 0) * 100)
     except Exception:
         after_score_pct = before_score_pct
 
+    no_action = not updated and not suggested
     return jsonify({
         "status": "ok",
         "fixed_count": len(updated),
         "suggested_count": len(suggested),
-        "skipped_count": len(skipped),
         "before_score_pct": before_score_pct,
         "after_score_pct": after_score_pct,
         "score_delta_pct": after_score_pct - before_score_pct,
+        "actions_taken": actions_taken,
         "updated": updated,
         "suggested": suggested,
+        **({"message": "No actionable findings — PRD already looks clean."} if no_action else {}),
     })
 
 
