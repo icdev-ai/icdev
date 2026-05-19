@@ -6,6 +6,12 @@ import { test, expect } from '@playwright/test';
 const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 
 test.describe('Chat Use Case Flows', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('icdev_tour_completed', '1');
+    });
+  });
+
   test('chat page loads with send button and message input', async ({ page }) => {
     await page.goto('/chat');
     await page.waitForLoadState('domcontentloaded');
@@ -16,8 +22,8 @@ test.describe('Chat Use Case Flows', () => {
     });
 
     // Core chat UI elements must be present
-    const input = page.locator('#message-input, textarea[name="message"], .chat-input');
-    const sendBtn = page.locator('#send-btn, button[type="submit"], .send-button');
+    const input = page.locator('#message-input, .chat-message-input');
+    const sendBtn = page.locator('#btn-send, .chat-send-btn');
 
     expect(await input.count()).toBeGreaterThan(0);
     expect(await sendBtn.count()).toBeGreaterThan(0);
@@ -50,7 +56,7 @@ test.describe('Chat Use Case Flows', () => {
 
     // Click new chat / new context button if present
     const newBtn = page.locator(
-      '#new-chat-btn, .new-chat-btn, button[title*="New"], [aria-label*="new chat"]'
+      '#btn-new-context, .chat-sidebar__new-btn, button[title*="new chat"]'
     ).first();
 
     if (await newBtn.count() > 0) {
@@ -77,17 +83,17 @@ test.describe('Chat Use Case Flows', () => {
     await page.goto('/chat');
     await page.waitForLoadState('domcontentloaded');
 
-    const tabs = [
-      page.locator('#tab-ricoas, [data-tab="ricoas"]').first(),
-      page.locator('#tab-gov, [data-tab="gov"]').first(),
-      page.locator('#tab-intel, [data-tab="intel"]').first(),
-    ];
+    // Use the toggle buttons in the toolbar (these open+switch the right panel)
+    const toggleGov = page.locator('#btn-gov-toggle');
+    const toggleIntel = page.locator('#btn-intel-toggle');
 
-    for (const tab of tabs) {
-      if (await tab.count() > 0) {
-        await tab.click();
-        await page.waitForTimeout(400);
-      }
+    if (await toggleGov.count() > 0) {
+      await toggleGov.click();
+      await page.waitForTimeout(400);
+    }
+    if (await toggleIntel.count() > 0) {
+      await toggleIntel.click();
+      await page.waitForTimeout(400);
     }
 
     // Filter out non-critical noise
@@ -103,9 +109,10 @@ test.describe('Chat Use Case Flows', () => {
     await page.goto('/chat');
     await page.waitForLoadState('domcontentloaded');
 
-    const govTab = page.locator('#tab-gov, [data-tab="gov"]').first();
-    if (await govTab.count() > 0) {
-      await govTab.click();
+    // Open the right panel to Gov using the toolbar toggle button
+    const toggleGov = page.locator('#btn-gov-toggle');
+    if (await toggleGov.count() > 0) {
+      await toggleGov.click();
       await page.waitForTimeout(800);
 
       await page.screenshot({
@@ -113,9 +120,8 @@ test.describe('Chat Use Case Flows', () => {
         fullPage: false,
       });
 
-      const govPanel = page.locator(
-        '#gov-sidebar-content, #gov-panel, [data-panel="gov"]'
-      );
+      // Gov sidebar container must be in DOM
+      const govPanel = page.locator('#gov-sidebar, [data-tab-content="gov"]');
       expect(await govPanel.count()).toBeGreaterThan(0);
     }
   });
@@ -124,9 +130,10 @@ test.describe('Chat Use Case Flows', () => {
     await page.goto('/chat');
     await page.waitForLoadState('domcontentloaded');
 
-    const intelTab = page.locator('#tab-intel, [data-tab="intel"]').first();
-    if (await intelTab.count() > 0) {
-      await intelTab.click();
+    // Open the right panel to Intel using the toolbar toggle button
+    const toggleIntel = page.locator('#btn-intel-toggle');
+    if (await toggleIntel.count() > 0) {
+      await toggleIntel.click();
       await page.waitForTimeout(800);
 
       await page.screenshot({
@@ -134,9 +141,8 @@ test.describe('Chat Use Case Flows', () => {
         fullPage: false,
       });
 
-      const intelPanel = page.locator(
-        '#intel-sidebar-content, #intel-panel, [data-panel="intel"]'
-      );
+      // Intel sidebar container must be in DOM
+      const intelPanel = page.locator('#intel-sidebar, [data-tab-content="intel"]');
       expect(await intelPanel.count()).toBeGreaterThan(0);
     }
   });

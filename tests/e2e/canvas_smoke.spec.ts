@@ -54,7 +54,7 @@ test.describe('Canvas Smoke Tests', () => {
       await page.waitForLoadState('domcontentloaded');
 
       const iqeWidget = page.locator(
-        '.iqe-query-widget, #iqe-widget, [data-iqe], .iqe-mini-bar, #iqe-mini-bar'
+        '.iqe-widget, #iqe-minibar, [data-api]'
       );
       const count = await iqeWidget.count();
       expect(
