@@ -365,6 +365,7 @@
         // Use the styled typing indicator instead of an inline static div
         showTypingIndicator(true);
         _setSendProcessing(true);
+        updateGovProcessing(true);
 
         fetch(INTAKE_API + '/turn', {
             method: 'POST',
@@ -375,6 +376,7 @@
         .then(function (data) {
             showTypingIndicator(false);
             _setSendProcessing(false);
+            updateGovProcessing(false);
 
             if (data.error) {
                 appendMessage({ role: 'system', content: 'Error: ' + data.error });
@@ -400,6 +402,7 @@
         .catch(function (err) {
             showTypingIndicator(false);
             _setSendProcessing(false);
+            updateGovProcessing(false);
             appendMessage({ role: 'system', content: 'Connection error: ' + err.message });
         });
     }
