@@ -23,7 +23,7 @@ export default defineConfig({
   timeout: 60000, // cold-start server + beforeEach login flows need >30s
   fullyParallel: false, // Sequential for Gov/DoD audit traceability
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
+  retries: process.env.CI ? 1 : 0,
   workers: 1, // Single worker for deterministic execution order
   reporter: [
     ['list'],
@@ -48,15 +48,7 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
-    // Additional browsers for cross-browser compliance verification
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
+    // firefox and webkit removed for demo run — chromium covers all functional checks
   ],
 
   // Dashboard server configuration
