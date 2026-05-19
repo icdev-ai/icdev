@@ -3,7 +3,7 @@
 {% block title %}Chat — ICDEV™ Dashboard{% endblock %}
 
 {% block head %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chat.css') }}?v=20260518c">
 {% endblock %}
 
 {% block content %}
@@ -370,7 +370,7 @@
 {% endblock %}
 
 {% block scripts %}
-<script defer src="{{ url_for('static', filename='js/chat.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/chat.js') }}?v=20260518c"></script>
 <script>
 // Right sidebar tab switching
 (function() {
