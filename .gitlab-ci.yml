@@ -10,6 +10,7 @@ stages:
   - security
   - sandbox
   - bdd
+  - e2e
   - docker
   - helm
 
@@ -195,6 +196,55 @@ bdd:
     when: always
     paths:
       - behave-report.json
+  allow_failure: true
+
+# ---------------------------------------------------------------------------
+# Stage: e2e — Playwright browser tests against the live dashboard
+# Starts the Flask app in background, waits for readiness, then runs the
+# full TypeScript Playwright suite. Reports are archived for 30 days.
+# ICDEV_NO_SERVER=1 tells playwright.config.ts to skip the webServer block
+# (server lifecycle is managed by this job, not Playwright).
+# ---------------------------------------------------------------------------
+e2e:playwright:
+  stage: e2e
+  image: node:20-bookworm-slim
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq python3 python3-pip curl --no-install-recommends
+    - python3 -m pip install --quiet -r requirements.txt --break-system-packages
+    - npm ci
+    - npx playwright install chromium --with-deps
+  script:
+    - |
+      echo "=== E2E Playwright Tests ==="
+      python3 tools/dashboard/app.py &
+      DASHBOARD_PID=$!
+      READY=false
+      for i in $(seq 1 30); do
+        if curl -sf http://localhost:5050/ > /dev/null 2>&1; then
+          READY=true
+          break
+        fi
+        sleep 1
+      done
+      if [ "$READY" = "false" ]; then
+        echo "Dashboard failed to start within 30s"
+        kill "$DASHBOARD_PID" 2>/dev/null || true
+        exit 1
+      fi
+      echo "Dashboard ready — running Playwright suite"
+      EXIT_CODE=0
+      ICDEV_NO_SERVER=1 CI=true npx playwright test || EXIT_CODE=$?
+      kill "$DASHBOARD_PID" 2>/dev/null || true
+      exit $EXIT_CODE
+  artifacts:
+    when: always
+    paths:
+      - .tmp/test_runs/playwright-report/
+      - .tmp/test_runs/playwright-results.json
+      - .tmp/test_runs/playwright-artifacts/
+    expire_in: 30 days
+  variables:
+    ICDEV_STORAGE_BACKEND: sqlite
   allow_failure: true
 
 docker:build:
