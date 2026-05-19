@@ -76,8 +76,12 @@ playwright/
 # Generated reports
 reports/
 
-# Test suite (local only)
+# Test suite (local only — exclude generated/temp artifacts)
 tests/
+# But track committed E2E Playwright specs
+!tests/e2e/
+!tests/e2e/*.spec.ts
+!tests/conftest.py
 
 # Vendored binaries (downloaded via setup, not committed)
 # Use layered rules so vendor/drivers README + .gitkeep + CHECKSUMS manifest

@@ -350,6 +350,18 @@ reflexes:
     cooldown_minutes: 10     # min gap between consecutive cycles
     max_applies_per_hour: 5  # matches CLAUDE.md self-healing cap
 
+  e2e_runner:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 02:00"
+    interval_seconds: 86400  # 24 hours
+    description: "Create a nightly Playwright E2E Kanban task (task_type=test); Kanban scheduler picks it up and dispatches to Claude CLI"
+    interval_hours: 24
+    success_metric:
+      name: tasks_created
+      threshold: 0
+      operator: gte
+
   kanban:
     enabled: true
     risk_tier: green

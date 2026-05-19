@@ -77,6 +77,7 @@ REFLEX_NAMES = [
     "alphadesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
+    "e2e_runner",
 ]
 
 # Backward-compat aliases for module-level access used by other code
