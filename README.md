@@ -1,12 +1,14 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/version-1.2.27-blue" alt="Version">
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
   <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
   <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
-  <img src="https://img.shields.io/badge/canvases-10-00acc1" alt="Design Canvases">
+  <img src="https://img.shields.io/badge/canvases-11-00acc1" alt="Design Canvases">
   <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
+  <img src="https://img.shields.io/badge/PyPI-icdev-informational" alt="PyPI">
 </p>
 
 # ICDEV™ — Intelligent Certified Development Platform
@@ -20,6 +22,63 @@ These aren't templates. They're living systems that can build their own features
 One developer built this. Imagine what your team could do with it.
 
 > **DISCLAIMER:** This repository does NOT contain classified or Controlled Unclassified Information (CUI). Terms like "CUI", "SECRET", "IL4", "IL5", "IL6" appear throughout as **configuration values and template strings** — not as indicators that this repository itself is classified. Classification terminology references publicly available U.S. government standards ([EO 13526](https://www.archives.gov/isoo/policy-documents/cnsi-eo.html), [32 CFR Part 2002](https://www.ecfr.gov/current/title-32/subtitle-B/chapter-XX/part-2002), [NIST SP 800-53](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final)). File headers containing `[TEMPLATE: CUI // SP-CTI]` are **template markers** demonstrating the format ICDEV™ applies to generated artifacts.
+
+---
+
+## What's New in 1.2.27 — Supply Chain, Chat AI Governance & UX
+
+- **Supply Chain SCRM Dashboard** (`/supply_chain`) — 11th design canvas. Full 8-component integration: vendor registry with SCRM risk tiering, CVE triage queue (SLA-tracked), ISA agreement lifecycle, SBOM records, Section 889 compliance status. IQE adapter with 4 registered collections. CUI // SP-CTI classification banner.
+- **Chat AI Governance panels** — GOV and INTEL right-sidebar tabs now load live data on every context switch. GOV shows: AI model (color-coded), classification marking, user, session ID, message count, links to AI Transparency / Explainability / Accountability pages. INTEL shows: RAG readiness %, Bayesian compliance score, complexity level, requirements + documents count, session health.
+- **Spinning indicators across all AI panels** — RICOAS, GOV, and INTEL tabs each show a blue processing bar whenever the AI is handling a request. Fires immediately on message send (both intake and regular chat), clears when the server reports `is_processing: false`.
+- **Poll backoff on disconnect** — `pollContextState` now uses exponential backoff (2ⁿ seconds, capped at 30s) after 2 consecutive `ERR_CONNECTION_REFUSED` failures, eliminating console flooding when the server is restarted.
+- **Context limit error messaging** — `POST /api/chat/contexts` 429 responses now surface a clear message: *"Context limit reached (N active). Close an existing context first."* Previously swallowed silently.
+- **favicon.ico 204** — Browser favicon requests no longer flood logs with 404 errors.
+- **Chat DB fallback after restart** — `chat_manager.get_context()` now falls back to the `chat_contexts` DB table when a context isn't in memory, eliminating 404s on the `/state` polling endpoint after a dashboard restart.
+- **Use case URL audit** — 6 broken `quick_action` URLs in `args/use_cases.yaml` repaired (5× `/network/ask` → `/supply_chain`, 1× `/audit` → `/prod-audit`).
+
+---
+
+## What's New in 1.2.26 — AADC Solution Packs & Autonomous Coder
+
+- **AADC Solution Packs** — 7 pre-wired agentic AI templates added to the Agentic AI Design Canvas. Each pack ships with pre-placed nodes, wired edges, a seeded risk register, compliance baseline, MITRE ATLAS scenario mappings, and a quick-start wizard. Packs: Customer Service Agent, Autonomous Coder, Knowledge Research Agent, Cybersecurity SOC Agent, Healthcare Admin Agent, Gov/Procurement Agent, Multi-Agent Research Lab.
+- **Autonomous Coder — Live Sample App** — A fully working agentic AI application ships at `/autonomous-coder/`. Multi-agent pipeline: Task Spec → Input Sanitizer → Orchestrator → Planner Agent → Schema Enforcer → Coder Agent → Schema Enforcer → Validator Agent → Audit Logger. Three backends: ICDEV LLM router, Ollama, or offline stub. CLI: `python -m apps.autonomous_coder.main "task"`. Validated via E2E build — quicksort generated and scored 95/100 in ~81s against Claude Sonnet.
+- **Lesson-Learned LL-001/LL-002 applied universally** — E2E build surfaced two universal risks now applied to all 7 solution packs: **LL-001** — Schema Enforcer nodes added at every LLM→agent handoff; **LL-002** — circuit breaker `max_duration_s` defaulted to 300s for multi-step LLM pipelines.
+- **Sample Applications gallery** — `/agentic-ai/` now shows a Sample Applications section alongside Solution Packs and design templates.
+
+---
+
+## What's New in 1.2.25 — Chat Common Use Cases & RICOAS v2
+
+- **10 Government Use Cases** — Pre-seeded use case catalog in the `/chat` left sidebar covering: Modernization, Budget Sprint, Doc Refresh, SBOM & Supply Chain Attestation, OSCAL Package, Compliance Gap Analysis, FedRAMP Assessment, Incident Playbook, Architecture Review, and Zero Trust Alignment.
+- **Compact mode** — The use case sidebar collapses to icon-only chips with category filters (All / Gov / Dev / Finance). Ctrl+click chains multiple use cases into a sequential intake workflow.
+- **Canvas seeding** — Activating a use case auto-seeds relevant design canvas nodes (NDC topology, SDC threat models, etc.) and pre-populates `template_requirements` so the intake conversation starts informed.
+- **Standalone app generator** — Every use case can generate a downloadable standalone HTML app from the collected requirements. Fixed variance sign formatting (`-$50.00` → `-$50.00`), vendor dropdown population, and column manager extended to all 13 use case types.
+- **Workflow step bar** — Use cases with defined workflow stages display a progress indicator in the RICOAS sidebar with a "Next Step →" button to advance through structured intake phases.
+- **All 12 post-export actions** — Send to Kanban, Dry Run (COAs), Validate PRD, Generate PRD, and Standalone App are now available for all use cases, not just the first three.
+
+---
+
+## What's New in 1.2.24 — Strategos OSINT & Digital Twin Canvases
+
+- **Digital Twin for all 5 canvases** — NDC, SDC, BDC, DDC, and ODC each have a `/digital-twin` page with graphical simulation results, AI chat-to-delta, and "Load from Canvas" integration. Air-gap safe (no external CDN dependencies).
+- **Strategos OSINT Phase 2** — Conflict intel pipeline (STIX 2.1 / CERT-UA importer), signal priority queue, AIS track processor for naval ORBAT, Kalibr threat ring overlay on GeoSIGINT, historical pre-war baselines (23 cases), supply-degradation coefficients in COA attrition model.
+- **Strategos predictive intel** — Leadership briefing dashboard, War Council brief with full RAG upgrade (corrective RAG on Strategy Agent), information signal scorer (rhetoric, dehumanization, cyber recon, disinfo surge), targeting package optimizer with greedy + 1-opt synergy algorithm.
+- **FathomDesk multi-agent panel** — Bull/Bear debate engine, decision audit trail, panel confidence flag, Vol Deleveraging and Crowding Ratio alerts, cross-asset rotation engine (7 ratios), IV rank computation.
+- **Cross-canvas event bus** — DB-persisted events fire across all canvases: `pipeline_deployed` on PDC triggers SDC threat model refresh; BDC ISA expiry fires 90-day alerts with 30-day Telegram notifications.
+- **GNS3 + ZTP integration** — Full GNS3 topology builder with Zero Touch Provisioning workflow and console push tool in NDC.
+- **Ontology Explorer** — D3 hierarchy tree visualization for the ICDEV knowledge graph ontology with RDF/Turtle class hierarchy loaded from `args/ontology/*.ttl`.
+
+---
+
+## What's New in 1.2.23 — IQE Rollout & Ask Any Canvas
+
+- **Ask any canvas** — Natural-language Q&A over the knowledge graph of each design canvas. Every canvas has a `/<canvas>/ask` page and `/<canvas>/api/ask` POST endpoint.
+- **IQE v0.1 — ICDEV Query Engine** — Declarative `foreach / where / select` DSL for compliance and network-health checks across all design-canvas databases. Ships with recursive-descent parser, typed AST, SQL-injection-safe executor, and seed query libraries for all canvases.
+- **IQE rollout to all 10 canvases** — NDC, SDC, PDC, BDC, DDC, ODC, IDC, AADC, QDC, MDC each have ≥3 seed queries and a registered IQE adapter.
+- **MITRE ATT&CK matrix dashboard** — ODC gets a full attack matrix page (`/security/ask`) with drill-through, Sigma rule generator, Splunk SPL export, and Caldera REST adapter.
+- **IaC generation** — IDC emits Terraform, CloudFormation, Pulumi, Ansible, and Helm artifacts from canvas designs. CLI: `python -m tools.infra_canvas.emit`.
+- **Instant KG freshness** — Save-hooks on every canvas design `POST`/`PUT` re-index the knowledge graph in <1s. 6-hour `canvas_indexer` Genesis reflex as safety net.
+- **Failure Triage auto-fix loop** — Genesis daemon runs `failure_triage` on a 30-min cadence. Two-tier LLM routing: Claude diagnoses, Ollama generates patches. Confidence threshold 0.85, 5-apply/hour rate cap. Opt-in via `ICDEV_AUTOFIX_ENABLED=true`.
 
 ---
 
