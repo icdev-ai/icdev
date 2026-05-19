@@ -17,6 +17,8 @@
     var _activeContextId = null;
     var _contextVersions = {};
     var _pollTimer = null;
+    var _pollFailCount = 0;
+    var _pollBackoffTimer = null;
     var _userId = 'dashboard-user';
 
     // Intake session mappings: context_id -> intake_session_id
@@ -318,13 +320,26 @@
     }
 
     function sendChatMessage(ctxId, content) {
+        showTypingIndicator(true);
+        _setSendProcessing(true);
+        updateGovProcessing(true);
         chatApi('POST', '/' + ctxId + '/send', { content: content, role: 'user' })
             .then(function (res) {
+                showTypingIndicator(false);
+                _setSendProcessing(false);
                 if (res.error) {
+                    updateGovProcessing(false);
                     if (ns.notify) ns.notify(res.error, 'error');
                     return;
                 }
                 appendMessage({ role: 'user', content: content, turn_number: res.turn_number });
+                // GOV spinner stays visible until pollContextState clears is_processing
+            })
+            .catch(function (err) {
+                showTypingIndicator(false);
+                _setSendProcessing(false);
+                updateGovProcessing(false);
+                appendMessage({ role: 'system', content: 'Connection error: ' + (err.message || 'unknown error') });
             });
     }
 
@@ -461,6 +476,7 @@
         var sinceVersion = _contextVersions[ctxId] || 0;
         chatApi('GET', '/' + ctxId + '/state?since_version=' + sinceVersion + '&client_id=' + encodeURIComponent(_userId))
             .then(function (state) {
+                _pollFailCount = 0;
                 if (!state || state.error) return;
                 if (state.dirty_version > sinceVersion) _contextVersions[ctxId] = state.dirty_version;
 
@@ -480,6 +496,18 @@
                     for (var j = 0; j < window._chatOnStateChange.length; j++) {
                         try { window._chatOnStateChange[j](state); } catch (e) {}
                     }
+                }
+            })
+            .catch(function () {
+                _pollFailCount++;
+                // Exponential backoff: pause polling for 2^fail * 1s, capped at 30s
+                if (_pollFailCount >= 2) {
+                    stopPolling();
+                    if (_pollBackoffTimer) clearTimeout(_pollBackoffTimer);
+                    var backoff = Math.min(1000 * Math.pow(2, _pollFailCount - 1), 30000);
+                    _pollBackoffTimer = setTimeout(function () {
+                        if (ctxId === _activeContextId) startPolling(ctxId);
+                    }, backoff);
                 }
             });
     }
@@ -1538,6 +1566,14 @@
             else bar.classList.remove('chat-intervention--visible');
         }
         showTypingIndicator(isProcessing);
+        updateGovProcessing(isProcessing);
+    }
+
+    function updateGovProcessing(isProcessing) {
+        var spinner = document.getElementById('gov-processing-spinner');
+        if (spinner) spinner.style.display = isProcessing ? 'flex' : 'none';
+        var placeholder = document.getElementById('gov-placeholder-text');
+        if (placeholder) placeholder.style.display = isProcessing ? 'none' : 'block';
     }
 
     function updateTopStats(contexts) {

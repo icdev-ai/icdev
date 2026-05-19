@@ -255,7 +255,11 @@
                 <strong class="gov-sidebar-title">AI Governance</strong>
             </div>
             <div id="gov-sidebar-content">
-                <p class="gov-sidebar-placeholder">Loading governance status...</p>
+                <div id="gov-processing-spinner" style="display:none;align-items:center;gap:10px;padding:12px 0;">
+                    <span class="send-spinner" style="width:18px;height:18px;border-width:2px;"></span>
+                    <span style="color:var(--text-secondary,#8b949e);font-size:0.85rem;">AI is processing&hellip;</span>
+                </div>
+                <p id="gov-placeholder-text" class="gov-sidebar-placeholder">Governance status updates as the AI processes your request.</p>
             </div>
         </div>
 
