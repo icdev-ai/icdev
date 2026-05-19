@@ -396,13 +396,21 @@ def s08_chat_use_cases(prs):
     _rect(s, xr, py, rw, ph, MGRAY, TEAL)
 
     _box(s, xl+Inches(0.1), py+Inches(0.1), lw-Inches(0.2), Inches(0.38),
-         "Common Use Cases", size=11, bold=True, color=GOLD)
-    for j, uc in enumerate(["+ New Chat", "▸ General Modernization",
-                             "▸ Year-End Budget Sprint", "▸ Doc Refresh",
-                             "▸ Custom Intake..."]):
-        _box(s, xl+Inches(0.12), py+Inches(0.55)+j*Inches(0.42),
-             lw-Inches(0.24), Inches(0.38), uc, size=10,
-             color=GOLD if j == 1 else LGRAY)
+         "Use Cases (13)", size=11, bold=True, color=GOLD)
+    sidebar_cases = [
+        ("+ New Chat",               GOLD),
+        ("▸ General Modernization",  GOLD),
+        ("▸ Year-End Budget Sprint", LGRAY),
+        ("▸ Doc Refresh",            LGRAY),
+        ("▸ ATO Package Builder",    LGRAY),
+        ("▸ CDRL Generator",         LGRAY),
+        ("▸ Incident Response Plan", LGRAY),
+        ("▸ SBOM Attestation",       LGRAY),
+        ("▸ +5 more...",             MGRAY),
+    ]
+    for j, (uc, clr) in enumerate(sidebar_cases):
+        _box(s, xl+Inches(0.12), py+Inches(0.55)+j*Inches(0.36),
+             lw-Inches(0.24), Inches(0.34), uc, size=9, color=clr)
 
     _box(s, xc+Inches(0.12), py+Inches(0.1), cw2-Inches(0.24), Inches(0.38),
          "Message Stream", size=11, bold=True, color=BLUE)
@@ -452,45 +460,40 @@ def s08_chat_use_cases(prs):
 
 def s09_use_cases(prs):
     s = _blank(prs); _bg(s)
-    _title(s, "Three Use Cases. Real Problems. Minutes to Launch.",
+    _title(s, "13 Use Cases. Real Problems. Minutes to Launch.",
            "Pre-built expert workflows — requirements loaded, canvases wired, AI persona ready.")
     _footer(s, 9)
 
+    # Featured 3 (shorter cards to leave room for the full catalog below)
     cases = [
         ("General Modernization",
          "12 requirements pre-loaded",
          [
-             "Start: Describe your legacy system.",
+             "Describe your legacy system in plain English.",
              "ICDEV wires Migration Canvas + Digital Twin.",
-             "Get 3 COAs: Speed / Balanced / Comprehensive.",
+             "3 COAs: Speed / Balanced / Comprehensive.",
              "7Rs classification: Retire → Re-architect.",
-             "ATO bridge maintained throughout.",
-             "Output: phased migration plan with",
-             "  rollback runbooks, IaC, and timeline.",
+             "Output: migration plan with IaC and timeline.",
          ],
          GOLD),
         ("Year-End Budget Sprint",
          "14 requirements pre-loaded",
          [
-             "Start: What do you need to spend before FY-end?",
+             "What do you need to spend before FY-end?",
              "ICDEV generates BOM, IGCE, and SOW in minutes.",
-             "Tier 1 (execution-ready) vs Tier 2 (backup).",
              "FAR/DFARS + Section 889 checked automatically.",
              "Digital Twin projects budget vs. outcome.",
-             "Output: CSV/XLSX BOM with lead times,",
-             "  vendor quotes, and contract vehicles.",
+             "Output: CSV/XLSX BOM with contract vehicles.",
          ],
          BLUE),
         ("Crowd-Sourced Doc Refresh",
          "10 requirements pre-loaded",
          [
-             "Start: Which document is stale?",
-             "Staleness detected: dates, deprecated refs.",
+             "Which document is stale?",
+             "Staleness detected: dates, deprecated references.",
              "Role-weighted crowd voting on edits.",
              "AI rebuilds approved sections.",
-             "Auto-indexed to Knowledge Graph in <24 hrs.",
-             "Output: version-controlled document with",
-             "  diff view and full audit trail.",
+             "Output: version-controlled doc with audit trail.",
          ],
          TEAL),
     ]
@@ -499,21 +502,48 @@ def s09_use_cases(prs):
     for i, (title, badge, items, clr) in enumerate(cases):
         x = LM + i*(cw2+Inches(0.1))
         y = Inches(2.05)
-        _rect(s, x, y, cw2, Inches(4.7), MGRAY, clr)
-        _box(s, x+Inches(0.12), y+Inches(0.12), cw2-Inches(0.24), Inches(0.48),
-             title, size=14, bold=True, color=clr)
-        _box(s, x+Inches(0.12), y+Inches(0.62), cw2-Inches(0.24), Inches(0.28),
+        _rect(s, x, y, cw2, Inches(3.05), MGRAY, clr)
+        _box(s, x+Inches(0.12), y+Inches(0.1), cw2-Inches(0.24), Inches(0.42),
+             title, size=13, bold=True, color=clr)
+        _box(s, x+Inches(0.12), y+Inches(0.54), cw2-Inches(0.24), Inches(0.26),
              badge, size=9, italic=True, color=GOLD)
-        _rect(s, x+Inches(0.12), y+Inches(0.95), cw2-Inches(0.24), Inches(0.03), clr)
-        yy = y + Inches(1.08)
+        _rect(s, x+Inches(0.12), y+Inches(0.84), cw2-Inches(0.24), Inches(0.03), clr)
+        yy = y + Inches(0.95)
         for item in items:
-            _box(s, x+Inches(0.12), yy, cw2-Inches(0.24), Inches(0.4),
-                 f"▸  {item}", size=10, color=LGRAY, wrap=True)
-            yy += Inches(0.44)
+            _box(s, x+Inches(0.12), yy, cw2-Inches(0.24), Inches(0.38),
+                 f"▸  {item}", size=9.5, color=LGRAY, wrap=True)
+            yy += Inches(0.40)
 
-    _box(s, LM, Inches(6.88), CW, Inches(0.28),
+    # Full catalog — remaining 10
+    _box(s, LM, Inches(5.26), CW, Inches(0.28),
+         "Plus 10 more expert workflows:", size=10, bold=True, color=GOLD)
+
+    more = [
+        ("ATO Package Builder",         "15 reqs"),
+        ("CDRL Generator",              "12 reqs"),
+        ("Incident Response Plan",      "10 reqs"),
+        ("Program Status Review",       "8 reqs"),
+        ("SBOM Attestation",            "10 reqs"),
+        ("FedRAMP Auth Prep",           "15 reqs"),
+        ("Privacy Impact Assessment",   "10 reqs"),
+        ("Section 508 Audit",           "8 reqs"),
+        ("Grant Tech Proposal",         "10 reqs"),
+        ("CJIS Compliance",             "12 reqs"),
+    ]
+    tw = (CW - Inches(0.36)) / 5
+    for i, (label, reqs) in enumerate(more):
+        col, row = i % 5, i // 5
+        x = LM + col*(tw+Inches(0.09))
+        y = Inches(5.60) + row*Inches(0.62)
+        _rect(s, x, y, tw, Inches(0.55), MGRAY, MGRAY)
+        _box(s, x+Inches(0.08), y+Inches(0.04), tw-Inches(0.16), Inches(0.28),
+             label, size=9, bold=True, color=LGRAY)
+        _box(s, x+Inches(0.08), y+Inches(0.32), tw-Inches(0.16), Inches(0.2),
+             reqs, size=8, color=GOLD, italic=True)
+
+    _box(s, LM, Inches(6.92), CW, Inches(0.24),
          "Add new use cases by editing args/use_cases.yaml — zero Python required.",
-         size=10, color=MGRAY, align=PP_ALIGN.CENTER, italic=True)
+         size=9, color=MGRAY, align=PP_ALIGN.CENTER, italic=True)
 
 
 def s10_digital_twin(prs):
