@@ -1084,16 +1084,19 @@ def auto_remediate_prd(session_id):
                 if len(new_text) < 10:
                     continue
                 try:
+                    import uuid as _uuid
+                    new_req_id = "req-" + _uuid.uuid4().hex[:12]
                     conn.execute(
                         """INSERT INTO intake_requirements
-                           (session_id, requirement_type, priority, text, criteria,
-                            source_type, created_at, updated_at)
+                           (id, session_id, requirement_type, priority, raw_text, acceptance_criteria,
+                            created_at, updated_at)
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
-                            session_id, missing_type, "high" if missing_type == "security" else "medium",
+                            new_req_id, session_id,
+                            missing_type, "high" if missing_type == "security" else "medium",
                             new_text,
                             f"System shall satisfy this {missing_type} requirement as stated and verified by testing.",
-                            "auto_remediate", now_iso, now_iso,
+                            now_iso, now_iso,
                         ),
                     )
                     conn.commit()
@@ -1127,11 +1130,11 @@ def auto_remediate_prd(session_id):
             if rid is None:
                 continue
             row = conn.execute(
-                "SELECT id, text FROM intake_requirements WHERE id = ?", (rid,)
+                "SELECT id, raw_text FROM intake_requirements WHERE id = ?", (rid,)
             ).fetchone()
             if not row:
                 continue
-            original_text = (row["text"] or "").strip()
+            original_text = (row["raw_text"] or "").strip()
             refined = _llm_rewrite(original_text, instruction)
             if refined:
                 _write_refined(rid, original_text, refined, f"smart/{weakest_dim}")
@@ -1153,11 +1156,11 @@ def auto_remediate_prd(session_id):
             if rid is None:
                 continue
             row = conn.execute(
-                "SELECT id, text FROM intake_requirements WHERE id = ?", (rid,)
+                "SELECT id, raw_text FROM intake_requirements WHERE id = ?", (rid,)
             ).fetchone()
             if not row:
                 continue
-            original_text = (row["text"] or "").strip()
+            original_text = (row["raw_text"] or "").strip()
             refined = _llm_rewrite(original_text, fix_instruction)
             if refined:
                 _write_refined(rid, original_text, refined, check_name)
