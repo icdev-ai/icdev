@@ -1,0 +1,6 @@
+# IQE-SC-004: Open critical and high CVEs pending remediation
+# Shows CVEs with remediate or mitigate decision not yet closed, sorted by severity.
+
+foreach c in supply_chain.cve_triage
+where (c.triage_decision == 'remediate' or c.triage_decision == 'mitigate') and c.remediated_at == null
+select c.cve_id, c.package_name, c.severity, c.cvss_score, c.exploitability, c.triage_decision, c.sla_deadline

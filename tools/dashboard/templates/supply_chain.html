@@ -1,0 +1,410 @@
+{% extends "base.html" %}
+{% block title %}Supply Chain Intelligence | ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  /* ── layout ── */
+  .sc-root { max-width: 1280px; margin: 0 auto; padding: 24px 20px 72px; }
+  .sc-cui-banner {
+    background:#1a2a1a; color:#6eff6e; font-weight:700; letter-spacing:.12em;
+    font-size:.72rem; text-align:center; padding:6px 0; border-radius:4px;
+    margin-bottom:20px; text-transform:uppercase;
+  }
+  .sc-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
+  .sc-title { font-size:1.5rem; font-weight:800; color:var(--text-primary,#e2e8f0); }
+  .sc-title span { color:#f0883e; }
+
+  /* ── KPI cards ── */
+  .sc-kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:28px; }
+  .sc-kpi { background:var(--card-bg,#1e2433); border:1px solid var(--border-color,#2d3550); border-radius:8px; padding:16px 18px; }
+  .sc-kpi__label { font-size:.72rem; color:var(--text-muted,#8892a4); text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px; }
+  .sc-kpi__value { font-size:2rem; font-weight:800; }
+  .sc-kpi__sub { font-size:.72rem; color:var(--text-muted,#8892a4); margin-top:4px; }
+  .sc-kpi--ok   .sc-kpi__value { color:#3fb950; }
+  .sc-kpi--warn .sc-kpi__value { color:#e3b341; }
+  .sc-kpi--crit .sc-kpi__value { color:#f85149; }
+  .sc-kpi--info .sc-kpi__value { color:#58a6ff; }
+
+  /* ── tabs ── */
+  .sc-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border-color,#2d3550); margin-bottom:20px; flex-wrap:wrap; }
+  .sc-tab { padding:8px 16px; font-size:.82rem; font-weight:600; cursor:pointer; border-radius:6px 6px 0 0;
+    color:var(--text-muted,#8892a4); background:none; border:1px solid transparent; border-bottom:none; transition:.15s; }
+  .sc-tab:hover { color:var(--text-primary,#e2e8f0); }
+  .sc-tab.active { color:#f0883e; background:var(--card-bg,#1e2433);
+    border-color:var(--border-color,#2d3550); border-bottom-color:var(--card-bg,#1e2433); }
+
+  .sc-panel { display:none; }
+  .sc-panel.active { display:block; }
+
+  /* ── table ── */
+  .sc-table-wrap { overflow-x:auto; }
+  .sc-table { width:100%; border-collapse:collapse; font-size:.83rem; }
+  .sc-table th { background:rgba(240,136,62,.08); color:#f0883e; font-weight:700; font-size:.72rem;
+    text-transform:uppercase; letter-spacing:.07em; padding:9px 12px; text-align:left;
+    border-bottom:1px solid var(--border-color,#2d3550); white-space:nowrap; }
+  .sc-table td { padding:8px 12px; border-bottom:1px solid var(--border-color,#2d3550);
+    color:var(--text-primary,#e2e8f0); vertical-align:top; }
+  .sc-table tr:last-child td { border-bottom:none; }
+  .sc-table tr:hover td { background:rgba(255,255,255,.02); }
+  .sc-table .empty { text-align:center; padding:40px; color:var(--text-muted,#8892a4); }
+
+  /* ── badges ── */
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:.72rem; font-weight:700; white-space:nowrap; }
+  .badge--critical { background:rgba(248,81,73,.18); color:#f85149; }
+  .badge--high     { background:rgba(240,136,62,.18); color:#f0883e; }
+  .badge--moderate { background:rgba(227,179,65,.18); color:#e3b341; }
+  .badge--low      { background:rgba(63,185,80,.18);  color:#3fb950; }
+  .badge--active   { background:rgba(63,185,80,.18);  color:#3fb950; }
+  .badge--expiring { background:rgba(240,136,62,.18); color:#f0883e; }
+  .badge--expired  { background:rgba(248,81,73,.18);  color:#f85149; }
+  .badge--review   { background:rgba(227,179,65,.18); color:#e3b341; }
+  .badge--signed   { background:rgba(88,166,255,.18); color:#58a6ff; }
+  .badge--draft    { background:rgba(139,148,158,.18); color:#8b949e; }
+  .badge--compliant    { background:rgba(63,185,80,.18);  color:#3fb950; }
+  .badge--prohibited   { background:rgba(248,81,73,.18);  color:#f85149; }
+  .badge--under_review { background:rgba(227,179,65,.18); color:#e3b341; }
+  .badge--exempt       { background:rgba(88,166,255,.18); color:#58a6ff; }
+
+  /* ── section header ── */
+  .sc-section-hdr { display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+  .sc-count { font-size:.78rem; color:var(--text-muted,#8892a4); }
+
+  /* ── loading ── */
+  .sc-loading { text-align:center; padding:40px; color:var(--text-muted,#8892a4); font-size:.85rem; }
+
+  /* ── footer ── */
+  .sc-footer { text-align:center; margin-top:48px; padding-top:20px;
+    border-top:1px solid var(--border-color,#2d3550); font-size:.72rem; color:var(--text-muted,#8892a4); }
+</style>
+
+<div class="sc-root">
+
+  <div class="sc-cui-banner">{{ classification_banner }}</div>
+
+  <div class="sc-header">
+    <div class="sc-title">Supply Chain <span>Intelligence</span></div>
+    <div style="font-size:.75rem;color:var(--text-muted,#8892a4);">NIST 800-161 &middot; NDAA §889 &middot; CUI // SP-CTI</div>
+  </div>
+
+  <!-- KPI row -->
+  <div class="sc-kpi-row" id="sc-kpi-row">
+    <div class="sc-kpi sc-kpi--info">
+      <div class="sc-kpi__label">Vendors</div>
+      <div class="sc-kpi__value" id="kpi-vendors">—</div>
+      <div class="sc-kpi__sub">in registry</div>
+    </div>
+    <div class="sc-kpi sc-kpi--warn">
+      <div class="sc-kpi__label">High / Critical Risk</div>
+      <div class="sc-kpi__value" id="kpi-highrisk">—</div>
+      <div class="sc-kpi__sub">require action</div>
+    </div>
+    <div class="sc-kpi sc-kpi--crit">
+      <div class="sc-kpi__label">Open CVEs</div>
+      <div class="sc-kpi__value" id="kpi-cves">—</div>
+      <div class="sc-kpi__sub" id="kpi-cves-sub">pending remediation</div>
+    </div>
+    <div class="sc-kpi sc-kpi--warn">
+      <div class="sc-kpi__label">ISAs Expiring</div>
+      <div class="sc-kpi__value" id="kpi-isas">—</div>
+      <div class="sc-kpi__sub">within 90 days</div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="sc-tabs">
+    <button class="sc-tab active" onclick="scShowTab('vendors',this)">Vendors</button>
+    <button class="sc-tab" onclick="scShowTab('scrm',this)">SCRM Risks</button>
+    <button class="sc-tab" onclick="scShowTab('cve',this)">CVE Queue</button>
+    <button class="sc-tab" onclick="scShowTab('isa',this)">ISA Agreements</button>
+    <button class="sc-tab" onclick="scShowTab('sbom',this)">SBOM Records</button>
+  </div>
+
+  <!-- Vendors panel -->
+  <div class="sc-panel active" id="panel-vendors">
+    <div class="sc-section-hdr">
+      <span style="font-weight:600;color:var(--text-primary,#e2e8f0);">Vendor Registry</span>
+      <span class="sc-count" id="vendors-count"></span>
+    </div>
+    <div class="sc-table-wrap">
+      <table class="sc-table" id="tbl-vendors">
+        <thead><tr>
+          <th>Vendor</th><th>Type</th><th>Country</th>
+          <th>SCRM Risk</th><th>§889 Status</th><th>DoD Approved</th>
+          <th>ISA Req.</th><th>Assessments</th><th>Last Assessed</th>
+        </tr></thead>
+        <tbody><tr><td class="empty" colspan="9"><div class="sc-loading">Loading…</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SCRM panel -->
+  <div class="sc-panel" id="panel-scrm">
+    <div class="sc-section-hdr">
+      <span style="font-weight:600;color:var(--text-primary,#e2e8f0);">SCRM Assessments</span>
+      <span class="sc-count" id="scrm-count"></span>
+    </div>
+    <div class="sc-table-wrap">
+      <table class="sc-table" id="tbl-scrm">
+        <thead><tr>
+          <th>Vendor</th><th>Package</th><th>Type</th><th>Category</th>
+          <th>Risk Score</th><th>Likelihood</th><th>Impact</th>
+          <th>Residual Risk</th><th>Assessed</th>
+        </tr></thead>
+        <tbody><tr><td class="empty" colspan="9"><div class="sc-loading">Loading…</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CVE panel -->
+  <div class="sc-panel" id="panel-cve">
+    <div class="sc-section-hdr">
+      <span style="font-weight:600;color:var(--text-primary,#e2e8f0);">CVE Triage Queue</span>
+      <span class="sc-count" id="cve-count"></span>
+    </div>
+    <div class="sc-table-wrap">
+      <table class="sc-table" id="tbl-cve">
+        <thead><tr>
+          <th>CVE</th><th>Package</th><th>Version</th><th>Severity</th>
+          <th>CVSS</th><th>Exploitability</th><th>Decision</th>
+          <th>SLA Deadline</th><th>Remediated</th>
+        </tr></thead>
+        <tbody><tr><td class="empty" colspan="9"><div class="sc-loading">Loading…</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ISA panel -->
+  <div class="sc-panel" id="panel-isa">
+    <div class="sc-section-hdr">
+      <span style="font-weight:600;color:var(--text-primary,#e2e8f0);">ISA / MOU Agreements</span>
+      <span class="sc-count" id="isa-count"></span>
+    </div>
+    <div class="sc-table-wrap">
+      <table class="sc-table" id="tbl-isa">
+        <thead><tr>
+          <th>Partner System</th><th>Org</th><th>Type</th><th>Status</th>
+          <th>Signed</th><th>Expires</th><th>Next Review</th><th>POC</th>
+        </tr></thead>
+        <tbody><tr><td class="empty" colspan="8"><div class="sc-loading">Loading…</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SBOM panel -->
+  <div class="sc-panel" id="panel-sbom">
+    <div class="sc-section-hdr">
+      <span style="font-weight:600;color:var(--text-primary,#e2e8f0);">SBOM Records</span>
+      <span class="sc-count" id="sbom-count"></span>
+    </div>
+    <div class="sc-table-wrap">
+      <table class="sc-table" id="tbl-sbom">
+        <thead><tr>
+          <th>Project</th><th>Format</th><th>Version</th>
+          <th>Components</th><th>Vulnerabilities</th><th>Generated</th>
+        </tr></thead>
+        <tbody><tr><td class="empty" colspan="6"><div class="sc-loading">Loading…</div></td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- IQE widget -->
+  <div style="margin-top:36px;">
+    {% set iqe_canvas = iqe_canvas %}
+    {% set iqe_api_route = iqe_api_route %}
+    {% set iqe_title = iqe_title %}
+    {% set iqe_examples = iqe_examples %}
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+
+  <div class="sc-footer">
+    {{ classification_banner }} &nbsp;&middot;&nbsp; ICDEV™ Supply Chain Intelligence &nbsp;&middot;&nbsp; NIST 800-161
+  </div>
+
+</div>
+
+<script>
+(function() {
+  // ── helpers ────────────────────────────────────────────────────────────────
+  function badge(val, cls) {
+    if (!val) return '<span style="color:#8b949e">—</span>';
+    return '<span class="badge badge--' + cls + '">' + esc(val) + '</span>';
+  }
+  function riskBadge(tier) {
+    var t = (tier||'').toLowerCase();
+    return badge(tier, t || 'low');
+  }
+  function statusBadge(s) { return badge(s, (s||'').toLowerCase()); }
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function fmtDate(s) {
+    if (!s) return '—';
+    return s.substring(0,10);
+  }
+  function yesNo(v) {
+    return v ? '<span style="color:#3fb950">Yes</span>' : '<span style="color:#8b949e">No</span>';
+  }
+  function setTbody(id, html) {
+    var t = document.getElementById(id);
+    if (t) t.querySelector('tbody').innerHTML = html;
+  }
+
+  // ── KPI ───────────────────────────────────────────────────────────────────
+  fetch('/api/supply_chain/stats').then(function(r){return r.json();}).then(function(d){
+    document.getElementById('kpi-vendors').textContent  = d.vendor_count   || 0;
+    document.getElementById('kpi-highrisk').textContent = d.high_risk_vendors || 0;
+    document.getElementById('kpi-cves').textContent     = d.open_cves      || 0;
+    var sub = document.getElementById('kpi-cves-sub');
+    if (sub && d.critical_cves > 0) sub.textContent = d.critical_cves + ' critical';
+    document.getElementById('kpi-isas').textContent     = d.expiring_isas  || 0;
+    // colour kpi-highrisk dynamically
+    var hrKpi = document.getElementById('kpi-highrisk').closest('.sc-kpi');
+    if (hrKpi) hrKpi.className = 'sc-kpi ' + (d.high_risk_vendors > 0 ? 'sc-kpi--crit' : 'sc-kpi--ok');
+    var cveKpi = document.getElementById('kpi-cves').closest('.sc-kpi');
+    if (cveKpi) cveKpi.className = 'sc-kpi ' + (d.open_cves > 0 ? 'sc-kpi--crit' : 'sc-kpi--ok');
+    var isaKpi = document.getElementById('kpi-isas').closest('.sc-kpi');
+    if (isaKpi) isaKpi.className = 'sc-kpi ' + (d.expiring_isas > 0 ? 'sc-kpi--warn' : 'sc-kpi--ok');
+  }).catch(function(){});
+
+  // ── Vendors ───────────────────────────────────────────────────────────────
+  var _vendorsLoaded = false;
+  function loadVendors() {
+    if (_vendorsLoaded) return;
+    _vendorsLoaded = true;
+    fetch('/api/supply_chain/vendors').then(function(r){return r.json();}).then(function(rows){
+      document.getElementById('vendors-count').textContent = rows.length + ' vendor(s)';
+      if (!rows.length) { setTbody('tbl-vendors','<tr><td class="empty" colspan="9">No vendors registered</td></tr>'); return; }
+      var html = rows.map(function(v){
+        return '<tr><td><strong>' + esc(v.vendor_name) + '</strong></td>'
+          + '<td>' + esc((v.vendor_type||'').toUpperCase()) + '</td>'
+          + '<td>' + esc(v.country_of_origin||'—') + '</td>'
+          + '<td>' + riskBadge(v.scrm_risk_tier) + '</td>'
+          + '<td>' + statusBadge(v.section_889_status) + '</td>'
+          + '<td>' + yesNo(v.dod_approved) + '</td>'
+          + '<td>' + yesNo(v.isa_required) + '</td>'
+          + '<td style="text-align:center">' + (v.assessment_count||0) + '</td>'
+          + '<td>' + fmtDate(v.last_assessed) + '</td>'
+          + '</tr>';
+      }).join('');
+      setTbody('tbl-vendors', html);
+    }).catch(function(){ setTbody('tbl-vendors','<tr><td class="empty" colspan="9">Error loading vendors</td></tr>'); });
+  }
+
+  // ── SCRM ──────────────────────────────────────────────────────────────────
+  var _scrmLoaded = false;
+  function loadSCRM() {
+    if (_scrmLoaded) return;
+    _scrmLoaded = true;
+    fetch('/api/supply_chain/scrm-risks').then(function(r){return r.json();}).then(function(rows){
+      document.getElementById('scrm-count').textContent = rows.length + ' assessment(s)';
+      if (!rows.length) { setTbody('tbl-scrm','<tr><td class="empty" colspan="9">No assessments on record</td></tr>'); return; }
+      var html = rows.map(function(a){
+        var score = a.risk_score != null ? parseFloat(a.risk_score).toFixed(2) : '—';
+        return '<tr><td>' + esc(a.vendor_name||'—') + '</td>'
+          + '<td>' + esc(a.package_name||'—') + '</td>'
+          + '<td>' + esc(a.assessment_type||'') + '</td>'
+          + '<td>' + esc(a.risk_category||'—') + '</td>'
+          + '<td style="text-align:center">' + score + '</td>'
+          + '<td>' + esc(a.likelihood||'—') + '</td>'
+          + '<td>' + esc(a.impact||'—') + '</td>'
+          + '<td>' + riskBadge(a.residual_risk) + '</td>'
+          + '<td>' + fmtDate(a.assessed_at) + '</td>'
+          + '</tr>';
+      }).join('');
+      setTbody('tbl-scrm', html);
+    }).catch(function(){ setTbody('tbl-scrm','<tr><td class="empty" colspan="9">Error loading assessments</td></tr>'); });
+  }
+
+  // ── CVE ───────────────────────────────────────────────────────────────────
+  var _cveLoaded = false;
+  function loadCVE() {
+    if (_cveLoaded) return;
+    _cveLoaded = true;
+    fetch('/api/supply_chain/cve-queue').then(function(r){return r.json();}).then(function(rows){
+      document.getElementById('cve-count').textContent = rows.length + ' record(s)';
+      if (!rows.length) { setTbody('tbl-cve','<tr><td class="empty" colspan="9">No CVEs in triage queue</td></tr>'); return; }
+      var html = rows.map(function(c){
+        var sev = (c.severity||'').toLowerCase();
+        var dec = (c.triage_decision||'');
+        var decColor = dec === 'remediate' ? '#f85149' : dec === 'mitigate' ? '#f0883e' : '#8b949e';
+        return '<tr><td><strong>' + esc(c.cve_id) + '</strong></td>'
+          + '<td>' + esc(c.package_name) + '</td>'
+          + '<td>' + esc(c.package_version||'—') + '</td>'
+          + '<td>' + badge(c.severity, sev) + '</td>'
+          + '<td style="text-align:center">' + (c.cvss_score != null ? parseFloat(c.cvss_score).toFixed(1) : '—') + '</td>'
+          + '<td>' + esc(c.exploitability||'—') + '</td>'
+          + '<td><span style="color:' + decColor + '">' + esc(dec||'—') + '</span></td>'
+          + '<td>' + (c.sla_deadline ? '<span style="color:' + (new Date(c.sla_deadline) < new Date() ? '#f85149' : '#e3b341') + '">' + fmtDate(c.sla_deadline) + '</span>' : '—') + '</td>'
+          + '<td>' + (c.remediated_at ? '<span style="color:#3fb950">' + fmtDate(c.remediated_at) + '</span>' : '<span style="color:#8b949e">Open</span>') + '</td>'
+          + '</tr>';
+      }).join('');
+      setTbody('tbl-cve', html);
+    }).catch(function(){ setTbody('tbl-cve','<tr><td class="empty" colspan="9">Error loading CVE queue</td></tr>'); });
+  }
+
+  // ── ISA ───────────────────────────────────────────────────────────────────
+  var _isaLoaded = false;
+  function loadISA() {
+    if (_isaLoaded) return;
+    _isaLoaded = true;
+    fetch('/api/supply_chain/isa-agreements').then(function(r){return r.json();}).then(function(rows){
+      document.getElementById('isa-count').textContent = rows.length + ' agreement(s)';
+      if (!rows.length) { setTbody('tbl-isa','<tr><td class="empty" colspan="8">No ISA agreements on record</td></tr>'); return; }
+      var html = rows.map(function(a){
+        return '<tr><td><strong>' + esc(a.partner_system) + '</strong></td>'
+          + '<td>' + esc(a.partner_org||'—') + '</td>'
+          + '<td>' + esc((a.agreement_type||'').toUpperCase()) + '</td>'
+          + '<td>' + statusBadge(a.status) + '</td>'
+          + '<td>' + fmtDate(a.signed_date) + '</td>'
+          + '<td>' + fmtDate(a.expiry_date) + '</td>'
+          + '<td>' + fmtDate(a.next_review_date) + '</td>'
+          + '<td>' + esc(a.poc_name||'—') + '</td>'
+          + '</tr>';
+      }).join('');
+      setTbody('tbl-isa', html);
+    }).catch(function(){ setTbody('tbl-isa','<tr><td class="empty" colspan="8">Error loading agreements</td></tr>'); });
+  }
+
+  // ── SBOM ──────────────────────────────────────────────────────────────────
+  var _sbomLoaded = false;
+  function loadSBOM() {
+    if (_sbomLoaded) return;
+    _sbomLoaded = true;
+    fetch('/api/supply_chain/sbom').then(function(r){return r.json();}).then(function(rows){
+      document.getElementById('sbom-count').textContent = rows.length + ' record(s)';
+      if (!rows.length) { setTbody('tbl-sbom','<tr><td class="empty" colspan="6">No SBOM records found</td></tr>'); return; }
+      var html = rows.map(function(s){
+        return '<tr><td>' + esc(s.project_name||s.project_id||'—') + '</td>'
+          + '<td>' + esc((s.format||'CycloneDX').toUpperCase()) + '</td>'
+          + '<td>' + esc(s.version||'—') + '</td>'
+          + '<td style="text-align:center">' + (s.component_count||0) + '</td>'
+          + '<td style="text-align:center">'
+            + (s.vulnerability_count > 0 ? '<span style="color:#f85149">' + s.vulnerability_count + '</span>' : '<span style="color:#3fb950">0</span>')
+          + '</td>'
+          + '<td>' + fmtDate(s.generated_at) + '</td>'
+          + '</tr>';
+      }).join('');
+      setTbody('tbl-sbom', html);
+    }).catch(function(){ setTbody('tbl-sbom','<tr><td class="empty" colspan="6">Error loading SBOM records</td></tr>'); });
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  window.scShowTab = function(name, btn) {
+    document.querySelectorAll('.sc-panel').forEach(function(p){ p.classList.remove('active'); });
+    document.querySelectorAll('.sc-tab').forEach(function(t){ t.classList.remove('active'); });
+    var panel = document.getElementById('panel-' + name);
+    if (panel) panel.classList.add('active');
+    if (btn) btn.classList.add('active');
+    if (name === 'vendors') loadVendors();
+    else if (name === 'scrm')   loadSCRM();
+    else if (name === 'cve')    loadCVE();
+    else if (name === 'isa')    loadISA();
+    else if (name === 'sbom')   loadSBOM();
+  };
+
+  // auto-load first tab
+  loadVendors();
+})();
+</script>
+{% endblock %}

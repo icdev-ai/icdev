@@ -1597,6 +1597,15 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
 
+    # ---- Supply Chain Intelligence Blueprint ----
+    try:
+        from tools.supply_chain.blueprint import create_supply_chain_blueprint
+        _sc_bp = create_supply_chain_blueprint()
+        app.register_blueprint(_sc_bp)
+        app.logger.info("Supply Chain blueprint registered at /supply_chain")
+    except Exception as _exc:
+        app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
+
     # ---- Strategos Blueprint ----
     if _HAS_STRATEGOS:
         try:
@@ -2525,7 +2534,8 @@ def create_app() -> Flask:
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
-            "strategos":     ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
+            "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
+            "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
