@@ -1577,7 +1577,9 @@ def _build_standalone_html(uc: dict) -> str:
             document.getElementById('est-total').textContent = fmt(est);
             document.getElementById('quot-total').textContent = fmt(quot);
             var varEl = document.getElementById('variance-total');
-            varEl.textContent = (varAmt > 0 ? '+' : '') + fmt(varAmt);
+            var absAmt = Math.abs(varAmt);
+            var fmtAbs = '$' + absAmt.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+            varEl.textContent = varAmt > 0 ? '+' + fmtAbs : varAmt < 0 ? '-' + fmtAbs : fmtAbs;
             varEl.style.color = varAmt > 0 ? '#f85149' : varAmt < 0 ? '#3fb950' : '';
         }"""
         after_render_call = "updateSummary();"
@@ -1800,6 +1802,8 @@ function renderTable() {{
       var val = item[col.key] || '';
       var cell = document.createElement('td');
       cell.innerHTML = makeCell(col.key, val, col.type);
+      var cellInp = cell.querySelector('.cell-input');
+      if (cellInp) cellInp.value = val;
       tr.appendChild(cell);
     }});
     var del = document.createElement('td');
@@ -1807,7 +1811,21 @@ function renderTable() {{
     tr.appendChild(del);
     tbody.appendChild(tr);
     tr.querySelectorAll('.cell-input').forEach(function(inp) {{
-      inp.addEventListener('change', function() {{ updateRow(idx, inp.dataset.key, inp.value); {input_change_call} }});
+      inp.addEventListener('change', function() {{
+        if (inp.dataset.key === 'vendor' && inp.value === '__custom__') {{
+          var custom = (prompt('Enter vendor name:') || '').trim();
+          if (custom) {{
+            var opt = document.createElement('option');
+            opt.value = custom; opt.textContent = custom;
+            inp.insertBefore(opt, inp.lastElementChild);
+            inp.value = custom;
+          }} else {{
+            inp.value = '';
+            return;
+          }}
+        }}
+        updateRow(idx, inp.dataset.key, inp.value); {input_change_call}
+      }});
     }});
   }});
   {after_render_call}
