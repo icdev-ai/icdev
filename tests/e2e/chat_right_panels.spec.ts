@@ -8,8 +8,19 @@ const SCREENSHOT_DIR = '.tmp/test_runs/screenshots';
 
 test.describe('Chat Right Panels', () => {
   test.beforeEach(async ({ page }) => {
+    // Suppress tour overlay before navigation via localStorage
+    await page.addInitScript(() => {
+      localStorage.setItem('icdev_tour_completed', '1');
+      localStorage.setItem('icdev_tour_last_step', '999');
+    });
     await page.goto('/chat');
     await page.waitForLoadState('domcontentloaded');
+    // Remove any residual tour overlay injected after load
+    await page.evaluate(() => {
+      localStorage.setItem('icdev_tour_completed', '1');
+      const tour = document.getElementById('icdev-tour-welcome');
+      if (tour) { tour.classList.remove('visible'); tour.style.display = 'none'; tour.remove(); }
+    });
   });
 
   // ── Tab buttons ──────────────────────────────────────────────────────────
@@ -49,19 +60,25 @@ test.describe('Chat Right Panels', () => {
   // ── GOV tab content ──────────────────────────────────────────────────────
 
   test('GOV tab renders content structure after load', async ({ page }) => {
-    // Click GOV tab
-    const govTab = page.locator('#tab-gov, [data-tab="gov"]').first();
-    if (await govTab.count() > 0) {
-      await govTab.click();
-      await page.waitForTimeout(800);
+    // Open the right sidebar via its external toggle, then click the GOV tab
+    const govToggle = page.locator('#btn-gov-toggle');
+    if (await govToggle.count() > 0) {
+      await govToggle.click();
+      await page.waitForTimeout(400);
+
+      const govTab = page.locator('#tab-gov, [data-tab="gov"]').first();
+      if (await govTab.isVisible()) {
+        await govTab.click();
+        await page.waitForTimeout(800);
+      }
 
       await page.screenshot({
         path: `${SCREENSHOT_DIR}/right_panels_gov_tab.png`,
         fullPage: false,
       });
 
-      // GOV panel container should be visible
-      const govPanel = page.locator('#gov-sidebar-content, #gov-panel, .gov-tab-content');
+      // GOV panel container should be in DOM
+      const govPanel = page.locator('#gov-sidebar-content, #gov-sidebar, .gov-tab-content');
       expect(await govPanel.count()).toBeGreaterThan(0);
     }
   });
@@ -69,18 +86,25 @@ test.describe('Chat Right Panels', () => {
   // ── INTEL tab content ─────────────────────────────────────────────────────
 
   test('INTEL tab renders content structure after load', async ({ page }) => {
-    const intelTab = page.locator('#tab-intel, [data-tab="intel"]').first();
-    if (await intelTab.count() > 0) {
-      await intelTab.click();
-      await page.waitForTimeout(800);
+    // Open the right sidebar via its external toggle, then click the INTEL tab
+    const intelToggle = page.locator('#btn-intel-toggle');
+    if (await intelToggle.count() > 0) {
+      await intelToggle.click();
+      await page.waitForTimeout(400);
+
+      const intelTab = page.locator('#tab-intel, [data-tab="intel"]').first();
+      if (await intelTab.isVisible()) {
+        await intelTab.click();
+        await page.waitForTimeout(800);
+      }
 
       await page.screenshot({
         path: `${SCREENSHOT_DIR}/right_panels_intel_tab.png`,
         fullPage: false,
       });
 
-      // INTEL panel container should be visible
-      const intelPanel = page.locator('#intel-sidebar-content, #intel-panel, .intel-tab-content');
+      // INTEL panel container should be in DOM (#intel-sidebar is the actual wrapper)
+      const intelPanel = page.locator('#intel-sidebar, #intel-sidebar-content, .intel-tab-content');
       expect(await intelPanel.count()).toBeGreaterThan(0);
     }
   });
