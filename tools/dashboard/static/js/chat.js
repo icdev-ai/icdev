@@ -806,10 +806,24 @@
 
     function chatValidatePRD() {
         if (!_activeIntakeSessionId) return;
-        appendMessage({ role: 'system', content: 'Running PRD quality validation (6 checks)...' });
+
+        var valSpinnerId = 'validate-spinner-' + Date.now();
+        var stream = document.getElementById('message-stream');
+        if (stream) {
+            var spinnerDiv = document.createElement('div');
+            spinnerDiv.id = valSpinnerId;
+            spinnerDiv.className = 'msg-bubble msg-bubble--system';
+            spinnerDiv.innerHTML = '<span class="send-spinner" style="vertical-align:middle;margin-right:8px;"></span>'
+                + '<span style="vertical-align:middle;">Running PRD quality validation (6 checks)&hellip;</span>';
+            stream.appendChild(spinnerDiv);
+            stream.scrollTop = stream.scrollHeight;
+        }
+
         fetch(INTAKE_API + '/prd/' + _activeIntakeSessionId + '/validate')
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            var el = document.getElementById(valSpinnerId);
+            if (el) el.remove();
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             var overall = (data.overall || 'unknown').toUpperCase();
             var score = data.overall_score || 0;
@@ -827,15 +841,34 @@
                 appendMessage({ role: 'assistant', content: '<button class="btn btn-sm btn-warning mt-2" onclick="window.ICDEV.chatAutoFixPRD(' + score + ')">\uD83D\uDD27 AI Auto-Fix PRD</button>' });
             }
         })
-        .catch(function (err) { appendMessage({ role: 'system', content: 'Validation error: ' + err.message }); });
+        .catch(function (err) {
+            var el = document.getElementById(valSpinnerId);
+            if (el) el.remove();
+            appendMessage({ role: 'system', content: 'Validation error: ' + err.message });
+        });
     }
 
     function chatAutoFixPRD(beforeScore) {
         if (!_activeIntakeSessionId) return;
-        appendMessage({ role: 'system', content: '\u23F3 Running AI auto-remediation on failing requirements...' });
+
+        // Inject a spinner bubble that we can remove when done
+        var spinnerId = 'autofix-spinner-' + Date.now();
+        var stream = document.getElementById('message-stream');
+        if (stream) {
+            var spinnerDiv = document.createElement('div');
+            spinnerDiv.id = spinnerId;
+            spinnerDiv.className = 'msg-bubble msg-bubble--system';
+            spinnerDiv.innerHTML = '<span class="send-spinner" style="vertical-align:middle;margin-right:8px;"></span>'
+                + '<span style="vertical-align:middle;">AI is reviewing and rewriting failing requirements&hellip;</span>';
+            stream.appendChild(spinnerDiv);
+            stream.scrollTop = stream.scrollHeight;
+        }
+
         fetch(INTAKE_API + '/prd/' + _activeIntakeSessionId + '/auto-remediate', { method: 'POST' })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+            var el = document.getElementById(spinnerId);
+            if (el) el.remove();
             if (data.error) { appendMessage({ role: 'system', content: 'Error: ' + data.error }); return; }
             var fixed = data.fixed_count || 0;
             var suggested = data.suggested_count || 0;
@@ -849,7 +882,11 @@
             if (fixed === 0 && suggested === 0) msg = '\u2139\uFE0F ' + (data.message || 'No actionable findings found.');
             appendMessage({ role: 'system', content: msg });
         })
-        .catch(function (err) { appendMessage({ role: 'system', content: 'Auto-fix error: ' + err.message }); });
+        .catch(function (err) {
+            var el = document.getElementById(spinnerId);
+            if (el) el.remove();
+            appendMessage({ role: 'system', content: 'Auto-fix error: ' + err.message });
+        });
     }
 
     // ===================================================================
