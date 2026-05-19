@@ -118,8 +118,10 @@ def inject_row_predicate(
         new_sql = sql[:pos] + " " + predicate + " AND" + sql[pos:]
         return new_sql, tuple(extra_params)
 
-    # No WHERE — find ORDER BY / GROUP BY / LIMIT to inject before
-    for pattern in (_RE_ORDER_BY, _RE_GROUP_BY, _RE_LIMIT):
+    # No WHERE — inject before the first SQL clause that follows the FROM/JOIN.
+    # Must check GROUP BY before ORDER BY: WHERE is only valid before GROUP BY
+    # in standard SQL (SELECT … FROM … WHERE … GROUP BY … ORDER BY …).
+    for pattern in (_RE_GROUP_BY, _RE_ORDER_BY, _RE_LIMIT):
         m = pattern.search(sql)
         if m:
             pos = m.start()

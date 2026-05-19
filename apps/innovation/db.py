@@ -2,7 +2,7 @@
 """FORGE IGNITE DB layer — all innov_* tables via get_connection()."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from tools.db.storage import get_connection
 
@@ -314,16 +314,18 @@ def pipeline_stats() -> dict:
         total = sum(counts.values())
 
         # Monthly velocity
+        thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         row = conn.execute(
-            """SELECT COUNT(*) FROM innov_ideas
-               WHERE created_at >= datetime('now', '-30 days')""",
+            "SELECT COUNT(*) FROM innov_ideas WHERE created_at >= ?",
+            (thirty_days_ago,),
         ).fetchone()
         submitted_this_month = row[0] if row else 0
 
         row = conn.execute(
             """SELECT COUNT(*) FROM innov_ideas
                WHERE status IN ('pilot','measure','scale')
-               AND updated_at >= datetime('now', '-30 days')""",
+               AND updated_at >= ?""",
+            (thirty_days_ago,),
         ).fetchone()
         pilots_this_month = row[0] if row else 0
 
