@@ -1003,7 +1003,7 @@ def auto_remediate_prd(session_id):
         issues = completeness_check.get("issues") or []
         # Load session context for better LLM prompts
         session_row = conn.execute(
-            "SELECT customer_name, use_case_id, project_id FROM intake_sessions WHERE id = ?",
+            "SELECT customer_name, project_id, impact_level FROM intake_sessions WHERE id = ?",
             (session_id,),
         ).fetchone()
         session_ctx = dict(session_row) if session_row else {}
