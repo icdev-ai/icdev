@@ -60,7 +60,7 @@ use_cases:
         target: _blank
       - icon: "🔗"
         label: Supply Chain
-        url: /network/ask
+        url: /supply_chain
         target: _blank
     user_config:
       industries:
@@ -525,7 +525,7 @@ use_cases:
         target: _blank
       - icon: "🔗"
         label: Supply Chain
-        url: /network/ask
+        url: /supply_chain
         target: _blank
       - icon: "📚"
         label: Knowledge Search
@@ -1116,7 +1116,7 @@ use_cases:
     quick_actions:
       - icon: "🔗"
         label: Supply Chain
-        url: /network/ask
+        url: /supply_chain
         target: _blank
       - icon: "🔒"
         label: Compliance Canvas
@@ -1269,7 +1269,7 @@ use_cases:
         target: _blank
       - icon: "🔗"
         label: Supply Chain
-        url: /network/ask
+        url: /supply_chain
         target: _blank
       - icon: "📚"
         label: Knowledge Search
@@ -1442,7 +1442,7 @@ use_cases:
         target: _blank
       - icon: "🔎"
         label: Audit Trail
-        url: /audit
+        url: /prod-audit
         target: _blank
       - icon: "📋"
         label: Kanban Board
@@ -1874,7 +1874,7 @@ use_cases:
         target: _blank
       - icon: "🔗"
         label: Supply Chain
-        url: /network/ask
+        url: /supply_chain
         target: _blank
       - icon: "📚"
         label: Knowledge Search
