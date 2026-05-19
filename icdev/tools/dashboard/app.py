@@ -1113,6 +1113,14 @@ def create_app() -> Flask:
     except ImportError:
         pass
 
+    # Budget monitor + throttling controller — background daemon wired into the
+    # generative intelligence and predictive analysis pipeline (services package).
+    try:
+        from services import start_budget_services
+        app.extensions["throttle_controller"] = start_budget_services()
+    except Exception as _exc:
+        app.logger.warning("Budget services skipped: %s", _exc)
+
     # Liveness probe — used by /start, container healthchecks, and uptime monitors.
     # Cheap, no DB call. For deeper checks see /api/platform/health.
     @app.route("/health", methods=["GET"])
@@ -1125,6 +1133,10 @@ def create_app() -> Flask:
             },
             200,
         )
+
+    @app.route("/favicon.ico")
+    def favicon():
+        return make_response("", 204)
 
     @app.route("/api/live-check", methods=["GET"])
     def api_live_check():
@@ -1588,6 +1600,15 @@ def create_app() -> Flask:
         app.logger.info("Migration Intelligence blueprint registered at /migration-intel")
     except Exception as _exc:
         app.logger.warning("Migration Intelligence blueprint failed to register: %s", _exc)
+
+    # ---- Supply Chain Intelligence Blueprint ----
+    try:
+        from tools.supply_chain.blueprint import create_supply_chain_blueprint
+        _sc_bp = create_supply_chain_blueprint()
+        app.register_blueprint(_sc_bp)
+        app.logger.info("Supply Chain blueprint registered at /supply_chain")
+    except Exception as _exc:
+        app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
 
     # ---- Strategos Blueprint ----
     if _HAS_STRATEGOS:
@@ -2517,6 +2538,8 @@ def create_app() -> Flask:
             "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
             "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
             "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
+            "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
+            "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -2753,6 +2776,171 @@ def create_app() -> Flask:
             )
         finally:
             conn.close()
+
+    # ── Requirements human-readable view ─────────────────────────────────
+    @app.route("/intake/requirements/<session_id>")
+    def intake_requirements_view(session_id):
+        """Professional requirements document view for an intake session."""
+        import json as _json
+        from datetime import datetime as _dt, timezone as _tz
+        from flask import abort as _abort
+        conn = _get_db()
+        try:
+            session = conn.execute(
+                "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not session:
+                app.logger.warning("intake_requirements_view: session %s not found", session_id)
+                _abort(404, description=f"Session '{session_id}' not found.")
+            session = dict(session)
+
+            reqs = conn.execute(
+                "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY priority, created_at",
+                (session_id,),
+            ).fetchall()
+            reqs = [dict(r) for r in reqs]
+
+            readiness_row = conn.execute(
+                "SELECT readiness_score, readiness_breakdown FROM intake_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        # Build readiness dict
+        readiness = None
+        if readiness_row and readiness_row["readiness_score"] is not None:
+            breakdown = {}
+            try:
+                breakdown = _json.loads(readiness_row["readiness_breakdown"] or "{}")
+            except Exception:
+                pass
+            readiness = {
+                "overall": float(readiness_row["readiness_score"]),
+                "dimensions": {
+                    "Completeness": breakdown.get("completeness", 0),
+                    "Clarity": breakdown.get("clarity", 0),
+                    "Feasibility": breakdown.get("feasibility", 0),
+                    "Compliance": breakdown.get("compliance", 0),
+                    "Testability": breakdown.get("testability", 0),
+                },
+            }
+
+        # Group requirements by type
+        _type_order = ["functional", "performance", "interface", "data", "compliance", "security", "non_functional"]
+        _type_labels = {
+            "functional": "Functional", "performance": "Performance",
+            "interface": "Interface", "data": "Data", "compliance": "Compliance",
+            "security": "Security", "non_functional": "Non-Functional",
+        }
+        groups = {}
+        for req in reqs:
+            t = (req.get("requirement_type") or "functional").lower().replace(" ", "_")
+            groups.setdefault(t, []).append(req)
+
+        grouped = []
+        for t in _type_order:
+            if t in groups:
+                grouped.append((t, _type_labels.get(t, t.replace("_", " ").title()), groups[t]))
+        for t, items in groups.items():
+            if t not in _type_order:
+                grouped.append((t, t.replace("_", " ").title(), items))
+
+        # Frameworks
+        frameworks = []
+        try:
+            ctx = _json.loads(session.get("context_summary") or "{}")
+            raw_fw = ctx.get("selected_frameworks", [])
+            frameworks = [fw.replace("_", " ").replace("-", " ").title() for fw in raw_fw]
+        except Exception:
+            pass
+
+        req_types = list(groups.keys())
+        cui_banner = getattr(app, "_cui_banner", None) or "CUI // SP-CTI"
+        generated_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        try:
+            return render_template(
+                "intake_requirements.html",
+                session=session,
+                requirements=reqs,
+                grouped_requirements=grouped,
+                req_types=req_types,
+                readiness=readiness,
+                frameworks=frameworks,
+                classification_banner=cui_banner,
+                generated_at=generated_at,
+            )
+        except Exception as _exc:
+            app.logger.error("intake_requirements_view render error: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+
+    # ── PRD rendered HTML view ────────────────────────────────────────────
+    @app.route("/intake/prd/<session_id>/view")
+    def intake_prd_view(session_id):
+        """Render PRD as a styled HTML page instead of downloading raw markdown."""
+        import json as _json_mod
+        from datetime import datetime as _dt, timezone as _tz
+        try:
+            import markdown as _md_lib
+            _HAS_MARKDOWN_LIB = True
+        except ImportError:
+            _HAS_MARKDOWN_LIB = False
+
+        # Fetch customer name from session
+        conn = _get_db()
+        try:
+            _sess_row = conn.execute(
+                "SELECT customer_name FROM intake_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            session_customer = (_sess_row["customer_name"] if _sess_row else "") or ""
+        except Exception:
+            session_customer = ""
+        finally:
+            conn.close()
+
+        try:
+            from tools.requirements.prd_generator import generate_prd as _gen_prd
+            result = _gen_prd(session_id)
+        except Exception as exc:
+            result = {"status": "error", "error": str(exc)}
+
+        cui_banner = getattr(app, "_cui_banner", None) or "CUI // SP-CTI"
+        generated_at = _dt.now(_tz.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+        if result.get("status") != "ok":
+            return render_template(
+                "intake_prd_view.html",
+                session_id=session_id,
+                session_customer=session_customer,
+                error=result.get("error", "PRD could not be generated."),
+                prd_html="",
+                prd_markdown_json="''",
+                classification_banner=cui_banner,
+                generated_at=generated_at,
+            )
+
+        raw_md = result.get("prd_markdown", "")
+
+        if _HAS_MARKDOWN_LIB:
+            prd_html = _md_lib.markdown(
+                raw_md,
+                extensions=["tables", "fenced_code", "nl2br", "toc"],
+            )
+        else:
+            import html as _html_lib
+            prd_html = "<pre style='white-space:pre-wrap'>" + _html_lib.escape(raw_md) + "</pre>"
+
+        return render_template(
+            "intake_prd_view.html",
+            session_id=session_id,
+            session_customer=session_customer,
+            error=None,
+            prd_html=prd_html,
+            prd_markdown_json=_json_mod.dumps(raw_md),
+            classification_banner=cui_banner,
+            generated_at=generated_at,
+        )
 
     @app.route("/quick-paths")
     def quick_paths_page():
@@ -3528,7 +3716,7 @@ def create_app() -> Flask:
         else:
             conn = get_connection(db_path=str(DB_PATH))
         try:
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: internal service engine, no Flask request context; tenant isolation enforced at API boundary
         except Exception:
             pass
         return conn
@@ -3987,8 +4175,8 @@ def create_app() -> Flask:
 
     @app.route("/analytics")
     def analytics_page():
-        """Compliance Funnel Analytics — ATO pipeline funnel, time-series, child app telemetry."""
-        return render_template("analytics.html")
+        """Compliance Funnel Analytics — redirects to usage dashboard (template pending)."""
+        return redirect("/usage")
 
     @app.route("/api/simulation/scenarios", methods=["POST"])
     def api_simulation_create():
@@ -9721,17 +9909,18 @@ if __name__ == "__main__":
         _ssl_context = _ctx
 
     # Use SocketIO runner if available (D170), otherwise plain Flask
+    # use_reloader=False: prevents Werkzeug's stat-based reloader from spawning
+    # a second create_app() call and causing repeated restart loops on Windows.
     socketio = get_socketio()
     if socketio:
         print("[ICDEV™ Dashboard] WebSocket enabled (Flask-SocketIO)")
         if _ssl_context is not None:
-            socketio.run(app, host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, use_reloader=False, ssl_context=_ssl_context, allow_unsafe_werkzeug=True)  # nosec B104
         else:
-            socketio.run(app, host=HOST, port=args.port, debug=args.debug, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            socketio.run(app, host=HOST, port=args.port, debug=args.debug, use_reloader=False, allow_unsafe_werkzeug=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
     else:
         print("[ICDEV™ Dashboard] WebSocket not available — using HTTP polling")
-        _extra_files = [str(BASE_DIR / "args" / "llm_config.yaml")]
         if _ssl_context is not None:
-            app.run(host=HOST, port=args.port, debug=args.debug, ssl_context=_ssl_context, extra_files=_extra_files, threaded=True)  # nosec B104
+            app.run(host=HOST, port=args.port, debug=args.debug, use_reloader=False, ssl_context=_ssl_context, threaded=True)  # nosec B104
         else:
-            app.run(host=HOST, port=args.port, debug=args.debug, extra_files=_extra_files, threaded=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
+            app.run(host=HOST, port=args.port, debug=args.debug, use_reloader=False, threaded=True)  # nosec B104 -- intentional bind-all for containerized/dev deployment
