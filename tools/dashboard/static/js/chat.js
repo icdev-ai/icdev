@@ -142,7 +142,11 @@
             system_prompt: options.system_prompt || ''
         }).then(function (ctx) {
             if (ctx.error) {
-                if (ns.notify) ns.notify(ctx.error, 'error');
+                var msg = ctx.active_count !== undefined
+                    ? 'Context limit reached (' + ctx.active_count + ' active). Close an existing context first.'
+                    : ctx.error;
+                if (ns.notify) ns.notify(msg, 'error');
+                else appendMessage({ role: 'system', content: msg });
                 return ctx;
             }
             refreshContextList();
@@ -1789,7 +1793,10 @@
                 system_prompt: 'RICOAS intake session: ' + intakeSessionId
             }).then(function (ctx) {
                 if (ctx.error) {
-                    appendMessage({ role: 'system', content: 'Error creating chat context: ' + ctx.error });
+                    var msg = ctx.active_count !== undefined
+                        ? 'Context limit reached (' + ctx.active_count + ' active). Close an existing context before creating a new one.'
+                        : 'Error creating chat context: ' + ctx.error;
+                    appendMessage({ role: 'system', content: msg });
                     return null;
                 }
                 // Step 3: Store mapping

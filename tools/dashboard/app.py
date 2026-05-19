@@ -1134,6 +1134,10 @@ def create_app() -> Flask:
             200,
         )
 
+    @app.route("/favicon.ico")
+    def favicon():
+        return make_response("", 204)
+
     @app.route("/api/live-check", methods=["GET"])
     def api_live_check():
         """Scheduler heartbeat + in_progress task count for the Live Activity panel."""
