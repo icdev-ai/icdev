@@ -1,1092 +1,947 @@
 """
-ICDEV™ Executive Presentation Generator
+ICDEV(tm) Executive Presentation Generator  v2 — developer-first narrative
 Produces: tools/presentations/output/ICDEV_Executive_Deck.pptx
-Theme: Dark-navy Gov/DoD executive style
+Message: A System That Builds Systems. Canvases, Workflows, Digital Twin, Use Cases.
+Compliance / ATO = silent byproduct, never the headline.
 """
 
 from pathlib import Path
 from pptx import Presentation
-from pptx.util import Inches, Pt, Emu
+from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 
-# ── Palette ────────────────────────────────────────────────────────────────
-NAVY   = RGBColor(0x0A, 0x16, 0x28)   # slide background
-GOLD   = RGBColor(0xC8, 0xA9, 0x51)   # accents, titles
-WHITE  = RGBColor(0xFF, 0xFF, 0xFF)   # body text
-LGRAY  = RGBColor(0xE0, 0xE6, 0xF0)   # sub-text
-MGRAY  = RGBColor(0x1E, 0x3A, 0x5F)   # divider / card backgrounds
-DGOLD  = RGBColor(0xA0, 0x82, 0x35)   # dark gold for hover-contrast
-GREEN  = RGBColor(0x2E, 0xCC, 0x71)   # success / positive
-RED    = RGBColor(0xE7, 0x4C, 0x3C)   # alert
-BLUE   = RGBColor(0x2E, 0x86, 0xC1)   # info
+# ── Palette ─────────────────────────────────────────────────────────────────
+NAVY  = RGBColor(0x0A, 0x16, 0x28)
+GOLD  = RGBColor(0xC8, 0xA9, 0x51)
+WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+LGRAY = RGBColor(0xE0, 0xE6, 0xF0)
+MGRAY = RGBColor(0x1E, 0x3A, 0x5F)
+GREEN = RGBColor(0x2E, 0xCC, 0x71)
+BLUE  = RGBColor(0x2E, 0x86, 0xC1)
+RED   = RGBColor(0xE7, 0x4C, 0x3C)
+TEAL  = RGBColor(0x17, 0xA5, 0x8A)
 
 W  = Inches(13.33)
 H  = Inches(7.50)
-LM = Inches(0.55)   # left margin
-RM = Inches(0.55)   # right margin
-TM = Inches(0.40)   # top margin
-CW = W - LM - RM    # content width
+LM = Inches(0.55)
+CW = W - LM * 2
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+# ── Primitives ───────────────────────────────────────────────────────────────
 
-def _new_prs() -> Presentation:
+def _new_prs():
     prs = Presentation()
     prs.slide_width  = W
     prs.slide_height = H
     return prs
 
+def _blank(prs):
+    return prs.slides.add_slide(prs.slide_layouts[6])
 
-def _blank(prs: Presentation):
-    return prs.slides.add_slide(prs.slide_layouts[6])   # blank layout
+def _bg(slide, color=NAVY):
+    f = slide.background.fill
+    f.solid()
+    f.fore_color.rgb = color
 
+def _rect(slide, l, t, w, h, fill, line=None, lw=Pt(1)):
+    s = slide.shapes.add_shape(1, l, t, w, h)
+    s.fill.solid(); s.fill.fore_color.rgb = fill
+    if line: s.line.color.rgb = line; s.line.width = lw
+    else: s.line.fill.background()
+    return s
 
-def _bg(slide, color: RGBColor = NAVY):
-    fill = slide.background.fill
-    fill.solid()
-    fill.fore_color.rgb = color
-
-
-def _box(slide, left, top, width, height,
-         text="", size=18, bold=False, italic=False,
-         color=WHITE, align=PP_ALIGN.LEFT,
-         bg_color=None, word_wrap=True):
-    shape = slide.shapes.add_textbox(left, top, width, height)
-    if bg_color:
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = bg_color
-    tf = shape.text_frame
-    tf.word_wrap = word_wrap
-    p = tf.paragraphs[0]
-    p.alignment = align
-    run = p.add_run()
-    run.text = text
-    run.font.size = Pt(size)
-    run.font.bold = bold
-    run.font.italic = italic
-    run.font.color.rgb = color
+def _box(slide, l, t, w, h, text="", size=14, bold=False,
+         italic=False, color=WHITE, align=PP_ALIGN.LEFT, wrap=True):
+    shape = slide.shapes.add_textbox(l, t, w, h)
+    tf = shape.text_frame; tf.word_wrap = wrap
+    p = tf.paragraphs[0]; p.alignment = align
+    run = p.add_run(); run.text = text
+    run.font.size = Pt(size); run.font.bold = bold
+    run.font.italic = italic; run.font.color.rgb = color
     return tf
 
+def _gold_bar(slide, top=Inches(1.55), h=Inches(0.04)):
+    _rect(slide, LM, top, CW, h, GOLD)
 
-def _para(tf, text, size=16, bold=False, color=WHITE, align=PP_ALIGN.LEFT, space_before=Pt(6)):
-    p = tf.add_paragraph()
-    p.alignment = align
-    p.space_before = space_before
-    run = p.add_run()
-    run.text = text
-    run.font.size = Pt(size)
-    run.font.bold = bold
-    run.font.color.rgb = color
-    return p
-
-
-def _rect(slide, left, top, width, height, fill_color, line_color=None):
-    shape = slide.shapes.add_shape(1, left, top, width, height)   # MSO_SHAPE_TYPE.RECTANGLE
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = fill_color
-    if line_color:
-        shape.line.color.rgb = line_color
-        shape.line.width = Pt(1)
-    else:
-        shape.line.fill.background()
-    return shape
-
-
-def _gold_bar(slide, top=Inches(1.55), height=Inches(0.04)):
-    _rect(slide, LM, top, CW, height, GOLD)
-
-
-def _slide_num(slide, n: int):
-    _box(slide, W - Inches(0.8), H - Inches(0.35), Inches(0.7), Inches(0.3),
+def _footer(slide, n, text="ICDEV™  ·  A System That Builds Systems"):
+    _box(slide, LM, H - Inches(0.32), CW - Inches(0.6), Inches(0.28),
+         text, size=8, color=MGRAY)
+    _box(slide, W - Inches(0.8), H - Inches(0.32), Inches(0.7), Inches(0.28),
          str(n), size=9, color=MGRAY, align=PP_ALIGN.RIGHT)
 
-
-def _footer(slide, text="ICDEV™  |  FORGE Framework  |  IL4+ Ready  |  Apache 2.0"):
-    _box(slide, LM, H - Inches(0.32), CW, Inches(0.28),
-         text, size=8, color=MGRAY)
-
-
-def _title_area(slide, title, subtitle=""):
-    _box(slide, LM, TM, CW, Inches(1.05),
+def _title(slide, title, sub=""):
+    _box(slide, LM, Inches(0.35), CW, Inches(1.1),
          title, size=32, bold=True, color=GOLD)
     _gold_bar(slide)
-    if subtitle:
-        _box(slide, LM, Inches(1.65), CW, Inches(0.45),
-             subtitle, size=14, color=LGRAY, italic=True)
+    if sub:
+        _box(slide, LM, Inches(1.65), CW, Inches(0.42),
+             sub, size=13, color=LGRAY, italic=True)
+
+def _card(slide, l, t, w, h, heading, body, hc=GOLD, bc=LGRAY, hs=12, bs=10, border=GOLD):
+    _rect(slide, l, t, w, h, MGRAY, border)
+    pad = Inches(0.12)
+    _box(slide, l+pad, t+pad, w-pad*2, Inches(0.38),
+         heading, size=hs, bold=True, color=hc)
+    _box(slide, l+pad, t+Inches(0.42), w-pad*2, h-Inches(0.54),
+         body, size=bs, color=bc, wrap=True)
 
 
-def _card(slide, left, top, width, height, heading, body, head_size=13, body_size=11):
-    _rect(slide, left, top, width, height, MGRAY, GOLD)
-    inner_pad = Inches(0.12)
-    tf = _box(slide, left + inner_pad, top + inner_pad,
-              width - inner_pad * 2, Inches(0.34),
-              heading, size=head_size, bold=True, color=GOLD)
-    _box(slide, left + inner_pad, top + Inches(0.38),
-         width - inner_pad * 2, height - Inches(0.50),
-         body, size=body_size, color=LGRAY, word_wrap=True)
+# ── Slides ───────────────────────────────────────────────────────────────────
 
-
-def _bullet_block(slide, items, left, top, width, height,
-                  bullet="▸", size=14, gap=Inches(0.38)):
-    y = top
-    for item in items:
-        _box(slide, left, y, width, gap,
-             f"{bullet}  {item}", size=size, color=WHITE, word_wrap=True)
-        y += gap
-
-
-# ── Individual Slide Builders ───────────────────────────────────────────────
-
-def slide_01_cover(prs):
+def s01_cover(prs):
     s = _blank(prs); _bg(s)
-    # Thick gold bar top
-    _rect(s, 0, 0, W, Inches(0.12), GOLD)
-    # Main title
-    _box(s, LM, Inches(1.0), CW, Inches(1.8),
-         "ICDEV™", size=80, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-    _box(s, LM, Inches(2.7), CW, Inches(0.7),
-         "The AI Lab That Builds AI Labs", size=28, bold=True,
-         color=WHITE, align=PP_ALIGN.CENTER)
-    _box(s, LM, Inches(3.4), CW, Inches(0.5),
-         "Adopt vs. Build  ·  Executive Briefing", size=16,
-         color=LGRAY, align=PP_ALIGN.CENTER, italic=True)
-    # Divider line
-    _rect(s, Inches(3.5), Inches(4.05), Inches(6.33), Inches(0.03), GOLD)
-    # Stats strip
-    stats = ["42 Compliance Frameworks", "15 AI Agents", "12 Design Canvases",
-             "530+ Deterministic Tools", "IL4+ Ready"]
-    col_w = CW / len(stats)
-    for i, stat in enumerate(stats):
-        _box(s, LM + col_w * i, Inches(4.15), col_w, Inches(0.5),
-             stat, size=11, color=LGRAY, align=PP_ALIGN.CENTER)
-    _box(s, LM, Inches(4.7), CW, Inches(0.35),
-         "May 2026  ·  CONFIDENTIAL", size=10, color=MGRAY, align=PP_ALIGN.CENTER)
-    # Thick gold bar bottom
-    _rect(s, 0, H - Inches(0.12), W, Inches(0.12), GOLD)
+    _rect(s, 0, 0, W, Inches(0.1), GOLD)
+    _rect(s, 0, H-Inches(0.1), W, Inches(0.1), GOLD)
 
+    _box(s, LM, Inches(0.9), CW, Inches(1.9),
+         "A System That\nBuilds Systems.",
+         size=52, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
-def slide_02_problem(prs):
-    s = _blank(prs); _bg(s)
-    _title_area(s, "The Problem Every Government Program Faces")
-    _footer(s); _slide_num(s, 2)
+    _box(s, LM, Inches(2.85), CW, Inches(0.55),
+         "ICDEV™  ·  The Developer Platform for Government AI",
+         size=18, color=WHITE, align=PP_ALIGN.CENTER)
 
-    items = [
-        ("⏱  12–18 Months",
-         "Programs spend over a year and millions of dollars before writing a single line of production code — "
-         "just to get an Authority to Operate (ATO)."),
-        ("🔒  Compliance Discovered Late",
-         "Security and compliance are identified after development — forcing costly redesigns, missed deadlines, "
-         "and emergency POAM entries that follow the system for its entire lifecycle."),
-        ("🧠  Expert Bottlenecks",
-         "One ISSO. One security architect. One CI/CD engineer. Any one of them on leave or departed "
-         "can stall an entire program. Knowledge lives in people, not in systems."),
-    ]
-    y = Inches(2.05)
-    for icon_label, body in items:
-        _rect(s, LM, y, CW, Inches(1.35), MGRAY, GOLD)
-        _box(s, LM + Inches(0.18), y + Inches(0.1), Inches(2.8), Inches(0.45),
-             icon_label, size=15, bold=True, color=GOLD)
-        _box(s, LM + Inches(0.18), y + Inches(0.52), CW - Inches(0.36), Inches(0.75),
-             body, size=12, color=LGRAY, word_wrap=True)
-        y += Inches(1.50)
+    _rect(s, Inches(3.8), Inches(3.55), Inches(5.73), Inches(0.03), GOLD)
 
-    _box(s, LM, Inches(6.65), CW, Inches(0.40),
-         "These are not edge cases. They are the default experience for government software programs today.",
-         size=11, italic=True, color=GOLD, align=PP_ALIGN.CENTER)
-
-
-def slide_03_question(prs):
-    s = _blank(prs); _bg(s)
-    _footer(s); _slide_num(s, 3)
-
-    _box(s, LM, TM, CW, Inches(0.8),
-         "The Decision", size=36, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-    _gold_bar(s, Inches(0.85), Inches(0.04))
-
-    _box(s, LM, Inches(1.1), CW, Inches(0.9),
-         "Build from scratch — or adopt a platform that's already solved it?",
-         size=22, color=WHITE, align=PP_ALIGN.CENTER, italic=True)
-
-    col_w = Inches(5.8)
-    gap   = Inches(0.3)
-    left1 = LM
-    left2 = LM + col_w + gap
-
-    # Build column
-    _rect(s, left1, Inches(2.1), col_w, Inches(4.5), MGRAY, RED)
-    _box(s, left1 + Inches(0.15), Inches(2.2), col_w - Inches(0.3), Inches(0.5),
-         "Build From Scratch", size=16, bold=True, color=RED, align=PP_ALIGN.CENTER)
-    build_items = [
-        "12–18 months before first ATO",
-        "Compliance mapped after the code is written",
-        "Expert knowledge locked in individuals",
-        "Each new system = new ATO from zero",
-        "No crosswalk between frameworks",
-        "Legacy modernization effectively impossible",
-        "No AI governance built in",
-    ]
-    y = Inches(2.75)
-    for item in build_items:
-        _box(s, left1 + Inches(0.15), y, col_w - Inches(0.3), Inches(0.38),
-             f"✗  {item}", size=11, color=LGRAY)
-        y += Inches(0.42)
-
-    # Adopt column
-    _rect(s, left2, Inches(2.1), col_w, Inches(4.5), MGRAY, GREEN)
-    _box(s, left2 + Inches(0.15), Inches(2.2), col_w - Inches(0.3), Inches(0.5),
-         "Adopt ICDEV™", size=16, bold=True, color=GREEN, align=PP_ALIGN.CENTER)
-    adopt_items = [
-        "ATO in 1–3 months",
-        "Compliance automated on first build",
-        "15 AI agents replace expert dependency",
-        "42-framework crosswalk — implement once",
-        "Living applications that self-improve",
-        "7Rs modernization pipeline built in",
-        "OMB M-25-21 · NIST AI RMF baked in",
-    ]
-    y = Inches(2.75)
-    for item in adopt_items:
-        _box(s, left2 + Inches(0.15), y, col_w - Inches(0.3), Inches(0.38),
-             f"✓  {item}", size=11, color=LGRAY)
-        y += Inches(0.42)
-
-
-def slide_04_what_is_icdev(prs):
-    s = _blank(prs); _bg(s)
-    _title_area(s, "What is ICDEV™?", "Intelligent Certified Development — a meta-builder for government software")
-    _footer(s); _slide_num(s, 4)
-
-    _box(s, LM, Inches(2.15), CW, Inches(0.55),
-         "Plain English Requirements  →  ATO-Ready System",
-         size=20, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-
-    _box(s, LM, Inches(2.7), CW, Inches(0.45),
-         '"One developer built ICDEV™.  Imagine what your team could do."',
-         size=14, italic=True, color=LGRAY, align=PP_ALIGN.CENTER)
+    _box(s, LM, Inches(3.7), CW, Inches(0.45),
+         "Adopt vs. Build  ·  Executive Briefing  ·  May 2026",
+         size=12, color=LGRAY, align=PP_ALIGN.CENTER, italic=True)
 
     stats = [
-        ("42", "Compliance\nFrameworks"),
-        ("15", "AI Agents"),
         ("12", "Design\nCanvases"),
+        ("15", "AI Agents"),
         ("530+", "Deterministic\nTools"),
-        ("588", "Database\nTables"),
         ("6", "Supported\nLanguages"),
+        ("100+", "Developers\nTrained Year‑1"),
     ]
-    box_w = CW / len(stats) - Inches(0.1)
-    y = Inches(3.25)
-    for i, (num, label) in enumerate(stats):
-        x = LM + i * (box_w + Inches(0.1))
-        _rect(s, x, y, box_w, Inches(2.5), MGRAY, GOLD)
-        _box(s, x, y + Inches(0.25), box_w, Inches(0.9),
-             num, size=36, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-        _box(s, x, y + Inches(1.15), box_w, Inches(0.8),
-             label, size=11, color=LGRAY, align=PP_ALIGN.CENTER)
+    sw = CW / len(stats) - Inches(0.08)
+    for i, (num, lbl) in enumerate(stats):
+        x = LM + i*(sw+Inches(0.08))
+        _rect(s, x, Inches(4.3), sw, Inches(1.8), MGRAY, GOLD)
+        _box(s, x, Inches(4.38), sw, Inches(0.75),
+             num, size=30, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+        _box(s, x, Inches(5.12), sw, Inches(0.75),
+             lbl, size=10, color=LGRAY, align=PP_ALIGN.CENTER)
 
-    _box(s, LM, Inches(6.1), CW, Inches(0.45),
-         "FORGE Framework  ·  ANVIL Workflow  ·  Apache 2.0  ·  AWS GovCloud  ·  IL4+",
-         size=11, color=MGRAY, align=PP_ALIGN.CENTER)
+    _box(s, LM, Inches(6.4), CW, Inches(0.35),
+         "Compliance artifacts generated automatically. ATO is the byproduct, not the goal.",
+         size=10, color=MGRAY, align=PP_ALIGN.CENTER, italic=True)
 
 
-def slide_05_forge(prs):
+def s02_developer_reality(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "The FORGE Framework", "Six layers that separate probabilistic AI reasoning from deterministic execution")
-    _footer(s); _slide_num(s, 5)
+    _title(s, "What Developers Are Dealing With Today",
+           "Before they write a single line of mission code.")
+    _footer(s, 2)
+
+    problems = [
+        ("Months of setup before the first feature",
+         "Infrastructure provisioning, compliance scaffolding, CI/CD pipeline wiring, "
+         "dependency audits — all before a single line of mission code is written. "
+         "Developers spend more time getting ready to build than actually building."),
+        ("Knowledge that lives in people, not systems",
+         "Security architect, ISSO, infrastructure engineer, CI/CD expert — remove any one "
+         "person and the program stalls. Every team re-invents the same wheel on every program."),
+        ("Complexity that grows faster than teams can absorb",
+         "Modern government software requires multi-cloud IaC, AI governance, supply chain integrity, "
+         "zero-trust architecture, and six languages — simultaneously. "
+         "No individual team can master all of it."),
+    ]
+
+    y = Inches(2.1)
+    for heading, body in problems:
+        _rect(s, LM, y, CW, Inches(1.4), MGRAY, GOLD)
+        _box(s, LM+Inches(0.18), y+Inches(0.1), CW-Inches(0.36), Inches(0.42),
+             heading, size=15, bold=True, color=GOLD)
+        _box(s, LM+Inches(0.18), y+Inches(0.52), CW-Inches(0.36), Inches(0.78),
+             body, size=12, color=LGRAY, wrap=True)
+        y += Inches(1.55)
+
+    _box(s, LM, Inches(6.75), CW, Inches(0.35),
+         "The problem is not that developers lack skill. The problem is that they lack a platform.",
+         size=12, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+
+
+def s03_the_vision(prs):
+    s = _blank(prs); _bg(s)
+    _footer(s, 3)
+
+    _box(s, LM, Inches(0.45), CW, Inches(1.4),
+         "What if your platform could build\nyour next platform?",
+         size=38, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+
+    _gold_bar(s, Inches(1.95), Inches(0.04))
+
+    _box(s, LM, Inches(2.1), CW, Inches(0.55),
+         "ICDEV™ is a meta-builder. It generates complete, working systems "
+         "from plain English — systems that themselves can build features using the same engine.",
+         size=14, color=LGRAY, align=PP_ALIGN.CENTER, wrap=True)
+
+    flow = [
+        ("Plain English\nRequirements", LGRAY),
+        ("12 Design\nCanvases", GOLD),
+        ("FORGE\nWorkflow", BLUE),
+        ("ANVIL\nBuild Cycle", GREEN),
+        ("Working\nSystem", GOLD),
+    ]
+    fw = (CW - Inches(0.6)) / len(flow)
+    y = Inches(2.85)
+    x = LM
+    for label, clr in flow:
+        _rect(s, x, y, fw, Inches(1.35), MGRAY, clr)
+        _box(s, x, y+Inches(0.3), fw, Inches(0.75),
+             label, size=13, bold=True, color=clr, align=PP_ALIGN.CENTER)
+        x += fw
+        if x < LM + CW - fw:
+            _box(s, x, y+Inches(0.48), Inches(0.15), Inches(0.45),
+                 "→", size=18, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+            x += Inches(0.15)
+
+    three = [
+        ("Canvases are\nyour design environment",
+         "12 visual builders where developers think, design, "
+         "and execute across every domain — network, security, data, AI, pipeline, and more."),
+        ("Digital Twin\nsimulates the outcome",
+         "Before writing a line of code, run a 6-dimension simulation. "
+         "Get three Courses of Action with cost, schedule, and risk projections."),
+        ("Use Cases\nlaunch in minutes",
+         "Pre-built expert workflows for real government problems — "
+         "modernization, budget execution, doc refresh — with canvas wiring done for you."),
+    ]
+    tw = (CW - Inches(0.2)) / 3
+    y = Inches(4.45)
+    for i, (heading, body) in enumerate(three):
+        x = LM + i*(tw+Inches(0.1))
+        _rect(s, x, y, tw, Inches(2.3), MGRAY, [GOLD, BLUE, TEAL][i])
+        _box(s, x+Inches(0.12), y+Inches(0.12), tw-Inches(0.24), Inches(0.6),
+             heading, size=13, bold=True, color=[GOLD, BLUE, TEAL][i])
+        _box(s, x+Inches(0.12), y+Inches(0.75), tw-Inches(0.24), Inches(1.38),
+             body, size=10, color=LGRAY, wrap=True)
+
+
+def s04_forge(prs):
+    s = _blank(prs); _bg(s)
+    _title(s, "FORGE — The Engine Underneath",
+           "Six layers that separate what to build from how to build it.")
+    _footer(s, 4)
 
     layers = [
-        ("Goals",         "Process definitions\nWhat to achieve,\nwhich tools, outputs"),
-        ("Orchestration", "AI reasoning layer\nClaude decides order,\nhandles errors"),
-        ("Tools",         "530+ Python scripts\nOne job each\nDeterministic"),
-        ("Args",          "YAML/JSON config\nChange behavior\nwithout editing code"),
-        ("Context",       "Static reference\nCompliance catalogs\nTone rules"),
-        ("Hard Prompts",  "Reusable LLM\ninstruction\ntemplates"),
+        ("Goals",        "What to achieve.\nWhich tools. Expected\noutputs. 66 workflows."),
+        ("Orchestration","AI reasons here.\nDecides tool order.\nHandles errors."),
+        ("Tools",        "530+ Python scripts.\nOne job each.\nFully deterministic."),
+        ("Args",         "YAML/JSON config.\nChange behavior\nwithout editing code."),
+        ("Context",      "Static reference.\nCompliance catalogs.\nTone and standards."),
+        ("Hard Prompts", "Reusable LLM\ninstruction templates\nacross all workflows."),
     ]
-    box_w = CW / len(layers) - Inches(0.08)
+    lw = (CW - Inches(0.25)) / len(layers)
     y = Inches(2.05)
     for i, (name, desc) in enumerate(layers):
-        x = LM + i * (box_w + Inches(0.08))
-        _rect(s, x, y, box_w, Inches(2.8), MGRAY, GOLD)
-        _box(s, x, y + Inches(0.15), box_w, Inches(0.55),
-             name, size=14, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-        _rect(s, x + Inches(0.1), y + Inches(0.72), box_w - Inches(0.2), Inches(0.03), GOLD)
-        _box(s, x + Inches(0.08), y + Inches(0.82), box_w - Inches(0.16), Inches(1.85),
+        x = LM + i*(lw+Inches(0.05))
+        _rect(s, x, y, lw, Inches(2.9), MGRAY, GOLD)
+        _box(s, x+Inches(0.08), y+Inches(0.12), lw-Inches(0.16), Inches(0.5),
+             name, size=13, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+        _rect(s, x+Inches(0.1), y+Inches(0.65), lw-Inches(0.2), Inches(0.03), GOLD)
+        _box(s, x+Inches(0.08), y+Inches(0.75), lw-Inches(0.16), Inches(1.95),
              desc, size=10, color=LGRAY, align=PP_ALIGN.CENTER)
 
-    _box(s, LM, Inches(5.10), CW, Inches(0.55),
-         "Why It Matters", size=14, bold=True, color=GOLD)
-    _box(s, LM, Inches(5.65), CW, Inches(0.90),
-         "LLMs are probabilistic. At 90% accuracy per step, a 5-step workflow degrades to ~59% end-to-end (0.9⁵). "
-         "FORGE confines AI reasoning to orchestration only — all execution is deterministic Python. "
-         "Result: >95% reliable, auditable, air-gap-safe delivery.",
-         size=12, color=LGRAY, word_wrap=True)
+    _box(s, LM, Inches(5.15), CW, Inches(0.5),
+         "Why this matters", size=13, bold=True, color=GOLD)
+    _box(s, LM, Inches(5.68), CW, Inches(0.9),
+         "LLMs are probabilistic. At 90% accuracy per step, a 5-step workflow degrades to ~59% end-to-end. "
+         "FORGE confines AI reasoning to orchestration only. Every tool call is deterministic Python. "
+         "Developers get reliable, repeatable, auditable delivery — not prompt roulette.",
+         size=12, color=LGRAY, wrap=True)
 
 
-def slide_06_anvil(prs):
+def s05_anvil(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "The ANVIL Workflow", "Five-phase TDD cycle — every feature, every time, with compliance baked in")
-    _footer(s); _slide_num(s, 6)
+    _title(s, "ANVIL — Every Feature, Fully Assembled",
+           "Five-phase build cycle. Runs automatically on every feature request.")
+    _footer(s, 5)
 
     phases = [
-        ("A\nrchitect",    "Design & acceptance\ncriteria. System\narchitecture defined."),
-        ("N\navigate",     "Map to existing tools\nand patterns. No\nnew code without cause."),
-        ("V\nerify",       "Write failing tests\nfirst. RED phase.\nSpec is the test."),
-        ("I\nntegrate",    "Generate implementation.\nGREEN phase. Tests\nmust pass."),
-        ("L\naunch",       "Refactor, security scan,\ncompliance map,\nmerge to main."),
+        ("Architect",  "Design and acceptance\ncriteria defined up\nfront. No surprises.", BLUE),
+        ("Navigate",   "Map to existing tools\nand patterns. Reuse\nbefore you build.", BLUE),
+        ("Verify",     "Failing tests written\nfirst. The spec IS\nthe test. (RED)", RED),
+        ("Integrate",  "Implementation\ngenerated until every\ntest passes. (GREEN)", GREEN),
+        ("Launch",     "Refactor, scan,\ncompliance map,\nmerge to main.", GOLD),
     ]
-    arrow_w = Inches(0.35)
-    box_w   = (CW - arrow_w * 4) / 5
-    y_box   = Inches(2.05)
-    colors  = [BLUE, BLUE, RED, GREEN, GOLD]
-
-    x = LM
-    for i, (name, desc) in enumerate(phases):
-        _rect(s, x, y_box, box_w, Inches(3.2), MGRAY, colors[i])
-        _box(s, x, y_box + Inches(0.12), box_w, Inches(0.7),
-             name.replace("\n", ""), size=16, bold=True, color=colors[i], align=PP_ALIGN.CENTER)
-        _rect(s, x + Inches(0.1), y_box + Inches(0.85), box_w - Inches(0.2), Inches(0.03), colors[i])
-        _box(s, x + Inches(0.08), y_box + Inches(0.98), box_w - Inches(0.16), Inches(2.0),
-             desc, size=10, color=LGRAY, align=PP_ALIGN.CENTER)
-        x += box_w
+    pw = (CW - Inches(0.6)) / len(phases)
+    y = Inches(2.1)
+    for i, (name, desc, clr) in enumerate(phases):
+        x = LM + i*(pw+Inches(0.15))
+        _rect(s, x, y, pw, Inches(3.2), MGRAY, clr)
+        _box(s, x, y+Inches(0.12), pw, Inches(0.5),
+             name, size=16, bold=True, color=clr, align=PP_ALIGN.CENTER)
+        _rect(s, x+Inches(0.1), y+Inches(0.65), pw-Inches(0.2), Inches(0.03), clr)
+        _box(s, x+Inches(0.08), y+Inches(0.78), pw-Inches(0.16), Inches(2.1),
+             desc, size=11, color=LGRAY, align=PP_ALIGN.CENTER)
         if i < 4:
-            _box(s, x, y_box + Inches(1.4), arrow_w, Inches(0.5),
-                 "→", size=22, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-            x += arrow_w
+            _box(s, x+pw+Inches(0.02), y+Inches(1.45), Inches(0.12), Inches(0.4),
+                 "→", size=16, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
-    _box(s, LM, Inches(5.55), CW, Inches(0.45),
-         "Compliance baked in at every phase — not bolted on after.",
-         size=14, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-    _box(s, LM, Inches(6.05), CW, Inches(0.55),
-         "Every ANVIL run produces: working code · passing tests · SBOM · compliance evidence · security scan report",
-         size=11, color=LGRAY, align=PP_ALIGN.CENTER)
+    outputs = [
+        "Working, tested code in 6 languages",
+        "Security scan report (SAST, deps, secrets)",
+        "SBOM and compliance artifacts — automatically",
+        "CI/CD pipeline wired and passing",
+        "Deployment-ready container image",
+    ]
+    _box(s, LM, Inches(5.55), CW, Inches(0.38),
+         "Every ANVIL run produces:", size=12, bold=True, color=GOLD)
+    ow = CW / len(outputs)
+    for i, out in enumerate(outputs):
+        _box(s, LM+i*ow, Inches(5.95), ow-Inches(0.05), Inches(0.55),
+             f"▸  {out}", size=10, color=LGRAY)
 
 
-def slide_07_canvases(prs):
+def s06_canvases_overview(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "12 Design Canvases", "Design visually. Query naturally. Comply automatically.")
-    _footer(s); _slide_num(s, 7)
+    _title(s, "12 Design Canvases — Your Thinking Environment",
+           "Design visually. Query in plain English. Execute with a click.")
+    _footer(s, 6)
 
     canvases = [
-        ("NDC",  "Network Design",        "Cloud topology, FedRAMP/IL/CMMC mapping, COTS cost modeling"),
-        ("SDC",  "Security Design",        "STRIDE threat modeling, MITRE ATT&CK, SSP/POAM generator"),
-        ("PDC",  "Pipeline Design",        "Visual CI/CD builder, SLSA assessment, OWASP coverage"),
-        ("BDC",  "Boundary Design",        "ATO boundary, ISA lifecycle, PPS matrix auto-generation"),
-        ("DDC",  "Data Design",            "Data classification zones, PII/PHI/CUI tracking, lineage"),
-        ("ODC",  "Observability Design",   "Detection coverage, Sigma rules, MITRE ATT&CK detection"),
-        ("IDC",  "Infrastructure Design",  "IaC resource design, 6 CSPs, Terraform generation"),
-        ("AADC", "Agentic AI Design",      "7 solution packs, 40+ node types, AI risk register"),
-        ("QDC",  "Quality Design",         "Code quality gates, UQS scoring, NIST SA-11 mapping"),
-        ("MDC",  "Migration Design",       "7R assessment, strangler fig mapping, ATO bridge"),
-        ("AIMC", "AI/ML Model Design",     "Foundation model catalog, DoD RAI compliance, IL assessment"),
-        ("MSN",  "Mission Canvas",         "Strategic mission planning, operational design, COA support"),
+        ("NDC",  "Network Design",        "Topology, multi-cloud, compliance overlay, cost modeling"),
+        ("SDC",  "Security Design",       "Threat modeling, ATT&CK mapping, gap detection, auto-fix"),
+        ("PDC",  "Pipeline Design",       "Visual CI/CD, SLSA, OWASP coverage, cost estimate"),
+        ("BDC",  "Boundary Design",       "System boundary, interface agreements, configuration control"),
+        ("DDC",  "Data Design",           "Classification zones, PII/CUI tracking, data lineage"),
+        ("ODC",  "Observability Design",  "Detection coverage, Sigma rules, alerting topology"),
+        ("IDC",  "Infrastructure Design", "IaC resources, 6 cloud providers, Terraform generation"),
+        ("AADC", "Agentic AI Design",     "7 solution packs, 40+ node types, AI risk register"),
+        ("QDC",  "Quality Design",        "Code quality gates, test coverage, maintainability scoring"),
+        ("MDC",  "Migration Design",      "7R assessment, strangler fig tracking, cutover planning"),
+        ("AIMC", "AI/ML Model Design",    "Foundation model catalog, deployment patterns, IL levels"),
+        ("MSN",  "Mission Canvas",        "Strategic planning, operational design, COA visualization"),
     ]
-
-    cols, rows = 4, 3
-    box_w = (CW - Inches(0.15) * (cols - 1)) / cols
-    box_h = Inches(1.32)
-    y_start = Inches(2.05)
-
+    cols, bw = 4, (CW - Inches(0.3)) / 4
+    bh = Inches(1.28)
+    y0 = Inches(2.05)
     for i, (code, name, desc) in enumerate(canvases):
-        col = i % cols
-        row = i // cols
-        x = LM + col * (box_w + Inches(0.15))
-        y = y_start + row * (box_h + Inches(0.1))
-        _rect(s, x, y, box_w, box_h, MGRAY, GOLD)
-        _box(s, x + Inches(0.1), y + Inches(0.08), box_w - Inches(0.2), Inches(0.38),
+        col, row = i % cols, i // cols
+        x = LM + col*(bw+Inches(0.1))
+        y = y0 + row*(bh+Inches(0.08))
+        _rect(s, x, y, bw, bh, MGRAY, GOLD)
+        _box(s, x+Inches(0.1), y+Inches(0.08), bw-Inches(0.2), Inches(0.38),
              f"{code}  ·  {name}", size=11, bold=True, color=GOLD)
-        _box(s, x + Inches(0.1), y + Inches(0.5), box_w - Inches(0.2), Inches(0.72),
-             desc, size=9, color=LGRAY, word_wrap=True)
+        _box(s, x+Inches(0.1), y+Inches(0.5), bw-Inches(0.2), Inches(0.68),
+             desc, size=9, color=LGRAY, wrap=True)
 
-    _box(s, LM, Inches(6.67), CW, Inches(0.38),
-         "All 12 canvases: Natural-language IQE queries · Knowledge graph indexing · Air-gap safe · No CDN dependencies",
+    _box(s, LM, Inches(6.72), CW, Inches(0.35),
+         "Every canvas: natural-language IQE queries · knowledge graph indexing · "
+         "simulation-ready · air-gap safe",
          size=10, color=MGRAY, align=PP_ALIGN.CENTER)
 
 
-def slide_08_chat(prs):
+def s07_canvas_in_action(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "Unified Chat — ICDEV in Action",
-                 "Not a chatbot. A structured intake engine with AI governance baked in.")
-    _footer(s); _slide_num(s, 8)
+    _title(s, "A Canvas in Action — Network Design (NDC)",
+           "From blank topology to compliant architecture in one session.")
+    _footer(s, 7)
 
-    # 3-pane layout diagram using rectangles
-    left_w   = Inches(2.8)
-    center_w = Inches(5.4)
-    right_w  = Inches(3.6)
-    pane_h   = Inches(4.0)
-    pane_y   = Inches(2.05)
-    gap      = Inches(0.12)
-
-    x_l = LM
-    x_c = x_l + left_w + gap
-    x_r = x_c + center_w + gap
-
-    _rect(s, x_l, pane_y, left_w, pane_h, MGRAY, GOLD)
-    _rect(s, x_c, pane_y, center_w, pane_h, MGRAY, BLUE)
-    _rect(s, x_r, pane_y, right_w, pane_h, MGRAY, GREEN)
-
-    # Left pane content
-    _box(s, x_l + Inches(0.1), pane_y + Inches(0.1), left_w - Inches(0.2), Inches(0.38),
-         "Contexts + Use Cases", size=11, bold=True, color=GOLD)
-    left_items = ["+ New Chat", "▸ General Modernization", "▸ Budget Sprint", "▸ Doc Refresh",
-                  "▸ Custom Context 1", "▸ Custom Context 2"]
-    y = pane_y + Inches(0.55)
-    for item in left_items:
-        _box(s, x_l + Inches(0.1), y, left_w - Inches(0.2), Inches(0.38),
-             item, size=10, color=LGRAY)
-        y += Inches(0.40)
-
-    # Center pane
-    _box(s, x_c + Inches(0.1), pane_y + Inches(0.1), center_w - Inches(0.2), Inches(0.38),
-         "Message Stream", size=11, bold=True, color=BLUE)
-    msgs = [("User", "What's the migration path for our legacy COBOL system?"),
-            ("ICDEV™", "Based on your inventory, I recommend a Replatform strategy (R4)..."),
-            ("User", "What does that mean for our current ATO?"),
-            ("ICDEV™", "I've pre-loaded 12 ATO bridge requirements. Readiness: 73%.")]
-    y = pane_y + Inches(0.55)
-    for who, msg in msgs:
-        c = GOLD if who == "User" else GREEN
-        _box(s, x_c + Inches(0.1), y, center_w - Inches(0.2), Inches(0.22),
-             who, size=9, bold=True, color=c)
-        _box(s, x_c + Inches(0.1), y + Inches(0.22), center_w - Inches(0.2), Inches(0.42),
-             msg, size=9, color=LGRAY, word_wrap=True)
-        y += Inches(0.75)
-    _rect(s, x_c + Inches(0.1), pane_y + pane_h - Inches(0.55),
-          center_w - Inches(0.2), Inches(0.38), NAVY, BLUE)
-    _box(s, x_c + Inches(0.15), pane_y + pane_h - Inches(0.50),
-         center_w - Inches(0.3), Inches(0.30),
-         "Send a message...  [↑ Send]", size=9, color=MGRAY)
-
-    # Right pane
-    _box(s, x_r + Inches(0.1), pane_y + Inches(0.1), right_w - Inches(0.2), Inches(0.38),
-         "RICOAS Readiness", size=11, bold=True, color=GREEN)
-    right_items = ["Readiness Score: 73 / 100", "Completeness: ✓ 8/12 reqs",
-                   "Clarity: ✓ High", "Compliance: ⚠ ATO Bridge",
-                   "AI Governance: ✓ Active",
-                   "──────────────────",
-                   "AI Governance Pillars",
-                   "Transparency: ✓",
-                   "Accountability: ✓",
-                   "Fairness: ⚠ Pending"]
-    y = pane_y + Inches(0.55)
-    for item in right_items:
-        _box(s, x_r + Inches(0.1), y, right_w - Inches(0.2), Inches(0.34),
-             item, size=9, color=LGRAY)
-        y += Inches(0.36)
-
-    # Callouts below
-    callouts = [
-        ("Typed Contexts", "Every chat carries project metadata, use case, and compliance scope"),
-        ("AI Governance", "6-pillar posture sidebar: Transparency, Accountability, Fairness, Safety, XAI, Privacy"),
-        ("Intervention", "Operator injects mid-stream directions to guide the agent during processing"),
+    steps = [
+        ("1  Drag + Drop",
+         "Developer places cloud resources on the canvas: VPCs, subnets, load balancers, "
+         "managed services. No Terraform yet. Just thinking visually.",
+         BLUE),
+        ("2  Ask a Question",
+         '"What\'s my blast radius if the east subnet goes down?"  '
+         "IQE runs a natural language query over the live diagram. Answer in <1 second.",
+         TEAL),
+        ("3  Run a Simulation",
+         "Click Simulate. Digital Twin scores the design across architecture, cost, and risk dimensions. "
+         "Recommendations surface inline.",
+         GOLD),
+        ("4  Export + Execute",
+         "Export to Terraform, Ansible, or K8s manifests with one click. "
+         "ANVIL wires the CI/CD pipeline. The canvas becomes the system.",
+         GREEN),
     ]
-    cw = CW / 3 - Inches(0.1)
+    sw = (CW - Inches(0.3)) / 4
+    y = Inches(2.1)
+    for i, (title, body, clr) in enumerate(steps):
+        x = LM + i*(sw+Inches(0.1))
+        _rect(s, x, y, sw, Inches(3.5), MGRAY, clr)
+        _box(s, x+Inches(0.1), y+Inches(0.12), sw-Inches(0.2), Inches(0.5),
+             title, size=13, bold=True, color=clr)
+        _rect(s, x+Inches(0.1), y+Inches(0.65), sw-Inches(0.2), Inches(0.03), clr)
+        _box(s, x+Inches(0.1), y+Inches(0.78), sw-Inches(0.2), Inches(2.55),
+             body, size=10, color=LGRAY, wrap=True)
+
+    _box(s, LM, Inches(5.8), CW, Inches(0.45),
+         "Same pattern works across all 12 canvases.", size=14, bold=True,
+         color=GOLD, align=PP_ALIGN.CENTER)
+    _box(s, LM, Inches(6.3), CW, Inches(0.55),
+         "Design once on the canvas — ICDEV™ generates IaC, pipeline config, test scaffolding, "
+         "and compliance evidence automatically. Developers ship. The platform handles the rest.",
+         size=11, color=LGRAY, align=PP_ALIGN.CENTER, wrap=True)
+
+
+def s08_chat_use_cases(prs):
+    s = _blank(prs); _bg(s)
+    _title(s, "Unified Chat — Intent Becomes Software",
+           "Not a chatbot. A structured intake engine that wires canvases, agents, and tools for you.")
+    _footer(s, 8)
+
+    # 3-pane mockup
+    lw, cw2, rw = Inches(2.7), Inches(5.5), Inches(3.6)
+    ph, py = Inches(3.9), Inches(2.1)
+    gap = Inches(0.12)
+    xl, xc, xr = LM, LM+lw+gap, LM+lw+gap+cw2+gap
+
+    _rect(s, xl, py, lw, ph, MGRAY, GOLD)
+    _rect(s, xc, py, cw2, ph, MGRAY, BLUE)
+    _rect(s, xr, py, rw, ph, MGRAY, TEAL)
+
+    _box(s, xl+Inches(0.1), py+Inches(0.1), lw-Inches(0.2), Inches(0.38),
+         "Common Use Cases", size=11, bold=True, color=GOLD)
+    for j, uc in enumerate(["+ New Chat", "▸ General Modernization",
+                             "▸ Year-End Budget Sprint", "▸ Doc Refresh",
+                             "▸ Custom Intake..."]):
+        _box(s, xl+Inches(0.12), py+Inches(0.55)+j*Inches(0.42),
+             lw-Inches(0.24), Inches(0.38), uc, size=10,
+             color=GOLD if j == 1 else LGRAY)
+
+    _box(s, xc+Inches(0.12), py+Inches(0.1), cw2-Inches(0.24), Inches(0.38),
+         "Message Stream", size=11, bold=True, color=BLUE)
+    for j, (who, msg) in enumerate([
+        ("You",    "We have a COBOL system that needs modernization."),
+        ("ICDEV",  "Got it. I've pre-loaded 12 modernization requirements and wired the Migration "
+                   "Canvas + Digital Twin. Readiness score: 78%. Shall I run a simulation?"),
+        ("You",    "Yes, show me the three options."),
+        ("ICDEV",  "Running Digital Twin — 3 COAs ready. Speed: 1 PI. Balanced: 2 PI (recommended). "
+                   "Comprehensive: 4 PI. Sending to canvas now."),
+    ]):
+        c = GOLD if who == "You" else TEAL
+        _box(s, xc+Inches(0.12), py+Inches(0.55)+j*Inches(0.75),
+             cw2-Inches(0.24), Inches(0.22), who, size=9, bold=True, color=c)
+        _box(s, xc+Inches(0.12), py+Inches(0.77)+j*Inches(0.75),
+             cw2-Inches(0.24), Inches(0.45), msg, size=9, color=LGRAY, wrap=True)
+
+    _box(s, xr+Inches(0.12), py+Inches(0.1), rw-Inches(0.24), Inches(0.38),
+         "Live Context", size=11, bold=True, color=TEAL)
+    for j, item in enumerate(["Readiness: 78 / 100",
+                               "Requirements: 12 loaded",
+                               "Migration Canvas: active",
+                               "Digital Twin: ready",
+                               "Supply Chain: queued",
+                               "————————",
+                               "AI Governance: active",
+                               "Transparency: OK",
+                               "Fairness: OK"]):
+        _box(s, xr+Inches(0.12), py+Inches(0.55)+j*Inches(0.37),
+             rw-Inches(0.24), Inches(0.34), item, size=9, color=LGRAY)
+
+    callouts = [
+        ("Expert persona loaded automatically",
+         "Each use case launches with a specialized AI persona and pre-seeded requirements."),
+        ("Canvases wired on launch",
+         "Clicking a use case pre-configures Migration Canvas, Digital Twin, Supply Chain in one step."),
+        ("Readiness score keeps you honest",
+         "7-dimension scoring surfaces gaps before you build, not after you deploy."),
+    ]
+    cw3 = CW / 3 - Inches(0.1)
     y = Inches(6.15)
     for i, (title, body) in enumerate(callouts):
-        x = LM + i * (cw + Inches(0.1))
-        _box(s, x, y, cw, Inches(0.28), title, size=10, bold=True, color=GOLD)
-        _box(s, x, y + Inches(0.28), cw, Inches(0.40), body, size=9, color=LGRAY, word_wrap=True)
+        x = LM + i*(cw3+Inches(0.1))
+        _box(s, x, y, cw3, Inches(0.28), title, size=10, bold=True, color=GOLD)
+        _box(s, x, y+Inches(0.28), cw3, Inches(0.42), body, size=9, color=LGRAY, wrap=True)
 
 
-def slide_09_use_cases(prs):
+def s09_use_cases(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "Pre-Built Use Cases — Start in Minutes",
-                 "Expert AI personas, pre-loaded requirements, and canvas wiring — out of the box")
-    _footer(s); _slide_num(s, 9)
+    _title(s, "Three Use Cases. Real Problems. Minutes to Launch.",
+           "Pre-built expert workflows — requirements loaded, canvases wired, AI persona ready.")
+    _footer(s, 9)
 
     cases = [
-        (
-            "⚙  General Modernization",
-            "BADGE: AI Boost  ·  12 Pre-Loaded Requirements",
-            [
-                "7Rs framework (Retire → Re-architect)",
-                "Asset inventory + migration phasing",
-                "ATO continuity bridge maintained",
-                "Canvas wiring: Migration, Digital Twin,",
-                "  Supply Chain, Compliance",
-                "Output: phased migration plan with",
-                "  rollback runbooks",
-            ]
-        ),
-        (
-            "$  Year-End Budget Sprint",
-            "BADGE: RICOAS  ·  14 Pre-Loaded Requirements",
-            [
-                '"Spend it or lose it" procurement',
-                "BOM + IGCE + SOW generated in days",
-                "Tier 1 (execution-ready) vs Tier 2 (backup)",
-                "FAR/DFARS + NDAA §889 compliance",
-                "Canvas wiring: CPMP, Digital Twin,",
-                "  Supply Chain, Kanban",
-                "Output: CSV/XLSX BOM with lead times",
-            ]
-        ),
-        (
-            "📄  Crowd-Sourced Doc Refresh",
-            "BADGE: RAG + KG  ·  10 Pre-Loaded Requirements",
-            [
-                "Staleness detection + crowd voting",
-                "AI rebuild with role-weighted edits",
-                "Immutable audit trail per NIST AU",
-                "Auto-indexed to Knowledge Graph",
-                "  within 24 hrs of approval",
-                "Canvas wiring: Knowledge, RAG,",
-                "  Compliance, Audit",
-            ]
-        ),
+        ("General Modernization",
+         "12 requirements pre-loaded",
+         [
+             "Start: Describe your legacy system.",
+             "ICDEV wires Migration Canvas + Digital Twin.",
+             "Get 3 COAs: Speed / Balanced / Comprehensive.",
+             "7Rs classification: Retire → Re-architect.",
+             "ATO bridge maintained throughout.",
+             "Output: phased migration plan with",
+             "  rollback runbooks, IaC, and timeline.",
+         ],
+         GOLD),
+        ("Year-End Budget Sprint",
+         "14 requirements pre-loaded",
+         [
+             "Start: What do you need to spend before FY-end?",
+             "ICDEV generates BOM, IGCE, and SOW in minutes.",
+             "Tier 1 (execution-ready) vs Tier 2 (backup).",
+             "FAR/DFARS + Section 889 checked automatically.",
+             "Digital Twin projects budget vs. outcome.",
+             "Output: CSV/XLSX BOM with lead times,",
+             "  vendor quotes, and contract vehicles.",
+         ],
+         BLUE),
+        ("Crowd-Sourced Doc Refresh",
+         "10 requirements pre-loaded",
+         [
+             "Start: Which document is stale?",
+             "Staleness detected: dates, deprecated refs.",
+             "Role-weighted crowd voting on edits.",
+             "AI rebuilds approved sections.",
+             "Auto-indexed to Knowledge Graph in <24 hrs.",
+             "Output: version-controlled document with",
+             "  diff view and full audit trail.",
+         ],
+         TEAL),
     ]
 
-    cw = (CW - Inches(0.2)) / 3
-    for i, (title, badge, items) in enumerate(cases):
-        x = LM + i * (cw + Inches(0.1))
+    cw2 = (CW - Inches(0.2)) / 3
+    for i, (title, badge, items, clr) in enumerate(cases):
+        x = LM + i*(cw2+Inches(0.1))
         y = Inches(2.05)
-        _rect(s, x, y, cw, Inches(4.6), MGRAY, GOLD)
-        _box(s, x + Inches(0.12), y + Inches(0.1), cw - Inches(0.24), Inches(0.5),
-             title, size=13, bold=True, color=GOLD)
-        _box(s, x + Inches(0.12), y + Inches(0.62), cw - Inches(0.24), Inches(0.32),
-             badge, size=9, color=GOLD, italic=True)
-        _rect(s, x + Inches(0.12), y + Inches(0.95), cw - Inches(0.24), Inches(0.02), GOLD)
-        yy = y + Inches(1.05)
+        _rect(s, x, y, cw2, Inches(4.7), MGRAY, clr)
+        _box(s, x+Inches(0.12), y+Inches(0.12), cw2-Inches(0.24), Inches(0.48),
+             title, size=14, bold=True, color=clr)
+        _box(s, x+Inches(0.12), y+Inches(0.62), cw2-Inches(0.24), Inches(0.28),
+             badge, size=9, italic=True, color=GOLD)
+        _rect(s, x+Inches(0.12), y+Inches(0.95), cw2-Inches(0.24), Inches(0.03), clr)
+        yy = y + Inches(1.08)
         for item in items:
-            _box(s, x + Inches(0.12), yy, cw - Inches(0.24), Inches(0.40),
-                 f"• {item}", size=10, color=LGRAY, word_wrap=True)
+            _box(s, x+Inches(0.12), yy, cw2-Inches(0.24), Inches(0.4),
+                 f"▸  {item}", size=10, color=LGRAY, wrap=True)
             yy += Inches(0.44)
 
-    _box(s, LM, Inches(6.78), CW, Inches(0.32),
-         "Add new use cases by editing args/use_cases.yaml — zero Python required. Auto-seeds RICOAS requirements and wires canvases.",
-         size=10, color=MGRAY, align=PP_ALIGN.CENTER)
+    _box(s, LM, Inches(6.88), CW, Inches(0.28),
+         "Add new use cases by editing args/use_cases.yaml — zero Python required.",
+         size=10, color=MGRAY, align=PP_ALIGN.CENTER, italic=True)
 
 
-def slide_10_digital_twin(prs):
+def s10_digital_twin(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "Digital Program Twin",
-                 "Simulate before you commit. Three Courses of Action. Confidence-banded outcomes.")
-    _footer(s); _slide_num(s, 10)
+    _title(s, "Digital Program Twin — See the Future Before You Build It",
+           "Simulate outcomes across six dimensions before committing a single requirement.")
+    _footer(s, 10)
 
     dims = [
-        ("Architecture", "Components, API surface,\ncoupling, data flow"),
-        ("Compliance",   "Control coverage,\nPOAM projection, boundary tier"),
-        ("Supply Chain", "New dependencies,\nvendor risk, SBOM delta"),
-        ("Schedule",     "PERT estimates,\nMonte Carlo confidence"),
-        ("Cost",         "T-shirt roll-up,\ninfrastructure delta"),
-        ("Risk",         "Compound score,\nrisk interactions"),
+        ("Architecture", "Components, coupling,\nAPI surface, data flow"),
+        ("Compliance",   "Control coverage,\nboundary tier impact"),
+        ("Supply Chain", "Dependencies, vendors,\nSBOM delta, CVE risk"),
+        ("Schedule",     "PERT estimates, critical\npath, PI count"),
+        ("Cost",         "T-shirt roll-up, infra\ndelta, vendor licensing"),
+        ("Risk",         "Compound score, risk\ninteractions, mitigation"),
     ]
     dw = (CW - Inches(0.25)) / 6
     y = Inches(2.05)
     for i, (dim, desc) in enumerate(dims):
-        x = LM + i * (dw + Inches(0.05))
+        x = LM + i*(dw+Inches(0.05))
         _rect(s, x, y, dw, Inches(1.55), MGRAY, BLUE)
-        _box(s, x + Inches(0.06), y + Inches(0.1), dw - Inches(0.12), Inches(0.42),
+        _box(s, x+Inches(0.06), y+Inches(0.1), dw-Inches(0.12), Inches(0.42),
              dim, size=11, bold=True, color=BLUE, align=PP_ALIGN.CENTER)
-        _box(s, x + Inches(0.06), y + Inches(0.55), dw - Inches(0.12), Inches(0.85),
+        _box(s, x+Inches(0.06), y+Inches(0.58), dw-Inches(0.12), Inches(0.85),
              desc, size=9, color=LGRAY, align=PP_ALIGN.CENTER)
 
     _box(s, LM, Inches(3.73), CW, Inches(0.35),
-         "Monte Carlo: 10,000 iterations  →  P10 (optimistic) / P50 (likely) / P80 (management reserve) / P90 (conservative)",
-         size=11, color=GOLD, align=PP_ALIGN.CENTER, bold=True)
+         "10,000 Monte Carlo iterations  →  "
+         "P10 (optimistic)  /  P50 (likely)  /  P80 (reserve)  /  P90 (conservative)",
+         size=11, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
     coas = [
-        ("Speed COA",           "1–2 PIs",    "Lowest", "HIGH",   RED,    "P1 only. Fast. Technical debt."),
-        ("Balanced COA ★",      "2–3 PIs",    "Medium", "MOD",    GREEN,  "P1+P2. Recommended. Best tradeoff."),
-        ("Comprehensive COA",   "3–5 PIs",    "Highest","LOW",    LGRAY,  "Full scope. Complete coverage."),
+        ("Speed COA",          "1–2 PIs",  "LOW cost",  "HIGH risk",
+         "P1 requirements only.\nFastest path to capability.\nTechnical debt incurred.", LGRAY),
+        ("Balanced COA  ★","2–3 PIs",  "MED cost",  "MOD risk",
+         "P1 + P2. Best tradeoff.\nRecommended for most programs.\nFull capability delivery.", GREEN),
+        ("Comprehensive COA",  "3–5 PIs",  "HIGH cost", "LOW risk",
+         "Full scope. All requirements.\nLowest residual risk.\nLongest delivery timeline.", LGRAY),
     ]
-    tw = CW / 3 - Inches(0.1)
-    y = Inches(4.2)
-    for i, (name, timeline, cost, risk, clr, desc) in enumerate(coas):
-        x = LM + i * (tw + Inches(0.1))
-        _rect(s, x, y, tw, Inches(2.05), MGRAY, clr)
-        _box(s, x + Inches(0.1), y + Inches(0.08), tw - Inches(0.2), Inches(0.40),
+    tw = (CW - Inches(0.2)) / 3
+    y = Inches(4.22)
+    for i, (name, timeline, cost, risk, desc, clr) in enumerate(coas):
+        x = LM + i*(tw+Inches(0.1))
+        _rect(s, x, y, tw, Inches(2.42), MGRAY, clr)
+        _box(s, x+Inches(0.1), y+Inches(0.1), tw-Inches(0.2), Inches(0.4),
              name, size=12, bold=True, color=clr, align=PP_ALIGN.CENTER)
-        for j, (label, val) in enumerate([("Timeline", timeline), ("Cost", cost), ("Risk", risk)]):
-            _box(s, x + Inches(0.1), y + Inches(0.55) + j * Inches(0.35),
-                 tw - Inches(0.2), Inches(0.32),
-                 f"{label}: {val}", size=10, color=LGRAY)
-        _box(s, x + Inches(0.1), y + Inches(1.6), tw - Inches(0.2), Inches(0.35),
-             desc, size=9, color=LGRAY, italic=True)
+        for j, val in enumerate([timeline, cost, risk]):
+            _box(s, x+Inches(0.1), y+Inches(0.56)+j*Inches(0.32),
+                 tw-Inches(0.2), Inches(0.28), val, size=10,
+                 color=GREEN if "LOW" in val or "★" in name else LGRAY)
+        _box(s, x+Inches(0.1), y+Inches(1.57), tw-Inches(0.2), Inches(0.75),
+             desc, size=9, color=LGRAY, italic=True, wrap=True)
 
-    _box(s, LM, Inches(6.45), CW, Inches(0.35),
-         "No commercial vendor offers program-level Digital Twin semantics with NIST/FedRAMP verdicts. ICDEV does.",
-         size=11, color=GOLD, align=PP_ALIGN.CENTER, italic=True)
+    _box(s, LM, Inches(6.75), CW, Inches(0.35),
+         "No commercial platform offers program-level simulation with this depth. "
+         "ICDEV™ is the only one.",
+         size=11, italic=True, color=GOLD, align=PP_ALIGN.CENTER)
 
 
-def slide_11_compliance(prs):
+def s11_academy(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "42-Framework Compliance Superpower",
-                 "Implement once. Satisfy many. Dual-hub crosswalk eliminates duplicate assessments.")
-    _footer(s); _slide_num(s, 11)
+    _title(s, "FORGE Academy — 100 Developers in 8 Weeks",
+           "Gamified, role-based AI training purpose-built for government software teams.")
+    _footer(s, 11)
 
-    # Big stat
-    _box(s, LM, Inches(2.05), CW, Inches(0.65),
-         "Implement AC-2 (Account Management) once → automatically satisfies 30+ frameworks",
-         size=16, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-
-    # Two hub boxes
-    hub_w = Inches(4.0)
-    hub_h = Inches(3.2)
-    hub_y = Inches(2.85)
-
-    # US Hub
-    _rect(s, LM, hub_y, hub_w, hub_h, MGRAY, BLUE)
-    _box(s, LM + Inches(0.1), hub_y + Inches(0.1), hub_w - Inches(0.2), Inches(0.42),
-         "US HUB — NIST 800-53 Rev 5", size=12, bold=True, color=BLUE)
-    us = ["FedRAMP (Mod/High/20x)", "CMMC Level 2 & 3", "NIST 800-171 Rev 2",
-          "FIPS 199/200", "CNSSI 1253 (IL6)", "DoD CSSP (DI 8530.01)",
-          "DoD MOSA (10 U.S.C. §4401)", "NIST SP 800-207 Zero Trust"]
-    for j, fw in enumerate(us):
-        _box(s, LM + Inches(0.12), hub_y + Inches(0.62) + j * Inches(0.31),
-             hub_w - Inches(0.24), Inches(0.28), f"✓  {fw}", size=10, color=LGRAY)
-
-    # Arrow
-    arr_x = LM + hub_w + Inches(0.15)
-    _box(s, arr_x, hub_y + Inches(1.3), Inches(1.3), Inches(0.6),
-         "↔", size=36, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-    _box(s, arr_x, hub_y + Inches(1.9), Inches(1.3), Inches(0.45),
-         "Crosswalk\nEngine", size=9, color=GOLD, align=PP_ALIGN.CENTER)
-
-    # Intl Hub
-    ih_x = arr_x + Inches(1.35)
-    _rect(s, ih_x, hub_y, hub_w, hub_h, MGRAY, GREEN)
-    _box(s, ih_x + Inches(0.1), hub_y + Inches(0.1), hub_w - Inches(0.2), Inches(0.42),
-         "INTL HUB — ISO/IEC 27001:2022", size=12, bold=True, color=GREEN)
-    intl = ["ISO/IEC 42001:2023 (AI Mgmt)", "EU AI Act (Annex III)",
-            "HIPAA Security Rule", "HITRUST CSF v11",
-            "PCI DSS v4.0", "SOC 2 Type II",
-            "CJIS Security Policy", "NIST AI RMF 1.0 + AI 600-1"]
-    for j, fw in enumerate(intl):
-        _box(s, ih_x + Inches(0.12), hub_y + Inches(0.62) + j * Inches(0.31),
-             hub_w - Inches(0.24), Inches(0.28), f"✓  {fw}", size=10, color=LGRAY)
-
-    _box(s, LM, Inches(6.22), CW, Inches(0.45),
-         "ATO in 1–3 months.  Not 12–18.  SSP, POAM, STIG, SBOM, OSCAL generated automatically on first build.",
-         size=13, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-
-
-def slide_12_agents(prs):
-    s = _blank(prs); _bg(s)
-    _title_area(s, "15-Agent Autonomous Ecosystem",
-                 "Agents coordinate so your team doesn't have to.")
-    _footer(s); _slide_num(s, 12)
-
-    tiers = [
-        ("CORE TIER", [("Orchestrator :8443", "Task routing, DAG execution, dispatcher mode"),
-                       ("Architect :8444", "ANVIL A/T phases, system design, M-ANVIL for models")]),
-        ("DOMAIN TIER", [
-            ("Builder :8445",          "TDD code gen — 6 languages"),
-            ("Compliance :8446",       "ATO: SSP, POAM, STIG, SBOM, OSCAL, eMASS"),
-            ("Security :8447",         "SAST, deps, secrets, containers, ATLAS"),
-            ("Infrastructure :8448",   "Terraform, Ansible, K8s, 6 CSPs"),
-            ("MBSE :8451",             "SysML, DOORS NG, digital thread, DES"),
-            ("Modernization :8452",    "7R assessment, migration, code gen"),
-            ("Requirements :8453",     "Intake, gap detection, SAFe, readiness"),
-            ("Supply Chain :8454",     "SBOM, CVE triage, SCRM, §889"),
-            ("Simulation :8455",       "Digital Twin, Monte Carlo, COA gen"),
-            ("DevSecOps+ZTA :8457",    "Pipeline security, NIST 800-207, policy-as-code"),
-            ("Gateway :8458",          "Remote commands, 8-gate security chain"),
-        ]),
-        ("SUPPORT TIER", [("Knowledge :8449", "Self-healing patterns, ML recommendations"),
-                          ("Monitor :8450",   "Logs, metrics, alerts, SLA tracking")]),
-    ]
-
-    tier_colors = [GOLD, BLUE, GREEN]
-    tier_h      = [Inches(0.85), Inches(3.2), Inches(0.85)]
-    y = Inches(2.0)
-
-    for t_idx, (tier_name, agents) in enumerate(tiers):
-        clr = tier_colors[t_idx]
-        th  = tier_h[t_idx]
-        _rect(s, LM, y, CW, th, MGRAY, clr)
-        _box(s, LM + Inches(0.1), y + Inches(0.08), Inches(1.8), Inches(0.38),
-             tier_name, size=11, bold=True, color=clr)
-
-        aw = (CW - Inches(0.2) - Inches(1.9)) / len(agents)
-        ax = LM + Inches(1.9)
-        for name, desc in agents:
-            _box(s, ax, y + Inches(0.08), aw - Inches(0.05), Inches(0.32),
-                 name, size=9, bold=True, color=clr)
-            _box(s, ax, y + Inches(0.40), aw - Inches(0.05), th - Inches(0.50),
-                 desc, size=8, color=LGRAY, word_wrap=True)
-            ax += aw
-
-        y += th + Inches(0.1)
-
-    _box(s, LM, Inches(6.32), CW, Inches(0.5),
-         "A2A protocol: JSON-RPC 2.0 over mutual TLS  ·  All agents publish /.well-known/agent.json  "
-         "·  Self-healing daemon: 30-min failure triage  ·  Confidence ≥ 0.7 required for auto-patch",
-         size=10, color=MGRAY, align=PP_ALIGN.CENTER)
-
-
-def slide_13_academy(prs):
-    s = _blank(prs); _bg(s)
-    _title_area(s, "FORGE Academy — Building AI-Ready Teams",
-                 "Gamified, role-based AI training designed for government and defense organizations")
-    _footer(s); _slide_num(s, 13)
-
-    # Stats row
-    stats = [("12", "Role Tracks"), ("75", "Missions"), ("165", "Mission Steps"),
-             ("5", "Ranks"), ("3", "Certifications")]
+    stats = [("12", "Role Tracks"), ("75", "Missions"),
+             ("5", "Ranks"), ("3", "Certifications"), ("4 × 25", "Cohort Model")]
     sw = CW / len(stats) - Inches(0.1)
-    for i, (num, lbl) in enumerate(stats):
-        x = LM + i * (sw + Inches(0.1))
-        _rect(s, x, Inches(2.05), sw, Inches(1.1), MGRAY, GOLD)
+    for i, (n, l) in enumerate(stats):
+        x = LM + i*(sw+Inches(0.1))
+        _rect(s, x, Inches(2.05), sw, Inches(1.05), MGRAY, GOLD)
         _box(s, x, Inches(2.1), sw, Inches(0.55),
-             num, size=32, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-        _box(s, x, Inches(2.65), sw, Inches(0.4),
-             lbl, size=10, color=LGRAY, align=PP_ALIGN.CENTER)
+             n, size=30, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+        _box(s, x, Inches(2.65), sw, Inches(0.35),
+             l, size=10, color=LGRAY, align=PP_ALIGN.CENTER)
 
-    # Rank progression
-    ranks = ["Recruit\n0 XP", "Operative\n500 XP", "Specialist\n2,000 XP",
-             "Architect\n5,000 XP", "Sensei\n10,000+ XP"]
+    ranks = [
+        ("Recruit",   "0 XP",       "Uses AI tools safely"),
+        ("Operative", "500 XP",     "Builds basic AI features"),
+        ("Specialist","2,000 XP",   "Designs multi-agent systems"),
+        ("Architect", "5,000 XP",   "Builds AI platforms"),
+        ("Sensei",    "10,000+ XP", "Defines AI strategy"),
+    ]
     rw = (CW - Inches(0.6)) / 5
-    for i, rank in enumerate(ranks):
-        x = LM + i * (rw + Inches(0.15))
+    for i, (rank, xp, cap) in enumerate(ranks):
+        x = LM + i*(rw+Inches(0.15))
         clr = [LGRAY, LGRAY, BLUE, GREEN, GOLD][i]
-        _rect(s, x, Inches(3.35), rw, Inches(0.75), MGRAY, clr)
-        _box(s, x, Inches(3.38), rw, Inches(0.7),
-             rank, size=10, color=clr, align=PP_ALIGN.CENTER)
+        _rect(s, x, Inches(3.28), rw, Inches(1.05), MGRAY, clr)
+        _box(s, x, Inches(3.33), rw, Inches(0.38),
+             rank, size=11, bold=True, color=clr, align=PP_ALIGN.CENTER)
+        _box(s, x, Inches(3.72), rw, Inches(0.25),
+             xp, size=9, color=LGRAY, align=PP_ALIGN.CENTER)
         if i < 4:
-            _box(s, x + rw + Inches(0.02), Inches(3.55), Inches(0.12), Inches(0.40),
-                 "→", size=14, color=GOLD, align=PP_ALIGN.CENTER)
+            _box(s, x+rw+Inches(0.03), Inches(3.65), Inches(0.11), Inches(0.35),
+                 "→", size=13, color=GOLD, align=PP_ALIGN.CENTER)
 
-    # Two columns
-    col_w = (CW - Inches(0.2)) / 2
-    _box(s, LM, Inches(4.25), col_w, Inches(0.38),
-         "Role Tracks (12)", size=13, bold=True, color=GOLD)
-    roles = ["DevOps · DataOps · SecOps", "SWE/Architect · NetOps · SRE",
-             "ISSO · ISSM · CISO", "PM · Analyst · Leadership"]
-    for j, r in enumerate(roles):
-        _box(s, LM, Inches(4.65) + j * Inches(0.38),
-             col_w, Inches(0.35), f"• {r}", size=11, color=LGRAY)
+    cols = [
+        ("Role Tracks (12)",
+         ["DevOps  ·  DataOps  ·  SecOps",
+          "SWE / Architect  ·  NetOps  ·  SRE",
+          "ISSO  ·  ISSM  ·  CISO",
+          "PM  ·  Analyst  ·  Leadership"]),
+        ("Certification Gates",
+         ["Foundation (8 wks) — Tier 1 + role Tier 2",
+          "Practitioner (+4 wks) — design score ≥80 + GameDay",
+          "Expert (Capstone) — top-50% GameDay finish",
+          "Auto-currency: Genesis daemon updates curriculum"]),
+        ("Developer Outcomes",
+         ["Day 1: deploys first LLM feature via ICDEV",
+          "Week 4: designs multi-agent system on AADC canvas",
+          "Week 8: Foundation-certified, Kanban-ready",
+          "Week 12+: mentors next cohort (Sensei path)"]),
+    ]
+    cw2 = (CW - Inches(0.2)) / 3
+    for i, (heading, items) in enumerate(cols):
+        x = LM + i*(cw2+Inches(0.1))
+        _box(s, x, Inches(4.52), cw2, Inches(0.38),
+             heading, size=12, bold=True, color=GOLD)
+        for j, item in enumerate(items):
+            _box(s, x, Inches(4.95)+j*Inches(0.38),
+                 cw2, Inches(0.35), f"▸  {item}", size=10, color=LGRAY)
 
-    x2 = LM + col_w + Inches(0.2)
-    _box(s, x2, Inches(4.25), col_w, Inches(0.38),
-         "Certifications + Alignment", size=13, bold=True, color=GOLD)
-    certs = ["Foundation (2yr) — Tier 1 + role Tier 2 + 75% score",
-             "Practitioner (2yr) — AADC ≥80 + 1 GameDay",
-             "Expert (3yr) — Capstone + top-50% GameDay finish",
-             "DoD AI Workforce Framework + NICE KSA crosswalk"]
-    for j, c in enumerate(certs):
-        _box(s, x2, Inches(4.65) + j * Inches(0.38),
-             col_w, Inches(0.35), f"• {c}", size=11, color=LGRAY)
 
-    _box(s, LM, Inches(6.45), CW, Inches(0.40),
-         "Auto-updating curriculum: Genesis daemon detects proven patterns → auto-generates new missions → human review → activated",
-         size=11, color=GOLD, align=PP_ALIGN.CENTER)
-
-
-def slide_14_gameday(prs):
+def s12_gameday(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "AI GameDay — Where Training Meets Reality",
-                 "Live, AI-scored tabletop exercises. Competitive. NIST-compliant. After-action ready.")
-    _footer(s); _slide_num(s, 14)
+    _title(s, "AI GameDay — Skills Tested Under Fire",
+           "Live, AI-scored wargame. Four teams. Five injects. One After-Action Report.")
+    _footer(s, 12)
 
     teams = [
-        ("RED TEAM", "Threat",       RED,   "Scout · Threat Analyst\nExploit Engineer\nRed Orchestrator"),
-        ("BLUE TEAM","Defense",      BLUE,  "SOC Analyst · Security Arch\nIR Responder\nBlue Orchestrator"),
-        ("GOLD TEAM","Innovation",   GOLD,  "Researcher · Builder\nEvaluator\nGold Orchestrator"),
-        ("GREEN TEAM","Compliance",  GREEN, "NIST Auditor · Risk Assessor\nPolicy Advisor\nGreen Orchestrator"),
+        ("RED\nTHREAT",      RED,   "Attack design\nThreat emulation\nExploit engineering"),
+        ("BLUE\nDEFENSE",    BLUE,  "Incident response\nDefense posture\nContainment"),
+        ("GOLD\nINNOVATION", GOLD,  "Novel AI modules\nTraining pair generation\nML sprint"),
+        ("GREEN\nCOMPLIANCE",GREEN, "NIST verdicts\nEthics assessment\nPolicy guidance"),
     ]
     tw = (CW - Inches(0.3)) / 4
-    for i, (name, role, clr, members) in enumerate(teams):
-        x = LM + i * (tw + Inches(0.1))
-        _rect(s, x, Inches(2.05), tw, Inches(1.9), MGRAY, clr)
-        _box(s, x + Inches(0.08), Inches(2.12), tw - Inches(0.16), Inches(0.38),
-             name, size=11, bold=True, color=clr, align=PP_ALIGN.CENTER)
-        _box(s, x + Inches(0.08), Inches(2.52), tw - Inches(0.16), Inches(0.32),
-             role, size=10, color=GOLD, align=PP_ALIGN.CENTER, italic=True)
-        _box(s, x + Inches(0.08), Inches(2.85), tw - Inches(0.16), Inches(0.95),
-             members, size=9, color=LGRAY, align=PP_ALIGN.CENTER)
+    y = Inches(2.05)
+    for i, (name, clr, roles) in enumerate(teams):
+        x = LM + i*(tw+Inches(0.1))
+        _rect(s, x, y, tw, Inches(1.85), MGRAY, clr)
+        _box(s, x+Inches(0.08), y+Inches(0.1), tw-Inches(0.16), Inches(0.55),
+             name, size=12, bold=True, color=clr, align=PP_ALIGN.CENTER)
+        _box(s, x+Inches(0.08), y+Inches(0.68), tw-Inches(0.16), Inches(0.95),
+             roles, size=10, color=LGRAY, align=PP_ALIGN.CENTER)
 
-    # Injects
-    _box(s, LM, Inches(4.1), CW, Inches(0.40),
-         "Operation CIPHER FORGE — 5 Injects (4 Hours Total)", size=13, bold=True, color=GOLD)
+    _box(s, LM, Inches(4.07), CW, Inches(0.38),
+         "Operation CIPHER FORGE — Five Injects (4-Hour Event)", size=13, bold=True, color=GOLD)
+
     injects = [
-        ("Signal Cluster",      "15 min", "SIGINT threat assessment"),
-        ("COA Posture",         "40 min", "Force posture recommendation"),
-        ("Ransomware Cascade",  "Seq",    "IR: contain, eradicate, recover"),
-        ("Fine-Tune Sprint",    "Seq",    "ML: generate + evaluate training pairs"),
-        ("War Council Brief",   "Final",  "Executive synthesis of all learnings"),
+        ("Signal\nCluster",     "15 min", "SIGINT threat\nassessment"),
+        ("COA\nPosture",        "40 min", "Force posture\nrecommendation"),
+        ("Ransomware\nCascade", "Seq",    "Contain, eradicate,\nrecover"),
+        ("Fine-Tune\nSprint",   "Seq",    "Generate + evaluate\nML training pairs"),
+        ("War Council\nBrief",  "Final",  "Executive synthesis\nof all learnings"),
     ]
     iw = CW / len(injects) - Inches(0.06)
     for i, (name, dur, desc) in enumerate(injects):
-        x = LM + i * (iw + Inches(0.06))
-        _rect(s, x, Inches(4.6), iw, Inches(1.35), MGRAY, BLUE)
-        _box(s, x + Inches(0.08), Inches(4.68), iw - Inches(0.16), Inches(0.38),
+        x = LM + i*(iw+Inches(0.06))
+        _rect(s, x, Inches(4.55), iw, Inches(1.38), MGRAY, BLUE)
+        _box(s, x+Inches(0.08), Inches(4.62), iw-Inches(0.16), Inches(0.42),
              name, size=10, bold=True, color=BLUE, align=PP_ALIGN.CENTER)
-        _box(s, x + Inches(0.08), Inches(5.06), iw - Inches(0.16), Inches(0.28),
+        _box(s, x+Inches(0.08), Inches(5.04), iw-Inches(0.16), Inches(0.28),
              dur, size=10, color=GOLD, align=PP_ALIGN.CENTER)
-        _box(s, x + Inches(0.08), Inches(5.35), iw - Inches(0.16), Inches(0.52),
-             desc, size=9, color=LGRAY, align=PP_ALIGN.CENTER, word_wrap=True)
+        _box(s, x+Inches(0.08), Inches(5.33), iw-Inches(0.16), Inches(0.52),
+             desc, size=9, color=LGRAY, align=PP_ALIGN.CENTER, wrap=True)
 
-    _box(s, LM, Inches(6.1), CW, Inches(0.32),
-         "Scoring: Adversarial 40% · Innovation 25% · Compliance 20% · Training Pairs 15%  "
-         "·  AI-scored · Server-verified receipts · Leaderboard live",
+    _box(s, LM, Inches(6.08), CW, Inches(0.3),
+         "Scoring: Adversarial 40%  ·  Innovation 25%  ·  Compliance 20%  ·  Training Pairs 15%"
+         "  ·  AI-judged  ·  Server-verified receipts",
          size=10, color=LGRAY, align=PP_ALIGN.CENTER)
-    _box(s, LM, Inches(6.45), CW, Inches(0.35),
-         "Output: Auto-generated AAR · Kanban debrief card · Fine-tune pairs → model improvement  "
-         "·  NIST AC-2, AU-2, SI-10 compliant",
+    _box(s, LM, Inches(6.42), CW, Inches(0.35),
+         "Output: Auto-generated AAR  ·  Live leaderboard  ·  "
+         "Fine-tune pairs feed directly into model improvement  ·  Required for Practitioner cert",
          size=10, color=MGRAY, align=PP_ALIGN.CENTER)
 
 
-def slide_15_build_vs_adopt(prs):
+def s13_compounding(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "Build vs. Adopt — The Numbers Don't Lie",
-                 "Nine dimensions. ICDEV wins on every axis.")
-    _footer(s); _slide_num(s, 15)
+    _title(s, "Every Program Makes the Next One Faster",
+           "ICDEV™ generates living systems — they inherit the full platform and improve the shared knowledge base.")
+    _footer(s, 13)
+
+    _box(s, LM, Inches(2.05), CW, Inches(0.55),
+         "Programs built with ICDEV™ are not finished products. They are living systems.",
+         size=16, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+
+    points = [
+        ("Generated systems inherit the full platform",
+         "Every app ICDEV builds gets its own FORGE framework, agent architecture, "
+         "memory system, CI/CD, and canvas suite. They can build their own next features "
+         "using the same ANVIL workflow that built them."),
+        ("Knowledge compounds across programs",
+         "Every build adds to the shared knowledge graph. Patterns discovered in Program A "
+         "are automatically surfaced when Program B starts the same task. "
+         "Genesis daemon promotes proven patterns into new Academy missions."),
+        ("Teams get faster, not slower",
+         "Each cohort of 25 developers who complete FORGE Academy become internal Senseis "
+         "who train the next cohort. By Year 2, your AI Lab runs itself."),
+        ("Compliance artifacts accumulate, not repeat",
+         "Control evidence generated in Program A is reused by Program B. "
+         "The crosswalk engine means you never map the same control twice. "
+         "ATO becomes a natural output — developers don’t even think about it."),
+    ]
+
+    cw2 = (CW - Inches(0.1)) / 2
+    for i, (heading, body) in enumerate(points):
+        col, row = i % 2, i // 2
+        x = LM + col*(cw2+Inches(0.1))
+        y = Inches(2.8) + row*Inches(1.75)
+        _rect(s, x, y, cw2, Inches(1.6), MGRAY, [GOLD, BLUE, GREEN, TEAL][i])
+        _box(s, x+Inches(0.12), y+Inches(0.1), cw2-Inches(0.24), Inches(0.42),
+             heading, size=12, bold=True, color=[GOLD, BLUE, GREEN, TEAL][i])
+        _box(s, x+Inches(0.12), y+Inches(0.55), cw2-Inches(0.24), Inches(0.95),
+             body, size=10, color=LGRAY, wrap=True)
+
+    _box(s, LM, Inches(6.45), CW, Inches(0.42),
+         "Year 1: stand up the lab.  "
+         "Year 2: every program team is self-sufficient.  "
+         "Year 3: your organization is the AI center of excellence.",
+         size=12, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+
+
+def s14_build_vs_build(prs):
+    s = _blank(prs); _bg(s)
+    _title(s, "Build Alone vs. Build With ICDEV™",
+           "The question is not whether to build — it’s whether to build with a platform or without one.")
+    _footer(s, 14)
 
     rows = [
-        ("Dimension",            "Build From Scratch",           "Adopt ICDEV™"),
-        ("ATO Timeline",         "12–18 months",                 "1–3 months"),
-        ("Compliance",           "Manual, post-hoc, incomplete", "42 frameworks, auto-crosswalk"),
-        ("AI Agents",            "None (hire specialists)",      "15 coordinating agents"),
-        ("Digital Twin",         "Not available",                "6-dim simulation, 3 COAs, Monte Carlo"),
-        ("AI Governance",        "Build from scratch (months)",  "OMB M-25-21 + NIST AI RMF built in"),
-        ("Legacy Modernization", "No path. Greenfield only.",    "7Rs + cross-language + ATO bridge"),
-        ("Audit Trail",          "Manual / ad hoc",              "Append-only, NIST AU, day one"),
-        ("Scalability",          "Re-architect per program",     "Generated apps inherit full FORGE/ANVIL"),
-        ("Cost",                 "$5M–10M+ to replicate",        "$570K–880K Year 1 (open-source base)"),
+        ("Dimension",            "Building Without ICDEV™",              "Building With ICDEV™"),
+        ("Setup time",           "Weeks of scaffolding before first feature", "First feature on Day 1"),
+        ("Design",               "Whiteboard → doc → ticket",       "Canvas → simulate → execute"),
+        ("AI capability",        "Build LLM wrappers from scratch",           "12 canvases + 15 agents ready to go"),
+        ("Simulation",           "Spreadsheet estimates, best guesses",       "Digital Twin: 6 dims, 3 COAs, Monte Carlo"),
+        ("Multi-cloud",          "Re-learn each CSP per program",             "6 CSPs, IaC generation, equivalence maps"),
+        ("Legacy modernization", "Greenfield rebuild or nothing",             "7Rs assessment + migration canvas + ATO bridge"),
+        ("Developer growth",     "Ad hoc, on-the-job, expensive training",   "FORGE Academy: 12 roles, certified in 8 weeks"),
+        ("Knowledge transfer",   "Walks out the door when people leave",     "Knowledge graph + Genesis daemon: never lost"),
+        ("Compliance artifacts", "Manual, post-hoc, months of ISSO time",    "Generated automatically — a byproduct of building"),
     ]
 
-    col_widths = [Inches(2.5), Inches(4.8), Inches(4.8)]
-    col_colors = [MGRAY, MGRAY, MGRAY]
-    header_colors = [MGRAY, MGRAY, GREEN]
-
-    y = Inches(2.0)
+    col_widths = [Inches(2.4), Inches(4.65), Inches(4.65)]
+    y = Inches(2.05)
     for r_idx, row in enumerate(rows):
         x = LM
-        for c_idx, (cell, cw) in enumerate(zip(row, col_widths)):
-            is_header = r_idx == 0
-            bg = [MGRAY, NAVY, MGRAY][c_idx] if not is_header else [MGRAY, MGRAY, GREEN][c_idx]
-            tc = GOLD if is_header else (WHITE if c_idx == 0 else (LGRAY if c_idx == 1 else WHITE))
-            _rect(s, x, y, cw - Inches(0.02), Inches(0.42), bg, None)
-            _box(s, x + Inches(0.1), y + Inches(0.04), cw - Inches(0.14), Inches(0.35),
-                 cell, size=10 if not is_header else 11, bold=is_header or c_idx == 0,
-                 color=tc)
-            x += cw
+        is_hdr = r_idx == 0
+        for c_idx, (cell, cw2) in enumerate(zip(row, col_widths)):
+            bg = {0: MGRAY, 1: NAVY, 2: MGRAY}[c_idx] if not is_hdr else {0: MGRAY, 1: MGRAY, 2: GREEN}[c_idx]
+            tc = GOLD if is_hdr else (WHITE if c_idx == 0 else (LGRAY if c_idx == 1 else WHITE))
+            _rect(s, x, y, cw2-Inches(0.02), Inches(0.42), bg)
+            _box(s, x+Inches(0.1), y+Inches(0.04), cw2-Inches(0.15), Inches(0.35),
+                 cell, size=10 if not is_hdr else 11,
+                 bold=is_hdr or c_idx == 0, color=tc)
+            x += cw2
         y += Inches(0.43)
 
+    _box(s, LM, Inches(6.58), CW, Inches(0.38),
+         "Compliance and ATO in the last row — because with ICDEV™, developers never have to think about it.",
+         size=11, italic=True, color=GOLD, align=PP_ALIGN.CENTER)
 
-def slide_16_timeline(prs):
+
+def s15_lab_vision(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "From Intake to ATO in 1–3 Months",
-                 "A single auditable pipeline — intake through Authority to Operate.")
-    _footer(s); _slide_num(s, 16)
+    _title(s, "The AI Lab — What You’re Standing Up",
+           "A self-improving developer platform that trains your people and accelerates every program.")
+    _footer(s, 15)
 
-    steps = [
-        ("RICOAS\nIntake",     "Requirements\ngap detection\nreadiness score"),
-        ("Digital\nTwin",      "6-dim simulation\n3 COAs\nMonte Carlo"),
-        ("Design\nCanvases",   "12 visual builders\nNL queries\ncompliance map"),
-        ("ANVIL\nBuild",       "TDD: RED→GREEN\nSecurity scan\nSBOM generated"),
-        ("Compliance\nAuto",   "42 frameworks\nSSP+POAM+STIG\nOSCAL+eMASS"),
-        ("Deploy\n+ ATO",      "K8s + IaC\nATO package\nSigned"),
-    ]
-    sw = (CW - Inches(0.5)) / len(steps)
-    y = Inches(2.2)
-    for i, (step, desc) in enumerate(steps):
-        x = LM + i * (sw + Inches(0.1))
-        clr = [BLUE, BLUE, GOLD, GREEN, GREEN, GOLD][i]
-        _rect(s, x, y, sw, Inches(1.55), MGRAY, clr)
-        _box(s, x + Inches(0.06), y + Inches(0.1), sw - Inches(0.12), Inches(0.55),
-             step, size=11, bold=True, color=clr, align=PP_ALIGN.CENTER)
-        _box(s, x + Inches(0.06), y + Inches(0.68), sw - Inches(0.12), Inches(0.78),
-             desc, size=9, color=LGRAY, align=PP_ALIGN.CENTER)
-        if i < len(steps) - 1:
-            _box(s, x + sw + Inches(0.01), y + Inches(0.65), Inches(0.08), Inches(0.4),
-                 "→", size=14, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-
-    # Old vs new
-    _rect(s, LM, Inches(4.05), CW / 2 - Inches(0.1), Inches(0.7), MGRAY, RED)
-    _box(s, LM + Inches(0.1), Inches(4.1), CW / 2 - Inches(0.3), Inches(0.55),
-         "Without ICDEV™:  12–18 months  ·  $2M–5M+  ·  Expert-dependent", size=13, color=RED)
-    _rect(s, LM + CW / 2 + Inches(0.1), Inches(4.05), CW / 2 - Inches(0.1), Inches(0.7), MGRAY, GREEN)
-    _box(s, LM + CW / 2 + Inches(0.2), Inches(4.1), CW / 2 - Inches(0.3), Inches(0.55),
-         "With ICDEV™:  1–3 months  ·  $570K–880K  ·  15 agents", size=13, color=GREEN)
-
-    # PI timeline
-    _box(s, LM, Inches(4.95), CW, Inches(0.40), "Program Increment Timeline:", size=13, bold=True, color=GOLD)
-    pis = [
-        ("Speed COA",         "1–2 PIs", "P1 only, MVP delivery"),
-        ("Balanced COA  ★",   "2–3 PIs", "P1+P2, recommended"),
-        ("Comprehensive COA", "3–5 PIs", "Full scope"),
-    ]
-    pw = CW / 3 - Inches(0.1)
-    for i, (name, pi, desc) in enumerate(pis):
-        x = LM + i * (pw + Inches(0.1))
-        _rect(s, x, Inches(5.42), pw, Inches(0.75), MGRAY, [LGRAY, GREEN, LGRAY][i])
-        _box(s, x + Inches(0.1), Inches(5.46), pw - Inches(0.2), Inches(0.30),
-             name, size=11, bold=True, color=[LGRAY, GREEN, LGRAY][i])
-        _box(s, x + Inches(0.1), Inches(5.76), pw - Inches(0.2), Inches(0.28),
-             f"{pi}  ·  {desc}", size=10, color=LGRAY)
-
-
-def slide_17_lab_vision(prs):
-    s = _blank(prs); _bg(s)
-    _title_area(s, "The AI Lab Vision",
-                 "A living lab that trains your people, hardens your systems, and accelerates every program.")
-    _footer(s); _slide_num(s, 17)
-
-    # Central ICDEV platform box
-    cx = LM + CW / 2 - Inches(1.9)
-    _rect(s, cx, Inches(2.3), Inches(3.8), Inches(1.6), MGRAY, GOLD)
-    _box(s, cx + Inches(0.15), Inches(2.4), Inches(3.5), Inches(0.55),
+    cx = LM + CW/2 - Inches(2.0)
+    _rect(s, cx, Inches(2.4), Inches(4.0), Inches(1.55), MGRAY, GOLD)
+    _box(s, cx+Inches(0.15), Inches(2.52), Inches(3.7), Inches(0.5),
          "ICDEV™ Platform", size=18, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-    _box(s, cx + Inches(0.15), Inches(2.97), Inches(3.5), Inches(0.75),
-         "FORGE · ANVIL · 12 Canvases · 15 Agents\nChat + Use Cases · Digital Twin · 42 Frameworks",
+    _box(s, cx+Inches(0.15), Inches(3.04), Inches(3.7), Inches(0.7),
+         "12 Canvases  ·  15 Agents  ·  FORGE + ANVIL\n"
+         "Digital Twin  ·  Chat + Use Cases",
          size=10, color=LGRAY, align=PP_ALIGN.CENTER)
 
-    satellites = [
-        (LM,                         Inches(2.0),  "FORGE Academy",
-         "12 roles · 75 missions\n4 cohorts × 25 devs\n8 weeks each", BLUE),
-        (LM,                         Inches(4.2),  "AI GameDay",
-         "4 teams · 5 injects\nQuarterly tournaments\nAAR + certification", GREEN),
-        (W - LM - Inches(3.5),       Inches(2.0),  "Cloud Infrastructure",
-         "AWS GovCloud / Azure Gov\nK8s · 15 agents\nIL4+ ready", GOLD),
-        (W - LM - Inches(3.5),       Inches(4.2),  "100+ Developers",
-         "AI-trained workforce\nCertified Sensei bench\nProgram acceleration", LGRAY),
+    sats = [
+        (LM,                     Inches(2.2),  "FORGE Academy",
+         "12 roles, 75 missions\n4 cohorts × 25 devs, 8 wks\nCertified AI workforce", BLUE),
+        (LM,                     Inches(4.3),  "AI GameDay",
+         "4 teams, 5 injects\nQuarterly wargames\nAAR + certification", GREEN),
+        (W-LM-Inches(3.4),       Inches(2.2),  "Cloud Lab",
+         "AWS GovCloud / Azure Gov\nK8s, 15 agents live\nIL4+ environment", GOLD),
+        (W-LM-Inches(3.4),       Inches(4.3),  "100+ Developers",
+         "AI-trained, certified\nSensei bench by Month 8\nSelf-sustaining by Year 2", TEAL),
     ]
-
-    for sx, sy, title, desc, clr in satellites:
+    for sx, sy, title, desc, clr in sats:
         _rect(s, sx, sy, Inches(3.3), Inches(1.55), MGRAY, clr)
-        _box(s, sx + Inches(0.1), sy + Inches(0.1), Inches(3.1), Inches(0.42),
+        _box(s, sx+Inches(0.1), sy+Inches(0.1), Inches(3.1), Inches(0.42),
              title, size=13, bold=True, color=clr)
-        _box(s, sx + Inches(0.1), sy + Inches(0.55), Inches(3.1), Inches(0.85),
+        _box(s, sx+Inches(0.1), sy+Inches(0.55), Inches(3.1), Inches(0.85),
              desc, size=10, color=LGRAY)
-        # Arrow toward center (simplified — just a dash)
-        if sx == LM:
-            _box(s, sx + Inches(3.32), sy + Inches(0.55), Inches(0.5), Inches(0.45),
-                 "→", size=18, bold=True, color=GOLD)
-        else:
-            _box(s, sx - Inches(0.55), sy + Inches(0.55), Inches(0.5), Inches(0.45),
-                 "←", size=18, bold=True, color=GOLD)
+        arrow = "→" if sx == LM else "←"
+        ax = sx+Inches(3.32) if sx == LM else sx-Inches(0.5)
+        _box(s, ax, sy+Inches(0.55), Inches(0.45), Inches(0.45),
+             arrow, size=18, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
-    _box(s, LM, Inches(6.1), CW, Inches(0.60),
-         "Every program powered by ICDEV™ generates its own ATO package, trains its own team, and "
-         "improves the shared knowledge base — compounding returns across the enterprise.",
-         size=12, color=LGRAY, align=PP_ALIGN.CENTER, word_wrap=True)
+    _box(s, LM, Inches(6.12), CW, Inches(0.6),
+         "Every program powered by ICDEV™ trains your team, improves the knowledge base, "
+         "and generates its own compliance artifacts — compounding returns across the enterprise.",
+         size=11, color=LGRAY, align=PP_ALIGN.CENTER, wrap=True)
 
 
-def slide_18_the_ask(prs):
+def s16_the_ask(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "What We're Asking For",
-                 "Three specific approvals to stand up the ICDEV™ AI Lab.")
-    _footer(s); _slide_num(s, 18)
+    _title(s, "What We’re Asking For",
+           "Three approvals. One platform. Returns from Day 90.")
+    _footer(s, 16)
 
     asks = [
-        ("1.  Infrastructure Approval",
+        ("1.  Infrastructure",
          "2-node Kubernetes cluster  ·  64 vCPU, 256 GB RAM, 10 TB NVMe\n"
          "AWS Bedrock (Claude) or Azure OpenAI Gov access (IL4+)\n"
-         "Isolated lab VLAN + CAC auth  ·  GitLab EE + JFrog Artifactory\n"
-         "Timeline: 30-day procurement",
+         "GitLab EE + isolated lab VLAN + CAC auth\n"
+         "Timeline: 30-day procurement  ·  Budget: $150K–$300K",
          BLUE),
         ("2.  Personnel (4 FTEs)",
          "AI Lab Director — strategy, stakeholder liaison, program integration\n"
-         "Platform / MLOps Engineer — ICDEV deployment, agent health, Bedrock\n"
+         "Platform / MLOps Engineer — ICDEV deployment, agent health, LLM integration\n"
          "Training Lead — Academy curriculum, cohort scheduling, GameDay facilitation\n"
-         "ISSO — lab ATO, STIG compliance, audit trail review",
+         "ISSO — lab authorization, audit trail review, POA&M management",
          GREEN),
-        ("3.  Budget Authority — Year 1",
-         "Infrastructure (cloud + on-prem K8s): $150K–300K\n"
-         "Personnel (4 FTEs, blended rate): $300K–400K\n"
-         "Academy (4 cohorts) + GameDay (4 events): $120K–160K\n"
+        ("3.  Budget Authority (Year 1)",
+         "Infrastructure (cloud + K8s): $150K–$300K\n"
+         "Personnel (4 FTEs): $300K–$400K\n"
+         "Academy (4 cohorts × 25 devs) + GameDay (4 events): $120K–$160K\n"
          "ICDEV™ platform: $0 (Apache 2.0 open source)\n"
-         "Total: $570K–860K  against a Year-1 return of $4M–6M+",
+         "Total: $570K–$860K  against a Year-1 return of $4M–$6M+",
          GOLD),
     ]
-
     y = Inches(2.05)
     for title, body, clr in asks:
         _rect(s, LM, y, CW, Inches(1.5), MGRAY, clr)
-        _box(s, LM + Inches(0.15), y + Inches(0.1), CW - Inches(0.3), Inches(0.45),
+        _box(s, LM+Inches(0.15), y+Inches(0.1), CW-Inches(0.3), Inches(0.42),
              title, size=15, bold=True, color=clr)
-        _box(s, LM + Inches(0.15), y + Inches(0.58), CW - Inches(0.3), Inches(0.82),
-             body, size=11, color=LGRAY, word_wrap=True)
+        _box(s, LM+Inches(0.15), y+Inches(0.56), CW-Inches(0.3), Inches(0.84),
+             body, size=11, color=LGRAY, wrap=True)
         y += Inches(1.62)
 
 
-def slide_19_why_now(prs):
+def s17_why_now(prs):
     s = _blank(prs); _bg(s)
-    _title_area(s, "Why Now — The Mandate Is Here",
-                 "Federal AI policy and DoD strategy are not optional. ICDEV is already mapped to all of them.")
-    _footer(s); _slide_num(s, 19)
+    _title(s, "Why Now",
+           "The mandate to build AI-capable government software teams has arrived.")
+    _footer(s, 17)
 
-    mandates = [
-        ("OMB M-25-21",
-         "High-Impact AI Transparency",
-         "Requires model cards, system cards, AI inventory, confabulation detection, fairness assessment.\n"
-         "ICDEV status: BUILT — AI Transparency canvas + cross-framework audit.",
+    drivers = [
+        ("OMB M-25-21 + M-26-04",
+         "Federal agencies must demonstrate responsible, unbiased, transparent AI. "
+         "ICDEV™ generates model cards, system cards, fairness assessments, and AI inventory "
+         "automatically — as a byproduct of building.",
          GOLD),
-        ("OMB M-26-04",
-         "Unbiased AI",
-         "Requires fairness testing, bias detection, and accountability plans for all federal AI systems.\n"
-         "ICDEV status: BUILT — Fairness assessor + appeals + CAIO designation workflow.",
+        ("DoD AI Workforce Strategy",
+         "DoD requires AI literacy across all personnel grades with NICE KSA alignment. "
+         "FORGE Academy is already crosswalked to the DoD AI Workforce Framework. "
+         "Every mission maps to a KSA.",
          BLUE),
-        ("DoD AI Strategy",
-         "AI-Ready Workforce",
-         "Requires AI literacy across all personnel grades; NICE KSA alignment.\n"
-         "ICDEV status: BUILT — FORGE Academy is DoD AI Workforce Framework crosswalked.",
+        ("The Competitive Window",
+         "Organizations that build AI-native developer platforms now will have a 3–5 year "
+         "head start over those that wait. The tools exist. The talent can be trained. "
+         "The only question is whether you move first.",
          GREEN),
-        ("EO on AI / NIST AI RMF",
-         "Govern, Map, Measure, Manage",
-         "All high-impact AI systems must implement GOVERN, MAP, MEASURE, MANAGE functions.\n"
-         "ICDEV status: BUILT — NIST AI RMF 1.0 + AI 600-1 + OWASP Agentic AI integrated.",
-         LGRAY),
+        ("The Cost of Waiting",
+         "Every month without a platform is another month of developers re-inventing scaffolding, "
+         "re-learning compliance, and re-training from scratch. "
+         "The opportunity cost compounds just as fast as the returns would.",
+         TEAL),
     ]
 
-    cw2 = (CW - Inches(0.15)) / 2
-    positions = [(LM, Inches(2.05)), (LM + cw2 + Inches(0.15), Inches(2.05)),
-                 (LM, Inches(4.2)),  (LM + cw2 + Inches(0.15), Inches(4.2))]
-
-    for (x, y), (ref, title, body, clr) in zip(positions, mandates):
+    cw2 = (CW - Inches(0.1)) / 2
+    for i, (title, body, clr) in enumerate(drivers):
+        col, row = i % 2, i // 2
+        x = LM + col*(cw2+Inches(0.1))
+        y = Inches(2.05) + row*Inches(2.1)
         _rect(s, x, y, cw2, Inches(1.95), MGRAY, clr)
-        _box(s, x + Inches(0.12), y + Inches(0.1), cw2 - Inches(0.24), Inches(0.38),
-             ref, size=13, bold=True, color=clr)
-        _box(s, x + Inches(0.12), y + Inches(0.5), cw2 - Inches(0.24), Inches(0.3),
-             title, size=11, color=GOLD, italic=True)
-        _box(s, x + Inches(0.12), y + Inches(0.82), cw2 - Inches(0.24), Inches(1.0),
-             body, size=9, color=LGRAY, word_wrap=True)
+        _box(s, x+Inches(0.12), y+Inches(0.1), cw2-Inches(0.24), Inches(0.42),
+             title, size=13, bold=True, color=clr)
+        _box(s, x+Inches(0.12), y+Inches(0.56), cw2-Inches(0.24), Inches(1.22),
+             body, size=11, color=LGRAY, wrap=True)
 
-    _box(s, LM, Inches(6.35), CW, Inches(0.45),
-         "Your organization doesn't have to figure this out. We already did.",
-         size=16, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+    _box(s, LM, Inches(6.35), CW, Inches(0.42),
+         "ICDEV™ is already mapped to every current federal AI mandate. "
+         "Your organization doesn’t have to figure it out — we already did.",
+         size=13, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
 
-def slide_20_next_steps(prs):
+def s18_next_steps(prs):
     s = _blank(prs); _bg(s)
-    _rect(s, 0, 0, W, Inches(0.12), GOLD)
-    _rect(s, 0, H - Inches(0.12), W, Inches(0.12), GOLD)
-    _footer(s); _slide_num(s, 20)
+    _rect(s, 0, 0, W, Inches(0.1), GOLD)
+    _rect(s, 0, H-Inches(0.1), W, Inches(0.1), GOLD)
+    _footer(s, 18)
 
-    _box(s, LM, TM, CW, Inches(0.75),
-         "Next Steps", size=40, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
-    _gold_bar(s, Inches(0.8), Inches(0.04))
+    _box(s, LM, Inches(0.25), CW, Inches(0.75),
+         "Next Steps", size=42, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
+    _gold_bar(s, Inches(1.02), Inches(0.04))
 
     steps = [
         ("Day 1–30",  "Approve AI Lab stand-up",
-         "Authorize infrastructure procurement (K8s cluster + cloud LLM access).\n"
-         "Designate AI Lab Director and ISSO. Begin FY procurement action."),
-        ("Day 31–60", "Deploy ICDEV™ + Onboard First Program",
-         "ICDEV deployed and health-checked. First program team onboarded to canvases.\n"
-         "RICOAS intake session completed. Digital Twin run. ATO package auto-generated."),
-        ("Day 61–90", "Launch FORGE Academy Cohort 1 + AI GameDay #1",
-         "25-developer Cohort 1 begins 8-week track.\n"
-         "AI GameDay #1 executed — 4 teams, Operation CIPHER FORGE, live AAR."),
+         "Authorize infrastructure procurement. Designate AI Lab Director and ISSO. "
+         "Begin FY procurement action. ICDEV™ deployed and health-checked by Day 30."),
+        ("Day 31–60", "Onboard first program team",
+         "First team onboarded to canvases. RICOAS intake session run. "
+         "Digital Twin simulation executed. First set of compliance artifacts generated "
+         "automatically — without anyone asking for them."),
+        ("Day 61–90", "Launch Academy Cohort 1 + GameDay #1",
+         "25 developers begin 8-week FORGE Academy track. "
+         "AI GameDay #1 executed with 4 teams. AAR published. "
+         "Lessons learned fed back into Academy curriculum automatically."),
     ]
 
     y = Inches(1.3)
     for date, title, body in steps:
-        _rect(s, LM, y, CW, Inches(1.6), MGRAY, GOLD)
-        _box(s, LM + Inches(0.15), y + Inches(0.1), Inches(1.5), Inches(0.42),
+        _rect(s, LM, y, CW, Inches(1.55), MGRAY, GOLD)
+        _box(s, LM+Inches(0.15), y+Inches(0.1), Inches(1.45), Inches(0.42),
              date, size=14, bold=True, color=GOLD)
-        _box(s, LM + Inches(1.7), y + Inches(0.1), CW - Inches(1.85), Inches(0.42),
+        _box(s, LM+Inches(1.65), y+Inches(0.1), CW-Inches(1.8), Inches(0.42),
              title, size=14, bold=True, color=WHITE)
-        _box(s, LM + Inches(0.15), y + Inches(0.56), CW - Inches(0.3), Inches(0.88),
-             body, size=12, color=LGRAY, word_wrap=True)
-        y += Inches(1.72)
+        _box(s, LM+Inches(0.15), y+Inches(0.56), CW-Inches(0.3), Inches(0.86),
+             body, size=11, color=LGRAY, wrap=True)
+        y += Inches(1.68)
 
-    _rect(s, LM, Inches(6.28), CW, Inches(0.55), MGRAY, GOLD)
-    _box(s, LM + Inches(0.15), Inches(6.33), CW - Inches(0.3), Inches(0.45),
-         "One platform.  One decision.  Infinite programs.",
+    _rect(s, LM, Inches(6.32), CW, Inches(0.52), MGRAY, GOLD)
+    _box(s, LM+Inches(0.15), Inches(6.37), CW-Inches(0.3), Inches(0.42),
+         "One platform.  Every program.  Starting Day 1.",
          size=20, bold=True, color=GOLD, align=PP_ALIGN.CENTER)
 
 
-# ── Main ────────────────────────────────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
     out_dir = Path(__file__).parent / "output"
@@ -1094,30 +949,28 @@ def main():
 
     prs = _new_prs()
 
-    slide_01_cover(prs)
-    slide_02_problem(prs)
-    slide_03_question(prs)
-    slide_04_what_is_icdev(prs)
-    slide_05_forge(prs)
-    slide_06_anvil(prs)
-    slide_07_canvases(prs)
-    slide_08_chat(prs)
-    slide_09_use_cases(prs)
-    slide_10_digital_twin(prs)
-    slide_11_compliance(prs)
-    slide_12_agents(prs)
-    slide_13_academy(prs)
-    slide_14_gameday(prs)
-    slide_15_build_vs_adopt(prs)
-    slide_16_timeline(prs)
-    slide_17_lab_vision(prs)
-    slide_18_the_ask(prs)
-    slide_19_why_now(prs)
-    slide_20_next_steps(prs)
+    s01_cover(prs)
+    s02_developer_reality(prs)
+    s03_the_vision(prs)
+    s04_forge(prs)
+    s05_anvil(prs)
+    s06_canvases_overview(prs)
+    s07_canvas_in_action(prs)
+    s08_chat_use_cases(prs)
+    s09_use_cases(prs)
+    s10_digital_twin(prs)
+    s11_academy(prs)
+    s12_gameday(prs)
+    s13_compounding(prs)
+    s14_build_vs_build(prs)
+    s15_lab_vision(prs)
+    s16_the_ask(prs)
+    s17_why_now(prs)
+    s18_next_steps(prs)
 
-    out_path = out_dir / "ICDEV_Executive_Deck.pptx"
-    prs.save(str(out_path))
-    print(f"[OK] Saved: {out_path}  ({len(prs.slides)} slides)")
+    out = out_dir / "ICDEV_Executive_Deck.pptx"
+    prs.save(str(out))
+    print(f"[OK] {out}  ({len(prs.slides)} slides)")
 
 
 if __name__ == "__main__":
