@@ -1570,10 +1570,14 @@
     }
 
     function updateGovProcessing(isProcessing) {
-        var spinner = document.getElementById('gov-processing-spinner');
-        if (spinner) spinner.style.display = isProcessing ? 'flex' : 'none';
-        var placeholder = document.getElementById('gov-placeholder-text');
-        if (placeholder) placeholder.style.display = isProcessing ? 'none' : 'block';
+        var ids = ['ricoas-processing-bar', 'gov-processing-bar', 'intel-processing-bar'];
+        for (var i = 0; i < ids.length; i++) {
+            var el = document.getElementById(ids[i]);
+            if (el) {
+                if (isProcessing) el.classList.add('tab-processing-bar--visible');
+                else el.classList.remove('tab-processing-bar--visible');
+            }
+        }
     }
 
     function updateTopStats(contexts) {
