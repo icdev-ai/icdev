@@ -10,7 +10,13 @@ const PG_BASE = 'http://localhost:5050';
 
 test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
   test.beforeEach(async ({ page }) => {
-    // Steps 1-2: Login to dashboard
+    // Suppress tour overlay before any navigation
+    await page.addInitScript(() => {
+      localStorage.setItem('icdev_tour_completed', '1');
+      localStorage.setItem('icdev_tour_last_step', '999');
+    });
+
+    // Login (no-op in dev mode — dashboard has no auth gate)
     await page.goto(`${PG_BASE}/login`);
     await page.waitForLoadState('domcontentloaded');
 
@@ -26,6 +32,14 @@ test.describe('Proposal Genesis — Autonomous Capture Pipeline', () => {
         await page.waitForLoadState('domcontentloaded');
       }
     }
+
+    // Dismiss any lingering dialog from a previous test
+    await page.evaluate(() => {
+      document.querySelectorAll<HTMLElement>('dialog[open]').forEach(d => {
+        if (typeof (d as any).close === 'function') (d as any).close();
+        else d.removeAttribute('open');
+      });
+    });
   });
 
   test('proposal genesis page loads with heading and intro panel', async ({ page }) => {
