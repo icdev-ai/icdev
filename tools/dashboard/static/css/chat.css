@@ -589,6 +589,78 @@
     color: var(--text-secondary);
 }
 
+.gov-info-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 10px;
+}
+
+.gov-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border-color, #21262d);
+    gap: 8px;
+}
+
+.gov-info-row--sub {
+    border-bottom: none;
+    padding: 2px 0;
+}
+
+.gov-info-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #8b949e);
+    flex-shrink: 0;
+}
+
+.gov-info-value {
+    font-size: 0.8rem;
+    color: var(--text-primary, #e6edf3);
+    text-align: right;
+    word-break: break-all;
+}
+
+.gov-info-value.gov-mono {
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: var(--text-secondary, #8b949e);
+}
+
+.gov-classification {
+    background: rgba(240,136,62,0.15);
+    color: #f0883e;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+}
+
+.gov-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-color, #21262d);
+}
+
+.gov-link {
+    font-size: 0.75rem;
+    color: var(--accent-blue, #58a6ff);
+    text-decoration: none;
+    padding: 2px 8px;
+    border: 1px solid var(--accent-blue, #58a6ff);
+    border-radius: 4px;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+}
+
+.gov-link:hover { opacity: 1; }
+
 /* ===================================================================
    Tab Processing Bar — shared across RICOAS / Gov / Intel tabs
    =================================================================== */
