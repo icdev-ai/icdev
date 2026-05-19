@@ -332,8 +332,6 @@ def pipeline_stats() -> dict:
         # Phase distribution
         phase_counts = {}
         for phase in ("phase1_quick_win", "phase2_augmentation", "phase3_transformation", "deferred"):
-            tag = phase.split("_")[0] + ("_" + phase.split("_")[1] if "_" in phase[6:] else "")
-            # Map to stored values
             stored_tag = {
                 "phase1_quick_win": "phase1",
                 "phase2_augmentation": "phase2",
