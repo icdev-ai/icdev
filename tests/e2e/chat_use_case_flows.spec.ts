@@ -158,7 +158,9 @@ test.describe('Chat Use Case Flows', () => {
     });
 
     await page.goto('/chat');
-    await page.waitForLoadState('networkidle');
+    // Use domcontentloaded — live.js polls every 3s so networkidle never fires
+    await page.waitForLoadState('domcontentloaded');
+    await page.waitForTimeout(2000); // allow initial static assets to load
 
     expect(
       failed.length,
