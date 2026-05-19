@@ -212,6 +212,8 @@
 
             renderMessages(ctx.messages || []);
             updateInterventionBar(ctx.is_processing);
+            refreshGovPanel(ctx, null);
+            refreshIntelPanel(null);
             startPolling(ctxId);
         });
     }
@@ -279,6 +281,12 @@
         // Display framework tags from config
         var cfg = window._CHAT_CONFIG || {};
         displayFrameworkTags(cfg.wizardFrameworks || '');
+
+        // Populate GOV + INTEL sidebars
+        chatApi('GET', '/contexts/' + ctxId).then(function (ctx) {
+            refreshGovPanel(ctx, intakeSessionId);
+        });
+        refreshIntelPanel(intakeSessionId);
 
         // Start chat polling too (for intervention)
         startPolling(ctxId);
@@ -1570,6 +1578,126 @@
         }
         showTypingIndicator(isProcessing);
         updateGovProcessing(isProcessing);
+    }
+
+    // ── GOV panel ────────────────────────────────────────────────────────────
+
+    function refreshGovPanel(ctx, intakeSessionId) {
+        var el = document.getElementById('gov-sidebar-content');
+        if (!el) return;
+        var model = ctx.agent_model || 'unknown';
+        var user = ctx.user_id || 'System';
+        var classification = ctx.classification || 'CUI';
+        var status = ctx.status || 'active';
+        var msgCount = ctx.message_count || 0;
+        var ctxId = ctx.context_id || '';
+        var created = ctx.created_at ? new Date(ctx.created_at).toLocaleString() : '—';
+        var lastActive = ctx.last_activity_at ? new Date(ctx.last_activity_at).toLocaleString() : '—';
+
+        var modelColor = {'kimi-cloud':'#58a6ff','sonnet':'#7c4dff','opus':'#f0883e','haiku':'#3fb950'}[model] || '#8b949e';
+        var statusColor = status === 'active' ? '#3fb950' : status === 'closed' ? '#f85149' : '#d29922';
+
+        var html = '<div class="gov-info-grid">'
+            + '<div class="gov-info-row"><span class="gov-info-label">AI Model</span>'
+            + '<span class="gov-info-value" style="color:' + modelColor + ';font-weight:600;">' + _esc(model) + '</span></div>'
+            + '<div class="gov-info-row"><span class="gov-info-label">Classification</span>'
+            + '<span class="gov-info-value gov-classification">' + _esc(classification) + '</span></div>'
+            + '<div class="gov-info-row"><span class="gov-info-label">Status</span>'
+            + '<span class="gov-info-value" style="color:' + statusColor + ';">' + _esc(status) + '</span></div>'
+            + '<div class="gov-info-row"><span class="gov-info-label">User</span>'
+            + '<span class="gov-info-value">' + _esc(user) + '</span></div>'
+            + '<div class="gov-info-row"><span class="gov-info-label">Messages</span>'
+            + '<span class="gov-info-value">' + msgCount + '</span></div>'
+            + '<div class="gov-info-row"><span class="gov-info-label">Session ID</span>'
+            + '<span class="gov-info-value gov-mono">' + _esc(ctxId.slice(0,16)) + '…</span></div>'
+            + '</div>';
+
+        if (intakeSessionId) {
+            html += '<div class="gov-info-row gov-info-row--sub"><span class="gov-info-label">Intake Session</span>'
+                + '<span class="gov-info-value gov-mono">' + _esc(intakeSessionId.slice(0,16)) + '…</span></div>';
+        }
+
+        html += '<div class="gov-links">'
+            + '<a href="/ai-transparency" target="_blank" class="gov-link">AI Transparency</a>'
+            + '<a href="/xai" target="_blank" class="gov-link">Explainability</a>'
+            + '<a href="/ai-accountability" target="_blank" class="gov-link">Accountability</a>'
+            + '</div>';
+
+        el.innerHTML = html;
+    }
+
+    function _esc(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── INTEL panel ──────────────────────────────────────────────────────────
+
+    function refreshIntelPanel(intakeSessionId) {
+        if (!intakeSessionId) {
+            _setIntelText('intel-rag-content', 'Connect a requirements intake session to activate RAG retrieval.');
+            _setIntelText('intel-bayesian-content', 'Discuss compliance topics to get information-gain optimized control recommendations.');
+            _setIntelText('intel-code-quality-content', 'Discuss code or implementation topics to get maintainability insights.');
+            _setIntelText('intel-genesis-content', 'Discuss improvements or research to see autonomous Genesis findings.');
+            _setIntelText('intel-health-content', '<span style="color:#4caf50;">Healthy</span> — No active session to monitor.');
+            return;
+        }
+        // Readiness → RAG + Bayesian
+        fetch(INTAKE_API + '/readiness/' + intakeSessionId)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) return;
+                var pct = Math.round((data.overall_score || data.overall || 0) * 100);
+                _setIntelText('intel-rag-content',
+                    '<strong>' + pct + '% readiness</strong> — '
+                    + (pct >= 70 ? 'Requirements quality is strong.' : pct >= 40 ? 'Some gaps detected. Keep elaborating.' : 'Early stage — continue the intake conversation.')
+                    + ' RAG context is automatically injected when you ask questions.');
+                var dims = data.dimensions || {};
+                var comp = dims.compliance || {};
+                var compScore = Math.round((comp.score || 0) * 100);
+                _setIntelText('intel-bayesian-content',
+                    '<strong>Compliance score: ' + compScore + '%</strong> — '
+                    + (compScore >= 70 ? 'Frameworks well-represented.' : 'Discuss compliance controls to improve coverage.')
+                    + ' Bayesian learning is active.');
+            })
+            .catch(function () {});
+
+        // Complexity → Code Quality
+        fetch(INTAKE_API + '/complexity/' + intakeSessionId)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) return;
+                var level = data.complexity_level || data.level || 'unknown';
+                var score = data.complexity_score !== undefined ? Math.round(data.complexity_score * 100) : null;
+                var scoreStr = score !== null ? ' (' + score + '%)' : '';
+                _setIntelText('intel-code-quality-content',
+                    'Complexity: <strong>' + _esc(level) + scoreStr + '</strong> — '
+                    + (level === 'high' || level === 'very_high' ? 'Consider decomposing into smaller services.' : 'Complexity is manageable.'));
+            })
+            .catch(function () {});
+
+        // Session → Genesis + Health
+        fetch(INTAKE_API + '/session/' + intakeSessionId)
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (data.error) return;
+                var reqCount = data.requirements_count || 0;
+                var docCount = data.documents_count || 0;
+                _setIntelText('intel-genesis-content',
+                    '<strong>' + reqCount + ' requirement' + (reqCount !== 1 ? 's' : '') + '</strong> captured'
+                    + (docCount > 0 ? ', <strong>' + docCount + ' document' + (docCount !== 1 ? 's' : '') + '</strong> uploaded' : '')
+                    + '. Genesis research is monitoring for knowledge gaps.');
+                var sess = data.session || {};
+                var goal = sess.goal || '';
+                var goalSnip = goal ? '"' + goal.slice(0,60) + (goal.length > 60 ? '…' : '') + '"' : 'No goal set yet.';
+                _setIntelText('intel-health-content',
+                    '<span style="color:#4caf50;">Healthy</span> — ' + _esc(goalSnip));
+            })
+            .catch(function () {});
+    }
+
+    function _setIntelText(id, html) {
+        var el = document.getElementById(id);
+        if (el) el.innerHTML = html;
     }
 
     function updateGovProcessing(isProcessing) {
