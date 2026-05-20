@@ -593,3 +593,131 @@ class TestGapListSectionRoute:
         result = self._call_route(app)
         assert result["gaps"] == []
         assert result["total_gaps"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Template: enhancement recommendations section structural checks (gcpl-map-05)
+# ---------------------------------------------------------------------------
+
+class TestEnhancementRecommendationsTemplate:
+    """Template source must contain the enhancement recommendations section."""
+
+    _tmpl_path = (
+        Path(__file__).parent.parent
+        / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+    )
+
+    def _html(self) -> str:
+        return self._tmpl_path.read_text(encoding="utf-8")
+
+    def test_template_has_enhancement_recommendations_heading(self):
+        assert "Enhancement Recommendations" in self._html()
+
+    def test_template_has_recommendation_column_header(self):
+        assert "Recommendation" in self._html()
+
+    def test_template_has_type_column_header(self):
+        assert "Type" in self._html()
+
+    def test_template_has_impact_column_header(self):
+        assert "Impact" in self._html()
+
+    def test_template_iterates_recommendations(self):
+        assert "for r in recommendations" in self._html()
+
+    def test_template_has_recommendations_empty_state(self):
+        assert "No recommendations generated yet." in self._html()
+
+    def test_template_renders_r_recommendation(self):
+        assert "r.recommendation" in self._html()
+
+    def test_template_renders_r_domain(self):
+        assert "r.domain" in self._html()
+
+    def test_template_renders_r_type(self):
+        assert "r.type" in self._html()
+
+    def test_template_renders_r_impact(self):
+        assert "r.impact" in self._html()
+
+
+# ---------------------------------------------------------------------------
+# Route tests: enhancement recommendations data passed to template (gcpl-map-05)
+# ---------------------------------------------------------------------------
+
+class TestEnhancementRecommendationsRoute:
+    """Route must pass recommendations list to render_template."""
+
+    def _call_route(self, flask_app, rec_return_value) -> dict:
+        captured = {}
+
+        def fake_render(template_name, **kwargs):
+            captured.update(kwargs)
+            captured["_template"] = template_name
+            return "OK"
+
+        with patch("tools.govcon.gap_analyzer.generate_recommendations",
+                   return_value=rec_return_value):
+            with patch("tools.dashboard.app.render_template", side_effect=fake_render):
+                with flask_app.test_client() as c:
+                    resp = c.get("/govcon/capabilities")
+                    captured["_status"] = resp.status_code
+
+        return captured
+
+    def test_route_passes_recommendations_key(self, tmp_path):
+        app, _ = _build_test_app(tmp_path, [])
+        result = self._call_route(app, {"recommendations": []})
+        assert "recommendations" in result
+
+    def test_recommendations_is_list(self, tmp_path):
+        app, _ = _build_test_app(tmp_path, [])
+        result = self._call_route(app, {"recommendations": []})
+        assert isinstance(result["recommendations"], list)
+
+    def test_empty_recommendations_returned_when_no_gaps(self, tmp_path):
+        app, _ = _build_test_app(tmp_path, [])
+        result = self._call_route(app, {"recommendations": []})
+        assert result["recommendations"] == []
+
+    def test_recommendations_populated_from_gap_analyzer(self, tmp_path):
+        app, _ = _build_test_app(tmp_path, [])
+        recs = [
+            {"recommendation": "Extend DevSecOps pipeline", "domain": "devsecops",
+             "type": "pipeline", "impact": "high"},
+            {"recommendation": "Add ATO tooling", "domain": "ato_rmf",
+             "type": "compliance", "impact": "medium"},
+        ]
+        result = self._call_route(app, {"recommendations": recs})
+        assert len(result["recommendations"]) == 2
+        assert result["recommendations"][0]["domain"] == "devsecops"
+
+    def test_recommendations_truncated_to_15(self, tmp_path):
+        app, _ = _build_test_app(tmp_path, [])
+        recs = [
+            {"recommendation": f"Rec {i}", "domain": "devsecops",
+             "type": "pipeline", "impact": "low"}
+            for i in range(20)
+        ]
+        result = self._call_route(app, {"recommendations": recs})
+        assert len(result["recommendations"]) <= 15
+
+    def test_route_degrades_gracefully_when_gap_analyzer_raises(self, tmp_path):
+        app, _ = _build_test_app(tmp_path, [])
+        captured = {}
+
+        def fake_render(template_name, **kwargs):
+            captured.update(kwargs)
+            return "OK"
+
+        def exploding_generate():
+            raise RuntimeError("gap_analyzer offline")
+
+        with patch("tools.govcon.gap_analyzer.generate_recommendations",
+                   side_effect=exploding_generate):
+            with patch("tools.dashboard.app.render_template", side_effect=fake_render):
+                with app.test_client() as c:
+                    resp = c.get("/govcon/capabilities")
+                    assert resp.status_code == 200
+        assert captured.get("recommendations", None) is not None
+        assert isinstance(captured["recommendations"], list)
