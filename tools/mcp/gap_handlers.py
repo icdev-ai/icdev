@@ -1600,6 +1600,120 @@ def handle_cot_invoke(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+# ---------------------------------------------------------------------------
+# NOC CANVAS (NOCC)
+# ---------------------------------------------------------------------------
+
+
+def noc_alarm_ingest(args: dict) -> dict:
+    """Ingest an alarm into NOCC and correlate with existing alarms."""
+    try:
+        from tools.noc_canvas.db.init_db import get_connection
+        from tools.noc_canvas.alarm_correlator import ingest_alarm
+        conn = get_connection()
+        try:
+            result = ingest_alarm(conn, args)
+            return result
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("noc_alarm_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
+def noc_incident_create(args: dict) -> dict:
+    """Create a P1–P4 incident in the NOC Operations Canvas."""
+    try:
+        from tools.noc_canvas.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            title = args.get("title", "")
+            severity = args.get("severity", "p3")
+            affected_circuit = args.get("affected_circuit", "")
+            affected_carrier = args.get("affected_carrier", "")
+            root_cause = args.get("root_cause", "")
+            sla_breach = 1 if args.get("sla_breach") else 0
+            opened_by = args.get("opened_by", "mcp-gateway")
+            assigned_to = args.get("assigned_to", "")
+            import time as _time
+            incident_number = f"INC-MCP-{int(_time.time())}"
+            try:
+                conn.execute(
+                    "INSERT INTO noc_incidents (incident_number, title, severity, status, "
+                    "affected_circuit, affected_carrier, root_cause, sla_breach, opened_by, "
+                    "assigned_to, classification) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (incident_number, title, severity, "open", affected_circuit,
+                     affected_carrier, root_cause, sla_breach, opened_by, assigned_to,
+                     "CUI // SP-CTI"),
+                )
+            except Exception:
+                conn.execute(
+                    "INSERT INTO noc_incidents (incident_number, title, severity, status, "
+                    "affected_circuit, affected_carrier, root_cause, sla_breach, opened_by, "
+                    "assigned_to, classification) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (incident_number, title, severity, "open", affected_circuit,
+                     affected_carrier, root_cause, sla_breach, opened_by, assigned_to,
+                     "CUI // SP-CTI"),
+                )
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"status": "created", "incident_number": incident_number, "severity": severity}
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("noc_incident_create: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# PMC CANVAS
+# ---------------------------------------------------------------------------
+
+
+def pmc_peer_evaluate(args: dict) -> dict:
+    """Run the 6-dimension peering decision engine on a BGP peer."""
+    try:
+        from tools.pmc_canvas.peering_decision_engine import evaluate_peer
+        peer = {
+            "asn": args.get("asn"),
+            "org_name": args.get("org_name", f"AS{args.get('asn')}"),
+            "traffic_ratio": args.get("traffic_ratio", 0.5),
+            "ipv4_prefix_count": args.get("ipv4_prefix_count", 0),
+            "ipv6_prefix_count": args.get("ipv6_prefix_count", 0),
+            "irr_as_set": args.get("irr_as_set", ""),
+        }
+        our_asn = args.get("our_asn", 0)
+        our_ix_ids = args.get("our_ix_ids", [])
+        prefixes = args.get("prefixes", [])
+        # Inject optional scored dimensions
+        if "rpki_valid_pct" in args:
+            peer["rpki_valid_pct"] = args["rpki_valid_pct"]
+        if "irr_registered_pct" in args:
+            peer["irr_registered_pct"] = args["irr_registered_pct"]
+        if "noc_responsiveness" in args:
+            peer["noc_responsiveness"] = args["noc_responsiveness"]
+        return evaluate_peer(peer, our_asn, our_ix_ids, prefixes)
+    except Exception as exc:
+        logger.warning("pmc_peer_evaluate: %s", exc)
+        return {"error": str(exc)}
+
+
+def pmc_rpki_validate(args: dict) -> dict:
+    """Validate a BGP prefix against Cloudflare RPKI API."""
+    try:
+        from tools.pmc_canvas.rpki_validator import validate_prefix
+        prefix = args.get("prefix", "")
+        origin_asn = int(args.get("origin_asn", 0))
+        if not prefix or not origin_asn:
+            return {"error": "prefix and origin_asn are required"}
+        return validate_prefix(prefix, origin_asn)
+    except Exception as exc:
+        logger.warning("pmc_rpki_validate: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_cod_invoke(args: dict) -> dict:
     """Invoke Chain of Debate via ChainOrchestrator."""
     try:
