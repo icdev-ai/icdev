@@ -212,8 +212,9 @@ def list_wbs(contract_id):
     try:
         from tools.govcon.contract_manager import list_wbs as _list, build_wbs_tree as _tree
 
-        tree = request.args.get("tree", "").lower() == "true"
-        if tree:
+        mode = request.args.get("mode", "")
+        tree_flag = request.args.get("tree", "").lower() == "true"
+        if mode == "tree" or tree_flag:
             result = _tree(contract_id)
         else:
             result = _list(contract_id)
