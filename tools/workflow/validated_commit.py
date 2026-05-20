@@ -379,9 +379,53 @@ def _run_coherence(cwd: str, compare_to_main: bool = True) -> Tuple[bool, str]:
     return True, "coherence fails in both main and cwd — pre-existing"
 
 
-def _run_e2e(cwd: str, ui_touched: bool) -> Tuple[bool, str, Dict[str, Any]]:
-    """Run E2E test if UI files were modified AND dashboard is running."""
-    metrics = {"e2e_ran": False, "e2e_passed": None}
+def _run_route_smoke(modified_files: List[str]) -> Tuple[bool, str, Dict[str, Any]]:
+    """Run HTTP route smoke on routes affected by *modified_files*.
+
+    This is the critical gate that CodeLens + Coherence cannot replace:
+    it makes real HTTP requests to the running server and verifies pages
+    return 200 without error text in the body.  Catches:
+      - Blueprint import errors (500 at route registration)
+      - Missing templates (TemplateNotFound 500)
+      - Missing DB tables/columns (OperationalError 500)
+      - Nav links pointing to unregistered routes (404)
+    """
+    metrics: Dict[str, Any] = {"smoke_ran": False, "smoke_passed": None, "smoke_failures": []}
+    try:
+        from tools.testing.route_smoke import run_smoke, _routes_for_changed_files, _server_up
+    except ImportError:
+        return True, "route_smoke not available — skipped", metrics
+
+    if not _server_up("http://localhost:5050"):
+        return True, "dashboard not running — route smoke skipped", metrics
+
+    routes = _routes_for_changed_files(modified_files) if modified_files else []
+    if not routes:
+        return True, "no routes affected — route smoke skipped", metrics
+
+    metrics["smoke_ran"] = True
+    passed, results = run_smoke(routes, verbose=False)
+    failures = [r for r in results if not r["ok"]]
+    metrics["smoke_passed"] = passed
+    metrics["smoke_failures"] = [{"route": r["route"], "error": r["error"]} for r in failures]
+
+    if not passed:
+        fail_summary = "; ".join(f"{r['route']} ({r['error']})" for r in failures[:5])
+        return False, f"Route smoke FAILED: {fail_summary}", metrics
+
+    return True, f"Route smoke passed ({len(results)} routes OK)", metrics
+
+
+def _run_e2e(cwd: str, ui_touched: bool, modified_files: Optional[List[str]] = None) -> Tuple[bool, str, Dict[str, Any]]:
+    """Run E2E test if UI files were modified AND dashboard is running.
+
+    Now includes route smoke as a MANDATORY first gate (catches 500/404
+    at page load — things CodeLens + Coherence cannot detect).
+    """
+    metrics: Dict[str, Any] = {
+        "e2e_ran": False, "e2e_passed": None,
+        "smoke_ran": False, "smoke_passed": None, "smoke_failures": [],
+    }
 
     if not ui_touched:
         return True, "no UI files modified — E2E skipped", metrics
@@ -392,6 +436,27 @@ def _run_e2e(cwd: str, ui_touched: bool) -> Tuple[bool, str, Dict[str, Any]]:
     except Exception:
         return True, "dashboard not running — E2E skipped", metrics
 
+    # ── Route Smoke Gate (NEW) ────────────────────────────────────────────────
+    # Must pass before spending 3+ minutes on full E2E. Catches broken pages
+    # in < 30 seconds. A 500 on ANY affected route blocks the merge.
+    smoke_ok, smoke_reason, smoke_metrics = _run_route_smoke(modified_files or [])
+    metrics.update(smoke_metrics)
+    if not smoke_ok:
+        # Log to build.ndjson so log_triage can create a remediation task
+        try:
+            from tools.logging.build_logger import capture_pytest
+            capture_pytest(
+                returncode=1,
+                stdout=f"Route smoke FAILED: {smoke_reason}",
+                stderr="",
+                duration_s=0,
+                passed=0,
+                failed=len(smoke_metrics.get("smoke_failures", [])),
+            )
+        except Exception:
+            pass
+        return False, f"Route smoke FAILED — {smoke_reason}", metrics
+
     # Verify the kanban POST API is responsive before committing to a full E2E
     # run. If the endpoint doesn't answer a lightweight GET within 5 s (e.g.
     # SQLite write-lock contention from the scheduler), treat it as an
@@ -400,7 +465,7 @@ def _run_e2e(cwd: str, ui_touched: bool) -> Tuple[bool, str, Dict[str, Any]]:
         _ul.urlopen("http://localhost:5050/api/kanban/tasks", timeout=5)  # nosec B310
     except Exception:
         metrics["e2e_ran"] = False
-        return True, "kanban API unresponsive — E2E skipped (transient load)", metrics
+        return True, f"{smoke_reason}; kanban API unresponsive — full E2E skipped (transient load)", metrics
 
     metrics["e2e_ran"] = True
     _cmd = ["python", "tests/e2e_kanban_depends_on.py"]
@@ -607,7 +672,7 @@ def validate_working_tree(
         for f in modified_files
     )
     if run_e2e:
-        ok, reason, e2e_metrics = _run_e2e(cwd, ui_touched)
+        ok, reason, e2e_metrics = _run_e2e(cwd, ui_touched, modified_files=modified_files)
         metrics.update(e2e_metrics)
         if not ok:
             metrics["elapsed_sec"] = round(time.monotonic() - t0, 2)

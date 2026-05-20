@@ -2737,6 +2737,141 @@ def check_security_context() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: nav_route_parity — every href in base.html nav must have a Flask route
+# ---------------------------------------------------------------------------
+
+
+def check_nav_route_parity() -> CoherenceCheck:
+    """Verify every static nav href in base.html has a matching Flask @route decorator.
+
+    Parses href="/<path>" links from the navbar section of base.html, then
+    grepping tools/ for @<name>.route("/<path>") or @bp.route("/<path>").
+    Catches the most common cause of unusable menus: a nav link added to the
+    template before the blueprint route was implemented (or vice versa).
+
+    Does NOT require a running server — purely static analysis.
+    """
+    base_html = PROJECT_ROOT / "tools" / "dashboard" / "templates" / "base.html"
+    if not base_html.exists():
+        return CoherenceCheck(
+            check_id="nav_route_parity",
+            check_name="Nav / Route Parity",
+            status="warn",
+            expected=["base.html exists"],
+            actual=["base.html not found"],
+            missing=[],
+            extra=[],
+            message="base.html not found — skipping nav/route parity check",
+        )
+
+    nav_html = _read_text(base_html)
+
+    # Extract all static hrefs from the nav (exclude JS hrefs, anchors, external URLs)
+    raw_hrefs: List[str] = re.findall(r'href="(/[^"#?{%][^"]*?)"', nav_html)
+    # Keep only simple paths (no query strings, no dynamic segments)
+    nav_routes: List[str] = sorted(set(
+        h.rstrip("/") or "/"
+        for h in raw_hrefs
+        if not h.startswith("//") and "{{" not in h and "{%" not in h
+    ))
+
+    # Build a set of all route prefixes registered in tools/ blueprints
+    # by grepping for @*.route("/...") patterns
+    all_py = list((PROJECT_ROOT / "tools").rglob("*.py"))
+    registered_prefixes: Set[str] = set()
+    route_pattern = re.compile(r'@\w+\.route\s*\(\s*["\'](/[^"\']*)["\']')
+    url_prefix_pattern = re.compile(r'url_prefix\s*=\s*["\']([^"\']+)["\']')
+
+    for py_file in all_py:
+        src = _read_text(py_file)
+        for m in route_pattern.finditer(src):
+            registered_prefixes.add(m.group(1).split("<")[0].rstrip("/") or "/")
+        # Also capture url_prefix values as registered prefixes
+        for m in url_prefix_pattern.finditer(src):
+            registered_prefixes.add(m.group(1).rstrip("/") or "/")
+
+    # Also check app.py add_url_rule
+    app_py = PROJECT_ROOT / "tools" / "dashboard" / "app.py"
+    if app_py.exists():
+        for m in re.finditer(r'add_url_rule\s*\(\s*["\']([^"\']+)["\']', _read_text(app_py)):
+            registered_prefixes.add(m.group(1).split("<")[0].rstrip("/") or "/")
+
+    missing: List[str] = []
+    for route in nav_routes:
+        # A route is "covered" if any registered prefix is a prefix of this route
+        covered = any(
+            route == reg or route.startswith(reg + "/") or reg == "/"
+            for reg in registered_prefixes
+        )
+        if not covered:
+            missing.append(f"{route} — no matching @route or url_prefix found in tools/")
+
+    status = "fail" if missing else "pass"
+    return CoherenceCheck(
+        check_id="nav_route_parity",
+        check_name="Nav / Route Parity",
+        status=status,
+        expected=[f"All {len(nav_routes)} nav hrefs have a registered Flask route"],
+        actual=[f"{len(missing)} unmatched nav href(s)"],
+        missing=missing,
+        extra=[],
+        message=(
+            f"{len(missing)} nav href(s) have no matching Flask route — "
+            "users will hit 404 clicking these menu items"
+        ) if missing else f"All {len(nav_routes)} nav hrefs matched to registered routes",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check: blueprint_imports — every blueprint.py must import without error
+# ---------------------------------------------------------------------------
+
+
+def check_blueprint_imports() -> CoherenceCheck:
+    """Dry-import every blueprint.py to catch ImportError before runtime.
+
+    Runs each blueprint in a subprocess so a bad import doesn't poison this
+    process.  A blueprint that fails to import will cause a 500 on ALL routes
+    served by that blueprint — this check catches that before deployment.
+    """
+    import subprocess as _sp
+
+    blueprint_files = sorted((PROJECT_ROOT / "tools").rglob("blueprint.py"))
+    failures: List[str] = []
+
+    for bp_file in blueprint_files:
+        rel = bp_file.relative_to(PROJECT_ROOT)
+        # Convert path to module name: tools/govcon/blueprint.py → tools.govcon.blueprint
+        module = str(rel).replace("\\", "/").replace("/", ".").removesuffix(".py")
+        try:
+            result = _sp.run(
+                [sys.executable, "-c", f"import sys; sys.path.insert(0, '.'); import {module}"],
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                cwd=str(PROJECT_ROOT), timeout=15,
+            )
+            if result.returncode != 0:
+                first_error = (result.stderr or result.stdout or "unknown error").strip().splitlines()[0]
+                failures.append(f"{rel}: {first_error}")
+        except Exception as exc:
+            failures.append(f"{rel}: subprocess error — {exc}")
+
+    status = "fail" if failures else "pass"
+    return CoherenceCheck(
+        check_id="blueprint_imports",
+        check_name="Blueprint Import Check",
+        status=status,
+        expected=["All blueprint.py files import without error"],
+        actual=[f"{len(failures)} import failure(s)"],
+        missing=failures,
+        extra=[],
+        message=(
+            f"{len(failures)} blueprint(s) fail to import — "
+            "all routes in those blueprints will return 500"
+        ) if failures else f"All {len(blueprint_files)} blueprints import cleanly",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: log_standard_compliance — all tools/ modules must use get_logger()
 # ---------------------------------------------------------------------------
 
@@ -2810,6 +2945,8 @@ CHECK_REGISTRY = {
     "mcp_security": check_mcp_security,
     "security_context": check_security_context,
     "log_standard": check_log_standard_compliance,
+    "nav_route_parity": check_nav_route_parity,
+    "blueprint_imports": check_blueprint_imports,
 }
 
 
