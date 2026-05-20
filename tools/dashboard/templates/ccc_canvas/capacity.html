@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Capacity Plans — CCC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0" style="color:#38bdf8;"><i class="bi bi-graph-up-arrow me-2"></i>Capacity Planning</h5>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-info" onclick="runCapacityAnalysis()">Run Analysis</button>
+      <a href="/ccc" class="btn btn-sm btn-outline-secondary">← Overview</a>
+    </div>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;">
+    <a href="/ccc" class="btn btn-sm btn-outline-secondary">Overview</a>
+    <a href="/ccc/circuits" class="btn btn-sm btn-outline-secondary">Circuits</a>
+    <a href="/ccc/cross-connects" class="btn btn-sm btn-outline-secondary">Cross-Connects</a>
+    <a href="/ccc/loa" class="btn btn-sm btn-outline-secondary">LOA</a>
+    <a href="/ccc/capacity" class="btn btn-sm btn-outline-info active">Capacity</a>
+    <a href="/ccc/dwdm" class="btn btn-sm btn-outline-secondary">DWDM</a>
+  </div>
+
+  <div id="analysis-banner" class="d-none alert alert-info mb-3"></div>
+
+  <div class="card bg-dark border-secondary">
+    <div class="card-body p-0">
+      <table class="table table-dark table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Circuit ID</th><th>Carrier</th><th>BW (Gbps)</th>
+            <th>Current Util%</th><th>6-mo Projected%</th><th>Months to Sat.</th>
+            <th>Growth %/mo</th><th>Confidence</th><th>Action</th><th>Plan Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in plans %}
+          <tr>
+            <td class="text-info fw-bold">{{ p.circuit_id }}</td>
+            <td>{{ p.carrier }}</td>
+            <td>{{ p.bandwidth_gbps }}</td>
+            <td>
+              {% set u = p.current_utilization_pct | float %}
+              <span class="{% if u >= 85 %}text-danger{% elif u >= 70 %}text-warning{% else %}text-success{% endif %} fw-bold">
+                {{ u | round(1) }}%
+              </span>
+            </td>
+            <td>
+              {% set pu = p.projected_utilization_pct | float %}
+              <span class="{% if pu >= 85 %}text-danger{% elif pu >= 70 %}text-warning{% else %}text-success{% endif %}">
+                {{ pu | round(1) }}%
+              </span>
+            </td>
+            <td>
+              {% set m = p.months_to_saturation | int %}
+              <span class="{% if m <= 6 %}text-danger fw-bold{% elif m <= 12 %}text-warning{% else %}text-success{% endif %}">
+                {% if m >= 9999 %}∞{% else %}{{ m }}{% endif %}
+              </span>
+            </td>
+            <td>{{ p.growth_rate_pct | round(2) }}%</td>
+            <td>{{ (p.confidence_score * 100) | round(0) | int }}%</td>
+            <td style="font-size:.78rem;max-width:280px;">{{ p.recommended_action }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ p.plan_date[:10] if p.plan_date else '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="text-center text-muted py-4">
+            No capacity plans yet. Click "Run Analysis" to generate plans for all active circuits.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% include 'includes/iqe_query_widget.html' %}
+</div>
+<script>
+const IQE_CANVAS = 'ccc'; const IQE_COLLECTION = 'ccc.capacity_plans';
+function runCapacityAnalysis() {
+  const banner = document.getElementById('analysis-banner');
+  banner.classList.remove('d-none');
+  banner.textContent = 'Running capacity analysis…';
+  fetch('/api/ccc/capacity/report')
+    .then(r => r.json())
+    .then(d => { banner.textContent = `Analysis complete: ${d.count} plans generated. Reload to see updated table.`; })
+    .catch(e => { banner.classList.replace('alert-info','alert-danger'); banner.textContent = 'Analysis failed: '+e; });
+}
+</script>
+{% endblock %}

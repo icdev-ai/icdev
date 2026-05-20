@@ -15,6 +15,7 @@ if str(_REPO_ROOT) not in sys.path:
 os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 os.environ["NOCC_STORAGE_BACKEND"] = "sqlite"
 os.environ["PMC_STORAGE_BACKEND"] = "sqlite"
+os.environ["CCC_STORAGE_BACKEND"] = "sqlite"
 
 
 @pytest.fixture
@@ -34,6 +35,19 @@ def nocc_db(tmp_path, monkeypatch):
     monkeypatch.setenv("NOCC_STORAGE_BACKEND", "sqlite")
     monkeypatch.setenv("NOCC_DB_PATH", str(db_path))
     from tools.noc_canvas.db.init_db import init_db, get_connection
+    init_db()
+    conn = get_connection()
+    yield conn
+    conn.close()
+
+
+@pytest.fixture
+def ccc_db(tmp_path, monkeypatch):
+    """In-memory SQLite CCC DB for unit tests."""
+    db_path = tmp_path / "ccc_canvas.db"
+    monkeypatch.setenv("CCC_STORAGE_BACKEND", "sqlite")
+    monkeypatch.setenv("CCC_DB_PATH", str(db_path))
+    from tools.ccc_canvas.db.init_db import init_db, get_connection
     init_db()
     conn = get_connection()
     yield conn

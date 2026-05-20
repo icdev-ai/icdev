@@ -1503,3 +1503,22 @@ gates:
     threshold_unregistered_pct: 20
     table: peering_peers
     nist_controls: [SC-5, CM-8]
+
+  # CCC (Circuit & Capacity Canvas) gates
+  - id: CCC-UTIL-001
+    name: Circuit Critical Utilization
+    description: Warns when any active circuit reaches 85% utilization — indicates immediate upgrade needed.
+    severity: WARN
+    warn_on: [ccc_circuit_critical_utilization]
+    threshold_utilization_pct: 85
+    table: ccc_circuits
+    nist_controls: [CP-2, SA-9, SC-5]
+
+  - id: CCC-EXPIRY-001
+    name: Circuit Contract Expiring
+    description: Warns when an active circuit contract expires within 90 days with no renewal record.
+    severity: WARN
+    warn_on: [ccc_contract_expiring_soon]
+    threshold_days: 90
+    table: ccc_circuits
+    nist_controls: [CP-2, SA-9]

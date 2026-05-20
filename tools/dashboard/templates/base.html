@@ -297,6 +297,16 @@
                     <li><a href="/pmc/requests">Peering Requests</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
+                    {% if ccc_enabled %}
+                    <li class="nav-section-label">Circuit &amp; Capacity</li>
+                    <li><a href="/ccc" style="color:#38bdf8;">CCC Overview</a></li>
+                    <li><a href="/ccc/circuits">Circuits</a></li>
+                    <li><a href="/ccc/cross-connects">Cross-Connects</a></li>
+                    <li><a href="/ccc/loa">LOA Requests</a></li>
+                    <li><a href="/ccc/capacity">Capacity Plans</a></li>
+                    <li><a href="/ccc/dwdm">DWDM Spans</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
                     {% if govlift_enabled %}
                     <li class="nav-section-label">Cloud Migration</li>
                     <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
@@ -842,6 +852,7 @@
             [/^\/supply.chain/, 'supply_chain'],
             [/^\/noc/, 'nocc'],
             [/^\/pmc/, 'pmc'],
+            [/^\/ccc/, 'ccc'],
         ];
 
         function detectCanvas() {

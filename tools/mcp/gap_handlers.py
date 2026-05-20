@@ -1714,6 +1714,72 @@ def pmc_rpki_validate(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def ccc_circuit_ingest(args: dict) -> dict:
+    """Add or update a circuit record in the CCC inventory."""
+    try:
+        from tools.ccc_canvas.db.init_db import get_connection
+        conn = get_connection()
+        circuit_id = args.get("circuit_id", "")
+        circuit_type = args.get("circuit_type", "other")
+        carrier = args.get("carrier", "")
+        if not circuit_id or not carrier:
+            return {"error": "circuit_id and carrier are required"}
+        fields = {
+            "circuit_id": circuit_id,
+            "circuit_type": circuit_type,
+            "carrier": carrier,
+            "bandwidth_gbps": float(args.get("bandwidth_gbps", 0)),
+            "utilization_pct": float(args.get("utilization_pct", 0)),
+            "mrr_usd": float(args.get("mrr_usd", 0)),
+        }
+        cols = ", ".join(fields.keys())
+        try:
+            placeholders = ", ".join("?" * len(fields))
+            conn.execute(f"INSERT OR REPLACE INTO ccc_circuits ({cols}) VALUES ({placeholders})", tuple(fields.values()))
+        except Exception:
+            placeholders = ", ".join("%s" * len(fields))
+            conn.execute(f"INSERT INTO ccc_circuits ({cols}) VALUES ({placeholders}) ON CONFLICT (circuit_id) DO UPDATE SET circuit_type=EXCLUDED.circuit_type", tuple(fields.values()))
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "circuit_id": circuit_id}
+    except Exception as exc:
+        logger.warning("ccc_circuit_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
+def ccc_capacity_analyze(args: dict) -> dict:
+    """Run capacity analysis for a single circuit by primary key."""
+    try:
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.capacity_engine import analyze_circuit
+        circuit_pk = int(args.get("circuit_pk", 0))
+        if not circuit_pk:
+            return {"error": "circuit_pk required"}
+        conn = get_connection()
+        result = analyze_circuit(conn, circuit_pk)
+        conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("ccc_capacity_analyze: %s", exc)
+        return {"error": str(exc)}
+
+
+def ccc_loa_create(args: dict) -> dict:
+    """Create an LOA request for a cross-connect."""
+    try:
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.loa_workflow import create_loa_request
+        if not args.get("facility"):
+            return {"error": "facility required"}
+        conn = get_connection()
+        result = create_loa_request(conn, args)
+        conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("ccc_loa_create: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_cod_invoke(args: dict) -> dict:
     """Invoke Chain of Debate via ChainOrchestrator."""
     try:

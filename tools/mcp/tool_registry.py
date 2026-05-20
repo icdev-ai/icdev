@@ -6761,4 +6761,55 @@ RESOURCE_REGISTRY = {
             "required": ["prefix", "origin_asn"],
         },
     },
+    # ── CCC: Circuit & Capacity Canvas ──────────────────────────────────────
+    "ccc_circuit_ingest": {
+        "category": "ccc",
+        "module": "tools.ccc_canvas.blueprint",
+        "handler": "create_ccc_blueprint",
+        "description": "Add or update a circuit record in the CCC inventory (circuit_id, type, carrier, bandwidth, utilization).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "circuit_id":   {"type": "string"},
+                "circuit_type": {"type": "string", "enum": ["ethernet","wavelength","dark_fiber","100g","400g","mpls","ip_vpn","other"]},
+                "carrier":      {"type": "string"},
+                "bandwidth_gbps": {"type": "number"},
+                "utilization_pct": {"type": "number"},
+                "mrr_usd":      {"type": "number"},
+            },
+            "required": ["circuit_id", "circuit_type", "carrier"],
+        },
+    },
+    "ccc_capacity_analyze": {
+        "category": "ccc",
+        "module": "tools.ccc_canvas.capacity_engine",
+        "handler": "analyze_circuit",
+        "description": "Run capacity analysis for a single circuit: projects utilization, months-to-saturation, and recommended action.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "circuit_pk": {"type": "integer", "description": "Internal circuit primary key (id column)"},
+            },
+            "required": ["circuit_pk"],
+        },
+    },
+    "ccc_loa_create": {
+        "category": "ccc",
+        "module": "tools.ccc_canvas.loa_workflow",
+        "handler": "create_loa_request",
+        "description": "Create an LOA request for a cross-connect at a colocation facility.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "facility":          {"type": "string"},
+                "requester_name":    {"type": "string"},
+                "requester_email":   {"type": "string"},
+                "requester_company": {"type": "string"},
+                "rack_a":            {"type": "string"},
+                "rack_z":            {"type": "string"},
+                "valid_days":        {"type": "integer", "default": 30},
+            },
+            "required": ["facility", "requester_name", "requester_email", "requester_company"],
+        },
+    },
 }
