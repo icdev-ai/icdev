@@ -3035,3 +3035,341 @@ class TestAutoComplianceAPIEndpoint:
         resp = self._post(api_app, opp_id="opp-test-123")
         data = resp.get_json()
         assert data["opportunity_id"] == "opp-test-123"
+
+
+# Fake data: POST /api/govcon/opportunities/<id>/auto-draft (gcpl-dft-04)
+# ---------------------------------------------------------------------------
+
+_FAKE_DRAFT_RESULTS = [
+    {
+        "status": "ok",
+        "draft_id": "draft-uuid-1",
+        "shall_id": "shall-1",
+        "method": "template",
+        "confidence": 0.85,
+        "best_coverage": 0.92,
+        "capabilities_matched": 3,
+        "kb_blocks_used": 2,
+        "draft_length": 412,
+    },
+    {
+        "status": "ok",
+        "draft_id": "draft-uuid-2",
+        "shall_id": "shall-2",
+        "method": "template",
+        "confidence": 0.72,
+        "best_coverage": 0.61,
+        "capabilities_matched": 2,
+        "kb_blocks_used": 1,
+        "draft_length": 388,
+    },
+    {
+        "status": "ok",
+        "draft_id": "draft-uuid-3",
+        "shall_id": "shall-3",
+        "method": "template",
+        "confidence": 0.55,
+        "best_coverage": 0.25,
+        "capabilities_matched": 1,
+        "kb_blocks_used": 0,
+        "draft_length": 310,
+    },
+]
+
+_FAKE_DRAFT_ALL_RESULT_OK = {
+    "status": "ok",
+    "opportunity_id": "opp-test-123",
+    "total_statements": 3,
+    "drafted": 3,
+    "avg_confidence": 0.71,
+    "results": _FAKE_DRAFT_RESULTS,
+}
+
+_FAKE_DRAFT_ALL_RESULT_NO_STMTS = {
+    "status": "error",
+    "message": "No shall statements for opp-empty",
+}
+
+_FAKE_DRAFT_ALL_RESULT_EMPTY = {
+    "status": "ok",
+    "opportunity_id": "opp-no-drafts",
+    "total_statements": 0,
+    "drafted": 0,
+    "avg_confidence": 0.0,
+    "results": [],
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: POST /api/govcon/opportunities/<id>/auto-draft (gcpl-dft-04)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoDraftAPIEndpoint:
+    """POST /api/govcon/opportunities/<id>/auto-draft returns draft section list."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _post(self, api_app, opp_id="opp-test-123", fake_result=None, body=None):
+        if fake_result is None:
+            fake_result = _FAKE_DRAFT_ALL_RESULT_OK
+        with patch(
+            "tools.govcon.response_drafter.draft_all_for_opportunity",
+            return_value=fake_result,
+        ):
+            with api_app.test_client() as c:
+                resp = c.post(
+                    f"/api/govcon/opportunities/{opp_id}/auto-draft",
+                    json=body,
+                    content_type="application/json",
+                )
+        return resp
+
+    def test_post_returns_200(self, api_app):
+        resp = self._post(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._post(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_opportunity_id(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "opportunity_id" in data
+
+    def test_opportunity_id_matches_url_param(self, api_app):
+        resp = self._post(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        assert data["opportunity_id"] == "opp-test-123"
+
+    def test_response_has_total_statements(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "total_statements" in data
+
+    def test_total_statements_is_non_negative_integer(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        total = data["total_statements"]
+        assert isinstance(total, int) and not isinstance(total, bool)
+        assert total >= 0
+
+    def test_response_has_drafted(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "drafted" in data
+
+    def test_drafted_is_non_negative_integer(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        drafted = data["drafted"]
+        assert isinstance(drafted, int) and not isinstance(drafted, bool)
+        assert drafted >= 0
+
+    def test_drafted_does_not_exceed_total_statements(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert data["drafted"] <= data["total_statements"], (
+            f"drafted={data['drafted']} exceeds total_statements={data['total_statements']}"
+        )
+
+    def test_response_has_avg_confidence(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "avg_confidence" in data
+
+    def test_avg_confidence_is_numeric(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        avg = data["avg_confidence"]
+        assert isinstance(avg, (int, float)) and not isinstance(avg, bool), (
+            f"avg_confidence must be numeric, got {type(avg).__name__}: {avg!r}"
+        )
+
+    def test_avg_confidence_is_between_0_and_1(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        avg = data["avg_confidence"]
+        assert 0.0 <= avg <= 1.0, f"avg_confidence {avg!r} out of range [0.0, 1.0]"
+
+    def test_response_has_results(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "results" in data
+
+    def test_results_is_a_list(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert isinstance(data["results"], list)
+
+    def test_results_length_matches_total_statements(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert len(data["results"]) == data["total_statements"], (
+            f"results length {len(data['results'])} != total_statements {data['total_statements']}"
+        )
+
+    def test_each_result_has_status(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert "status" in r, f"results[{i}] missing 'status'"
+
+    def test_each_result_has_draft_id(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert "draft_id" in r, f"results[{i}] missing 'draft_id'"
+
+    def test_each_result_draft_id_is_non_empty_string(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert isinstance(r["draft_id"], str) and r["draft_id"], (
+                f"results[{i}]['draft_id'] must be non-empty string, got {r['draft_id']!r}"
+            )
+
+    def test_each_result_has_shall_id(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert "shall_id" in r, f"results[{i}] missing 'shall_id'"
+
+    def test_each_result_has_method(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert "method" in r, f"results[{i}] missing 'method'"
+
+    def test_each_result_method_is_valid_string(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        valid_methods = {"auto", "template", "llm"}
+        for i, r in enumerate(data["results"]):
+            assert r["method"] in valid_methods, (
+                f"results[{i}]['method']={r['method']!r} not in {valid_methods}"
+            )
+
+    def test_each_result_has_confidence(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert "confidence" in r, f"results[{i}] missing 'confidence'"
+
+    def test_each_result_confidence_is_float_in_range(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            c = r["confidence"]
+            assert isinstance(c, (int, float)) and not isinstance(c, bool), (
+                f"results[{i}]['confidence'] must be numeric, got {type(c).__name__}: {c!r}"
+            )
+            assert 0.0 <= c <= 1.0, (
+                f"results[{i}]['confidence']={c!r} out of range [0.0, 1.0]"
+            )
+
+    def test_each_result_has_draft_length(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            assert "draft_length" in r, f"results[{i}] missing 'draft_length'"
+
+    def test_each_result_draft_length_is_positive_integer(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for i, r in enumerate(data["results"]):
+            dl = r["draft_length"]
+            assert isinstance(dl, int) and not isinstance(dl, bool) and dl > 0, (
+                f"results[{i}]['draft_length'] must be positive int, got {dl!r}"
+            )
+
+    def test_endpoint_accepts_arbitrary_opp_id(self, api_app):
+        for opp_id in ("abc-123", "uuid-9999", "opportunity-xyz"):
+            resp = self._post(api_app, opp_id=opp_id)
+            assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id!r}"
+
+    def test_method_param_defaults_to_auto(self, api_app):
+        captured = {}
+
+        def _capture(opp_id, method="auto"):
+            captured["method"] = method
+            return _FAKE_DRAFT_ALL_RESULT_OK
+
+        with patch(
+            "tools.govcon.response_drafter.draft_all_for_opportunity",
+            side_effect=_capture,
+        ):
+            with api_app.test_client() as c:
+                c.post("/api/govcon/opportunities/opp-test-123/auto-draft")
+        assert captured.get("method") == "auto"
+
+    def test_method_param_passed_from_request_body(self, api_app):
+        captured = {}
+
+        def _capture(opp_id, method="auto"):
+            captured["method"] = method
+            return _FAKE_DRAFT_ALL_RESULT_OK
+
+        with patch(
+            "tools.govcon.response_drafter.draft_all_for_opportunity",
+            side_effect=_capture,
+        ):
+            with api_app.test_client() as c:
+                c.post(
+                    "/api/govcon/opportunities/opp-test-123/auto-draft",
+                    json={"method": "template"},
+                    content_type="application/json",
+                )
+        assert captured.get("method") == "template"
+
+    def test_returns_500_when_drafter_raises(self, api_app):
+        with patch(
+            "tools.govcon.response_drafter.draft_all_for_opportunity",
+            side_effect=RuntimeError("drafter offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-err/auto-draft")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.response_drafter.draft_all_for_opportunity",
+            side_effect=RuntimeError("drafter offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-err/auto-draft")
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_no_shall_statements_returns_200_with_status_error(self, api_app):
+        resp = self._post(api_app, opp_id="opp-empty", fake_result=_FAKE_DRAFT_ALL_RESULT_NO_STMTS)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "error"
+
+    def test_empty_results_returns_200(self, api_app):
+        resp = self._post(api_app, opp_id="opp-no-drafts", fake_result=_FAKE_DRAFT_ALL_RESULT_EMPTY)
+        assert resp.status_code == 200
+
+    def test_empty_results_has_zero_drafted(self, api_app):
+        resp = self._post(api_app, opp_id="opp-no-drafts", fake_result=_FAKE_DRAFT_ALL_RESULT_EMPTY)
+        data = resp.get_json()
+        assert data.get("drafted", 0) == 0
+
+    def test_empty_results_list_is_empty(self, api_app):
+        resp = self._post(api_app, opp_id="opp-no-drafts", fake_result=_FAKE_DRAFT_ALL_RESULT_EMPTY)
+        data = resp.get_json()
+        assert data.get("results", []) == []
