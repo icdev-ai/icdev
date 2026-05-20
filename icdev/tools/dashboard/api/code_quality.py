@@ -10,6 +10,7 @@ import json
 import os
 import sqlite3
 import sys
+from datetime import datetime, timezone, timedelta
 from tools.db.storage import get_connection
 from pathlib import Path
 
@@ -250,3 +251,98 @@ def trigger_scan():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ── Log Health (LOG-11) ────────────────────────────────────────
+
+
+_LOG_HEALTH_DDL = """
+CREATE TABLE IF NOT EXISTS log_health_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    component TEXT NOT NULL,
+    level TEXT NOT NULL,
+    count INTEGER DEFAULT 1
+)
+"""
+
+
+def _ensure_log_health_table(conn: sqlite3.Connection) -> None:
+    conn.execute(_LOG_HEALTH_DDL)
+    conn.commit()
+
+
+def _read_build_ndjson(lines: int = 1000) -> list:
+    build_log = BASE_DIR / ".logs" / "build.ndjson"
+    if not build_log.exists():
+        return []
+    try:
+        all_lines = build_log.read_text(encoding="utf-8").splitlines()
+        events = []
+        for raw in all_lines[-lines:]:
+            raw = raw.strip()
+            if raw:
+                try:
+                    events.append(json.loads(raw))
+                except json.JSONDecodeError:
+                    pass
+        return events
+    except OSError:
+        return []
+
+
+@code_quality_api.route("/log-health", methods=["GET"])
+def log_health():
+    """Aggregate log health metrics from build.ndjson for the dashboard card."""
+    events = _read_build_ndjson()
+    cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    cutoff_7d = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+
+    error_count_24h = sum(
+        1 for e in events if e.get("level") == "ERROR" and e.get("ts", "") >= cutoff_24h
+    )
+    warn_count_24h = sum(
+        1 for e in events if e.get("level") == "WARNING" and e.get("ts", "") >= cutoff_24h
+    )
+
+    build_events = [e for e in events if e.get("event_type") in ("pytest_run", "playwright_run")]
+    last_build = build_events[-1] if build_events else None
+
+    triage_count = 0
+    try:
+        conn = _get_db()
+        _ensure_log_health_table(conn)
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM kanban_tasks WHERE title LIKE '[LOG-TRIAGE]%' AND created_at >= ?",
+            (cutoff_7d,),
+        ).fetchone()
+        if row:
+            triage_count = row["c"]
+        conn.close()
+    except Exception:
+        pass
+
+    return jsonify({
+        "error_count_24h": error_count_24h,
+        "warn_count_24h": warn_count_24h,
+        "last_build_status": "pass" if last_build and last_build.get("returncode", 1) == 0 else (
+            "fail" if last_build else "unknown"
+        ),
+        "last_build_ts": last_build.get("ts") if last_build else None,
+        "last_build_event_type": last_build.get("event_type") if last_build else None,
+        "last_build_passed": last_build.get("passed") if last_build else None,
+        "last_build_failed": last_build.get("failed") if last_build else None,
+        "triage_tasks_created_7d": triage_count,
+        "build_log_events": len(events),
+    })
+
+
+@code_quality_api.route("/log-health/latest", methods=["GET"])
+def log_health_latest():
+    """Return the most recent build event only."""
+    events = _read_build_ndjson(lines=50)
+    build_events = [e for e in events if e.get("event_type") in ("pytest_run", "playwright_run")]
+    if not build_events:
+        return jsonify({"has_data": False})
+    last = build_events[-1]
+    return jsonify({"has_data": True, **last})
