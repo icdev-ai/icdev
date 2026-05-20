@@ -131,7 +131,7 @@ def _create_task(sig: Dict[str, Any]) -> bool:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10) as resp:  # nosec B310 — URL is hardcoded internal constant
             return resp.status in (200, 201)
     except Exception as exc:
         log.error("Failed to create Kanban task: %s", exc)
