@@ -6308,3 +6308,297 @@ class TestKnowledgeBaseSearchResponse:
         assert "query" in data, (
             f"Empty search response must still include 'query' key, got {list(data.keys())}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: POST /api/govcon/knowledge-base — creates new KB entry (gcpl-dft-13)
+# ---------------------------------------------------------------------------
+
+_NEW_BLOCK_PAYLOAD = {
+    "title": "Agile Delivery Framework",
+    "content": "We use SAFe and Scrum to deliver incremental value aligned with customer priorities.",
+    "category": "approach",
+    "domain": "agile",
+    "volume_type": "management",
+    "keywords": ["agile", "safe", "scrum"],
+}
+
+
+def _post_kb(app_trio, payload=None, content_type="application/json"):
+    flask_app, fake_get_db, db_path = app_trio
+    with patch("tools.govcon.knowledge_base._get_db", side_effect=fake_get_db):
+        with flask_app.test_client() as c:
+            resp = c.post(
+                "/api/govcon/knowledge-base",
+                json=payload if content_type == "application/json" else None,
+                data=payload if content_type != "application/json" else None,
+                content_type=content_type,
+            )
+    return resp, db_path
+
+
+class TestCreateKnowledgeBlockStatus:
+    """POST /api/govcon/knowledge-base returns 200 with status=ok on valid input."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path, rows=[])
+
+    def test_returns_200(self, app_trio):
+        resp, _ = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        assert resp.status_code == 200, (
+            f"POST /api/govcon/knowledge-base must return 200, got {resp.status_code}"
+        )
+
+    def test_content_type_is_json(self, app_trio):
+        resp, _ = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        assert resp.content_type.startswith("application/json"), (
+            f"Content-Type must be application/json, got {resp.content_type!r}"
+        )
+
+    def test_response_status_is_ok(self, app_trio):
+        data, _ = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        data = data.get_json()
+        assert data.get("status") == "ok", (
+            f"Response status must be 'ok', got {data.get('status')!r}"
+        )
+
+
+class TestCreateKnowledgeBlockResponseShape:
+    """POST response includes block_id and title fields."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path, rows=[])
+
+    def _post(self, app_trio, payload=None):
+        resp, db_path = _post_kb(app_trio, payload or _NEW_BLOCK_PAYLOAD)
+        return resp.get_json(), db_path
+
+    def test_response_has_block_id_key(self, app_trio):
+        data, _ = self._post(app_trio)
+        assert "block_id" in data, (
+            f"Response must include 'block_id', got keys={list(data.keys())}"
+        )
+
+    def test_block_id_is_string(self, app_trio):
+        data, _ = self._post(app_trio)
+        assert isinstance(data["block_id"], str), (
+            f"'block_id' must be a string, got {type(data['block_id'])!r}"
+        )
+
+    def test_block_id_is_not_empty(self, app_trio):
+        data, _ = self._post(app_trio)
+        assert data["block_id"], "Response 'block_id' must not be empty"
+
+    def test_response_has_title_key(self, app_trio):
+        data, _ = self._post(app_trio)
+        assert "title" in data, (
+            f"Response must include 'title', got keys={list(data.keys())}"
+        )
+
+    def test_response_title_matches_payload(self, app_trio):
+        data, _ = self._post(app_trio)
+        assert data["title"] == _NEW_BLOCK_PAYLOAD["title"], (
+            f"Response 'title' must match payload, expected {_NEW_BLOCK_PAYLOAD['title']!r}, "
+            f"got {data['title']!r}"
+        )
+
+
+class TestCreateKnowledgeBlockPersistence:
+    """POST /api/govcon/knowledge-base persists the entry to the database."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path, rows=[])
+
+    def test_block_exists_in_db_after_post(self, app_trio):
+        resp, db_path = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT id FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row is not None, (
+            f"Block {block_id!r} must exist in proposal_knowledge_base after POST"
+        )
+
+    def test_db_record_title_matches_payload(self, app_trio):
+        resp, db_path = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT title FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row[0] == _NEW_BLOCK_PAYLOAD["title"], (
+            f"DB title must match payload '{_NEW_BLOCK_PAYLOAD['title']}', got {row[0]!r}"
+        )
+
+    def test_db_record_category_matches_payload(self, app_trio):
+        resp, db_path = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT category FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row[0] == _NEW_BLOCK_PAYLOAD["category"], (
+            f"DB category must be {_NEW_BLOCK_PAYLOAD['category']!r}, got {row[0]!r}"
+        )
+
+    def test_db_record_domain_matches_payload(self, app_trio):
+        resp, db_path = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT domain FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row[0] == _NEW_BLOCK_PAYLOAD["domain"], (
+            f"DB domain must be {_NEW_BLOCK_PAYLOAD['domain']!r}, got {row[0]!r}"
+        )
+
+    def test_db_record_classification_is_cui(self, app_trio):
+        resp, db_path = _post_kb(app_trio, _NEW_BLOCK_PAYLOAD)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT classification FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row[0] == "CUI // SP-CTI", (
+            f"DB classification must be 'CUI // SP-CTI', got {row[0]!r}"
+        )
+
+
+class TestCreateKnowledgeBlockDefaults:
+    """POST with minimal payload uses default category and domain."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path, rows=[])
+
+    def test_default_category_is_capability_description(self, app_trio):
+        minimal = {"title": "Minimal Block", "content": "Some content here."}
+        resp, db_path = _post_kb(app_trio, minimal)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT category FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row[0] == "capability_description", (
+            f"Default category must be 'capability_description', got {row[0]!r}"
+        )
+
+    def test_default_domain_is_general(self, app_trio):
+        minimal = {"title": "Minimal Block", "content": "Some content here."}
+        resp, db_path = _post_kb(app_trio, minimal)
+        block_id = resp.get_json()["block_id"]
+
+        conn = sqlite3.connect(str(db_path))
+        row = conn.execute(
+            "SELECT domain FROM proposal_knowledge_base WHERE id = ?", (block_id,)
+        ).fetchone()
+        conn.close()
+
+        assert row[0] == "general", (
+            f"Default domain must be 'general', got {row[0]!r}"
+        )
+
+    def test_empty_body_uses_defaults(self, app_trio):
+        resp, _ = _post_kb(app_trio, {})
+        data = resp.get_json()
+        assert data.get("status") == "ok", (
+            f"Empty payload must succeed with defaults, got status={data.get('status')!r}"
+        )
+
+
+class TestCreateKnowledgeBlockValidation:
+    """POST with invalid category or domain returns error status (no 500)."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path, rows=[])
+
+    def test_invalid_category_returns_200(self, app_trio):
+        bad = {**_NEW_BLOCK_PAYLOAD, "category": "not_a_real_category"}
+        resp, _ = _post_kb(app_trio, bad)
+        assert resp.status_code == 200, (
+            f"Invalid category must return 200 (add_block handles it), got {resp.status_code}"
+        )
+
+    def test_invalid_category_response_status_is_error(self, app_trio):
+        bad = {**_NEW_BLOCK_PAYLOAD, "category": "not_a_real_category"}
+        data = _post_kb(app_trio, bad)[0].get_json()
+        assert data.get("status") == "error", (
+            f"Invalid category must yield status='error', got {data.get('status')!r}"
+        )
+
+    def test_invalid_category_response_has_message(self, app_trio):
+        bad = {**_NEW_BLOCK_PAYLOAD, "category": "not_a_real_category"}
+        data = _post_kb(app_trio, bad)[0].get_json()
+        assert "message" in data, (
+            f"Error response must include 'message', got keys={list(data.keys())}"
+        )
+
+    def test_invalid_domain_returns_200(self, app_trio):
+        bad = {**_NEW_BLOCK_PAYLOAD, "domain": "not_a_real_domain"}
+        resp, _ = _post_kb(app_trio, bad)
+        assert resp.status_code == 200, (
+            f"Invalid domain must return 200 (add_block handles it), got {resp.status_code}"
+        )
+
+    def test_invalid_domain_response_status_is_error(self, app_trio):
+        bad = {**_NEW_BLOCK_PAYLOAD, "domain": "not_a_real_domain"}
+        data = _post_kb(app_trio, bad)[0].get_json()
+        assert data.get("status") == "error", (
+            f"Invalid domain must yield status='error', got {data.get('status')!r}"
+        )
+
+
+class TestCreateKnowledgeBlockException:
+    """POST /api/govcon/knowledge-base returns 500 when add_block raises."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path, rows=[])
+
+    def test_add_block_exception_returns_500(self, app_trio):
+        flask_app, _, _ = app_trio
+        with patch(
+            "tools.govcon.knowledge_base.add_block",
+            side_effect=RuntimeError("DB write failed"),
+        ):
+            with flask_app.test_client() as c:
+                resp = c.post("/api/govcon/knowledge-base", json=_NEW_BLOCK_PAYLOAD)
+        assert resp.status_code == 500, (
+            f"add_block exception must yield 500, got {resp.status_code}"
+        )
+
+    def test_add_block_exception_response_has_error_key(self, app_trio):
+        flask_app, _, _ = app_trio
+        with patch(
+            "tools.govcon.knowledge_base.add_block",
+            side_effect=RuntimeError("DB write failed"),
+        ):
+            with flask_app.test_client() as c:
+                resp = c.post("/api/govcon/knowledge-base", json=_NEW_BLOCK_PAYLOAD)
+        data = resp.get_json()
+        assert "error" in data, (
+            f"500 response must include 'error' key, got keys={list(data.keys())}"
+        )
