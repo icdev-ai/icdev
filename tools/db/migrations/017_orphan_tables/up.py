@@ -10,7 +10,7 @@ gap detector. These tables are written by tool code (INSERT INTO / SELECT)
 but had no CREATE TABLE statement in any migration, so fresh sqlite
 deployments would 500 on first use.
 
-This migration covers 57 distinct orphan tables.
+This migration covers 58 distinct orphan tables.
 All CREATE TABLE statements are idempotent (IF NOT EXISTS).
 
 REVIEW GATE: Human review required before applying. Run:
@@ -23,7 +23,7 @@ import sqlite3
 MIGRATION_ID = "017"
 MIGRATION_NAME = "orphan_tables"
 DESCRIPTION = (
-    "Create 57 orphan tables identified by the Internal Awareness Engine "
+    "Create 58 orphan tables identified by the Internal Awareness Engine "
     "gap detector. Resolves schema drift — tables referenced by tool code but missing "
     "from any migration, causing fresh sqlite deploys to 500 on first use."
 )
@@ -38,6 +38,7 @@ _ORPHAN_TABLES = [
     "autoresearch_experiments",
     "awareness_component_health",
     "boundary_assessments",
+    "build_items",
     "code_quality_findings",
     "compliance_artifacts",
     "contact_submissions",
@@ -107,6 +108,8 @@ _CREATE_STMTS = [
     "CREATE TABLE IF NOT EXISTS awareness_component_health (\n    id TEXT PRIMARY KEY,\n    node_id TEXT NOT NULL,\n    probe_type TEXT NOT NULL,\n    status TEXT DEFAULT 'unknown',\n    detail TEXT DEFAULT '{}',\n    probed_at TEXT\n);",
     # boundary_assessments — first referenced in tools/extensions/builtins/080_intake_enrichment_chat.py [known_schema]
     "CREATE TABLE IF NOT EXISTS boundary_assessments (\n    id TEXT PRIMARY KEY,\n    project_id TEXT DEFAULT '',\n    status TEXT DEFAULT 'pending',\n    findings TEXT DEFAULT '[]',\n    created_at TEXT\n);",
+    # build_items — first referenced in tools/dashboard/api/intake.py [known_schema]
+    "CREATE TABLE IF NOT EXISTS build_items (\n    id TEXT PRIMARY KEY,\n    project_id TEXT DEFAULT '',\n    session_id TEXT DEFAULT '',\n    item_type TEXT DEFAULT '',\n    name TEXT DEFAULT '',\n    status TEXT DEFAULT 'pending',\n    content TEXT DEFAULT '{}',\n    created_at TEXT\n);",
     # code_quality_findings — first referenced in tools/simulation/simulation_engine.py [known_schema]
     "CREATE TABLE IF NOT EXISTS code_quality_findings (\n    id TEXT PRIMARY KEY,\n    project_id TEXT DEFAULT '',\n    rule_id TEXT DEFAULT '',\n    severity TEXT DEFAULT 'low',\n    message TEXT DEFAULT '',\n    file_path TEXT DEFAULT '',\n    created_at TEXT\n);",
     # compliance_artifacts — first referenced in tools/testing/goveval.py [known_schema]
