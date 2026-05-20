@@ -1454,3 +1454,271 @@ class TestAnalyzeGapsSeverityField:
             assert item["severity"] == "medium", (
                 f"M-grade partial expected 'medium', got {item['severity']!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Fake data: GET /api/govcon/gaps/recommendations (gcpl-map-09)
+# ---------------------------------------------------------------------------
+
+_FAKE_REC_ITEM = {
+    "pattern_id": "pat-gap-1",
+    "pattern_name": "Zero Trust Architecture",
+    "domain": "devsecops",
+    "frequency": 5,
+    "priority": 4.0,
+    "current_coverage": 0.20,
+    "recommendation": {
+        "approach": "Extend DevSecOps pipeline with new scanning stage or tool integration",
+        "effort_estimate": "M",
+        "existing_tools": ["pipeline_security_generator.py", "policy_generator.py"],
+        "compliance_benefit": "SA-11, SA-15, SI-7 coverage improvement",
+        "action": (
+            "NEW CAPABILITY NEEDED: 'Zero Trust Architecture' appears in 5 RFPs "
+            "with zero ICDEV™ coverage. Create new tool in tools/ targeting devsecops domain."
+        ),
+    },
+}
+
+_FAKE_RECOMMENDATIONS_RESULT = {
+    "status": "ok",
+    "total_recommendations": 1,
+    "recommendations": [_FAKE_REC_ITEM],
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: GET /api/govcon/gaps/recommendations (gcpl-map-09)
+# ---------------------------------------------------------------------------
+
+
+class TestGetGapRecommendationsAPIEndpoint:
+    """GET /api/govcon/gaps/recommendations returns actionable recommendations."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _get(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.generate_recommendations",
+            return_value=_FAKE_RECOMMENDATIONS_RESULT,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps/recommendations")
+        return resp
+
+    def test_get_returns_200(self, api_app):
+        resp = self._get(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._get(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_recommendations_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "recommendations" in data
+
+    def test_recommendations_is_a_list(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert isinstance(data["recommendations"], list)
+
+    def test_response_has_total_recommendations_count(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "total_recommendations" in data
+
+    def test_total_recommendations_matches_list_length(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["total_recommendations"] == len(data["recommendations"])
+
+    def test_recommendation_items_have_pattern_id(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert "pattern_id" in item, f"Recommendation missing 'pattern_id': {item}"
+
+    def test_recommendation_items_have_pattern_name(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert "pattern_name" in item, f"Recommendation missing 'pattern_name': {item}"
+
+    def test_recommendation_items_have_domain(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert "domain" in item, f"Recommendation missing 'domain': {item}"
+
+    def test_recommendation_domain_is_non_empty_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert isinstance(item["domain"], str) and item["domain"], (
+                f"Recommendation domain is empty or not a string: {item['domain']!r}"
+            )
+
+    def test_recommendation_items_have_priority(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert "priority" in item, f"Recommendation missing 'priority': {item}"
+
+    def test_recommendation_items_have_current_coverage(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert "current_coverage" in item, (
+                f"Recommendation missing 'current_coverage': {item}"
+            )
+
+    def test_recommendation_items_have_nested_recommendation_object(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            assert "recommendation" in item, (
+                f"Recommendation missing nested 'recommendation' object: {item}"
+            )
+            assert isinstance(item["recommendation"], dict), (
+                f"'recommendation' field is not a dict: {item['recommendation']!r}"
+            )
+
+    def test_nested_recommendation_has_approach(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            rec = item["recommendation"]
+            assert "approach" in rec, f"Nested recommendation missing 'approach': {rec}"
+
+    def test_nested_recommendation_has_effort_estimate(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            rec = item["recommendation"]
+            assert "effort_estimate" in rec, (
+                f"Nested recommendation missing 'effort_estimate': {rec}"
+            )
+
+    def test_nested_recommendation_has_action(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            rec = item["recommendation"]
+            assert "action" in rec, f"Nested recommendation missing 'action': {rec}"
+
+    def test_action_is_non_empty_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["recommendations"]:
+            action = item["recommendation"]["action"]
+            assert isinstance(action, str) and action, (
+                f"Recommendation action is empty or not a string: {action!r}"
+            )
+
+    def test_returns_500_when_generate_recommendations_raises(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.generate_recommendations",
+            side_effect=RuntimeError("recommender offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps/recommendations")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.generate_recommendations",
+            side_effect=RuntimeError("recommender offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps/recommendations")
+        data = resp.get_json()
+        assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: generate_recommendations() actionable output (gcpl-map-09)
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateRecommendationsFunction:
+    """generate_recommendations() returns actionable per-gap recommendations."""
+
+    @pytest.fixture()
+    def gaps_db(self, tmp_path):
+        return _make_gaps_db(tmp_path)
+
+    def _run_recommendations(self, db_path):
+        import sqlite3 as _sqlite3
+
+        def _fake_get_db():
+            conn = _sqlite3.connect(str(db_path))
+            conn.row_factory = _sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            return conn
+
+        with patch("tools.govcon.gap_analyzer._get_db", side_effect=_fake_get_db):
+            from tools.govcon import gap_analyzer
+            return gap_analyzer.generate_recommendations()
+
+    def test_returns_status_ok(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        assert result["status"] == "ok"
+
+    def test_returns_recommendations_list(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        assert isinstance(result["recommendations"], list)
+
+    def test_total_recommendations_matches_list_length(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        assert result["total_recommendations"] == len(result["recommendations"])
+
+    def test_each_recommendation_has_pattern_id(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        for rec in result["recommendations"]:
+            assert "pattern_id" in rec, f"Missing 'pattern_id': {rec}"
+
+    def test_each_recommendation_has_domain(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        for rec in result["recommendations"]:
+            assert "domain" in rec, f"Missing 'domain': {rec}"
+
+    def test_each_recommendation_has_nested_recommendation(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        for rec in result["recommendations"]:
+            assert "recommendation" in rec, f"Missing nested 'recommendation': {rec}"
+            assert isinstance(rec["recommendation"], dict)
+
+    def test_nested_recommendation_action_is_non_empty(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        for rec in result["recommendations"]:
+            action = rec["recommendation"].get("action", "")
+            assert isinstance(action, str) and action, (
+                f"Action is empty or not a string: {action!r}"
+            )
+
+    def test_only_gap_patterns_are_recommended(self, gaps_db):
+        """generate_recommendations() only covers N-grade gaps, not M or L."""
+        db_path, pat_n, _, _ = gaps_db
+        result = self._run_recommendations(db_path)
+        pattern_ids = {r["pattern_id"] for r in result["recommendations"]}
+        assert pat_n in pattern_ids, "N-grade gap pattern should appear in recommendations"
