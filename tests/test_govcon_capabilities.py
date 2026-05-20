@@ -3373,3 +3373,369 @@ class TestAutoDraftAPIEndpoint:
         resp = self._post(api_app, opp_id="opp-no-drafts", fake_result=_FAKE_DRAFT_ALL_RESULT_EMPTY)
         data = resp.get_json()
         assert data.get("results", []) == []
+
+
+# ---------------------------------------------------------------------------
+# DB schema and helpers: GET /api/govcon/opportunities/<id>/drafts (gcpl-dft-05)
+# ---------------------------------------------------------------------------
+
+_DRAFT_LIST_SCHEMA = """
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id TEXT PRIMARY KEY,
+    section_id TEXT,
+    opportunity_id TEXT NOT NULL,
+    shall_statement_id TEXT,
+    capability_ids TEXT DEFAULT '[]',
+    knowledge_block_ids TEXT DEFAULT '[]',
+    draft_content TEXT NOT NULL,
+    draft_method TEXT,
+    confidence_score REAL DEFAULT 0.0,
+    confidence REAL DEFAULT 0.0,
+    domain_category TEXT,
+    generation_model TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    review_notes TEXT,
+    reviewer_notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    classification TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rfp_shall_statements (
+    id TEXT PRIMARY KEY,
+    sam_opportunity_id TEXT,
+    statement_text TEXT,
+    domain_category TEXT,
+    statement_type TEXT,
+    keywords TEXT,
+    created_at TEXT
+);
+"""
+
+_LIST_DRAFTS_SHALLS = [
+    {
+        "id": "shall-list-1",
+        "statement_text": "The system shall implement zero-trust networking controls.",
+        "domain_category": "devsecops",
+    },
+    {
+        "id": "shall-list-2",
+        "statement_text": "The system shall encrypt all data at rest using FIPS 140-2 algorithms.",
+        "domain_category": "security",
+    },
+]
+
+# Three drafts for opp-test-123; one for a different opp; third has no shall link.
+# Timestamps descend so the query ORDER BY created_at DESC yields ld-draft-1 first.
+_LIST_DRAFTS_ROWS = [
+    {
+        "id": "ld-draft-1",
+        "opportunity_id": "opp-test-123",
+        "shall_statement_id": "shall-list-1",
+        "draft_content": "We provide zero-trust networking via our ZTA platform.",
+        "draft_method": "template",
+        "confidence_score": 0.85,
+        "status": "draft",
+        "created_at": "2026-05-20T12:00:00",
+    },
+    {
+        "id": "ld-draft-2",
+        "opportunity_id": "opp-test-123",
+        "shall_statement_id": "shall-list-2",
+        "draft_content": "Our team implements FIPS 140-2 compliant encryption at rest.",
+        "draft_method": "template",
+        "confidence_score": 0.72,
+        "status": "approved",
+        "created_at": "2026-05-20T11:00:00",
+    },
+    {
+        "id": "ld-draft-3",
+        "opportunity_id": "opp-test-123",
+        "shall_statement_id": None,
+        "draft_content": "Supply chain risk management approach.",
+        "draft_method": "llm",
+        "confidence_score": 0.55,
+        "status": "rejected",
+        "created_at": "2026-05-20T10:00:00",
+    },
+    {
+        "id": "ld-draft-4",
+        "opportunity_id": "opp-other",
+        "shall_statement_id": None,
+        "draft_content": "Other opportunity draft content.",
+        "draft_method": "auto",
+        "confidence_score": 0.60,
+        "status": "draft",
+        "created_at": "2026-05-20T09:00:00",
+    },
+]
+
+
+def _make_drafts_db(tmp_path, draft_rows=None, shall_rows=None):
+    """Create a seeded SQLite DB for list_drafts endpoint tests."""
+    if draft_rows is None:
+        draft_rows = _LIST_DRAFTS_ROWS
+    if shall_rows is None:
+        shall_rows = _LIST_DRAFTS_SHALLS
+
+    db_path = tmp_path / "drafts_list_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_DRAFT_LIST_SCHEMA)
+
+    for s in shall_rows:
+        conn.execute(
+            "INSERT INTO rfp_shall_statements (id, statement_text, domain_category) VALUES (?, ?, ?)",
+            (s["id"], s["statement_text"], s.get("domain_category")),
+        )
+
+    for d in draft_rows:
+        conn.execute(
+            """INSERT INTO proposal_section_drafts
+               (id, opportunity_id, shall_statement_id, draft_content,
+                draft_method, confidence_score, status, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                d["id"],
+                d["opportunity_id"],
+                d.get("shall_statement_id"),
+                d["draft_content"],
+                d.get("draft_method"),
+                d.get("confidence_score", 0.0),
+                d.get("status", "draft"),
+                d["created_at"],
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_drafts_list_api_app(tmp_path):
+    """Return (flask_app, fake_get_db) for testing GET /api/govcon/opportunities/<id>/drafts."""
+    db_path = _make_drafts_db(tmp_path)
+
+    import sqlite3 as _sqlite3
+
+    def _fake_get_db():
+        conn = _sqlite3.connect(str(db_path))
+        conn.row_factory = _sqlite3.Row
+        return conn
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, _fake_get_db
+
+
+# ---------------------------------------------------------------------------
+# API tests: GET /api/govcon/opportunities/<id>/drafts (gcpl-dft-05)
+# ---------------------------------------------------------------------------
+
+
+class TestListDraftsAPIEndpoint:
+    """GET /api/govcon/opportunities/<id>/drafts returns draft records."""
+
+    @pytest.fixture()
+    def api_app(self, tmp_path):
+        return _build_drafts_list_api_app(tmp_path)
+
+    def _get(self, api_app_pair, opp_id="opp-test-123", params=None):
+        flask_app, fake_get_db = api_app_pair
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get(
+                    f"/api/govcon/opportunities/{opp_id}/drafts",
+                    query_string=params or {},
+                )
+        return resp
+
+    def test_get_returns_200(self, api_app):
+        resp = self._get(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._get(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_drafts_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "drafts" in data
+
+    def test_drafts_is_a_list(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert isinstance(data["drafts"], list)
+
+    def test_response_has_total_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "total" in data
+
+    def test_total_is_non_negative_integer(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        total = data["total"]
+        assert isinstance(total, int) and not isinstance(total, bool)
+        assert total >= 0
+
+    def test_total_equals_len_of_drafts(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["total"] == len(data["drafts"])
+
+    def test_seeded_opp_returns_expected_count(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        assert data["total"] == 3
+
+    def test_returns_only_drafts_for_given_opp_id(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        for d in data["drafts"]:
+            assert d["opportunity_id"] == "opp-test-123"
+
+    def test_unknown_opp_id_returns_empty_drafts_list(self, api_app):
+        resp = self._get(api_app, opp_id="opp-does-not-exist")
+        data = resp.get_json()
+        assert data["drafts"] == []
+
+    def test_unknown_opp_id_returns_total_zero(self, api_app):
+        resp = self._get(api_app, opp_id="opp-does-not-exist")
+        data = resp.get_json()
+        assert data["total"] == 0
+
+    def test_returns_200_for_unknown_opp_id(self, api_app):
+        resp = self._get(api_app, opp_id="opp-completely-empty")
+        assert resp.status_code == 200
+
+    def test_each_draft_has_id(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "id" in d, f"drafts[{i}] missing 'id'"
+
+    def test_each_draft_has_opportunity_id(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "opportunity_id" in d, f"drafts[{i}] missing 'opportunity_id'"
+
+    def test_each_draft_has_draft_content(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "draft_content" in d, f"drafts[{i}] missing 'draft_content'"
+
+    def test_each_draft_content_is_non_empty_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert isinstance(d["draft_content"], str) and d["draft_content"], (
+                f"drafts[{i}]['draft_content'] must be non-empty string"
+            )
+
+    def test_each_draft_has_status(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "status" in d, f"drafts[{i}] missing 'status'"
+
+    def test_each_draft_status_is_valid(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        valid_statuses = {"draft", "reviewed", "approved", "rejected"}
+        for i, d in enumerate(data["drafts"]):
+            assert d["status"] in valid_statuses, (
+                f"drafts[{i}]['status']={d['status']!r} not in {valid_statuses}"
+            )
+
+    def test_each_draft_has_created_at(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "created_at" in d, f"drafts[{i}] missing 'created_at'"
+
+    def test_shall_linked_draft_has_shall_text(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        shall_drafts = [d for d in data["drafts"] if d.get("shall_statement_id")]
+        assert shall_drafts, "Expected at least one draft with shall_statement_id"
+        for d in shall_drafts:
+            assert "shall_text" in d, (
+                f"Draft {d['id']} with shall_statement_id missing 'shall_text'"
+            )
+
+    def test_shall_linked_draft_has_domain(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        shall_drafts = [d for d in data["drafts"] if d.get("shall_statement_id")]
+        assert shall_drafts, "Expected at least one draft with shall_statement_id"
+        for d in shall_drafts:
+            assert "domain" in d, (
+                f"Draft {d['id']} with shall_statement_id missing 'domain'"
+            )
+
+    def test_shall_text_matches_seeded_statement(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        draft1 = next((d for d in data["drafts"] if d["id"] == "ld-draft-1"), None)
+        assert draft1 is not None, "Expected draft ld-draft-1 in results"
+        assert draft1["shall_text"] == "The system shall implement zero-trust networking controls."
+
+    def test_shall_domain_matches_seeded_shall(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        draft1 = next((d for d in data["drafts"] if d["id"] == "ld-draft-1"), None)
+        assert draft1 is not None, "Expected draft ld-draft-1 in results"
+        assert draft1["domain"] == "devsecops"
+
+    def test_status_filter_returns_only_draft_status(self, api_app):
+        resp = self._get(api_app, params={"status": "draft"})
+        data = resp.get_json()
+        for d in data["drafts"]:
+            assert d["status"] == "draft"
+
+    def test_status_filter_approved_returns_only_approved(self, api_app):
+        resp = self._get(api_app, params={"status": "approved"})
+        data = resp.get_json()
+        for d in data["drafts"]:
+            assert d["status"] == "approved"
+
+    def test_status_filter_total_matches_filtered_count(self, api_app):
+        resp = self._get(api_app, params={"status": "draft"})
+        data = resp.get_json()
+        assert data["total"] == len(data["drafts"])
+
+    def test_status_filter_unknown_returns_empty(self, api_app):
+        resp = self._get(api_app, params={"status": "nonexistent_status"})
+        data = resp.get_json()
+        assert data["drafts"] == []
+        assert data["total"] == 0
+
+    def test_results_ordered_newest_first(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        created_ats = [d["created_at"] for d in data["drafts"]]
+        assert created_ats == sorted(created_ats, reverse=True), (
+            f"Drafts not in descending created_at order: {created_ats}"
+        )
+
+    def test_other_opp_drafts_excluded(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        ids = {d["id"] for d in data["drafts"]}
+        assert "ld-draft-4" not in ids, (
+            "Draft from 'opp-other' must not appear in 'opp-test-123' results"
+        )
+
+    def test_accepts_arbitrary_opp_id(self, api_app):
+        for opp_id in ("abc-001", "uuid-xyz", "opp-9999"):
+            resp = self._get(api_app, opp_id=opp_id)
+            assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id!r}"
