@@ -7,8 +7,8 @@
     --border: #2a2a40;
     --text: #e0e0e0;
     --text-muted: #888;
-    --accent: #6366f1;
-    --accent-light: #818cf8;
+    --accent: #ef4444;
+    --accent-light: #f87171;
     --success: #22c55e;
     --warning: #f59e0b;
     --error: #ef4444;
@@ -28,7 +28,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .nav {
     display: flex; align-items: center; gap: 24px;
     padding: 0 24px; height: 56px;
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    background: linear-gradient(135deg,#991b1b,#dc262620, #16213e 100%);
     border-bottom: 1px solid var(--border);
     position: sticky; top: 0; z-index: 100;
 }
