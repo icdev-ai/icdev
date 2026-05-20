@@ -455,6 +455,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "dsoc_audit",
         # OSINT Privacy Sanitizer — PII detection/redaction audit (NIST AU, migration 159)
         "osint_privacy_audit",
+        # AI Augmentation Canvas — scan sessions and audit trail (NIST AU, append-only)
+        "aac_scans",
+        "aac_audit_log",
     ]
 
     if tool_name == "Bash":
