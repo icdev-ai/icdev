@@ -1,0 +1,102 @@
+{
+  "version": "1.0.0",
+  "description": "AI Augmentation pattern catalog — maps legacy code patterns to AI/ML replacements with effort and risk metadata.",
+  "patterns": [
+    {
+      "id": "nested_conditionals",
+      "label": "Nested Conditionals",
+      "description": "Deeply nested if/elif/else blocks encoding domain logic across multiple dimensions, often brittle and hard to extend.",
+      "ai_replacement": "ml_classifier",
+      "ai_paradigm": "supervised_learning",
+      "effort_days_min": 5,
+      "effort_days_max": 15,
+      "risk_level": "medium",
+      "needs_training_data": true,
+      "zero_shot_feasible": false
+    },
+    {
+      "id": "regex_user_input",
+      "label": "Regex-Based User Input Parsing",
+      "description": "Hand-crafted regular expressions used to extract structured data from free-form user input — fragile against variations and typos.",
+      "ai_replacement": "nlp_extractor",
+      "ai_paradigm": "nlp_ner",
+      "effort_days_min": 3,
+      "effort_days_max": 10,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true
+    },
+    {
+      "id": "string_template_rendering",
+      "label": "String Template Rendering",
+      "description": "Static string interpolation or Jinja/Handlebars templates that produce repetitive, formulaic output with limited contextual adaptation.",
+      "ai_replacement": "llm_generation",
+      "ai_paradigm": "generative_llm",
+      "effort_days_min": 2,
+      "effort_days_max": 7,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true
+    },
+    {
+      "id": "scheduled_cron",
+      "label": "Scheduled Cron Job",
+      "description": "Time-based polling or batch jobs that run on a fixed schedule regardless of whether conditions warrant action.",
+      "ai_replacement": "agentic_trigger",
+      "ai_paradigm": "agentic_ai",
+      "effort_days_min": 4,
+      "effort_days_max": 12,
+      "risk_level": "medium",
+      "needs_training_data": false,
+      "zero_shot_feasible": true
+    },
+    {
+      "id": "hardcoded_threshold",
+      "label": "Hardcoded Threshold",
+      "description": "Static numeric thresholds (e.g., alert if value > 95) baked into config or code, unable to adapt to seasonal or contextual variance.",
+      "ai_replacement": "anomaly_detection",
+      "ai_paradigm": "unsupervised_learning",
+      "effort_days_min": 5,
+      "effort_days_max": 20,
+      "risk_level": "high",
+      "needs_training_data": true,
+      "zero_shot_feasible": false
+    },
+    {
+      "id": "db_render_notify_chain",
+      "label": "DB → Render → Notify Chain",
+      "description": "Pipeline that queries a database, formats results into a report, and sends notifications — producing mechanical, context-free summaries.",
+      "ai_replacement": "llm_synthesis",
+      "ai_paradigm": "generative_llm",
+      "effort_days_min": 3,
+      "effort_days_max": 8,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true
+    },
+    {
+      "id": "keyword_list_search",
+      "label": "Keyword List Search",
+      "description": "Exact-match keyword or substring search over documents — misses synonyms, intent, and semantic similarity.",
+      "ai_replacement": "vector_search",
+      "ai_paradigm": "embedding_retrieval",
+      "effort_days_min": 2,
+      "effort_days_max": 6,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true
+    },
+    {
+      "id": "large_rule_table",
+      "label": "Large Rule Table",
+      "description": "Hundreds of hand-authored business rules in a spreadsheet or decision table — maintenance-heavy and inconsistent at scale.",
+      "ai_replacement": "decision_agent",
+      "ai_paradigm": "agentic_ai",
+      "effort_days_min": 10,
+      "effort_days_max": 30,
+      "risk_level": "high",
+      "needs_training_data": true,
+      "zero_shot_feasible": false
+    }
+  ]
+}
