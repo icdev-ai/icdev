@@ -116,7 +116,7 @@ def api_stats():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Real-Time Cyber Threat Intelligence Dashboard")
-    parser.add_argument("--port", type=int, default=5100)
+    parser.add_argument("--port", type=int, default=5102)
     parser.add_argument("--seed", action="store_true")
     args = parser.parse_args()
     init_db()
