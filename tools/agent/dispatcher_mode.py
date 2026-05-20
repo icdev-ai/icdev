@@ -487,6 +487,83 @@ def disable_for_project(project_id: str, disabled_by: str = "system", db_path: P
         conn.close()
 
 
+def verify_db_path(db_path: Path) -> dict:
+    """Check that a database path is accessible and queryable.
+
+    Args:
+        db_path: Path to the SQLite database file.
+
+    Returns:
+        Dict with keys: ok, exists, readable, writable, query_ok, error.
+    """
+    import os
+
+    result = {
+        "ok": False,
+        "exists": False,
+        "readable": False,
+        "writable": False,
+        "query_ok": False,
+        "error": None,
+    }
+
+    if not db_path.exists():
+        result["error"] = f"Database not found: {db_path}"
+        return result
+
+    result["exists"] = True
+
+    if not os.access(str(db_path), os.R_OK):
+        result["error"] = f"Database not readable: {db_path}"
+        return result
+
+    result["readable"] = True
+
+    if not os.access(str(db_path), os.W_OK):
+        result["error"] = f"Database not writable: {db_path}"
+        return result
+
+    result["writable"] = True
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("SELECT 1")
+        conn.close()
+        result["query_ok"] = True
+    except Exception as exc:
+        result["error"] = str(exc)
+        return result
+
+    result["ok"] = True
+    return result
+
+
+# Module-level cache of verified database paths (avoids redundant checks per process).
+_startup_verified: set = set()
+
+
+def run_startup_verification(db_path: Path = None) -> None:
+    """Verify the database is accessible at startup (once per process per path).
+
+    Args:
+        db_path: Path to the database to verify. Defaults to DB_PATH.
+
+    Raises:
+        RuntimeError: If the database fails verification, prefixed with "ABORTED".
+    """
+    target = (db_path or DB_PATH).resolve()
+    key = str(target)
+
+    if key in _startup_verified:
+        return
+
+    result = verify_db_path(target)
+    if not result["ok"]:
+        raise RuntimeError(f"ABORTED — dispatcher_mode startup verification failed: {result['error']}")
+
+    _startup_verified.add(key)
+
+
 def get_status(project_id: str = None, db_path: Path = None) -> dict:
     """Get the current dispatcher mode status.
 
