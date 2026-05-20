@@ -396,3 +396,200 @@ class TestCapabilitiesRouteEmptyDB:
         flask_app, _ = empty_app
         result = self._call_route(flask_app)
         assert result["coverage"]["rate"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Template: gap list section structural checks (gcpl-map-04)
+# ---------------------------------------------------------------------------
+
+class TestGapListSectionTemplate:
+    """Template source must contain the gap list section with required structure."""
+
+    _tmpl_path = (
+        Path(__file__).parent.parent
+        / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+    )
+
+    def _html(self) -> str:
+        return self._tmpl_path.read_text(encoding="utf-8")
+
+    def test_template_has_top_gaps_heading(self):
+        assert "Top Gaps" in self._html()
+
+    def test_template_has_frequency_column(self):
+        assert "Frequency" in self._html()
+
+    def test_template_has_priority_column(self):
+        assert "Priority" in self._html()
+
+    def test_template_iterates_gaps(self):
+        assert "for g in gaps" in self._html()
+
+    def test_template_has_gap_empty_state(self):
+        assert "No gaps identified yet." in self._html()
+
+    def test_template_renders_g_requirement(self):
+        assert "g.requirement" in self._html()
+
+    def test_template_renders_g_coverage(self):
+        assert "g.coverage" in self._html()
+
+    def test_template_renders_g_frequency(self):
+        assert "g.frequency" in self._html()
+
+    def test_template_renders_g_priority(self):
+        assert "g.priority" in self._html()
+
+
+# ---------------------------------------------------------------------------
+# DB helper: seed rfp_requirement_patterns for gap route tests (gcpl-map-04)
+# ---------------------------------------------------------------------------
+
+def _make_db_with_gaps(tmp_path: Path, pattern_rows: list) -> Path:
+    """Create a SQLite DB with rfp_requirement_patterns seeded for gap route testing.
+
+    pattern_rows: list of dicts with keys: name, domain, frequency, score.
+    score < 0.40 appears in gaps; score >= 0.40 is filtered out.
+    """
+    db_path = tmp_path / "icdev_gaps.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_SCHEMA)
+
+    for row in pattern_rows:
+        pat_id = str(uuid.uuid4())
+        cap_id = str(uuid.uuid4())
+        name = row.get("name", "Test Pattern")
+        domain = row.get("domain", "devsecops")
+        freq = row.get("frequency", 1)
+        score = row.get("score", 0.2)
+
+        if score >= 0.80:
+            grade = "L"
+        elif score >= 0.40:
+            grade = "M"
+        else:
+            grade = "N"
+
+        conn.execute(
+            "INSERT INTO rfp_requirement_patterns "
+            "(id, pattern_name, domain_category, frequency, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (pat_id, name, domain, freq, "2026-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO icdev_capability_map "
+            "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), pat_id, cap_id, score, grade, "[]", "2026-01-01T00:00:00+00:00", "{}"),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_test_app_with_gaps(tmp_path: Path, pattern_rows: list):
+    """Return (flask_app, db_path) for testing the gap list route."""
+    db_path = _make_db_with_gaps(tmp_path, pattern_rows)
+
+    import sqlite3 as _sqlite3
+
+    def _get_db():
+        inner_conn = _sqlite3.connect(str(db_path))
+        inner_conn.row_factory = _sqlite3.Row
+        return inner_conn
+
+    flask_app = Flask(__name__, template_folder=str(
+        Path(__file__).parent.parent / "tools" / "dashboard" / "templates"
+    ))
+    flask_app.config["TESTING"] = True
+
+    from tools.dashboard.app import _register_govcon_pages
+    _register_govcon_pages(flask_app, _get_db)
+
+    return flask_app, db_path
+
+
+# ---------------------------------------------------------------------------
+# Route tests: gap list data (gcpl-map-04)
+# ---------------------------------------------------------------------------
+
+class TestGapListSectionRoute:
+    """Route must surface N-grade items in the gaps list and set total_gaps correctly."""
+
+    def _call_route(self, flask_app) -> dict:
+        captured = {}
+
+        def fake_render(template_name, **kwargs):
+            captured.update(kwargs)
+            captured["_template"] = template_name
+            return "OK"
+
+        with patch("tools.govcon.gap_analyzer.generate_recommendations",
+                   return_value={"recommendations": []}):
+            with patch("tools.dashboard.app.render_template", side_effect=fake_render):
+                with flask_app.test_client() as c:
+                    resp = c.get("/govcon/capabilities")
+                    captured["_status"] = resp.status_code
+
+        return captured
+
+    def test_n_grade_pattern_appears_in_gaps(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(
+            tmp_path,
+            [{"name": "zero-trust-req", "domain": "security", "frequency": 3, "score": 0.10}],
+        )
+        result = self._call_route(app)
+        assert len(result["gaps"]) == 1
+        assert result["gaps"][0]["requirement"] == "zero-trust-req"
+
+    def test_total_gaps_equals_n_grade_count(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(
+            tmp_path,
+            [
+                {"name": "req-a", "domain": "security", "frequency": 2, "score": 0.05},
+                {"name": "req-b", "domain": "compliance", "frequency": 1, "score": 0.30},
+            ],
+        )
+        result = self._call_route(app)
+        assert result["total_gaps"] == 2
+
+    def test_l_grade_pattern_excluded_from_gaps(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(
+            tmp_path,
+            [{"name": "compliant-req", "domain": "devsecops", "frequency": 5, "score": 0.90}],
+        )
+        result = self._call_route(app)
+        assert result["gaps"] == []
+
+    def test_m_grade_pattern_excluded_from_gaps(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(
+            tmp_path,
+            [{"name": "partial-req", "domain": "devsecops", "frequency": 2, "score": 0.60}],
+        )
+        result = self._call_route(app)
+        assert result["gaps"] == []
+
+    def test_gap_dict_has_required_keys(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(
+            tmp_path,
+            [{"name": "gap-req", "domain": "security", "frequency": 4, "score": 0.15}],
+        )
+        result = self._call_route(app)
+        gap = result["gaps"][0]
+        for key in ("requirement", "domain", "coverage", "frequency", "priority"):
+            assert key in gap, f"Gap missing key: {key}"
+
+    def test_gap_coverage_is_below_threshold(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(
+            tmp_path,
+            [{"name": "low-cov-req", "domain": "security", "frequency": 2, "score": 0.25}],
+        )
+        result = self._call_route(app)
+        assert result["gaps"][0]["coverage"] < 0.40
+
+    def test_no_patterns_gives_empty_gaps(self, tmp_path):
+        app, _ = _build_test_app_with_gaps(tmp_path, [])
+        result = self._call_route(app)
+        assert result["gaps"] == []
+        assert result["total_gaps"] == 0
