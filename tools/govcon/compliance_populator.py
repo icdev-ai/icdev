@@ -162,32 +162,37 @@ def _bid_recommendation(matrix_result):
     """Generate bid/no-bid recommendation based on compliance coverage."""
     total = matrix_result.get("total_requirements", 0)
     if total == 0:
-        return {"decision": "insufficient_data", "reason": "No requirements extracted"}
+        return {"decision": "insufficient_data", "score": 0.0, "reason": "No requirements extracted"}
 
     l_rate = matrix_result["L_compliant"] / total
     n_rate = matrix_result["N_gap"] / total
+    score = round(l_rate, 4)
 
     if l_rate >= 0.70 and n_rate <= 0.10:
         return {
             "decision": "strong_bid",
+            "score": score,
             "reason": f"{l_rate:.0%} compliant, only {n_rate:.0%} gaps. Strong capability alignment.",
             "confidence": "high",
         }
     elif l_rate >= 0.50 and n_rate <= 0.25:
         return {
             "decision": "bid_with_gaps",
+            "score": score,
             "reason": f"{l_rate:.0%} compliant, {n_rate:.0%} gaps. Address gaps via teaming or enhancement.",
             "confidence": "medium",
         }
     elif l_rate >= 0.30:
         return {
             "decision": "conditional_bid",
+            "score": score,
             "reason": f"Only {l_rate:.0%} compliant. Significant gaps. Consider teaming partner.",
             "confidence": "low",
         }
     else:
         return {
             "decision": "no_bid",
+            "score": score,
             "reason": f"Only {l_rate:.0%} compliant with {n_rate:.0%} gaps. Poor alignment.",
             "confidence": "high",
         }

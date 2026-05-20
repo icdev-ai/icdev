@@ -1981,3 +1981,401 @@ class TestGetHeatmapFunction:
 
         result = self._run_heatmap(db_path)
         assert result["heatmap"] == {}, f"Expected empty heatmap, got {result['heatmap']}"
+
+
+# ---------------------------------------------------------------------------
+# Shared fixtures: GET /api/govcon/opportunities/<id>/bid-recommendation (gcpl-dft-01)
+# ---------------------------------------------------------------------------
+
+_FAKE_SUMMARY_STRONG_BID = {
+    "status": "ok",
+    "opportunity_id": "opp-test-123",
+    "overall": {
+        "total": 10,
+        "L": 8,
+        "M": 1,
+        "N": 1,
+        "compliance_rate": 0.8,
+    },
+    "by_domain": {"devsecops": {"L": 8, "M": 1, "N": 1, "total": 10}},
+    "bid_recommendation": {
+        "decision": "strong_bid",
+        "score": 0.8,
+        "reason": "80% compliant, only 10% gaps. Strong capability alignment.",
+        "confidence": "high",
+    },
+}
+
+_FAKE_SUMMARY_BID_WITH_GAPS = {
+    "status": "ok",
+    "opportunity_id": "opp-test-456",
+    "overall": {
+        "total": 10,
+        "L": 6,
+        "M": 2,
+        "N": 2,
+        "compliance_rate": 0.6,
+    },
+    "by_domain": {"security": {"L": 6, "M": 2, "N": 2, "total": 10}},
+    "bid_recommendation": {
+        "decision": "bid_with_gaps",
+        "score": 0.6,
+        "reason": "60% compliant, 20% gaps. Address gaps via teaming or enhancement.",
+        "confidence": "medium",
+    },
+}
+
+_FAKE_SUMMARY_CONDITIONAL_BID = {
+    "status": "ok",
+    "opportunity_id": "opp-test-789",
+    "overall": {
+        "total": 10,
+        "L": 4,
+        "M": 3,
+        "N": 3,
+        "compliance_rate": 0.4,
+    },
+    "by_domain": {"cloud": {"L": 4, "M": 3, "N": 3, "total": 10}},
+    "bid_recommendation": {
+        "decision": "conditional_bid",
+        "score": 0.4,
+        "reason": "Only 40% compliant. Significant gaps. Consider teaming partner.",
+        "confidence": "low",
+    },
+}
+
+_FAKE_SUMMARY_NO_BID = {
+    "status": "ok",
+    "opportunity_id": "opp-test-000",
+    "overall": {
+        "total": 10,
+        "L": 2,
+        "M": 2,
+        "N": 6,
+        "compliance_rate": 0.2,
+    },
+    "by_domain": {"data": {"L": 2, "M": 2, "N": 6, "total": 10}},
+    "bid_recommendation": {
+        "decision": "no_bid",
+        "score": 0.2,
+        "reason": "Only 20% compliant with 60% gaps. Poor alignment.",
+        "confidence": "high",
+    },
+}
+
+_FAKE_SUMMARY_INSUFFICIENT = {
+    "status": "ok",
+    "opportunity_id": "opp-empty",
+    "overall": {
+        "total": 0,
+        "L": 0,
+        "M": 0,
+        "N": 0,
+        "compliance_rate": 0.0,
+    },
+    "by_domain": {},
+    "bid_recommendation": {
+        "decision": "insufficient_data",
+        "score": 0.0,
+        "reason": "No requirements extracted",
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: GET /api/govcon/opportunities/<id>/bid-recommendation (gcpl-dft-01)
+# ---------------------------------------------------------------------------
+
+
+class TestBidRecommendationAPIEndpoint:
+    """GET /api/govcon/opportunities/<id>/bid-recommendation returns score + rationale."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _get(self, api_app, opp_id="opp-test-123", fake_summary=None):
+        if fake_summary is None:
+            fake_summary = _FAKE_SUMMARY_STRONG_BID
+        with patch(
+            "tools.govcon.compliance_populator.get_summary",
+            return_value=fake_summary,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get(f"/api/govcon/opportunities/{opp_id}/bid-recommendation")
+        return resp
+
+    def test_get_returns_200(self, api_app):
+        resp = self._get(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._get(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_bid_recommendation_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "bid_recommendation" in data
+
+    def test_bid_recommendation_has_decision(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "decision" in data["bid_recommendation"]
+
+    def test_bid_recommendation_has_score(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "score" in data["bid_recommendation"]
+
+    def test_bid_recommendation_score_is_float(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        score = data["bid_recommendation"]["score"]
+        assert isinstance(score, float), f"Expected float score, got {type(score).__name__}: {score!r}"
+
+    def test_bid_recommendation_score_is_between_0_and_1(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        score = data["bid_recommendation"]["score"]
+        assert 0.0 <= score <= 1.0, f"score {score!r} out of range [0.0, 1.0]"
+
+    def test_bid_recommendation_has_reason(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "reason" in data["bid_recommendation"]
+
+    def test_bid_recommendation_reason_is_non_empty_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        reason = data["bid_recommendation"]["reason"]
+        assert isinstance(reason, str) and reason, f"reason must be non-empty string, got {reason!r}"
+
+    def test_response_has_overall_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "overall" in data
+
+    def test_overall_has_compliance_rate(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "compliance_rate" in data["overall"]
+
+    def test_overall_compliance_rate_is_between_0_and_1(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        rate = data["overall"]["compliance_rate"]
+        assert 0.0 <= rate <= 1.0, f"compliance_rate {rate!r} out of range [0.0, 1.0]"
+
+    def test_strong_bid_decision_returned(self, api_app):
+        resp = self._get(api_app, fake_summary=_FAKE_SUMMARY_STRONG_BID)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["decision"] == "strong_bid"
+
+    def test_strong_bid_score_gte_070(self, api_app):
+        resp = self._get(api_app, fake_summary=_FAKE_SUMMARY_STRONG_BID)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["score"] >= 0.70, (
+            f"strong_bid score must be >= 0.70, got {data['bid_recommendation']['score']}"
+        )
+
+    def test_bid_with_gaps_decision_returned(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-456", fake_summary=_FAKE_SUMMARY_BID_WITH_GAPS)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["decision"] == "bid_with_gaps"
+
+    def test_bid_with_gaps_confidence_is_medium(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-456", fake_summary=_FAKE_SUMMARY_BID_WITH_GAPS)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["confidence"] == "medium"
+
+    def test_conditional_bid_decision_returned(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-789", fake_summary=_FAKE_SUMMARY_CONDITIONAL_BID)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["decision"] == "conditional_bid"
+
+    def test_conditional_bid_confidence_is_low(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-789", fake_summary=_FAKE_SUMMARY_CONDITIONAL_BID)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["confidence"] == "low"
+
+    def test_no_bid_decision_returned(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-000", fake_summary=_FAKE_SUMMARY_NO_BID)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["decision"] == "no_bid"
+
+    def test_no_bid_score_below_030(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-000", fake_summary=_FAKE_SUMMARY_NO_BID)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["score"] < 0.30, (
+            f"no_bid score must be < 0.30, got {data['bid_recommendation']['score']}"
+        )
+
+    def test_insufficient_data_decision_returned(self, api_app):
+        resp = self._get(api_app, opp_id="opp-empty", fake_summary=_FAKE_SUMMARY_INSUFFICIENT)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["decision"] == "insufficient_data"
+
+    def test_insufficient_data_score_is_zero(self, api_app):
+        resp = self._get(api_app, opp_id="opp-empty", fake_summary=_FAKE_SUMMARY_INSUFFICIENT)
+        data = resp.get_json()
+        assert data["bid_recommendation"]["score"] == 0.0, (
+            f"insufficient_data score must be 0.0, got {data['bid_recommendation']['score']}"
+        )
+
+    def test_endpoint_accepts_arbitrary_opp_id(self, api_app):
+        for opp_id in ("abc-123", "uuid-9999", "opportunity-xyz"):
+            resp = self._get(api_app, opp_id=opp_id)
+            assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id!r}"
+
+    def test_returns_500_when_get_summary_raises(self, api_app):
+        with patch(
+            "tools.govcon.compliance_populator.get_summary",
+            side_effect=RuntimeError("db offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-err/bid-recommendation")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.compliance_populator.get_summary",
+            side_effect=RuntimeError("db offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-err/bid-recommendation")
+        data = resp.get_json()
+        assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _bid_recommendation() score + rationale (gcpl-dft-01)
+# ---------------------------------------------------------------------------
+
+
+class TestBidRecommendationFunction:
+    """_bid_recommendation() computes a score 0.0–1.0 and a non-empty reason string."""
+
+    def _call(self, l_count, m_count, n_count):
+        from tools.govcon.compliance_populator import _bid_recommendation
+
+        total = l_count + m_count + n_count
+        return _bid_recommendation(
+            {
+                "total_requirements": total,
+                "L_compliant": l_count,
+                "M_partial": m_count,
+                "N_gap": n_count,
+            }
+        )
+
+    def test_returns_dict(self):
+        result = self._call(7, 2, 1)
+        assert isinstance(result, dict)
+
+    def test_result_has_score_key(self):
+        result = self._call(7, 2, 1)
+        assert "score" in result
+
+    def test_score_is_float(self):
+        result = self._call(7, 2, 1)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_between_0_and_1(self):
+        for l, m, n in [(7, 2, 1), (5, 3, 2), (3, 3, 4), (1, 2, 7)]:
+            result = self._call(l, m, n)
+            assert 0.0 <= result["score"] <= 1.0, (
+                f"score {result['score']!r} out of range for L={l} M={m} N={n}"
+            )
+
+    def test_result_has_reason_key(self):
+        result = self._call(7, 2, 1)
+        assert "reason" in result
+
+    def test_reason_is_non_empty_string(self):
+        result = self._call(7, 2, 1)
+        assert isinstance(result["reason"], str) and result["reason"]
+
+    def test_result_has_decision_key(self):
+        result = self._call(7, 2, 1)
+        assert "decision" in result
+
+    def test_strong_bid_at_70pct_L_10pct_N(self):
+        result = self._call(7, 2, 1)
+        assert result["decision"] == "strong_bid"
+
+    def test_strong_bid_score_equals_l_rate(self):
+        result = self._call(7, 2, 1)
+        assert result["score"] == pytest.approx(0.7, abs=1e-4)
+
+    def test_strong_bid_confidence_is_high(self):
+        result = self._call(7, 2, 1)
+        assert result["confidence"] == "high"
+
+    def test_bid_with_gaps_at_50pct_L_20pct_N(self):
+        result = self._call(5, 3, 2)
+        assert result["decision"] == "bid_with_gaps"
+
+    def test_bid_with_gaps_score_equals_l_rate(self):
+        result = self._call(5, 3, 2)
+        assert result["score"] == pytest.approx(0.5, abs=1e-4)
+
+    def test_bid_with_gaps_confidence_is_medium(self):
+        result = self._call(5, 3, 2)
+        assert result["confidence"] == "medium"
+
+    def test_conditional_bid_at_30pct_L(self):
+        result = self._call(3, 3, 4)
+        assert result["decision"] == "conditional_bid"
+
+    def test_conditional_bid_score_equals_l_rate(self):
+        result = self._call(3, 3, 4)
+        assert result["score"] == pytest.approx(0.3, abs=1e-4)
+
+    def test_conditional_bid_confidence_is_low(self):
+        result = self._call(3, 3, 4)
+        assert result["confidence"] == "low"
+
+    def test_no_bid_at_10pct_L(self):
+        result = self._call(1, 2, 7)
+        assert result["decision"] == "no_bid"
+
+    def test_no_bid_score_equals_l_rate(self):
+        result = self._call(1, 2, 7)
+        assert result["score"] == pytest.approx(0.1, abs=1e-4)
+
+    def test_no_bid_confidence_is_high(self):
+        result = self._call(1, 2, 7)
+        assert result["confidence"] == "high"
+
+    def test_insufficient_data_when_total_is_zero(self):
+        result = self._call(0, 0, 0)
+        assert result["decision"] == "insufficient_data"
+
+    def test_insufficient_data_score_is_0(self):
+        result = self._call(0, 0, 0)
+        assert result["score"] == 0.0
+
+    def test_insufficient_data_has_reason(self):
+        result = self._call(0, 0, 0)
+        assert result["reason"] == "No requirements extracted"
+
+    def test_score_at_boundary_100pct_L(self):
+        result = self._call(10, 0, 0)
+        assert result["score"] == 1.0
+        assert result["decision"] == "strong_bid"
+
+    def test_score_at_boundary_0pct_L(self):
+        result = self._call(0, 0, 10)
+        assert result["score"] == 0.0
+        assert result["decision"] == "no_bid"
