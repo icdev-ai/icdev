@@ -49,13 +49,22 @@ def _uuid():
 
 
 def _audit(conn, action, details="", actor="govcon_api"):
-    """Append-only audit trail (NIST AU-2)."""
+    """Append-only audit trail (NIST AU-2).
+
+    Uses a SAVEPOINT so a failure here never aborts the caller's transaction.
+    id is omitted — both SQLite AUTOINCREMENT and PostgreSQL SERIAL auto-assign it.
+    """
     try:
-        conn.execute(
-            "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (_uuid(), now_isoformat(), "govcon.api", actor, action, details, "govcon"),
-        )
+        conn.execute("SAVEPOINT govcon_audit")
+        try:
+            conn.execute(
+                "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (now_isoformat(), "govcon.api", actor, action, details, "govcon"),
+            )
+            conn.execute("RELEASE SAVEPOINT govcon_audit")
+        except Exception:
+            conn.execute("ROLLBACK TO SAVEPOINT govcon_audit")
     except Exception:
         pass
 
