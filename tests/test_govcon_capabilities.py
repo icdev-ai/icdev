@@ -906,3 +906,209 @@ class TestMapCapabilitiesAPIEndpoint:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["patterns_mapped"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Fixtures shared by GET /api/govcon/opportunities/<id>/coverage tests
+# ---------------------------------------------------------------------------
+
+_FAKE_COVERAGE_MATRIX = [
+    {
+        "shall_id": 1,
+        "statement": "The system shall implement zero trust.",
+        "domain": "devsecops",
+        "statement_type": "functional",
+        "best_capability": "ZTA Enforcement",
+        "best_capability_id": "cap-1",
+        "coverage_score": 0.92,
+        "grade": "L",
+        "evidence": "Keyword overlap",
+    },
+    {
+        "shall_id": 2,
+        "statement": "The system shall encrypt data at rest.",
+        "domain": "security",
+        "statement_type": "functional",
+        "best_capability": "Data Encryption",
+        "best_capability_id": "cap-2",
+        "coverage_score": 0.61,
+        "grade": "M",
+        "evidence": "Partial match",
+    },
+    {
+        "shall_id": 3,
+        "statement": "The system shall manage supply chain risks.",
+        "domain": "supply_chain",
+        "statement_type": "functional",
+        "best_capability": "SBOM Generation",
+        "best_capability_id": "cap-3",
+        "coverage_score": 0.25,
+        "grade": "N",
+        "evidence": "Low overlap",
+    },
+]
+
+_FAKE_COVERAGE_RESULT = {
+    "status": "ok",
+    "opportunity_id": "opp-test-123",
+    "total_requirements": 3,
+    "L_compliant": 1,
+    "M_partial": 1,
+    "N_gap": 1,
+    "compliance_rate": 0.3333,
+    "matrix": _FAKE_COVERAGE_MATRIX,
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: GET /api/govcon/opportunities/<id>/coverage (gcpl-map-07)
+# ---------------------------------------------------------------------------
+
+
+class TestGetCoverageAPIEndpoint:
+    """GET /api/govcon/opportunities/<id>/coverage returns L/M/N grades."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _get(self, api_app, opp_id="opp-test-123"):
+        with patch(
+            "tools.govcon.capability_mapper.get_compliance_matrix",
+            return_value=_FAKE_COVERAGE_RESULT,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get(f"/api/govcon/opportunities/{opp_id}/coverage")
+        return resp
+
+    def test_get_returns_200(self, api_app):
+        resp = self._get(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._get(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_opportunity_id(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "opportunity_id" in data
+
+    def test_opportunity_id_matches_url_param(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        assert data["opportunity_id"] == "opp-test-123"
+
+    def test_response_has_total_requirements(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "total_requirements" in data
+
+    def test_response_has_L_compliant(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "L_compliant" in data
+
+    def test_response_has_M_partial(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "M_partial" in data
+
+    def test_response_has_N_gap(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "N_gap" in data
+
+    def test_response_has_compliance_rate(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "compliance_rate" in data
+
+    def test_response_has_matrix_list(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "matrix" in data
+        assert isinstance(data["matrix"], list)
+
+    def test_grade_counts_sum_to_total_requirements(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["L_compliant"] + data["M_partial"] + data["N_gap"] == data["total_requirements"]
+
+    def test_compliance_rate_is_float_between_0_and_1(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert 0.0 <= data["compliance_rate"] <= 1.0
+
+    def test_matrix_items_have_grade_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["matrix"]:
+            assert "grade" in item, f"Matrix item missing 'grade': {item}"
+
+    def test_matrix_grades_are_L_M_or_N(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["matrix"]:
+            assert item["grade"] in {"L", "M", "N"}, f"Invalid grade: {item['grade']}"
+
+    def test_matrix_items_have_coverage_score(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["matrix"]:
+            assert "coverage_score" in item, f"Matrix item missing 'coverage_score': {item}"
+
+    def test_matrix_coverage_scores_are_between_0_and_1(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["matrix"]:
+            assert 0.0 <= item["coverage_score"] <= 1.0, f"Score out of range: {item['coverage_score']}"
+
+    def test_endpoint_accepts_arbitrary_opp_id(self, api_app):
+        for opp_id in ("abc-123", "uuid-9999", "opportunity-xyz"):
+            resp = self._get(api_app, opp_id=opp_id)
+            assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id}"
+
+    def test_returns_500_when_get_compliance_matrix_raises(self, api_app):
+        with patch(
+            "tools.govcon.capability_mapper.get_compliance_matrix",
+            side_effect=RuntimeError("mapper offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-err/coverage")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.capability_mapper.get_compliance_matrix",
+            side_effect=RuntimeError("mapper offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-err/coverage")
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_no_statements_returns_200_with_status_error(self, api_app):
+        no_stmts_result = {
+            "status": "error",
+            "message": "No shall statements for opportunity opp-empty",
+        }
+        with patch(
+            "tools.govcon.capability_mapper.get_compliance_matrix",
+            return_value=no_stmts_result,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-empty/coverage")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "error"
