@@ -5460,3 +5460,452 @@ class TestListQuestionsFilters:
             f"stats.total must be 0 when no questions match filter, "
             f"got {data['stats']['total']}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Schema + helpers for PUT /api/govcon/questions/<id>/status (gcpl-dft-11)
+# ---------------------------------------------------------------------------
+
+_QUESTION_STATUS_HISTORY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS proposal_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT NOT NULL,
+    changed_by TEXT,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+_QS_OPP_ID = "opp-status-test"
+_QS_DRAFT_ID = "q-status-draft"
+_QS_APPROVED_ID = "q-status-approved"
+_QS_SUBMITTED_ID = "q-status-submitted"
+_QS_ANSWERED_ID = "q-status-answered"
+
+_QS_DRAFT_ROW = {
+    "id": _QS_DRAFT_ID,
+    "opportunity_id": _QS_OPP_ID,
+    "question_number": 1,
+    "question_text": "What is the period of performance for this contract?",
+    "category": "scope",
+    "priority": "high",
+    "source": "manual",
+    "status": "draft",
+    "classification": "CUI",
+}
+_QS_APPROVED_ROW = {
+    "id": _QS_APPROVED_ID,
+    "opportunity_id": _QS_OPP_ID,
+    "question_number": 2,
+    "question_text": "Please clarify the evaluation criteria weights for Section L.",
+    "category": "evaluation_criteria",
+    "priority": "medium",
+    "source": "auto",
+    "status": "approved",
+    "classification": "CUI",
+}
+_QS_SUBMITTED_ROW = {
+    "id": _QS_SUBMITTED_ID,
+    "opportunity_id": _QS_OPP_ID,
+    "question_number": 3,
+    "question_text": "Are small business subcontracting requirements applicable?",
+    "category": "small_business",
+    "priority": "low",
+    "source": "manual",
+    "status": "submitted",
+    "classification": "CUI",
+}
+_QS_ANSWERED_ROW = {
+    "id": _QS_ANSWERED_ID,
+    "opportunity_id": _QS_OPP_ID,
+    "question_number": 4,
+    "question_text": "What security clearance level is required for personnel?",
+    "category": "compliance_security",
+    "priority": "high",
+    "source": "auto",
+    "status": "answered",
+    "classification": "CUI",
+}
+
+
+def _make_question_status_db(tmp_path):
+    """Create a SQLite test DB with proposal_questions and proposal_status_history seeded."""
+    db_path = tmp_path / "question_status_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_QUESTIONS_SCHEMA)
+    conn.executescript(_QUESTION_STATUS_HISTORY_SCHEMA)
+    for r in [_QS_DRAFT_ROW, _QS_APPROVED_ROW, _QS_SUBMITTED_ROW, _QS_ANSWERED_ROW]:
+        conn.execute(
+            """INSERT INTO proposal_questions
+               (id, opportunity_id, question_number, question_text,
+                category, priority, source, status, classification)
+               VALUES (:id, :opportunity_id, :question_number, :question_text,
+                       :category, :priority, :source, :status, :classification)""",
+            r,
+        )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_question_status_api_app(tmp_path):
+    """Return (flask_app, fake_get_db, db_path) for question status transition tests."""
+    db_path = _make_question_status_db(tmp_path)
+
+    import sqlite3 as _sqlite3
+
+    def fake_get_db():
+        c = _sqlite3.connect(str(db_path))
+        c.row_factory = _sqlite3.Row
+        return c
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, fake_get_db, db_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/questions/<id>/status — response shape (gcpl-dft-11)
+# ---------------------------------------------------------------------------
+
+
+class TestChangeQuestionStatusResponse:
+    """PUT /api/govcon/questions/<id>/status returns 200 JSON with correct shape."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_question_status_api_app(tmp_path)
+
+    def _put(self, app_trio, q_id=_QS_DRAFT_ID, body=None):
+        flask_app, fake_get_db, _ = app_trio
+        if body is None:
+            body = {"status": "approved"}
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.put(f"/api/govcon/questions/{q_id}/status", json=body)
+        return resp
+
+    def test_returns_200(self, app_trio):
+        resp = self._put(app_trio)
+        assert resp.status_code == 200
+
+    def test_content_type_is_json(self, app_trio):
+        resp = self._put(app_trio)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_question_id(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert "question_id" in data
+
+    def test_response_question_id_matches_request(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert data["question_id"] == _QS_DRAFT_ID
+
+    def test_response_has_old_status(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert "old_status" in data
+
+    def test_response_has_new_status(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert "new_status" in data
+
+    def test_response_old_status_reflects_prior_state(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert data["old_status"] == "draft", (
+            f"old_status must be 'draft' for a question seeded as draft, got {data['old_status']!r}"
+        )
+
+    def test_response_new_status_reflects_requested_transition(self, app_trio):
+        data = self._put(app_trio).get_json()
+        assert data["new_status"] == "approved", (
+            f"new_status must be 'approved' after draft→approved transition, got {data['new_status']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/questions/<id>/status — valid transitions (gcpl-dft-11)
+# ---------------------------------------------------------------------------
+
+
+class TestChangeQuestionStatusValidTransitions:
+    """State machine allows only permitted forward and backward transitions."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_question_status_api_app(tmp_path)
+
+    def _put(self, app_trio, q_id, new_status, changed_by=None):
+        flask_app, fake_get_db, _ = app_trio
+        body = {"status": new_status}
+        if changed_by:
+            body["changed_by"] = changed_by
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.put(f"/api/govcon/questions/{q_id}/status", json=body)
+        return resp
+
+    def test_draft_to_approved_returns_200(self, app_trio):
+        resp = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        assert resp.status_code == 200
+
+    def test_draft_to_approved_new_status_in_response(self, app_trio):
+        data = self._put(app_trio, _QS_DRAFT_ID, "approved").get_json()
+        assert data["new_status"] == "approved", (
+            f"new_status must be 'approved' after draft→approved, got {data.get('new_status')!r}"
+        )
+
+    def test_approved_to_submitted_returns_200(self, app_trio):
+        resp = self._put(app_trio, _QS_APPROVED_ID, "submitted")
+        assert resp.status_code == 200
+
+    def test_approved_to_submitted_new_status_in_response(self, app_trio):
+        data = self._put(app_trio, _QS_APPROVED_ID, "submitted").get_json()
+        assert data["new_status"] == "submitted", (
+            f"new_status must be 'submitted' after approved→submitted, got {data.get('new_status')!r}"
+        )
+
+    def test_approved_to_draft_returns_200(self, app_trio):
+        resp = self._put(app_trio, _QS_APPROVED_ID, "draft")
+        assert resp.status_code == 200
+
+    def test_approved_to_draft_new_status_in_response(self, app_trio):
+        data = self._put(app_trio, _QS_APPROVED_ID, "draft").get_json()
+        assert data["new_status"] == "draft", (
+            f"new_status must be 'draft' after approved→draft, got {data.get('new_status')!r}"
+        )
+
+    def test_submitted_to_answered_returns_200(self, app_trio):
+        resp = self._put(app_trio, _QS_SUBMITTED_ID, "answered")
+        assert resp.status_code == 200
+
+    def test_submitted_to_answered_new_status_in_response(self, app_trio):
+        data = self._put(app_trio, _QS_SUBMITTED_ID, "answered").get_json()
+        assert data["new_status"] == "answered", (
+            f"new_status must be 'answered' after submitted→answered, got {data.get('new_status')!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/questions/<id>/status — invalid transitions (gcpl-dft-11)
+# ---------------------------------------------------------------------------
+
+
+class TestChangeQuestionStatusInvalidTransitions:
+    """State machine rejects forbidden transitions with 400 and an error key."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_question_status_api_app(tmp_path)
+
+    def _put(self, app_trio, q_id, new_status):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.put(
+                    f"/api/govcon/questions/{q_id}/status",
+                    json={"status": new_status},
+                )
+        return resp
+
+    def test_draft_to_submitted_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_DRAFT_ID, "submitted")
+        assert resp.status_code == 400
+
+    def test_draft_to_answered_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_DRAFT_ID, "answered")
+        assert resp.status_code == 400
+
+    def test_draft_to_draft_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_DRAFT_ID, "draft")
+        assert resp.status_code == 400
+
+    def test_submitted_to_draft_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_SUBMITTED_ID, "draft")
+        assert resp.status_code == 400
+
+    def test_submitted_to_approved_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_SUBMITTED_ID, "approved")
+        assert resp.status_code == 400
+
+    def test_answered_to_submitted_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_ANSWERED_ID, "submitted")
+        assert resp.status_code == 400
+
+    def test_invalid_transition_response_has_error_key(self, app_trio):
+        data = self._put(app_trio, _QS_DRAFT_ID, "submitted").get_json()
+        assert "error" in data, (
+            f"Invalid transition response must include 'error' key, got {list(data.keys())}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/questions/<id>/status — error cases (gcpl-dft-11)
+# ---------------------------------------------------------------------------
+
+
+class TestChangeQuestionStatusErrorCases:
+    """Endpoint returns correct error codes for missing status and unknown question."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_question_status_api_app(tmp_path)
+
+    def _put(self, app_trio, q_id, body=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.put(f"/api/govcon/questions/{q_id}/status", json=body or {})
+        return resp
+
+    def test_missing_status_returns_400(self, app_trio):
+        resp = self._put(app_trio, _QS_DRAFT_ID, body={})
+        assert resp.status_code == 400
+
+    def test_missing_status_response_has_error_key(self, app_trio):
+        data = self._put(app_trio, _QS_DRAFT_ID, body={}).get_json()
+        assert "error" in data, (
+            f"Missing status response must include 'error' key, got {list(data.keys())}"
+        )
+
+    def test_unknown_question_id_returns_404(self, app_trio):
+        resp = self._put(app_trio, "q-does-not-exist", body={"status": "approved"})
+        assert resp.status_code == 404
+
+    def test_unknown_question_id_response_has_error_key(self, app_trio):
+        data = self._put(app_trio, "q-does-not-exist", body={"status": "approved"}).get_json()
+        assert "error" in data, (
+            f"Unknown question response must include 'error' key, got {list(data.keys())}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/questions/<id>/status — DB side effects (gcpl-dft-11)
+# ---------------------------------------------------------------------------
+
+
+class TestChangeQuestionStatusSideEffects:
+    """Transitions persist updated status, set timestamp fields, and write a history record."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_question_status_api_app(tmp_path)
+
+    def _put(self, app_trio, q_id, new_status, changed_by=None, notes=None):
+        flask_app, fake_get_db, db_path = app_trio
+        body = {"status": new_status}
+        if changed_by:
+            body["changed_by"] = changed_by
+        if notes:
+            body["notes"] = notes
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(f"/api/govcon/questions/{q_id}/status", json=body)
+        return db_path
+
+    def _fetch_question(self, db_path, q_id):
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
+
+    def _fetch_history(self, db_path, entity_id):
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM proposal_status_history WHERE entity_id = ?", (entity_id,)
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def test_draft_to_approved_persists_new_status(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        q = self._fetch_question(db_path, _QS_DRAFT_ID)
+        assert q["status"] == "approved", (
+            f"DB status must be 'approved' after transition, got {q['status']!r}"
+        )
+
+    def test_draft_to_approved_sets_approved_by(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved", changed_by="reviewer_1")
+        q = self._fetch_question(db_path, _QS_DRAFT_ID)
+        assert q["approved_by"] == "reviewer_1", (
+            f"approved_by must be set to changed_by on approval, got {q['approved_by']!r}"
+        )
+
+    def test_draft_to_approved_sets_approved_at(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        q = self._fetch_question(db_path, _QS_DRAFT_ID)
+        assert q["approved_at"] is not None, (
+            "approved_at must be set to a timestamp after approval transition"
+        )
+
+    def test_approved_to_submitted_sets_submitted_at(self, app_trio):
+        db_path = self._put(app_trio, _QS_APPROVED_ID, "submitted")
+        q = self._fetch_question(db_path, _QS_APPROVED_ID)
+        assert q["submitted_at"] is not None, (
+            "submitted_at must be set to a timestamp after submitted transition"
+        )
+
+    def test_approved_to_submitted_persists_new_status(self, app_trio):
+        db_path = self._put(app_trio, _QS_APPROVED_ID, "submitted")
+        q = self._fetch_question(db_path, _QS_APPROVED_ID)
+        assert q["status"] == "submitted", (
+            f"DB status must be 'submitted' after approved→submitted, got {q['status']!r}"
+        )
+
+    def test_transition_creates_history_record(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        history = self._fetch_history(db_path, _QS_DRAFT_ID)
+        assert len(history) == 1, (
+            f"One history record must be created per transition, got {len(history)}"
+        )
+
+    def test_history_record_has_correct_entity_type(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        history = self._fetch_history(db_path, _QS_DRAFT_ID)
+        assert history[0]["entity_type"] == "question", (
+            f"History entity_type must be 'question', got {history[0]['entity_type']!r}"
+        )
+
+    def test_history_record_has_correct_old_status(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        history = self._fetch_history(db_path, _QS_DRAFT_ID)
+        assert history[0]["old_status"] == "draft", (
+            f"History old_status must be 'draft', got {history[0]['old_status']!r}"
+        )
+
+    def test_history_record_has_correct_new_status(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved")
+        history = self._fetch_history(db_path, _QS_DRAFT_ID)
+        assert history[0]["new_status"] == "approved", (
+            f"History new_status must be 'approved', got {history[0]['new_status']!r}"
+        )
+
+    def test_history_record_stores_changed_by(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved", changed_by="test_actor")
+        history = self._fetch_history(db_path, _QS_DRAFT_ID)
+        assert history[0]["changed_by"] == "test_actor", (
+            f"History changed_by must be 'test_actor', got {history[0]['changed_by']!r}"
+        )
+
+    def test_history_record_stores_notes_as_reason(self, app_trio):
+        db_path = self._put(app_trio, _QS_DRAFT_ID, "approved", notes="LPTA review complete")
+        history = self._fetch_history(db_path, _QS_DRAFT_ID)
+        assert history[0]["reason"] == "LPTA review complete", (
+            f"History reason must be 'LPTA review complete', got {history[0]['reason']!r}"
+        )
