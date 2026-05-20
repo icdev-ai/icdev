@@ -60,6 +60,24 @@ CPI_RED = EVM_CFG.get("cpi_red_threshold", 0.85)
 SPI_YELLOW = EVM_CFG.get("spi_yellow_threshold", 0.95)
 SPI_RED = EVM_CFG.get("spi_red_threshold", 0.85)
 
+RECOMMENDATION_THRESHOLD = _CFG.get("recommendation_threshold", 0.75)
+
+_DIM_RECOMMENDATIONS = {
+    "evm": "Review earned value management — cost or schedule variance exceeds acceptable limits",
+    "deliverables": "Address overdue or at-risk deliverables to prevent CPARS impact",
+    "cpars": "Engage contracting officer to improve past performance ratings",
+    "negative_events": "Resolve open negative events to reduce NDAA penalty exposure",
+    "funding": "Review contract funding status and obligation rate",
+}
+
+
+def _build_recommendations(scores):
+    return [
+        {"dimension": dim, "action": action}
+        for dim, action in _DIM_RECOMMENDATIONS.items()
+        if scores.get(dim, 1.0) < RECOMMENDATION_THRESHOLD
+    ]
+
 
 def _get_db():
     conn = get_connection()
@@ -236,6 +254,7 @@ def compute_contract_health(contract_id):
         "health_score": round(weighted, 4),
         "dimension_scores": {k: round(v, 4) for k, v in scores.items()},
         "weights": HEALTH_WEIGHTS,
+        "recommendations": _build_recommendations(scores),
     }
 
 
