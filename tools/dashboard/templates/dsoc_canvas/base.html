@@ -1,0 +1,63 @@
+<!-- CUI // SP-CTI -->
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+/* ── DSOC shared styles ───────────────────────────────────────────────── */
+.dsoc-critical { color: #ef4444; font-weight: 600; }
+.dsoc-warn     { color: #f59e0b; }
+.dsoc-ok       { color: #22c55e; }
+
+.badge-rtbh    { background: #7c3aed; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; }
+.badge-flowspec{ background: #0ea5e9; color: white; padding: 2px 6px; border-radius: 3px; font-size: 0.75rem; }
+
+.dsoc-stat { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:16px; text-align:center; }
+.dsoc-stat .val { font-size:2rem; font-weight:700; color:#f8fafc; line-height:1.1; }
+.dsoc-stat .lbl { font-size:.72rem; color:#64748b; margin-top:4px; text-transform:uppercase; letter-spacing:.04em; }
+
+.dsoc-header { background:linear-gradient(135deg,#0f172a 0%,#1a0a2e 40%,#0c0f1a 100%);
+               padding:24px 28px 20px; border-radius:12px; margin-bottom:24px;
+               border-left:4px solid #ef4444; }
+.dsoc-header h1 { margin:0; font-size:1.5rem; font-weight:700; color:#fca5a5; }
+.dsoc-header .sub { margin:5px 0 0; color:#f87171; font-size:.85rem; }
+
+.dsoc-subnav { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:22px; }
+.dsoc-subnav a { padding:6px 14px; border-radius:8px; font-size:.8rem; font-weight:600;
+                 text-decoration:none; background:#0f172a; border:1px solid #334155; color:#94a3b8; }
+.dsoc-subnav a:hover, .dsoc-subnav a.active { border-color:#ef4444; color:#ef4444; }
+
+/* Inline status badges */
+.badge-active      { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-withdrawn   { background:#f3f4f6; color:#374151; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-draft       { background:#e0f2fe; color:#075985; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-completed   { background:#dcfce7; color:#166534; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-failed      { background:#f3f4f6; color:#374151; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-operational { background:#dcfce7; color:#166534; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-degraded    { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-maintenance { background:#dbeafe; color:#1d4ed8; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+
+/* Action badges for flowspec */
+.badge-drop        { background:#fee2e2; color:#991b1b; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-rate-limit  { background:#fef9c3; color:#854d0e; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-redirect    { background:#dbeafe; color:#1d4ed8; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-mark        { background:#f3f4f6; color:#374151; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.badge-sample      { background:#e0f2fe; color:#075985; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+
+/* Util bars */
+.util-bar      { height:6px; border-radius:3px; background:#1e293b; }
+.util-bar-fill { height:100%; border-radius:3px; }
+.util-ok       { background:#22c55e; }
+.util-warn     { background:#f59e0b; }
+.util-crit     { background:#ef4444; }
+
+/* DSOC table */
+.dsoc-table { width:100%; font-size:.83rem; }
+.dsoc-table th { color:#64748b; font-weight:600; text-transform:uppercase; font-size:.72rem;
+                 letter-spacing:.04em; padding:8px 12px; border-bottom:1px solid #334155; }
+.dsoc-table td { padding:10px 12px; border-bottom:1px solid #1e293b; vertical-align:middle; }
+.dsoc-table tr:last-child td { border-bottom:none; }
+.dsoc-table tr:hover td { background:#1e293b44; }
+
+.iqe-host { margin-top:32px; }
+</style>
+{% endblock %}
+{% block content %}{% endblock %}

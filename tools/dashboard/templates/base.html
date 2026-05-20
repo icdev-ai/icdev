@@ -307,6 +307,16 @@
                     <li><a href="/ccc/dwdm">DWDM Spans</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
+                    {% if dsoc_enabled %}
+                    <li class="nav-section-label">DDoS &amp; Security Ops</li>
+                    <li><a href="/dsoc" style="color:#f87171;">DSOC Overview</a></li>
+                    <li><a href="/dsoc/flowspec">Flowspec Rules</a></li>
+                    <li><a href="/dsoc/rtbh">RTBH Blackholes</a></li>
+                    <li><a href="/dsoc/scrubbing">Scrubbing Centers</a></li>
+                    <li><a href="/dsoc/threats">Threats</a></li>
+                    <li><a href="/dsoc/mitigations">Mitigations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
                     {% if govlift_enabled %}
                     <li class="nav-section-label">Cloud Migration</li>
                     <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
@@ -853,6 +863,7 @@
             [/^\/noc/, 'nocc'],
             [/^\/pmc/, 'pmc'],
             [/^\/ccc/, 'ccc'],
+            [/^\/dsoc/, 'dsoc'],
         ];
 
         function detectCanvas() {

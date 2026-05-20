@@ -1,0 +1,5 @@
+# IQE-DSOC-001: All active DDoS mitigations
+# Use: incident response, NOC situational awareness
+foreach m in dsoc.mitigations
+where m.status == 'active'
+select m.mitigation_number, m.target_prefix, m.mitigation_type, m.attack_type, m.peak_traffic_gbps, m.started_at

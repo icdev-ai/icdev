@@ -1,0 +1,133 @@
+<!-- CUI // SP-CTI -->
+{% extends "dsoc_canvas/base.html" %}
+{% block title %}Threat Feed — DSOC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0" style="color:#f59e0b;">
+      <i class="bi bi-radioactive me-2"></i>Threat Feed
+    </h5>
+    <a href="/dsoc" class="btn btn-sm btn-outline-secondary">← Overview</a>
+  </div>
+
+  <!-- Sub-nav -->
+  <div class="dsoc-subnav">
+    <a href="/dsoc">Overview</a>
+    <a href="/dsoc/flowspec">Flowspec Rules</a>
+    <a href="/dsoc/rtbh">RTBH</a>
+    <a href="/dsoc/scrubbing">Scrubbing Centers</a>
+    <a href="/dsoc/threats" class="active">Threat Feed</a>
+    <a href="/dsoc/mitigations">Mitigations</a>
+  </div>
+
+  <!-- Summary badges -->
+  <div class="d-flex gap-3 mb-3 flex-wrap">
+    {% set active_count = threats | selectattr('is_active') | list | length %}
+    {% set high_conf    = threats | selectattr('confidence_pct', 'ge', 80) | list | length %}
+    <span class="badge bg-danger" style="font-size:.8rem;">
+      {{ active_count }} Active
+    </span>
+    <span class="badge bg-warning text-dark" style="font-size:.8rem;">
+      {{ high_conf }} High Confidence (&ge;80%)
+    </span>
+    <span class="badge bg-secondary" style="font-size:.8rem;">
+      {{ threats | length }} Total
+    </span>
+  </div>
+
+  <!-- Threats Table -->
+  <div class="card bg-dark border-secondary">
+    <div class="card-body p-0">
+      <table class="table table-dark table-hover table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Source Prefix</th>
+            <th>Type</th>
+            <th>Confidence %</th>
+            <th>Feed Source</th>
+            <th>First Seen</th>
+            <th>Last Seen</th>
+            <th>Pps</th>
+            <th>Bps</th>
+            <th>Active</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in threats %}
+          {% set conf = t.confidence_pct | float %}
+          <tr>
+            <td class="text-info fw-bold" style="font-family:monospace;">{{ t.source_prefix or '—' }}</td>
+            <td>
+              {% set tt = t.threat_type | lower %}
+              {% if 'volumetric' in tt or 'flood' in tt %}
+                <span class="badge bg-danger" style="font-size:.75rem;">{{ t.threat_type }}</span>
+              {% elif 'amplif' in tt %}
+                <span class="badge bg-warning text-dark" style="font-size:.75rem;">{{ t.threat_type }}</span>
+              {% elif 'spoof' in tt %}
+                <span class="badge bg-info text-dark" style="font-size:.75rem;">{{ t.threat_type }}</span>
+              {% elif 'scan' in tt or 'probe' in tt %}
+                <span class="badge bg-secondary" style="font-size:.75rem;">{{ t.threat_type }}</span>
+              {% else %}
+                <span class="badge bg-dark border border-secondary" style="font-size:.75rem;">{{ t.threat_type }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="{% if conf >= 80 %}dsoc-critical{% elif conf >= 50 %}dsoc-warn{% else %}text-muted{% endif %} fw-bold">
+                {{ conf | round(1) }}%
+              </span>
+            </td>
+            <td class="text-muted" style="font-size:.82rem;">{{ t.feed_source or '—' }}</td>
+            <td class="text-muted" style="font-size:.78rem;">
+              {{ t.first_seen[:16].replace('T', ' ') if t.first_seen else '—' }}
+            </td>
+            <td class="text-muted" style="font-size:.78rem;">
+              {{ t.last_seen[:16].replace('T', ' ') if t.last_seen else '—' }}
+            </td>
+            <td class="text-muted" style="font-size:.82rem;">
+              {{ '{:,}'.format(t.pps | int) if t.pps else '—' }}
+            </td>
+            <td class="text-muted" style="font-size:.82rem;">
+              {% if t.bps %}
+                {% set bps = t.bps | float %}
+                {% if bps >= 1000000000 %}
+                  {{ (bps / 1000000000) | round(2) }} Gbps
+                {% elif bps >= 1000000 %}
+                  {{ (bps / 1000000) | round(1) }} Mbps
+                {% else %}
+                  {{ bps | round(0) | int }} bps
+                {% endif %}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td>
+              {% if t.is_active %}
+                <span class="badge bg-danger" style="font-size:.75rem;">yes</span>
+              {% else %}
+                <span class="badge bg-secondary" style="font-size:.75rem;">no</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="9" class="text-center text-muted py-4">
+              No threats in feed. Check threat intel integrations.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- IQE Widget -->
+  <div class="iqe-host">
+    {% include 'includes/iqe_query_widget.html' %}
+  </div>
+</div>
+
+<script>
+const IQE_CANVAS = 'dsoc';
+</script>
+{% endblock %}
