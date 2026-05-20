@@ -1112,3 +1112,345 @@ class TestGetCoverageAPIEndpoint:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "error"
+
+
+# ---------------------------------------------------------------------------
+# Fake data: GET /api/govcon/gaps (gcpl-map-08)
+# ---------------------------------------------------------------------------
+
+_FAKE_GAP_ITEM = {
+    "pattern_id": "pat-gap-1",
+    "pattern_name": "Zero Trust Architecture",
+    "description": "ZTA requirement pattern",
+    "domain": "devsecops",
+    "frequency": 5,
+    "representative_text": "The system shall implement ZTA.",
+    "best_coverage": 0.20,
+    "capability_count": 1,
+    "status": "gap_identified",
+    "grade": "N",
+    "priority": 4.0,
+    "severity": "high",
+}
+
+_FAKE_PARTIAL_ITEM = {
+    "pattern_id": "pat-partial-1",
+    "pattern_name": "Encryption at Rest",
+    "description": "Encryption requirement",
+    "domain": "security",
+    "frequency": 3,
+    "representative_text": "Data at rest shall be encrypted.",
+    "best_coverage": 0.61,
+    "capability_count": 2,
+    "status": "mapped",
+    "grade": "M",
+    "priority": 1.17,
+    "severity": "medium",
+}
+
+_FAKE_GAPS_RESULT = {
+    "status": "ok",
+    "summary": {
+        "total_patterns": 2,
+        "N_gaps": 1,
+        "M_partial": 1,
+        "L_compliant": 0,
+        "gap_rate": 0.5,
+    },
+    "gaps": [_FAKE_GAP_ITEM],
+    "partial": [_FAKE_PARTIAL_ITEM],
+    "compliant_count": 0,
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: GET /api/govcon/gaps (gcpl-map-08)
+# ---------------------------------------------------------------------------
+
+
+class TestGetGapsAPIEndpoint:
+    """GET /api/govcon/gaps returns gap list with domain and severity."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _get(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.analyze_gaps",
+            return_value=_FAKE_GAPS_RESULT,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps")
+        return resp
+
+    def test_get_returns_200(self, api_app):
+        resp = self._get(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._get(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_gaps_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "gaps" in data
+
+    def test_gaps_is_a_list(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert isinstance(data["gaps"], list)
+
+    def test_response_has_summary_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "summary" in data
+
+    def test_summary_has_N_gaps_count(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "N_gaps" in data["summary"]
+
+    def test_gap_items_have_domain_attribute(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["gaps"]:
+            assert "domain" in item, f"Gap item missing 'domain': {item}"
+
+    def test_gap_domain_is_non_empty_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["gaps"]:
+            assert isinstance(item["domain"], str) and item["domain"], (
+                f"Gap domain is empty or not a string: {item['domain']!r}"
+            )
+
+    def test_gap_items_have_severity_attribute(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["gaps"]:
+            assert "severity" in item, f"Gap item missing 'severity': {item}"
+
+    def test_gap_severity_values_are_valid(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        valid = {"high", "medium", "low"}
+        for item in data["gaps"]:
+            assert item["severity"] in valid, (
+                f"Invalid severity {item['severity']!r} — expected one of {valid}"
+            )
+
+    def test_N_grade_gap_has_high_severity(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        n_items = [g for g in data["gaps"] if g.get("grade") == "N"]
+        for item in n_items:
+            assert item["severity"] == "high", (
+                f"N-grade gap expected severity 'high', got {item['severity']!r}"
+            )
+
+    def test_response_has_partial_list(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "partial" in data
+        assert isinstance(data["partial"], list)
+
+    def test_partial_items_have_domain_attribute(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["partial"]:
+            assert "domain" in item, f"Partial item missing 'domain': {item}"
+
+    def test_partial_items_have_severity_attribute(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for item in data["partial"]:
+            assert "severity" in item, f"Partial item missing 'severity': {item}"
+
+    def test_M_grade_partial_has_medium_severity(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        m_items = [p for p in data["partial"] if p.get("grade") == "M"]
+        for item in m_items:
+            assert item["severity"] == "medium", (
+                f"M-grade partial expected severity 'medium', got {item['severity']!r}"
+            )
+
+    def test_response_has_compliant_count(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "compliant_count" in data
+
+    def test_returns_500_when_analyze_gaps_raises(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.analyze_gaps",
+            side_effect=RuntimeError("gap_analyzer offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.analyze_gaps",
+            side_effect=RuntimeError("gap_analyzer offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps")
+        data = resp.get_json()
+        assert "error" in data
+
+
+# ---------------------------------------------------------------------------
+# DB schema for analyze_gaps() unit tests (gcpl-map-08)
+# ---------------------------------------------------------------------------
+
+_GAPS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS rfp_requirement_patterns (
+    id TEXT PRIMARY KEY,
+    pattern_name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    domain_category TEXT NOT NULL DEFAULT 'devsecops',
+    frequency INTEGER NOT NULL DEFAULT 1,
+    representative_text TEXT NOT NULL DEFAULT '',
+    keyword_fingerprint TEXT NOT NULL DEFAULT '',
+    keywords TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'new',
+    classification TEXT DEFAULT 'CUI',
+    metadata TEXT DEFAULT '{}'
+);
+
+CREATE TABLE IF NOT EXISTS icdev_capability_map (
+    id TEXT PRIMARY KEY,
+    pattern_id TEXT,
+    capability_id TEXT,
+    coverage_score REAL,
+    grade TEXT,
+    matched_keywords TEXT,
+    created_at TEXT,
+    metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    created_at TEXT,
+    event_type TEXT,
+    actor TEXT,
+    action TEXT,
+    details TEXT,
+    session_id TEXT
+);
+"""
+
+
+def _make_gaps_db(tmp_path: Path) -> tuple:
+    """Create a SQLite DB with N/M/L-grade patterns; return (path, n_id, m_id, l_id)."""
+    db_path = tmp_path / "gaps_unit.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_GAPS_SCHEMA)
+
+    pat_n = str(uuid.uuid4())
+    pat_m = str(uuid.uuid4())
+    pat_l = str(uuid.uuid4())
+
+    for pat_id, domain in [(pat_n, "devsecops"), (pat_m, "security"), (pat_l, "compliance")]:
+        conn.execute(
+            "INSERT INTO rfp_requirement_patterns "
+            "(id, pattern_name, description, domain_category, frequency, "
+            " representative_text, keyword_fingerprint, keywords, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pat_id, f"Pattern {pat_id[:8]}", "test desc", domain, 3, "text", "fp", "[]", "new"),
+        )
+
+    # N-grade: coverage 0.10
+    conn.execute(
+        "INSERT INTO icdev_capability_map "
+        "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), pat_n, "cap-n", 0.10, "N", "[]", "2026-01-01T00:00:00+00:00", "{}"),
+    )
+    # M-grade: coverage 0.60
+    conn.execute(
+        "INSERT INTO icdev_capability_map "
+        "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), pat_m, "cap-m", 0.60, "M", "[]", "2026-01-01T00:00:00+00:00", "{}"),
+    )
+    # L-grade: coverage 0.90
+    conn.execute(
+        "INSERT INTO icdev_capability_map "
+        "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (str(uuid.uuid4()), pat_l, "cap-l", 0.90, "L", "[]", "2026-01-01T00:00:00+00:00", "{}"),
+    )
+    conn.commit()
+    conn.close()
+
+    return db_path, pat_n, pat_m, pat_l
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: analyze_gaps() severity field (gcpl-map-08)
+# ---------------------------------------------------------------------------
+
+
+class TestAnalyzeGapsSeverityField:
+    """analyze_gaps() returns severity derived from coverage grade."""
+
+    @pytest.fixture()
+    def gaps_db(self, tmp_path):
+        return _make_gaps_db(tmp_path)
+
+    def _run_analyze(self, db_path):
+        import sqlite3 as _sqlite3
+
+        def _fake_get_db():
+            conn = _sqlite3.connect(str(db_path))
+            conn.row_factory = _sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            return conn
+
+        with patch("tools.govcon.gap_analyzer._get_db", side_effect=_fake_get_db):
+            from tools.govcon import gap_analyzer
+            return gap_analyzer.analyze_gaps()
+
+    def test_gaps_list_items_have_domain_key(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_analyze(db_path)
+        assert len(result["gaps"]) > 0
+        for gap in result["gaps"]:
+            assert "domain" in gap, f"Gap missing 'domain': {gap}"
+
+    def test_gaps_list_items_have_severity_key(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_analyze(db_path)
+        assert len(result["gaps"]) > 0
+        for gap in result["gaps"]:
+            assert "severity" in gap, f"Gap missing 'severity': {gap}"
+
+    def test_N_grade_gaps_have_severity_high(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_analyze(db_path)
+        for gap in result["gaps"]:
+            assert gap["severity"] == "high", (
+                f"N-grade gap expected 'high', got {gap['severity']!r}"
+            )
+
+    def test_M_grade_partial_has_severity_medium(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_analyze(db_path)
+        for item in result["partial"]:
+            assert item["severity"] == "medium", (
+                f"M-grade partial expected 'medium', got {item['severity']!r}"
+            )

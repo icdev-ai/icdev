@@ -113,14 +113,17 @@ def analyze_gaps():
 
         if best < 0.40:
             item["grade"] = "N"
+            item["severity"] = "high"
             item["priority"] = round(row["frequency"] * (1.0 - best), 2)
             gaps.append(item)
         elif best < 0.80:
             item["grade"] = "M"
+            item["severity"] = "medium"
             item["priority"] = round(row["frequency"] * (1.0 - best) * 0.5, 2)
             partial.append(item)
         else:
             item["grade"] = "L"
+            item["severity"] = "low"
             item["priority"] = 0
             compliant.append(item)
 
