@@ -12,7 +12,6 @@ GREEN tier — only creates a DB record, reads nothing sensitive.
 from __future__ import annotations
 
 import json
-import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -22,22 +21,37 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger("e2e_runner")
 
 _TASK_TITLE = "[AUTO-RUN] Playwright E2E Suite — full smoke"
 _TASK_DESC = (
     "Run the full Playwright E2E smoke suite targeting all menus, use cases, "
     "canvases, and chat right panels.\n\n"
-    "Command:\n"
+    "Steps (execute in order):\n\n"
+    "1. Run route smoke to catch broken pages before spending time on full E2E:\n"
     "```\n"
-    "npx playwright test tests/e2e/ --project=chromium --reporter=line\n"
+    "python tools/testing/route_smoke.py --all\n"
+    "```\n"
+    "   If any route fails, STOP and report the failures. Do NOT proceed to step 2.\n\n"
+    "2. Run the full Playwright suite:\n"
+    "```\n"
+    "npx playwright test tests/e2e/ --project=chromium --reporter=line 2>&1 | tee .tmp/pw_out.txt\n"
     "```\n\n"
-    "After the run:\n"
-    "1. Report total pass / fail count as a brief assistant message.\n"
-    "2. If any tests failed, list the failing test titles.\n"
-    "3. Screenshots are in `.tmp/test_runs/screenshots/`.\n"
-    "4. HTML report: `npx playwright show-report`\n"
+    "3. Capture the results to the structured build log:\n"
+    "```python\n"
+    "import subprocess, re\n"
+    "from tools.logging.build_logger import capture_playwright\n"
+    "out = open('.tmp/pw_out.txt').read()\n"
+    "rc = 0 if 'failed' not in out.lower() else 1\n"
+    "capture_playwright(returncode=rc, stdout=out)\n"
+    "```\n\n"
+    "4. Report:\n"
+    "   - Total pass / fail / skip count\n"
+    "   - If any tests failed, list failing test titles (max 20)\n"
+    "   - Screenshots: `.tmp/test_runs/screenshots/`\n"
+    "   - HTML report: `npx playwright show-report`\n"
 )
 
 
