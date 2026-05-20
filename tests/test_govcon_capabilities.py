@@ -3739,3 +3739,485 @@ class TestListDraftsAPIEndpoint:
         for opp_id in ("abc-001", "uuid-xyz", "opp-9999"):
             resp = self._get(api_app, opp_id=opp_id)
             assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id!r}"
+
+
+# ---------------------------------------------------------------------------
+# DB helpers: drafts with metadata.best_coverage seeded (gcpl-dft-06)
+# ---------------------------------------------------------------------------
+
+import json as _json
+
+_DRAFT_SCHEMA_WITH_METADATA = _DRAFT_LIST_SCHEMA  # reuse — metadata column already declared
+
+_QUALITY_DRAFT_ROWS = [
+    {
+        "id": "qd-draft-1",
+        "opportunity_id": "opp-quality-test",
+        "shall_statement_id": "shall-list-1",
+        "draft_content": "We provide zero-trust networking via our ZTA platform.",
+        "draft_method": "template",
+        "confidence_score": 0.85,
+        "status": "draft",
+        "created_at": "2026-05-20T12:00:00",
+        "metadata": _json.dumps({"best_coverage": 0.92, "capability_count": 3, "kb_count": 2}),
+    },
+    {
+        "id": "qd-draft-2",
+        "opportunity_id": "opp-quality-test",
+        "shall_statement_id": "shall-list-2",
+        "draft_content": "Our team implements FIPS 140-2 compliant encryption at rest.",
+        "draft_method": "template",
+        "confidence_score": 0.60,
+        "status": "draft",
+        "created_at": "2026-05-20T11:00:00",
+        "metadata": _json.dumps({"best_coverage": 0.61, "capability_count": 2, "kb_count": 1}),
+    },
+    {
+        "id": "qd-draft-3",
+        "opportunity_id": "opp-quality-test",
+        "shall_statement_id": None,
+        "draft_content": "Supply chain risk management approach.",
+        "draft_method": "llm",
+        "confidence_score": 0.0,
+        "status": "draft",
+        "created_at": "2026-05-20T10:00:00",
+        "metadata": _json.dumps({"best_coverage": 0.0, "capability_count": 0, "kb_count": 0}),
+    },
+]
+
+
+def _make_quality_drafts_db(tmp_path, draft_rows=None, shall_rows=None):
+    """Create a seeded DB for quality_score validation tests."""
+    if draft_rows is None:
+        draft_rows = _QUALITY_DRAFT_ROWS
+    if shall_rows is None:
+        shall_rows = _LIST_DRAFTS_SHALLS
+
+    db_path = tmp_path / "quality_drafts_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_DRAFT_SCHEMA_WITH_METADATA)
+
+    for s in shall_rows:
+        conn.execute(
+            "INSERT INTO rfp_shall_statements (id, statement_text, domain_category) VALUES (?, ?, ?)",
+            (s["id"], s["statement_text"], s.get("domain_category")),
+        )
+
+    for d in draft_rows:
+        conn.execute(
+            """INSERT INTO proposal_section_drafts
+               (id, opportunity_id, shall_statement_id, draft_content,
+                draft_method, confidence_score, status, created_at, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                d["id"],
+                d["opportunity_id"],
+                d.get("shall_statement_id"),
+                d["draft_content"],
+                d.get("draft_method"),
+                d.get("confidence_score", 0.0),
+                d.get("status", "draft"),
+                d["created_at"],
+                d.get("metadata", "{}"),
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_quality_drafts_api_app(tmp_path):
+    """Return (flask_app, fake_get_db) for quality_score endpoint tests."""
+    db_path = _make_quality_drafts_db(tmp_path)
+
+    import sqlite3 as _sqlite3
+
+    def _fake_get_db():
+        conn = _sqlite3.connect(str(db_path))
+        conn.row_factory = _sqlite3.Row
+        return conn
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, _fake_get_db
+
+
+# ---------------------------------------------------------------------------
+# Tests: draft records have status='draft' by default (gcpl-dft-06)
+# ---------------------------------------------------------------------------
+
+
+class TestDraftDefaultStatus:
+    """Newly stored draft records must have status='draft' by default."""
+
+    def test_db_schema_default_status_is_draft(self, tmp_path):
+        """DB schema DEFAULT 'draft' must produce status='draft' on INSERT without status."""
+        db_path = tmp_path / "schema_default.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.row_factory = sqlite3.Row
+        conn.executescript(_DRAFT_LIST_SCHEMA)
+        draft_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO proposal_section_drafts "
+            "(id, opportunity_id, draft_content, created_at) VALUES (?, ?, ?, ?)",
+            (draft_id, "opp-default-test", "content", "2026-05-20T00:00:00"),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT status FROM proposal_section_drafts WHERE id = ?", (draft_id,)
+        ).fetchone()
+        conn.close()
+        assert row["status"] == "draft", (
+            f"DB DEFAULT 'draft' not applied — got {row['status']!r}"
+        )
+
+    def test_seeded_new_drafts_have_status_draft(self, tmp_path):
+        """All seeded _QUALITY_DRAFT_ROWS have status='draft'."""
+        for d in _QUALITY_DRAFT_ROWS:
+            assert d["status"] == "draft", (
+                f"Draft {d['id']} has status={d['status']!r}, expected 'draft'"
+            )
+
+    def test_api_returns_status_field_on_each_draft(self, tmp_path):
+        """GET /api/govcon/opportunities/<id>/drafts — every draft record exposes status."""
+        flask_app, fake_get_db = _build_quality_drafts_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-quality-test/drafts")
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "status" in d, f"drafts[{i}] missing 'status'"
+
+    def test_api_new_drafts_all_have_draft_status(self, tmp_path):
+        """All seeded drafts (all status='draft') are returned with status='draft'."""
+        flask_app, fake_get_db = _build_quality_drafts_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get(
+                    "/api/govcon/opportunities/opp-quality-test/drafts",
+                    query_string={"status": "draft"},
+                )
+        data = resp.get_json()
+        assert data["total"] == 3, f"Expected 3 draft-status records, got {data['total']}"
+        for d in data["drafts"]:
+            assert d["status"] == "draft", f"Expected status='draft', got {d['status']!r}"
+
+    def test_status_is_string_not_none(self, tmp_path):
+        """draft status field must be a non-None string."""
+        flask_app, fake_get_db = _build_quality_drafts_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-quality-test/drafts")
+        data = resp.get_json()
+        for d in data["drafts"]:
+            assert isinstance(d["status"], str) and d["status"], (
+                f"status must be non-empty string, got {d['status']!r}"
+            )
+
+    def test_status_is_in_valid_set(self, tmp_path):
+        """draft status must be one of the recognised lifecycle values."""
+        flask_app, fake_get_db = _build_quality_drafts_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-quality-test/drafts")
+        data = resp.get_json()
+        valid = {"draft", "reviewed", "approved", "rejected"}
+        for d in data["drafts"]:
+            assert d["status"] in valid, (
+                f"status {d['status']!r} not in valid set {valid}"
+            )
+
+    def test_response_drafter_stores_draft_status(self, tmp_path):
+        """draft_response() must INSERT with status='draft' (verified via DB read-back)."""
+        db_path = tmp_path / "drafter_status.db"
+        conn = sqlite3.connect(str(db_path))
+        _DRAFTER_SCHEMA = _DRAFT_LIST_SCHEMA.replace(
+            "created_at TEXT NOT NULL",
+            "created_at TEXT NOT NULL, updated_at TEXT",
+        )
+        conn.executescript(_DRAFTER_SCHEMA + """
+CREATE TABLE IF NOT EXISTS icdev_capability_map (
+    id TEXT PRIMARY KEY,
+    pattern_id TEXT,
+    capability_id TEXT,
+    coverage_score REAL,
+    grade TEXT,
+    matched_keywords TEXT,
+    created_at TEXT,
+    metadata TEXT
+);
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    created_at TEXT,
+    event_type TEXT,
+    actor TEXT,
+    action TEXT,
+    details TEXT,
+    session_id TEXT
+);
+""")
+        shall_id = str(uuid.uuid4())
+        opp_id = "opp-drafter-test"
+        conn.execute(
+            "INSERT INTO rfp_shall_statements "
+            "(id, sam_opportunity_id, statement_text, domain_category, keywords, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (shall_id, opp_id, "The system shall implement ZTA.", "devsecops", "[]", "2026-01-01T00:00:00"),
+        )
+        conn.commit()
+        conn.close()
+
+        import sqlite3 as _sqlite3
+
+        def _fake_conn():
+            c = _sqlite3.connect(str(db_path))
+            c.row_factory = _sqlite3.Row
+            c.execute("PRAGMA journal_mode=WAL")
+            return c
+
+        with patch("tools.govcon.response_drafter._get_db", side_effect=_fake_conn):
+            with patch("tools.govcon.response_drafter._try_llm_draft", return_value=(None, None)):
+                with patch(
+                    "tools.govcon.capability_mapper.load_capability_catalog",
+                    return_value=[],
+                ):
+                    with patch(
+                        "tools.govcon.knowledge_base.search_blocks",
+                        return_value={"results": []},
+                    ):
+                        from tools.govcon.response_drafter import draft_response
+
+                        result = draft_response(shall_id)
+
+        assert result.get("status") == "ok", f"draft_response failed: {result}"
+
+        verify_conn = sqlite3.connect(str(db_path))
+        verify_conn.row_factory = sqlite3.Row
+        row = verify_conn.execute(
+            "SELECT status FROM proposal_section_drafts WHERE id = ?",
+            (result["draft_id"],),
+        ).fetchone()
+        verify_conn.close()
+        assert row is not None, "Draft row was not written to DB"
+        assert row["status"] == "draft", (
+            f"draft_response must store status='draft', got {row['status']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: draft records have composite quality_score (gcpl-dft-06)
+# ---------------------------------------------------------------------------
+
+
+class TestDraftQualityScorePresence:
+    """GET /api/govcon/opportunities/<id>/drafts must return quality_score on each record."""
+
+    @pytest.fixture()
+    def api_app(self, tmp_path):
+        return _build_quality_drafts_api_app(tmp_path)
+
+    def _get(self, api_app_pair, opp_id="opp-quality-test"):
+        flask_app, fake_get_db = api_app_pair
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get(f"/api/govcon/opportunities/{opp_id}/drafts")
+        return resp
+
+    def test_each_draft_has_quality_score_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert "quality_score" in d, f"drafts[{i}] missing 'quality_score'"
+
+    def test_quality_score_is_not_none(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert d["quality_score"] is not None, f"drafts[{i}]['quality_score'] is None"
+
+    def test_quality_score_is_numeric(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            qs = d["quality_score"]
+            assert isinstance(qs, (int, float)) and not isinstance(qs, bool), (
+                f"drafts[{i}]['quality_score'] must be numeric, got {type(qs).__name__}: {qs!r}"
+            )
+
+    def test_quality_score_is_not_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            assert not isinstance(d["quality_score"], str), (
+                f"drafts[{i}]['quality_score'] must not be a string"
+            )
+
+    def test_quality_score_is_between_0_and_1(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for i, d in enumerate(data["drafts"]):
+            qs = d["quality_score"]
+            assert 0.0 <= qs <= 1.0, (
+                f"drafts[{i}]['quality_score']={qs!r} out of range [0.0, 1.0]"
+            )
+
+    def test_quality_score_gte_0_for_zero_confidence(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        zero_conf = [d for d in data["drafts"] if d.get("confidence_score", 1) == 0.0]
+        for d in zero_conf:
+            assert d["quality_score"] >= 0.0, (
+                f"quality_score must be >= 0.0 even for zero-confidence draft"
+            )
+
+    def test_high_confidence_draft_has_higher_quality_than_low(self, api_app):
+        """qd-draft-1 (confidence=0.85, coverage=0.92) must outscore qd-draft-3 (both=0.0)."""
+        resp = self._get(api_app)
+        data = resp.get_json()
+        high = next((d for d in data["drafts"] if d["id"] == "qd-draft-1"), None)
+        low = next((d for d in data["drafts"] if d["id"] == "qd-draft-3"), None)
+        assert high is not None, "Expected draft qd-draft-1 in response"
+        assert low is not None, "Expected draft qd-draft-3 in response"
+        assert high["quality_score"] > low["quality_score"], (
+            f"High-confidence draft quality_score {high['quality_score']!r} "
+            f"should exceed zero-confidence {low['quality_score']!r}"
+        )
+
+    def test_zero_confidence_zero_coverage_quality_score_is_zero(self, api_app):
+        """qd-draft-3 has confidence=0.0, best_coverage=0.0 → quality_score must be 0.0."""
+        resp = self._get(api_app)
+        data = resp.get_json()
+        draft3 = next((d for d in data["drafts"] if d["id"] == "qd-draft-3"), None)
+        assert draft3 is not None, "Expected qd-draft-3 in response"
+        assert draft3["quality_score"] == 0.0, (
+            f"zero confidence + zero coverage should yield quality_score=0.0, "
+            f"got {draft3['quality_score']!r}"
+        )
+
+    def test_quality_score_for_max_confidence_and_coverage(self, tmp_path):
+        """A draft with confidence_score=1.0 and best_coverage=1.0 must have quality_score=1.0."""
+        perfect_row = [{
+            "id": "qd-perfect",
+            "opportunity_id": "opp-perfect",
+            "shall_statement_id": None,
+            "draft_content": "Perfect content.",
+            "draft_method": "template",
+            "confidence_score": 1.0,
+            "status": "draft",
+            "created_at": "2026-05-20T09:00:00",
+            "metadata": _json.dumps({"best_coverage": 1.0, "capability_count": 5, "kb_count": 3}),
+        }]
+        db_path = _make_quality_drafts_db(tmp_path, draft_rows=perfect_row, shall_rows=[])
+
+        import sqlite3 as _sqlite3
+
+        def _fake_get_db():
+            c = _sqlite3.connect(str(db_path))
+            c.row_factory = _sqlite3.Row
+            return c
+
+        from tools.dashboard.api.govcon import govcon_api
+
+        flask_app = Flask(__name__)
+        flask_app.config["TESTING"] = True
+        flask_app.register_blueprint(govcon_api)
+
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=_fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/opportunities/opp-perfect/drafts")
+        data = resp.get_json()
+        assert data["total"] == 1
+        qs = data["drafts"][0]["quality_score"]
+        assert qs == 1.0, f"Perfect draft should have quality_score=1.0, got {qs!r}"
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: _compute_quality_score() composite formula (gcpl-dft-06)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeQualityScoreFunction:
+    """_compute_quality_score(confidence_score, best_coverage) = 0.6*c + 0.4*b."""
+
+    def _call(self, confidence_score, best_coverage):
+        from tools.govcon.response_drafter import _compute_quality_score
+
+        return _compute_quality_score(confidence_score, best_coverage)
+
+    def test_returns_float(self):
+        result = self._call(0.7, 0.8)
+        assert isinstance(result, float), (
+            f"_compute_quality_score must return float, got {type(result).__name__}"
+        )
+
+    def test_zero_inputs_return_zero(self):
+        assert self._call(0.0, 0.0) == 0.0
+
+    def test_max_inputs_return_one(self):
+        result = self._call(1.0, 1.0)
+        assert result == pytest.approx(1.0, abs=1e-4)
+
+    def test_confidence_weight_is_0_6(self):
+        """confidence_score=1.0, best_coverage=0.0 → quality_score = 0.6."""
+        result = self._call(1.0, 0.0)
+        assert result == pytest.approx(0.6, abs=1e-4), (
+            f"confidence weight 0.6 failed: expected 0.6, got {result!r}"
+        )
+
+    def test_coverage_weight_is_0_4(self):
+        """confidence_score=0.0, best_coverage=1.0 → quality_score = 0.4."""
+        result = self._call(0.0, 1.0)
+        assert result == pytest.approx(0.4, abs=1e-4), (
+            f"coverage weight 0.4 failed: expected 0.4, got {result!r}"
+        )
+
+    def test_result_is_in_0_1_range(self):
+        for c, b in [(0.85, 0.92), (0.60, 0.61), (0.5, 0.5), (0.0, 0.0), (1.0, 1.0)]:
+            result = self._call(c, b)
+            assert 0.0 <= result <= 1.0, (
+                f"_compute_quality_score({c}, {b}) = {result!r} out of [0.0, 1.0]"
+            )
+
+    def test_composite_at_typical_values(self):
+        """confidence=0.85, coverage=0.92 → 0.85*0.6 + 0.92*0.4 = 0.51 + 0.368 = 0.878."""
+        result = self._call(0.85, 0.92)
+        expected = 0.85 * 0.6 + 0.92 * 0.4
+        assert result == pytest.approx(expected, abs=1e-4), (
+            f"Expected {expected!r}, got {result!r}"
+        )
+
+    def test_result_not_bool(self):
+        result = self._call(0.7, 0.8)
+        assert not isinstance(result, bool), "_compute_quality_score must not return bool"
+
+    def test_partial_confidence_zero_coverage(self):
+        result = self._call(0.72, 0.0)
+        assert result == pytest.approx(0.72 * 0.6, abs=1e-4)
+
+    def test_zero_confidence_partial_coverage(self):
+        result = self._call(0.0, 0.61)
+        assert result == pytest.approx(0.61 * 0.4, abs=1e-4)
+
+    @pytest.mark.parametrize(
+        "confidence,coverage",
+        [
+            (0.85, 0.92),
+            (0.60, 0.61),
+            (0.55, 0.25),
+            (1.0, 1.0),
+            (0.0, 0.0),
+            (0.5, 0.5),
+        ],
+    )
+    def test_parametrized_composite_formula(self, confidence, coverage):
+        expected = confidence * 0.6 + coverage * 0.4
+        result = self._call(confidence, coverage)
+        assert result == pytest.approx(expected, abs=1e-4), (
+            f"_compute_quality_score({confidence}, {coverage}) = {result!r}, "
+            f"expected {expected!r}"
+        )
