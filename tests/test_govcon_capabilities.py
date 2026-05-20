@@ -5015,3 +5015,448 @@ class TestRejectDraftSectionNotChanged:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# Schema + helpers for GET /api/govcon/opportunities/<id>/questions (gcpl-dft-10)
+# ---------------------------------------------------------------------------
+
+_QUESTIONS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS proposal_questions (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL,
+    question_number INTEGER,
+    question_text TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'scope',
+    priority TEXT NOT NULL DEFAULT 'medium',
+    source TEXT NOT NULL DEFAULT 'manual',
+    rfp_section_ref TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    ambiguity_trigger TEXT,
+    content_hash TEXT,
+    created_by TEXT,
+    approved_by TEXT,
+    approved_at TEXT,
+    submitted_at TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+_Q_OPP_ID = "opp-questions-test"
+_Q_OTHER_OPP_ID = "opp-other"
+
+_Q_ROW_1 = {
+    "id": "q-001",
+    "opportunity_id": _Q_OPP_ID,
+    "question_number": 1,
+    "question_text": "What is the period of performance for this contract?",
+    "category": "scope",
+    "priority": "high",
+    "source": "auto",
+    "status": "draft",
+    "classification": "CUI",
+}
+_Q_ROW_2 = {
+    "id": "q-002",
+    "opportunity_id": _Q_OPP_ID,
+    "question_number": 2,
+    "question_text": "Please clarify the evaluation criteria weights for Section L.",
+    "category": "evaluation_criteria",
+    "priority": "medium",
+    "source": "manual",
+    "status": "approved",
+    "classification": "CUI",
+}
+_Q_ROW_3 = {
+    "id": "q-003",
+    "opportunity_id": _Q_OPP_ID,
+    "question_number": 3,
+    "question_text": "Are small business subcontracting requirements applicable?",
+    "category": "small_business",
+    "priority": "low",
+    "source": "auto",
+    "status": "draft",
+    "classification": "CUI",
+}
+_Q_ROW_OTHER = {
+    "id": "q-other-1",
+    "opportunity_id": _Q_OTHER_OPP_ID,
+    "question_number": 1,
+    "question_text": "Unrelated question for a different opportunity.",
+    "category": "scope",
+    "priority": "medium",
+    "source": "manual",
+    "status": "draft",
+    "classification": "CUI",
+}
+
+
+def _make_questions_db(tmp_path, rows=None):
+    """Create a SQLite test DB seeded with proposal_questions rows."""
+    db_path = tmp_path / "questions_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_QUESTIONS_SCHEMA)
+    if rows is None:
+        rows = [_Q_ROW_1, _Q_ROW_2, _Q_ROW_3, _Q_ROW_OTHER]
+    for r in rows:
+        conn.execute(
+            """INSERT INTO proposal_questions
+               (id, opportunity_id, question_number, question_text,
+                category, priority, source, status, classification)
+               VALUES (:id, :opportunity_id, :question_number, :question_text,
+                       :category, :priority, :source, :status, :classification)""",
+            r,
+        )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_questions_api_app(tmp_path, rows=None):
+    """Return (flask_app, fake_get_db, db_path) for questions list endpoint tests."""
+    db_path = _make_questions_db(tmp_path, rows=rows)
+
+    import sqlite3 as _sqlite3
+
+    def fake_get_db():
+        c = _sqlite3.connect(str(db_path))
+        c.row_factory = _sqlite3.Row
+        return c
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, fake_get_db, db_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/opportunities/<id>/questions — response shape (gcpl-dft-10)
+# ---------------------------------------------------------------------------
+
+
+class TestListQuestionsEndpoint:
+    """GET /api/govcon/opportunities/<id>/questions returns a 200 JSON response."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_questions_api_app(tmp_path)
+
+    def _get(self, app_trio, opp_id=_Q_OPP_ID, params=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                url = f"/api/govcon/opportunities/{opp_id}/questions"
+                resp = c.get(url, query_string=params or {})
+        return resp
+
+    def test_returns_200(self, app_trio):
+        resp = self._get(app_trio)
+        assert resp.status_code == 200
+
+    def test_content_type_is_json(self, app_trio):
+        resp = self._get(app_trio)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_questions_key(self, app_trio):
+        resp = self._get(app_trio)
+        data = resp.get_json()
+        assert "questions" in data
+
+    def test_questions_value_is_list(self, app_trio):
+        resp = self._get(app_trio)
+        data = resp.get_json()
+        assert isinstance(data["questions"], list)
+
+    def test_response_has_stats_key(self, app_trio):
+        resp = self._get(app_trio)
+        data = resp.get_json()
+        assert "stats" in data
+
+    def test_stats_value_is_dict(self, app_trio):
+        resp = self._get(app_trio)
+        data = resp.get_json()
+        assert isinstance(data["stats"], dict)
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/opportunities/<id>/questions — Q&A records (gcpl-dft-10)
+# ---------------------------------------------------------------------------
+
+
+class TestListQuestionsRecords:
+    """Questions list returns only records for the requested opportunity_id."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_questions_api_app(tmp_path)
+
+    def _get(self, app_trio, opp_id=_Q_OPP_ID):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get(f"/api/govcon/opportunities/{opp_id}/questions")
+        return resp
+
+    def test_returns_three_questions_for_target_opp(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert len(data["questions"]) == 3, (
+            f"Expected 3 questions for {_Q_OPP_ID!r}, got {len(data['questions'])}"
+        )
+
+    def test_questions_belong_to_requested_opp(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for q in data["questions"]:
+            assert q["opportunity_id"] == _Q_OPP_ID, (
+                f"All questions must belong to {_Q_OPP_ID!r}, got {q['opportunity_id']!r}"
+            )
+
+    def test_other_opp_questions_not_included(self, app_trio):
+        data = self._get(app_trio).get_json()
+        ids = [q["id"] for q in data["questions"]]
+        assert _Q_ROW_OTHER["id"] not in ids, (
+            "Questions from a different opportunity must not appear in results"
+        )
+
+    def test_questions_ordered_by_question_number(self, app_trio):
+        data = self._get(app_trio).get_json()
+        numbers = [q["question_number"] for q in data["questions"]]
+        assert numbers == sorted(numbers), (
+            f"Questions must be ordered by question_number ASC, got {numbers}"
+        )
+
+    def test_first_question_text_matches_seeded_value(self, app_trio):
+        data = self._get(app_trio).get_json()
+        first = data["questions"][0]
+        assert first["question_text"] == _Q_ROW_1["question_text"], (
+            f"First question text mismatch: {first['question_text']!r}"
+        )
+
+    def test_question_record_has_id_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for q in data["questions"]:
+            assert "id" in q, "Each question record must have an 'id' field"
+
+    def test_question_record_has_category_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for q in data["questions"]:
+            assert "category" in q, "Each question record must have a 'category' field"
+
+    def test_question_record_has_status_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for q in data["questions"]:
+            assert "status" in q, "Each question record must have a 'status' field"
+
+    def test_question_record_has_priority_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for q in data["questions"]:
+            assert "priority" in q, "Each question record must have a 'priority' field"
+
+    def test_unknown_opp_returns_empty_list(self, app_trio):
+        data = self._get(app_trio, opp_id="opp-nonexistent").get_json()
+        assert data["questions"] == [], (
+            f"Unknown opportunity_id must return empty list, got {data['questions']!r}"
+        )
+
+    def test_unknown_opp_returns_zero_total(self, app_trio):
+        data = self._get(app_trio, opp_id="opp-nonexistent").get_json()
+        assert data["stats"]["total"] == 0, (
+            f"Unknown opportunity must have stats.total=0, got {data['stats']['total']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/opportunities/<id>/questions — stats (gcpl-dft-10)
+# ---------------------------------------------------------------------------
+
+
+class TestListQuestionsStats:
+    """stats block aggregates total, by_category, by_status, by_priority correctly."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_questions_api_app(tmp_path)
+
+    def _get(self, app_trio, opp_id=_Q_OPP_ID, params=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get(
+                    f"/api/govcon/opportunities/{opp_id}/questions",
+                    query_string=params or {},
+                )
+        return resp
+
+    def test_stats_total_equals_question_count(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["total"] == len(data["questions"]), (
+            f"stats.total must equal len(questions), "
+            f"got total={data['stats']['total']} vs len={len(data['questions'])}"
+        )
+
+    def test_stats_has_by_category(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert "by_category" in data["stats"]
+
+    def test_stats_has_by_status(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert "by_status" in data["stats"]
+
+    def test_stats_has_by_priority(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert "by_priority" in data["stats"]
+
+    def test_by_category_scope_count_is_one(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["by_category"].get("scope") == 1, (
+            f"Expected by_category['scope']=1, got {data['stats']['by_category'].get('scope')}"
+        )
+
+    def test_by_category_evaluation_criteria_count_is_one(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["by_category"].get("evaluation_criteria") == 1, (
+            f"Expected by_category['evaluation_criteria']=1, "
+            f"got {data['stats']['by_category'].get('evaluation_criteria')}"
+        )
+
+    def test_by_status_draft_count_is_two(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["by_status"].get("draft") == 2, (
+            f"Expected by_status['draft']=2, got {data['stats']['by_status'].get('draft')}"
+        )
+
+    def test_by_status_approved_count_is_one(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["by_status"].get("approved") == 1, (
+            f"Expected by_status['approved']=1, got {data['stats']['by_status'].get('approved')}"
+        )
+
+    def test_by_priority_high_count_is_one(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["by_priority"].get("high") == 1, (
+            f"Expected by_priority['high']=1, got {data['stats']['by_priority'].get('high')}"
+        )
+
+    def test_by_priority_low_count_is_one(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["stats"]["by_priority"].get("low") == 1, (
+            f"Expected by_priority['low']=1, got {data['stats']['by_priority'].get('low')}"
+        )
+
+    def test_by_category_values_sum_to_total(self, app_trio):
+        data = self._get(app_trio).get_json()
+        cat_sum = sum(data["stats"]["by_category"].values())
+        assert cat_sum == data["stats"]["total"], (
+            f"Sum of by_category values {cat_sum} must equal total {data['stats']['total']}"
+        )
+
+    def test_by_status_values_sum_to_total(self, app_trio):
+        data = self._get(app_trio).get_json()
+        status_sum = sum(data["stats"]["by_status"].values())
+        assert status_sum == data["stats"]["total"], (
+            f"Sum of by_status values {status_sum} must equal total {data['stats']['total']}"
+        )
+
+    def test_by_priority_values_sum_to_total(self, app_trio):
+        data = self._get(app_trio).get_json()
+        pri_sum = sum(data["stats"]["by_priority"].values())
+        assert pri_sum == data["stats"]["total"], (
+            f"Sum of by_priority values {pri_sum} must equal total {data['stats']['total']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/opportunities/<id>/questions — filters (gcpl-dft-10)
+# ---------------------------------------------------------------------------
+
+
+class TestListQuestionsFilters:
+    """Query-string filters narrow the returned questions list."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_questions_api_app(tmp_path)
+
+    def _get(self, app_trio, opp_id=_Q_OPP_ID, params=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get(
+                    f"/api/govcon/opportunities/{opp_id}/questions",
+                    query_string=params or {},
+                )
+        return resp
+
+    def test_filter_by_status_draft_returns_two(self, app_trio):
+        data = self._get(app_trio, params={"status": "draft"}).get_json()
+        assert len(data["questions"]) == 2, (
+            f"status=draft filter must return 2, got {len(data['questions'])}"
+        )
+
+    def test_filter_by_status_approved_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"status": "approved"}).get_json()
+        assert len(data["questions"]) == 1, (
+            f"status=approved filter must return 1, got {len(data['questions'])}"
+        )
+
+    def test_filter_by_status_matches_returned_records(self, app_trio):
+        data = self._get(app_trio, params={"status": "approved"}).get_json()
+        for q in data["questions"]:
+            assert q["status"] == "approved", (
+                f"All returned questions must have status='approved', got {q['status']!r}"
+            )
+
+    def test_filter_by_category_scope_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"category": "scope"}).get_json()
+        assert len(data["questions"]) == 1, (
+            f"category=scope filter must return 1, got {len(data['questions'])}"
+        )
+
+    def test_filter_by_category_matches_returned_records(self, app_trio):
+        data = self._get(app_trio, params={"category": "scope"}).get_json()
+        for q in data["questions"]:
+            assert q["category"] == "scope", (
+                f"All returned questions must have category='scope', got {q['category']!r}"
+            )
+
+    def test_filter_by_priority_high_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"priority": "high"}).get_json()
+        assert len(data["questions"]) == 1, (
+            f"priority=high filter must return 1, got {len(data['questions'])}"
+        )
+
+    def test_filter_by_priority_matches_returned_records(self, app_trio):
+        data = self._get(app_trio, params={"priority": "high"}).get_json()
+        for q in data["questions"]:
+            assert q["priority"] == "high", (
+                f"All returned questions must have priority='high', got {q['priority']!r}"
+            )
+
+    def test_filter_by_source_auto_returns_two(self, app_trio):
+        data = self._get(app_trio, params={"source": "auto"}).get_json()
+        assert len(data["questions"]) == 2, (
+            f"source=auto filter must return 2, got {len(data['questions'])}"
+        )
+
+    def test_filter_by_source_manual_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"source": "manual"}).get_json()
+        assert len(data["questions"]) == 1, (
+            f"source=manual filter must return 1, got {len(data['questions'])}"
+        )
+
+    def test_filter_no_match_returns_empty_list(self, app_trio):
+        data = self._get(app_trio, params={"status": "submitted"}).get_json()
+        assert data["questions"] == [], (
+            f"Filter with no matching rows must return empty list, got {data['questions']!r}"
+        )
+
+    def test_filter_no_match_stats_total_is_zero(self, app_trio):
+        data = self._get(app_trio, params={"status": "submitted"}).get_json()
+        assert data["stats"]["total"] == 0, (
+            f"stats.total must be 0 when no questions match filter, "
+            f"got {data['stats']['total']}"
+        )
