@@ -1566,6 +1566,8 @@ def create_app() -> Flask:
         "ohc": "",
         "iop": "/info-ops",
         "mission_canvas": "/mission-canvas",
+        "nocc": "",
+        "pmc": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
