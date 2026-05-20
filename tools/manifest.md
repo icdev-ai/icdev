@@ -735,3 +735,9 @@
 | Nocc Alarm Triage | tools\genesis\reflexes\nocc_alarm_triage.py | Auto-registered: reflexes/nocc_alarm_triage.py | --json | JSON |
 | Nocc Sla Watcher | tools\genesis\reflexes\nocc_sla_watcher.py | Auto-registered: reflexes/nocc_sla_watcher.py | --json | JSON |
 | Peering Health Monitor | tools\genesis\reflexes\peering_health_monitor.py | Auto-registered: reflexes/peering_health_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Test Gcpl Disc 10 | tools\testing\test_gcpl_disc_10.py | Auto-registered: testing/test_gcpl_disc_10.py | --json | JSON |
