@@ -263,7 +263,7 @@ cpmp:
     spi_yellow_threshold: 0.95
     spi_red_threshold: 0.85
     monte_carlo_iterations: 10000
-    forecast_confidence_levels: [0.50, 0.80, 0.95]
+    forecast_confidence_levels: [0.10, 0.50, 0.90]
 
   # CPARS prediction (D-CPMP-3 — deterministic weighted scoring)
   cpars:
