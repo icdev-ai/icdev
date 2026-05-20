@@ -5909,3 +5909,402 @@ class TestChangeQuestionStatusSideEffects:
         assert history[0]["reason"] == "LPTA review complete", (
             f"History reason must be 'LPTA review complete', got {history[0]['reason']!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Schema + helpers for GET /api/govcon/knowledge-base (gcpl-dft-12)
+# ---------------------------------------------------------------------------
+
+_KB_SCHEMA = """
+CREATE TABLE IF NOT EXISTS proposal_knowledge_base (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'capability_description',
+    domain TEXT NOT NULL DEFAULT 'general',
+    volume_type TEXT DEFAULT 'technical',
+    keywords TEXT DEFAULT '[]',
+    naics_codes TEXT DEFAULT '[]',
+    usage_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'active',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI // SP-CTI'
+);
+
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    created_at TEXT,
+    event_type TEXT,
+    actor TEXT,
+    action TEXT,
+    details TEXT,
+    session_id TEXT
+);
+"""
+
+_KB_BLOCK_1 = {
+    "id": "kb-001",
+    "title": "DevSecOps Pipeline Capability",
+    "content": "Our DevSecOps pipeline integrates SAST, DAST, and SCA scanning at every stage.",
+    "category": "capability_description",
+    "domain": "devsecops",
+    "volume_type": "technical",
+    "keywords": '["devsecops", "pipeline", "sast", "dast"]',
+    "naics_codes": "[]",
+    "usage_count": 5,
+    "status": "active",
+    "classification": "CUI // SP-CTI",
+}
+_KB_BLOCK_2 = {
+    "id": "kb-002",
+    "title": "Zero Trust Architecture Approach",
+    "content": "We implement zero trust principles using identity-based access controls and micro-segmentation.",
+    "category": "approach",
+    "domain": "security",
+    "volume_type": "technical",
+    "keywords": '["zero trust", "identity", "micro-segmentation"]',
+    "naics_codes": "[]",
+    "usage_count": 3,
+    "status": "active",
+    "classification": "CUI // SP-CTI",
+}
+_KB_BLOCK_3 = {
+    "id": "kb-003",
+    "title": "AI/ML Model Training Staffing Plan",
+    "content": "Our staffing plan includes data scientists, ML engineers, and DevOps specialists.",
+    "category": "staffing",
+    "domain": "ai_ml",
+    "volume_type": "staffing",
+    "keywords": '["ai", "ml", "data scientist", "staffing"]',
+    "naics_codes": "[]",
+    "usage_count": 1,
+    "status": "active",
+    "classification": "CUI // SP-CTI",
+}
+
+_KB_INSERT_SQL = (
+    "INSERT INTO proposal_knowledge_base "
+    "(id, title, content, category, domain, volume_type, keywords, naics_codes, "
+    "usage_count, status, classification) "
+    "VALUES (:id, :title, :content, :category, :domain, :volume_type, :keywords, "
+    ":naics_codes, :usage_count, :status, :classification)"
+)
+
+
+def _make_kb_db(tmp_path, rows=None):
+    """Create a SQLite test DB seeded with proposal_knowledge_base rows."""
+    db_path = tmp_path / "kb_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_KB_SCHEMA)
+    if rows is None:
+        rows = [_KB_BLOCK_1, _KB_BLOCK_2, _KB_BLOCK_3]
+    for r in rows:
+        conn.execute(_KB_INSERT_SQL, r)
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_kb_api_app(tmp_path, rows=None):
+    """Return (flask_app, fake_get_db, db_path) for knowledge-base endpoint tests."""
+    db_path = _make_kb_db(tmp_path, rows=rows)
+
+    import sqlite3 as _sqlite3
+
+    def fake_get_db():
+        c = _sqlite3.connect(str(db_path))
+        c.row_factory = _sqlite3.Row
+        return c
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, fake_get_db, db_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/knowledge-base — list response shape (gcpl-dft-12)
+# ---------------------------------------------------------------------------
+
+
+class TestKnowledgeBaseListResponse:
+    """GET /api/govcon/knowledge-base (no query) returns 200 JSON with correct shape."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path)
+
+    def _get(self, app_trio, params=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.govcon.knowledge_base._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/knowledge-base", query_string=params or {})
+        return resp
+
+    def test_returns_200(self, app_trio):
+        resp = self._get(app_trio)
+        assert resp.status_code == 200
+
+    def test_content_type_is_json(self, app_trio):
+        resp = self._get(app_trio)
+        assert resp.content_type.startswith("application/json"), (
+            f"Content-Type must be application/json, got {resp.content_type!r}"
+        )
+
+    def test_response_has_status_key(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert "status" in data, (
+            f"Response must include 'status' key, got {list(data.keys())}"
+        )
+
+    def test_response_status_is_ok(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["status"] == "ok", (
+            f"Response status must be 'ok', got {data['status']!r}"
+        )
+
+    def test_response_has_total_key(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert "total" in data, (
+            f"Response must include 'total' key, got {list(data.keys())}"
+        )
+
+    def test_response_total_is_integer(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert isinstance(data["total"], int), (
+            f"Response 'total' must be an integer, got {type(data['total'])!r}"
+        )
+
+    def test_response_has_blocks_key(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert "blocks" in data, (
+            f"Response must include 'blocks' key, got {list(data.keys())}"
+        )
+
+    def test_response_blocks_is_list(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert isinstance(data["blocks"], list), (
+            f"Response 'blocks' must be a list, got {type(data['blocks'])!r}"
+        )
+
+    def test_total_matches_blocks_length(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["total"] == len(data["blocks"]), (
+            f"total={data['total']} must equal len(blocks)={len(data['blocks'])}"
+        )
+
+    def test_returns_all_seeded_blocks(self, app_trio):
+        data = self._get(app_trio).get_json()
+        assert data["total"] == 3, (
+            f"list with no filters must return all 3 seeded blocks, got {data['total']}"
+        )
+
+    def test_each_block_has_id_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for blk in data["blocks"]:
+            assert "id" in blk, f"Each block must have 'id' field, block keys: {list(blk.keys())}"
+
+    def test_each_block_has_title_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for blk in data["blocks"]:
+            assert "title" in blk, f"Each block must have 'title' field, block keys: {list(blk.keys())}"
+
+    def test_each_block_has_content_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for blk in data["blocks"]:
+            assert "content" in blk, f"Each block must have 'content' field, block keys: {list(blk.keys())}"
+
+    def test_each_block_has_category_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for blk in data["blocks"]:
+            assert "category" in blk, f"Each block must have 'category' field, block keys: {list(blk.keys())}"
+
+    def test_each_block_has_domain_field(self, app_trio):
+        data = self._get(app_trio).get_json()
+        for blk in data["blocks"]:
+            assert "domain" in blk, f"Each block must have 'domain' field, block keys: {list(blk.keys())}"
+
+    def test_empty_db_returns_total_zero(self, tmp_path):
+        app_trio = _build_kb_api_app(tmp_path, rows=[])
+        data = self._get(app_trio).get_json()
+        assert data["total"] == 0, (
+            f"Empty DB must return total=0, got {data['total']}"
+        )
+
+    def test_empty_db_returns_empty_blocks_list(self, tmp_path):
+        app_trio = _build_kb_api_app(tmp_path, rows=[])
+        data = self._get(app_trio).get_json()
+        assert data["blocks"] == [], (
+            f"Empty DB must return blocks=[], got {data['blocks']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/knowledge-base — domain/category filtering (gcpl-dft-12)
+# ---------------------------------------------------------------------------
+
+
+class TestKnowledgeBaseListFiltering:
+    """GET /api/govcon/knowledge-base filters blocks by domain and category params."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path)
+
+    def _get(self, app_trio, params=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.govcon.knowledge_base._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/knowledge-base", query_string=params or {})
+        return resp
+
+    def test_filter_by_domain_devsecops_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"domain": "devsecops"}).get_json()
+        assert data["total"] == 1, (
+            f"domain=devsecops filter must return 1 block, got {data['total']}"
+        )
+
+    def test_filter_by_domain_matches_returned_records(self, app_trio):
+        data = self._get(app_trio, params={"domain": "devsecops"}).get_json()
+        for blk in data["blocks"]:
+            assert blk["domain"] == "devsecops", (
+                f"All returned blocks must have domain='devsecops', got {blk['domain']!r}"
+            )
+
+    def test_filter_by_domain_security_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"domain": "security"}).get_json()
+        assert data["total"] == 1, (
+            f"domain=security filter must return 1 block, got {data['total']}"
+        )
+
+    def test_filter_by_category_approach_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"category": "approach"}).get_json()
+        assert data["total"] == 1, (
+            f"category=approach filter must return 1 block, got {data['total']}"
+        )
+
+    def test_filter_by_category_matches_returned_records(self, app_trio):
+        data = self._get(app_trio, params={"category": "approach"}).get_json()
+        for blk in data["blocks"]:
+            assert blk["category"] == "approach", (
+                f"All returned blocks must have category='approach', got {blk['category']!r}"
+            )
+
+    def test_filter_by_category_staffing_returns_one(self, app_trio):
+        data = self._get(app_trio, params={"category": "staffing"}).get_json()
+        assert data["total"] == 1, (
+            f"category=staffing filter must return 1 block, got {data['total']}"
+        )
+
+    def test_filter_no_domain_match_returns_empty(self, app_trio):
+        data = self._get(app_trio, params={"domain": "cloud"}).get_json()
+        assert data["total"] == 0, (
+            f"domain=cloud filter (no matching blocks) must return total=0, got {data['total']}"
+        )
+
+    def test_filter_no_domain_match_blocks_list_is_empty(self, app_trio):
+        data = self._get(app_trio, params={"domain": "cloud"}).get_json()
+        assert data["blocks"] == [], (
+            f"domain=cloud filter (no match) must return empty blocks, got {data['blocks']!r}"
+        )
+
+    def test_combined_domain_and_category_filter(self, app_trio):
+        data = self._get(app_trio, params={"domain": "devsecops", "category": "capability_description"}).get_json()
+        assert data["total"] == 1, (
+            f"domain=devsecops + category=capability_description must return 1, got {data['total']}"
+        )
+
+    def test_combined_filter_wrong_category_returns_empty(self, app_trio):
+        data = self._get(app_trio, params={"domain": "devsecops", "category": "staffing"}).get_json()
+        assert data["total"] == 0, (
+            f"domain=devsecops + category=staffing must return 0 (no match), got {data['total']}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: GET /api/govcon/knowledge-base?q= — search response (gcpl-dft-12)
+# ---------------------------------------------------------------------------
+
+
+class TestKnowledgeBaseSearchResponse:
+    """GET /api/govcon/knowledge-base?q=<query> returns search results with correct shape."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_kb_api_app(tmp_path)
+
+    def _get(self, app_trio, params=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.govcon.knowledge_base._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.get("/api/govcon/knowledge-base", query_string=params or {})
+        return resp
+
+    def test_search_returns_200(self, app_trio):
+        resp = self._get(app_trio, params={"q": "devsecops pipeline"})
+        assert resp.status_code == 200
+
+    def test_search_response_has_status_key(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert "status" in data, (
+            f"Search response must include 'status' key, got {list(data.keys())}"
+        )
+
+    def test_search_response_status_is_ok(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert data["status"] == "ok", (
+            f"Search response status must be 'ok', got {data['status']!r}"
+        )
+
+    def test_search_response_has_query_key(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert "query" in data, (
+            f"Search response must include 'query' key, got {list(data.keys())}"
+        )
+
+    def test_search_response_query_matches_input(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert data["query"] == "devsecops pipeline", (
+            f"Response 'query' must echo the input, got {data['query']!r}"
+        )
+
+    def test_search_response_has_results_key(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert "results" in data, (
+            f"Search response must include 'results' key, got {list(data.keys())}"
+        )
+
+    def test_search_response_results_is_list(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert isinstance(data["results"], list), (
+            f"Search response 'results' must be a list, got {type(data['results'])!r}"
+        )
+
+    def test_search_matching_term_returns_result(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        assert len(data["results"]) >= 1, (
+            f"Search for 'devsecops pipeline' must return at least 1 result, got {len(data['results'])}"
+        )
+
+    def test_search_result_contains_matching_block_id(self, app_trio):
+        data = self._get(app_trio, params={"q": "devsecops pipeline"}).get_json()
+        ids = [r["id"] for r in data["results"]]
+        assert _KB_BLOCK_1["id"] in ids, (
+            f"Search 'devsecops pipeline' must include block {_KB_BLOCK_1['id']!r}, got ids={ids}"
+        )
+
+    def test_search_no_match_returns_empty_results(self, app_trio):
+        data = self._get(app_trio, params={"q": "xyzzy_nonexistent_term_999"}).get_json()
+        assert data["results"] == [], (
+            f"Search with no matching term must return empty results, got {data['results']!r}"
+        )
+
+    def test_search_no_match_still_has_query_key(self, app_trio):
+        data = self._get(app_trio, params={"q": "xyzzy_nonexistent_term_999"}).get_json()
+        assert "query" in data, (
+            f"Empty search response must still include 'query' key, got {list(data.keys())}"
+        )
