@@ -1,0 +1,159 @@
+# Peering Management Canvas (PMC) — Configuration
+# Controls peering decision engine weights, RPKI thresholds,
+# PeeringDB sync cadence, and transit benchmark refresh.
+
+# Feature gate (mirrors .env ICDEV_PMC_ENABLED)
+enabled: true
+
+# ── Peering Decision Engine ───────────────────────────────────────────────────
+decision_engine:
+  # Scoring weights (must sum to 1.0)
+  weights:
+    traffic_ratio: 0.25        # Inbound/outbound traffic ratio balance
+    rpki_validity: 0.20        # % of peer prefixes with valid ROAs
+    prefix_count: 0.15         # Managed prefix count (more = riskier)
+    irr_registration: 0.15     # % of routes registered in IRR/RPSL
+    ix_presence: 0.15          # Common IXP membership overlap
+    noc_responsiveness: 0.10   # NOC email response quality indicator
+
+  # Recommendation thresholds (score 0.0 – 1.0)
+  thresholds:
+    open: 0.75        # Score ≥ 0.75 → recommend "open" peering
+    selective: 0.45   # Score ≥ 0.45 → recommend "selective" peering
+    # Score < 0.45    → recommend "no" peering
+
+  # Blockers — any blocker forces recommendation to "no" regardless of score
+  blockers:
+    rpki_invalid_override: true   # Any RPKI-invalid prefix → block
+    max_prefix_count_ipv4: 500000 # > 500K IPv4 prefixes → flag for review
+    max_prefix_count_ipv6: 100000 # > 100K IPv6 prefixes → flag for review
+    unregistered_irr_pct: 50      # > 50% unregistered in IRR → downgrade
+
+  # Traffic ratio scoring (inbound_gbps / outbound_gbps)
+  traffic_ratio_scoring:
+    balanced_range: [0.8, 1.2]    # Ratio in this range → full score
+    acceptable_range: [0.5, 2.0]  # Outside balanced but acceptable → 0.5 score
+    # Outside acceptable range → 0.0 score
+
+  # Prefix count scoring thresholds
+  prefix_scoring:
+    excellent_max_ipv4: 5000      # ≤ 5K IPv4 prefixes → full score
+    acceptable_max_ipv4: 50000    # ≤ 50K → partial score
+    # > 50K → minimal score (large deaggregated table risk)
+
+# ── RPKI Validation ───────────────────────────────────────────────────────────
+rpki:
+  # Cloudflare RPKI API
+  api_base_url: "https://rpki.cloudflare.com/api/v1"
+  timeout_seconds: 10
+
+  # Batch validation settings
+  max_concurrent_validations: 20
+  retry_attempts: 3
+  retry_delay_seconds: 2
+
+  # Thresholds for alerts and reports
+  thresholds:
+    invalid_prefix_alert_pct: 5    # Alert if > 5% of peer's prefixes are RPKI-invalid
+    not_found_warn_pct: 30         # Warn if > 30% have no ROA (not-found)
+    high_traffic_peer_gbps: 1.0    # Force re-validation for peers > 1 Gbps traffic
+
+  # Revalidation cadence
+  revalidation:
+    high_traffic_peer_hours: 24    # Revalidate high-traffic peers every 24h
+    standard_peer_hours: 168       # Revalidate all others weekly (7d)
+    on_peer_status_change: true    # Always revalidate on status change
+
+# ── PeeringDB Integration ─────────────────────────────────────────────────────
+peeringdb:
+  # Optional API key (increases rate limits from 100/day to 1000/day)
+  # Set via env: PEERINGDB_API_KEY
+  base_url: "https://www.peeringdb.com/api"
+  timeout_seconds: 15
+
+  # Local cache (stored in .tmp/peeringdb_cache/)
+  cache:
+    ttl_hours: 24          # Cache ASN info for 24 hours
+    max_cache_size_mb: 100 # Evict oldest if cache exceeds this
+
+  # Sync settings
+  sync:
+    stale_threshold_days: 7        # Re-sync peer if PeeringDB data is > 7 days old
+    batch_size: 50                 # Max ASNs to sync per run
+    auto_sync_on_evaluate: true    # Trigger PeeringDB sync before evaluating a peer
+
+  # Fields to sync from PeeringDB
+  sync_fields:
+    - org_name
+    - noc_email
+    - irr_as_set
+    - ipv4_prefix_count
+    - ipv6_prefix_count
+    - policy_general
+    - rir
+
+# ── BGP Configuration Generation ─────────────────────────────────────────────
+bgp_config:
+  # Default session parameters
+  defaults:
+    max_prefixes_v4: 10000
+    max_prefixes_v6: 1000
+    soft_reconfiguration: true
+    send_community: true
+    remove_private_as: true
+    next_hop_self: false    # Only for route reflectors
+
+  # Route policy naming convention
+  policy_naming:
+    import_template: "PEER-{asn}-IN"
+    export_template: "PEER-{asn}-OUT"
+    prefix_list_template: "PFX-{asn}-{af}"   # af = v4 or v6
+
+  # Supported OS types
+  supported_os_types:
+    - ios_xr
+    - junos
+    - eos
+    - nokia_sros
+    - frr
+    - bird2
+
+# ── Transit Pricing Benchmarks ────────────────────────────────────────────────
+transit_benchmark:
+  # Regions in dataset
+  regions: [na, eu, apac, latam, mea]
+
+  # ROI analysis defaults
+  roi_defaults:
+    analysis_years: 3
+    discount_rate: 0.10
+    noc_hourly_rate_usd: 120
+    noc_hours_per_peer: 4
+
+  # Thresholds for peering vs. transit recommendation
+  thresholds:
+    min_traffic_gbps_for_peering: 0.5    # Below this, transit cheaper than IX port fees
+    min_peers_for_ix_port: 5            # Need ≥5 peers before IX port ROI is positive
+    payback_target_months: 24           # Payback within 2 years = favorable ROI
+
+  # Data refresh (informational — data is static in codebase)
+  data_vintage: "2026-Q1"
+  refresh_cadence: "quarterly"
+
+# ── Security Gates ────────────────────────────────────────────────────────────
+security_gates:
+  # Warn if high-traffic peers have RPKI-invalid prefixes
+  rpki_invalid_high_traffic:
+    enabled: true
+    traffic_threshold_gbps: 1.0
+    max_invalid_prefixes: 0     # Zero tolerance for high-traffic peers
+
+  # Warn if active peers with open policy have unregistered IRR
+  irr_unregistered_open_peer:
+    enabled: true
+    max_unregistered_pct: 20
+
+  # Alert on pending peering requests older than threshold
+  stale_peering_requests:
+    enabled: true
+    stale_days: 14

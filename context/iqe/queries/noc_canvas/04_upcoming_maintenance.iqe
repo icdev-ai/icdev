@@ -1,0 +1,7 @@
+# IQE-NOCC-004: Scheduled maintenance windows in the next 7 days
+# Use: NOC planning, customer advance notifications, change advisory board
+
+foreach m in noc.maintenance_windows
+  where m.status == "scheduled"
+  select m.window_number, m.title, m.scheduled_start, m.scheduled_end,
+         m.impact_scope, m.notification_sent, m.rfc_id

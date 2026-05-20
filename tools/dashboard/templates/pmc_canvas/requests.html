@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Peering Requests — PMC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0" style="color:#38bdf8;"><i class="bi bi-envelope-paper me-2"></i>Peering Requests</h4>
+    <button class="btn btn-sm btn-outline-success" onclick="openAddRequestModal()">+ New Request</button>
+  </div>
+
+  <!-- Status tabs -->
+  <ul class="nav nav-tabs border-secondary mb-3" id="req-tabs">
+    <li class="nav-item"><a class="nav-link active" href="#" onclick="filterRequests('pending',this)">Pending</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="filterRequests('sent',this)">Sent</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="filterRequests('accepted',this)">Accepted</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="filterRequests('rejected',this)">Rejected</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="filterRequests('',this)">All</a></li>
+  </ul>
+
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm">
+      <thead><tr>
+        <th>ASN</th><th>Organization</th><th>Type</th><th>Status</th>
+        <th>Contact Method</th><th>Created</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="req-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Add Request Modal -->
+  <div class="modal fade" id="addReqModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title">New Peering Request</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3"><label class="form-label">Peer ASN *</label>
+            <input type="number" class="form-control bg-dark text-white border-secondary" id="req-asn" placeholder="64512"></div>
+          <div class="mb-3"><label class="form-label">Request Type</label>
+            <select class="form-select bg-dark text-white border-secondary" id="req-type">
+              <option value="new">New Peering</option>
+              <option value="upgrade">Upgrade</option>
+              <option value="terminate">Terminate</option>
+              <option value="policy_change">Policy Change</option>
+            </select></div>
+          <div class="mb-3"><label class="form-label">Contact Method</label>
+            <select class="form-select bg-dark text-white border-secondary" id="req-contact">
+              <option value="email">Email</option>
+              <option value="peeringdb">PeeringDB</option>
+              <option value="noc">NOC Portal</option>
+              <option value="manual">Manual</option>
+            </select></div>
+          <div class="mb-3"><label class="form-label">Contact Address</label>
+            <input type="text" class="form-control bg-dark text-white border-secondary" id="req-contact-addr" placeholder="noc@peer.example.com"></div>
+          <div class="mb-3"><label class="form-label">Notes</label>
+            <textarea class="form-control bg-dark text-white border-secondary" id="req-notes" rows="2"></textarea></div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-success" onclick="submitRequest()">Create Request</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% include 'includes/iqe_query_widget.html' %}
+</div>
+
+<script>
+const IQE_CANVAS = 'pmc';
+const IQE_COLLECTION = 'pmc.peering_requests';
+let allRequests = [];
+let currentFilter = 'pending';
+
+const STATUS_COLORS = {pending:'text-warning',sent:'text-info',accepted:'text-success',rejected:'text-danger',withdrawn:'text-muted'};
+
+function loadRequests() {
+  fetch('/api/pmc/requests').then(r=>r.json()).then(d=>{
+    allRequests = Array.isArray(d) ? d : (d.requests||[]);
+    renderRequests();
+  }).catch(()=>{});
+}
+
+function filterRequests(status, link) {
+  document.querySelectorAll('#req-tabs .nav-link').forEach(l=>l.classList.remove('active'));
+  link.classList.add('active');
+  currentFilter = status;
+  renderRequests();
+  return false;
+}
+
+function renderRequests() {
+  const filtered = currentFilter ? allRequests.filter(r=>r.status===currentFilter) : allRequests;
+  const tbody = document.getElementById('req-tbody');
+  tbody.innerHTML = filtered.map(r=>{
+    const cls = STATUS_COLORS[r.status] || 'text-muted';
+    const created = r.created_at ? r.created_at.substring(0,10) : '–';
+    return `<tr>
+      <td>AS${r.asn||'–'}</td>
+      <td>${r.org_name||'–'}</td>
+      <td>${r.request_type||'–'}</td>
+      <td class="${cls} fw-bold">${r.status||'–'}</td>
+      <td>${r.contact_method||'–'}</td>
+      <td>${created}</td>
+      <td>
+        ${r.status==='pending'?`<button class="btn btn-xs btn-outline-info btn-sm py-0 px-1" onclick="markSent('${r.id}')">Mark Sent</button>`:''}
+        ${r.status==='sent'?`<button class="btn btn-xs btn-outline-success btn-sm py-0 px-1" onclick="markAccepted('${r.id}')">Accept</button>`:''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openAddRequestModal() { new bootstrap.Modal(document.getElementById('addReqModal')).show(); }
+
+function submitRequest() {
+  const asn = parseInt(document.getElementById('req-asn').value);
+  const body = {
+    asn, request_type: document.getElementById('req-type').value,
+    contact_method: document.getElementById('req-contact').value,
+    contact_address: document.getElementById('req-contact-addr').value,
+    notes: document.getElementById('req-notes').value,
+  };
+  fetch('/api/pmc/requests',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(()=>{
+      bootstrap.Modal.getInstance(document.getElementById('addReqModal')).hide();
+      loadRequests();
+    }).catch(()=>{});
+}
+
+function markSent(id) {
+  fetch(`/api/pmc/requests/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'sent'})})
+    .then(()=>loadRequests()).catch(()=>{});
+}
+
+function markAccepted(id) {
+  fetch(`/api/pmc/requests/${id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'accepted'})})
+    .then(()=>loadRequests()).catch(()=>{});
+}
+
+loadRequests();
+</script>
+{% endblock %}

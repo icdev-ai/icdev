@@ -277,6 +277,26 @@
                     <li><a href="/ops/incidents">Incidents</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
+                    {% if nocc_enabled %}
+                    <li class="nav-section-label">NOC Operations</li>
+                    <li><a href="/noc" style="color:#f97316;">NOC Overview</a></li>
+                    <li><a href="/noc/alarms">Alarms</a></li>
+                    <li><a href="/noc/incidents">Incidents</a></li>
+                    <li><a href="/noc/rfcs">RFCs</a></li>
+                    <li><a href="/noc/maintenance">Maintenance</a></li>
+                    <li><a href="/noc/sla">SLA</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if pmc_enabled %}
+                    <li class="nav-section-label">Peering Management</li>
+                    <li><a href="/pmc" style="color:#38bdf8;">Peering Canvas</a></li>
+                    <li><a href="/pmc/peers">BGP Peers</a></li>
+                    <li><a href="/pmc/ix">Internet Exchanges</a></li>
+                    <li><a href="/pmc/rpki">RPKI Validation</a></li>
+                    <li><a href="/pmc/policies">Route Policies</a></li>
+                    <li><a href="/pmc/requests">Peering Requests</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
                     {% if govlift_enabled %}
                     <li class="nav-section-label">Cloud Migration</li>
                     <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
@@ -820,6 +840,8 @@
             [/^\/cache-savings/, 'cache_savings'],
             [/^\/strategos/, 'strategos'],
             [/^\/supply.chain/, 'supply_chain'],
+            [/^\/noc/, 'nocc'],
+            [/^\/pmc/, 'pmc'],
         ];
 
         function detectCanvas() {

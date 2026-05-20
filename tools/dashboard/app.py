@@ -159,6 +159,8 @@ _CANVAS_DEFS = [
     ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
     ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
     ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
+    ("nocc", "ICDEV_NOCC_ENABLED", "tools.noc_canvas.blueprint", "create_noc_canvas_blueprint"),
+    ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
 ]
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
@@ -1418,6 +1420,8 @@ def create_app() -> Flask:
             "aadc_enabled": _CANVAS_FLAGS.get("aadc", False),
             "aimc_enabled": _CANVAS_FLAGS.get("aimc", False),
             "ohc_enabled": _CANVAS_FLAGS.get("ohc", False),
+            "nocc_enabled": _CANVAS_FLAGS.get("nocc", False),
+            "pmc_enabled": _CANVAS_FLAGS.get("pmc", False),
             "govlift_enabled": _CANVAS_FLAGS.get("govlift", False),
             "info_ops_enabled": _CANVAS_FLAGS.get("iop", False),
             "mission_canvas_enabled": _CANVAS_FLAGS.get("mission_canvas", False),
@@ -2530,6 +2534,8 @@ def create_app() -> Flask:
             "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts", "aadc.ai_decisions"]),
             "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts", "aimc.ai_decisions"]),
             "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
+            "nocc":       ("tools.iqe.adapters.nocc",        ["noc.alarms", "noc.incidents", "noc.rfcs", "noc.mops", "noc.maintenance_windows", "noc.sla_records"]),
+            "pmc":        ("tools.iqe.adapters.pmc",         ["pmc.peers", "pmc.ix_memberships", "pmc.prefixes", "pmc.peering_requests", "pmc.route_policies"]),
             "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
             "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),

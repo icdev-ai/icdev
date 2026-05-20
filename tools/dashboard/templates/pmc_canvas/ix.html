@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Internet Exchanges — PMC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0" style="color:#38bdf8;"><i class="bi bi-globe me-2"></i>Internet Exchanges</h4>
+    <button class="btn btn-sm btn-outline-success" onclick="openAddIXModal()">+ Add IX</button>
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-dark table-hover table-sm">
+      <thead><tr>
+        <th>IX Name</th><th>City</th><th>Country</th>
+        <th>Our IPv4</th><th>Our IPv6</th><th>Speed (Gbps)</th>
+        <th>Monthly Cost</th><th>Status</th>
+      </tr></thead>
+      <tbody id="ix-tbody"></tbody>
+    </table>
+  </div>
+
+  <!-- Add IX Modal -->
+  <div class="modal fade" id="addIXModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content bg-dark border-secondary">
+        <div class="modal-header border-secondary">
+          <h5 class="modal-title">Add IX Membership</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">IX Name *</label>
+              <input type="text" class="form-control bg-dark text-white border-secondary" id="ix-name" placeholder="e.g. Equinix Ashburn"></div>
+            <div class="col-md-3"><label class="form-label">City</label>
+              <input type="text" class="form-control bg-dark text-white border-secondary" id="ix-city"></div>
+            <div class="col-md-3"><label class="form-label">Country</label>
+              <input type="text" class="form-control bg-dark text-white border-secondary" id="ix-country" placeholder="US"></div>
+            <div class="col-md-6"><label class="form-label">Our IPv4</label>
+              <input type="text" class="form-control bg-dark text-white border-secondary" id="ix-ipv4" placeholder="198.51.100.1"></div>
+            <div class="col-md-6"><label class="form-label">Our IPv6</label>
+              <input type="text" class="form-control bg-dark text-white border-secondary" id="ix-ipv6" placeholder="2001:db8::1"></div>
+            <div class="col-md-4"><label class="form-label">Speed (Gbps)</label>
+              <input type="number" step="0.1" class="form-control bg-dark text-white border-secondary" id="ix-speed" value="10"></div>
+            <div class="col-md-4"><label class="form-label">Monthly Cost (USD)</label>
+              <input type="number" step="0.01" class="form-control bg-dark text-white border-secondary" id="ix-cost" value="0"></div>
+            <div class="col-md-4"><label class="form-label">PeeringDB IX ID</label>
+              <input type="number" class="form-control bg-dark text-white border-secondary" id="ix-pdb-id"></div>
+          </div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-success" onclick="submitIX()">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% include 'includes/iqe_query_widget.html' %}
+</div>
+
+<script>
+const IQE_CANVAS = 'pmc';
+const IQE_COLLECTION = 'pmc.ix_memberships';
+
+function loadIX() {
+  fetch('/api/pmc/ix').then(r=>r.json()).then(rows=>{
+    const tbody = document.getElementById('ix-tbody');
+    tbody.innerHTML = '';
+    (Array.isArray(rows)?rows:(rows.ix||[])).forEach(ix=>{
+      const statusColor = ix.status==='active'?'text-success':ix.status==='pending'?'text-warning':'text-muted';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong>${ix.ix_name}</strong></td>
+        <td>${ix.city||'–'}</td><td>${ix.country||'–'}</td>
+        <td>${ix.our_ipv4||'–'}</td><td>${ix.our_ipv6||'–'}</td>
+        <td>${ix.our_speed_gbps||0} Gbps</td>
+        <td>$${(ix.monthly_cost_usd||0).toLocaleString()}/mo</td>
+        <td class="${statusColor}">${ix.status||'–'}</td>`;
+      tbody.appendChild(tr);
+    });
+  }).catch(()=>{});
+}
+
+function openAddIXModal() { new bootstrap.Modal(document.getElementById('addIXModal')).show(); }
+
+function submitIX() {
+  const body = {
+    ix_name: document.getElementById('ix-name').value,
+    city: document.getElementById('ix-city').value,
+    country: document.getElementById('ix-country').value,
+    our_ipv4: document.getElementById('ix-ipv4').value,
+    our_ipv6: document.getElementById('ix-ipv6').value,
+    our_speed_gbps: parseFloat(document.getElementById('ix-speed').value)||0,
+    monthly_cost_usd: parseFloat(document.getElementById('ix-cost').value)||0,
+    peeringdb_ix_id: parseInt(document.getElementById('ix-pdb-id').value)||null,
+  };
+  fetch('/api/pmc/ix', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})
+    .then(r=>r.json()).then(()=>{
+      bootstrap.Modal.getInstance(document.getElementById('addIXModal')).hide();
+      loadIX();
+    }).catch(()=>{});
+}
+
+loadIX();
+</script>
+{% endblock %}

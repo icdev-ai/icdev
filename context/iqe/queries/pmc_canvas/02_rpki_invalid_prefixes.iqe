@@ -1,0 +1,9 @@
+# PMC — RPKI invalid prefixes
+# Canvas: pmc | Collection: pmc.prefixes
+# Description: Surface RPKI-invalid route announcements from peers
+
+show rpki invalid prefixes
+list rpki invalid routes
+which peers have invalid rpki
+show prefixes with invalid roa
+find rpki violations
