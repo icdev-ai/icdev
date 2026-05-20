@@ -10256,6 +10256,23 @@ CREATE TABLE IF NOT EXISTS canvas_instances (
 CREATE INDEX IF NOT EXISTS idx_canvas_instances_session ON canvas_instances (session_id);
 CREATE INDEX IF NOT EXISTS idx_canvas_instances_tenant_canvas ON canvas_instances (tenant_id, canvas);
 
+-- JISE requirements feed (tools/dashboard/api/jise.py GET /requirements)
+CREATE TABLE IF NOT EXISTS requirements (
+    id             TEXT PRIMARY KEY,
+    title          TEXT NOT NULL DEFAULT '',
+    description    TEXT NOT NULL DEFAULT '',
+    status         TEXT NOT NULL DEFAULT 'open'
+        CHECK(status IN ('open', 'closed', 'in_progress', 'draft', 'review', 'deferred')),
+    priority       TEXT NOT NULL DEFAULT 'medium'
+        CHECK(priority IN ('critical', 'high', 'medium', 'low')),
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+    updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_requirements_status   ON requirements (status);
+CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements (priority);
+CREATE INDEX IF NOT EXISTS idx_requirements_created  ON requirements (created_at);
+
 """
 
 
