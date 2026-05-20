@@ -35,3 +35,8 @@ supported_languages:
 
 pattern_min_depth: 3   # min if-depth for conditional pattern detection
 rule_min_keys: 10      # min dict keys for rule-table pattern detection
+
+semgrep:
+  rules_dir: context/ai_augmentation/semgrep_rules
+  timeout_seconds: 60
+  metrics: "off"

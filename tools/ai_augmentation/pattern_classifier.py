@@ -1,22 +1,32 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas — Python AST Pattern Classifier.
+"""AI Augmentation Canvas — Pattern Classifier (Semgrep + AST fallback).
 
-Detects 8 AI-augmentable code patterns in Python source files via stdlib ast.
-Entry point: detect_patterns(file_path, language) -> list[dict]
+Primary path: Semgrep CLI is invoked via subprocess; its JSON output is parsed
+and mapped to the canonical result schema.
+
+Fallback (air-gap / Semgrep unavailable): Python stdlib ast walker handles
+Python source files only.
+
+Public API:
+    detect_patterns(target_path: str) -> list[dict]
 
 Each result dict contains:
     pattern_type    — one of tools.ai_augmentation.constants.PATTERN_TYPES
     module_path     — path to the analyzed source file
-    function_name   — enclosing function name, or '<module>'
+    function_name   — enclosing function name, or '<unknown>'
     line_start      — first line of the matched pattern (1-based)
     line_end        — last line of the matched pattern (1-based)
+    language        — source language identifier (e.g. 'python')
     pattern_detail  — dict with pattern-specific metadata
 """
 
 from __future__ import annotations
 
 import ast
+import json
 import pathlib
+import subprocess
+import shutil
 from typing import Any
 
 import yaml
@@ -24,6 +34,7 @@ import yaml
 # ── Config ────────────────────────────────────────────────────────────────────
 
 _CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "args" / "aac_config.yaml"
+_REPO_ROOT = pathlib.Path(__file__).parent.parent.parent
 
 
 def _load_config() -> dict[str, Any]:
@@ -38,7 +49,120 @@ _cfg = _load_config()
 _PATTERN_MIN_DEPTH: int = int(_cfg.get("pattern_min_depth", 3))
 _RULE_MIN_KEYS: int = int(_cfg.get("rule_min_keys", 10))
 
-# ── Constants ─────────────────────────────────────────────────────────────────
+_semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
+_SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
+    "rules_dir", "context/ai_augmentation/semgrep_rules"
+)
+_SEMGREP_TIMEOUT: int = int(_semgrep_cfg.get("timeout_seconds", 60))
+_SEMGREP_METRICS: str = str(_semgrep_cfg.get("metrics", "off"))
+
+# ── Language detection ────────────────────────────────────────────────────────
+
+_EXT_LANGUAGE: dict[str, str] = {
+    ".py": "python",
+    ".java": "java",
+    ".cs": "csharp",
+    ".go": "go",
+    ".rs": "rust",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+}
+
+
+def _language_from_path(path: str) -> str:
+    return _EXT_LANGUAGE.get(pathlib.Path(path).suffix.lower(), "unknown")
+
+
+# ── Semgrep wrapper ───────────────────────────────────────────────────────────
+
+
+def _detect_via_semgrep(target_path: str) -> list[dict] | None:
+    """Run Semgrep CLI on target_path and return parsed results.
+
+    Returns None if Semgrep is not installed or the run fails — signals the
+    caller to use the AST fallback instead.
+    """
+    if not shutil.which("semgrep"):
+        return None
+
+    rules_path = _REPO_ROOT / _SEMGREP_RULES_DIR
+    if not rules_path.exists():
+        return None
+
+    cmd = [
+        "semgrep",
+        "--json",
+        "--config", str(rules_path),
+        "--metrics", _SEMGREP_METRICS,
+        target_path,
+    ]
+
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            timeout=_SEMGREP_TIMEOUT,
+        )
+    except (FileNotFoundError, PermissionError, OSError):
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+
+    try:
+        data = json.loads(proc.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    return _map_semgrep_results(data.get("results", []))
+
+
+def _map_semgrep_results(hits: list[dict]) -> list[dict]:
+    """Map raw Semgrep result objects to the canonical AAC pattern dict."""
+    results: list[dict] = []
+    for hit in hits:
+        extra = hit.get("extra", {})
+        metadata = extra.get("metadata", {})
+        pattern_type = metadata.get("aac_pattern")
+        if not pattern_type:
+            continue
+
+        path = hit.get("path", "")
+        language = _language_from_path(path)
+
+        # Prefer metavariable capture of the enclosing function ($FUNC),
+        # then fall back to metadata.function_name, then '<unknown>'.
+        metavars = extra.get("metavars", {})
+        func_meta = metavars.get("$FUNC", {})
+        function_name: str = (
+            func_meta.get("abstract_content")
+            or metadata.get("function_name")
+            or "<unknown>"
+        )
+
+        pattern_detail: dict[str, Any] = {
+            k: v for k, v in metadata.items() if k != "aac_pattern"
+        }
+        message = extra.get("message", "")
+        if message:
+            pattern_detail["message"] = message
+
+        results.append({
+            "pattern_type": pattern_type,
+            "module_path": path,
+            "function_name": function_name,
+            "line_start": hit.get("start", {}).get("line", 0),
+            "line_end": hit.get("end", {}).get("line", 0),
+            "language": language,
+            "pattern_detail": pattern_detail,
+        })
+    return results
+
+
+# ── AST fallback (Python only) ────────────────────────────────────────────────
+
+# Constants for AST detection
 
 _RE_DETECT_FUNCS: frozenset[str] = frozenset(
     {"match", "search", "fullmatch", "compile", "findall", "finditer", "sub", "subn", "split"}
@@ -62,8 +186,16 @@ _NOTIFY_INDICATORS: frozenset[str] = frozenset({
     "send", "sendmail", "send_message", "send_mail",
     "notify", "emit", "publish", "dispatch", "deliver",
 })
-
-# ── Tree-building helpers ─────────────────────────────────────────────────────
+_RENDER_METHODS: frozenset[str] = frozenset(
+    {"render", "render_template", "render_string", "render_to_string"}
+)
+_RENDER_FUNCS: frozenset[str] = frozenset(
+    {"render_template", "render_string", "render_to_string"}
+)
+_CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
+    {"task", "cron", "schedule", "periodic", "job", "beat"}
+)
+_THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
 
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
@@ -75,7 +207,6 @@ def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
 
 
 def _build_scope_map(tree: ast.AST) -> dict[int, str]:
-    """Map id(node) → name of immediately enclosing function, or '<module>'."""
     scope_map: dict[int, str] = {}
 
     def _walk(node: ast.AST, scope: str) -> None:
@@ -91,7 +222,6 @@ def _build_scope_map(tree: ast.AST) -> dict[int, str]:
 
 
 def _collect_re_names(tree: ast.AST) -> tuple[set[str], set[str]]:
-    """Return (re_module_aliases, directly_imported_re_func_names)."""
     re_module_aliases: set[str] = set()
     re_func_names: set[str] = set()
     for node in ast.walk(tree):
@@ -107,15 +237,7 @@ def _collect_re_names(tree: ast.AST) -> tuple[set[str], set[str]]:
     return re_module_aliases, re_func_names
 
 
-# ── AST traversal utilities ───────────────────────────────────────────────────
-
-
 def _if_depth_in_subtree(node: ast.AST) -> int:
-    """Max consecutive if-nesting depth rooted at node.
-
-    Stops at nested FunctionDef/AsyncFunctionDef/ClassDef boundaries so that
-    ifs inside a nested function don't inflate the outer function's depth.
-    """
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
         return 0
     if isinstance(node, ast.If):
@@ -142,7 +264,6 @@ def _extract_decorator_name(dec: ast.expr) -> str | None:
 def _calls_in_func(
     func_node: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> list[ast.Call]:
-    """All ast.Call nodes inside func_node without crossing nested function boundaries."""
     result: list[ast.Call] = []
 
     def _walk(node: ast.AST) -> None:
@@ -168,7 +289,49 @@ def _call_attr(call: ast.Call) -> str | None:
     return None
 
 
-# ── Pattern 1: nested_conditionals ───────────────────────────────────────────
+def _ast_detect_file(file_path: str) -> list[dict]:
+    """Run all 8 AST pattern detectors on a single Python file."""
+    source_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    try:
+        tree = ast.parse(source_text, filename=file_path)
+    except SyntaxError:
+        return []
+
+    parent_map = _build_parent_map(tree)
+    scope_map = _build_scope_map(tree)
+    re_aliases, re_funcs = _collect_re_names(tree)
+
+    raw: list[dict] = []
+    raw.extend(_detect_nested_conditionals(file_path, tree, parent_map, scope_map))
+    raw.extend(_detect_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs))
+    raw.extend(_detect_string_template_rendering(file_path, tree, scope_map))
+    raw.extend(_detect_scheduled_cron(file_path, tree, scope_map))
+    raw.extend(_detect_hardcoded_threshold(file_path, tree, scope_map))
+    raw.extend(_detect_db_render_notify_chain(file_path, tree, scope_map))
+    raw.extend(_detect_keyword_list_search(file_path, tree, scope_map))
+    raw.extend(_detect_large_rule_table(file_path, tree, scope_map))
+
+    # Inject language field for consistency with Semgrep output schema.
+    for hit in raw:
+        hit.setdefault("language", "python")
+    return raw
+
+
+def _detect_via_ast_fallback(target_path: str) -> list[dict]:
+    """AST-based fallback for Python files when Semgrep is unavailable."""
+    p = pathlib.Path(target_path)
+    if p.is_file():
+        if p.suffix.lower() == ".py":
+            return _ast_detect_file(target_path)
+        return []
+    # Directory: walk recursively and collect results for all .py files.
+    results: list[dict] = []
+    for py_file in sorted(p.rglob("*.py")):
+        results.extend(_ast_detect_file(str(py_file)))
+    return results
+
+
+# ── AST pattern detectors ─────────────────────────────────────────────────────
 
 
 def _detect_nested_conditionals(
@@ -181,7 +344,6 @@ def _detect_nested_conditionals(
     for node in ast.walk(tree):
         if not isinstance(node, ast.If):
             continue
-        # Only report the root of each if-chain (skip elif branches)
         if isinstance(parent_map.get(id(node)), ast.If):
             continue
         depth = _if_depth_in_subtree(node)
@@ -195,9 +357,6 @@ def _detect_nested_conditionals(
                 "pattern_detail": {"max_depth": depth},
             })
     return results
-
-
-# ── Pattern 2: regex_user_input ───────────────────────────────────────────────
 
 
 def _detect_regex_user_input(
@@ -229,17 +388,6 @@ def _detect_regex_user_input(
                 "pattern_detail": {"call": matched},
             })
     return results
-
-
-# ── Pattern 3: string_template_rendering ─────────────────────────────────────
-
-
-_RENDER_METHODS: frozenset[str] = frozenset(
-    {"render", "render_template", "render_string", "render_to_string"}
-)
-_RENDER_FUNCS: frozenset[str] = frozenset(
-    {"render_template", "render_string", "render_to_string"}
-)
 
 
 def _detect_string_template_rendering(
@@ -275,14 +423,6 @@ def _detect_string_template_rendering(
                 "pattern_detail": {"kind": kind, **detail},
             })
     return results
-
-
-# ── Pattern 4: scheduled_cron ─────────────────────────────────────────────────
-
-
-_CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
-    {"task", "cron", "schedule", "periodic", "job", "beat"}
-)
 
 
 def _detect_scheduled_cron(
@@ -325,12 +465,6 @@ def _detect_scheduled_cron(
                     "pattern_detail": {"kind": "call", "func": func.id},
                 })
     return results
-
-
-# ── Pattern 5: hardcoded_threshold ────────────────────────────────────────────
-
-
-_THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
 
 def _detect_hardcoded_threshold(
@@ -384,9 +518,6 @@ def _detect_hardcoded_threshold(
     return results
 
 
-# ── Pattern 6: db_render_notify_chain ────────────────────────────────────────
-
-
 def _detect_db_render_notify_chain(
     file_path: str,
     tree: ast.AST,
@@ -420,9 +551,6 @@ def _detect_db_render_notify_chain(
                 },
             })
     return results
-
-
-# ── Pattern 7: keyword_list_search ────────────────────────────────────────────
 
 
 def _detect_keyword_list_search(
@@ -467,9 +595,6 @@ def _detect_keyword_list_search(
     return results
 
 
-# ── Pattern 8: large_rule_table ───────────────────────────────────────────────
-
-
 def _detect_large_rule_table(
     file_path: str,
     tree: ast.AST,
@@ -479,7 +604,6 @@ def _detect_large_rule_table(
     for node in ast.walk(tree):
         if not isinstance(node, ast.Dict):
             continue
-        # None keys represent **unpacking — exclude them from count
         key_count = sum(1 for k in node.keys if k is not None)
         if key_count >= _RULE_MIN_KEYS:
             results.append({
@@ -496,42 +620,21 @@ def _detect_large_rule_table(
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def detect_patterns(file_path: str, language: str) -> list[dict]:
-    """Detect AI-augmentable patterns in a source file.
+def detect_patterns(target_path: str) -> list[dict]:
+    """Detect AI-augmentable patterns in a source file or directory tree.
 
-    Phase 1 supports Python only (language='python'). All other languages
-    return an empty list — multi-language support lands in a later phase.
+    Tries Semgrep CLI first (multi-language, all 8 patterns via YAML rules).
+    Falls back to Python stdlib ast when Semgrep is unavailable (air-gap).
 
     Args:
-        file_path: Path to the source file to analyze.
-        language:  Source language identifier (e.g. 'python').
+        target_path: Path to a source file or directory to analyze.
 
     Returns:
-        List of pattern dicts. Each dict has keys: pattern_type,
-        module_path, function_name, line_start, line_end, pattern_detail.
-        Returns [] on syntax error or unsupported language.
+        List of pattern dicts with keys: pattern_type, module_path,
+        function_name, line_start, line_end, language, pattern_detail.
+        Returns [] on error or if no patterns are found.
     """
-    if language != "python":
-        return []
-
-    source_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
-    try:
-        tree = ast.parse(source_text, filename=file_path)
-    except SyntaxError:
-        return []
-
-    parent_map = _build_parent_map(tree)
-    scope_map = _build_scope_map(tree)
-    re_aliases, re_funcs = _collect_re_names(tree)
-
-    results: list[dict] = []
-    results.extend(_detect_nested_conditionals(file_path, tree, parent_map, scope_map))
-    results.extend(_detect_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs))
-    results.extend(_detect_string_template_rendering(file_path, tree, scope_map))
-    results.extend(_detect_scheduled_cron(file_path, tree, scope_map))
-    results.extend(_detect_hardcoded_threshold(file_path, tree, scope_map))
-    results.extend(_detect_db_render_notify_chain(file_path, tree, scope_map))
-    results.extend(_detect_keyword_list_search(file_path, tree, scope_map))
-    results.extend(_detect_large_rule_table(file_path, tree, scope_map))
-
-    return results
+    semgrep_results = _detect_via_semgrep(target_path)
+    if semgrep_results is not None:
+        return semgrep_results
+    return _detect_via_ast_fallback(target_path)
