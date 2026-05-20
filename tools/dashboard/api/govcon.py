@@ -1105,7 +1105,7 @@ def pipeline_status():
     try:
         # SAM.gov opportunities
         sam_total = conn.execute("SELECT COUNT(*) as c FROM sam_gov_opportunities").fetchone()["c"]
-        sam_active = conn.execute("SELECT COUNT(*) as c FROM sam_gov_opportunities WHERE active = 1").fetchone()["c"]
+        sam_active = conn.execute("SELECT COUNT(*) as c FROM sam_gov_opportunities WHERE active = 'true'").fetchone()["c"]
 
         # Requirements
         shall_total = conn.execute("SELECT COUNT(*) as c FROM rfp_shall_statements").fetchone()["c"]
