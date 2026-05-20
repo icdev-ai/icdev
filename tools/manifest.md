@@ -140,6 +140,7 @@
 - [SaaS (Additional)](manifest/saas.md)
 - [Scout](manifest/scout.md)
 - [FathomDesk Trading Engine](manifest/fathomdesk-trading-engine.md)
+- [IL5 Data Ingestion & SLA Enforcement](manifest/il5-data-ingestion.md)
 - [Auto-Registered (Coherence Fix)](manifest/auto-registered.md)
 - [Air-Gap Mode (OPT-51/OPT-61)](manifest/air-gap-mode.md)
 - [AI/ML Model Canvas (AIMC)](manifest/aiml-canvas.md)
