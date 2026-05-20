@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS aac_scans (
     language_profile JSONB,
     total_files      INTEGER DEFAULT 0,
     total_loc        INTEGER DEFAULT 0,
-    status           TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','complete','failed')),
+    status           TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','completed','failed')),
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at     TIMESTAMP
 );
