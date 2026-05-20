@@ -854,6 +854,8 @@ def _get_cor_contracts(cor_email):
 # Hidden fields for COR view (from config)
 COR_HIDDEN_FIELDS = {
     "subcontractor_pricing",
+    "subcontractor_rate",
+    "subcontractor_cost",
     "internal_cost_details",
     "internal_notes",
     "corrective_action_details",
