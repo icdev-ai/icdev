@@ -1,0 +1,537 @@
+# CUI // SP-CTI
+"""AI Augmentation Canvas — Python AST Pattern Classifier.
+
+Detects 8 AI-augmentable code patterns in Python source files via stdlib ast.
+Entry point: detect_patterns(file_path, language) -> list[dict]
+
+Each result dict contains:
+    pattern_type    — one of tools.ai_augmentation.constants.PATTERN_TYPES
+    module_path     — path to the analyzed source file
+    function_name   — enclosing function name, or '<module>'
+    line_start      — first line of the matched pattern (1-based)
+    line_end        — last line of the matched pattern (1-based)
+    pattern_detail  — dict with pattern-specific metadata
+"""
+
+from __future__ import annotations
+
+import ast
+import pathlib
+from typing import Any
+
+import yaml
+
+# ── Config ────────────────────────────────────────────────────────────────────
+
+_CONFIG_PATH = pathlib.Path(__file__).parent.parent.parent / "args" / "aac_config.yaml"
+
+
+def _load_config() -> dict[str, Any]:
+    try:
+        with open(_CONFIG_PATH, encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        return {}
+
+
+_cfg = _load_config()
+_PATTERN_MIN_DEPTH: int = int(_cfg.get("pattern_min_depth", 3))
+_RULE_MIN_KEYS: int = int(_cfg.get("rule_min_keys", 10))
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+_RE_DETECT_FUNCS: frozenset[str] = frozenset(
+    {"match", "search", "fullmatch", "compile", "findall", "finditer", "sub", "subn", "split"}
+)
+
+_CRON_CALL_ATTRS: frozenset[str] = frozenset(
+    {"add_job", "scheduled_job", "every", "crontab", "on_after_configure"}
+)
+_CRON_CALL_NAMES: frozenset[str] = frozenset({"crontab", "schedule"})
+
+_DB_INDICATORS: frozenset[str] = frozenset({
+    "query", "execute", "filter", "get", "fetch", "select",
+    "fetchone", "fetchall", "fetchmany", "find", "find_one", "find_all",
+    "scalar", "scalars", "all", "first",
+})
+_RENDER_INDICATORS: frozenset[str] = frozenset({
+    "render", "render_template", "render_string", "render_to_string",
+    "get_template", "from_string",
+})
+_NOTIFY_INDICATORS: frozenset[str] = frozenset({
+    "send", "sendmail", "send_message", "send_mail",
+    "notify", "emit", "publish", "dispatch", "deliver",
+})
+
+# ── Tree-building helpers ─────────────────────────────────────────────────────
+
+
+def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
+    parent_map: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parent_map[id(child)] = node
+    return parent_map
+
+
+def _build_scope_map(tree: ast.AST) -> dict[int, str]:
+    """Map id(node) → name of immediately enclosing function, or '<module>'."""
+    scope_map: dict[int, str] = {}
+
+    def _walk(node: ast.AST, scope: str) -> None:
+        scope_map[id(node)] = scope
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                _walk(child, child.name)
+            else:
+                _walk(child, scope)
+
+    _walk(tree, "<module>")
+    return scope_map
+
+
+def _collect_re_names(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """Return (re_module_aliases, directly_imported_re_func_names)."""
+    re_module_aliases: set[str] = set()
+    re_func_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "re":
+                    re_module_aliases.add(alias.asname or "re")
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "re":
+                for alias in node.names:
+                    if alias.name in _RE_DETECT_FUNCS:
+                        re_func_names.add(alias.asname or alias.name)
+    return re_module_aliases, re_func_names
+
+
+# ── AST traversal utilities ───────────────────────────────────────────────────
+
+
+def _if_depth_in_subtree(node: ast.AST) -> int:
+    """Max consecutive if-nesting depth rooted at node.
+
+    Stops at nested FunctionDef/AsyncFunctionDef/ClassDef boundaries so that
+    ifs inside a nested function don't inflate the outer function's depth.
+    """
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return 0
+    if isinstance(node, ast.If):
+        children = node.body + node.orelse
+        child_max = max((_if_depth_in_subtree(c) for c in children), default=0)
+        return 1 + child_max
+    child_max = max(
+        (_if_depth_in_subtree(c) for c in ast.iter_child_nodes(node)), default=0
+    )
+    return child_max
+
+
+def _extract_decorator_name(dec: ast.expr) -> str | None:
+    if isinstance(dec, ast.Name):
+        return dec.id
+    if isinstance(dec, ast.Attribute):
+        base = _extract_decorator_name(dec.value)
+        return f"{base}.{dec.attr}" if base else dec.attr
+    if isinstance(dec, ast.Call):
+        return _extract_decorator_name(dec.func)
+    return None
+
+
+def _calls_in_func(
+    func_node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.Call]:
+    """All ast.Call nodes inside func_node without crossing nested function boundaries."""
+    result: list[ast.Call] = []
+
+    def _walk(node: ast.AST) -> None:
+        if node is not func_node and isinstance(
+            node, (ast.FunctionDef, ast.AsyncFunctionDef)
+        ):
+            return
+        if isinstance(node, ast.Call):
+            result.append(node)
+        for child in ast.iter_child_nodes(node):
+            _walk(child)
+
+    _walk(func_node)
+    return result
+
+
+def _call_attr(call: ast.Call) -> str | None:
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    if isinstance(func, ast.Name):
+        return func.id
+    return None
+
+
+# ── Pattern 1: nested_conditionals ───────────────────────────────────────────
+
+
+def _detect_nested_conditionals(
+    file_path: str,
+    tree: ast.AST,
+    parent_map: dict[int, ast.AST],
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        # Only report the root of each if-chain (skip elif branches)
+        if isinstance(parent_map.get(id(node)), ast.If):
+            continue
+        depth = _if_depth_in_subtree(node)
+        if depth >= _PATTERN_MIN_DEPTH:
+            results.append({
+                "pattern_type": "nested_conditionals",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {"max_depth": depth},
+            })
+    return results
+
+
+# ── Pattern 2: regex_user_input ───────────────────────────────────────────────
+
+
+def _detect_regex_user_input(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+    re_module_aliases: set[str],
+    re_func_names: set[str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        matched: str | None = None
+        if isinstance(func, ast.Attribute):
+            if func.attr in _RE_DETECT_FUNCS and isinstance(func.value, ast.Name):
+                if func.value.id in re_module_aliases:
+                    matched = f"{func.value.id}.{func.attr}"
+        elif isinstance(func, ast.Name) and func.id in re_func_names:
+            matched = func.id
+        if matched:
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {"call": matched},
+            })
+    return results
+
+
+# ── Pattern 3: string_template_rendering ─────────────────────────────────────
+
+
+_RENDER_METHODS: frozenset[str] = frozenset(
+    {"render", "render_template", "render_string", "render_to_string"}
+)
+_RENDER_FUNCS: frozenset[str] = frozenset(
+    {"render_template", "render_string", "render_to_string"}
+)
+
+
+def _detect_string_template_rendering(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        kind: str | None = None
+        detail: dict[str, Any] = {}
+        if isinstance(node, ast.JoinedStr):
+            kind = "f_string"
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute):
+                if func.attr == "format":
+                    kind = "str_format"
+                    detail = {"method": ".format()"}
+                elif func.attr in _RENDER_METHODS:
+                    kind = "template_render"
+                    detail = {"method": f".{func.attr}()"}
+            elif isinstance(func, ast.Name) and func.id in _RENDER_FUNCS:
+                kind = "template_render"
+                detail = {"method": f"{func.id}()"}
+        if kind:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {"kind": kind, **detail},
+            })
+    return results
+
+
+# ── Pattern 4: scheduled_cron ─────────────────────────────────────────────────
+
+
+_CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
+    {"task", "cron", "schedule", "periodic", "job", "beat"}
+)
+
+
+def _detect_scheduled_cron(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for dec in node.decorator_list:
+                dec_name = _extract_decorator_name(dec)
+                if dec_name and any(k in dec_name.lower() for k in _CRON_DEC_KEYWORDS):
+                    results.append({
+                        "pattern_type": "scheduled_cron",
+                        "module_path": file_path,
+                        "function_name": node.name,
+                        "line_start": node.lineno,
+                        "line_end": node.end_lineno,
+                        "pattern_detail": {"kind": "decorator", "decorator": dec_name},
+                    })
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute) and func.attr in _CRON_CALL_ATTRS:
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": file_path,
+                    "function_name": scope_map.get(id(node), "<module>"),
+                    "line_start": node.lineno,
+                    "line_end": node.end_lineno,
+                    "pattern_detail": {"kind": "call", "method": func.attr},
+                })
+            elif isinstance(func, ast.Name) and func.id in _CRON_CALL_NAMES:
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": file_path,
+                    "function_name": scope_map.get(id(node), "<module>"),
+                    "line_start": node.lineno,
+                    "line_end": node.end_lineno,
+                    "pattern_detail": {"kind": "call", "func": func.id},
+                })
+    return results
+
+
+# ── Pattern 5: hardcoded_threshold ────────────────────────────────────────────
+
+
+_THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+
+def _detect_hardcoded_threshold(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            if not any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
+                continue
+            comparators = [node.left, *node.comparators]
+            numeric_consts = [
+                c.value
+                for c in comparators
+                if isinstance(c, ast.Constant) and isinstance(c.value, (int, float))
+            ]
+            if numeric_consts:
+                results.append({
+                    "pattern_type": "hardcoded_threshold",
+                    "module_path": file_path,
+                    "function_name": scope_map.get(id(node), "<module>"),
+                    "line_start": node.lineno,
+                    "line_end": node.end_lineno,
+                    "pattern_detail": {"kind": "compare", "constants": numeric_consts},
+                })
+        elif isinstance(node, ast.BinOp):
+            left_const = (
+                isinstance(node.left, ast.Constant)
+                and isinstance(node.left.value, (int, float))
+            )
+            right_const = (
+                isinstance(node.right, ast.Constant)
+                and isinstance(node.right.value, (int, float))
+            )
+            if left_const or right_const:
+                const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
+                results.append({
+                    "pattern_type": "hardcoded_threshold",
+                    "module_path": file_path,
+                    "function_name": scope_map.get(id(node), "<module>"),
+                    "line_start": node.lineno,
+                    "line_end": node.end_lineno,
+                    "pattern_detail": {
+                        "kind": "binop",
+                        "op": type(node.op).__name__,
+                        "constants": [const_val],
+                    },
+                })
+    return results
+
+
+# ── Pattern 6: db_render_notify_chain ────────────────────────────────────────
+
+
+def _detect_db_render_notify_chain(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        call_names: set[str] = {
+            name
+            for c in _calls_in_func(node)
+            if (name := _call_attr(c)) is not None
+        }
+        db_hits = call_names & _DB_INDICATORS
+        render_hits = call_names & _RENDER_INDICATORS
+        notify_hits = call_names & _NOTIFY_INDICATORS
+        if db_hits and render_hits and notify_hits:
+            results.append({
+                "pattern_type": "db_render_notify_chain",
+                "module_path": file_path,
+                "function_name": node.name,
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {
+                    "matched_calls": {
+                        "db": sorted(db_hits),
+                        "render": sorted(render_hits),
+                        "notify": sorted(notify_hits),
+                    }
+                },
+            })
+    return results
+
+
+# ── Pattern 7: keyword_list_search ────────────────────────────────────────────
+
+
+def _detect_keyword_list_search(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        for op, comp in zip(node.ops, node.comparators):
+            if not isinstance(op, ast.In):
+                continue
+            str_count = 0
+            if isinstance(comp, (ast.List, ast.Set, ast.Tuple)):
+                str_count = sum(
+                    1
+                    for elt in comp.elts
+                    if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+                )
+            elif isinstance(comp, ast.Dict):
+                str_count = sum(
+                    1
+                    for k in comp.keys
+                    if k is not None
+                    and isinstance(k, ast.Constant)
+                    and isinstance(k.value, str)
+                )
+            if str_count >= 3:
+                results.append({
+                    "pattern_type": "keyword_list_search",
+                    "module_path": file_path,
+                    "function_name": scope_map.get(id(node), "<module>"),
+                    "line_start": node.lineno,
+                    "line_end": node.end_lineno,
+                    "pattern_detail": {
+                        "container_type": type(comp).__name__,
+                        "string_count": str_count,
+                    },
+                })
+    return results
+
+
+# ── Pattern 8: large_rule_table ───────────────────────────────────────────────
+
+
+def _detect_large_rule_table(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+) -> list[dict]:
+    results: list[dict] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        # None keys represent **unpacking — exclude them from count
+        key_count = sum(1 for k in node.keys if k is not None)
+        if key_count >= _RULE_MIN_KEYS:
+            results.append({
+                "pattern_type": "large_rule_table",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {"key_count": key_count},
+            })
+    return results
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+
+def detect_patterns(file_path: str, language: str) -> list[dict]:
+    """Detect AI-augmentable patterns in a source file.
+
+    Phase 1 supports Python only (language='python'). All other languages
+    return an empty list — multi-language support lands in a later phase.
+
+    Args:
+        file_path: Path to the source file to analyze.
+        language:  Source language identifier (e.g. 'python').
+
+    Returns:
+        List of pattern dicts. Each dict has keys: pattern_type,
+        module_path, function_name, line_start, line_end, pattern_detail.
+        Returns [] on syntax error or unsupported language.
+    """
+    if language != "python":
+        return []
+
+    source_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    try:
+        tree = ast.parse(source_text, filename=file_path)
+    except SyntaxError:
+        return []
+
+    parent_map = _build_parent_map(tree)
+    scope_map = _build_scope_map(tree)
+    re_aliases, re_funcs = _collect_re_names(tree)
+
+    results: list[dict] = []
+    results.extend(_detect_nested_conditionals(file_path, tree, parent_map, scope_map))
+    results.extend(_detect_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs))
+    results.extend(_detect_string_template_rendering(file_path, tree, scope_map))
+    results.extend(_detect_scheduled_cron(file_path, tree, scope_map))
+    results.extend(_detect_hardcoded_threshold(file_path, tree, scope_map))
+    results.extend(_detect_db_render_notify_chain(file_path, tree, scope_map))
+    results.extend(_detect_keyword_list_search(file_path, tree, scope_map))
+    results.extend(_detect_large_rule_table(file_path, tree, scope_map))
+
+    return results
