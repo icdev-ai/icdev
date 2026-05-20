@@ -897,6 +897,125 @@ def _capture_diff_stats(task_id: str) -> dict:
         return default
 
 
+def _post_merge_route_smoke(task_id: str, commit_summary: str) -> None:
+    """Smoke-test routes affected by this task immediately after merge.
+
+    Creates a Kanban bug task if any route returns a server error, so the
+    failure surfaces in the backlog rather than silently breaking the dashboard.
+    """
+    try:
+        from tools.testing.route_smoke import (
+            _routes_for_changed_files,
+            _server_up,
+            run_smoke,
+        )
+    except ImportError:
+        logger.debug("route_smoke not available — skipping post-merge smoke")
+        return
+
+    base = "http://localhost:5050"
+    if not _server_up(base, timeout=3.0):
+        logger.debug("Dashboard not running — post-merge smoke skipped for %s", task_id)
+        return
+
+    # Derive affected routes from the commit summary (filenames in short log)
+    changed_files: list[str] = []
+    for line in commit_summary.splitlines():
+        # git log --oneline lines don't contain filenames; use a best-effort
+        # parse of task_id path components as the canvas slug
+        pass
+
+    # Better: list files changed on the branch via git
+    try:
+        import subprocess as _sp3
+        _flist = _sp3.run(
+            ["git", "diff", "--name-only", "HEAD~1", "HEAD"],
+            cwd=str(BASE_DIR),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if _flist.returncode == 0:
+            changed_files = [f.strip() for f in _flist.stdout.splitlines() if f.strip()]
+    except Exception:
+        pass
+
+    routes = _routes_for_changed_files(changed_files) if changed_files else []
+    if not routes:
+        logger.debug("No affected routes detected for %s — smoke skipped", task_id)
+        return
+
+    logger.info(
+        "Post-merge smoke: %d routes for task %s (changed files: %s)",
+        len(routes), task_id, changed_files[:5],
+    )
+    passed, results = run_smoke(routes, base=base, timeout=10.0, verbose=False)
+
+    if passed:
+        logger.info("Post-merge smoke PASSED for task %s (%d routes)", task_id, len(routes))
+        return
+
+    # Smoke failed — log failures and create a bug task
+    failures = [r for r in results if not r["ok"]]
+    failure_lines = "\n".join(
+        f"  - {f['route']}: HTTP {f.get('status')} — {f.get('error')}"
+        for f in failures
+    )
+    logger.warning(
+        "Post-merge smoke FAILED for task %s: %d/%d routes broken\n%s",
+        task_id, len(failures), len(routes), failure_lines,
+    )
+
+    try:
+        from tools.logging.build_logger import capture_pytest
+        capture_pytest(
+            returncode=1,
+            stdout=f"Post-merge smoke failed for {task_id}:\n{failure_lines}",
+            stderr="",
+            duration_s=0,
+            passed=len(results) - len(failures),
+            failed=len(failures),
+            skipped=0,
+        )
+    except Exception as _log_exc:
+        logger.debug("build_logger capture failed: %s", _log_exc)
+
+    # Create a high-priority bug task so the failure enters the remediation queue
+    try:
+        import json as _json
+        import urllib.request as _ureq
+        desc = (
+            f"## Post-Merge Smoke Failure\n\n"
+            f"Task **{task_id}** was merged to main but the following routes are broken:\n\n"
+            f"{failure_lines}\n\n"
+            f"**Triggered by:** post-merge route smoke gate\n"
+            f"**Commit summary:**\n```\n{commit_summary[:500]}\n```\n\n"
+            f"**Changed files:** {', '.join(changed_files[:10])}\n\n"
+            f"Fix the routes listed above so they return HTTP 200 without server errors."
+        )
+        payload = _json.dumps({
+            "title": f"[SMOKE-FAIL] Post-merge: {len(failures)} route(s) broken — {task_id}",
+            "task_type": "bug",
+            "priority": "critical",
+            "status": "backlog",
+            "description": desc,
+        }).encode("utf-8")
+        req = _ureq.Request(
+            f"{base}/api/kanban/tasks",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with _ureq.urlopen(req, timeout=10) as resp:
+            body = _json.loads(resp.read())
+            logger.warning(
+                "Created smoke-fail bug task %s for post-merge failures of %s",
+                body.get("id"), task_id,
+            )
+    except Exception as exc:
+        logger.warning("Failed to create smoke-fail bug task for %s: %s", task_id, exc)
+
+
 def _cleanup_worktree(task_id: str):
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
@@ -940,6 +1059,11 @@ def _cleanup_worktree(task_id: str):
         pass
 
     merged_ok = _merge_worktree_to_main(task_id)
+
+    # Post-merge route smoke — catches runtime failures that static checks miss.
+    # Only runs when merge succeeded and the dashboard is up.
+    if merged_ok:
+        _post_merge_route_smoke(task_id, _commit_summary)
 
     # Persist change metrics + branch info to kanban_tasks (best-effort)
     try:

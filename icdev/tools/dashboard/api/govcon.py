@@ -96,7 +96,7 @@ def list_sam_opportunities():
         query = "SELECT * FROM sam_gov_opportunities WHERE 1=1"
         params = []
         if active_only:
-            query += " AND active = 1"
+            query += " AND active = 'true'"
         if naics:
             query += " AND naics_code = ?"
             params.append(naics)

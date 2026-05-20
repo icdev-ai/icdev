@@ -38,6 +38,22 @@ if str(BASE_DIR) not in sys.path:
 
 # ── Nav routes extracted from base.html ─────────────────────────────────────
 # These are the routes reachable from the nav menu — the ones users actually hit.
+# ── Critical API endpoints ───────────────────────────────────────────────────
+# These are the GET endpoints that page features depend on.
+# A 500 here means buttons/tables/charts on the page silently fail.
+API_ENDPOINTS: List[Dict[str, object]] = [
+    {"route": "/api/kanban/tasks",               "expect_json": True},
+    {"route": "/api/kanban/tasks?status=backlog", "expect_json": True},
+    {"route": "/api/code-quality/summary",        "expect_json": True},
+    {"route": "/api/code-quality/log-health",     "expect_json": True},
+    {"route": "/api/iqe-query",                   "expect_json": False,  "skip_404": True},
+    {"route": "/api/proposals",                   "expect_json": True},
+    {"route": "/api/govcon/opportunities",        "expect_json": True},
+    {"route": "/api/projects",                    "expect_json": True},
+    {"route": "/api/agents",                      "expect_json": True},
+    {"route": "/health",                          "expect_json": False},
+]
+
 NAV_ROUTES: List[str] = [
     "/",
     "/projects",
@@ -183,15 +199,51 @@ def _routes_for_changed_files(changed_files: List[str]) -> List[str]:
     routes: List[str] = []
     for f in changed_files:
         fp = f.lower().replace("\\", "/")
-        # Blueprint or template change — check all nav routes by default
-        if "blueprint" in fp or "template" in fp or "app.py" in fp:
-            return NAV_ROUTES  # full smoke when app.py or base template changes
-        # Per-canvas heuristics
+        # blueprint.py, app.py, or files inside a templates/ directory trigger full smoke
+        if fp.endswith("blueprint.py") or fp.endswith("app.py") or "/templates/" in fp:
+            return NAV_ROUTES  # full smoke when app.py or layout templates change
+        # Per-canvas heuristics — match canvas slug anywhere in the path
         for route in NAV_ROUTES:
             slug = route.strip("/").split("/")[0]
             if slug and slug in fp:
                 routes.append(route)
-    return routes or NAV_ROUTES
+    return routes or []
+
+
+def _smoke_api_endpoint(
+    base: str, endpoint: Dict[str, object], timeout: float = 10.0
+) -> Dict[str, object]:
+    """Smoke a JSON API endpoint — checks 200 status + valid JSON response."""
+    import json as _json
+    route = str(endpoint["route"])
+    expect_json = bool(endpoint.get("expect_json", True))
+    skip_404 = bool(endpoint.get("skip_404", False))
+
+    result = _smoke_route(base, route, timeout=timeout)
+    result["is_api"] = True
+
+    # A 404 on an optional endpoint is acceptable
+    if result["status"] == 404 and skip_404:
+        result["ok"] = True
+        result["error"] = None
+        return result
+
+    if not result["ok"]:
+        return result
+
+    # For JSON endpoints, verify the body parses as JSON
+    if expect_json:
+        url = base.rstrip("/") + route
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ICDEV-APISmoker/1.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                body = resp.read(65536).decode("utf-8", errors="replace")
+            _json.loads(body)  # raises ValueError if not JSON
+        except (ValueError, Exception) as e:
+            result["ok"] = False
+            result["error"] = f"Non-JSON response: {str(e)[:80]}"
+
+    return result
 
 
 def run_smoke(
@@ -222,42 +274,91 @@ def run_smoke(
     return len(failures) == 0, results
 
 
+def run_api_smoke(
+    endpoints: Optional[List[Dict]] = None,
+    base: str = "http://localhost:5050",
+    timeout: float = 10.0,
+    verbose: bool = True,
+) -> Tuple[bool, List[Dict]]:
+    """Smoke critical API endpoints — verifies JSON responses, not just 200."""
+    if not _server_up(base):
+        if verbose:
+            print(f"  [SKIP] Server not running at {base} — API smoke skipped")
+        return True, []
+
+    targets = endpoints or API_ENDPOINTS
+    results = []
+    for ep in targets:
+        result = _smoke_api_endpoint(base, ep, timeout=timeout)
+        results.append(result)
+        if verbose:
+            route = ep["route"]
+            if result["ok"]:
+                print(f"  [OK]   {route}  ({result['elapsed_ms']}ms)")
+            else:
+                print(f"  [FAIL] {route}  status={result['status']}  error={result['error']}")
+
+    failures = [r for r in results if not r["ok"]]
+    return len(failures) == 0, results
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ICDEV Route Smoke Tester")
-    parser.add_argument("--all", action="store_true", help="Smoke all nav routes")
+    parser = argparse.ArgumentParser(description="ICDEV Route + API Smoke Tester")
+    parser.add_argument("--all", action="store_true", help="Smoke all nav routes + API endpoints")
     parser.add_argument("--routes", help="Comma-separated route list, e.g. /kanban,/govcon")
     parser.add_argument("--changed", help="Comma-separated list of changed file paths")
+    parser.add_argument("--api", action="store_true", help="Also smoke critical API endpoints")
+    parser.add_argument("--api-only", action="store_true", help="Only smoke API endpoints")
     parser.add_argument("--base", default="http://localhost:5050")
     parser.add_argument("--timeout", type=float, default=10.0)
     parser.add_argument("--json", action="store_true", dest="as_json")
     args = parser.parse_args()
 
-    if args.routes:
-        routes = [r.strip() for r in args.routes.split(",") if r.strip()]
-    elif args.changed:
-        changed = [f.strip() for f in args.changed.split(",") if f.strip()]
-        routes = _routes_for_changed_files(changed)
-    else:
-        routes = NAV_ROUTES
-
+    all_results: List[Dict] = []
+    overall_passed = True
     verbose = not args.as_json
-    if verbose:
-        print(f"Smoking {len(routes)} routes against {args.base} ...")
 
-    passed, results = run_smoke(routes, base=args.base, timeout=args.timeout, verbose=verbose)
+    if not args.api_only:
+        if args.routes:
+            routes = [r.strip() for r in args.routes.split(",") if r.strip()]
+        elif args.changed:
+            changed = [f.strip() for f in args.changed.split(",") if f.strip()]
+            routes = _routes_for_changed_files(changed)
+        else:
+            routes = NAV_ROUTES
 
-    failures = [r for r in results if not r["ok"]]
+        if verbose:
+            print(f"Smoking {len(routes)} nav routes against {args.base} ...")
+        passed, results = run_smoke(routes, base=args.base, timeout=args.timeout, verbose=verbose)
+        all_results.extend(results)
+        if not passed:
+            overall_passed = False
+
+    if args.api or args.api_only or args.all:
+        if verbose:
+            print(f"\nSmoking {len(API_ENDPOINTS)} API endpoints against {args.base} ...")
+        passed, results = run_api_smoke(base=args.base, timeout=args.timeout, verbose=verbose)
+        all_results.extend(results)
+        if not passed:
+            overall_passed = False
+
+    failures = [r for r in all_results if not r["ok"]]
 
     if args.as_json:
-        print(json.dumps({"passed": passed, "total": len(results), "failures": len(failures), "results": results}))
+        print(json.dumps({
+            "passed": overall_passed,
+            "total": len(all_results),
+            "failures": len(failures),
+            "results": all_results,
+        }))
     else:
-        print(f"\n{'PASS' if passed else 'FAIL'} — {len(results) - len(failures)}/{len(results)} routes OK")
+        print(f"\n{'PASS' if overall_passed else 'FAIL'} — {len(all_results) - len(failures)}/{len(all_results)} checks OK")
         if failures:
-            print("\nFailed routes:")
+            print("\nFailures:")
             for f in failures:
-                print(f"  {f['route']}: {f['error']}")
+                print(f"  {f.get('route')}: {f['error']}")
 
-    sys.exit(0 if passed else 1)
+    sys.exit(0 if overall_passed else 1)
 
 
 if __name__ == "__main__":

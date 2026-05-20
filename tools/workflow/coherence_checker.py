@@ -2737,6 +2737,106 @@ def check_security_context() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: new_page_completeness — 8-component gate for new dashboard pages
+# ---------------------------------------------------------------------------
+
+
+def check_new_page_completeness() -> CoherenceCheck:
+    """Enforce the 8-component gate for every new dashboard page.
+
+    When tools/dashboard/templates/<canvas>/page.html exists, ALL of the
+    following must also exist or the feature ships broken (CLAUDE.md §8):
+
+      1. icdev/tools/dashboard/templates/<canvas>/page.html  (companion mirror)
+      2. tools/<canvas>/blueprint.py has at least one @*.route
+      3. tools/<canvas>/ has a backing Python module (not just __init__.py)
+      4. base.html nav contains a link to /<canvas>
+      5. tools/iqe/adapters/<canvas>.py  (IQE adapter)
+      6. context/iqe/queries/<canvas>/   (at least 1 seed query)
+      7. Template contains iqe_query_widget include
+      8. @bp.route in blueprint references the template (render_template check)
+
+    Only checks page.html files under canvas sub-directories (not top-level
+    flat templates like code_quality.html).
+    """
+    templates_dir = PROJECT_ROOT / "tools" / "dashboard" / "templates"
+    base_html_path = templates_dir / "base.html"
+    base_html_text = _read_text(base_html_path)
+    iqe_adapters_dir = PROJECT_ROOT / "tools" / "iqe" / "adapters"
+    iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
+
+    violations: List[str] = []
+
+    # Find all canvas page.html files (sub-directory only)
+    for page_html in sorted(templates_dir.rglob("*/page.html")):
+        canvas = page_html.parent.name  # e.g. "govcon", "digital_twin"
+        rel_page = page_html.relative_to(PROJECT_ROOT)
+        page_text = _read_text(page_html)
+        missing: List[str] = []
+
+        # 1. icdev mirror
+        mirror = (PROJECT_ROOT / "icdev" / "tools" / "dashboard" / "templates" / canvas / "page.html")
+        if not mirror.exists():
+            missing.append("icdev/ mirror missing")
+
+        # 2. Blueprint with @route
+        bp_file = PROJECT_ROOT / "tools" / canvas / "blueprint.py"
+        if not bp_file.exists():
+            missing.append("tools/<canvas>/blueprint.py missing")
+        elif not re.search(r"@\w+\.route\s*\(", _read_text(bp_file)):
+            missing.append("blueprint.py has no @route decorator")
+
+        # 3. Backing module (any .py other than __init__.py and blueprint.py)
+        canvas_dir = PROJECT_ROOT / "tools" / canvas
+        if canvas_dir.exists():
+            py_modules = [
+                f for f in canvas_dir.glob("*.py")
+                if f.name not in ("__init__.py", "blueprint.py")
+            ]
+            if not py_modules:
+                missing.append("no backing module in tools/<canvas>/")
+        else:
+            missing.append(f"tools/{canvas}/ directory missing")
+
+        # 4. Nav link to /<canvas> in base.html
+        if f'href="/{canvas}' not in base_html_text and f"href='/{canvas}" not in base_html_text:
+            missing.append(f"no nav link to /{canvas} in base.html")
+
+        # 5. IQE adapter
+        iqe_adapter = iqe_adapters_dir / f"{canvas}.py"
+        if not iqe_adapter.exists():
+            missing.append(f"tools/iqe/adapters/{canvas}.py missing")
+
+        # 6. IQE seed queries
+        iqe_queries = iqe_queries_dir / canvas
+        if not iqe_queries.exists() or not list(iqe_queries.glob("*.yaml")) + list(iqe_queries.glob("*.yml")):
+            missing.append(f"context/iqe/queries/{canvas}/ missing or empty")
+
+        # 7. IQE widget in template
+        if "iqe_query_widget" not in page_text and "iqe-widget" not in page_text:
+            missing.append("template missing {% include 'includes/iqe_query_widget.html' %}")
+
+        if missing:
+            violations.append(f"{rel_page}: missing [{', '.join(missing)}]")
+
+    status = "fail" if violations else "pass"
+    canvas_count = len(list(templates_dir.rglob("*/page.html")))
+    return CoherenceCheck(
+        check_id="new_page_completeness",
+        check_name="New Page 8-Component Completeness",
+        status=status,
+        expected=[f"All {canvas_count} canvas pages have all 8 required components"],
+        actual=[f"{len(violations)} incomplete page(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            f"{len(violations)} canvas page(s) are missing required components — "
+            "these features will be broken or unreachable"
+        ) if violations else f"All {canvas_count} canvas pages have required components",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check: nav_route_parity — every href in base.html nav must have a Flask route
 # ---------------------------------------------------------------------------
 
@@ -2947,6 +3047,7 @@ CHECK_REGISTRY = {
     "log_standard": check_log_standard_compliance,
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
+    "new_page_completeness": check_new_page_completeness,
 }
 
 

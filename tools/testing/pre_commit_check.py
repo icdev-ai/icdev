@@ -74,18 +74,39 @@ def _run_blueprint_import_check() -> bool:
 
 
 def _run_route_smoke(changed_files: list[str]) -> bool:
-    """Run route smoke against running server for changed routes."""
+    """Run route smoke against running server for changed routes.
+
+    Uses --changed mode so only affected routes are tested (fast).
+    Falls back to skip gracefully when no routes are affected or when
+    the dashboard is not running.
+    """
     print("[pre-commit] Running route smoke test...")
     changed_arg = ",".join(changed_files)
+
+    # Pre-check: ask route_smoke which routes it would test so we can skip
+    # early when no routes are affected (e.g. only tool/test files changed).
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(BASE_DIR))
+        from tools.testing.route_smoke import _routes_for_changed_files, _server_up
+        affected = _routes_for_changed_files(changed_files)
+        if not affected:
+            print("[pre-commit] Route smoke: no dashboard routes affected — skipped")
+            return True
+        if not _server_up("http://localhost:5050", timeout=2.0):
+            print("[pre-commit] Route smoke: dashboard not running — skipped")
+            return True
+    except Exception:
+        pass  # fall through to subprocess approach
+
     result = subprocess.run(
         [sys.executable, "tools/testing/route_smoke.py", "--changed", changed_arg],
-        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=120,
+        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=60,
     )
     if result.returncode == 0:
-        # Print only failures (stdout has per-route lines)
         if result.stdout.strip():
             for line in result.stdout.strip().splitlines():
-                if "[FAIL]" in line or "FAIL" == line[:4]:
+                if "[FAIL]" in line or line.startswith("FAIL"):
                     print(f"  {line}")
         print("[pre-commit] Route smoke: OK")
         return True
