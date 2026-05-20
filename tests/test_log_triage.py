@@ -3,7 +3,7 @@
 import json
 import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -95,6 +95,23 @@ class TestExtractSignatures:
         sigs = _extract_signatures(events)
         assert len(sigs) == 1
 
+    def test_deduplicates_and_skips_info(self):
+        """Duplicate (component, message) tuples collapse to one; INFO-only logs are excluded."""
+        from tools.genesis.reflexes.log_triage import _extract_signatures
+        events = [
+            {"level": "ERROR", "component": "auth", "message": "token expired", "returncode": 1},
+            {"level": "ERROR", "component": "auth", "message": "token expired", "returncode": 1},
+            {"level": "ERROR", "component": "auth", "message": "token expired", "returncode": 1},
+            {"level": "INFO",  "component": "auth", "message": "token expired", "returncode": 0},
+            {"level": "INFO",  "component": "db",   "message": "connected",     "returncode": 0},
+        ]
+        sigs = _extract_signatures(events)
+        assert len(sigs) == 1
+        assert sigs[0]["component"] == "auth"
+        assert sigs[0]["message"] == "token expired"
+        sig_components = [s["component"] for s in sigs]
+        assert "db" not in sig_components
+
 
 class TestRun:
     def test_run_no_log_file(self, tmp_path):
@@ -129,7 +146,7 @@ class TestRun:
         ])
         # First run — discovers signature
         with patch.object(mod, "_create_task", return_value=True):
-            r1 = mod.run({"build_log": str(build_log)}, None)
+            mod.run({"build_log": str(build_log)}, None)
         # Second run — same log, should skip
         with patch.object(mod, "_create_task", return_value=True) as mock2:
             r2 = mod.run({"build_log": str(build_log)}, None)
