@@ -76,23 +76,21 @@ def analyze_gaps():
     """
     conn = _get_db()
 
-    # Get all patterns with their best coverage
+    # Wrap the multi-table JOIN in a CTE so RLS sees only one classification column
     rows = conn.execute("""
-        SELECT
-            p.id,
-            p.pattern_name,
-            p.description,
-            p.domain_category,
-            p.frequency,
-            p.representative_text,
-            p.keyword_fingerprint,
-            p.status,
-            COALESCE(MAX(m.coverage_score), 0.0) AS best_coverage,
-            COUNT(m.id) AS capability_count
-        FROM rfp_requirement_patterns p
-        LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
-        GROUP BY p.id
-        ORDER BY p.frequency DESC
+        WITH pattern_coverage AS (
+            SELECT p.id, p.pattern_name, p.description, p.domain_category,
+                   p.frequency, p.representative_text, p.keyword_fingerprint,
+                   p.status, p.classification,
+                   COALESCE(MAX(m.coverage_score), 0.0) AS best_coverage,
+                   COUNT(m.id) AS capability_count
+            FROM rfp_requirement_patterns p
+            LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
+            GROUP BY p.id, p.pattern_name, p.description, p.domain_category,
+                     p.frequency, p.representative_text, p.keyword_fingerprint,
+                     p.status, p.classification
+        )
+        SELECT * FROM pattern_coverage ORDER BY frequency DESC
     """).fetchall()
 
     gaps = []
