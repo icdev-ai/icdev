@@ -4476,3 +4476,42 @@ projects:
   - key: cor
     title: CPMP-COR — Government read-only portal + access audit
     priority: critical
+- key: aac
+  name: AI Augmentation Canvas (AAC) — Codebase AI Opportunity Assessment
+  description: |
+    13th ICDEV canvas. Scans external client codebases (Python/Java/C#/Go/Rust/TypeScript)
+    to identify features that should be replaced or enhanced with AI.
+    Detects 8 AI-augmentable patterns, scores by value x feasibility x risk,
+    maps to IL-appropriate models, and generates prioritized transformation roadmaps
+    for technical leads and architects.
+  task_prefix: aac-
+  default_open: true
+  briefs:
+    - '8 AI-augmentable patterns x 6 languages (Python / Java / C# / Go / Rust / TypeScript)'
+    - 'Scoring: value x feasibility x risk -> composite priority + IL4/IL5/IL6 model recommendations'
+    - 'Outputs: prioritized roadmap with AIMC model-selection links + AADC agentic-topology links'
+  epics:
+  - key: cfg
+    title: Config & Context Files
+    priority: high
+  - key: db
+    title: Database Schema
+    priority: critical
+  - key: core
+    title: Core Engine
+    priority: critical
+  - key: lang
+    title: Multi-Language AST
+    priority: high
+  - key: ui
+    title: UI Template & Nav
+    priority: critical
+  - key: iqe
+    title: IQE Integration
+    priority: high
+  - key: int
+    title: Integrations & Registration
+    priority: medium
+  - key: test
+    title: Tests & Validation
+    priority: critical
