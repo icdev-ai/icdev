@@ -131,9 +131,9 @@ def create_subcontractor(contract_id, data):
         "INSERT INTO cpmp_subcontractors "
         "(id, contract_id, company_name, cage_code, uei, business_size, "
         "subcontract_value, performance_rating, "
-        "flow_down_complete, cybersecurity_compliant, cmmc_level, isr_ssr_current, "
+        "flow_down_complete, flowdown_verified, cybersecurity_compliant, cmmc_level, isr_ssr_current, "
         "status, notes, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             sub_id,
             contract_id,
@@ -144,6 +144,7 @@ def create_subcontractor(contract_id, data):
             data.get("subcontract_value", 0.0),
             data.get("performance_rating"),
             data.get("flow_down_complete", 0),
+            data.get("flowdown_verified", 0),
             data.get("cybersecurity_compliant", 0),
             data.get("cmmc_level"),
             data.get("isr_ssr_current", 0),
@@ -192,6 +193,7 @@ def update_subcontractor(sub_id, data):
         "subcontract_value",
         "performance_rating",
         "flow_down_complete",
+        "flowdown_verified",
         "cybersecurity_compliant",
         "cmmc_level",
         "isr_ssr_current",

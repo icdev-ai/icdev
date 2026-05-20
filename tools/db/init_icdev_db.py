@@ -6033,6 +6033,7 @@ CREATE TABLE IF NOT EXISTS cpmp_subcontractors (
     performance_rating TEXT CHECK(performance_rating IN (
         'exceptional', 'very_good', 'satisfactory', 'marginal', 'unsatisfactory')),
     flow_down_complete INTEGER DEFAULT 0,
+    flowdown_verified INTEGER DEFAULT 0,
     cybersecurity_compliant INTEGER DEFAULT 0,
     cmmc_level INTEGER,
     isr_ssr_current INTEGER DEFAULT 0,
