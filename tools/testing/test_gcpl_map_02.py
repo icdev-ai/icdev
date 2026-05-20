@@ -19,7 +19,6 @@ os.environ.setdefault("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
 os.environ.setdefault("ICDEV_GOVCON_ENABLED", "true")
 
 # Reload config so the env vars above take effect (module may already be cached).
-import importlib
 import tools.dashboard.config as _cfg
 _cfg.CUI_BANNER_ENABLED = True
 _cfg.CUI_BANNER_TOP = os.environ["ICDEV_CUI_BANNER_TOP"]

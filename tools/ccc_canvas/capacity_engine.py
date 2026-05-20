@@ -6,7 +6,6 @@ Wraps isp_capacity_planner and adds DB persistence of plans.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
 
 
 def _months_to_saturation(current_pct: float, growth_rate_pct: float) -> int:

@@ -51,6 +51,8 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("strategos.pattern_learner", STRATEGOS, 24.0,
                 "RL weight-adjustment loop: aggregate annotations and update signal-scoring deltas",
                 on_demand=True),
+    ReflexEntry("dat_refresh", STRATEGOS, 6.0,
+                "DAT: ingest diplomatic signals and recompute Diplomatic Tension Index (DTI) for all theaters"),
 
     # ── DOMAIN ────────────────────────────────────────────────────────────────
     ReflexEntry("market",                     DOMAIN, 1.0,  "Market data refresh and signal detection"),
@@ -87,6 +89,22 @@ REGISTRY: List[ReflexEntry] = [
                 "HITL feedback aggregation → wf_feedback_insights per canvas/template/type"),
     ReflexEntry("wf_ext_poller",           SUPPORT, 0.25,
                 "HITL external step poller — checks Jira/SNOW/GitHub/Confluence/SharePoint status"),
+    # Phase 71 — OHC Ops Hub Canvas reflexes
+    ReflexEntry("llmops_drift_sweep",      SUPPORT, 4.0,
+                "OHC: Quality drift check across all registered LLMs via llmops_engine"),
+    ReflexEntry("mlops_data_drift_sweep",  SUPPORT, 4.0,
+                "OHC: Evidently adapter data drift check for all registered datasets"),
+    # ISP/Telco reflexes
+    ReflexEntry("circuit_capacity_monitor", DOMAIN, 4.0,
+                "CCC: Flag circuits ≥70% utilization; escalate critical to NOC alarms"),
+    ReflexEntry("nocc_alarm_triage",        DOMAIN, 2.0,
+                "NOCC: Correlate alarm storms and auto-create P2/P3 incidents"),
+    ReflexEntry("nocc_sla_watcher",         DOMAIN, 4.0,
+                "NOCC: Project SLA breach risk; set breach flag when compliance < target−0.5%"),
+    ReflexEntry("bgp_route_monitor",        DOMAIN, 1.0,
+                "NOCC: Query LibreNMS/SolarWinds for BGP session state; raise alarms for down sessions"),
+    ReflexEntry("peering_health_monitor",   DOMAIN, 6.0,
+                "PMC: Re-sync stale PeeringDB data (>7d); re-validate RPKI for high-traffic peers"),
 ]
 
 # Quick lookup: name → entry

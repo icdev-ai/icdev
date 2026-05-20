@@ -741,3 +741,11 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Test Gcpl Disc 10 | tools\testing\test_gcpl_disc_10.py | Auto-registered: testing/test_gcpl_disc_10.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Test Gcpl Ext 06 | tools\testing\test_gcpl_ext_06.py | Auto-registered: testing/test_gcpl_ext_06.py | --json | JSON |
+| Test Gcpl Map 02 | tools\testing\test_gcpl_map_02.py | Auto-registered: testing/test_gcpl_map_02.py | --json | JSON |
+| Circuit Capacity Monitor | tools\genesis\reflexes\circuit_capacity_monitor.py | Auto-registered: reflexes/circuit_capacity_monitor.py | --json | JSON |
