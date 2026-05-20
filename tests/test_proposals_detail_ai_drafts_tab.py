@@ -238,7 +238,7 @@ def _make_stub_opp():
 
 
 def _render_detail_template(opp=None):
-    from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader
+    from jinja2 import ChoiceLoader, DictLoader, Environment, FileSystemLoader, select_autoescape
 
     stub_base = (
         "{% block title %}{% endblock %}"
@@ -248,7 +248,8 @@ def _render_detail_template(opp=None):
         loader=ChoiceLoader([
             DictLoader({"base.html": stub_base}),
             FileSystemLoader(str(_TEMPLATES_DIR)),
-        ])
+        ]),
+        autoescape=select_autoescape(["html"]),
     )
 
     tmpl = env.get_template("proposals/detail.html")
