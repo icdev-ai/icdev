@@ -722,3 +722,15 @@
 | Seed Logging Kanban | tools\testing\seed_logging_kanban.py | Auto-registered: testing/seed_logging_kanban.py | --json | JSON |
 | Seed Playwright Kanban | tools\testing\seed_playwright_kanban.py | Auto-registered: testing/seed_playwright_kanban.py | --json | JSON |
 | Log Triage | tools\genesis\reflexes\log_triage.py | Auto-registered: reflexes/log_triage.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Telco Rfp Adapter | tools\govcon\telco_rfp_adapter.py | Auto-registered: govcon/telco_rfp_adapter.py | --json | JSON |
+| Fcc Compliance | tools\network\fcc_compliance.py | Auto-registered: network/fcc_compliance.py | --json | JSON |
+| Transit Pricing Benchmark | tools\pmc_canvas\transit_pricing_benchmark.py | Auto-registered: pmc_canvas/transit_pricing_benchmark.py | --json | JSON |
+| Bgp Route Monitor | tools\genesis\reflexes\bgp_route_monitor.py | Auto-registered: reflexes/bgp_route_monitor.py | --json | JSON |
+| Nocc Alarm Triage | tools\genesis\reflexes\nocc_alarm_triage.py | Auto-registered: reflexes/nocc_alarm_triage.py | --json | JSON |
+| Nocc Sla Watcher | tools\genesis\reflexes\nocc_sla_watcher.py | Auto-registered: reflexes/nocc_sla_watcher.py | --json | JSON |
+| Peering Health Monitor | tools\genesis\reflexes\peering_health_monitor.py | Auto-registered: reflexes/peering_health_monitor.py | --json | JSON |
