@@ -12660,6 +12660,56 @@ Planning rules:
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 
+    # ── FCC Compliance ──────────────────────────────────────────────────────────
+
+    @bp.route("/network/fcc")
+    @nc_login_required
+    def network_fcc():
+        from tools.network.fcc_compliance import (
+            calea_checklist, part36_assessment,
+            nanp_number_inventory, e911_capability_check,
+        )
+        checks = {}
+        for name, fn in [
+            ("calea", calea_checklist),
+            ("part36", part36_assessment),
+            ("nanp", nanp_number_inventory),
+            ("e911", e911_capability_check),
+        ]:
+            try:
+                checks[name] = fn()
+            except Exception as exc:
+                checks[name] = {"error": str(exc)}
+        return render_template("network/fcc_compliance.html", checks=checks)
+
+    @bp.route("/api/network/fcc/<check_type>")
+    def api_network_fcc(check_type):
+        from tools.network.fcc_compliance import (
+            calea_checklist, part36_assessment,
+            nanp_number_inventory, e911_capability_check,
+        )
+        _CHECK_MAP = {
+            "calea":  calea_checklist,
+            "part36": part36_assessment,
+            "nanp":   nanp_number_inventory,
+            "e911":   e911_capability_check,
+        }
+        if check_type == "all":
+            result = {}
+            for name, fn in _CHECK_MAP.items():
+                try:
+                    result[name] = fn()
+                except Exception as exc:
+                    result[name] = {"error": str(exc)}
+            return jsonify(result)
+        fn = _CHECK_MAP.get(check_type)
+        if not fn:
+            return jsonify({"error": f"Unknown check: {check_type}. Valid: {sorted(_CHECK_MAP)}"}), 400
+        try:
+            return jsonify(fn())
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

@@ -41,8 +41,9 @@ Categories:
     sre (8)
     canvas (8)
     system_graph (3)
+    intelligence (3)
 
-Total: 262 tools, 6 resources
+Total: 265 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6179,6 +6180,121 @@ TOOL_REGISTRY = {
         "description": "Run ADN database migrations to create/update ad_news_* tables.",
         "input_schema": {"type": "object", "properties": {}},
     },
+    # ── Network Migration Canvas (NMCE) ──────────────────────────────────────
+    "mc_net_get_inventory": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "get_network_inventory",
+        "description": "List network devices from ni_devices with EOL status, config-source chips, and active migration session links. Supports filters: site, device_type, vendor, eol_within_years.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "site": {"type": "string", "description": "Site/location filter"},
+                "device_type": {"type": "string", "description": "Device type filter (router/switch/firewall/etc.)"},
+                "vendor": {"type": "string", "description": "Vendor name filter"},
+                "eol_within_years": {"type": "number", "description": "Only include devices with EOL within N years"},
+            },
+        },
+    },
+    "mc_net_recommend_hardware": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "recommend_hardware",
+        "description": "AI-ranked top-3 hardware replacement recommendations from nc_hardware_profiles for a given source device. Deterministic fallback by throughput when LLM unavailable.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "device_info": {
+                    "type": "object",
+                    "description": "Source device dict with keys: vendor, model, device_type, throughput_gbps, eol_date",
+                },
+                "engineer_notes": {"type": "string", "description": "Optional engineer context or constraints"},
+                "session_id": {"type": "string", "description": "Migration session ID for audit trail"},
+            },
+            "required": ["device_info", "session_id"],
+        },
+    },
+    "mc_net_ai_assist": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ai_assist",
+        "description": "AI migration assistant — answers engineer questions with session context (BGP drain, optic compatibility, rollback steps, etc.). Saves conversation to mc_net_ai_sessions audit trail.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Migration session ID"},
+                "engineer_prompt": {"type": "string", "description": "Engineer question or task request"},
+            },
+            "required": ["session_id", "engineer_prompt"],
+        },
+    },
+    "mc_net_plan_protocol_migration": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "plan_protocol_migration",
+        "description": "Generate per-protocol migration steps (BGP/OSPF/VLAN/LAG/MPLS/ACL) from parsed device config. Upserts mc_net_protocol_plans. Requires src_config_raw in session.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Migration session ID with parsed config"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    "mc_net_build_parallel_timeline": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "build_parallel_timeline",
+        "description": "Generate 15–20 conditional milestones from D-30 to D+30 for a parallel network cutover operation. Writes mc_net_parallel_timelines.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "session_id": {"type": "string", "description": "Migration session ID"},
+            },
+            "required": ["session_id"],
+        },
+    },
+    "mc_net_ingest_csv": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ingest_devices_csv",
+        "description": "Bulk-import network devices from CSV or JSON bytes into ni_devices. Auto-creates a dated topology if topology_id not supplied.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "file_content": {"type": "string", "description": "Raw CSV or JSON string content"},
+                "topology_id": {"type": "string", "description": "Existing topology ID to attach devices to (optional)"},
+                "filename": {"type": "string", "description": "Filename hint for format detection (.csv or .json)"},
+            },
+            "required": ["file_content"],
+        },
+    },
+    "mc_net_ingest_netbox": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ingest_devices_netbox",
+        "description": "Sync device inventory from NetBox into ni_devices. Reads NETBOX_URL and NETBOX_TOKEN from .env. Use test_only=true to verify connectivity without writing.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "topology_id": {"type": "string", "description": "Target topology ID (optional — auto-creates)"},
+                "test_only": {"type": "boolean", "description": "If true, only tests connectivity — no DB writes"},
+            },
+        },
+    },
+    "mc_net_ingest_topology": {
+        "category": "migration",
+        "module": "tools.migration_canvas.network_migration",
+        "handler": "ingest_devices_topology",
+        "description": "Re-ingest all nodes from an existing topology diagram into ni_devices. Idempotent — safe to re-run on the same topology.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "src_topology_id": {"type": "string", "description": "Source topology ID to ingest nodes from"},
+            },
+            "required": ["src_topology_id"],
+        },
+    },
 }
 
 
@@ -6262,5 +6378,479 @@ RESOURCE_REGISTRY = {
         "module": "tools.mcp.observability_server",
         "handler": "stats_resource_handler",
         "mime_type": "application/json",
+    },
+    # ── OHC — Ops Hub Canvas (Phase 71) ──────────────────────────────────────
+    "ohc_overview": {
+        "category": "ohc",
+        "module": "tools.ops_hub.ops_aggregator",
+        "handler": "get_ops_overview",
+        "description": "Return cross-domain Ops Hub health overview: score (0-100), domain status cards, adapter grid, top alerts.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_llmops_summary": {
+        "category": "ohc",
+        "module": "tools.ops_hub.llmops_engine",
+        "handler": "get_llmops_summary",
+        "description": "LLMOps roll-up: gateway invocations, injection blocks, model health, drift events, cost anomalies.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_mlops_experiments": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "list_experiments",
+        "description": "List MLflow-tracked experiments with run counts and status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max number of experiments to return (default 20)"},
+            },
+        },
+    },
+    "ohc_model_registry": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "list_models",
+        "description": "List registered models from the OHC model registry with stage and version info.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "stage": {"type": "string", "enum": ["none", "staging", "production", "archived"], "description": "Filter by model stage"},
+            },
+        },
+    },
+    "ohc_slos": {
+        "category": "ohc",
+        "module": "tools.ops_hub.aiops_engine",
+        "handler": "get_slo_dashboard",
+        "description": "Return SLO dashboard: SLO definitions, current values, burn rates, error budgets.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_incidents": {
+        "category": "ohc",
+        "module": "tools.ops_hub.aiops_engine",
+        "handler": "get_incidents",
+        "description": "Return open and recent incidents with severity, MTTR, and status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {"type": "string", "description": "Filter by status (open, investigating, resolved)"},
+            },
+        },
+    },
+    "ohc_topology": {
+        "category": "ohc",
+        "module": "tools.ops_hub.aiops_engine",
+        "handler": "get_topology",
+        "description": "Return agent topology graph: nodes, edges, SPOF analysis, tier breakdown.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "ohc_adapter_health": {
+        "category": "ohc",
+        "module": "tools.ops_hub.adapter_registry",
+        "handler": "probe_all",
+        "description": "Probe all 11 ops adapters (6 OSS + 5 CSP) and return health status. Persists results to ohc_adapter_status.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "persist": {"type": "boolean", "description": "Write health results to DB (default true)"},
+            },
+        },
+    },
+    "ohc_run_experiment": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "create_run",
+        "description": "Create a new experiment run and return the run ID.",
+        "input_schema": {
+            "type": "object",
+            "required": ["experiment_id"],
+            "properties": {
+                "experiment_id": {"type": "string", "description": "ID of the parent experiment"},
+                "run_name": {"type": "string", "description": "Optional run name"},
+                "params": {"type": "object", "description": "Run hyperparameters as key-value pairs"},
+            },
+        },
+    },
+    "ohc_promote_model": {
+        "category": "ohc",
+        "module": "tools.ops_hub.mlops_engine",
+        "handler": "transition_model_stage",
+        "description": "Promote a registered model to a new stage (staging → production → archived).",
+        "input_schema": {
+            "type": "object",
+            "required": ["model_id", "new_stage"],
+            "properties": {
+                "model_id": {"type": "string", "description": "Model registry ID"},
+                "new_stage": {"type": "string", "enum": ["staging", "production", "archived"], "description": "Target stage"},
+            },
+        },
+    },
+    # ============================================================
+    # ONTOLOGY (4 tools)
+    # ============================================================
+    "ontology_build": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_build",
+        "description": "Build the ontology federation — merge domain ontologies into ICDEV Core, resolve equivalent classes, and pre-compute subclass closure.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
+            },
+        },
+    },
+    "ontology_query": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_query",
+        "description": "Query the unified ontology graph with a SPARQL-like natural language query.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Natural language SPARQL-like query"},
+                "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
+            },
+            "required": ["query"],
+        },
+    },
+    "ontology_list_domains": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_list_domains",
+        "description": "List all registered ontology domains and their class counts.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "db_path": {"type": "string", "description": "Optional path to ICDEV database"},
+            },
+        },
+    },
+    "ontology_export_mappings": {
+        "category": "ontology",
+        "module": "tools.mcp.ontology_server",
+        "handler": "handle_ontology_export_mappings",
+        "description": "Export ICDEV ontology mappings to external standards (STIX 2.1, OSCAL, GeoSPARQL, DCAT).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "format": {
+                    "type": "string",
+                    "enum": ["stix", "oscal", "geosparql", "all"],
+                    "description": "External standard to export mappings to",
+                    "default": "stix",
+                },
+                "icdev_class": {"type": "string", "description": "Optional specific ICDEV class to filter mappings"},
+            },
+        },
+    },
+    # ============================================================
+    # AI TRACEABILITY (migration 121 — canvas AI decision audit)
+    # ============================================================
+    "record_canvas_decision": {
+        "category": "ai_trace",
+        "module": "tools.canvas.ai_trace_mixin",
+        "handler": "record_canvas_decision",
+        "description": "Record an AI decision from a canvas assessment to canvas_ai_decisions (NIST AU-2, DoD RAI Traceable). Returns the new decision UUID.",
+        "input_schema": {
+            "type": "object",
+            "required": ["canvas_type", "decision_type", "decision"],
+            "properties": {
+                "canvas_type": {"type": "string", "enum": ["ndc", "sdc", "pdc", "bdc", "ddc", "odc", "idc", "aadc", "aimc", "mc", "genesis"], "description": "Source canvas identifier"},
+                "decision_type": {"type": "string", "description": "Decision category (compliance_finding, threat_assessment, risk_score, etc.)"},
+                "decision": {"type": "string", "description": "The AI decision or finding text"},
+                "record_id": {"type": "string", "description": "Canvas record ID (topology_id, design_id, etc.)"},
+                "rationale": {"type": "string", "description": "LLM-generated explanation"},
+                "model_used": {"type": "string", "description": "Model ID from LLM router"},
+                "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "Decision confidence 0.0–1.0"},
+                "alternatives": {"type": "array", "items": {"type": "string"}, "description": "Other options considered"},
+                "project_id": {"type": "string", "description": "Project ID"},
+                "classification": {"type": "string", "default": "CUI", "description": "Data classification"},
+            },
+        },
+    },
+    # ============================================================
+    # CHAIN ORCHESTRATION (CoT / CoD)
+    # ============================================================
+    "cot_invoke": {
+        "category": "llmops",
+        "module": "tools.llm.chain_orchestrator",
+        "handler": "invoke_chain_of_thought",
+        "description": "Invoke Chain of Thought multi-LLM reasoning chain.",
+        "input_schema": {
+            "type": "object",
+            "required": ["function", "prompt"],
+            "properties": {
+                "function": {"type": "string", "description": "ICDEV function name"},
+                "prompt": {"type": "string", "description": "User prompt"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "max_rounds": {"type": "integer", "default": 3, "description": "Max reasoning rounds"},
+                "self_consistency_runs": {"type": "integer", "default": 1, "description": "Self-consistency runs"},
+            },
+        },
+    },
+    "cod_invoke": {
+        "category": "llmops",
+        "module": "tools.llm.chain_orchestrator",
+        "handler": "invoke_chain_of_debate",
+        "description": "Invoke Chain of Debate multi-LLM debate chain.",
+        "input_schema": {
+            "type": "object",
+            "required": ["function", "prompt"],
+            "properties": {
+                "function": {"type": "string", "description": "ICDEV function name"},
+                "prompt": {"type": "string", "description": "User prompt"},
+                "system_prompt": {"type": "string", "description": "Optional system prompt"},
+                "num_debaters": {"type": "integer", "default": 3, "description": "Number of debaters"},
+                "debate_rounds": {"type": "integer", "default": 2, "description": "Debate rounds"},
+            },
+        },
+    },
+    "cot_stats": {
+        "category": "llmops",
+        "module": "tools.llm.chain_orchestrator",
+        "handler": "main",
+        "description": "Return chain telemetry stats aggregated by mode.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    # ============================================================
+    # INTELLIGENCE (3 tools) — JISE Portal Data Feed
+    # NIST 800-53: SA-11, CM-3, AC-3, AU-2
+    # ============================================================
+    "jise_get_portal_data": {
+        "category": "intelligence",
+        "module": "tools.intelligence.jise_portal",
+        "handler": "get_jise_portal_data",
+        "description": "Retrieve structured intelligence records for consumption by the JISE portal.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "classification": {
+                    "type": "string",
+                    "description": "Filter by classification level (CUI, FOUO, UNCLASSIFIED, SECRET).",
+                    "enum": ["CUI", "FOUO", "UNCLASSIFIED", "SECRET"],
+                },
+                "source": {
+                    "type": "string",
+                    "description": "Filter by collection source (SIGINT, HUMINT, OSINT, GEOINT, IMINT, FININT).",
+                    "enum": ["SIGINT", "HUMINT", "OSINT", "GEOINT", "IMINT", "FININT"],
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of records to return (default 200, max 1000).",
+                    "default": 200,
+                    "minimum": 1,
+                    "maximum": 1000,
+                },
+            },
+        },
+    },
+    "jise_get_requirements": {
+        "category": "intelligence",
+        "module": "tools.dashboard.api.jise",
+        "handler": "requirements",
+        "description": "Return ICDEV requirements feed for JISE downstream consumption.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by requirement status (open, closed, in_progress).",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum records to return (default 100, max 500).",
+                    "default": 100,
+                    "minimum": 1,
+                    "maximum": 500,
+                },
+            },
+        },
+    },
+    "jise_get_compliance": {
+        "category": "intelligence",
+        "module": "tools.dashboard.api.jise",
+        "handler": "compliance",
+        "description": "Return ICDEV compliance posture summary (POAM counts, control status) for JISE.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
+    # ============================================================
+    # NOC CANVAS — NOCC (4 tools)
+    # ============================================================
+    "noc_alarm_ingest": {
+        "category": "nocc",
+        "module": "tools.noc_canvas.alarm_correlator",
+        "handler": "ingest_alarm",
+        "description": "Ingest a new alarm into the NOC Operations Canvas. Correlates with existing alarms and auto-creates incidents for alarm storms.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "alarm_source": {"type": "string", "description": "NMS source (librenms, solarwinds, nagios, etc.)"},
+                "severity": {"type": "string", "enum": ["critical", "major", "minor", "warning", "info"]},
+                "alarm_type": {"type": "string", "enum": ["interface", "bgp", "circuit", "power", "optical", "environmental", "security", "other"]},
+                "device_name": {"type": "string", "description": "FQDN or hostname of affected device"},
+                "device_ip": {"type": "string", "description": "Management IP of affected device"},
+                "circuit_id": {"type": "string", "description": "Circuit ID (if circuit-level alarm)"},
+                "carrier": {"type": "string", "description": "Carrier or provider name"},
+                "description": {"type": "string", "description": "Human-readable alarm description"},
+            },
+            "required": ["alarm_source", "severity", "description"],
+        },
+    },
+    "noc_incident_create": {
+        "category": "nocc",
+        "module": "tools.noc_canvas.blueprint",
+        "handler": "create_incident_mcp",
+        "description": "Create a P1–P4 incident in the NOC Operations Canvas with optional circuit, carrier, and SLA breach flag.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Incident title"},
+                "severity": {"type": "string", "enum": ["p1", "p2", "p3", "p4"]},
+                "affected_circuit": {"type": "string"},
+                "affected_carrier": {"type": "string"},
+                "root_cause": {"type": "string"},
+                "sla_breach": {"type": "boolean", "default": False},
+                "opened_by": {"type": "string"},
+                "assigned_to": {"type": "string"},
+            },
+            "required": ["title", "severity"],
+        },
+    },
+    # ============================================================
+    # PMC CANVAS (2 tools)
+    # ============================================================
+    "pmc_peer_evaluate": {
+        "category": "pmc",
+        "module": "tools.pmc_canvas.peering_decision_engine",
+        "handler": "evaluate_peer",
+        "description": "Run the 6-dimension peering decision engine on a BGP peer and return open/selective/no recommendation with score and reasons.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asn": {"type": "integer", "description": "Peer ASN"},
+                "our_asn": {"type": "integer", "description": "Our ASN"},
+                "our_ix_ids": {"type": "array", "items": {"type": "integer"}, "description": "List of our IX IDs for presence scoring"},
+                "traffic_ratio": {"type": "number", "description": "Inbound/outbound traffic ratio"},
+                "ipv4_prefix_count": {"type": "integer"},
+                "ipv6_prefix_count": {"type": "integer"},
+                "rpki_valid_pct": {"type": "number", "description": "% of peer prefixes with valid ROA"},
+                "irr_registered_pct": {"type": "number", "description": "% of routes in IRR"},
+                "noc_responsiveness": {"type": "number", "description": "NOC response score 0.0–1.0"},
+            },
+            "required": ["asn", "our_asn"],
+        },
+    },
+    "pmc_rpki_validate": {
+        "category": "pmc",
+        "module": "tools.pmc_canvas.rpki_validator",
+        "handler": "validate_prefix",
+        "description": "Validate a BGP prefix against Cloudflare RPKI API and return validity status (valid/invalid/not-found/unknown).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prefix": {"type": "string", "description": "IP prefix to validate (e.g. '1.1.1.0/24')"},
+                "origin_asn": {"type": "integer", "description": "Origin ASN claiming the prefix"},
+            },
+            "required": ["prefix", "origin_asn"],
+        },
+    },
+    # ── CCC: Circuit & Capacity Canvas ──────────────────────────────────────
+    "ccc_circuit_ingest": {
+        "category": "ccc",
+        "module": "tools.ccc_canvas.blueprint",
+        "handler": "create_ccc_blueprint",
+        "description": "Add or update a circuit record in the CCC inventory (circuit_id, type, carrier, bandwidth, utilization).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "circuit_id":   {"type": "string"},
+                "circuit_type": {"type": "string", "enum": ["ethernet","wavelength","dark_fiber","100g","400g","mpls","ip_vpn","other"]},
+                "carrier":      {"type": "string"},
+                "bandwidth_gbps": {"type": "number"},
+                "utilization_pct": {"type": "number"},
+                "mrr_usd":      {"type": "number"},
+            },
+            "required": ["circuit_id", "circuit_type", "carrier"],
+        },
+    },
+    "ccc_capacity_analyze": {
+        "category": "ccc",
+        "module": "tools.ccc_canvas.capacity_engine",
+        "handler": "analyze_circuit",
+        "description": "Run capacity analysis for a single circuit: projects utilization, months-to-saturation, and recommended action.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "circuit_pk": {"type": "integer", "description": "Internal circuit primary key (id column)"},
+            },
+            "required": ["circuit_pk"],
+        },
+    },
+    "ccc_loa_create": {
+        "category": "ccc",
+        "module": "tools.ccc_canvas.loa_workflow",
+        "handler": "create_loa_request",
+        "description": "Create an LOA request for a cross-connect at a colocation facility.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "facility":          {"type": "string"},
+                "requester_name":    {"type": "string"},
+                "requester_email":   {"type": "string"},
+                "requester_company": {"type": "string"},
+                "rack_a":            {"type": "string"},
+                "rack_z":            {"type": "string"},
+                "valid_days":        {"type": "integer", "default": 30},
+            },
+            "required": ["facility", "requester_name", "requester_email", "requester_company"],
+        },
+    },
+    # ── DSOC (DDoS & Security Ops Canvas) ────────────────────────────────────
+    "dsoc_rtbh_trigger": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.rtbh_manager",
+        "handler": "trigger_rtbh",
+        "description": "Trigger RTBH (Remotely Triggered Black Hole) routing for a target prefix to null-route attack traffic.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prefix":                {"type": "string"},
+                "trigger_reason":        {"type": "string", "enum": ["volumetric_attack","syn_flood","udp_flood","icmp_flood","amplification","spoofed_traffic","manual","policy"]},
+                "triggered_by":          {"type": "string", "default": "system"},
+                "auto_withdraw_minutes": {"type": "integer", "default": 60},
+            },
+            "required": ["prefix", "trigger_reason"],
+        },
+    },
+    "dsoc_flowspec_activate": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.flowspec_engine",
+        "handler": "activate_rule",
+        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "integer"},
+            },
+            "required": ["rule_id"],
+        },
+    },
+    "dsoc_threat_ingest": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.dsoc_aggregator",
+        "handler": "get_dsoc_overview",
+        "description": "Get current DSOC overview: active mitigations, RTBH count, scrubbing utilization, active threats.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
     },
 }

@@ -1780,6 +1780,68 @@ def ccc_loa_create(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def dsoc_rtbh_trigger(args: dict) -> dict:
+    """Trigger RTBH null-route for a target prefix."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.rtbh_manager import trigger_rtbh
+        if not args.get("prefix"):
+            return {"error": "prefix required"}
+        if not args.get("trigger_reason"):
+            return {"error": "trigger_reason required"}
+        conn = get_connection()
+        try:
+            result = trigger_rtbh(
+                conn,
+                prefix=args["prefix"],
+                reason=args["trigger_reason"],
+                triggered_by=args.get("triggered_by", "mcp"),
+                auto_withdraw_minutes=int(args.get("auto_withdraw_minutes", 60)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("dsoc_rtbh_trigger: %s", exc)
+        return {"error": str(exc)}
+
+
+def dsoc_flowspec_activate(args: dict) -> dict:
+    """Activate a BGP flowspec rule by ID."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.flowspec_engine import activate_rule
+        rule_id = args.get("rule_id")
+        if rule_id is None:
+            return {"error": "rule_id required"}
+        conn = get_connection()
+        try:
+            result = activate_rule(conn, int(rule_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("dsoc_flowspec_activate: %s", exc)
+        return {"error": str(exc)}
+
+
+def dsoc_overview(args: dict) -> dict:
+    """Return DSOC overview: active mitigations, RTBH, scrubbing utilization, threats."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.dsoc_aggregator import get_dsoc_overview
+        conn = get_connection()
+        try:
+            return get_dsoc_overview(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("dsoc_overview: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_cod_invoke(args: dict) -> dict:
     """Invoke Chain of Debate via ChainOrchestrator."""
     try:

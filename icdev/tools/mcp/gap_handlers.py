@@ -1560,3 +1560,316 @@ def handle_system_graph_stats(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_system_graph_stats: %s", exc)
         return {"error": str(exc)}
+
+
+# ===========================================================================
+# Category: chain_orchestration (CoT / CoD)
+# ===========================================================================
+
+
+def handle_cot_invoke(args: dict) -> dict:
+    """Invoke Chain of Thought via ChainOrchestrator."""
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        orchestrator = ChainOrchestrator()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": args.get("prompt", "")}],
+            system_prompt=args.get("system_prompt", ""),
+        )
+        result = orchestrator.invoke_chain_of_thought(
+            args.get("function", "default"),
+            request,
+        )
+        return {
+            "content": result.content,
+            "chain_mode": result.chain_mode,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "trace_id": result.trace_id,
+            "confidence": result.confidence,
+            "rounds": result.rounds,
+        }
+    except Exception as exc:
+        logger.warning("handle_cot_invoke: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# NOC CANVAS (NOCC)
+# ---------------------------------------------------------------------------
+
+
+def noc_alarm_ingest(args: dict) -> dict:
+    """Ingest an alarm into NOCC and correlate with existing alarms."""
+    try:
+        from tools.noc_canvas.db.init_db import get_connection
+        from tools.noc_canvas.alarm_correlator import ingest_alarm
+        conn = get_connection()
+        try:
+            result = ingest_alarm(conn, args)
+            return result
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("noc_alarm_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
+def noc_incident_create(args: dict) -> dict:
+    """Create a P1–P4 incident in the NOC Operations Canvas."""
+    try:
+        from tools.noc_canvas.db.init_db import get_connection
+        conn = get_connection()
+        try:
+            title = args.get("title", "")
+            severity = args.get("severity", "p3")
+            affected_circuit = args.get("affected_circuit", "")
+            affected_carrier = args.get("affected_carrier", "")
+            root_cause = args.get("root_cause", "")
+            sla_breach = 1 if args.get("sla_breach") else 0
+            opened_by = args.get("opened_by", "mcp-gateway")
+            assigned_to = args.get("assigned_to", "")
+            import time as _time
+            incident_number = f"INC-MCP-{int(_time.time())}"
+            try:
+                conn.execute(
+                    "INSERT INTO noc_incidents (incident_number, title, severity, status, "
+                    "affected_circuit, affected_carrier, root_cause, sla_breach, opened_by, "
+                    "assigned_to, classification) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    (incident_number, title, severity, "open", affected_circuit,
+                     affected_carrier, root_cause, sla_breach, opened_by, assigned_to,
+                     "CUI // SP-CTI"),
+                )
+            except Exception:
+                conn.execute(
+                    "INSERT INTO noc_incidents (incident_number, title, severity, status, "
+                    "affected_circuit, affected_carrier, root_cause, sla_breach, opened_by, "
+                    "assigned_to, classification) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (incident_number, title, severity, "open", affected_circuit,
+                     affected_carrier, root_cause, sla_breach, opened_by, assigned_to,
+                     "CUI // SP-CTI"),
+                )
+            try:
+                conn.commit()
+            except Exception:
+                pass
+            return {"status": "created", "incident_number": incident_number, "severity": severity}
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("noc_incident_create: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# PMC CANVAS
+# ---------------------------------------------------------------------------
+
+
+def pmc_peer_evaluate(args: dict) -> dict:
+    """Run the 6-dimension peering decision engine on a BGP peer."""
+    try:
+        from tools.pmc_canvas.peering_decision_engine import evaluate_peer
+        peer = {
+            "asn": args.get("asn"),
+            "org_name": args.get("org_name", f"AS{args.get('asn')}"),
+            "traffic_ratio": args.get("traffic_ratio", 0.5),
+            "ipv4_prefix_count": args.get("ipv4_prefix_count", 0),
+            "ipv6_prefix_count": args.get("ipv6_prefix_count", 0),
+            "irr_as_set": args.get("irr_as_set", ""),
+        }
+        our_asn = args.get("our_asn", 0)
+        our_ix_ids = args.get("our_ix_ids", [])
+        prefixes = args.get("prefixes", [])
+        # Inject optional scored dimensions
+        if "rpki_valid_pct" in args:
+            peer["rpki_valid_pct"] = args["rpki_valid_pct"]
+        if "irr_registered_pct" in args:
+            peer["irr_registered_pct"] = args["irr_registered_pct"]
+        if "noc_responsiveness" in args:
+            peer["noc_responsiveness"] = args["noc_responsiveness"]
+        return evaluate_peer(peer, our_asn, our_ix_ids, prefixes)
+    except Exception as exc:
+        logger.warning("pmc_peer_evaluate: %s", exc)
+        return {"error": str(exc)}
+
+
+def pmc_rpki_validate(args: dict) -> dict:
+    """Validate a BGP prefix against Cloudflare RPKI API."""
+    try:
+        from tools.pmc_canvas.rpki_validator import validate_prefix
+        prefix = args.get("prefix", "")
+        origin_asn = int(args.get("origin_asn", 0))
+        if not prefix or not origin_asn:
+            return {"error": "prefix and origin_asn are required"}
+        return validate_prefix(prefix, origin_asn)
+    except Exception as exc:
+        logger.warning("pmc_rpki_validate: %s", exc)
+        return {"error": str(exc)}
+
+
+def ccc_circuit_ingest(args: dict) -> dict:
+    """Add or update a circuit record in the CCC inventory."""
+    try:
+        from tools.ccc_canvas.db.init_db import get_connection
+        conn = get_connection()
+        circuit_id = args.get("circuit_id", "")
+        circuit_type = args.get("circuit_type", "other")
+        carrier = args.get("carrier", "")
+        if not circuit_id or not carrier:
+            return {"error": "circuit_id and carrier are required"}
+        fields = {
+            "circuit_id": circuit_id,
+            "circuit_type": circuit_type,
+            "carrier": carrier,
+            "bandwidth_gbps": float(args.get("bandwidth_gbps", 0)),
+            "utilization_pct": float(args.get("utilization_pct", 0)),
+            "mrr_usd": float(args.get("mrr_usd", 0)),
+        }
+        cols = ", ".join(fields.keys())
+        try:
+            placeholders = ", ".join("?" * len(fields))
+            conn.execute(f"INSERT OR REPLACE INTO ccc_circuits ({cols}) VALUES ({placeholders})", tuple(fields.values()))
+        except Exception:
+            placeholders = ", ".join("%s" * len(fields))
+            conn.execute(f"INSERT INTO ccc_circuits ({cols}) VALUES ({placeholders}) ON CONFLICT (circuit_id) DO UPDATE SET circuit_type=EXCLUDED.circuit_type", tuple(fields.values()))
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "circuit_id": circuit_id}
+    except Exception as exc:
+        logger.warning("ccc_circuit_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
+def ccc_capacity_analyze(args: dict) -> dict:
+    """Run capacity analysis for a single circuit by primary key."""
+    try:
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.capacity_engine import analyze_circuit
+        circuit_pk = int(args.get("circuit_pk", 0))
+        if not circuit_pk:
+            return {"error": "circuit_pk required"}
+        conn = get_connection()
+        result = analyze_circuit(conn, circuit_pk)
+        conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("ccc_capacity_analyze: %s", exc)
+        return {"error": str(exc)}
+
+
+def ccc_loa_create(args: dict) -> dict:
+    """Create an LOA request for a cross-connect."""
+    try:
+        from tools.ccc_canvas.db.init_db import get_connection
+        from tools.ccc_canvas.loa_workflow import create_loa_request
+        if not args.get("facility"):
+            return {"error": "facility required"}
+        conn = get_connection()
+        result = create_loa_request(conn, args)
+        conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("ccc_loa_create: %s", exc)
+        return {"error": str(exc)}
+
+
+def dsoc_rtbh_trigger(args: dict) -> dict:
+    """Trigger RTBH null-route for a target prefix."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.rtbh_manager import trigger_rtbh
+        if not args.get("prefix"):
+            return {"error": "prefix required"}
+        if not args.get("trigger_reason"):
+            return {"error": "trigger_reason required"}
+        conn = get_connection()
+        try:
+            result = trigger_rtbh(
+                conn,
+                prefix=args["prefix"],
+                reason=args["trigger_reason"],
+                triggered_by=args.get("triggered_by", "mcp"),
+                auto_withdraw_minutes=int(args.get("auto_withdraw_minutes", 60)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("dsoc_rtbh_trigger: %s", exc)
+        return {"error": str(exc)}
+
+
+def dsoc_flowspec_activate(args: dict) -> dict:
+    """Activate a BGP flowspec rule by ID."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.flowspec_engine import activate_rule
+        rule_id = args.get("rule_id")
+        if rule_id is None:
+            return {"error": "rule_id required"}
+        conn = get_connection()
+        try:
+            result = activate_rule(conn, int(rule_id))
+            conn.commit()
+        finally:
+            conn.close()
+        return result
+    except Exception as exc:
+        logger.warning("dsoc_flowspec_activate: %s", exc)
+        return {"error": str(exc)}
+
+
+def dsoc_overview(args: dict) -> dict:
+    """Return DSOC overview: active mitigations, RTBH, scrubbing utilization, threats."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.dsoc_aggregator import get_dsoc_overview
+        conn = get_connection()
+        try:
+            return get_dsoc_overview(conn)
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("dsoc_overview: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_cod_invoke(args: dict) -> dict:
+    """Invoke Chain of Debate via ChainOrchestrator."""
+    try:
+        from tools.llm.chain_orchestrator import ChainOrchestrator
+        from tools.llm.provider import LLMRequest
+
+        orchestrator = ChainOrchestrator()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": args.get("prompt", "")}],
+            system_prompt=args.get("system_prompt", ""),
+        )
+        result = orchestrator.invoke_chain_of_debate(
+            args.get("function", "default"),
+            request,
+        )
+        return {
+            "content": result.content,
+            "chain_mode": result.chain_mode,
+            "models_used": result.models_used,
+            "total_cost_usd": result.total_cost_usd,
+            "total_input_tokens": result.total_input_tokens,
+            "total_output_tokens": result.total_output_tokens,
+            "total_duration_ms": result.total_duration_ms,
+            "stop_reason": result.stop_reason,
+            "trace_id": result.trace_id,
+            "confidence": result.confidence,
+            "rounds": result.rounds,
+        }
+    except Exception as exc:
+        logger.warning("handle_cod_invoke: %s", exc)
+        return {"error": str(exc)}

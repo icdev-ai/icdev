@@ -2500,3 +2500,92 @@ python -c "from tools.iqe.adapters.ccc import handle_query; from tools.ccc_canva
 #   GET  /api/ccc/capacity/report — run capacity analysis
 #   POST /api/ccc/iqe-query   — IQE natural-language query
 ```
+
+## DDoS & Security Ops Canvas (DSOC) Commands
+```bash
+# Initialize DSOC database (PostgreSQL default, SQLite fallback)
+python tools/dsoc_canvas/db/init_db.py
+
+# DSOC overview — active mitigations, RTBH, scrubbing utilization, threats
+python -c "from tools.dsoc_canvas.db.init_db import get_connection; from tools.dsoc_canvas.dsoc_aggregator import get_dsoc_overview; import json; conn=get_connection(); print(json.dumps(get_dsoc_overview(conn), indent=2))"
+
+# Trigger RTBH blackhole for a prefix (RFC 5635)
+python -c "from tools.dsoc_canvas.db.init_db import get_connection; from tools.dsoc_canvas.rtbh_manager import trigger_rtbh; conn=get_connection(); import json; r=trigger_rtbh(conn,'192.0.2.0/24','volumetric_attack'); conn.commit(); print(json.dumps(r, indent=2))"
+
+# Auto-expire RTBH entries whose timer has elapsed
+python -c "from tools.dsoc_canvas.db.init_db import get_connection; from tools.dsoc_canvas.rtbh_manager import auto_expire_rtbh; conn=get_connection(); n=auto_expire_rtbh(conn); conn.commit(); print(f'Expired: {n}')"
+
+# Generate IOS-XR flowspec config for a rule dict
+python -c "from tools.dsoc_canvas.flowspec_engine import generate_ios_xr_flowspec; r={'rule_name':'block-udp-1900','destination_prefix':'10.0.0.0/8','protocol':'udp','dst_port':'1900','action':'drop','rate_limit_bps':0}; print(generate_ios_xr_flowspec(r))"
+
+# Generate JunOS flowspec config
+python -c "from tools.dsoc_canvas.flowspec_engine import generate_junos_flowspec; r={'rule_name':'block-udp-1900','destination_prefix':'10.0.0.0/8','protocol':'udp','dst_port':'1900','action':'drop'}; print(generate_junos_flowspec(r))"
+
+# IQE adapter — query threats
+python -c "from tools.iqe.adapters.dsoc import handle_query; from tools.dsoc_canvas.db.init_db import get_connection; import json; conn=get_connection(); print(json.dumps(handle_query(conn, 'show high confidence threats'), indent=2))"
+
+# Genesis reflex — circuit capacity monitor (4h cadence)
+python tools/genesis/reflexes/circuit_capacity_monitor.py
+
+# Genesis reflex — NOCC alarm triage (2h cadence)
+python tools/genesis/reflexes/nocc_alarm_triage.py
+
+# Genesis reflex — NOCC SLA watcher (4h cadence)
+python tools/genesis/reflexes/nocc_sla_watcher.py
+
+# Genesis reflex — BGP route monitor (1h cadence)
+python tools/genesis/reflexes/bgp_route_monitor.py
+
+# Genesis reflex — Peering health monitor (6h cadence)
+python tools/genesis/reflexes/peering_health_monitor.py
+
+#   GET /dsoc                 — DSOC overview
+#   GET /dsoc/flowspec        — BGP flowspec rules
+#   GET /dsoc/rtbh            — RTBH blackhole entries
+#   GET /dsoc/scrubbing       — scrubbing center inventory
+#   GET /dsoc/threats         — threat intelligence feed
+#   GET /dsoc/mitigations     — active mitigation tracker
+#   POST /api/dsoc/rtbh       — trigger RTBH for a prefix
+#   POST /api/dsoc/rtbh/<id>/withdraw — withdraw RTBH entry
+#   POST /api/dsoc/flowspec   — create flowspec rule
+#   PUT  /api/dsoc/flowspec/<id>/withdraw — withdraw flowspec rule
+#   POST /api/dsoc/mitigations/<id>/complete — complete mitigation
+#   POST /api/dsoc/iqe-query  — IQE natural-language query
+```
+
+## Phase 4 — Commercial & Regulatory Intelligence Commands
+```bash
+# FCC compliance assessment (CALEA, Part 36, NANP, E-911)
+python tools/network/fcc_compliance.py --calea --json
+python tools/network/fcc_compliance.py --part36 --json
+python tools/network/fcc_compliance.py --nanp --json
+python tools/network/fcc_compliance.py --e911 --json
+python tools/network/fcc_compliance.py --all --json
+
+# FCC compliance via dashboard API
+#   GET /api/network/fcc/calea    — CALEA lawful-intercept checklist
+#   GET /api/network/fcc/part36   — Part 36 separations assessment
+#   GET /api/network/fcc/nanp     — NANP number inventory
+#   GET /api/network/fcc/e911     — E-911 capability check
+#   GET /api/network/fcc/all      — All checks combined
+
+# Telco RFP adapter (E-Rate Form 470, BEAD, RDOF)
+python tools/govcon/telco_rfp_adapter.py --form470 --json
+python tools/govcon/telco_rfp_adapter.py --bead --json
+python tools/govcon/telco_rfp_adapter.py --rdof --json
+
+# Telco RFP via dashboard API
+#   POST /api/govcon/telco/form470  — Parse Form 470 and score bid
+#   GET  /api/govcon/telco/bead     — BEAD compliance matrix
+#   GET  /api/govcon/telco/rdof     — RDOF eligibility scoring
+
+# Transit pricing benchmark (PMC)
+python tools/pmc_canvas/transit_pricing_benchmark.py --benchmark --region na --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --benchmark --region eu --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
+
+# Transit pricing via dashboard API
+#   GET  /api/pmc/transit/benchmark?region=na&speed_gbps=10 — Market benchmark
+#   POST /api/pmc/transit/roi — Peering-vs-transit NPV analysis
+#   GET  /pmc/transit         — Transit pricing dashboard page
+```

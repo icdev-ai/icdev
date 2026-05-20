@@ -86,6 +86,7 @@ from tools.network.config_generator import (  # noqa: E402
     list_configurable_nodes,
 )
 from tools.network.stig_import import import_stig_file  # noqa: E402
+from tools.canvas.ai_trace_mixin import record_canvas_decision  # noqa: E402
 
 
 def create_network_blueprint():
@@ -118,6 +119,7 @@ def create_network_blueprint():
         nc_login_required,
         _now,
         _row_to_dict,
+        _normalize_sop_step,
         _audit,
         _notify,
         _crud_list,
@@ -414,6 +416,8 @@ def create_network_blueprint():
             "network/canvas.html",
             topology_id=topo_id,
             topology_name=topo["name"],
+            classification=topo.get("classification", "public"),
+            design=topo,
             topo_projects=topo_projects,
             all_projects=all_projects,
         )
@@ -1068,6 +1072,51 @@ def create_network_blueprint():
             except Exception:
                 safe_bridge["roi"] = {}
 
+        # Migration phases with linked SOPs and parsed steps
+        migration_phases_raw = [
+            _row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                (proj_id,)
+            ).fetchall()
+        ]
+        for mphase in migration_phases_raw:
+            linked_docs = [
+                _row_to_dict(r) for r in conn.execute(
+                    """SELECT pd.doc_title, pd.doc_type, pd.doc_source, pd.relevance_note,
+                              s.steps, s.prerequisites, s.validation,
+                              s.rollback AS sop_rollback, s.escalation
+                       FROM nc_phase_documents pd
+                       LEFT JOIN ndc_sops s ON s.sop_id = pd.doc_id
+                       WHERE pd.phase_id = ?
+                       ORDER BY pd.display_order""",
+                    (mphase['id'],)
+                ).fetchall()
+            ]
+            for doc in linked_docs:
+                for field in ('steps', 'prerequisites', 'validation', 'escalation'):
+                    raw = doc.get(field)
+                    if raw:
+                        try:
+                            doc[field] = json.loads(raw)
+                        except Exception:
+                            doc[field] = []
+                # Normalize steps to canonical {number, text, verify, time_est, rollback}
+                # regardless of which schema variant the SOP was seeded with.
+                if doc.get('steps') and isinstance(doc['steps'], list):
+                    doc['steps'] = [
+                        _normalize_sop_step(s) for s in doc['steps']
+                        if isinstance(s, dict)
+                    ]
+            mphase['linked_docs'] = linked_docs
+            mphase['steps'] = [
+                s.strip().rstrip('.')
+                for s in (mphase.get('description') or '').split('. ')
+                if s.strip()
+            ]
+
+        # First topology ID for 3-panel diagram link
+        first_topo_id = topos[0]['id'] if topos else None
+
         conn.close()
         return render_template(
             "network/project_detail.html",
@@ -1090,6 +1139,8 @@ def create_network_blueprint():
             board_reviews=board_reviews,
             project_phases=project_phases,
             safe_bridge=safe_bridge,
+            migration_phases=migration_phases_raw,
+            first_topo_id=first_topo_id,
         )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1570,6 +1621,17 @@ def create_network_blueprint():
             from tools.canvas.kg_builder import rebuild_canvas_kg
 
             rebuild_canvas_kg("ndc", topo_id)
+        except Exception:
+            pass
+        # Blockchain provenance
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="ndc",
+                design_id=topo_id,
+                graph_json=data.get("graph_json", {}),
+                project_id=data.get("project_id", ""),
+            )
         except Exception:
             pass
         resp = {"ok": True}
@@ -2094,6 +2156,16 @@ def create_network_blueprint():
             graph = {"nodes": [], "edges": []}
 
         result = _add_narrative(_run_simulation(graph, sim_type, data))
+        _narrative = result.get("narrative") if isinstance(result, dict) else None
+        if _narrative:
+            record_canvas_decision(
+                canvas_type="ndc",
+                record_id=topo_id,
+                decision_type="narrative",
+                decision=str(_narrative)[:500],
+                rationale=f"Simulation type: {sim_type}",
+                model_used=None,
+            )
         sim_id = str(_uuid.uuid4())
         now = _now()
         conn = get_connection()
@@ -5962,6 +6034,18 @@ def create_network_blueprint():
         conn.commit()
         conn.close()
         _audit("CREATE", "ipam_block", bid, data.get("network", ""))
+        try:
+            from tools.canvas.event_bus import publish as _eb_publish
+            _eb_publish("ndc", "ndc.ipam.added", {
+                "block_id": bid,
+                "network": data.get("network", ""),
+                "topology_id": data.get("topology_id"),
+                "vrf": data.get("vrf", "global"),
+                "vlan_id": data.get("vlan_id"),
+                "classification": "CUI",
+            }, target_canvas="idc")
+        except Exception:
+            pass
         return jsonify({"id": bid}), 201
 
     @bp.route("/api/ipam/<bid>", methods=["PUT"])
@@ -6521,15 +6605,25 @@ def create_network_blueprint():
         )
         conn.commit()
         conn.close()
-        return jsonify(
-            {
-                "check_id": check_id,
-                "passed": passed,
-                "failed": failed,
-                "score_pct": round(passed / max(passed + failed, 1) * 100, 1),
-                "findings": findings,
-            }
-        )
+        result = {
+            "check_id": check_id,
+            "passed": passed,
+            "failed": failed,
+            "score_pct": round(passed / max(passed + failed, 1) * 100, 1),
+            "findings": findings,
+        }
+        # Blockchain provenance for assessment
+        try:
+            from tools.canvas.provenance import register_canvas_provenance
+            register_canvas_provenance(
+                canvas_key="ndc",
+                design_id=topo_id,
+                assessment_data=result,
+                project_id="",
+            )
+        except Exception:
+            pass
+        return jsonify(result)
 
     # ══════════════════════════════════════════════════════════════════════
     # API: Full Compliance Audit Engine
@@ -6587,6 +6681,16 @@ def create_network_blueprint():
             return jsonify({"error": "Bad graph"}), 500
 
         result = run_compliance_audit(topo_id, graph, regimes, classification)
+        record_canvas_decision(
+            canvas_type="ndc",
+            record_id=topo_id,
+            decision_type="compliance_finding",
+            decision=f"{len(result.get('findings', []))} finding(s) across regimes: {', '.join(regimes)}",
+            rationale=f"Scores: {result.get('scores', {})}",
+            model_used=None,
+            confidence=None,
+            project_id=None,
+        )
 
         audit_id = str(_uuid.uuid4())
         now = _now()
@@ -8433,6 +8537,10 @@ SP/Carrier:   mpls-pe, mpls-p, route-reflector, pop, sonet-adm, roadm, oadm, edf
 Media:        media-fiber, media-ge, media-10ge, media-100ge
 Colo:         meet-me-room, cross-connect
 Drawing:      draw-rect, draw-rounded-rect, text-heading, text-label, text-badge
+DoD JWICS:    dod-jwics-backbone, dod-jwics-gateway, dod-jwics-dns, dod-jwics-mail-relay, dod-type1-encryptor, dod-scif-lan
+DoD C2S:      dod-c2s-direct-connect, dod-c2s-tgw, dod-c2s-vpc, dod-c2s-dns-phz
+DoD C2E:      dod-c2e-expressroute, dod-c2e-vnet, dod-c2e-dns-private
+DoD Shared:   dod-secret-bcap, dod-cds
 
 Use vendor-specific types when the user names a vendor product (e.g., Juniper PTX10003 → juniper-ptx10003, Juniper MX304 → juniper-mx304, Cisco ASR → cisco-router, Cisco Catalyst → cisco-switch-l3, Cisco ASA → cisco-firewall).
 
@@ -8503,8 +8611,40 @@ Structure:
 Each legend entry: text-label with "• <description>" and appropriate _textColor.
 Spacing: 22px between entries, 30px between sections.
 
+═══ DoD SECRET / CLASSIFIED NETWORK TOPOLOGIES ═══
+Use dod-* types when user mentions: JWICS, SCIF, C2S, C2E, SIPR, classified network, SECRET network, DISA, BCAP, SCCA, Type 1, CDS, cross-domain, IL6, DIA, or NSA encryption.
+
+STANDARD JWICS AGENCY CONNECTION (left → right):
+  dod-scif-lan → dod-type1-encryptor → dod-jwics-gateway → dod-jwics-backbone → [DIA hub: router] → dod-jwics-dns, dod-jwics-mail-relay, server (app)
+
+JWICS → C2S (AWS Secret Region):
+  dod-scif-lan → dod-type1-encryptor → dod-jwics-gateway → dod-jwics-backbone → dod-secret-bcap → dod-c2s-direct-connect → dod-c2s-tgw → dod-c2s-vpc → dod-c2s-dns-phz
+
+JWICS → C2E (Azure Government Secret):
+  dod-scif-lan → dod-type1-encryptor → dod-jwics-gateway → dod-jwics-backbone → dod-secret-bcap → dod-c2e-expressroute → dod-c2e-vnet → dod-c2e-dns-private
+
+FULL DISA PANORAMA (3-row layout — stack vertically, 280px row spacing):
+  TOP ROW (NIPR, y=80):   endpoint-pc → router → firewall → [dod-secret-bcap optional NIPR side] → aws-vpc / az-vnet
+  MID ROW (DISN, y=360):  router (DISN backbone) → siem → server (ACAS/HBSS)
+  BOT ROW (SECRET, y=640): dod-scif-lan → dod-type1-encryptor → dod-jwics-backbone → dod-secret-bcap → dod-c2s-vpc / dod-c2e-vnet
+  CDS bridging MID ↔ BOT: place dod-cds node between MID row and BOT row (y=500)
+
+CROSS-DOMAIN SOLUTION: place dod-cds between NIPR (unclassified) and JWICS (SECRET) segments.
+DNS FLOW diagram: dod-scif-lan → endpoint-pc (SCIF user) → server (stub resolver) → dod-jwics-dns (JWICS recursive) → server (DIA authoritative)
+EMAIL FLOW diagram: endpoint-pc (SCIF sender) → server (agency SMTP relay) → dod-jwics-mail-relay → server (DIA relay) → endpoint-pc (recipient)
+
+ZONE COLORS for classified:
+  SECRET zone: Red   {"_fill": "#1a0808", "_stroke": "#e74c3c"}
+  JWICS zone:  Red   {"_fill": "#2b0808", "_stroke": "#ff4757"}
+  C2S zone:    Amber {"_fill": "#1a0f00", "_stroke": "#e67e22"}
+  C2E zone:    Purple{"_fill": "#0f0820", "_stroke": "#8e44ad"}
+  CDS bridge:  Red   {"_fill": "#1a0a1a", "_stroke": "#ff7675"}
+  NIPR zone:   Blue  (standard)
+
+EDGE LABELS for classified: "Type 1 AES-256 HAIPE", "OSPF Area 0", "ClassifiedConnect 10G", "BGP eBGP MD5", "UDP/53 DNSSEC", "SMTP/S 587", "LDAPS/636"
+
 ═══ PROTOCOLS (use realistic ones) ═══
-OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, STP, VXLAN, BGP EVPN, GRE
+OSPF, BGP, iBGP, eBGP, MP-BGP, MPLS, LDP, RSVP, IPSec, STP, VXLAN, BGP EVPN, GRE, Type 1 AES-256, DNSSEC, S/MIME, HAIPE
 
 Output ONLY the JSON object. No other text."""
 
@@ -8517,6 +8657,16 @@ Output ONLY the JSON object. No other text."""
         "data center", "datacenter", "cloud", "hub", "spoke", "mesh",
         "three tier", "three-tier", "two tier", "two-tier", "spine", "leaf",
         "core", "distribution", "access layer",
+        # DoD / classified network keywords
+        "jwics", "scif", "sipr", "niprnet", "c2s", "c2e",
+        "classified", "secret network", "il6", "il5", "il4",
+        "disa", "bcap", "scca", "vdss", "vdms", "tccm",
+        "type 1", "type-1", "taclane", "kg-250", "kg-175",
+        "cds", "cross-domain", "cross domain",
+        "classifiedconnect", "classified connect",
+        "dia hub", "dia network", "jwics backbone",
+        "secret region", "aws secret", "azure secret",
+        "agency connect", "dod agency", "dod network",
     }
 
     # Migration scenario keywords — trigger multi-phase layout + migration canvas session
@@ -8525,6 +8675,52 @@ Output ONLY the JSON object. No other text."""
         "as-is", "as is", "to-be", "to be", "phase ", "phased", "hand-off", "handoff",
         "decommission", "decomm", "retire", "swap", "upgrade router", "upgrade switch",
     }
+
+    _AI_MIGRATION_PLAN_PROMPT = """You are a DoD/government network migration planner. \
+You work with any vendor (Cisco, Juniper, Arista, Palo Alto, Fortinet, HPE, Brocade, etc.), \
+any device type (routers, switches, firewalls, load balancers, wireless controllers, SD-WAN), \
+any ISP or carrier, and any partner network (government, commercial, NIPR, SIPR, or private).
+
+CRITICAL ARCHITECTURE RULE — DoD Cloud Connectivity:
+CSPs (AWS GovCloud, Azure Government, GCP, OCI, IBM Cloud, etc.) do NOT connect directly to \
+the edge router or to NIPR. In DoD networks, ALL CSP connectivity is routed through DISA BCAP \
+(Boundary Cloud Access Point). The topology is always:
+  Edge Router → DISA BCAP → CSP
+NEVER model a direct edge-router-to-CSP connection. Any migration involving cloud workloads \
+must include DISA BCAP as an intermediate node on the north side, and must include DISA \
+coordination steps in the relevant phases.
+
+Given a plain-English description of a migration, decompose it into an ordered list of phases \
+that are specific to the described devices and connections — do NOT assume any vendor, protocol, \
+or peer unless the description explicitly names them.
+
+Output ONLY a valid JSON array — no markdown, no explanation:
+[
+  {
+    "phase_num": 1,
+    "title": "Short imperative title",
+    "description": "3-4 sentences: what changes, what stays, dependencies, and any coordination required",
+    "duration_days": 14,
+    "parallel_run": 0,
+    "rollback_criteria": "One sentence: condition and steps that trigger rollback",
+    "maintenance_window": "Sat 02:00-06:00 local time",
+    "classification": "CUI",
+    "impact_level": "IL4"
+  }
+]
+
+Rules:
+1. Phase titles must be short imperatives specific to the described devices (e.g. "Stage Cisco ASR Config", "Cut Over ISP BGP", "Migrate VLANs to New Core Switch")
+2. Infer phases from the actual topology: north-side partners, south-side peers, protocols (BGP, OSPF, EIGRP, MPLS, etc.) and physical connections (trunk, LAG, port-channel, SFP) mentioned
+3. If CSP connectivity is mentioned (cloud workloads, AWS, Azure, GCP, etc.), always model it as going through DISA BCAP — generate a BCAP coordination phase
+4. duration_days: realistic estimate in days (minimum 1, typical 7-30 for production cuts)
+5. parallel_run: 1 if old and new devices run simultaneously during this phase, else 0
+6. classification: PUBLIC | CUI | SECRET | TS — infer from context or default to CUI
+7. impact_level: IL2 | IL4 | IL5 | IL6 — infer from context or default to IL4
+8. Phases must be ordered so each depends only on prior completed phases
+9. Always end with a decommission or final validation phase
+10. Minimum 2 phases, maximum 12 phases
+11. If partner coordination is needed (ISP, DISA, government agency, carrier), add a dedicated coordination step within the relevant phase description"""
 
     @bp.route("/api/ai-generate", methods=["POST"])
     @nc_login_required
@@ -8798,8 +8994,25 @@ Output ONLY the JSON object. No other text."""
         if not description:
             return jsonify({"error": "message is required"}), 400
 
+        phase_context = data.get("phase_context") or {}
+        phase_header = ""
+        if phase_context:
+            ph_num = phase_context.get("phase_num", "?")
+            ph_title = phase_context.get("title", "")
+            ph_cls = phase_context.get("classification", "CUI")
+            ph_il = phase_context.get("impact_level", "IL4")
+            ph_status = phase_context.get("status", "planned")
+            phase_header = (
+                f"\n\n## ACTIVE MIGRATION PHASE CONTEXT\n"
+                f"Phase {ph_num}: {ph_title}\n"
+                f"Classification: {ph_cls} | Impact Level: {ph_il} | Status: {ph_status}\n"
+                f"All responses must respect {ph_cls}/{ph_il} constraints, applicable STIG/RMF controls, "
+                f"and DoD network migration best practices for this classification level.\n"
+            )
+
         qa_system = (  # noqa: F841
             _AI_TOPO_SYSTEM_PROMPT
+            + phase_header
             + "\n\nYou are also a network expert who can answer questions directly"
             " without generating JSON. When the user asks a question (rather than"
             " requesting a diagram), respond in plain English with a clear, concise"
@@ -10532,6 +10745,83 @@ Respond with ONLY this JSON (no other text):
         conn.close()
         return jsonify({"status": "deleted"})
 
+    # ── SOP Library ───────────────────────────────────────────────────────
+
+    @bp.route("/sops")
+    @nc_login_required
+    def nc_sops_page():
+        from tools.network.sops import list_sops as _ls
+        category = request.args.get("category", "")
+        status_f = request.args.get("status", "approved")
+        q = request.args.get("q", "")
+        sops = _ls(category=category or None, status=status_f or None, limit=200)
+        all_sops = _ls(limit=1000)
+        categories = sorted({s["category"] for s in all_sops})
+        csps = sorted({s.get("csp", "multi") for s in all_sops})
+        return render_template(
+            "network/sops.html",
+            sops=sops, categories=categories, csps=csps,
+            filter_category=category, filter_status=status_f, search_q=q,
+            is_admin=(getattr(getattr(g, "current_user", None), "role", "") == "admin"),
+        )
+
+    @bp.route("/api/sops")
+    def nc_api_sops_list():
+        from tools.network.sops import list_sops as _ls
+        return jsonify(_ls(
+            category=request.args.get("category") or None,
+            status=request.args.get("status") or None,
+            limit=200,
+        ))
+
+    @bp.route("/api/sops/<sop_id>")
+    def nc_api_sop_get(sop_id):
+        from tools.network.sops import get_sop as _gs
+        s = _gs(sop_id)
+        return (jsonify(s), 200) if s else (jsonify({"error": "not found"}), 404)
+
+    @bp.route("/api/sops/<sop_id>/history")
+    def nc_api_sop_history(sop_id):
+        from tools.network.sops import get_approval_history as _gah
+        return jsonify(_gah(sop_id))
+
+    # ── Connectivity Reference ────────────────────────────────────────────
+
+    @bp.route("/connectivity")
+    @nc_login_required
+    def nc_connectivity_page():
+        from tools.network.connectivity_ref import (
+            get_connectivity_matrix, get_scca_flow, get_resiliency_tiers,
+        )
+        return render_template(
+            "network/connectivity.html",
+            matrix=get_connectivity_matrix(),
+            csps=["aws", "azure", "gcp", "oci", "ibm"],
+            scca_flow=get_scca_flow(),
+            resiliency_tiers=get_resiliency_tiers(),
+        )
+
+    @bp.route("/api/connectivity/matrix")
+    def nc_api_connectivity_matrix():
+        from tools.network.connectivity_ref import get_connectivity_matrix
+        return jsonify(get_connectivity_matrix())
+
+    @bp.route("/api/connectivity/onprem-pattern")
+    def nc_api_onprem_pattern():
+        from tools.network.connectivity_ref import get_onprem_to_csp_patterns
+        return jsonify(get_onprem_to_csp_patterns(
+            csp=request.args.get("csp", "aws"),
+            pattern_type=request.args.get("type", "ipsec_vpn"),
+        ))
+
+    @bp.route("/api/connectivity/c2c-patterns")
+    def nc_api_c2c_patterns():
+        from tools.network.connectivity_ref import get_csp_to_csp_patterns
+        return jsonify(get_csp_to_csp_patterns(
+            src_csp=request.args.get("src", "aws"),
+            dst_csp=request.args.get("dst", "azure"),
+        ))
+
     # ── Packet Capture (GNS3 / lab link capture) ─────────────────────────
 
     import hashlib
@@ -11183,6 +11473,9 @@ Respond with ONLY this JSON (no other text):
             engine = TrafficFlowEngine()
             if request.method == "GET":
                 flows = engine.list_flows(topo_id, conn)
+                phase_filter = request.args.get("phase_id")
+                if phase_filter:
+                    flows = [f for f in flows if f.get("phase_id") == phase_filter]
                 return jsonify({"flows": flows}), 200
             # POST — create
             data = request.get_json(silent=True) or {}
@@ -11224,6 +11517,7 @@ Respond with ONLY this JSON (no other text):
         body = request.get_json(silent=True) or {}
         personas = body.get("personas") or None
         use_llm = bool(body.get("use_llm", True))
+        phase_id_filter = request.args.get("phase_id") or body.get("phase_id")
 
         try:
             conn = get_connection()
@@ -11237,6 +11531,8 @@ Respond with ONLY this JSON (no other text):
             if engine_cls:
                 engine = engine_cls()
                 engine._ensure_tables(conn)
+                if phase_id_filter:
+                    engine.generate_walkthrough(flow_id, conn, phase_id=phase_id_filter)
 
             # Verify flow belongs to this topology
             flow_row = conn.execute(
@@ -11278,6 +11574,38 @@ Respond with ONLY this JSON (no other text):
                 conn.close()
             except Exception:
                 pass
+
+    @bp.route("/api/twin/<topo_id>/traffic-flows/<flow_id>/assign-phase", methods=["POST"])
+    @nc_login_required
+    def nc_api_twin_tfw_assign_phase(topo_id, flow_id):
+        """Assign (or unassign) a traffic flow to a migration phase.
+
+        Body: {"phase_id": "<id>"}  — pass null to unassign.
+        """
+        from tools.network.db.init_db import get_connection as _gc
+        data = request.get_json(silent=True) or {}
+        phase_id = data.get("phase_id")
+
+        conn = _gc()
+        try:
+            row = conn.execute(
+                "SELECT id FROM nc_traffic_flows WHERE id=? AND topology_id=?",
+                (flow_id, topo_id),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "flow not found"}), 404
+
+            conn.execute(
+                "UPDATE nc_traffic_flows SET phase_id=? WHERE id=?",
+                (phase_id, flow_id),
+            )
+            conn.commit()
+            return jsonify({"status": "ok", "flow_id": flow_id, "phase_id": phase_id}), 200
+        except Exception as exc:
+            logger.warning("assign-phase error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
 
     # ══════════════════════════════════════════════════════════════════════
     # API: IP Address Planning Assistant
@@ -11482,6 +11810,905 @@ Planning rules:
             return jsonify({"messages": messages})
         finally:
             conn.close()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Subnet Calculator — page + API
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/subnet-calc")
+    @nc_login_required
+    def nc_subnet_calc():
+        conn = get_connection()
+        project_id = request.args.get("project", "")
+        projects = [_row_to_dict(r) for r in conn.execute("SELECT id, name FROM nc_projects ORDER BY name").fetchall()]
+        if project_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_subnet_calc_history WHERE project_id=? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT h.*, p.name AS project_name FROM nc_subnet_calc_history h "
+                "LEFT JOIN nc_projects p ON p.id=h.project_id ORDER BY h.created_at DESC LIMIT 200"
+            ).fetchall()
+        history = [_row_to_dict(r) for r in rows]
+        conn.close()
+        active_project = next((p for p in projects if p["id"] == project_id), None)
+        return render_template(
+            "network/subnet_calc.html",
+            projects=projects,
+            history=history,
+            filter_project=project_id,
+            active_project=active_project,
+        )
+
+    @bp.route("/api/nc-projects", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_project_quick():
+        """Lightweight project creation — name + optional description/owner only."""
+        data = request.get_json(force=True, silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+        pid = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        conn.execute(
+            "INSERT INTO nc_projects (id, name, description, status, owner, created_at, updated_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (pid, name, data.get("description", ""), data.get("status", "draft"), data.get("owner", ""), now, now),
+        )
+        conn.commit()
+        conn.close()
+        _audit("CREATE", "project", pid, name)
+        return jsonify({"id": pid, "name": name}), 201
+
+    @bp.route("/api/nc-projects", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_projects_quick():
+        """Return all nc_projects as id/name pairs for dropdowns."""
+        conn = get_connection()
+        rows = conn.execute("SELECT id, name, status FROM nc_projects ORDER BY name").fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/subnet-calc", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_subnet_calc():
+        conn = get_connection()
+        project_id = request.args.get("project", "")
+        if project_id:
+            rows = conn.execute(
+                "SELECT * FROM nc_subnet_calc_history WHERE project_id=? ORDER BY created_at DESC",
+                (project_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM nc_subnet_calc_history ORDER BY created_at DESC LIMIT 200"
+            ).fetchall()
+        conn.close()
+        return jsonify([_row_to_dict(r) for r in rows])
+
+    @bp.route("/api/subnet-calc", methods=["POST"])
+    @nc_login_required
+    def nc_api_save_subnet_calc():
+        import ipaddress
+        data = request.get_json(force=True, silent=True) or {}
+        cidr = (data.get("cidr") or "").strip()
+        project_id = (data.get("project_id") or "").strip()
+        if not cidr or not project_id:
+            return jsonify({"error": "cidr and project_id required"}), 400
+
+        # Validate and compute server-side
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+        except ValueError as exc:
+            return jsonify({"error": f"Invalid CIDR: {exc}"}), 422
+
+        prefix_len = net.prefixlen
+        af = "ipv6" if net.version == 6 else "ipv4"
+        total_hosts = net.num_addresses
+        if net.version == 4:
+            usable = max(0, total_hosts - 2) if prefix_len < 31 else total_hosts
+            subnet_mask = str(net.netmask)
+            wildcard = str(net.hostmask)
+            first_addr = str(net.network_address + 1) if prefix_len < 31 else str(net.network_address)
+            last_addr = str(net.broadcast_address - 1) if prefix_len < 31 else str(net.broadcast_address)
+            first_octet = int(str(net.network_address).split(".")[0])
+            if first_octet < 128:
+                ip_class = "A"
+            elif first_octet < 192:
+                ip_class = "B"
+            elif first_octet < 224:
+                ip_class = "C"
+            elif first_octet < 240:
+                ip_class = "D"
+            else:
+                ip_class = "E"
+            broadcast = str(net.broadcast_address)
+        else:
+            usable = None   # too large for SQLite INTEGER; frontend uses prefix_len
+            total_hosts = None
+            subnet_mask = f"/{prefix_len}"
+            wildcard = str(net.hostmask)
+            first_addr = str(net.network_address + 1)
+            last_addr = str(net.broadcast_address - 1)
+            ip_class = data.get("ip_class") or "Global Unicast"
+            broadcast = str(net.broadcast_address)
+
+        entry_id = str(_uuid.uuid4())
+        now = _now()
+        conn = get_connection()
+        # Dedup: INSERT OR REPLACE (UNIQUE on cidr+project_id)
+        existing = conn.execute(
+            "SELECT id FROM nc_subnet_calc_history WHERE cidr=? AND project_id=?",
+            (str(net.with_prefixlen), project_id),
+        ).fetchone()
+        if existing:
+            entry_id = existing[0]
+            conn.execute(
+                "UPDATE nc_subnet_calc_history SET network_addr=?,broadcast=?,first_host=?,last_host=?,"
+                "total_hosts=?,usable_hosts=?,prefix_len=?,subnet_mask=?,wildcard_mask=?,address_family=?,"
+                "ip_class=?,notes=?,created_at=? WHERE id=?",
+                (str(net.network_address), broadcast, first_addr, last_addr,
+                 total_hosts, usable, prefix_len, subnet_mask, wildcard,
+                 af, ip_class, data.get("notes", ""), now, entry_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO nc_subnet_calc_history "
+                "(id,project_id,cidr,network_addr,broadcast,first_host,last_host,"
+                "total_hosts,usable_hosts,prefix_len,subnet_mask,wildcard_mask,"
+                "address_family,ip_class,notes,created_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (entry_id, project_id, str(net.with_prefixlen),
+                 str(net.network_address), broadcast, first_addr, last_addr,
+                 total_hosts, usable, prefix_len, subnet_mask, wildcard,
+                 af, ip_class, data.get("notes", ""), now),
+            )
+        conn.commit()
+        conn.close()
+        _audit("SAVE", "subnet_calc", entry_id, cidr)
+        return jsonify({"id": entry_id, "cidr": str(net.with_prefixlen), "updated": bool(existing)}), 201
+
+    @bp.route("/api/subnet-calc/<entry_id>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_delete_subnet_calc(entry_id):
+        conn = get_connection()
+        conn.execute("DELETE FROM nc_subnet_calc_history WHERE id=?", (entry_id,))
+        conn.commit()
+        conn.close()
+        _audit("DELETE", "subnet_calc", entry_id)
+        return jsonify({"deleted": entry_id})
+
+    # ── Migration Phases View ───────────────────────────────────────────────
+
+    @bp.route("/migration-phases/<topo_id>")
+    @nc_login_required
+    def nc_migration_phases(topo_id):
+        """Three-panel migration phases view: Current → Phase N → Final/To-Be."""
+        conn = get_connection()
+        topo = conn.execute(
+            "SELECT id, name, graph_json FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo:
+            conn.close()
+            return "Topology not found", 404
+
+        # Fetch migration phases linked to any project that uses this topology
+        phases = conn.execute(
+            """
+            SELECT mp.id, mp.phase_num, mp.title, mp.description,
+                   mp.duration_days, mp.parallel_run, mp.rollback_criteria,
+                   mp.maintenance_window, mp.dependencies, mp.status
+            FROM nc_migration_phases mp
+            JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
+            WHERE pt.topology_id = ?
+            ORDER BY mp.phase_num
+            """,
+            (topo_id,),
+        ).fetchall()
+        conn.close()
+
+        topo_name = topo["name"] if hasattr(topo, "__getitem__") else topo[1]
+        phases_list = [dict(p) if hasattr(p, "keys") else {
+            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+            "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
+            "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
+        } for p in phases]
+
+        return render_template(
+            "network/migration_phases.html",
+            topo_id=topo_id,
+            topo_name=topo_name,
+            phases=phases_list,
+            phase_count=len(phases_list),
+        )
+
+    @bp.route("/api/migration-phases/<topo_id>/data", methods=["GET"])
+    @nc_login_required
+    def nc_api_migration_phases_data(topo_id):
+        """Return all phase graphs + info boxes + consolidation as JSON."""
+        import json as _json
+        from tools.network.migration_phases import (
+            compute_infoboxes, compute_final_infoboxes,
+            generate_phase_graph, generate_final_graph,
+            run_consolidation_analysis, load_consolidation,
+        )
+
+        conn = get_connection()
+        topo_row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo_row:
+            conn.close()
+            return jsonify({"error": "topology not found"}), 404
+
+        graph_json, topo_name = topo_row[0], topo_row[1]
+        current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
+
+        phases = conn.execute(
+            """
+            SELECT mp.id, mp.phase_num, mp.title, mp.description,
+                   mp.duration_days, mp.parallel_run, mp.rollback_criteria,
+                   mp.maintenance_window, mp.dependencies, mp.status
+            FROM nc_migration_phases mp
+            JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
+            WHERE pt.topology_id = ?
+            ORDER BY mp.phase_num
+            """,
+            (topo_id,),
+        ).fetchall()
+        conn.close()
+
+        phases_list = [dict(p) if hasattr(p, "keys") else {
+            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+            "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
+            "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
+            "total_phases": len(phases),
+        } for p in phases]
+
+        # Build per-phase graphs and info boxes
+        phase_data = []
+        for pm in phases_list:
+            pm["total_phases"] = len(phases_list)
+            ph_graph = generate_phase_graph(current_graph, pm)
+            ph_boxes = compute_infoboxes(ph_graph, phase_key=f"phase-{pm['phase_num']}", phase_meta=pm)
+            phase_data.append({
+                "phase_num": pm["phase_num"],
+                "title": pm["title"],
+                "status": pm["status"],
+                "graph": ph_graph,
+                "infoboxes": ph_boxes,
+            })
+
+        # Final/To-Be graph + consolidation
+        final_graph = generate_final_graph(current_graph, phases_list)
+        consolidation = load_consolidation(topo_id)
+        if not consolidation:
+            consolidation = run_consolidation_analysis(current_graph, final_graph)
+            consolidation["current_device_count"] = len(current_graph.get("nodes", []))
+            consolidation["final_device_count"] = len(final_graph.get("nodes", []))
+        final_boxes = compute_final_infoboxes(current_graph, final_graph, consolidation)
+
+        return jsonify({
+            "topo_id": topo_id,
+            "topo_name": topo_name,
+            "current": {
+                "graph": current_graph,
+                "infoboxes": compute_infoboxes(current_graph, phase_key="current"),
+            },
+            "phases": phase_data,
+            "final": {
+                "graph": final_graph,
+                "infoboxes": final_boxes,
+                "consolidation": consolidation,
+            },
+        })
+
+    @bp.route("/api/migration-phases/<topo_id>/export/<phase_key>/<fmt>", methods=["POST"])
+    @nc_login_required
+    def nc_api_migration_phases_export(topo_id, phase_key, fmt):
+        """Export a single phase panel as PDF, Visio, or Draw.io.
+
+        phase_key: 'current', 'phase-N', or 'final'
+        fmt: 'pdf', 'visio', 'drawio'
+        """
+        import json as _json
+        from tools.network.migration_phases import (
+            compute_infoboxes, compute_final_infoboxes,
+            generate_phase_graph, generate_final_graph,
+            run_consolidation_analysis, load_consolidation,
+        )
+
+        conn = get_connection()
+        topo_row = conn.execute(
+            "SELECT graph_json, name FROM topologies WHERE id=?", (topo_id,)
+        ).fetchone()
+        if not topo_row:
+            conn.close()
+            return jsonify({"error": "topology not found"}), 404
+        graph_json, topo_name = topo_row[0], topo_row[1]
+        current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
+        conn.close()
+
+        # Resolve which graph + label to export
+        if phase_key == "current":
+            graph = current_graph
+            phase_label = "Current State"
+            infoboxes = compute_infoboxes(graph, phase_key="current")
+            consolidation = None
+            phase_meta = None
+        elif phase_key == "final":
+            phases_raw = []  # fetch from DB if needed — simplified: use empty for now
+            graph = generate_final_graph(current_graph, phases_raw)
+            phase_label = "Final / To-Be State"
+            consolidation = load_consolidation(topo_id) or run_consolidation_analysis(current_graph, graph)
+            infoboxes = compute_final_infoboxes(current_graph, graph, consolidation)
+            phase_meta = None
+        else:
+            # phase-N
+            try:
+                pnum = int(phase_key.split("-")[1])
+            except Exception:
+                pnum = 1
+            phase_meta = {"phase_num": pnum, "total_phases": pnum, "title": f"Phase {pnum}"}
+            graph = generate_phase_graph(current_graph, phase_meta)
+            phase_label = f"Phase {pnum}"
+            infoboxes = compute_infoboxes(graph, phase_key=phase_key, phase_meta=phase_meta)
+            consolidation = None
+
+        safe_name = topo_name.replace(" ", "_").replace("/", "-")[:40]
+
+        if fmt == "pdf":
+            from tools.network.pdf_export import export_phase_pdf
+            pdf_bytes = export_phase_pdf(
+                topo_name, phase_label, graph, infoboxes, consolidation, phase_meta
+            )
+            is_html = pdf_bytes[:15].startswith(b"<!DOCTYPE")
+            if is_html:
+                return current_app.response_class(
+                    pdf_bytes,
+                    mimetype="text/html",
+                    headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}_report.html"'},
+                )
+            return current_app.response_class(
+                pdf_bytes,
+                mimetype="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}.pdf"'},
+            )
+
+        if fmt == "visio":
+            from tools.network.visio_export import export_vsdx
+            vsdx_bytes = export_vsdx(f"{topo_name} — {phase_label}", graph)
+            return current_app.response_class(
+                vsdx_bytes,
+                mimetype="application/vnd.visio",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}.vsdx"'},
+            )
+
+        if fmt == "drawio":
+            from tools.network.export_import import to_drawio
+            xml = to_drawio(graph, f"{topo_name} — {phase_label}")
+            return current_app.response_class(
+                xml.encode("utf-8"),
+                mimetype="application/octet-stream",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_{phase_key}.drawio"'},
+            )
+
+        return jsonify({"error": f"Unknown format: {fmt}"}), 400
+
+    # ── AI Migration Plan Generator ────────────────────────────────────────
+    @bp.route("/api/migration-plan/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_migration_plan_generate():
+        """Decompose a NL description into migration phases using LLM.
+
+        Body: {"description": "...", "project_id": "...", "topo_id": "..."}
+        Returns: {"phases_created": N, "phase_ids": [...]}
+        """
+        import uuid as _uuid
+        from tools.http.client import request as _req_request
+
+        data = request.get_json(force=True, silent=True) or {}
+        description = (data.get("description") or "").strip()
+        project_id = (data.get("project_id") or "").strip()
+        if not description:
+            return jsonify({"error": "description is required"}), 400
+
+        api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if not api_key:
+            return jsonify({"error": "No ANTHROPIC_API_KEY set"}), 503
+
+        try:
+            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
+            r = _req_request(
+                "POST",
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 2048,
+                    "system": _AI_MIGRATION_PLAN_PROMPT,
+                    "messages": [{"role": "user", "content": description}],
+                },
+                timeout=60,
+            )
+            if r.status_code != 200:
+                return jsonify({"error": f"LLM API error {r.status_code}"}), 503
+
+            raw_text = r.json()["content"][0]["text"].strip()
+            # Strip markdown fences if present
+            if raw_text.startswith("```"):
+                raw_text = raw_text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+            phases_data = json.loads(raw_text)
+            if not isinstance(phases_data, list):
+                return jsonify({"error": "LLM returned unexpected format"}), 500
+        except Exception as exc:
+            logger.exception("migration-plan/generate LLM call failed")
+            return jsonify({"error": str(exc)}), 500
+
+        if not project_id:
+            return jsonify({"error": "project_id is required"}), 400
+
+        conn = get_connection()
+        try:
+            phase_ids = []
+            for ph in phases_data:
+                pid = str(_uuid.uuid4())
+                conn.execute(
+                    """INSERT INTO nc_migration_phases
+                       (id, project_id, phase_num, title, description,
+                        duration_days, parallel_run, rollback_criteria,
+                        maintenance_window, classification, impact_level, status)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,'planned')""",
+                    (
+                        pid,
+                        project_id,
+                        int(ph.get("phase_num", len(phase_ids) + 1)),
+                        str(ph.get("title", f"Phase {len(phase_ids)+1}")),
+                        str(ph.get("description", "")),
+                        int(ph.get("duration_days", 7)),
+                        int(ph.get("parallel_run", 0)),
+                        str(ph.get("rollback_criteria", "")),
+                        str(ph.get("maintenance_window", "")),
+                        str(ph.get("classification", "CUI")),
+                        str(ph.get("impact_level", "IL4")),
+                    ),
+                )
+                phase_ids.append(pid)
+                # Auto-link SOPs: extract meaningful tokens from phase text, match against SOP titles
+                _stop = {"the","and","or","for","with","from","that","this","into","will","phase",
+                         "have","been","each","only","when","also","are","was","were","all","not"}
+                phase_text = f"{ph.get('title','')} {ph.get('description','')}".lower()
+                import re as _re
+                raw_tokens = _re.findall(r"[a-z][a-z0-9\-]{3,}", phase_text)
+                sop_keywords = {t for t in raw_tokens if t not in _stop}
+                if sop_keywords:
+                    sop_rows = conn.execute(
+                        "SELECT sop_id, title FROM ndc_sops WHERE status = 'approved'"
+                    ).fetchall()
+                    for sop_row in sop_rows:
+                        sop_title_lower = (sop_row["title"] or "").lower()
+                        if any(kw in sop_title_lower for kw in sop_keywords):
+                            link_id = str(_uuid.uuid4())
+                            try:
+                                conn.execute(
+                                    """INSERT OR IGNORE INTO nc_phase_documents
+                                       (id, phase_id, project_id, doc_source, doc_id,
+                                        doc_title, doc_type, relevance_note, display_order)
+                                       VALUES (?,?,?,?,?,?,?,?,0)""",
+                                    (link_id, pid, project_id, "sop",
+                                     sop_row["sop_id"], sop_row["title"],
+                                     "sop", "auto-linked by keyword match"),
+                                )
+                            except Exception:
+                                pass
+            conn.commit()
+            return jsonify({"phases_created": len(phase_ids), "phase_ids": phase_ids}), 201
+        except Exception as exc:
+            logger.warning("migration-plan insert error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    # ── Phase Status Update + Snapshot ────────────────────────────────────
+    @bp.route("/api/migration-phases/<topo_id>/<phase_id>/status", methods=["PUT"])
+    @nc_login_required
+    def nc_api_migration_phase_status(topo_id, phase_id):
+        """Update phase status; if completed, snapshot the topology.
+
+        Body (JSON):
+          status         : "completed" | "in_progress" | "rolled_back"
+          classification : optional override ("PUBLIC"|"CUI"|"SECRET"|"TS")
+          impact_level   : optional override ("IL2"|"IL4"|"IL5"|"IL6")
+        """
+        import json as _json
+        import uuid as _uuid
+        from tools.network.migration_phases import (
+            generate_phase_graph,
+            run_consolidation_analysis,
+            save_consolidation,
+        )
+
+        data = request.get_json(silent=True) or {}
+        new_status = data.get("status", "").strip()
+        valid_statuses = {"planned", "in_progress", "completed", "rolled_back"}
+        if new_status not in valid_statuses:
+            return jsonify({"error": f"status must be one of {sorted(valid_statuses)}"}), 400
+
+        conn = get_connection()
+        try:
+            phase_row = conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE id=?", (phase_id,)
+            ).fetchone()
+            if not phase_row:
+                return jsonify({"error": "phase not found"}), 404
+            phase = dict(phase_row)
+
+            update_fields = ["status=?"]
+            update_vals: list = [new_status]
+            classification = data.get("classification")
+            impact_level = data.get("impact_level")
+            if classification:
+                update_fields.append("classification=?")
+                update_vals.append(classification)
+            if impact_level:
+                update_fields.append("impact_level=?")
+                update_vals.append(impact_level)
+            update_vals.extend([phase_id])
+
+            conn.execute(
+                f"UPDATE nc_migration_phases SET {', '.join(update_fields)} WHERE id=?",
+                update_vals,
+            )
+
+            snapshot_id = None
+            if new_status == "completed":
+                topo_row = conn.execute(
+                    "SELECT graph_json FROM topologies WHERE id=?", (topo_id,)
+                ).fetchone()
+                if topo_row:
+                    current_graph = _json.loads(topo_row[0] or "{}") or {"nodes": [], "edges": []}
+                    phase_meta = dict(phase)
+                    phase_meta["status"] = new_status
+                    post_graph = generate_phase_graph(current_graph, phase_meta)
+                    snapshot_id = str(_uuid.uuid4())
+                    conn.execute(
+                        """INSERT INTO nc_topology_snapshots (id, topo_id, phase_id, label, graph_json)
+                           VALUES (?,?,?,?,?)""",
+                        (
+                            snapshot_id,
+                            topo_id,
+                            phase_id,
+                            f"Phase {phase.get('phase_num', '?')} Complete",
+                            _json.dumps(post_graph),
+                        ),
+                    )
+                    try:
+                        analysis = run_consolidation_analysis(current_graph, post_graph)
+                        save_consolidation(topo_id, analysis)
+                    except Exception:
+                        pass
+
+                _audit(conn, "phase_completed", {
+                    "phase_id": phase_id,
+                    "topo_id": topo_id,
+                    "classification": classification or phase.get("classification", "CUI"),
+                })
+
+            conn.commit()
+            return jsonify({"status": "ok", "snapshot_id": snapshot_id}), 200
+        except Exception as exc:
+            logger.warning("phase status update error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    # ── Migration Hub ──────────────────────────────────────────────────────
+    @bp.route("/migration-hub")
+    def migration_hub():
+        """Hub page: all migration projects, phases, and linked documentation."""
+        return render_template("network/migration_hub.html")
+
+    @bp.route("/api/migration-hub/data", methods=["GET"])
+    def migration_hub_data():
+        """Return all projects + phases + linked docs as JSON for the hub."""
+        conn = get_connection()
+        try:
+            # Projects
+            projects = [dict(r) for r in conn.execute(
+                "SELECT id, name, description, status, owner, created_at FROM nc_projects ORDER BY created_at DESC"
+            ).fetchall()]
+
+            # Phases per project
+            phases_raw = conn.execute(
+                """SELECT id, project_id, phase_num, title, description,
+                          duration_days, status, maintenance_window, rollback_criteria,
+                          dependencies, classification, impact_level, created_at
+                   FROM nc_migration_phases
+                   ORDER BY project_id, phase_num"""
+            ).fetchall()
+            phases_by_project: dict = {}
+            for row in phases_raw:
+                r = dict(row)
+                pid = r["project_id"]
+                phases_by_project.setdefault(pid, []).append(r)
+
+            # Phase documents
+            phase_docs_raw = conn.execute(
+                """SELECT id, phase_id, project_id, doc_source, doc_id,
+                          doc_title, doc_type, relevance_note, display_order
+                   FROM nc_phase_documents
+                   ORDER BY project_id, display_order"""
+            ).fetchall()
+            docs_by_phase: dict = {}
+            for row in phase_docs_raw:
+                r = dict(row)
+                docs_by_phase.setdefault(r["phase_id"], []).append(r)
+
+            # Standalone uploaded docs (not yet linked to a phase but in project)
+            docs_raw = conn.execute(
+                """SELECT id, file_name, doc_type, project_id,
+                          topology_id, classification, status, ingested_at
+                   FROM nc_documents
+                   WHERE status = 'ingested'
+                   ORDER BY project_id, ingested_at DESC"""
+            ).fetchall()
+            docs_by_project: dict = {}
+            for row in docs_raw:
+                r = dict(row)
+                pid = r["project_id"] or "default"
+                docs_by_project.setdefault(pid, []).append(r)
+
+            # Runbooks
+            runbooks_raw = conn.execute(
+                """SELECT id, title, trigger_event, severity, owner, topology_id, classification
+                   FROM ndc_runbooks ORDER BY title"""
+            ).fetchall()
+            runbooks = [dict(r) for r in runbooks_raw]
+
+            # SOPs
+            sops_raw = conn.execute(
+                """SELECT sop_id AS id, title, category, version, status,
+                          description, classification, author
+                   FROM ndc_sops ORDER BY category, title"""
+            ).fetchall()
+            sops = [dict(r) for r in sops_raw]
+
+            # Topologies (for MP links)
+            topos_raw = conn.execute(
+                "SELECT id, name FROM topologies ORDER BY name"
+            ).fetchall()
+            topos = [dict(r) for r in topos_raw]
+
+            # First topology per project (for 3-panel diagram links)
+            topo_by_project = {}
+            for r in conn.execute(
+                "SELECT project_id, topology_id FROM nc_project_topologies"
+            ).fetchall():
+                topo_by_project.setdefault(r[0], r[1])
+
+            # Attach phases and docs to projects
+            for proj in projects:
+                pid = proj["id"]
+                proj_phases = phases_by_project.get(pid, [])
+                for phase in proj_phases:
+                    phase["documents"] = docs_by_phase.get(phase["id"], [])
+                proj["phases"] = proj_phases
+                proj["documents"] = docs_by_project.get(pid, [])
+                proj["topology_id"] = topo_by_project.get(pid)
+
+            return jsonify({
+                "projects": projects,
+                "runbooks": runbooks,
+                "sops": sops,
+                "topologies": topos,
+            })
+        finally:
+            conn.close()
+
+    @bp.route("/api/migration-hub/phase-docs", methods=["POST"])
+    def migration_hub_link_doc():
+        """Link a document/runbook/SOP to a migration phase."""
+        data = request.get_json(force=True) or {}
+        required = {"phase_id", "project_id", "doc_source", "doc_id", "doc_title"}
+        if missing := required - data.keys():
+            return jsonify({"error": f"Missing fields: {missing}"}), 400
+
+        conn = get_connection()
+        try:
+            doc_id = str(_uuid.uuid4())
+            conn.execute(
+                """INSERT INTO nc_phase_documents
+                   (id, phase_id, project_id, doc_source, doc_id,
+                    doc_title, doc_type, relevance_note, display_order)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    doc_id,
+                    data["phase_id"],
+                    data["project_id"],
+                    data["doc_source"],
+                    data["doc_id"],
+                    data["doc_title"],
+                    data.get("doc_type", ""),
+                    data.get("relevance_note", ""),
+                    data.get("display_order", 0),
+                ),
+            )
+            conn.commit()
+            return jsonify({"id": doc_id, "status": "linked"})
+        finally:
+            conn.close()
+
+    @bp.route("/api/migration-hub/phase-docs/<doc_link_id>", methods=["DELETE"])
+    def migration_hub_unlink_doc(doc_link_id: str):
+        """Remove a document link from a migration phase."""
+        conn = get_connection()
+        try:
+            conn.execute("DELETE FROM nc_phase_documents WHERE id = ?", (doc_link_id,))
+            conn.commit()
+            return jsonify({"status": "deleted"})
+        finally:
+            conn.close()
+
+    # ── Unified Project Dashboard ──────────────────────────────────────────
+    @bp.route("/projects/<project_id>")
+    @nc_login_required
+    def nc_project_dashboard(project_id):
+        """Unified 4-panel view: phases + canvas + SOPs per phase + traffic flows."""
+        conn = get_connection()
+        try:
+            project_row = conn.execute(
+                "SELECT * FROM nc_projects WHERE id=?", (project_id,)
+            ).fetchone()
+            if not project_row:
+                return "Project not found", 404
+            project = dict(project_row)
+
+            phases = [dict(r) for r in conn.execute(
+                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                (project_id,),
+            ).fetchall()]
+
+            topo_row = conn.execute(
+                "SELECT t.id, t.name, t.graph_json FROM topologies t "
+                "JOIN nc_project_topologies pt ON pt.topology_id = t.id "
+                "WHERE pt.project_id=? LIMIT 1",
+                (project_id,),
+            ).fetchone()
+            topology = dict(topo_row) if topo_row else None
+            topo_id = topology["id"] if topology else None
+
+            snapshots = [dict(r) for r in conn.execute(
+                "SELECT id, phase_id, label, created_at FROM nc_topology_snapshots "
+                "WHERE topo_id=? ORDER BY created_at DESC",
+                (topo_id,),
+            ).fetchall()] if topo_id else []
+
+            phase_ids = [ph["id"] for ph in phases]
+            sops_by_phase: dict = {ph["id"]: [] for ph in phases}
+            if phase_ids:
+                placeholders = ",".join("?" * len(phase_ids))
+                doc_rows = conn.execute(
+                    f"SELECT pd.phase_id, s.sop_id, s.title, s.category, s.csp "
+                    f"FROM nc_phase_documents pd "
+                    f"JOIN ndc_sops s ON s.sop_id = pd.doc_id "
+                    f"WHERE pd.phase_id IN ({placeholders}) AND pd.doc_source='sop'",
+                    phase_ids,
+                ).fetchall()
+                for r in doc_rows:
+                    sops_by_phase.setdefault(r[0], []).append({
+                        "sop_id": r[1], "title": r[2], "category": r[3], "csp": r[4]
+                    })
+
+            flows_by_phase: dict = {ph["id"]: [] for ph in phases}
+            if topo_id and phase_ids:
+                placeholders = ",".join("?" * len(phase_ids))
+                flow_rows = conn.execute(
+                    f"SELECT id, name, source_zone, destination_zone, classification, phase_id "
+                    f"FROM nc_traffic_flows WHERE topology_id=? AND phase_id IN ({placeholders})",
+                    [topo_id] + phase_ids,
+                ).fetchall()
+                for r in flow_rows:
+                    flows_by_phase.setdefault(r[5], []).append({
+                        "id": r[0], "name": r[1],
+                        "source_zone": r[2], "destination_zone": r[3],
+                        "classification": r[4],
+                    })
+
+            return render_template(
+                "network/project_dashboard.html",
+                project=project,
+                phases=phases,
+                topology=topology,
+                topo_id=topo_id,
+                snapshots=snapshots,
+                sops_by_phase=sops_by_phase,
+                flows_by_phase=flows_by_phase,
+            )
+        finally:
+            conn.close()
+
+    # ── AI Trace API ────────────────────────────────────────────────────────
+    @bp.route("/api/ai-trace")
+    @nc_login_required
+    def nc_api_ai_trace():
+        """Return recent AI decisions made by NDC assessment engines."""
+        limit = min(int(request.args.get("limit", 50)), 200)
+        record_id = request.args.get("record_id")
+        try:
+            from tools.db.storage import get_connection as _gc
+            with _gc() as _conn:
+                if record_id:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' AND record_id=? "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (record_id, limit),
+                    ).fetchall()
+                else:
+                    rows = _conn.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' "
+                        "ORDER BY created_at DESC LIMIT ?",
+                        (limit,),
+                    ).fetchall()
+            return jsonify({"ok": True, "canvas": "ndc", "decisions": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # ── FCC Compliance ──────────────────────────────────────────────────────────
+
+    @bp.route("/network/fcc")
+    @nc_login_required
+    def network_fcc():
+        from tools.network.fcc_compliance import (
+            calea_checklist, part36_assessment,
+            nanp_number_inventory, e911_capability_check,
+        )
+        checks = {}
+        for name, fn in [
+            ("calea", calea_checklist),
+            ("part36", part36_assessment),
+            ("nanp", nanp_number_inventory),
+            ("e911", e911_capability_check),
+        ]:
+            try:
+                checks[name] = fn()
+            except Exception as exc:
+                checks[name] = {"error": str(exc)}
+        return render_template("network/fcc_compliance.html", checks=checks)
+
+    @bp.route("/api/network/fcc/<check_type>")
+    def api_network_fcc(check_type):
+        from tools.network.fcc_compliance import (
+            calea_checklist, part36_assessment,
+            nanp_number_inventory, e911_capability_check,
+        )
+        _CHECK_MAP = {
+            "calea":  calea_checklist,
+            "part36": part36_assessment,
+            "nanp":   nanp_number_inventory,
+            "e911":   e911_capability_check,
+        }
+        if check_type == "all":
+            result = {}
+            for name, fn in _CHECK_MAP.items():
+                try:
+                    result[name] = fn()
+                except Exception as exc:
+                    result[name] = {"error": str(exc)}
+            return jsonify(result)
+        fn = _CHECK_MAP.get(check_type)
+        if not fn:
+            return jsonify({"error": f"Unknown check: {check_type}. Valid: {sorted(_CHECK_MAP)}"}), 400
+        try:
+            return jsonify(fn())
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
