@@ -1176,3 +1176,38 @@ def pipeline_status():
         )
     finally:
         conn.close()
+
+
+# =====================================================================
+# Telco RFP Adapter — FCC Form 470, BEAD, RDOF
+# =====================================================================
+
+
+@govcon_api.route("/telco/form470", methods=["POST"])
+def api_govcon_telco_form470():
+    from tools.govcon.telco_rfp_adapter import parse_fcc_form470
+    data = request.get_json(force=True) or {}
+    try:
+        return jsonify(parse_fcc_form470(data))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@govcon_api.route("/telco/bead")
+def api_govcon_telco_bead():
+    from tools.govcon.telco_rfp_adapter import generate_bead_compliance_matrix
+    rfp = request.args.to_dict()
+    try:
+        return jsonify(generate_bead_compliance_matrix(rfp))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@govcon_api.route("/telco/rdof")
+def api_govcon_telco_rdof():
+    from tools.govcon.telco_rfp_adapter import score_rdof_eligibility
+    network_data = request.args.to_dict()
+    try:
+        return jsonify(score_rdof_eligibility(network_data))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
