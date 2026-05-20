@@ -1,0 +1,139 @@
+<!-- CUI // SP-CTI -->
+{% extends "dsoc_canvas/base.html" %}
+{% block title %}Mitigations — DSOC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0" style="color:#ef4444;">
+      <i class="bi bi-shield-fill-check me-2"></i>Mitigations
+    </h5>
+    <a href="/dsoc" class="btn btn-sm btn-outline-secondary">← Overview</a>
+  </div>
+
+  <!-- Sub-nav -->
+  <div class="dsoc-subnav">
+    <a href="/dsoc">Overview</a>
+    <a href="/dsoc/flowspec">Flowspec Rules</a>
+    <a href="/dsoc/rtbh">RTBH</a>
+    <a href="/dsoc/scrubbing">Scrubbing Centers</a>
+    <a href="/dsoc/threats">Threat Feed</a>
+    <a href="/dsoc/mitigations" class="active">Mitigations</a>
+  </div>
+
+  <!-- Summary line -->
+  <div class="d-flex gap-3 mb-3 flex-wrap">
+    {% set active_m    = mitigations | selectattr('status', 'equalto', 'active')    | list | length %}
+    {% set completed_m = mitigations | selectattr('status', 'equalto', 'completed') | list | length %}
+    {% set failed_m    = mitigations | selectattr('status', 'equalto', 'failed')    | list | length %}
+    <span class="badge bg-danger"    style="font-size:.8rem;">{{ active_m }} Active</span>
+    <span class="badge bg-success"   style="font-size:.8rem;">{{ completed_m }} Completed</span>
+    <span class="badge bg-secondary" style="font-size:.8rem;">{{ failed_m }} Failed</span>
+    <span class="badge bg-dark border border-secondary" style="font-size:.8rem;">{{ mitigations | length }} Total</span>
+  </div>
+
+  <!-- Mitigations Table -->
+  <div class="card bg-dark border-secondary">
+    <div class="card-body p-0">
+      <table class="table table-dark table-hover table-sm mb-0">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Target Prefix</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Attack Type</th>
+            <th>Peak (Gbps)</th>
+            <th>Started By</th>
+            <th>Started At</th>
+            <th>Ended At</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in mitigations %}
+          <tr>
+            <td class="text-muted" style="font-size:.78rem;">{{ loop.index }}</td>
+            <td class="text-info fw-bold" style="font-family:monospace;">{{ m.target_prefix or '—' }}</td>
+            <td>
+              {% set mt = m.mitigation_type | lower if m.mitigation_type else '' %}
+              {% if 'rtbh' in mt %}
+                <span class="badge-rtbh">rtbh</span>
+              {% elif 'flowspec' in mt or 'flow' in mt %}
+                <span class="badge-flowspec">flowspec</span>
+              {% elif 'scrub' in mt %}
+                <span class="badge bg-info text-dark" style="font-size:.75rem;">scrubbing</span>
+              {% else %}
+                <code class="text-secondary" style="font-size:.78rem;">{{ m.mitigation_type or '—' }}</code>
+              {% endif %}
+            </td>
+            <td>
+              {% set st = m.status | lower %}
+              {% if st == 'active' %}
+                <span class="badge-active">active</span>
+              {% elif st == 'completed' %}
+                <span class="badge-completed">completed</span>
+              {% elif st == 'failed' %}
+                <span class="badge-failed">failed</span>
+              {% else %}
+                <span class="badge-withdrawn">{{ m.status }}</span>
+              {% endif %}
+            </td>
+            <td class="text-muted" style="font-size:.82rem;">{{ m.attack_type or '—' }}</td>
+            <td>
+              {% set peak = m.peak_gbps | float %}
+              <span class="{% if peak >= 100 %}dsoc-critical{% elif peak >= 10 %}dsoc-warn{% else %}text-light{% endif %} fw-bold">
+                {{ peak }}
+              </span>
+            </td>
+            <td class="text-muted" style="font-size:.82rem;">{{ m.started_by or '—' }}</td>
+            <td class="text-muted" style="font-size:.78rem;">
+              {{ m.started_at[:16].replace('T', ' ') if m.started_at else '—' }}
+            </td>
+            <td class="text-muted" style="font-size:.78rem;">
+              {{ m.ended_at[:16].replace('T', ' ') if m.ended_at else '—' }}
+            </td>
+            <td>
+              {% if m.status | lower == 'active' %}
+              <button class="btn btn-xs btn-outline-success"
+                      style="font-size:10px;padding:1px 6px;"
+                      onclick="completeMitigation({{ m.id }})">Complete</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="text-center text-muted py-4">
+              No mitigation records found.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- IQE Widget -->
+  <div class="iqe-host">
+    {% include 'includes/iqe_query_widget.html' %}
+  </div>
+</div>
+
+<script>
+const IQE_CANVAS = 'dsoc';
+
+function completeMitigation(id) {
+  if (!confirm('Mark mitigation ' + id + ' as completed?')) return;
+  fetch(`/api/dsoc/mitigations/${id}/complete`, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'completed' || d.ok) {
+        location.reload();
+      } else {
+        alert(d.error || 'Failed to complete mitigation.');
+      }
+    })
+    .catch(e => alert(e));
+}
+</script>
+{% endblock %}

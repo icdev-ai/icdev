@@ -1522,3 +1522,31 @@ gates:
     threshold_days: 90
     table: ccc_circuits
     nist_controls: [CP-2, SA-9]
+
+  # DSOC (DDoS & Security Ops Canvas) gates
+  - id: DSOC-RTBH-001
+    name: RTBH Entries Without Auto-Withdraw
+    description: Warns when active RTBH entries have no auto_withdraw_minutes set — risk of indefinite null-routing.
+    severity: WARN
+    warn_on: [dsoc_rtbh_no_auto_withdraw]
+    threshold_auto_withdraw_minutes: 0
+    table: dsoc_rtbh_entries
+    nist_controls: [SC-5, IR-4, CP-2]
+
+  - id: DSOC-SCRUB-001
+    name: Scrubbing Center Critical Utilization
+    description: Warns when any scrubbing center exceeds 85% of its rated capacity — mitigation may overflow.
+    severity: WARN
+    warn_on: [dsoc_scrubbing_critical_utilization]
+    threshold_utilization_pct: 85
+    table: dsoc_scrubbing_centers
+    nist_controls: [SC-5, CP-2, SA-9]
+
+  - id: DSOC-THREAT-001
+    name: High-Confidence Active Threats Without Mitigation
+    description: Warns when threats with confidence >= 90% have no associated active mitigation.
+    severity: WARN
+    warn_on: [dsoc_unmitigated_high_confidence_threats]
+    threshold_confidence_pct: 90
+    table: dsoc_threats
+    nist_controls: [IR-4, SI-3, SC-5]

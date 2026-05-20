@@ -1,0 +1,5 @@
+# IQE-DSOC-002: Active RTBH blackhole entries
+# Use: check what prefixes are currently null-routed
+foreach r in dsoc.rtbh_entries
+where r.status == 'active'
+select r.prefix, r.trigger_reason, r.community, r.nexthop, r.auto_withdraw_minutes, r.created_at

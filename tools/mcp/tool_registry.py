@@ -6812,4 +6812,45 @@ RESOURCE_REGISTRY = {
             "required": ["facility", "requester_name", "requester_email", "requester_company"],
         },
     },
+    # ── DSOC (DDoS & Security Ops Canvas) ────────────────────────────────────
+    "dsoc_rtbh_trigger": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.rtbh_manager",
+        "handler": "trigger_rtbh",
+        "description": "Trigger RTBH (Remotely Triggered Black Hole) routing for a target prefix to null-route attack traffic.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prefix":                {"type": "string"},
+                "trigger_reason":        {"type": "string", "enum": ["volumetric_attack","syn_flood","udp_flood","icmp_flood","amplification","spoofed_traffic","manual","policy"]},
+                "triggered_by":          {"type": "string", "default": "system"},
+                "auto_withdraw_minutes": {"type": "integer", "default": 60},
+            },
+            "required": ["prefix", "trigger_reason"],
+        },
+    },
+    "dsoc_flowspec_activate": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.flowspec_engine",
+        "handler": "activate_rule",
+        "description": "Activate a BGP flowspec rule by ID to rate-limit or drop matching traffic.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "rule_id": {"type": "integer"},
+            },
+            "required": ["rule_id"],
+        },
+    },
+    "dsoc_threat_ingest": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.dsoc_aggregator",
+        "handler": "get_dsoc_overview",
+        "description": "Get current DSOC overview: active mitigations, RTBH count, scrubbing utilization, active threats.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 }

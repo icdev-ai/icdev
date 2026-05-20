@@ -451,6 +451,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "pmc_audit",
         # Circuit & Capacity Canvas — audit trail (NIST AU, append-only)
         "ccc_audit",
+        # DDoS & Security Ops Canvas — audit trail (NIST AU, append-only)
+        "dsoc_audit",
         # OSINT Privacy Sanitizer — PII detection/redaction audit (NIST AU, migration 159)
         "osint_privacy_audit",
     ]
