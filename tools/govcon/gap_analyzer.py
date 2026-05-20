@@ -90,7 +90,7 @@ def analyze_gaps():
                      p.frequency, p.representative_text, p.keyword_fingerprint,
                      p.status, p.classification
         )
-        SELECT * FROM pattern_coverage ORDER BY frequency DESC
+        SELECT * FROM pattern_coverage WHERE TRUE ORDER BY frequency DESC
     """).fetchall()
 
     gaps = []
@@ -275,20 +275,33 @@ def get_heatmap():
     """Domain × Grade heatmap for visualization."""
     conn = _get_db()
 
+    # Wrap JOIN in a CTE so RLS sees only one classification column (avoids ambiguity).
+    # p.classification is explicitly selected so the RLS predicate resolves unambiguously.
     rows = conn.execute("""
+        WITH domain_coverage AS (
+            SELECT
+                p.domain_category,
+                p.id,
+                p.frequency,
+                p.classification,
+                COALESCE(MAX(m.coverage_score), 0) AS best_coverage
+            FROM rfp_requirement_patterns p
+            LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
+            GROUP BY p.domain_category, p.id, p.frequency, p.classification
+        )
         SELECT
-            p.domain_category,
+            domain_category,
             CASE
-                WHEN COALESCE(MAX(m.coverage_score), 0) >= 0.80 THEN 'L'
-                WHEN COALESCE(MAX(m.coverage_score), 0) >= 0.40 THEN 'M'
+                WHEN best_coverage >= 0.80 THEN 'L'
+                WHEN best_coverage >= 0.40 THEN 'M'
                 ELSE 'N'
             END AS grade,
-            COUNT(DISTINCT p.id) AS pattern_count,
-            SUM(p.frequency) AS total_frequency
-        FROM rfp_requirement_patterns p
-        LEFT JOIN icdev_capability_map m ON p.id = m.pattern_id
-        GROUP BY p.domain_category, grade
-        ORDER BY p.domain_category
+            COUNT(DISTINCT id) AS pattern_count,
+            SUM(frequency) AS total_frequency
+        FROM domain_coverage
+        WHERE TRUE
+        GROUP BY domain_category, grade
+        ORDER BY domain_category
     """).fetchall()
 
     conn.close()
