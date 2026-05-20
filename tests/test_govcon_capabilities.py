@@ -2678,3 +2678,360 @@ class TestBidScoreAndBinaryDecisionAPI:
     def test_api_insufficient_data_bid_is_false(self, api_app):
         resp = self._get(api_app, opp_id="opp-empty", fake_summary=_FAKE_SUMMARY_INSUFFICIENT)
         assert resp.get_json()["bid_recommendation"]["bid"] is False
+
+
+# ---------------------------------------------------------------------------
+# Fake data: POST /api/govcon/opportunities/<id>/auto-compliance (gcpl-dft-03)
+# ---------------------------------------------------------------------------
+
+_FAKE_AUTO_COMPLIANCE_MATRIX = [
+    {
+        "shall_id": 1,
+        "statement": "The system shall implement zero trust.",
+        "domain": "devsecops",
+        "statement_type": "functional",
+        "best_capability": "ZTA Enforcement",
+        "best_capability_id": "cap-1",
+        "coverage_score": 0.92,
+        "grade": "L",
+        "evidence": "Keyword overlap",
+    },
+    {
+        "shall_id": 2,
+        "statement": "The system shall encrypt data at rest.",
+        "domain": "security",
+        "statement_type": "functional",
+        "best_capability": "Data Encryption",
+        "best_capability_id": "cap-2",
+        "coverage_score": 0.61,
+        "grade": "M",
+        "evidence": "Partial match",
+    },
+    {
+        "shall_id": 3,
+        "statement": "The system shall manage supply chain risks.",
+        "domain": "supply_chain",
+        "statement_type": "functional",
+        "best_capability": "SBOM Generation",
+        "best_capability_id": "cap-3",
+        "coverage_score": 0.25,
+        "grade": "N",
+        "evidence": "Low overlap",
+    },
+]
+
+_FAKE_POPULATE_RESULT_OK = {
+    "status": "ok",
+    "opportunity_id": "opp-test-123",
+    "total_requirements": 3,
+    "L_compliant": 1,
+    "M_partial": 1,
+    "N_gap": 1,
+    "compliance_rate": 0.3333,
+    "matrix": _FAKE_AUTO_COMPLIANCE_MATRIX,
+}
+
+_FAKE_POPULATE_RESULT_NO_STMTS = {
+    "status": "error",
+    "message": "No shall statements for opportunity opp-empty",
+}
+
+_FAKE_POPULATE_RESULT_EMPTY_MATRIX = {
+    "status": "ok",
+    "opportunity_id": "opp-no-matrix",
+    "total_requirements": 0,
+    "L_compliant": 0,
+    "M_partial": 0,
+    "N_gap": 0,
+    "compliance_rate": 0.0,
+    "matrix": [],
+}
+
+
+def _make_mock_conn():
+    """Return a MagicMock simulating a DB connection for the compliance write path."""
+    from unittest.mock import MagicMock
+
+    mock = MagicMock()
+    # fetchone returns None → item doesn't exist yet → INSERT path runs
+    mock.execute.return_value.fetchone.return_value = None
+    return mock
+
+
+# ---------------------------------------------------------------------------
+# API tests: POST /api/govcon/opportunities/<id>/auto-compliance (gcpl-dft-03)
+# ---------------------------------------------------------------------------
+
+
+class TestAutoComplianceAPIEndpoint:
+    """POST /api/govcon/opportunities/<id>/auto-compliance returns compliance matrix rows."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _post(self, api_app, opp_id="opp-test-123", fake_result=None):
+        if fake_result is None:
+            fake_result = _FAKE_POPULATE_RESULT_OK
+        mock_conn = _make_mock_conn()
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            return_value=fake_result,
+        ):
+            with patch("tools.dashboard.api.govcon._get_db", return_value=mock_conn):
+                with api_app.test_client() as c:
+                    resp = c.post(f"/api/govcon/opportunities/{opp_id}/auto-compliance")
+        return resp
+
+    def test_post_returns_200(self, api_app):
+        resp = self._post(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._post(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_matrix_key(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "matrix" in data
+
+    def test_matrix_is_a_list(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert isinstance(data["matrix"], list)
+
+    def test_matrix_is_non_empty(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert len(data["matrix"]) > 0
+
+    def test_matrix_rows_have_grade_key(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            assert "grade" in row, f"Matrix row missing 'grade': {row}"
+
+    def test_matrix_grades_are_L_M_or_N(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            assert row["grade"] in {"L", "M", "N"}, f"Invalid grade: {row['grade']}"
+
+    def test_matrix_rows_have_coverage_score(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            assert "coverage_score" in row, f"Matrix row missing 'coverage_score': {row}"
+
+    def test_matrix_coverage_scores_are_between_0_and_1(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            score = row["coverage_score"]
+            assert 0.0 <= score <= 1.0, f"coverage_score {score!r} out of range"
+
+    def test_matrix_rows_have_statement_key(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            assert "statement" in row, f"Matrix row missing 'statement': {row}"
+
+    def test_matrix_rows_have_domain_key(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            assert "domain" in row, f"Matrix row missing 'domain': {row}"
+
+    def test_l_grade_row_has_score_gte_080(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        l_rows = [r for r in data["matrix"] if r["grade"] == "L"]
+        for row in l_rows:
+            assert row["coverage_score"] >= 0.80, (
+                f"L-grade row coverage_score below 0.80: {row['coverage_score']}"
+            )
+
+    def test_m_grade_row_has_score_between_040_and_080(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        m_rows = [r for r in data["matrix"] if r["grade"] == "M"]
+        for row in m_rows:
+            assert 0.40 <= row["coverage_score"] < 0.80, (
+                f"M-grade row coverage_score {row['coverage_score']!r} out of [0.40, 0.80)"
+            )
+
+    def test_n_grade_row_has_score_below_040(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        n_rows = [r for r in data["matrix"] if r["grade"] == "N"]
+        for row in n_rows:
+            assert row["coverage_score"] < 0.40, (
+                f"N-grade row coverage_score {row['coverage_score']!r} not below 0.40"
+            )
+
+    def test_response_has_total_requirements(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "total_requirements" in data
+
+    def test_response_has_L_compliant(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "L_compliant" in data
+
+    def test_response_has_M_partial(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "M_partial" in data
+
+    def test_response_has_N_gap(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "N_gap" in data
+
+    def test_response_has_compliance_rate(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "compliance_rate" in data
+
+    def test_compliance_rate_is_between_0_and_1(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        rate = data["compliance_rate"]
+        assert 0.0 <= rate <= 1.0, f"compliance_rate {rate!r} out of range [0.0, 1.0]"
+
+    def test_grade_counts_sum_to_total_requirements(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        total = data["total_requirements"]
+        assert data["L_compliant"] + data["M_partial"] + data["N_gap"] == total, (
+            f"Grade counts don't sum to total_requirements: "
+            f"L={data['L_compliant']} M={data['M_partial']} N={data['N_gap']} total={total}"
+        )
+
+    def test_response_has_compliance_items_created(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "compliance_items_created" in data, (
+            "Response missing 'compliance_items_created' — endpoint should set this after DB write"
+        )
+
+    def test_compliance_items_created_is_integer(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        created = data.get("compliance_items_created")
+        assert isinstance(created, int) and not isinstance(created, bool), (
+            f"compliance_items_created must be int, got {type(created).__name__}: {created!r}"
+        )
+
+    def test_compliance_items_created_is_non_negative(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert data["compliance_items_created"] >= 0
+
+    def test_matrix_length_matches_total_requirements(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert len(data["matrix"]) == data["total_requirements"], (
+            f"matrix length {len(data['matrix'])} != total_requirements {data['total_requirements']}"
+        )
+
+    def test_endpoint_accepts_arbitrary_opp_id(self, api_app):
+        for opp_id in ("abc-123", "uuid-9999", "opportunity-xyz"):
+            resp = self._post(api_app, opp_id=opp_id)
+            assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id!r}"
+
+    def test_returns_500_when_populate_raises(self, api_app):
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            side_effect=RuntimeError("populator offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-err/auto-compliance")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            side_effect=RuntimeError("populator offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-err/auto-compliance")
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_no_shall_statements_returns_200_with_status_error(self, api_app):
+        """Endpoint passes through populate_compliance_matrix error status unchanged."""
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            return_value=_FAKE_POPULATE_RESULT_NO_STMTS,
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-empty/auto-compliance")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "error"
+
+    def test_empty_matrix_returns_200(self, api_app):
+        mock_conn = _make_mock_conn()
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            return_value=_FAKE_POPULATE_RESULT_EMPTY_MATRIX,
+        ):
+            with patch("tools.dashboard.api.govcon._get_db", return_value=mock_conn):
+                with api_app.test_client() as c:
+                    resp = c.post("/api/govcon/opportunities/opp-no-matrix/auto-compliance")
+        assert resp.status_code == 200
+
+    def test_empty_matrix_has_zero_compliance_items_created(self, api_app):
+        """Empty matrix skips the DB write loop; compliance_items_created should be absent or 0."""
+        mock_conn = _make_mock_conn()
+        with patch(
+            "tools.govcon.compliance_populator.populate_compliance_matrix",
+            return_value=_FAKE_POPULATE_RESULT_EMPTY_MATRIX,
+        ):
+            with patch("tools.dashboard.api.govcon._get_db", return_value=mock_conn):
+                with api_app.test_client() as c:
+                    resp = c.post("/api/govcon/opportunities/opp-no-matrix/auto-compliance")
+        data = resp.get_json()
+        created = data.get("compliance_items_created", 0)
+        assert created == 0, f"Empty matrix should yield compliance_items_created=0, got {created!r}"
+
+    def test_matrix_row_statement_is_non_empty_string(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            stmt = row["statement"]
+            assert isinstance(stmt, str) and stmt, (
+                f"Matrix row statement must be non-empty string, got {stmt!r}"
+            )
+
+    def test_matrix_row_domain_is_non_empty_string(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for row in data["matrix"]:
+            domain = row["domain"]
+            assert isinstance(domain, str) and domain, (
+                f"Matrix row domain must be non-empty string, got {domain!r}"
+            )
+
+    def test_response_has_opportunity_id(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "opportunity_id" in data
+
+    def test_opportunity_id_matches_url_param(self, api_app):
+        resp = self._post(api_app, opp_id="opp-test-123")
+        data = resp.get_json()
+        assert data["opportunity_id"] == "opp-test-123"
