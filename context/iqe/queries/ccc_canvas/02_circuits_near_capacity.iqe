@@ -1,0 +1,4 @@
+collection: ccc.circuits
+query: high utilization circuits near capacity
+description: Circuits at ≥70% utilization that need capacity planning attention
+tags: [capacity, utilization, planning]

@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Circuit & Capacity Canvas — ICDEV™{% endblock %}
+{% block extra_head %}
+<style>
+.ccc-stat { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:16px; text-align:center; }
+.ccc-stat .val { font-size:2rem; font-weight:700; color:#f8fafc; line-height:1.1; }
+.ccc-stat .lbl { font-size:.72rem; color:#64748b; margin-top:4px; text-transform:uppercase; letter-spacing:.04em; }
+.util-bar { height:8px; border-radius:4px; background:#334155; overflow:hidden; display:flex; }
+.util-ok { background:#22c55e; } .util-warn { background:#f59e0b; } .util-crit { background:#ef4444; }
+.badge-active{background:#dcfce7;color:#166534;} .badge-pending{background:#fef9c3;color:#854d0e;}
+.badge-maintenance{background:#dbeafe;color:#1d4ed8;} .badge-degraded{background:#fee2e2;color:#991b1b;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0" style="color:#38bdf8;">
+      <i class="bi bi-hdd-network-fill me-2"></i>Circuit &amp; Capacity Canvas
+    </h4>
+    <span class="badge bg-secondary">CUI // SP-CTI</span>
+  </div>
+
+  <!-- Sub-nav -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:22px;">
+    <a href="/ccc" class="btn btn-sm btn-outline-info active">Overview</a>
+    <a href="/ccc/circuits" class="btn btn-sm btn-outline-secondary">Circuits</a>
+    <a href="/ccc/cross-connects" class="btn btn-sm btn-outline-secondary">Cross-Connects</a>
+    <a href="/ccc/loa" class="btn btn-sm btn-outline-secondary">LOA Requests</a>
+    <a href="/ccc/capacity" class="btn btn-sm btn-outline-secondary">Capacity Plans</a>
+    <a href="/ccc/dwdm" class="btn btn-sm btn-outline-secondary">DWDM</a>
+  </div>
+
+  <!-- Stat cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-2">
+      <div class="ccc-stat">
+        <div class="val" id="stat-active-circuits">{{ overview.circuits.active | default(0) }}</div>
+        <div class="lbl">Active Circuits</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="ccc-stat">
+        <div class="val" style="color:#f59e0b;" id="stat-high-util">{{ overview.circuits.high_util | default(0) }}</div>
+        <div class="lbl">High Util ≥70%</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="ccc-stat">
+        <div class="val" style="color:#ef4444;" id="stat-crit-util">{{ overview.circuits.critical_util | default(0) }}</div>
+        <div class="lbl">Critical ≥85%</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="ccc-stat">
+        <div class="val" id="stat-total-tbps">{{ overview.capacity.total_tbps | default(0) }}</div>
+        <div class="lbl">Total Tbps</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="ccc-stat">
+        <div class="val" id="stat-active-xc">{{ overview.cross_connects.active | default(0) }}</div>
+        <div class="lbl">Active XCs</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="ccc-stat">
+        <div class="val" style="color:#f59e0b;" id="stat-open-loa">{{ overview.loa.open | default(0) }}</div>
+        <div class="lbl">Open LOAs</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <!-- Circuits near capacity -->
+    <div class="col-md-7">
+      <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary d-flex justify-content-between">
+          <span>Circuits Requiring Attention</span>
+          <a href="/ccc/circuits" class="btn btn-sm btn-outline-info">All Circuits</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-dark table-sm mb-0">
+            <thead><tr><th>Circuit ID</th><th>Carrier</th><th>Type</th><th>BW (Gbps)</th><th>Util%</th></tr></thead>
+            <tbody id="attn-circuits-table"><tr><td colspan="5" class="text-center text-muted py-3">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- DWDM health -->
+    <div class="col-md-5">
+      <div class="card bg-dark border-secondary h-100">
+        <div class="card-header border-secondary d-flex justify-content-between">
+          <span>DWDM &amp; Cross-Connect Status</span>
+          <a href="/ccc/dwdm" class="btn btn-sm btn-outline-info">DWDM</a>
+        </div>
+        <div class="card-body" id="infra-summary">
+          <div class="text-muted text-center py-3">Loading…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IQE Widget -->
+  <div class="iqe-host">
+    {% include 'includes/iqe_query_widget.html' %}
+  </div>
+</div>
+
+<script>
+const IQE_CANVAS = 'ccc';
+const IQE_COLLECTION = 'ccc.circuits';
+
+fetch('/api/ccc/circuits?status=active')
+  .then(r => r.json())
+  .then(circuits => {
+    const attn = circuits.filter(c => (c.utilization_pct || 0) >= 70)
+      .sort((a, b) => (b.utilization_pct || 0) - (a.utilization_pct || 0))
+      .slice(0, 8);
+    const tbody = document.getElementById('attn-circuits-table');
+    if (!attn.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-success py-3">All circuits healthy</td></tr>';
+      return;
+    }
+    tbody.innerHTML = attn.map(c => {
+      const u = c.utilization_pct || 0;
+      const cls = u >= 85 ? 'text-danger' : u >= 70 ? 'text-warning' : '';
+      return `<tr>
+        <td><a href="/ccc/circuits" class="text-info">${c.circuit_id}</a></td>
+        <td>${c.carrier}</td><td>${c.circuit_type}</td><td>${c.bandwidth_gbps}</td>
+        <td class="${cls} fw-bold">${u.toFixed(1)}%</td>
+      </tr>`;
+    }).join('');
+  })
+  .catch(() => { document.getElementById('attn-circuits-table').innerHTML = '<tr><td colspan="5" class="text-muted text-center">Error loading</td></tr>'; });
+
+fetch('/api/ccc/overview')
+  .then(r => r.json())
+  .then(d => {
+    const el = document.getElementById('infra-summary');
+    const xc = d.cross_connects || {};
+    const dw = d.dwdm || {};
+    const lo = d.loa || {};
+    el.innerHTML = `
+      <div class="mb-3">
+        <div class="fw-semibold mb-1" style="color:#94a3b8;font-size:.8rem;">CROSS-CONNECTS</div>
+        <div class="d-flex gap-3">
+          <span class="text-success">${xc.active || 0} Active</span>
+          <span class="text-warning">${xc.pending || 0} Pending</span>
+        </div>
+      </div>
+      <div class="mb-3">
+        <div class="fw-semibold mb-1" style="color:#94a3b8;font-size:.8rem;">DWDM SPANS</div>
+        <div class="d-flex gap-3">
+          <span class="text-success">${dw.spans || 0} Total</span>
+          ${dw.degraded ? `<span class="text-danger">${dw.degraded} Degraded</span>` : '<span class="text-success">All Healthy</span>'}
+        </div>
+      </div>
+      <div>
+        <div class="fw-semibold mb-1" style="color:#94a3b8;font-size:.8rem;">LOA REQUESTS</div>
+        <span class="text-warning">${lo.open || 0} Open</span>
+      </div>`;
+  })
+  .catch(() => {});
+</script>
+{% endblock %}

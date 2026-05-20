@@ -1,0 +1,4 @@
+collection: ccc.cross_connects
+query: pending cross connects installing
+description: Cross-connects awaiting LOA approval or currently being installed
+tags: [cross-connect, pending, loa]

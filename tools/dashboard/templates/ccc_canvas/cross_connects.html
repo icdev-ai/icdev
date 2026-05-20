@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Cross-Connects — CCC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0" style="color:#38bdf8;"><i class="bi bi-diagram-2 me-2"></i>Cross-Connects</h5>
+    <a href="/ccc" class="btn btn-sm btn-outline-secondary">← Overview</a>
+  </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;">
+    <a href="/ccc" class="btn btn-sm btn-outline-secondary">Overview</a>
+    <a href="/ccc/circuits" class="btn btn-sm btn-outline-secondary">Circuits</a>
+    <a href="/ccc/cross-connects" class="btn btn-sm btn-outline-info active">Cross-Connects</a>
+    <a href="/ccc/loa" class="btn btn-sm btn-outline-secondary">LOA</a>
+    <a href="/ccc/capacity" class="btn btn-sm btn-outline-secondary">Capacity</a>
+    <a href="/ccc/dwdm" class="btn btn-sm btn-outline-secondary">DWDM</a>
+  </div>
+
+  <!-- Add XC form -->
+  <div class="card bg-dark border-secondary mb-4">
+    <div class="card-header border-secondary">Add Cross-Connect</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-xc-number" placeholder="XC Number *"></div>
+        <div class="col-md-2">
+          <select class="form-select form-select-sm bg-dark text-light border-secondary" id="f-facility">
+            <option value="">Facility *</option>
+            <option>equinix</option><option>megaport</option><option>zayo</option>
+            <option>lumen</option><option>cogent</option><option>coresite</option>
+            <option>digital_realty</option><option>switch</option><option>other</option>
+          </select>
+        </div>
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-port-a" placeholder="Port A"></div>
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-port-z" placeholder="Port Z"></div>
+        <div class="col-md-1"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-speed" placeholder="Gbps" type="number" step="0.1"></div>
+        <div class="col-md-2"><input class="form-control form-control-sm bg-dark text-light border-secondary" id="f-xc-cost" placeholder="Monthly Cost $" type="number"></div>
+        <div class="col-md-1"><button class="btn btn-sm btn-info w-100" onclick="addXC()">Add</button></div>
+      </div>
+      <div id="add-xc-msg" class="mt-2 small"></div>
+    </div>
+  </div>
+
+  <div class="card bg-dark border-secondary">
+    <div class="card-body p-0">
+      <table class="table table-dark table-sm mb-0">
+        <thead>
+          <tr><th>XC Number</th><th>Facility</th><th>Port A</th><th>Port Z</th><th>Speed</th><th>Monthly $</th><th>Circuit</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          {% for xc in xcs %}
+          <tr>
+            <td class="text-info fw-bold">{{ xc.xc_number }}</td>
+            <td><span class="badge bg-secondary text-uppercase" style="font-size:10px;">{{ xc.facility }}</span></td>
+            <td class="text-muted" style="font-size:.8rem;">{{ xc.port_a or '—' }}</td>
+            <td class="text-muted" style="font-size:.8rem;">{{ xc.port_z or '—' }}</td>
+            <td>{{ xc.speed_gbps }}G</td>
+            <td>${{ xc.monthly_cost_usd | round(0) | int }}</td>
+            <td class="text-info" style="font-size:.8rem;">{{ xc.linked_circuit or '—' }}</td>
+            <td>
+              {% set s = xc.status %}
+              <span class="badge-{{ s }}" style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;">{{ s }}</span>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="text-center text-muted py-4">No cross-connects yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% include 'includes/iqe_query_widget.html' %}
+</div>
+<script>
+const IQE_CANVAS = 'ccc'; const IQE_COLLECTION = 'ccc.cross_connects';
+function addXC() {
+  const data = {
+    xc_number: document.getElementById('f-xc-number').value,
+    facility: document.getElementById('f-facility').value,
+    port_a: document.getElementById('f-port-a').value,
+    port_z: document.getElementById('f-port-z').value,
+    speed_gbps: parseFloat(document.getElementById('f-speed').value) || 1,
+    monthly_cost_usd: parseFloat(document.getElementById('f-xc-cost').value) || 0,
+  };
+  const msg = document.getElementById('add-xc-msg');
+  fetch('/api/ccc/cross-connects', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)})
+    .then(r => r.json())
+    .then(d => { msg.innerHTML = d.status==='created' ? '<span class="text-success">Added. Reload to see.</span>' : '<span class="text-danger">'+(d.error||'Error')+'</span>'; })
+    .catch(e => { msg.innerHTML = '<span class="text-danger">'+e+'</span>'; });
+}
+</script>
+{% endblock %}

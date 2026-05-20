@@ -1,0 +1,4 @@
+collection: ccc.circuits
+query: show active circuits
+description: All active circuits with carrier, type, bandwidth, and utilization
+tags: [circuits, active, inventory]

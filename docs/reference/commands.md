@@ -2471,3 +2471,32 @@ python -c "from tools.databridge.connectors.megaport_connector import MegaportCo
 # NDC Config Generator — IOS-XR and Nokia SR OS (added as OS types)
 python -c "from tools.network.config_generator import _DEFAULT_OS, _IFACE_GEN; print([k for k in _DEFAULT_OS if 'ios_xr' in _DEFAULT_OS[k] or 'nokia' in _DEFAULT_OS[k]])"
 ```
+
+## Circuit & Capacity Canvas (CCC) Commands
+```bash
+# Initialize CCC database (PostgreSQL default, SQLite fallback)
+python tools/ccc_canvas/db/init_db.py
+
+# Circuit aggregator overview
+python -c "from tools.ccc_canvas.circuit_aggregator import get_ccc_overview; import json; print(json.dumps(get_ccc_overview(), indent=2))"
+
+# Capacity analysis — run for all active circuits
+python -c "from tools.ccc_canvas.db.init_db import get_connection; from tools.ccc_canvas.capacity_engine import run_all_circuits; conn=get_connection(); import json; print(json.dumps(run_all_circuits(conn), indent=2))"
+
+# LOA workflow — generate document
+python -c "from tools.ccc_canvas.db.init_db import get_connection; from tools.ccc_canvas.loa_workflow import generate_loa_text; conn=get_connection(); print(generate_loa_text(conn, 1))"
+
+# IQE adapter — query circuits
+python -c "from tools.iqe.adapters.ccc import handle_query; from tools.ccc_canvas.db.init_db import get_connection; conn=get_connection(); import json; print(json.dumps(handle_query(conn, 'show active circuits'), indent=2))"
+
+#   GET /ccc                  — CCC overview
+#   GET /ccc/circuits         — circuit inventory
+#   GET /ccc/cross-connects   — cross-connect list
+#   GET /ccc/loa              — LOA request tracker
+#   GET /ccc/capacity         — capacity planning
+#   GET /ccc/dwdm             — DWDM span inventory
+#   POST /api/ccc/circuits    — add circuit
+#   POST /api/ccc/loa         — create LOA request
+#   GET  /api/ccc/capacity/report — run capacity analysis
+#   POST /api/ccc/iqe-query   — IQE natural-language query
+```

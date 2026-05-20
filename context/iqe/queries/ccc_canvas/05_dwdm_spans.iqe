@@ -1,0 +1,4 @@
+collection: ccc.dwdm_spans
+query: dwdm spans with available wavelengths
+description: DWDM spans showing available capacity and OSNR health
+tags: [dwdm, wavelength, capacity, optical]
