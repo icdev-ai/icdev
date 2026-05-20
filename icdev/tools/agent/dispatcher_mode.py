@@ -48,6 +48,21 @@ CONFIG_PATH = BASE_DIR / "args" / "agent_config.yaml"
 
 logger = logging.getLogger("icdev.dispatcher_mode")
 
+__all__ = [
+    "_startup_verified",
+    "verify_db_path",
+    "run_startup_verification",
+    "is_dispatcher_mode",
+    "get_dispatch_tools",
+    "get_blocked_tools",
+    "is_tool_allowed",
+    "filter_tools_for_dispatcher",
+    "get_redirect_agent",
+    "enable_for_project",
+    "disable_for_project",
+    "get_status",
+]
+
 
 # ---------------------------------------------------------------------------
 # Helpers
