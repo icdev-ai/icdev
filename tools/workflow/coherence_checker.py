@@ -2737,6 +2737,54 @@ def check_security_context() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check: log_standard_compliance — all tools/ modules must use get_logger()
+# ---------------------------------------------------------------------------
+
+
+def check_log_standard_compliance() -> CoherenceCheck:
+    """Verify that tools/ Python modules use get_logger(), not raw logging.getLogger().
+
+    Excludes:
+      - tools/logging/ (the implementation itself)
+      - tests/ directories
+      - __init__.py and setup files
+    """
+    tools_dir = PROJECT_ROOT / "tools"
+    violations: List[str] = []
+
+    for py_file in sorted(tools_dir.rglob("*.py")):
+        rel = py_file.relative_to(PROJECT_ROOT)
+        parts = rel.parts
+        # Skip the logging package itself and test files
+        if "logging" in parts or "tests" in parts or "__pycache__" in parts:
+            continue
+        if py_file.name in ("conftest.py", "setup.py"):
+            continue
+        try:
+            src = py_file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        # Flag raw logging.getLogger() usage (allow in logging/ itself)
+        if re.search(r"\blogging\.getLogger\s*\(", src):
+            violations.append(f"{rel}: uses logging.getLogger() — migrate to tools.logging.icdev_logger.get_logger()")
+
+    status = "fail" if violations else "pass"
+    return CoherenceCheck(
+        check_id="log_standard",
+        check_name="Log Standard Compliance",
+        status=status,
+        expected=["All tools/ modules use get_logger() from tools.logging.icdev_logger"],
+        actual=[f"{len(violations)} violation(s)"],
+        missing=violations,
+        extra=[],
+        message=(
+            f"{len(violations)} tool(s) use raw logging.getLogger() — "
+            "migrate to tools.logging.icdev_logger.get_logger()"
+        ) if violations else "All tools/ modules use the ICDEV structured logger",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -2761,6 +2809,7 @@ CHECK_REGISTRY = {
     "hitl_workflow": check_hitl_workflow,
     "mcp_security": check_mcp_security,
     "security_context": check_security_context,
+    "log_standard": check_log_standard_compliance,
 }
 
 

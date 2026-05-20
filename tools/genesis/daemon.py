@@ -78,6 +78,7 @@ REFLEX_NAMES = [
     "migration_canvas",
     "academy_reflex",
     "e2e_runner",
+    "log_triage",
 ]
 
 # Backward-compat aliases for module-level access used by other code

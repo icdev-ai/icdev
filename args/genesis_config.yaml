@@ -335,6 +335,19 @@ reflexes:
     max_auto_heals_per_hour: 5
     cooldown_minutes: 10
 
+  log_triage:
+    enabled: true
+    risk_tier: green
+    schedule: "every 30m"
+    interval_seconds: 1800
+    description: "Read .logs/build.ndjson tail, deduplicate failure signatures, create Kanban tasks for unseen failures. Fully autonomous — no LLM required."
+    success_metric:
+      name: tasks_created
+      threshold: 0
+      operator: gte
+    tail_lines: 500           # NDJSON lines to read per cycle
+    build_log: .logs/build.ndjson
+
   failure_triage:
     enabled: true
     risk_tier: yellow

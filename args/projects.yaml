@@ -4214,3 +4214,46 @@ projects:
   - key: stats
     title: STATS
     priority: medium
+- key: gcpl
+  name: GovCon + CPMP Full Lifecycle E2E Tests
+  description: >
+    Complete Playwright CLI lifecycle tests for GovCon capture pipeline
+    (DISCOVER->EXTRACT->MAP->DRAFT->PROPOSALS) and CPMP post-award management
+    (Contract Setup -> EVM -> Performance -> CDRL/SAM -> COR Portal).
+  task_prefix: gcpl-
+  default_open: true
+  briefs:
+    - '10 spec files under tests/e2e/ — one per epic'
+    - 'Shared fixture: tests/e2e/fixtures/govcon_cpmp.ts — seed contract + opportunity'
+    - 'Run all: npx playwright test tests/e2e/govcon_*.spec.ts tests/e2e/cpmp_*.spec.ts'
+  epics:
+    - key: disc
+      title: DISCOVER — SAM.gov scan + pipeline hub
+      priority: critical
+    - key: ext
+      title: EXTRACT — Shall statement extraction + requirements page
+      priority: critical
+    - key: map
+      title: MAP — Capability mapping + gap analysis
+      priority: critical
+    - key: dft
+      title: DRAFT — AI drafting + bid recommendation + Q&A
+      priority: critical
+    - key: prop
+      title: PROPOSALS — List + detail + action bar
+      priority: critical
+    - key: cset
+      title: CPMP-SETUP — Portfolio + contract creation + CLINs + WBS + deliverables
+      priority: critical
+    - key: evm
+      title: CPMP-EVM — EVM snapshots + Monte Carlo + S-curve + IPMDAR
+      priority: critical
+    - key: perf
+      title: CPMP-PERF — Subcontractors + CPARS + negative events + health
+      priority: critical
+    - key: cdrl
+      title: CPMP-CDRL — Auto-generate CDRLs + SAM awards sync
+      priority: critical
+    - key: cor
+      title: CPMP-COR — Government read-only portal + access audit
+      priority: critical
