@@ -1,0 +1,69 @@
+{
+  "info": {
+    "name": "CDRL SAM Award Link Tests",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",     "value": "http://localhost:5050" },
+    { "key": "sam_award_id", "value": "SAM-2026-0001" },
+    { "key": "contract_id",  "value": "ctr-test-001" }
+  ],
+  "item": [
+    {
+      "name": "POST link SAM award to contract — expects 200",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{base_url}}/api/cpmp/sam/link/{{sam_award_id}}" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"contract_id\": \"{{contract_id}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status code is 200', () => pm.response.to.have.status(200));",
+              "pm.test('content type is JSON', () => pm.response.to.have.header('Content-Type', /application\\/json/));",
+              "const body = pm.response.json();",
+              "pm.test('status field is ok', () => pm.expect(body.status).to.equal('ok'));",
+              "pm.test('sam_award_id present', () => pm.expect(body).to.have.property('sam_award_id'));",
+              "pm.test('contract_id present', () => pm.expect(body).to.have.property('contract_id'));",
+              "pm.test('sam_award_id echoes path param', () => pm.expect(body.sam_award_id).to.equal(pm.collectionVariables.get('sam_award_id')));",
+              "pm.test('contract_id echoes request body', () => pm.expect(body.contract_id).to.equal(pm.collectionVariables.get('contract_id')));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "POST link non-existent SAM award — expects 404",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{base_url}}/api/cpmp/sam/link/SAM-DOES-NOT-EXIST-00000" },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"contract_id\": \"{{contract_id}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status code is 404 (acceptable — award not found)', () => pm.response.to.have.status(404));",
+              "pm.test('content type is JSON', () => pm.response.to.have.header('Content-Type', /application\\/json/));",
+              "const body = pm.response.json();",
+              "pm.test('status field is error', () => pm.expect(body.status).to.equal('error'));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
