@@ -449,6 +449,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "noc_audit",
         # Peering Management Canvas — audit trail (NIST AU, append-only)
         "pmc_audit",
+        # OSINT Privacy Sanitizer — PII detection/redaction audit (NIST AU, migration 159)
+        "osint_privacy_audit",
     ]
 
     if tool_name == "Bash":
