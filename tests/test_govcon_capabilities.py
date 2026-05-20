@@ -1,0 +1,398 @@
+# CUI // SP-CTI
+"""Tests for /govcon/capabilities — L/M/N coverage breakdown.
+
+Verifies:
+1. coverage_to_grade() maps scores to L/M/N correctly.
+2. Route handler queries DB and aggregates correct L/M/N counts.
+3. Template receives L/M/N stat values (render_template is mocked to avoid
+   base.html context-processor dependencies in unit-test environment).
+"""
+import sqlite3
+import uuid
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from flask import Flask
+
+
+# ---------------------------------------------------------------------------
+# DB schema helpers
+# ---------------------------------------------------------------------------
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS rfp_shall_statements (
+    id TEXT PRIMARY KEY,
+    sam_opportunity_id TEXT,
+    statement_text TEXT,
+    domain_category TEXT,
+    statement_type TEXT,
+    keywords TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS rfp_requirement_patterns (
+    id TEXT PRIMARY KEY,
+    pattern_name TEXT,
+    domain_category TEXT,
+    frequency INTEGER DEFAULT 1,
+    representative_text TEXT,
+    keyword_fingerprint TEXT,
+    keywords TEXT,
+    created_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS icdev_capability_map (
+    id TEXT PRIMARY KEY,
+    pattern_id TEXT,
+    capability_id TEXT,
+    coverage_score REAL,
+    grade TEXT,
+    matched_keywords TEXT,
+    created_at TEXT,
+    metadata TEXT
+);
+
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    created_at TEXT,
+    event_type TEXT,
+    actor TEXT,
+    action TEXT,
+    details TEXT,
+    session_id TEXT
+);
+"""
+
+
+def _make_db(tmp_path: Path, seed_rows: list) -> Path:
+    """Create a SQLite DB with govcon tables and optional seed rows.
+
+    seed_rows: list of dicts with keys: domain, score (coverage_score).
+    Each row creates a rfp_shall_statements entry linked via icdev_capability_map.
+    """
+    db_path = tmp_path / "icdev.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_SCHEMA)
+
+    for row in seed_rows:
+        stmt_id = str(uuid.uuid4())
+        cap_id = str(uuid.uuid4())
+        domain = row.get("domain", "devsecops")
+        score = row.get("score", 0.5)
+
+        if score >= 0.80:
+            grade = "L"
+        elif score >= 0.40:
+            grade = "M"
+        else:
+            grade = "N"
+
+        conn.execute(
+            "INSERT INTO rfp_shall_statements (id, domain_category, created_at) VALUES (?, ?, ?)",
+            (stmt_id, domain, "2026-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO icdev_capability_map "
+            "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), stmt_id, cap_id, score, grade, "[]", "2026-01-01T00:00:00+00:00", "{}"),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: coverage_to_grade()
+# ---------------------------------------------------------------------------
+
+class TestCoverageToGrade:
+    """coverage_to_grade() must respect the 0.80 / 0.40 thresholds."""
+
+    def test_score_at_compliant_threshold_is_L(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(0.80) == "L"
+
+    def test_score_above_compliant_threshold_is_L(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(1.0) == "L"
+        assert coverage_to_grade(0.95) == "L"
+
+    def test_score_just_below_compliant_threshold_is_M(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(0.79) == "M"
+
+    def test_score_at_partial_threshold_is_M(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(0.40) == "M"
+
+    def test_score_just_below_partial_threshold_is_N(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(0.39) == "N"
+
+    def test_score_zero_is_N(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(0.0) == "N"
+
+    def test_midrange_M(self):
+        from tools.govcon.capability_mapper import coverage_to_grade
+        assert coverage_to_grade(0.60) == "M"
+
+
+# ---------------------------------------------------------------------------
+# Helpers: minimal Flask app + _get_db that bypass full app context processors
+# ---------------------------------------------------------------------------
+
+def _build_test_app(tmp_path: Path, seed_rows: list):
+    """Return (flask_app, db_path) for testing the capabilities route.
+
+    render_template is NOT mocked here — callers do that per-test.
+    """
+    db_path = _make_db(tmp_path, seed_rows)
+
+    import sqlite3 as _sqlite3
+
+    def _get_db():
+        conn = _sqlite3.connect(str(db_path))
+        conn.row_factory = _sqlite3.Row
+        return conn
+
+    flask_app = Flask(__name__, template_folder=str(
+        Path(__file__).parent.parent / "tools" / "dashboard" / "templates"
+    ))
+    flask_app.config["TESTING"] = True
+
+    from tools.dashboard.app import _register_govcon_pages
+    _register_govcon_pages(flask_app, _get_db)
+
+    return flask_app, db_path
+
+
+# ---------------------------------------------------------------------------
+# Route tests: coverage dict passed to render_template
+#
+# We mock render_template to avoid base.html context-processor requirements
+# (ROLE_VIEWS etc.) that only exist in the full create_app() environment.
+# The mock captures the kwargs so we can assert on coverage.L/M/N counts.
+# ---------------------------------------------------------------------------
+
+class TestCapabilitiesRouteCoverageData:
+    """Route passes correct L/M/N counts to render_template."""
+
+    @pytest.fixture()
+    def seeded_app(self, tmp_path):
+        # 2L, 1M, 1N
+        return _build_test_app(
+            tmp_path,
+            [
+                {"domain": "devsecops", "score": 0.90},  # L
+                {"domain": "devsecops", "score": 0.85},  # L
+                {"domain": "compliance", "score": 0.60},  # M
+                {"domain": "compliance", "score": 0.20},  # N
+            ],
+        )
+
+    def _call_route(self, flask_app) -> dict:
+        """Invoke /govcon/capabilities, intercept render_template kwargs."""
+        captured = {}
+
+        def fake_render(template_name, **kwargs):
+            captured.update(kwargs)
+            captured["_template"] = template_name
+            return "OK"
+
+        with patch("tools.govcon.gap_analyzer.generate_recommendations",
+                   return_value={"recommendations": []}):
+            with patch("tools.dashboard.app.render_template", side_effect=fake_render):
+                with flask_app.test_client() as c:
+                    resp = c.get("/govcon/capabilities")
+                    captured["_status"] = resp.status_code
+
+        return captured
+
+    def test_route_returns_200(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert result["_status"] == 200
+
+    def test_template_name(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert result["_template"] == "govcon/capabilities.html"
+
+    def test_L_count_is_two(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["L"] == 2, f"Expected L=2, got {result['coverage']}"
+
+    def test_M_count_is_one(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["M"] == 1, f"Expected M=1, got {result['coverage']}"
+
+    def test_N_count_is_one(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["N"] == 1, f"Expected N=1, got {result['coverage']}"
+
+    def test_compliance_rate_is_50(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        # 2L out of 4 total = 50%
+        assert result["coverage"]["rate"] == 50, f"Expected rate=50, got {result['coverage']}"
+
+    def test_coverage_dict_has_all_keys(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        coverage = result["coverage"]
+        assert "L" in coverage
+        assert "M" in coverage
+        assert "N" in coverage
+        assert "rate" in coverage
+
+    def test_domain_coverage_list_present(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert "domain_coverage" in result
+        assert isinstance(result["domain_coverage"], list)
+
+    def test_gaps_list_present(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert "gaps" in result
+        assert isinstance(result["gaps"], list)
+
+    def test_total_gaps_present(self, seeded_app):
+        flask_app, _ = seeded_app
+        result = self._call_route(flask_app)
+        assert "total_gaps" in result
+
+
+# ---------------------------------------------------------------------------
+# Template static content: ensure the HTML renders L/M/N label strings
+# ---------------------------------------------------------------------------
+
+class TestCapabilitiesTemplateLabels:
+    """Template source must include the L/M/N label strings."""
+
+    def test_template_contains_L_label(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "L (Compliant)" in html
+
+    def test_template_contains_M_label(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "M (Partial)" in html
+
+    def test_template_contains_N_label(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "N (Gap)" in html
+
+    def test_template_renders_coverage_L_variable(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "{{ coverage.L }}" in html
+
+    def test_template_renders_coverage_M_variable(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "{{ coverage.M }}" in html
+
+    def test_template_renders_coverage_N_variable(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "{{ coverage.N }}" in html
+
+    def test_template_has_domain_table_headers(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "Coverage by Domain" in html
+        # Column headers for per-domain L/M/N breakdown
+        assert ">L<" in html or "<th" in html
+
+    def test_template_has_compliance_rate_label(self):
+        tmpl_path = (
+            Path(__file__).parent.parent
+            / "tools" / "dashboard" / "templates" / "govcon" / "capabilities.html"
+        )
+        html = tmpl_path.read_text(encoding="utf-8")
+        assert "Compliance Rate" in html
+
+
+# ---------------------------------------------------------------------------
+# Edge case: empty DB — route must not raise, coverage defaults to zeros
+# ---------------------------------------------------------------------------
+
+class TestCapabilitiesRouteEmptyDB:
+    """Route degrades gracefully when no coverage data has been seeded."""
+
+    @pytest.fixture()
+    def empty_app(self, tmp_path):
+        return _build_test_app(tmp_path, [])
+
+    def _call_route(self, flask_app) -> dict:
+        captured = {}
+
+        def fake_render(template_name, **kwargs):
+            captured.update(kwargs)
+            captured["_status_ok"] = True
+            return "OK"
+
+        with patch("tools.govcon.gap_analyzer.generate_recommendations",
+                   return_value={"recommendations": []}):
+            with patch("tools.dashboard.app.render_template", side_effect=fake_render):
+                with flask_app.test_client() as c:
+                    resp = c.get("/govcon/capabilities")
+                    captured["_http_status"] = resp.status_code
+
+        return captured
+
+    def test_empty_db_returns_200(self, empty_app):
+        flask_app, _ = empty_app
+        result = self._call_route(flask_app)
+        assert result["_http_status"] == 200
+
+    def test_empty_db_L_defaults_to_zero(self, empty_app):
+        flask_app, _ = empty_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["L"] == 0
+
+    def test_empty_db_M_defaults_to_zero(self, empty_app):
+        flask_app, _ = empty_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["M"] == 0
+
+    def test_empty_db_N_defaults_to_zero(self, empty_app):
+        flask_app, _ = empty_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["N"] == 0
+
+    def test_empty_db_rate_defaults_to_zero(self, empty_app):
+        flask_app, _ = empty_app
+        result = self._call_route(flask_app)
+        assert result["coverage"]["rate"] == 0
