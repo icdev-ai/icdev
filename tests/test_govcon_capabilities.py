@@ -4072,7 +4072,7 @@ class TestDraftQualityScorePresence:
         zero_conf = [d for d in data["drafts"] if d.get("confidence_score", 1) == 0.0]
         for d in zero_conf:
             assert d["quality_score"] >= 0.0, (
-                f"quality_score must be >= 0.0 even for zero-confidence draft"
+                "quality_score must be >= 0.0 even for zero-confidence draft"
             )
 
     def test_high_confidence_draft_has_higher_quality_than_low(self, api_app):
@@ -4220,4 +4220,453 @@ class TestComputeQualityScoreFunction:
         assert result == pytest.approx(expected, abs=1e-4), (
             f"_compute_quality_score({confidence}, {coverage}) = {result!r}, "
             f"expected {expected!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Schema + helpers for PUT /api/govcon/drafts/<id>/approve tests (gcpl-dft-07)
+# ---------------------------------------------------------------------------
+
+_APPROVE_SCHEMA = """
+CREATE TABLE IF NOT EXISTS proposal_section_drafts (
+    id TEXT PRIMARY KEY,
+    section_id TEXT,
+    opportunity_id TEXT NOT NULL,
+    shall_statement_id TEXT,
+    capability_ids TEXT DEFAULT '[]',
+    knowledge_block_ids TEXT DEFAULT '[]',
+    draft_content TEXT NOT NULL,
+    draft_method TEXT,
+    confidence REAL DEFAULT 0.0,
+    confidence_score REAL DEFAULT 0.0,
+    generation_model TEXT,
+    status TEXT NOT NULL DEFAULT 'draft',
+    reviewed_by TEXT,
+    reviewed_at TEXT,
+    review_notes TEXT,
+    reviewer_notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    classification TEXT DEFAULT 'CUI'
+);
+
+CREATE TABLE IF NOT EXISTS proposal_sections (
+    id TEXT PRIMARY KEY,
+    volume_id TEXT,
+    opportunity_id TEXT,
+    section_number TEXT NOT NULL DEFAULT '1',
+    title TEXT NOT NULL DEFAULT 'Test Section',
+    status TEXT NOT NULL DEFAULT 'not_started',
+    notes TEXT,
+    updated_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS proposal_status_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    old_status TEXT,
+    new_status TEXT NOT NULL,
+    changed_by TEXT,
+    reason TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS audit_trail (
+    id TEXT PRIMARY KEY,
+    created_at TEXT,
+    event_type TEXT,
+    actor TEXT,
+    action TEXT,
+    details TEXT,
+    session_id TEXT
+);
+"""
+
+_APPROVE_DRAFT_ID = "approve-draft-1"
+_APPROVE_OPP_ID = "opp-approve-test"
+_APPROVE_SECTION_ID = "section-approve-1"
+_APPROVE_DRAFT_CONTENT = "Our team provides zero-trust networking via our ZTA platform."
+
+
+def _make_approve_db(tmp_path, section_status="not_started", include_section=True):
+    """Create a SQLite test DB seeded with one draft (and optionally a linked section)."""
+    db_path = tmp_path / "approve_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_APPROVE_SCHEMA)
+
+    section_id = _APPROVE_SECTION_ID if include_section else None
+
+    conn.execute(
+        """INSERT INTO proposal_section_drafts
+           (id, section_id, opportunity_id, draft_content, draft_method, confidence_score, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            _APPROVE_DRAFT_ID,
+            section_id,
+            _APPROVE_OPP_ID,
+            _APPROVE_DRAFT_CONTENT,
+            "template",
+            0.82,
+            "draft",
+            "2026-05-20T10:00:00",
+        ),
+    )
+
+    if include_section:
+        conn.execute(
+            "INSERT INTO proposal_sections (id, section_number, title, status) VALUES (?, ?, ?, ?)",
+            (_APPROVE_SECTION_ID, "1.1", "Technical Approach", section_status),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_approve_api_app(tmp_path, section_status="not_started", include_section=True):
+    """Return (flask_app, fake_get_db) for approve endpoint tests."""
+    db_path = _make_approve_db(tmp_path, section_status=section_status, include_section=include_section)
+
+    import sqlite3 as _sqlite3
+
+    def fake_get_db():
+        c = _sqlite3.connect(str(db_path))
+        c.row_factory = _sqlite3.Row
+        return c
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, fake_get_db, db_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/drafts/<id>/approve — response shape (gcpl-dft-07)
+# ---------------------------------------------------------------------------
+
+
+class TestApproveDraftEndpoint:
+    """PUT /api/govcon/drafts/<id>/approve returns ok and transitions draft status."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_approve_api_app(tmp_path)
+
+    def _put(self, app_trio, draft_id=_APPROVE_DRAFT_ID, body=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.put(
+                    f"/api/govcon/drafts/{draft_id}/approve",
+                    json=body or {},
+                    content_type="application/json",
+                )
+        return resp
+
+    def test_approve_returns_200(self, app_trio):
+        resp = self._put(app_trio)
+        assert resp.status_code == 200
+
+    def test_approve_content_type_is_json(self, app_trio):
+        resp = self._put(app_trio)
+        assert resp.content_type.startswith("application/json")
+
+    def test_approve_response_has_status_key(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_approve_response_status_is_ok(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_approve_response_has_draft_id(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert "draft_id" in data
+
+    def test_approve_draft_id_matches_requested(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert data["draft_id"] == _APPROVE_DRAFT_ID
+
+    def test_approve_response_approved_is_true(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert data.get("approved") is True
+
+    def test_approve_nonexistent_draft_returns_404(self, app_trio):
+        resp = self._put(app_trio, draft_id="no-such-draft-id")
+        assert resp.status_code == 404
+
+    def test_404_response_has_error_key(self, app_trio):
+        resp = self._put(app_trio, draft_id="no-such-draft-id")
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_approve_inserts_new_approved_row(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_APPROVE_DRAFT_ID}/approve",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        rows = verify.execute(
+            "SELECT * FROM proposal_section_drafts WHERE status = 'approved'"
+        ).fetchall()
+        verify.close()
+        assert len(rows) == 1, (
+            f"Expected exactly 1 approved row, got {len(rows)}"
+        )
+
+    def test_approved_row_preserves_draft_content(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_APPROVE_DRAFT_ID}/approve",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT draft_content FROM proposal_section_drafts WHERE status = 'approved'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["draft_content"] == _APPROVE_DRAFT_CONTENT
+
+    def test_original_draft_row_unchanged(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_APPROVE_DRAFT_ID}/approve",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        original = verify.execute(
+            "SELECT status FROM proposal_section_drafts WHERE id = ?",
+            (_APPROVE_DRAFT_ID,),
+        ).fetchone()
+        verify.close()
+        assert original is not None, "Original draft row was deleted"
+        assert original["status"] == "draft", (
+            f"Original row must remain status='draft', got {original['status']!r}"
+        )
+
+    def test_approved_row_reviewed_by_defaults_to_govcon_api(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_APPROVE_DRAFT_ID}/approve",
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT reviewed_by FROM proposal_section_drafts WHERE status = 'approved'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["reviewed_by"] == "govcon_api", (
+            f"Default reviewed_by must be 'govcon_api', got {row['reviewed_by']!r}"
+        )
+
+    def test_approved_row_reviewed_by_from_request_body(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_APPROVE_DRAFT_ID}/approve",
+                    json={"reviewed_by": "alice@example.com"},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT reviewed_by FROM proposal_section_drafts WHERE status = 'approved'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["reviewed_by"] == "alice@example.com", (
+            f"reviewed_by should come from body, got {row['reviewed_by']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: section status transition on approve (gcpl-dft-07)
+# ---------------------------------------------------------------------------
+
+
+class TestApproveDraftSectionTransition:
+    """Approving a draft advances linked section from not_started/outlining to drafting."""
+
+    def _approve(self, flask_app, fake_get_db, draft_id=_APPROVE_DRAFT_ID, body=None):
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                return c.put(
+                    f"/api/govcon/drafts/{draft_id}/approve",
+                    json=body or {},
+                    content_type="application/json",
+                )
+
+    def test_section_not_started_advances_to_drafting(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="not_started")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_APPROVE_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section is not None
+        assert section["status"] == "drafting", (
+            f"Section status should advance to 'drafting', got {section['status']!r}"
+        )
+
+    def test_section_outlining_advances_to_drafting(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="outlining")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_APPROVE_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section["status"] == "drafting", (
+            f"Section 'outlining' must advance to 'drafting', got {section['status']!r}"
+        )
+
+    def test_section_already_drafting_not_changed(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="drafting")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_APPROVE_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section["status"] == "drafting", (
+            f"Section already in 'drafting' must remain 'drafting', got {section['status']!r}"
+        )
+
+    def test_section_internal_review_not_downgraded(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(
+            tmp_path, section_status="internal_review"
+        )
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_APPROVE_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section["status"] == "internal_review", (
+            f"Section in 'internal_review' must not be downgraded, got {section['status']!r}"
+        )
+
+    def test_status_history_row_inserted_on_transition(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="not_started")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        rows = verify.execute(
+            "SELECT * FROM proposal_status_history WHERE entity_id = ?",
+            (_APPROVE_SECTION_ID,),
+        ).fetchall()
+        verify.close()
+        assert len(rows) == 1, (
+            f"Expected 1 proposal_status_history row for section, got {len(rows)}"
+        )
+
+    def test_status_history_entity_type_is_section(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="not_started")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT entity_type FROM proposal_status_history WHERE entity_id = ?",
+            (_APPROVE_SECTION_ID,),
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["entity_type"] == "section", (
+            f"entity_type must be 'section', got {row['entity_type']!r}"
+        )
+
+    def test_status_history_old_status_is_not_started(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="not_started")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT old_status FROM proposal_status_history WHERE entity_id = ?",
+            (_APPROVE_SECTION_ID,),
+        ).fetchone()
+        verify.close()
+        assert row["old_status"] == "not_started", (
+            f"old_status must be 'not_started', got {row['old_status']!r}"
+        )
+
+    def test_status_history_new_status_is_drafting(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="not_started")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT new_status FROM proposal_status_history WHERE entity_id = ?",
+            (_APPROVE_SECTION_ID,),
+        ).fetchone()
+        verify.close()
+        assert row["new_status"] == "drafting", (
+            f"new_status must be 'drafting', got {row['new_status']!r}"
+        )
+
+    def test_no_history_row_when_section_not_advanced(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="internal_review")
+        self._approve(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        rows = verify.execute(
+            "SELECT * FROM proposal_status_history WHERE entity_id = ?",
+            (_APPROVE_SECTION_ID,),
+        ).fetchall()
+        verify.close()
+        assert len(rows) == 0, (
+            f"No history row expected when section not advanced, got {len(rows)}"
+        )
+
+    def test_approve_without_section_id_returns_ok(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, include_section=False)
+        resp = self._approve(flask_app, fake_get_db)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_section_notes_mention_reviewer(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_approve_api_app(tmp_path, section_status="not_started")
+        self._approve(flask_app, fake_get_db, body={"reviewed_by": "bob@example.com"})
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT notes FROM proposal_sections WHERE id = ?", (_APPROVE_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section is not None
+        assert "bob@example.com" in (section["notes"] or ""), (
+            f"Section notes must mention reviewer 'bob@example.com', got {section['notes']!r}"
         )
