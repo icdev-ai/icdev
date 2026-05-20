@@ -4,6 +4,44 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: fix_dispatcher
+  name: Fix Dispatcher Project
+  description: Auto-registered project for tasks with prefix 'fix-dispatcher-'. Update
+    name and description to reflect the project purpose.
+  task_prefix: fix-dispatcher-
+  default_open: true
+  briefs: []
+  epics:
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: agd
+    title: AGD
+    priority: medium
+  - key: cfg
+    title: CFG
+    priority: medium
+  - key: chl
+    title: CHL
+    priority: medium
+  - key: cvs
+    title: CVS
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: eco
+    title: ECO
+    priority: medium
+  - key: fan
+    title: FAN
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: tst
+    title: TST
+    priority: medium
 - key: sec
   name: Sec Project
   description: Auto-registered project for tasks with prefix 'sec-'. Update name and
@@ -38,6 +76,9 @@ projects:
     priority: medium
   - key: tst
     title: TST
+    priority: medium
+  - key: dom
+    title: DOM
     priority: medium
 - key: onto
   name: Onto Project
@@ -798,6 +839,9 @@ projects:
   - key: wiki
     title: WIKI
     priority: medium
+  - key: fix
+    title: FIX
+    priority: medium
 - key: oracle
   name: Oracle Project
   description: Auto-registered project for tasks with prefix 'oracle-'. Update name
@@ -1189,6 +1233,9 @@ projects:
   - key: cyber-ext
     title: Cyber Extension — NVD/KEV/ATT&CK Ingest + Shodan + Dynamic Heatmap
     priority: high
+  - key: infra
+    title: INFRA
+    priority: medium
 - key: sc-core
   name: Supply Chain Core Promotion
   description: 'Promote tools/supply_chain/ to true ICDEV core: domain-agnostic DB
@@ -1252,6 +1299,21 @@ projects:
     priority: high
   - key: e5
     title: V&V
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: erb
+    title: ERB
+    priority: medium
+  - key: portdiag
+    title: PORTDIAG
+    priority: medium
+  - key: wizard
+    title: WIZARD
     priority: medium
 - key: nmig
   name: Network Device Migration Workflow
@@ -3521,6 +3583,69 @@ projects:
     title: Phase 10 — Design Review, Lifecycle & Monitoring (lifecycle state machine,
       multi-reviewer workflow, portfolio score drift dashboard)
     priority: high
+  - key: agent
+    title: AGENT
+    priority: medium
+  - key: analyst
+    title: ANALYST
+    priority: medium
+  - key: cyber
+    title: CYBER
+    priority: medium
+  - key: ew
+    title: EW
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: game
+    title: GAME
+    priority: medium
+  - key: ghost
+    title: GHOST
+    priority: medium
+  - key: import
+    title: IMPORT
+    priority: medium
+  - key: info
+    title: INFO
+    priority: medium
+  - key: iw
+    title: IW
+    priority: medium
+  - key: land
+    title: LAND
+    priority: medium
+  - key: oracle
+    title: ORACLE
+    priority: medium
+  - key: pacific
+    title: PACIFIC
+    priority: medium
+  - key: rag
+    title: RAG
+    priority: medium
+  - key: reflex
+    title: REFLEX
+    priority: medium
+  - key: sc
+    title: SC
+    priority: medium
+  - key: sea
+    title: SEA
+    priority: medium
+  - key: space
+    title: SPACE
+    priority: medium
+  - key: t2
+    title: T2
+    priority: medium
+  - key: twin
+    title: TWIN
+    priority: medium
+  - key: viz
+    title: VIZ
+    priority: medium
 - key: sysgraph
   name: Unified System Graph — Sigma.js Federated Graph Platform
   description: 'Replace fragmented graph systems (JointJS /components-map, /knowledge-graph,
@@ -3680,6 +3805,24 @@ projects:
   - key: vv
     title: V&V Gate
     priority: high
+  - key: cg
+    title: CG
+    priority: medium
+  - key: dg
+    title: DG
+    priority: medium
+  - key: fnd
+    title: FND
+    priority: medium
+  - key: inn
+    title: INN
+    priority: medium
+  - key: inv
+    title: INV
+    priority: medium
+  - key: wp
+    title: WP
+    priority: medium
 - key: mce
   name: Migration Canvas Enhancements — Compliance Gate, Wave Planner, Discovery,
     Dossier Guidance
@@ -3809,6 +3952,27 @@ projects:
   - key: wire
     title: Wiring — OpenLineage, requirements, manifest, V&V
     priority: high
+  - key: blueprint
+    title: BLUEPRINT
+    priority: medium
+  - key: engine
+    title: ENGINE
+    priority: medium
+  - key: foundation
+    title: FOUNDATION
+    priority: medium
+  - key: oss
+    title: OSS
+    priority: medium
+  - key: templates
+    title: TEMPLATES
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wiring
+    title: WIRING
+    priority: medium
 - key: ohc
   name: Ops Hub Canvas (OHC) — Unified LLMOps · MLOps · AIOps
   description: 'Unified operations canvas at /ops covering all three ops disciplines:
@@ -3915,6 +4079,15 @@ projects:
     priority: medium
   - key: ep9
     title: EP9
+    priority: medium
+  - key: ep4
+    title: EP4
+    priority: medium
+  - key: ep5
+    title: EP5
+    priority: medium
+  - key: ep6
+    title: EP6
     priority: medium
 - key: gv
   name: GovLift — DoD IL4 Cloud Migration Tool
@@ -4031,6 +4204,21 @@ projects:
   - key: ep5
     title: Navigation, Redirect, V&V
     priority: high
+  - key: ep10
+    title: EP10
+    priority: medium
+  - key: ep11
+    title: EP11
+    priority: medium
+  - key: ep7
+    title: EP7
+    priority: medium
+  - key: ep8
+    title: EP8
+    priority: medium
+  - key: ep9
+    title: EP9
+    priority: medium
 - key: wex
   name: Workflow Execution — Run Engine, Code Gen, Canvas Integration, Chat-to-Workflow
   description: 'Closes the Studio Workflows execution gap. Phase 1: per-run SSE execution
@@ -4214,46 +4402,77 @@ projects:
   - key: stats
     title: STATS
     priority: medium
+  - key: cdrl
+    title: CDRL
+    priority: medium
+  - key: cor
+    title: COR
+    priority: medium
+  - key: cset
+    title: CSET
+    priority: medium
+  - key: dft
+    title: DFT
+    priority: medium
+  - key: disc
+    title: DISC
+    priority: medium
+  - key: evm
+    title: EVM
+    priority: medium
+  - key: ext
+    title: EXT
+    priority: medium
+  - key: map
+    title: MAP
+    priority: medium
+  - key: perf
+    title: PERF
+    priority: medium
+  - key: prop
+    title: PROP
+    priority: medium
 - key: gcpl
   name: GovCon + CPMP Full Lifecycle E2E Tests
-  description: >
-    Complete Playwright CLI lifecycle tests for GovCon capture pipeline
-    (DISCOVER->EXTRACT->MAP->DRAFT->PROPOSALS) and CPMP post-award management
-    (Contract Setup -> EVM -> Performance -> CDRL/SAM -> COR Portal).
+  description: 'Complete Playwright CLI lifecycle tests for GovCon capture pipeline
+    (DISCOVER->EXTRACT->MAP->DRAFT->PROPOSALS) and CPMP post-award management (Contract
+    Setup -> EVM -> Performance -> CDRL/SAM -> COR Portal).
+
+    '
   task_prefix: gcpl-
   default_open: true
   briefs:
-    - '10 spec files under tests/e2e/ — one per epic'
-    - 'Shared fixture: tests/e2e/fixtures/govcon_cpmp.ts — seed contract + opportunity'
-    - 'Run all: npx playwright test tests/e2e/govcon_*.spec.ts tests/e2e/cpmp_*.spec.ts'
+  - 10 spec files under tests/e2e/ — one per epic
+  - 'Shared fixture: tests/e2e/fixtures/govcon_cpmp.ts — seed contract + opportunity'
+  - 'Run all: npx playwright test tests/e2e/govcon_*.spec.ts tests/e2e/cpmp_*.spec.ts'
   epics:
-    - key: disc
-      title: DISCOVER — SAM.gov scan + pipeline hub
-      priority: critical
-    - key: ext
-      title: EXTRACT — Shall statement extraction + requirements page
-      priority: critical
-    - key: map
-      title: MAP — Capability mapping + gap analysis
-      priority: critical
-    - key: dft
-      title: DRAFT — AI drafting + bid recommendation + Q&A
-      priority: critical
-    - key: prop
-      title: PROPOSALS — List + detail + action bar
-      priority: critical
-    - key: cset
-      title: CPMP-SETUP — Portfolio + contract creation + CLINs + WBS + deliverables
-      priority: critical
-    - key: evm
-      title: CPMP-EVM — EVM snapshots + Monte Carlo + S-curve + IPMDAR
-      priority: critical
-    - key: perf
-      title: CPMP-PERF — Subcontractors + CPARS + negative events + health
-      priority: critical
-    - key: cdrl
-      title: CPMP-CDRL — Auto-generate CDRLs + SAM awards sync
-      priority: critical
-    - key: cor
-      title: CPMP-COR — Government read-only portal + access audit
-      priority: critical
+  - key: disc
+    title: DISCOVER — SAM.gov scan + pipeline hub
+    priority: critical
+  - key: ext
+    title: EXTRACT — Shall statement extraction + requirements page
+    priority: critical
+  - key: map
+    title: MAP — Capability mapping + gap analysis
+    priority: critical
+  - key: dft
+    title: DRAFT — AI drafting + bid recommendation + Q&A
+    priority: critical
+  - key: prop
+    title: PROPOSALS — List + detail + action bar
+    priority: critical
+  - key: cset
+    title: CPMP-SETUP — Portfolio + contract creation + CLINs + WBS + deliverables
+    priority: critical
+  - key: evm
+    title: CPMP-EVM — EVM snapshots + Monte Carlo + S-curve + IPMDAR
+    priority: critical
+  - key: perf
+    title: CPMP-PERF — Subcontractors + CPARS + negative events + health
+    priority: critical
+  - key: cdrl
+    title: CPMP-CDRL — Auto-generate CDRLs + SAM awards sync
+    priority: critical
+  - key: cor
+    title: CPMP-COR — Government read-only portal + access audit
+    priority: critical
