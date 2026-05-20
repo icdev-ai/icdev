@@ -884,8 +884,8 @@ def update_question(q_id):
         sets = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [now_isoformat(), q_id]
         conn.execute(
-            f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?",
-            vals,  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?",  # nosec B608 -- column names validated against allowlist above
+            vals,
         )
         _audit(conn, "update_question", f"question={q_id}, fields={list(updates.keys())}")
         conn.commit()
