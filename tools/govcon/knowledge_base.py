@@ -181,7 +181,7 @@ def list_blocks(domain=None, category=None, volume_type=None, limit=50):
     }
 
 
-def search_blocks(query_text, domain=None, top_k=5):
+def search_blocks(query_text, domain=None, category=None, top_k=5):
     """Keyword search across knowledge blocks.
 
     Simple TF-based ranking: count query terms in title + content + keywords.
@@ -193,6 +193,9 @@ def search_blocks(query_text, domain=None, top_k=5):
     if domain:
         sql += " AND domain = ?"
         params.append(domain)
+    if category:
+        sql += " AND category = ?"
+        params.append(category)
 
     rows = conn.execute(sql, params).fetchall()
     conn.close()
