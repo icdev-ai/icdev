@@ -1,0 +1,37 @@
+# AAC (Autonomous Automation Candidate) Engine Configuration
+# CUI // SP-CTI
+
+scoring_weights:
+  value: 0.45
+  feasibility: 0.35
+  risk_inv: 0.20
+
+value_weights:
+  usage_freq: 0.40
+  task_complexity: 0.35
+  automation_deficit: 0.25
+
+feasibility_weights:
+  data_avail: 0.40
+  il_model_exists: 0.35
+  integration_simplicity: 0.25
+
+risk_weights:
+  reversibility: 0.40
+  compliance_impact_inv: 0.35
+  dep_simplicity: 0.25
+
+confidence_threshold: 0.55
+
+scan_depth: full  # options: full | shallow | summary
+
+supported_languages:
+  - python
+  - java
+  - csharp
+  - go
+  - rust
+  - typescript
+
+pattern_min_depth: 3   # min if-depth for conditional pattern detection
+rule_min_keys: 10      # min dict keys for rule-table pattern detection
