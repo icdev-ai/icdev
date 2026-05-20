@@ -6680,4 +6680,85 @@ RESOURCE_REGISTRY = {
             "properties": {},
         },
     },
+    # ============================================================
+    # NOC CANVAS — NOCC (4 tools)
+    # ============================================================
+    "noc_alarm_ingest": {
+        "category": "nocc",
+        "module": "tools.noc_canvas.alarm_correlator",
+        "handler": "ingest_alarm",
+        "description": "Ingest a new alarm into the NOC Operations Canvas. Correlates with existing alarms and auto-creates incidents for alarm storms.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "alarm_source": {"type": "string", "description": "NMS source (librenms, solarwinds, nagios, etc.)"},
+                "severity": {"type": "string", "enum": ["critical", "major", "minor", "warning", "info"]},
+                "alarm_type": {"type": "string", "enum": ["interface", "bgp", "circuit", "power", "optical", "environmental", "security", "other"]},
+                "device_name": {"type": "string", "description": "FQDN or hostname of affected device"},
+                "device_ip": {"type": "string", "description": "Management IP of affected device"},
+                "circuit_id": {"type": "string", "description": "Circuit ID (if circuit-level alarm)"},
+                "carrier": {"type": "string", "description": "Carrier or provider name"},
+                "description": {"type": "string", "description": "Human-readable alarm description"},
+            },
+            "required": ["alarm_source", "severity", "description"],
+        },
+    },
+    "noc_incident_create": {
+        "category": "nocc",
+        "module": "tools.noc_canvas.blueprint",
+        "handler": "create_incident_mcp",
+        "description": "Create a P1–P4 incident in the NOC Operations Canvas with optional circuit, carrier, and SLA breach flag.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Incident title"},
+                "severity": {"type": "string", "enum": ["p1", "p2", "p3", "p4"]},
+                "affected_circuit": {"type": "string"},
+                "affected_carrier": {"type": "string"},
+                "root_cause": {"type": "string"},
+                "sla_breach": {"type": "boolean", "default": False},
+                "opened_by": {"type": "string"},
+                "assigned_to": {"type": "string"},
+            },
+            "required": ["title", "severity"],
+        },
+    },
+    # ============================================================
+    # PMC CANVAS (2 tools)
+    # ============================================================
+    "pmc_peer_evaluate": {
+        "category": "pmc",
+        "module": "tools.pmc_canvas.peering_decision_engine",
+        "handler": "evaluate_peer",
+        "description": "Run the 6-dimension peering decision engine on a BGP peer and return open/selective/no recommendation with score and reasons.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asn": {"type": "integer", "description": "Peer ASN"},
+                "our_asn": {"type": "integer", "description": "Our ASN"},
+                "our_ix_ids": {"type": "array", "items": {"type": "integer"}, "description": "List of our IX IDs for presence scoring"},
+                "traffic_ratio": {"type": "number", "description": "Inbound/outbound traffic ratio"},
+                "ipv4_prefix_count": {"type": "integer"},
+                "ipv6_prefix_count": {"type": "integer"},
+                "rpki_valid_pct": {"type": "number", "description": "% of peer prefixes with valid ROA"},
+                "irr_registered_pct": {"type": "number", "description": "% of routes in IRR"},
+                "noc_responsiveness": {"type": "number", "description": "NOC response score 0.0–1.0"},
+            },
+            "required": ["asn", "our_asn"],
+        },
+    },
+    "pmc_rpki_validate": {
+        "category": "pmc",
+        "module": "tools.pmc_canvas.rpki_validator",
+        "handler": "validate_prefix",
+        "description": "Validate a BGP prefix against Cloudflare RPKI API and return validity status (valid/invalid/not-found/unknown).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prefix": {"type": "string", "description": "IP prefix to validate (e.g. '1.1.1.0/24')"},
+                "origin_asn": {"type": "integer", "description": "Origin ASN claiming the prefix"},
+            },
+            "required": ["prefix", "origin_asn"],
+        },
+    },
 }

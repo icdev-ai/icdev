@@ -1,0 +1,7 @@
+# IQE-NOCC-003: Circuits with SLA breach this period
+# Use: SLA review, customer credit exposure, carrier escalation
+
+foreach s in noc.sla_records
+  where s.breach == true
+  select s.circuit_id, s.carrier, s.customer, s.sla_type,
+         s.target_value, s.measured_value, s.breach_minutes, s.credit_eligible

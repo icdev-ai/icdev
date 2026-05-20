@@ -1473,3 +1473,33 @@ gates:
     tool: "python -m bandit -r tools/ --test B310 --severity-level medium --json"
     nist_controls: [SI-10, SC-8, SA-11]
     bandit_test: B310
+
+  # NOC Operations Canvas gates
+  - id: NOC-OPS-001
+    name: P1 Incident Unacknowledged
+    description: Warns when a P1 (critical) NOC incident has been open for more than 15 minutes without acknowledgement.
+    severity: WARN
+    warn_on: [noc_p1_unacknowledged]
+    threshold_minutes: 15
+    table: noc_incidents
+    query: "SELECT COUNT(*) FROM noc_incidents WHERE severity='p1' AND status='open' AND created_at < NOW() - INTERVAL '15 minutes'"
+    nist_controls: [IR-6, SI-4]
+
+  # PMC (Peering Management Canvas) gates
+  - id: PMC-RPKI-001
+    name: RPKI Invalid High-Traffic Peer
+    description: Warns when a high-traffic peer (95th-pct ≥ 1 Gbps) has any RPKI-invalid prefix registered.
+    severity: WARN
+    warn_on: [pmc_rpki_invalid_high_traffic]
+    threshold_traffic_gbps: 1.0
+    table: peering_prefixes
+    nist_controls: [SC-5, SI-3, RA-5]
+
+  - id: PMC-IRR-001
+    name: IRR Unregistered Open Peer
+    description: Warns when an active peer with open peering policy has more than 20% of routes unregistered in IRR.
+    severity: WARN
+    warn_on: [irr_unregistered_open_peer]
+    threshold_unregistered_pct: 20
+    table: peering_peers
+    nist_controls: [SC-5, CM-8]

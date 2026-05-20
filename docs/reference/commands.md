@@ -2353,3 +2353,121 @@ python icdev/tools/strategos/adversarial_validator.py --health --json
 python -c "from icdev.tools.strategos.adversarial_validator import validate_signals; print(validate_signals([...]))"
 ```
 
+
+## NOC Operations Canvas (NOCC) Commands
+```bash
+# Initialize NOCC database (PostgreSQL default, SQLite fallback)
+python -c "from tools.noc_canvas.db.init_db import init_db; init_db()"
+
+# Dashboard (web UI)
+#   GET /noc                  — NOCC home/overview
+#   GET /noc/alarms           — Alarm board
+#   GET /noc/incidents        — Incident tracker
+#   GET /noc/rfcs             — RFC/Change management
+#   GET /noc/mops             — MOP library
+#   GET /noc/maintenance      — Maintenance windows
+#   GET /noc/sla              — SLA dashboard
+
+# REST API
+# POST /api/noc/alarms                          — Ingest alarm
+# POST /api/noc/alarms/<id>/ack                 — Acknowledge alarm
+# POST /api/noc/alarms/<id>/clear               — Clear alarm
+# GET  /api/noc/incidents                        — List open incidents
+# POST /api/noc/incidents                        — Create incident
+# GET  /api/noc/sla                             — SLA records
+# GET  /api/noc/overview                        — Aggregated status
+# POST /api/noc/mops/generate                   — LLM-generate MOP steps
+# POST /api/noc/iqe-query                       — NL→SQL query
+
+# Python direct import
+python -c "from tools.noc_canvas.alarm_correlator import get_active_alarms; from tools.noc_canvas.db.init_db import get_connection; c = get_connection(); print(get_active_alarms(c))"
+python -c "from tools.noc_canvas.sla_predictor import get_sla_dashboard; from tools.noc_canvas.db.init_db import get_connection; c = get_connection(); import json; print(json.dumps(get_sla_dashboard(c), indent=2, default=str))"
+python -c "from tools.noc_canvas.noc_aggregator import get_noc_overview; from tools.noc_canvas.db.init_db import get_connection; c = get_connection(); import json; print(json.dumps(get_noc_overview(c), indent=2, default=str))"
+
+# Genesis reflexes (run manually or via Genesis daemon)
+python tools/genesis/reflexes/nocc_alarm_triage.py     # 2h cadence: auto-incident from alarm storms
+python tools/genesis/reflexes/nocc_sla_watcher.py      # 4h cadence: SLA breach detection
+python tools/genesis/reflexes/bgp_route_monitor.py     # 1h cadence: BGP session monitoring
+python tools/genesis/reflexes/peering_health_monitor.py  # 6h cadence: PeeringDB re-sync + RPKI re-validate
+
+# Skill
+# /icdev-noc  — NOC operations brief (alarms, incidents, SLA, maintenance, peering)
+```
+
+## Peering Management Canvas (PMC) Commands
+```bash
+# Initialize PMC database (PostgreSQL default, SQLite fallback)
+python -c "from tools.pmc_canvas.db.init_db import init_db; init_db()"
+
+# Dashboard (web UI)
+#   GET /pmc                  — PMC home/overview
+#   GET /pmc/peers            — BGP peer registry
+#   GET /pmc/peers/<id>       — Peer detail + RPKI + config
+#   GET /pmc/ix               — Internet Exchange memberships
+#   GET /pmc/rpki             — RPKI validation dashboard
+#   GET /pmc/policies         — Route policies
+#   GET /pmc/requests         — Peering requests pipeline
+
+# REST API
+# GET  /api/pmc/overview                         — Aggregated metrics
+# POST /api/pmc/peers                            — Add BGP peer
+# GET  /api/pmc/peers/<id>/evaluate              — Run decision engine
+# POST /api/pmc/peers/<id>/validate-rpki         — Validate RPKI
+# GET  /api/pmc/peers/<id>/generate-config       — Generate BGP config
+# GET  /api/pmc/peers/<id>/rpsl                  — Generate RPSL aut-num
+# POST /api/pmc/peers/<id>/sync                  — Sync from PeeringDB
+# GET  /api/pmc/rpki/report                      — Full RPKI validation report
+# POST /api/pmc/iqe-query                        — NL→SQL query
+
+# PeeringDB client
+python -c "from tools.pmc_canvas.peeringdb_client import get_asn_info; import json; print(json.dumps(get_asn_info(13335), indent=2))"
+
+# RPKI validation
+python -c "from tools.pmc_canvas.rpki_validator import validate_prefix; import json; print(json.dumps(validate_prefix('1.1.1.0/24', 13335), indent=2))"
+python -c "from tools.pmc_canvas.rpki_validator import generate_roa_report; print(generate_roa_report(1, [{'prefix':'1.1.1.0/24','origin_asn':13335}]))"
+
+# RPSL generator
+python -c "from tools.pmc_canvas.rpsl_generator import generate_aut_num; print(generate_aut_num(64512, [], []))"
+
+# BGP config generator (all 6 OS types)
+python -c "from tools.pmc_canvas.bgp_config_generator import generate_peer_session; print(generate_peer_session({'asn':13335,'org_name':'Cloudflare'}, 64512, 'ios_xr', '198.51.100.1'))"
+
+# Peering decision engine
+python -c "from tools.pmc_canvas.peering_decision_engine import evaluate_peer; import json; print(json.dumps(evaluate_peer({'asn':13335,'org_name':'Cloudflare','traffic_ratio':0.9,'ipv4_prefix_count':1200,'ipv6_prefix_count':300,'irr_as_set':'AS13335'}, 64512, [], []), indent=2))"
+
+# Transit pricing benchmark
+python tools/pmc_canvas/transit_pricing_benchmark.py --benchmark --region na --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
+python tools/pmc_canvas/transit_pricing_benchmark.py --ix --json
+
+# Config
+#   args/pmc_config.yaml  — Decision engine weights, RPKI thresholds, PeeringDB sync cadence
+```
+
+## ISP Carrier Tools Commands
+```bash
+# ISP Capacity Planner
+python -c "from tools.network.isp_capacity_planner import model_traffic_growth; import json; print(json.dumps(model_traffic_growth([100,120,145,180], 12), indent=2))"
+python -c "from tools.network.isp_capacity_planner import dwdm_capacity_analysis; import json; print(json.dumps(dwdm_capacity_analysis(fiber_pairs=4, modulation='400G-DP-16QAM', grid='C-band-50GHz', current_channels_used=60), indent=2))"
+python -c "from tools.network.isp_capacity_planner import dark_fiber_roi; import json; print(json.dumps(dark_fiber_roi(route_km=120, fiber_pairs=4, iru_cost_usd=800000, annual_lease_usd=120000, lease_term_years=20), indent=2))"
+python -c "from tools.network.isp_capacity_planner import capacity_planning_summary; import json; print(json.dumps(capacity_planning_summary('Dallas PoP', [100,120,145,180], 4, '400G-DP-16QAM'), indent=2))"
+
+# FCC Compliance
+python tools/network/fcc_compliance.py --calea --json
+python tools/network/fcc_compliance.py --part36 --json
+python tools/network/fcc_compliance.py --nanp --json
+python tools/network/fcc_compliance.py --e911 --json
+python tools/network/fcc_compliance.py --all --json
+
+# Telco RFP Adapter (E-Rate / BEAD / RDOF)
+python tools/govcon/telco_rfp_adapter.py --form470 --json
+python tools/govcon/telco_rfp_adapter.py --bead --json
+python tools/govcon/telco_rfp_adapter.py --rdof --json
+
+# DataBridge Connectors
+python -c "from tools.databridge.connectors.equinix_ecx_connector import EquinixECXConnector; c = EquinixECXConnector(); print(c.health_check())"
+python -c "from tools.databridge.connectors.megaport_connector import MegaportConnector; c = MegaportConnector(); print(c.health_check())"
+
+# NDC Config Generator — IOS-XR and Nokia SR OS (added as OS types)
+python -c "from tools.network.config_generator import _DEFAULT_OS, _IFACE_GEN; print([k for k in _DEFAULT_OS if 'ios_xr' in _DEFAULT_OS[k] or 'nokia' in _DEFAULT_OS[k]])"
+```

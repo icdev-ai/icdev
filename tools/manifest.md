@@ -706,3 +706,19 @@
 |------|------|-------------|-------|--------|
 | Deploy Staging | tools\il5\deploy_staging.py | Auto-registered: il5/deploy_staging.py | --json | JSON |
 | Async Alert Writer | tools\monitor\async_alert_writer.py | Auto-registered: monitor/async_alert_writer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Build Logger | tools\logging\build_logger.py | Auto-registered: logging/build_logger.py | --json | JSON |
+| Icdev Logger | tools\logging\icdev_logger.py | Auto-registered: logging/icdev_logger.py | --json | JSON |
+| Generate Exec Deck | tools\presentations\generate_exec_deck.py | Auto-registered: presentations/generate_exec_deck.py | --json | JSON |
+| Generate Exec Doc | tools\presentations\generate_exec_doc.py | Auto-registered: presentations/generate_exec_doc.py | --json | JSON |
+| Feature Task Template | tools\testing\feature_task_template.py | Auto-registered: testing/feature_task_template.py | --json | JSON |
+| Pre Commit Check | tools\testing\pre_commit_check.py | Auto-registered: testing/pre_commit_check.py | --json | JSON |
+| Route Smoke | tools\testing\route_smoke.py | Auto-registered: testing/route_smoke.py | --json | JSON |
+| Seed Gcpl Kanban | tools\testing\seed_gcpl_kanban.py | Auto-registered: testing/seed_gcpl_kanban.py | --json | JSON |
+| Seed Logging Kanban | tools\testing\seed_logging_kanban.py | Auto-registered: testing/seed_logging_kanban.py | --json | JSON |
+| Seed Playwright Kanban | tools\testing\seed_playwright_kanban.py | Auto-registered: testing/seed_playwright_kanban.py | --json | JSON |
+| Log Triage | tools\genesis\reflexes\log_triage.py | Auto-registered: reflexes/log_triage.py | --json | JSON |

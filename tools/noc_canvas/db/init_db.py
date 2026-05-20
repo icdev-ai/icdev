@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-_ICDEV_ROOT = Path(__file__).resolve().parents[4]
+_ICDEV_ROOT = Path(__file__).resolve().parents[3]
 _SQLITE_PATH = _ICDEV_ROOT / "data" / "noc_canvas.db"
 
 _NOCC_BACKEND = os.environ.get(

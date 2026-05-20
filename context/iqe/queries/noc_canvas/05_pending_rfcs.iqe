@@ -1,0 +1,7 @@
+# IQE-NOCC-005: RFCs awaiting approval or currently executing
+# Use: Change management review board, NOC shift handoff
+
+foreach r in noc.rfcs
+  where r.status == "submitted" or r.status == "executing"
+  select r.rfc_number, r.title, r.change_type, r.risk_level,
+         r.scheduled_start, r.change_owner, r.approver, r.status
