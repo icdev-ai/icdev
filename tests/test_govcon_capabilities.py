@@ -2001,6 +2001,7 @@ _FAKE_SUMMARY_STRONG_BID = {
     "bid_recommendation": {
         "decision": "strong_bid",
         "score": 0.8,
+        "bid": True,
         "reason": "80% compliant, only 10% gaps. Strong capability alignment.",
         "confidence": "high",
     },
@@ -2020,6 +2021,7 @@ _FAKE_SUMMARY_BID_WITH_GAPS = {
     "bid_recommendation": {
         "decision": "bid_with_gaps",
         "score": 0.6,
+        "bid": True,
         "reason": "60% compliant, 20% gaps. Address gaps via teaming or enhancement.",
         "confidence": "medium",
     },
@@ -2039,6 +2041,7 @@ _FAKE_SUMMARY_CONDITIONAL_BID = {
     "bid_recommendation": {
         "decision": "conditional_bid",
         "score": 0.4,
+        "bid": True,
         "reason": "Only 40% compliant. Significant gaps. Consider teaming partner.",
         "confidence": "low",
     },
@@ -2058,6 +2061,7 @@ _FAKE_SUMMARY_NO_BID = {
     "bid_recommendation": {
         "decision": "no_bid",
         "score": 0.2,
+        "bid": False,
         "reason": "Only 20% compliant with 60% gaps. Poor alignment.",
         "confidence": "high",
     },
@@ -2077,6 +2081,7 @@ _FAKE_SUMMARY_INSUFFICIENT = {
     "bid_recommendation": {
         "decision": "insufficient_data",
         "score": 0.0,
+        "bid": False,
         "reason": "No requirements extracted",
     },
 }
@@ -2379,3 +2384,297 @@ class TestBidRecommendationFunction:
         result = self._call(0, 0, 10)
         assert result["score"] == 0.0
         assert result["decision"] == "no_bid"
+
+
+# ---------------------------------------------------------------------------
+# Tests: bid score is numeric float 0.0–1.0 (gcpl-dft-02)
+# ---------------------------------------------------------------------------
+
+
+class TestBidScoreIsNumeric:
+    """Score must be a Python float (not int, bool, or str) in closed range [0.0, 1.0]."""
+
+    def _call(self, l_count, m_count, n_count):
+        from tools.govcon.compliance_populator import _bid_recommendation
+
+        total = l_count + m_count + n_count
+        return _bid_recommendation(
+            {
+                "total_requirements": total,
+                "L_compliant": l_count,
+                "M_partial": m_count,
+                "N_gap": n_count,
+            }
+        )
+
+    def test_score_is_float_strong_bid(self):
+        result = self._call(7, 2, 1)
+        assert isinstance(result["score"], float), (
+            f"score must be float for strong_bid, got {type(result['score']).__name__}"
+        )
+
+    def test_score_is_float_bid_with_gaps(self):
+        result = self._call(5, 3, 2)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_float_conditional_bid(self):
+        result = self._call(3, 3, 4)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_float_no_bid(self):
+        result = self._call(1, 2, 7)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_float_insufficient_data(self):
+        result = self._call(0, 0, 0)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_float_at_100pct_L(self):
+        result = self._call(10, 0, 0)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_float_at_0pct_L(self):
+        result = self._call(0, 0, 10)
+        assert isinstance(result["score"], float)
+
+    def test_score_is_not_bool(self):
+        result = self._call(7, 2, 1)
+        assert not isinstance(result["score"], bool), "score must not be bool"
+
+    def test_score_is_not_string(self):
+        result = self._call(7, 2, 1)
+        assert not isinstance(result["score"], str), "score must not be a string"
+
+    def test_score_gte_0_strong_bid(self):
+        assert self._call(7, 2, 1)["score"] >= 0.0
+
+    def test_score_lte_1_strong_bid(self):
+        assert self._call(7, 2, 1)["score"] <= 1.0
+
+    def test_score_gte_0_bid_with_gaps(self):
+        assert self._call(5, 3, 2)["score"] >= 0.0
+
+    def test_score_lte_1_bid_with_gaps(self):
+        assert self._call(5, 3, 2)["score"] <= 1.0
+
+    def test_score_gte_0_conditional_bid(self):
+        assert self._call(3, 3, 4)["score"] >= 0.0
+
+    def test_score_lte_1_conditional_bid(self):
+        assert self._call(3, 3, 4)["score"] <= 1.0
+
+    def test_score_gte_0_no_bid(self):
+        assert self._call(1, 2, 7)["score"] >= 0.0
+
+    def test_score_lte_1_no_bid(self):
+        assert self._call(1, 2, 7)["score"] <= 1.0
+
+    def test_score_exactly_0_insufficient_data(self):
+        assert self._call(0, 0, 0)["score"] == 0.0
+
+    def test_score_exactly_1_at_100pct_L(self):
+        assert self._call(10, 0, 0)["score"] == 1.0
+
+    def test_score_exactly_0_at_0pct_L_with_total(self):
+        assert self._call(0, 0, 10)["score"] == 0.0
+
+    @pytest.mark.parametrize(
+        "l,m,n",
+        [
+            (7, 2, 1),
+            (5, 3, 2),
+            (3, 3, 4),
+            (1, 2, 7),
+            (10, 0, 0),
+            (0, 0, 10),
+        ],
+    )
+    def test_score_in_range_parametrized(self, l, m, n):
+        result = self._call(l, m, n)
+        assert 0.0 <= result["score"] <= 1.0, (
+            f"score {result['score']!r} out of [0.0, 1.0] for L={l} M={m} N={n}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: binary bid/no_bid decision field (gcpl-dft-02)
+# ---------------------------------------------------------------------------
+
+
+class TestBidBinaryDecision:
+    """_bid_recommendation() must include a binary `bid` boolean field."""
+
+    def _call(self, l_count, m_count, n_count):
+        from tools.govcon.compliance_populator import _bid_recommendation
+
+        total = l_count + m_count + n_count
+        return _bid_recommendation(
+            {
+                "total_requirements": total,
+                "L_compliant": l_count,
+                "M_partial": m_count,
+                "N_gap": n_count,
+            }
+        )
+
+    def test_result_has_bid_key(self):
+        result = self._call(7, 2, 1)
+        assert "bid" in result, "bid boolean field must be present in result"
+
+    def test_bid_is_bool_strong_bid(self):
+        assert isinstance(self._call(7, 2, 1)["bid"], bool)
+
+    def test_bid_is_bool_bid_with_gaps(self):
+        assert isinstance(self._call(5, 3, 2)["bid"], bool)
+
+    def test_bid_is_bool_conditional_bid(self):
+        assert isinstance(self._call(3, 3, 4)["bid"], bool)
+
+    def test_bid_is_bool_no_bid(self):
+        assert isinstance(self._call(1, 2, 7)["bid"], bool)
+
+    def test_bid_is_bool_insufficient_data(self):
+        assert isinstance(self._call(0, 0, 0)["bid"], bool)
+
+    def test_strong_bid_bid_is_true(self):
+        assert self._call(7, 2, 1)["bid"] is True
+
+    def test_bid_with_gaps_bid_is_true(self):
+        assert self._call(5, 3, 2)["bid"] is True
+
+    def test_conditional_bid_bid_is_true(self):
+        assert self._call(3, 3, 4)["bid"] is True
+
+    def test_no_bid_bid_is_false(self):
+        assert self._call(1, 2, 7)["bid"] is False
+
+    def test_insufficient_data_bid_is_false(self):
+        assert self._call(0, 0, 0)["bid"] is False
+
+    def test_bid_true_at_100pct_L(self):
+        assert self._call(10, 0, 0)["bid"] is True
+
+    def test_bid_false_at_0pct_L_with_total(self):
+        assert self._call(0, 0, 10)["bid"] is False
+
+    def test_bid_not_none(self):
+        assert self._call(7, 2, 1)["bid"] is not None
+
+    def test_bid_is_not_string(self):
+        result = self._call(7, 2, 1)
+        assert not isinstance(result["bid"], str), "bid must be bool, not string"
+
+    def test_bid_coalesces_all_positive_decisions(self):
+        for l, m, n in [(7, 2, 1), (5, 3, 2), (3, 3, 4)]:
+            result = self._call(l, m, n)
+            assert result["bid"] is True, (
+                f"Expected bid=True for L={l} M={m} N={n}, got {result['bid']!r}"
+            )
+
+    def test_bid_false_for_no_bid_decision(self):
+        result = self._call(1, 2, 7)
+        assert result["decision"] == "no_bid"
+        assert result["bid"] is False
+
+    def test_bid_false_for_insufficient_data(self):
+        result = self._call(0, 0, 0)
+        assert result["decision"] == "insufficient_data"
+        assert result["bid"] is False
+
+    def test_bid_consistent_with_decision(self):
+        _BID_DECISIONS = {"strong_bid", "bid_with_gaps", "conditional_bid"}
+        for l, m, n in [(7, 2, 1), (5, 3, 2), (3, 3, 4), (1, 2, 7), (10, 0, 0), (0, 0, 10)]:
+            result = self._call(l, m, n)
+            expected = result["decision"] in _BID_DECISIONS
+            assert result["bid"] == expected, (
+                f"bid mismatch for L={l} M={m} N={n}: decision={result['decision']}, bid={result['bid']}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# API tests: score numeric + binary bid field via endpoint (gcpl-dft-02)
+# ---------------------------------------------------------------------------
+
+
+class TestBidScoreAndBinaryDecisionAPI:
+    """GET /api/govcon/opportunities/<id>/bid-recommendation returns float score and bool bid."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _get(self, api_app, opp_id="opp-test-123", fake_summary=None):
+        if fake_summary is None:
+            fake_summary = _FAKE_SUMMARY_STRONG_BID
+        with patch(
+            "tools.govcon.compliance_populator.get_summary",
+            return_value=fake_summary,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get(f"/api/govcon/opportunities/{opp_id}/bid-recommendation")
+        return resp
+
+    def test_score_is_json_number_not_string(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        score = data["bid_recommendation"]["score"]
+        assert isinstance(score, (int, float)) and not isinstance(score, bool), (
+            f"score must be JSON number, got {type(score).__name__}: {score!r}"
+        )
+
+    def test_score_not_string_strong_bid(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert not isinstance(data["bid_recommendation"]["score"], str)
+
+    def test_score_gte_0_all_summaries(self, api_app):
+        for fake in [
+            _FAKE_SUMMARY_STRONG_BID,
+            _FAKE_SUMMARY_BID_WITH_GAPS,
+            _FAKE_SUMMARY_CONDITIONAL_BID,
+            _FAKE_SUMMARY_NO_BID,
+            _FAKE_SUMMARY_INSUFFICIENT,
+        ]:
+            resp = self._get(api_app, fake_summary=fake)
+            score = resp.get_json()["bid_recommendation"]["score"]
+            assert score >= 0.0, f"score {score!r} < 0.0"
+
+    def test_score_lte_1_positive_decisions(self, api_app):
+        for fake in [
+            _FAKE_SUMMARY_STRONG_BID,
+            _FAKE_SUMMARY_BID_WITH_GAPS,
+            _FAKE_SUMMARY_CONDITIONAL_BID,
+            _FAKE_SUMMARY_NO_BID,
+        ]:
+            resp = self._get(api_app, fake_summary=fake)
+            score = resp.get_json()["bid_recommendation"]["score"]
+            assert score <= 1.0, f"score {score!r} > 1.0"
+
+    def test_bid_recommendation_has_bid_field(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "bid" in data["bid_recommendation"], "bid boolean field missing from API response"
+
+    def test_api_bid_is_bool_strong_bid(self, api_app):
+        resp = self._get(api_app, fake_summary=_FAKE_SUMMARY_STRONG_BID)
+        assert isinstance(resp.get_json()["bid_recommendation"]["bid"], bool)
+
+    def test_api_strong_bid_bid_is_true(self, api_app):
+        resp = self._get(api_app, fake_summary=_FAKE_SUMMARY_STRONG_BID)
+        assert resp.get_json()["bid_recommendation"]["bid"] is True
+
+    def test_api_bid_with_gaps_bid_is_true(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-456", fake_summary=_FAKE_SUMMARY_BID_WITH_GAPS)
+        assert resp.get_json()["bid_recommendation"]["bid"] is True
+
+    def test_api_conditional_bid_bid_is_true(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-789", fake_summary=_FAKE_SUMMARY_CONDITIONAL_BID)
+        assert resp.get_json()["bid_recommendation"]["bid"] is True
+
+    def test_api_no_bid_bid_is_false(self, api_app):
+        resp = self._get(api_app, opp_id="opp-test-000", fake_summary=_FAKE_SUMMARY_NO_BID)
+        assert resp.get_json()["bid_recommendation"]["bid"] is False
+
+    def test_api_insufficient_data_bid_is_false(self, api_app):
+        resp = self._get(api_app, opp_id="opp-empty", fake_summary=_FAKE_SUMMARY_INSUFFICIENT)
+        assert resp.get_json()["bid_recommendation"]["bid"] is False
