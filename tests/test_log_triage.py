@@ -152,3 +152,25 @@ class TestRun:
             r2 = mod.run({"build_log": str(build_log)}, None)
         assert r2["tasks_created"] == 0
         mock2.assert_not_called()
+
+    def test_run_creates_exactly_one_task_for_new_signature(self, tmp_path):
+        """Exactly one task is created for a new failing signature, even with duplicate log events."""
+        from tools.genesis.reflexes import log_triage as mod
+        mod._SEEN_SIGS_FILE = tmp_path / "seen.json"
+        build_log = tmp_path / "build.ndjson"
+        # Three events: two share the same (component, message) — new signature deduplicates to one task
+        _write_ndjson(build_log, [
+            {"ts": "2026-01-01T00:00:00Z", "level": "ERROR",
+             "component": "auth_service", "message": "connection refused",
+             "returncode": 1, "failed": 1},
+            {"ts": "2026-01-01T00:00:01Z", "level": "ERROR",
+             "component": "auth_service", "message": "connection refused",
+             "returncode": 1, "failed": 1},
+            {"ts": "2026-01-01T00:00:02Z", "level": "INFO",
+             "component": "auth_service", "message": "retry attempt",
+             "returncode": 0},
+        ])
+        with patch.object(mod, "_create_task", return_value=True) as mock_create:
+            result = mod.run({"build_log": str(build_log)}, None)
+        assert result["tasks_created"] == 1
+        mock_create.assert_called_once()
