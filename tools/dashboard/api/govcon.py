@@ -145,11 +145,16 @@ def import_sam_to_proposal(sam_opp_id):
 
         # Create proposal_opportunity
         prop_id = _uuid()
+        # Normalize set_aside_type — empty string is not a valid CHECK value
+        raw_set_aside = sam.get("set_aside_type") or None
+        valid_set_asides = {"full_open", "small_business", "8a", "hubzone", "sdvosb", "wosb", "edwosb", "sole_source", "other"}
+        set_aside = raw_set_aside if raw_set_aside in valid_set_asides else None
         conn.execute(
             """INSERT INTO proposal_opportunities
                (id, solicitation_number, title, agency, sub_agency, due_date,
-                naics_code, set_aside_type, rfp_url, status, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'intake', ?, ?, ?)""",
+                naics_code, set_aside_type, rfp_url, proposal_type, status,
+                classification, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'other', 'intake', ?, ?, ?)""",
             (
                 prop_id,
                 sam.get("solicitation_number", ""),
@@ -158,7 +163,7 @@ def import_sam_to_proposal(sam_opp_id):
                 sam.get("agency_hierarchy", ""),
                 sam.get("response_deadline", ""),
                 sam.get("naics_code", ""),
-                sam.get("set_aside_type", ""),
+                set_aside,
                 sam.get("solicitation_number", ""),  # use as rfp_url placeholder
                 DEFAULT_CLASSIFICATION,
                 now_isoformat(),
