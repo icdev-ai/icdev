@@ -721,3 +721,188 @@ class TestEnhancementRecommendationsRoute:
                     assert resp.status_code == 200
         assert captured.get("recommendations", None) is not None
         assert isinstance(captured["recommendations"], list)
+
+
+# ---------------------------------------------------------------------------
+# API test helper: minimal Flask app with govcon_api blueprint (gcpl-map-06)
+# ---------------------------------------------------------------------------
+
+def _build_api_test_app():
+    """Return a Flask test app with only the govcon_api blueprint registered."""
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+    return flask_app
+
+
+_FAKE_MAPPINGS = [
+    {
+        "pattern_id": "pat-1",
+        "pattern_name": "Zero Trust Architecture",
+        "domain": "devsecops",
+        "capability_id": "cap-1",
+        "capability_name": "ZTA Enforcement",
+        "score": 0.92,
+        "grade": "L",
+        "matched_keywords": ["zero", "trust"],
+        "evidence": "Keyword overlap",
+    },
+    {
+        "pattern_id": "pat-2",
+        "pattern_name": "Encryption at Rest",
+        "domain": "security",
+        "capability_id": "cap-2",
+        "capability_name": "Data Encryption",
+        "score": 0.61,
+        "grade": "M",
+        "matched_keywords": ["encryption", "rest"],
+        "evidence": "Partial match",
+    },
+    {
+        "pattern_id": "pat-3",
+        "pattern_name": "Supply Chain Risk",
+        "domain": "supply_chain",
+        "capability_id": "cap-3",
+        "capability_name": "SBOM Generation",
+        "score": 0.25,
+        "grade": "N",
+        "matched_keywords": ["supply"],
+        "evidence": "Low overlap",
+    },
+]
+
+_FAKE_RESULT_OK = {
+    "status": "ok",
+    "patterns_mapped": 3,
+    "capability_links": 3,
+    "mappings": _FAKE_MAPPINGS,
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: POST /api/govcon/opportunities/<id>/map-capabilities (gcpl-map-06)
+# ---------------------------------------------------------------------------
+
+class TestMapCapabilitiesAPIEndpoint:
+    """POST /api/govcon/opportunities/<id>/map-capabilities returns coverage scores."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _post(self, api_app, opp_id="opp-test-123"):
+        with patch(
+            "tools.govcon.capability_mapper.map_all_patterns",
+            return_value=_FAKE_RESULT_OK,
+        ):
+            with api_app.test_client() as c:
+                resp = c.post(f"/api/govcon/opportunities/{opp_id}/map-capabilities")
+        return resp
+
+    def test_post_returns_200(self, api_app):
+        resp = self._post(api_app)
+        assert resp.status_code == 200
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_patterns_mapped(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "patterns_mapped" in data
+
+    def test_response_has_capability_links(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "capability_links" in data
+
+    def test_response_has_mappings_list(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        assert "mappings" in data
+        assert isinstance(data["mappings"], list)
+
+    def test_mappings_contain_score_values(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for m in data["mappings"]:
+            assert "score" in m, f"Mapping missing 'score': {m}"
+
+    def test_mappings_contain_grade_values(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for m in data["mappings"]:
+            assert "grade" in m, f"Mapping missing 'grade': {m}"
+
+    def test_mapping_grades_are_L_M_or_N(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for m in data["mappings"]:
+            assert m["grade"] in {"L", "M", "N"}, f"Invalid grade: {m['grade']}"
+
+    def test_mapping_scores_are_float_between_0_and_1(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        for m in data["mappings"]:
+            assert 0.0 <= m["score"] <= 1.0, f"Score out of range: {m['score']}"
+
+    def test_l_grade_mapping_has_score_gte_080(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        l_mappings = [m for m in data["mappings"] if m["grade"] == "L"]
+        for m in l_mappings:
+            assert m["score"] >= 0.80, f"L-grade score below 0.80: {m['score']}"
+
+    def test_m_grade_mapping_has_score_between_040_and_080(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        m_mappings = [m for m in data["mappings"] if m["grade"] == "M"]
+        for m in m_mappings:
+            assert 0.40 <= m["score"] < 0.80, f"M-grade score out of range: {m['score']}"
+
+    def test_n_grade_mapping_has_score_below_040(self, api_app):
+        resp = self._post(api_app)
+        data = resp.get_json()
+        n_mappings = [m for m in data["mappings"] if m["grade"] == "N"]
+        for m in n_mappings:
+            assert m["score"] < 0.40, f"N-grade score not below 0.40: {m['score']}"
+
+    def test_endpoint_accepts_arbitrary_opp_id(self, api_app):
+        for opp_id in ("abc-123", "uuid-9999", "opportunity-xyz"):
+            resp = self._post(api_app, opp_id=opp_id)
+            assert resp.status_code == 200, f"Expected 200 for opp_id={opp_id}"
+
+    def test_returns_500_when_map_all_patterns_raises(self, api_app):
+        with patch(
+            "tools.govcon.capability_mapper.map_all_patterns",
+            side_effect=RuntimeError("mapper offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-err/map-capabilities")
+        assert resp.status_code == 500
+
+    def test_500_response_has_error_key(self, api_app):
+        with patch(
+            "tools.govcon.capability_mapper.map_all_patterns",
+            side_effect=RuntimeError("mapper offline"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-err/map-capabilities")
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_no_patterns_returns_200_with_zero_mapped(self, api_app):
+        empty_result = {"status": "ok", "patterns_mapped": 0, "message": "No requirement patterns found"}
+        with patch(
+            "tools.govcon.capability_mapper.map_all_patterns",
+            return_value=empty_result,
+        ):
+            with api_app.test_client() as c:
+                resp = c.post("/api/govcon/opportunities/opp-empty/map-capabilities")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["patterns_mapped"] == 0
