@@ -80,8 +80,8 @@ RATING_THRESHOLDS = _CPARS_CFG.get(
     "rating_thresholds",
     {
         "exceptional": 0.90,
-        "very_good": 0.75,
-        "satisfactory": 0.60,
+        "very_good": 0.80,
+        "satisfactory": 0.65,
         "marginal": 0.40,
     },
 )
