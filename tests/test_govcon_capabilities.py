@@ -4670,3 +4670,348 @@ class TestApproveDraftSectionTransition:
         assert "bob@example.com" in (section["notes"] or ""), (
             f"Section notes must mention reviewer 'bob@example.com', got {section['notes']!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Schema + helpers for PUT /api/govcon/drafts/<id>/reject tests (gcpl-dft-08)
+# ---------------------------------------------------------------------------
+
+_REJECT_DRAFT_ID = "reject-draft-1"
+_REJECT_OPP_ID = "opp-reject-test"
+_REJECT_SECTION_ID = "section-reject-1"
+_REJECT_DRAFT_CONTENT = "Our team leverages containerized microservices for rapid deployment."
+
+
+def _make_reject_db(tmp_path, section_status="not_started", include_section=True):
+    """Create a SQLite test DB seeded with one draft (and optionally a linked section)."""
+    db_path = tmp_path / "reject_test.db"
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(_APPROVE_SCHEMA)
+
+    section_id = _REJECT_SECTION_ID if include_section else None
+
+    conn.execute(
+        """INSERT INTO proposal_section_drafts
+           (id, section_id, opportunity_id, draft_content, draft_method, confidence_score, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            _REJECT_DRAFT_ID,
+            section_id,
+            _REJECT_OPP_ID,
+            _REJECT_DRAFT_CONTENT,
+            "llm",
+            0.55,
+            "draft",
+            "2026-05-20T10:00:00",
+        ),
+    )
+
+    if include_section:
+        conn.execute(
+            "INSERT INTO proposal_sections (id, section_number, title, status) VALUES (?, ?, ?, ?)",
+            (_REJECT_SECTION_ID, "2.1", "Management Approach", section_status),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+def _build_reject_api_app(tmp_path, section_status="not_started", include_section=True):
+    """Return (flask_app, fake_get_db, db_path) for reject endpoint tests."""
+    db_path = _make_reject_db(tmp_path, section_status=section_status, include_section=include_section)
+
+    import sqlite3 as _sqlite3
+
+    def fake_get_db():
+        c = _sqlite3.connect(str(db_path))
+        c.row_factory = _sqlite3.Row
+        return c
+
+    from tools.dashboard.api.govcon import govcon_api
+
+    flask_app = Flask(__name__)
+    flask_app.config["TESTING"] = True
+    flask_app.register_blueprint(govcon_api)
+
+    return flask_app, fake_get_db, db_path
+
+
+# ---------------------------------------------------------------------------
+# Tests: PUT /api/govcon/drafts/<id>/reject — response shape (gcpl-dft-08)
+# ---------------------------------------------------------------------------
+
+
+class TestRejectDraftEndpoint:
+    """PUT /api/govcon/drafts/<id>/reject records reason and sets status=rejected."""
+
+    @pytest.fixture()
+    def app_trio(self, tmp_path):
+        return _build_reject_api_app(tmp_path)
+
+    def _put(self, app_trio, draft_id=_REJECT_DRAFT_ID, body=None):
+        flask_app, fake_get_db, _ = app_trio
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                resp = c.put(
+                    f"/api/govcon/drafts/{draft_id}/reject",
+                    json=body or {},
+                    content_type="application/json",
+                )
+        return resp
+
+    def test_reject_returns_200(self, app_trio):
+        resp = self._put(app_trio)
+        assert resp.status_code == 200
+
+    def test_reject_content_type_is_json(self, app_trio):
+        resp = self._put(app_trio)
+        assert resp.content_type.startswith("application/json")
+
+    def test_reject_response_has_status_key(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_reject_response_status_is_ok(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_reject_response_has_draft_id(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert "draft_id" in data
+
+    def test_reject_draft_id_matches_requested(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert data["draft_id"] == _REJECT_DRAFT_ID
+
+    def test_reject_response_rejected_is_true(self, app_trio):
+        resp = self._put(app_trio)
+        data = resp.get_json()
+        assert data.get("rejected") is True
+
+    def test_reject_nonexistent_draft_returns_404(self, app_trio):
+        resp = self._put(app_trio, draft_id="no-such-draft-id")
+        assert resp.status_code == 404
+
+    def test_404_response_has_error_key(self, app_trio):
+        resp = self._put(app_trio, draft_id="no-such-draft-id")
+        data = resp.get_json()
+        assert "error" in data
+
+    def test_reject_inserts_new_rejected_row(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        rows = verify.execute(
+            "SELECT * FROM proposal_section_drafts WHERE status = 'rejected'"
+        ).fetchall()
+        verify.close()
+        assert len(rows) == 1, f"Expected exactly 1 rejected row, got {len(rows)}"
+
+    def test_rejected_row_preserves_draft_content(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT draft_content FROM proposal_section_drafts WHERE status = 'rejected'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["draft_content"] == _REJECT_DRAFT_CONTENT
+
+    def test_original_draft_row_unchanged(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        original = verify.execute(
+            "SELECT status FROM proposal_section_drafts WHERE id = ?",
+            (_REJECT_DRAFT_ID,),
+        ).fetchone()
+        verify.close()
+        assert original is not None, "Original draft row was deleted"
+        assert original["status"] == "draft", (
+            f"Original row must remain status='draft', got {original['status']!r}"
+        )
+
+    def test_rejected_row_reviewed_by_defaults_to_govcon_api(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT reviewed_by FROM proposal_section_drafts WHERE status = 'rejected'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["reviewed_by"] == "govcon_api", (
+            f"Default reviewed_by must be 'govcon_api', got {row['reviewed_by']!r}"
+        )
+
+    def test_rejected_row_reviewed_by_from_request_body(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    json={"reviewed_by": "carol@example.com"},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT reviewed_by FROM proposal_section_drafts WHERE status = 'rejected'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["reviewed_by"] == "carol@example.com", (
+            f"reviewed_by should come from body, got {row['reviewed_by']!r}"
+        )
+
+    def test_rejected_row_stores_review_notes(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    json={"review_notes": "Content does not meet compliance requirements."},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT review_notes FROM proposal_section_drafts WHERE status = 'rejected'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["review_notes"] == "Content does not meet compliance requirements.", (
+            f"review_notes must be stored, got {row['review_notes']!r}"
+        )
+
+    def test_rejected_row_review_notes_defaults_to_rejected(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path)
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                c.put(
+                    f"/api/govcon/drafts/{_REJECT_DRAFT_ID}/reject",
+                    json={},
+                    content_type="application/json",
+                )
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        row = verify.execute(
+            "SELECT review_notes FROM proposal_section_drafts WHERE status = 'rejected'"
+        ).fetchone()
+        verify.close()
+        assert row is not None
+        assert row["review_notes"] == "Rejected", (
+            f"Default review_notes must be 'Rejected', got {row['review_notes']!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tests: section status NOT changed on reject (gcpl-dft-08)
+# ---------------------------------------------------------------------------
+
+
+class TestRejectDraftSectionNotChanged:
+    """Rejecting a draft must NOT change the linked section's status."""
+
+    def _reject(self, flask_app, fake_get_db, draft_id=_REJECT_DRAFT_ID, body=None):
+        with patch("tools.dashboard.api.govcon._get_db", side_effect=fake_get_db):
+            with flask_app.test_client() as c:
+                return c.put(
+                    f"/api/govcon/drafts/{draft_id}/reject",
+                    json=body or {},
+                    content_type="application/json",
+                )
+
+    def test_section_not_started_status_unchanged(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path, section_status="not_started")
+        self._reject(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_REJECT_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section is not None
+        assert section["status"] == "not_started", (
+            f"Section status must remain 'not_started' after reject, got {section['status']!r}"
+        )
+
+    def test_section_drafting_status_unchanged(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path, section_status="drafting")
+        self._reject(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_REJECT_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section["status"] == "drafting", (
+            f"Section status must remain 'drafting' after reject, got {section['status']!r}"
+        )
+
+    def test_section_internal_review_status_unchanged(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path, section_status="internal_review")
+        self._reject(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        section = verify.execute(
+            "SELECT status FROM proposal_sections WHERE id = ?", (_REJECT_SECTION_ID,)
+        ).fetchone()
+        verify.close()
+        assert section["status"] == "internal_review", (
+            f"Section status must remain 'internal_review' after reject, got {section['status']!r}"
+        )
+
+    def test_no_status_history_row_inserted_on_reject(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path, section_status="not_started")
+        self._reject(flask_app, fake_get_db)
+        verify = sqlite3.connect(str(db_path))
+        verify.row_factory = sqlite3.Row
+        rows = verify.execute(
+            "SELECT * FROM proposal_status_history WHERE entity_id = ?",
+            (_REJECT_SECTION_ID,),
+        ).fetchall()
+        verify.close()
+        assert len(rows) == 0, (
+            f"No status_history row expected on reject, got {len(rows)}"
+        )
+
+    def test_reject_without_section_id_returns_ok(self, tmp_path):
+        flask_app, fake_get_db, db_path = _build_reject_api_app(tmp_path, include_section=False)
+        resp = self._reject(flask_app, fake_get_db)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
