@@ -62,6 +62,11 @@ def _audit(conn, action, details="", actor="response_drafter"):
         pass
 
 
+def _compute_quality_score(confidence_score: float, best_coverage: float) -> float:
+    """Composite quality score: 60% confidence + 40% capability coverage."""
+    return float(round(confidence_score * 0.6 + best_coverage * 0.4, 4))
+
+
 def _load_config():
     try:
         import yaml
