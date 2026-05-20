@@ -1722,3 +1722,262 @@ class TestGenerateRecommendationsFunction:
         result = self._run_recommendations(db_path)
         pattern_ids = {r["pattern_id"] for r in result["recommendations"]}
         assert pat_n in pattern_ids, "N-grade gap pattern should appear in recommendations"
+
+
+# ---------------------------------------------------------------------------
+# Fake data: GET /api/govcon/gaps/heatmap (gcpl-map-10)
+# ---------------------------------------------------------------------------
+
+_FAKE_HEATMAP_RESULT = {
+    "status": "ok",
+    "heatmap": {
+        "devsecops": {"L": 2, "M": 1, "N": 1, "total_frequency": 10, "health_score": 0.63},
+        "security": {"L": 0, "M": 1, "N": 2, "total_frequency": 6, "health_score": 0.17},
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# API tests: GET /api/govcon/gaps/heatmap (gcpl-map-10)
+# ---------------------------------------------------------------------------
+
+
+class TestGetHeatmapAPIEndpoint:
+    """GET /api/govcon/gaps/heatmap returns a domain-keyed heatmap object."""
+
+    @pytest.fixture()
+    def api_app(self):
+        return _build_api_test_app()
+
+    def _get(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.get_heatmap",
+            return_value=_FAKE_HEATMAP_RESULT,
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps/heatmap")
+        return resp
+
+    def test_get_returns_200(self, api_app):
+        resp = self._get(api_app)
+        assert resp.status_code == 200
+
+    def test_response_content_type_is_json(self, api_app):
+        resp = self._get(api_app)
+        assert resp.content_type.startswith("application/json")
+
+    def test_response_has_status_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "status" in data
+
+    def test_response_status_is_ok(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert data["status"] == "ok"
+
+    def test_response_has_heatmap_key(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert "heatmap" in data
+
+    def test_heatmap_is_a_dict(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        assert isinstance(data["heatmap"], dict)
+
+    def test_heatmap_keys_are_non_empty_strings(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for key in data["heatmap"]:
+            assert isinstance(key, str) and key, f"Domain key is empty or not a string: {key!r}"
+
+    def test_each_domain_has_L_count(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for domain, entry in data["heatmap"].items():
+            assert "L" in entry, f"Domain '{domain}' missing 'L' key"
+
+    def test_each_domain_has_M_count(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for domain, entry in data["heatmap"].items():
+            assert "M" in entry, f"Domain '{domain}' missing 'M' key"
+
+    def test_each_domain_has_N_count(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for domain, entry in data["heatmap"].items():
+            assert "N" in entry, f"Domain '{domain}' missing 'N' key"
+
+    def test_each_domain_has_total_frequency(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for domain, entry in data["heatmap"].items():
+            assert "total_frequency" in entry, f"Domain '{domain}' missing 'total_frequency' key"
+
+    def test_each_domain_has_health_score(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for domain, entry in data["heatmap"].items():
+            assert "health_score" in entry, f"Domain '{domain}' missing 'health_score' key"
+
+    def test_health_score_is_between_0_and_1(self, api_app):
+        resp = self._get(api_app)
+        data = resp.get_json()
+        for domain, entry in data["heatmap"].items():
+            score = entry["health_score"]
+            assert 0.0 <= score <= 1.0, (
+                f"Domain '{domain}' health_score {score!r} out of range [0, 1]"
+            )
+
+    def test_get_returns_500_when_heatmap_raises(self, api_app):
+        with patch(
+            "tools.govcon.gap_analyzer.get_heatmap",
+            side_effect=RuntimeError("db error"),
+        ):
+            with api_app.test_client() as c:
+                resp = c.get("/api/govcon/gaps/heatmap")
+        assert resp.status_code == 500
+
+
+# ---------------------------------------------------------------------------
+# Unit tests: get_heatmap() domain-keyed structure (gcpl-map-10)
+# ---------------------------------------------------------------------------
+
+
+class TestGetHeatmapFunction:
+    """get_heatmap() returns a domain-keyed dict with L/M/N counts and health_score."""
+
+    @pytest.fixture()
+    def gaps_db(self, tmp_path):
+        return _make_gaps_db(tmp_path)
+
+    def _run_heatmap(self, db_path):
+        import sqlite3 as _sqlite3
+
+        def _fake_get_db():
+            conn = _sqlite3.connect(str(db_path))
+            conn.row_factory = _sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            return conn
+
+        with patch("tools.govcon.gap_analyzer._get_db", side_effect=_fake_get_db):
+            from tools.govcon import gap_analyzer
+            return gap_analyzer.get_heatmap()
+
+    def test_returns_status_ok(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        assert result["status"] == "ok"
+
+    def test_returns_heatmap_key(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        assert "heatmap" in result
+
+    def test_heatmap_is_domain_keyed_dict(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        assert isinstance(result["heatmap"], dict)
+
+    def test_N_grade_domain_has_positive_N_count(self, gaps_db):
+        """devsecops domain holds the N-grade pattern; its N count must be >= 1."""
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        heatmap = result["heatmap"]
+        assert "devsecops" in heatmap, f"'devsecops' domain missing from heatmap: {list(heatmap)}"
+        assert heatmap["devsecops"]["N"] >= 1, (
+            f"Expected N >= 1 for devsecops, got {heatmap['devsecops']['N']}"
+        )
+
+    def test_M_grade_domain_has_positive_M_count(self, gaps_db):
+        """security domain holds the M-grade pattern; its M count must be >= 1."""
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        heatmap = result["heatmap"]
+        assert "security" in heatmap, f"'security' domain missing from heatmap: {list(heatmap)}"
+        assert heatmap["security"]["M"] >= 1, (
+            f"Expected M >= 1 for security, got {heatmap['security']['M']}"
+        )
+
+    def test_L_grade_domain_has_positive_L_count(self, gaps_db):
+        """compliance domain holds the L-grade pattern; its L count must be >= 1."""
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        heatmap = result["heatmap"]
+        assert "compliance" in heatmap, f"'compliance' domain missing from heatmap: {list(heatmap)}"
+        assert heatmap["compliance"]["L"] >= 1, (
+            f"Expected L >= 1 for compliance, got {heatmap['compliance']['L']}"
+        )
+
+    def test_each_domain_entry_has_all_required_keys(self, gaps_db):
+        db_path, _, _, _ = gaps_db
+        result = self._run_heatmap(db_path)
+        required = {"L", "M", "N", "total_frequency", "health_score"}
+        for domain, entry in result["heatmap"].items():
+            missing = required - set(entry)
+            assert not missing, f"Domain '{domain}' missing keys: {missing}"
+
+    def test_health_score_for_L_only_domain_is_1(self, tmp_path):
+        """A domain where all patterns are L-grade must have health_score == 1.0."""
+        db_path = tmp_path / "l_only.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(_GAPS_SCHEMA)
+        pat_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO rfp_requirement_patterns "
+            "(id, pattern_name, description, domain_category, frequency, "
+            " representative_text, keyword_fingerprint, keywords, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pat_id, "Full Compliance", "all good", "ato_rmf", 2, "text", "fp", "[]", "new"),
+        )
+        conn.execute(
+            "INSERT INTO icdev_capability_map "
+            "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), pat_id, "cap-l", 0.95, "L", "[]", "2026-01-01T00:00:00+00:00", "{}"),
+        )
+        conn.commit()
+        conn.close()
+
+        result = self._run_heatmap(db_path)
+        score = result["heatmap"]["ato_rmf"]["health_score"]
+        assert score == 1.0, f"All-L domain should have health_score 1.0, got {score}"
+
+    def test_health_score_for_N_only_domain_is_0(self, tmp_path):
+        """A domain where all patterns are N-grade must have health_score == 0.0."""
+        db_path = tmp_path / "n_only.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(_GAPS_SCHEMA)
+        pat_id = str(uuid.uuid4())
+        conn.execute(
+            "INSERT INTO rfp_requirement_patterns "
+            "(id, pattern_name, description, domain_category, frequency, "
+            " representative_text, keyword_fingerprint, keywords, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (pat_id, "Total Gap", "no coverage", "cloud", 4, "text", "fp", "[]", "new"),
+        )
+        conn.execute(
+            "INSERT INTO icdev_capability_map "
+            "(id, pattern_id, capability_id, coverage_score, grade, matched_keywords, created_at, metadata) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(uuid.uuid4()), pat_id, "cap-n", 0.05, "N", "[]", "2026-01-01T00:00:00+00:00", "{}"),
+        )
+        conn.commit()
+        conn.close()
+
+        result = self._run_heatmap(db_path)
+        score = result["heatmap"]["cloud"]["health_score"]
+        assert score == 0.0, f"All-N domain should have health_score 0.0, got {score}"
+
+    def test_empty_db_returns_empty_heatmap(self, tmp_path):
+        """With no patterns in the DB, heatmap must be an empty dict."""
+        db_path = tmp_path / "empty.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript(_GAPS_SCHEMA)
+        conn.commit()
+        conn.close()
+
+        result = self._run_heatmap(db_path)
+        assert result["heatmap"] == {}, f"Expected empty heatmap, got {result['heatmap']}"
