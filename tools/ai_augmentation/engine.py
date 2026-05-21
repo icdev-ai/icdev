@@ -22,6 +22,7 @@ import pathlib
 from datetime import datetime, timezone
 from typing import Any
 
+from tools.ai_augmentation.agent_readiness import run_readiness_check
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.opportunity_scorer import score_opportunity
 from tools.ai_augmentation.pattern_classifier import detect_patterns
@@ -104,9 +105,28 @@ def run_scan(
     init_db()
 
     total_files, total_loc = _count_source(input_ref)
-    language_profile = {"python": total_files}
 
-    # 1. Insert scan record
+    # 1a. Agent Readiness check (runs before Semgrep scan)
+    try:
+        readiness_result = run_readiness_check(input_ref)
+    except Exception as exc:  # noqa: BLE001
+        readiness_result = {
+            "pillar_scores": {},
+            "overall_readiness_score": 0.0,
+            "icdev_checks": {},
+            "error": str(exc),
+        }
+
+    language_profile: dict = {
+        "python": total_files,
+        "agent_readiness_summary": {
+            "pillar_scores": readiness_result["pillar_scores"],
+            "overall_readiness_score": readiness_result["overall_readiness_score"],
+            "icdev_checks": readiness_result["icdev_checks"],
+        },
+    }
+
+    # 1b. Insert scan record
     conn = get_connection()
     try:
         cur = _exec(
@@ -128,7 +148,7 @@ def run_scan(
     finally:
         conn.close()
 
-    # 2. Detect patterns
+    # 2. Detect patterns (Semgrep or AST fallback)
     patterns = detect_patterns(input_ref)
 
     # 3. Insert opportunities + scores
@@ -217,4 +237,7 @@ def run_scan(
         "scores_count": len(score_rows),
         "roadmap_id": roadmap["roadmap_id"],
         "status": "completed",
+        "pillar_scores": readiness_result["pillar_scores"],
+        "overall_readiness_score": readiness_result["overall_readiness_score"],
+        "icdev_checks": readiness_result["icdev_checks"],
     }
