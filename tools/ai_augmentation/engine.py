@@ -11,8 +11,9 @@ Orchestrates the full AAC pipeline:
   4. aac_opportunities INSERT + score_opportunity() per hit
   5. aac_scores INSERT
   6. generate_roadmap() -> aac_roadmaps INSERT
-  7. aac_scans UPDATE  — status='completed'
-  8. aac_audit_log     — scan_started / scan_completed events
+  7. promote top-5 opportunities -> kanban_tasks + aac_audit_log
+  8. aac_scans UPDATE  — status='completed'
+  9. aac_audit_log     — scan_started / scan_completed events
 """
 from __future__ import annotations
 
@@ -70,6 +71,135 @@ def _exec(conn: Any, sql: str, params: tuple) -> Any:
         return conn.execute(sql.replace("?", "%s"), params)
 
 
+def _phase_label(score: float) -> str:
+    if score >= 0.7:
+        return "P1 — Quick Wins"
+    if score >= 0.5:
+        return "P2 — Core Modernization"
+    if score >= 0.3:
+        return "P3 — Long-Horizon Investments"
+    return "Unclassified"
+
+
+def _promote_top_opportunities(
+    opp_rows: list[dict],
+    score_rows: list[dict],
+    scan_id: int,
+    roadmap_id: str,
+) -> int:
+    """Promote top 5 opportunities (by composite_score) to kanban_tasks.
+
+    Uses the main ICDEV get_connection() for kanban_tasks and the AAC
+    get_connection() for aac_audit_log. Skips tasks whose id already exists.
+    Returns the count of tasks actually inserted.
+    """
+    from tools.db.storage import get_connection as _icdev_get_connection
+
+    score_index: dict[int, dict] = {int(s["opportunity_id"]): s for s in score_rows}
+    enriched: list[dict] = []
+    for opp in opp_rows:
+        opp_id = int(opp["opportunity_id"])
+        score = score_index.get(opp_id, {})
+        enriched.append({
+            "opportunity_id": opp_id,
+            "pattern_type": opp.get("pattern_type", ""),
+            "module_path": opp.get("module_path", ""),
+            "function_name": opp.get("function_name", "<unknown>"),
+            "ai_paradigm": opp.get("ai_paradigm", "llm_generation"),
+            "il_recommended_model": opp.get("il_recommended_model", ""),
+            "composite_score": float(score.get("composite_score", 0.0)),
+            "value_score": float(score.get("value_score", 0.0)),
+            "feasibility_score": float(score.get("feasibility_score", 0.0)),
+            "risk_score": float(score.get("risk_score", 0.0)),
+        })
+
+    enriched.sort(key=lambda x: x["composite_score"], reverse=True)
+    top5 = enriched[:5]
+    if not top5:
+        return 0
+
+    promoted_opps: list[dict] = []
+    icdev_conn = _icdev_get_connection()
+    try:
+        for opp in top5:
+            opp_id = opp["opportunity_id"]
+            task_id = f"aac-opp-{str(opp_id)[:8]}"
+
+            existing = _exec(
+                icdev_conn,
+                "SELECT id FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
+            if existing:
+                continue
+
+            priority = "high" if opp["composite_score"] >= 0.7 else "medium"
+            title = (
+                f"[AI Opp] {opp['pattern_type']} in "
+                f"{opp['module_path']}:{opp['function_name']} "
+                f"-> {opp['ai_paradigm']}"
+            )
+            description = json.dumps(
+                {
+                    "opportunity_id": opp_id,
+                    "scan_id": scan_id,
+                    "roadmap_id": roadmap_id,
+                    "pattern_type": opp["pattern_type"],
+                    "module_path": opp["module_path"],
+                    "function_name": opp["function_name"],
+                    "ai_paradigm": opp["ai_paradigm"],
+                    "scores": {
+                        "composite": opp["composite_score"],
+                        "value": opp["value_score"],
+                        "feasibility": opp["feasibility_score"],
+                        "risk": opp["risk_score"],
+                    },
+                    "roadmap_phase": _phase_label(opp["composite_score"]),
+                    "model_recommendation": opp["il_recommended_model"],
+                },
+                indent=2,
+            )
+            _exec(
+                icdev_conn,
+                "INSERT INTO kanban_tasks "
+                "(id, title, description, task_type, priority, status, executor_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (task_id, title, description, "build", priority, "suggested", "claude_cli"),
+            )
+            icdev_conn.commit()
+            promoted_opps.append({**opp, "task_id": task_id})
+    finally:
+        icdev_conn.close()
+
+    if not promoted_opps:
+        return 0
+
+    # Write one audit entry per promoted task (separate AAC connection)
+    aac_conn = get_connection()
+    try:
+        for opp in promoted_opps:
+            _exec(
+                aac_conn,
+                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+                (
+                    "kanban_promoted",
+                    scan_id,
+                    "system",
+                    _dump({
+                        "task_id": opp["task_id"],
+                        "opportunity_id": opp["opportunity_id"],
+                        "composite_score": opp["composite_score"],
+                        "roadmap_id": roadmap_id,
+                    }),
+                ),
+            )
+        aac_conn.commit()
+    finally:
+        aac_conn.close()
+
+    return len(promoted_opps)
+
+
 def _count_source(path: str) -> tuple[int, int]:
     p = pathlib.Path(path)
     total_files = total_loc = 0
@@ -97,7 +227,8 @@ def run_scan(
         scan_context: Optional; il_level defaults to 'il4'.
 
     Returns:
-        {"scan_id", "opportunities_count", "scores_count", "roadmap_id", "status"}
+        {"scan_id", "opportunities_count", "scores_count", "roadmap_id",
+         "kanban_promoted", "status"}
     """
     if scan_context is None:
         scan_context = {"il_level": "il4"}
@@ -209,7 +340,10 @@ def run_scan(
     # 4. Generate roadmap (persists to aac_roadmaps internally)
     roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
 
-    # 5. Mark scan completed + final audit entry
+    # 5. Promote top opportunities to kanban
+    kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
+
+    # 6. Mark scan completed + final audit entry
     conn = get_connection()
     try:
         _exec(
@@ -236,6 +370,7 @@ def run_scan(
         "opportunities_count": len(opp_rows),
         "scores_count": len(score_rows),
         "roadmap_id": roadmap["roadmap_id"],
+        "kanban_promoted": kanban_promoted,
         "status": "completed",
         "pillar_scores": readiness_result["pillar_scores"],
         "overall_readiness_score": readiness_result["overall_readiness_score"],
