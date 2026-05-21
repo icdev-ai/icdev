@@ -50,6 +50,9 @@ _COLLECTIONS = [
     "network.groups",
     "network.cables",
     "network.cross_connects",
+    "network.ai_decisions",
+    "network.partners",
+    "network.agreements_expiring",
 ]
 
 
@@ -126,6 +129,27 @@ class NDCAdapter(IQEAdapter):
         elif collection == "network.cross_connects":
             sql = f"SELECT * FROM nc_cross_connects {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
+        elif collection == "network.ai_decisions":
+            try:
+                from tools.db.storage import get_connection as _main_conn
+                with _main_conn() as _c:
+                    rows = [dict(r) for r in _c.execute(
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='ndc' ORDER BY created_at DESC"
+                    ).fetchall()]
+            except Exception:
+                rows = []
+            return rows
+        elif collection == "network.partners":
+            rows = _fetch(conn, "SELECT * FROM nc_partners ORDER BY name")
+        elif collection == "network.agreements_expiring":
+            rows = _fetch(
+                conn,
+                "SELECT id, peer_name, peer_asn, status, contract_end, "
+                "CAST((julianday(contract_end) - julianday('now')) AS INTEGER) AS days_remaining, "
+                "monthly_cost_usd FROM nc_peering_agreements "
+                "WHERE status='operational' AND contract_end != '' AND contract_end <= date('now', '+90 days') "
+                "ORDER BY contract_end ASC",
+            )
         else:
             raise ValueError(
                 f"NDCAdapter: unknown collection {collection!r}. "
@@ -142,3 +166,20 @@ class NDCAdapter(IQEAdapter):
                     row["config"] = {}
 
         return rows
+
+
+# Register all NDC collections on the module-level executor so the IQE dispatch
+# route can use this adapter without instantiating NDCAdapter explicitly.
+from tools.iqe.executor import register_collection  # noqa: E402
+
+_ndc_inst = NDCAdapter()
+
+
+def _make_ndc_fn(coll: str):
+    def _fn(conn):  # conn unused — NDCAdapter manages its own connection
+        return _ndc_inst.get_collection(coll)
+    return _fn
+
+
+for _c in _COLLECTIONS:
+    register_collection(_c, _make_ndc_fn(_c))

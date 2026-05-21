@@ -275,6 +275,18 @@ class EquinixECXConnector(DataConnector):
             return ConnectorResponse(status="error", errors=[str(exc)])
         return ConnectorResponse(status="error", errors=[f"Write not supported for '{table}'"])
 
+    def create_connection(self, data: dict) -> dict:
+        """POST /fabric/v4/connections — thin wrapper for use by xc_order_manager."""
+        return self._api("POST", "/connections", body=data)
+
+    def get_connection_status(self, uuid: str) -> dict:
+        """GET /fabric/v4/connections/{uuid} — returns raw API response."""
+        return self._api("GET", f"/connections/{uuid}")
+
+    def cancel_connection(self, uuid: str) -> dict:
+        """DELETE /fabric/v4/connections/{uuid} — returns raw API response."""
+        return self._api("DELETE", f"/connections/{uuid}")
+
     def health_check(self) -> Dict[str, Any]:
         try:
             self._get_token()

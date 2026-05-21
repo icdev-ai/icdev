@@ -107,6 +107,10 @@ REGISTRY: List[ReflexEntry] = [
                 "PMC: Re-sync stale PeeringDB data (>7d); re-validate RPKI for high-traffic peers"),
     ReflexEntry("bgp_alerter_ingest",       DOMAIN, 1.0,
                 "NOCC: Ingest BGPalerter JSON alerts into noc_alarms (hijack, route-leak, RPKI, session)"),
+    ReflexEntry("peering_agreement_renewal", DOMAIN, 24.0,
+                "Network: warn on peering agreements expiring within 90 days"),
+    ReflexEntry("xc_order_poller",           DOMAIN, 1.0,
+                "CCC: Poll in-flight cross-connect orders; alarm on delayed deliveries"),
 ]
 
 # Quick lookup: name → entry

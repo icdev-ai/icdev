@@ -458,6 +458,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # AI Augmentation Canvas — scan sessions and audit trail (NIST AU, append-only)
         "aac_scans",
         "aac_audit_log",
+        # ISP/Telco — Partner & Agreement Lifecycle (NIST AU, append-only amendment log)
+        "nc_agreement_amendments",
+        # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
+        "ccc_xc_order_events",
     ]
 
     if tool_name == "Bash":
