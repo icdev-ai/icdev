@@ -6853,4 +6853,40 @@ RESOURCE_REGISTRY = {
             "required": [],
         },
     },
+    "dsoc_hijack_report": {
+        "category": "dsoc",
+        "module": "tools.dsoc_canvas.bgp_hijack_detector",
+        "handler": "get_active_hijacks",
+        "description": "List open BGP hijack and route-leak events from DSOC, ordered by confidence.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "pmacct_ingest": {
+        "category": "nocc",
+        "module": "tools.databridge.connectors.pmacct_connector",
+        "handler": "test_connection",
+        "description": "Test pmacct NetFlow connector health (PostgreSQL or JSON dir backend).",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    "routinator_validate": {
+        "category": "pmc",
+        "module": "tools.databridge.connectors.routinator_connector",
+        "handler": "validate_prefix",
+        "description": "Validate a prefix+ASN pair against on-premises Routinator RPKI validator.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prefix": {"type": "string", "description": "IP prefix, e.g. 203.0.113.0/24"},
+                "origin_asn": {"type": "integer", "description": "Origin ASN"},
+            },
+            "required": ["prefix", "origin_asn"],
+        },
+    },
 }

@@ -130,6 +130,28 @@ CREATE TABLE IF NOT EXISTS dsoc_mitigations (
     created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS dsoc_bgp_hijacks (
+    id                   SERIAL PRIMARY KEY,
+    hijack_number        TEXT NOT NULL UNIQUE,
+    hijack_type          TEXT NOT NULL CHECK(hijack_type IN (
+                             'type_0','type_1','type_2','route_leak','rpki_invalid','unknown')),
+    status               TEXT NOT NULL DEFAULT 'open' CHECK(status IN (
+                             'open','under_review','mitigated','false_positive','resolved')),
+    detected_prefix      TEXT NOT NULL,
+    expected_prefix      TEXT NOT NULL,
+    expected_origin_asn  INTEGER,
+    observed_origin_asn  INTEGER,
+    peer_asn             INTEGER,
+    route_leak_type      TEXT DEFAULT '',
+    confidence_pct       REAL DEFAULT 75.0,
+    detection_source     TEXT DEFAULT 'internal',
+    notes                TEXT DEFAULT '',
+    resolved_at          TEXT DEFAULT '',
+    classification       TEXT DEFAULT 'CUI',
+    detected_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS dsoc_audit (
     id              SERIAL PRIMARY KEY,
     action          TEXT NOT NULL,

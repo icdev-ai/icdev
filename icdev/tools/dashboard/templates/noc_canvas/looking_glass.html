@@ -1,0 +1,116 @@
+<!-- CUI // SP-CTI -->
+{% extends "noc_canvas/base.html" %}
+{% block title %}Looking Glass — NOC Operations Canvas{% endblock %}
+{% block content %}
+<div class="page-header mb-4">
+  <h1 class="page-title mb-1">Looking Glass</h1>
+  <p class="text-muted mb-0">BGP route lookup — powered by hyperglass when configured</p>
+</div>
+
+{% if hyperglass_url %}
+<div class="card mb-4">
+  <div class="card-header fw-semibold d-flex justify-content-between align-items-center">
+    <span>hyperglass — Live BGP Lookup</span>
+    <a href="{{ hyperglass_url }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+      Open in New Tab
+    </a>
+  </div>
+  <div class="card-body p-0">
+    <iframe src="{{ hyperglass_url }}" style="width:100%;height:700px;border:none;"
+            title="hyperglass looking glass"></iframe>
+  </div>
+</div>
+{% else %}
+<div class="card mb-4">
+  <div class="card-body">
+    <h5 class="card-title">Quick BGP Lookup</h5>
+    <p class="text-muted small mb-3">
+      Set <code>HYPERGLASS_URL</code> in <code>.env</code> to embed a
+      <a href="https://github.com/thatmattlove/hyperglass" target="_blank">hyperglass</a>
+      instance for live multi-router lookups. Running ad-hoc queries below:
+    </p>
+    <div class="row g-2 mb-3">
+      <div class="col-md-4">
+        <select class="form-select" id="lgQueryType">
+          <option value="bgp_route">BGP Route</option>
+          <option value="bgp_community">BGP Community</option>
+          <option value="bgp_aspath">BGP AS-Path</option>
+          <option value="ping">Ping</option>
+          <option value="traceroute">Traceroute</option>
+        </select>
+      </div>
+      <div class="col-md-5">
+        <input type="text" class="form-control" id="lgTarget"
+               placeholder="e.g. 8.8.8.0/24 or AS15169">
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-primary w-100" onclick="runLookup()">Look Up</button>
+      </div>
+    </div>
+    <div id="lgResult" class="bg-dark text-light rounded p-3 font-monospace"
+         style="min-height:120px;white-space:pre-wrap;display:none;"></div>
+    <div id="lgPlaceholder" class="text-center text-muted py-4">
+      Enter a prefix or ASN above to query the NOC looking glass.
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold">External Looking Glass Resources</div>
+  <div class="card-body">
+    <p class="text-muted small mb-3">
+      Quick links to public looking glass services for route verification:
+    </p>
+    <div class="row g-2">
+      <div class="col-md-4">
+        <div class="card border">
+          <div class="card-body py-2">
+            <div class="fw-semibold small">RIPE RIS</div>
+            <div class="text-muted" style="font-size:0.78rem;">BGP routing info from RIS route collectors</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border">
+          <div class="card-body py-2">
+            <div class="fw-semibold small">BGPalerter</div>
+            <div class="text-muted" style="font-size:0.78rem;">
+              {% if config.get('BGPALERTER_ALERT_DIR') %}
+                <span class="text-success">Configured</span> — alerts via Genesis reflex
+              {% else %}
+                Set <code>BGPALERTER_ALERT_DIR</code> in <code>.env</code>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card border">
+          <div class="card-body py-2">
+            <div class="fw-semibold small">Alice-LG</div>
+            <div class="text-muted" style="font-size:0.78rem;">IX-focused looking glass — Bird2/ExaBGP backend</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const IQE_CANVAS = 'nocc';
+
+function runLookup() {
+  const qtype = document.getElementById('lgQueryType').value;
+  const target = document.getElementById('lgTarget').value.trim();
+  if (!target) return;
+  const res = document.getElementById('lgResult');
+  const ph = document.getElementById('lgPlaceholder');
+  res.style.display = 'block';
+  ph.style.display = 'none';
+  res.textContent = `Querying ${qtype} for ${target}...\n(Connect HYPERGLASS_URL or BGPalerter for live data)`;
+}
+</script>
+{% endblock %}

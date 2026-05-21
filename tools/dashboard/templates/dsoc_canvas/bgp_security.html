@@ -1,0 +1,200 @@
+<!-- CUI // SP-CTI -->
+{% extends "dsoc_canvas/base.html" %}
+{% block title %}BGP Security — DDoS & Security Ops Canvas{% endblock %}
+{% block content %}
+<div class="page-header d-flex justify-content-between align-items-center mb-4">
+  <div>
+    <h1 class="page-title mb-1">BGP Security</h1>
+    <p class="text-muted mb-0">Prefix hijack detection &amp; route leak monitoring (artemis-model, RFC 7908)</p>
+  </div>
+  <button class="btn btn-danger btn-sm" data-bs-toggle="modal" data-bs-target="#reportHijackModal">
+    + Report Hijack
+  </button>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-3">
+    <div class="card dsoc-critical text-center p-3">
+      <div class="fs-1 fw-bold text-danger">{{ hijacks | selectattr('hijack_type','equalto','type_0') | list | length }}</div>
+      <div class="text-muted small">Type-0 (Exact Prefix)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card dsoc-warn text-center p-3">
+      <div class="fs-1 fw-bold text-warning">{{ hijacks | selectattr('hijack_type','equalto','type_1') | list | length }}</div>
+      <div class="text-muted small">Type-1 (Sub-Prefix)</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card dsoc-warn text-center p-3">
+      <div class="fs-1 fw-bold text-warning">{{ hijacks | selectattr('hijack_type','equalto','route_leak') | list | length }}</div>
+      <div class="text-muted small">Route Leaks</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card dsoc-ok text-center p-3">
+      <div class="fs-1 fw-bold text-success">{{ hijacks | selectattr('confidence_pct','ge',80) | list | length }}</div>
+      <div class="text-muted small">High-Confidence (&ge;80%)</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header fw-semibold">Open Hijack Events</div>
+  <div class="card-body p-0">
+    {% if hijacks %}
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead class="table-dark">
+          <tr>
+            <th>Number</th>
+            <th>Type</th>
+            <th>Detected Prefix</th>
+            <th>Expected Prefix</th>
+            <th>Expected ASN</th>
+            <th>Observed ASN</th>
+            <th>Confidence</th>
+            <th>Source</th>
+            <th>Detected</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for h in hijacks %}
+          <tr>
+            <td><code>{{ h.hijack_number }}</code></td>
+            <td>
+              {% if h.hijack_type == 'type_0' %}
+                <span class="badge bg-danger">TYPE-0</span>
+              {% elif h.hijack_type == 'type_1' %}
+                <span class="badge bg-warning text-dark">TYPE-1</span>
+              {% elif h.hijack_type == 'type_2' %}
+                <span class="badge bg-warning text-dark">TYPE-2</span>
+              {% elif h.hijack_type == 'route_leak' %}
+                <span class="badge bg-info">ROUTE LEAK</span>
+              {% elif h.hijack_type == 'rpki_invalid' %}
+                <span class="badge bg-secondary">RPKI INVALID</span>
+              {% else %}
+                <span class="badge bg-secondary">{{ h.hijack_type | upper }}</span>
+              {% endif %}
+            </td>
+            <td><code>{{ h.detected_prefix }}</code></td>
+            <td><code>{{ h.expected_prefix }}</code></td>
+            <td>{% if h.expected_origin_asn %}AS{{ h.expected_origin_asn }}{% else %}&mdash;{% endif %}</td>
+            <td>{% if h.observed_origin_asn %}<span class="text-danger fw-bold">AS{{ h.observed_origin_asn }}</span>{% else %}&mdash;{% endif %}</td>
+            <td>
+              {% set conf = h.confidence_pct | float %}
+              <span class="badge {% if conf >= 80 %}bg-danger{% elif conf >= 60 %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+                {{ conf | round(0) | int }}%
+              </span>
+            </td>
+            <td><small>{{ h.detection_source }}</small></td>
+            <td><small>{{ h.detected_at[:16] if h.detected_at else '' }}</small></td>
+            <td>
+              <button class="btn btn-xs btn-outline-success"
+                      onclick="resolveHijack({{ h.id }}, 'resolved')">Resolve</button>
+              <button class="btn btn-xs btn-outline-secondary ms-1"
+                      onclick="resolveHijack({{ h.id }}, 'false_positive')">FP</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-5">
+      <div class="fs-1">✓</div>
+      <div>No open BGP hijack events detected.</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Report Hijack Modal -->
+<div class="modal fade" id="reportHijackModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Report BGP Hijack / Route Leak</h5></div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Hijack Type</label>
+          <select class="form-select" id="hijackType">
+            <option value="type_0">Type-0 — Exact prefix, wrong origin ASN</option>
+            <option value="type_1">Type-1 — Sub-prefix hijack</option>
+            <option value="type_2">Type-2 — Super-prefix hijack</option>
+            <option value="route_leak">Route Leak</option>
+            <option value="rpki_invalid">RPKI Invalid</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Detected Prefix <small class="text-muted">(observed)</small></label>
+          <input type="text" class="form-control" id="detectedPrefix" placeholder="e.g. 203.0.113.0/24">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Expected Prefix <small class="text-muted">(our prefix)</small></label>
+          <input type="text" class="form-control" id="expectedPrefix" placeholder="e.g. 203.0.113.0/24">
+        </div>
+        <div class="row">
+          <div class="col">
+            <label class="form-label">Expected Origin ASN</label>
+            <input type="number" class="form-control" id="expectedAsn" placeholder="64512">
+          </div>
+          <div class="col">
+            <label class="form-label">Observed Origin ASN</label>
+            <input type="number" class="form-control" id="observedAsn" placeholder="65001">
+          </div>
+        </div>
+        <div class="mb-3 mt-3">
+          <label class="form-label">Confidence % <small class="text-muted">(0-100)</small></label>
+          <input type="number" class="form-control" id="confidencePct" value="75" min="0" max="100">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control" id="hijackNotes" rows="2"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger" onclick="submitHijack()">Report</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+const IQE_CANVAS = 'dsoc';
+
+function resolveHijack(id, resolution) {
+  if (!confirm(`Mark hijack #${id} as ${resolution}?`)) return;
+  fetch(`/api/dsoc/bgp-hijacks/${id}/resolve`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({resolution})
+  }).then(r => r.json()).then(() => location.reload());
+}
+
+function submitHijack() {
+  const payload = {
+    hijack_type: document.getElementById('hijackType').value,
+    detected_prefix: document.getElementById('detectedPrefix').value.trim(),
+    expected_prefix: document.getElementById('expectedPrefix').value.trim(),
+    expected_origin_asn: parseInt(document.getElementById('expectedAsn').value) || null,
+    observed_origin_asn: parseInt(document.getElementById('observedAsn').value) || null,
+    confidence_pct: parseFloat(document.getElementById('confidencePct').value) || 75,
+    notes: document.getElementById('hijackNotes').value.trim(),
+    detection_source: 'manual',
+  };
+  fetch('/api/dsoc/bgp-hijacks', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).then(r => r.json()).then(d => {
+    if (d.error) { alert(d.error); return; }
+    bootstrap.Modal.getInstance(document.getElementById('reportHijackModal')).hide();
+    location.reload();
+  });
+}
+</script>
+{% endblock %}

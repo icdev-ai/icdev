@@ -516,6 +516,75 @@ def create_dsoc_blueprint() -> Blueprint:
         finally:
             conn.close()
 
+    @bp.route("/dsoc/bgp-security")
+    def dsoc_bgp_security():
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.bgp_hijack_detector import get_active_hijacks
+        conn = get_connection()
+        try:
+            hijacks = get_active_hijacks(conn)
+        except Exception:
+            hijacks = []
+        finally:
+            conn.close()
+        return render_template("dsoc_canvas/bgp_security.html", hijacks=hijacks)
+
+    @bp.route("/api/dsoc/bgp-hijacks", methods=["GET"])
+    def api_dsoc_bgp_hijacks_list():
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.bgp_hijack_detector import get_active_hijacks
+        conn = get_connection()
+        try:
+            hijacks = get_active_hijacks(conn)
+            return jsonify(hijacks)
+        finally:
+            conn.close()
+
+    @bp.route("/api/dsoc/bgp-hijacks", methods=["POST"])
+    def api_dsoc_bgp_hijacks_create():
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.bgp_hijack_detector import record_hijack_event
+        data = request.get_json(force=True) or {}
+        required = ("hijack_type", "detected_prefix", "expected_prefix")
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            return jsonify({"error": f"Missing: {', '.join(missing)}"}), 400
+        conn = get_connection()
+        try:
+            record = record_hijack_event(
+                conn,
+                hijack_type=data["hijack_type"],
+                detected_prefix=data["detected_prefix"],
+                expected_prefix=data["expected_prefix"],
+                expected_origin_asn=data.get("expected_origin_asn"),
+                observed_origin_asn=data.get("observed_origin_asn"),
+                peer_asn=data.get("peer_asn"),
+                route_leak_type=data.get("route_leak_type"),
+                confidence_pct=float(data.get("confidence_pct", 75.0)),
+                detection_source=data.get("detection_source", "manual"),
+                notes=data.get("notes", ""),
+            )
+            return jsonify(record), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/dsoc/bgp-hijacks/<int:hijack_id>/resolve", methods=["POST"])
+    def api_dsoc_bgp_hijacks_resolve(hijack_id):
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.bgp_hijack_detector import resolve_hijack
+        data = request.get_json(force=True) or {}
+        resolution = data.get("resolution", "resolved")
+        conn = get_connection()
+        try:
+            result = resolve_hijack(conn, hijack_id, resolution)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
     @bp.route("/api/dsoc/iqe-query", methods=["POST"])
     def api_dsoc_iqe_query():
         from tools.dsoc_canvas.db.init_db import get_connection
