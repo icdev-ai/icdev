@@ -319,7 +319,7 @@ def _ast_detect_file(file_path: str) -> list[dict]:
 
 
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
-    """AST-based fallback for Python/C# files when Semgrep is unavailable."""
+    """AST-based fallback for Python/C#/Rust files when Semgrep is unavailable."""
     p = pathlib.Path(target_path)
     if p.is_file():
         suffix = p.suffix.lower()
@@ -327,13 +327,17 @@ def _detect_via_ast_fallback(target_path: str) -> list[dict]:
             return _ast_detect_file(target_path)
         if suffix == ".cs":
             return _cs_detect_file(target_path)
+        if suffix == ".rs":
+            return _rs_detect_file(target_path)
         return []
-    # Directory: walk recursively for .py and .cs files.
+    # Directory: walk recursively for .py, .cs, and .rs files.
     results: list[dict] = []
     for py_file in sorted(p.rglob("*.py")):
         results.extend(_ast_detect_file(str(py_file)))
     for cs_file in sorted(p.rglob("*.cs")):
         results.extend(_cs_detect_file(str(cs_file)))
+    for rs_file in sorted(p.rglob("*.rs")):
+        results.extend(_rs_detect_file(str(rs_file)))
     return results
 
 
@@ -1148,6 +1152,551 @@ def _cs_detect_file(file_path: str) -> list[dict]:
     results = _cs_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
     for hit in results:
         hit.setdefault("language", "csharp")
+    return results
+
+
+# ── Rust tree-sitter / regex fallback ────────────────────────────────────────
+
+_RS_SCOPE_NODE_TYPES: frozenset[str] = frozenset({
+    "function_item",
+    "closure_expression",
+})
+
+_RS_DB_CALL_NAMES: frozenset[str] = frozenset({
+    "query", "query_as", "query_scalar", "query_as_with",
+    "fetch", "fetch_one", "fetch_optional", "fetch_all",
+    "execute", "execute_many", "prepare",
+})
+_RS_RENDER_CALL_NAMES: frozenset[str] = frozenset({
+    "render", "render_str", "render_to",
+})
+_RS_NOTIFY_CALL_NAMES: frozenset[str] = frozenset({
+    "send", "send_message", "deliver",
+})
+
+_RS_RE_REGEX_NEW = re.compile(r'\bRegex\s*::\s*new\s*\(')
+_RS_RE_FORMAT_MACRO = re.compile(r'\bformat\s*!\s*[({]')
+_RS_RE_ASKAMA = re.compile(r'#\s*\[\s*derive\s*\([^)]*\bTemplate\b')
+_RS_RE_TERA_RENDER = re.compile(r'\.render\s*\(')
+_RS_RE_CRON = re.compile(
+    r'\b(?:tokio::time::interval|tokio_cron_scheduler|clokwerk)\b'
+)
+_RS_RE_THRESHOLD = re.compile(
+    r'(?:[<>]=?|==|!=)\s*(-?\d+(?:\.\d+)?[uif\d]*)|(-?\d+(?:\.\d+)?[uif\d]*)\s*(?:[<>]=?|==|!=)'
+)
+_RS_RE_CONTAINS = re.compile(r'\.contains\s*\(')
+_RS_RE_HASHMAP_FROM = re.compile(r'\bHashMap\s*::\s*from\s*\(')
+_RS_RE_PHF_MAP = re.compile(r'\bphf_map\s*!\s*\{')
+_RS_RE_IF_INDENT = re.compile(r'^(\s+)if\b')
+
+
+def _rs_walk_scoped(root: Any, src: bytes):
+    """Iterative DFS generator yielding (node, parent_type, scope_name)."""
+    stack: list[tuple[Any, str, str]] = [(root, "", "<module>")]
+    while stack:
+        node, parent_type, scope = stack.pop()
+        new_scope = scope
+        if node.type == "function_item":
+            name_child = node.child_by_field_name("name")
+            if name_child is not None:
+                new_scope = src[name_child.start_byte:name_child.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+        yield node, parent_type, new_scope
+        for child in reversed(node.children):
+            stack.append((child, node.type, new_scope))
+
+
+def _rs_if_depth(root: Any) -> int:
+    """Max nesting depth of if_expression/match_guard within root's subtree."""
+    _COND_TYPES: frozenset[str] = frozenset({"if_expression", "match_guard"})
+    max_depth = 0
+    stack: list[tuple[Any, int]] = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if node.type in _COND_TYPES:
+            if depth > max_depth:
+                max_depth = depth
+        for child in node.children:
+            if child.type in _RS_SCOPE_NODE_TYPES:
+                continue
+            new_depth = depth + 1 if child.type in _COND_TYPES else depth
+            stack.append((child, new_depth))
+    return max_depth
+
+
+def _rs_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, parent_type, scope in _rs_walk_scoped(root, src):
+        if node.type != "if_expression":
+            continue
+        if parent_type in ("if_expression", "else_clause"):
+            continue
+        depth = _rs_if_depth(node)
+        if depth >= _PATTERN_MIN_DEPTH:
+            results.append({
+                "pattern_type": "nested_conditionals",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"max_depth": depth},
+            })
+    return results
+
+
+def _rs_detect_regex_user_input_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        if node.type != "call_expression":
+            continue
+        func = node.child_by_field_name("function")
+        if func is None:
+            continue
+        func_text = src[func.start_byte:func.end_byte].decode("utf-8", errors="replace")
+        if "Regex::new" in func_text:
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"call": func_text},
+            })
+    return results
+
+
+def _rs_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        kind: str | None = None
+        detail: dict[str, Any] = {}
+
+        if node.type == "macro_invocation":
+            macro_node = node.child_by_field_name("macro")
+            if macro_node is None:
+                named = [c for c in node.children if c.is_named]
+                macro_node = named[0] if named else None
+            if macro_node is not None:
+                macro_text = src[macro_node.start_byte:macro_node.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                if macro_text == "format":
+                    kind = "format_macro"
+                    detail = {"macro": "format!"}
+
+        elif node.type == "attribute_item":
+            attr_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            if "derive" in attr_text and "Template" in attr_text:
+                kind = "askama_derive"
+                detail = {"attribute": attr_text.strip()[:80]}
+
+        elif node.type == "method_call_expression":
+            name_child = node.child_by_field_name("name")
+            if name_child is not None:
+                method = src[name_child.start_byte:name_child.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                if method == "render":
+                    kind = "template_render"
+                    detail = {"method": ".render()"}
+
+        if kind:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": kind, **detail},
+            })
+    return results
+
+
+def _rs_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    _CRON_FRAGMENTS: frozenset[str] = frozenset({
+        "tokio::time::interval", "tokio_cron_scheduler", "clokwerk",
+    })
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        if node.type != "call_expression":
+            continue
+        func = node.child_by_field_name("function")
+        if func is None:
+            continue
+        func_text = src[func.start_byte:func.end_byte].decode("utf-8", errors="replace")
+        if any(frag in func_text for frag in _CRON_FRAGMENTS):
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": "call", "call": func_text},
+            })
+    return results
+
+
+def _rs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    _CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        if node.type != "binary_expression":
+            continue
+        op_token: str | None = None
+        for child in node.children:
+            if not child.is_named:
+                text = src[child.start_byte:child.end_byte].decode(
+                    "utf-8", errors="replace"
+                ).strip()
+                if text in _CMP_OPS:
+                    op_token = text
+                    break
+        if not op_token:
+            continue
+        named_parts = [c for c in node.children if c.is_named]
+        numeric_literals = [
+            src[c.start_byte:c.end_byte].decode("utf-8", errors="replace")
+            for c in named_parts
+            if c.type in ("integer_literal", "float_literal")
+        ]
+        if numeric_literals:
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
+            })
+    return results
+
+
+def _rs_collect_calls_in_fn(fn_node: Any, src: bytes) -> set[str]:
+    """Collect method and function call names within fn_node, not crossing nested functions."""
+    calls: set[str] = set()
+    stack: list[Any] = [fn_node]
+    while stack:
+        n = stack.pop()
+        if n is not fn_node and n.type == "function_item":
+            continue
+        if n.type == "method_call_expression":
+            name_child = n.child_by_field_name("name")
+            if name_child:
+                calls.add(
+                    src[name_child.start_byte:name_child.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
+                )
+        elif n.type == "call_expression":
+            func = n.child_by_field_name("function")
+            if func:
+                func_text = src[func.start_byte:func.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                calls.add(func_text.split("::")[-1])
+        for child in n.children:
+            stack.append(child)
+    return calls
+
+
+def _rs_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        if node.type != "function_item":
+            continue
+        calls = _rs_collect_calls_in_fn(node, src)
+        db_hits = calls & _RS_DB_CALL_NAMES
+        render_hits = calls & _RS_RENDER_CALL_NAMES
+        notify_hits = calls & _RS_NOTIFY_CALL_NAMES
+        if db_hits and render_hits and notify_hits:
+            results.append({
+                "pattern_type": "db_render_notify_chain",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {
+                    "matched_calls": {
+                        "db": sorted(db_hits),
+                        "render": sorted(render_hits),
+                        "notify": sorted(notify_hits),
+                    }
+                },
+            })
+    return results
+
+
+def _rs_detect_keyword_list_search_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        if node.type != "method_call_expression":
+            continue
+        name_child = node.child_by_field_name("name")
+        if name_child is None:
+            continue
+        method = src[name_child.start_byte:name_child.end_byte].decode(
+            "utf-8", errors="replace"
+        )
+        if method != "contains":
+            continue
+        receiver = node.child_by_field_name("receiver")
+        receiver_text = (
+            src[receiver.start_byte:receiver.end_byte].decode("utf-8", errors="replace")[:50]
+            if receiver
+            else "<unknown>"
+        )
+        results.append({
+            "pattern_type": "keyword_list_search",
+            "module_path": fp,
+            "function_name": scope,
+            "line_start": node.start_point[0] + 1,
+            "line_end": node.end_point[0] + 1,
+            "pattern_detail": {"method": "contains", "receiver": receiver_text},
+        })
+    return results
+
+
+def _rs_detect_large_rule_table_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _rs_walk_scoped(root, src):
+        if node.type == "call_expression":
+            func = node.child_by_field_name("function")
+            if func is None:
+                continue
+            func_text = src[func.start_byte:func.end_byte].decode("utf-8", errors="replace")
+            if "HashMap::from" not in func_text:
+                continue
+            args = node.child_by_field_name("arguments")
+            if args is None:
+                continue
+            for child in args.children:
+                if child.type == "array_expression":
+                    entries = [c for c in child.children if c.is_named]
+                    if len(entries) >= _RULE_MIN_KEYS:
+                        results.append({
+                            "pattern_type": "large_rule_table",
+                            "module_path": fp,
+                            "function_name": scope,
+                            "line_start": node.start_point[0] + 1,
+                            "line_end": node.end_point[0] + 1,
+                            "pattern_detail": {
+                                "kind": "HashMap::from",
+                                "entry_count": len(entries),
+                            },
+                        })
+                    break
+
+        elif node.type == "macro_invocation":
+            macro_node = node.child_by_field_name("macro")
+            if macro_node is None:
+                named = [c for c in node.children if c.is_named]
+                macro_node = named[0] if named else None
+            if macro_node is None:
+                continue
+            macro_text = src[macro_node.start_byte:macro_node.end_byte].decode(
+                "utf-8", errors="replace"
+            )
+            if macro_text not in ("phf_map", "phf::phf_map"):
+                continue
+            node_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            entry_count = node_text.count("=>")
+            if entry_count >= _RULE_MIN_KEYS:
+                results.append({
+                    "pattern_type": "large_rule_table",
+                    "module_path": fp,
+                    "function_name": scope,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "pattern_detail": {"kind": "phf_map!", "entry_count": entry_count},
+                })
+    return results
+
+
+def _rs_detect_via_tree_sitter(file_path: str, tree: Any, src: bytes) -> list[dict]:
+    """Run all 8 pattern detectors using a parsed tree-sitter Rust tree."""
+    root = tree.root_node
+    results: list[dict] = []
+    results.extend(_rs_detect_nested_conditionals_ts(file_path, root, src))
+    results.extend(_rs_detect_regex_user_input_ts(file_path, root, src))
+    results.extend(_rs_detect_string_template_ts(file_path, root, src))
+    results.extend(_rs_detect_scheduled_cron_ts(file_path, root, src))
+    results.extend(_rs_detect_hardcoded_threshold_ts(file_path, root, src))
+    results.extend(_rs_detect_db_render_notify_ts(file_path, root, src))
+    results.extend(_rs_detect_keyword_list_search_ts(file_path, root, src))
+    results.extend(_rs_detect_large_rule_table_ts(file_path, root, src))
+    for hit in results:
+        hit.setdefault("language", "rust")
+    return results
+
+
+# ── Rust regex fallback ───────────────────────────────────────────────────────
+
+
+def _rs_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
+    """Indentation-based heuristic for nested if detection (Rust regex fallback)."""
+    results: list[dict] = []
+    if_stack: list[tuple[int, int]] = []
+    reported: set[int] = set()
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        m = _RS_RE_IF_INDENT.match(line)
+        if m:
+            indent = len(m.group(1).expandtabs(4))
+            if_stack = [(ind, ln) for ind, ln in if_stack if ind < indent]
+            if_stack.append((indent, i))
+            if len(if_stack) >= _PATTERN_MIN_DEPTH:
+                outer_ln = if_stack[0][1]
+                if outer_ln not in reported:
+                    reported.add(outer_ln)
+                    results.append({
+                        "pattern_type": "nested_conditionals",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": outer_ln,
+                        "line_end": i,
+                        "pattern_detail": {"max_depth": len(if_stack)},
+                    })
+    return results
+
+
+def _rs_regex_large_table(file_path: str, lines: list[str]) -> list[dict]:
+    """Scanner for large HashMap::from / phf_map! initializers (Rust regex fallback)."""
+    results: list[dict] = []
+    n = len(lines)
+    i = 0
+    while i < n:
+        line = lines[i]
+        is_hashmap = bool(_RS_RE_HASHMAP_FROM.search(line))
+        is_phf = bool(_RS_RE_PHF_MAP.search(line))
+        if is_hashmap or is_phf:
+            start_line = i + 1
+            open_ch, close_ch = ("{", "}") if is_phf else ("[", "]")
+            depth = line.count(open_ch) - line.count(close_ch)
+            block = line
+            j = i + 1
+            while j < n and depth > 0:
+                depth += lines[j].count(open_ch) - lines[j].count(close_ch)
+                block += "\n" + lines[j]
+                j += 1
+            if is_phf:
+                # phf_map! entries use `"key" => value` syntax
+                entry_count = block.count("=>")
+            else:
+                # HashMap::from entries are tuples: ("key", value)
+                # Count "), " separators between tuples, then +1 for last entry
+                entry_count = block.count("),") + 1
+            if entry_count >= _RULE_MIN_KEYS:
+                kind = "phf_map!" if is_phf else "HashMap::from"
+                results.append({
+                    "pattern_type": "large_rule_table",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": start_line,
+                    "line_end": j,
+                    "pattern_detail": {"kind": kind, "entry_count": entry_count},
+                })
+        i += 1
+    return results
+
+
+def _rs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
+    """Regex-based Rust pattern detection when tree-sitter-languages is unavailable."""
+    results: list[dict] = []
+    lines = source_text.splitlines()
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        # regex_user_input
+        if _RS_RE_REGEX_NEW.search(line):
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"call": "Regex::new"},
+            })
+
+        # string_template_rendering (first match wins per line)
+        for pat, kind, extra in (
+            (_RS_RE_FORMAT_MACRO, "format_macro", {"macro": "format!"}),
+            (_RS_RE_ASKAMA, "askama_derive", {}),
+            (_RS_RE_TERA_RENDER, "template_render", {"method": ".render()"}),
+        ):
+            if pat.search(line):
+                results.append({
+                    "pattern_type": "string_template_rendering",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i,
+                    "line_end": i,
+                    "pattern_detail": {"kind": kind, **extra},
+                })
+                break
+
+        # scheduled_cron
+        if _RS_RE_CRON.search(line):
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "call"},
+            })
+
+        # hardcoded_threshold
+        m = _RS_RE_THRESHOLD.search(line)
+        if m:
+            const = m.group(1) or m.group(2) or "?"
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
+            })
+
+        # keyword_list_search
+        if _RS_RE_CONTAINS.search(line):
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"method": "contains"},
+            })
+
+    results.extend(_rs_regex_nested_ifs(file_path, lines))
+    results.extend(_rs_regex_large_table(file_path, lines))
+    return results
+
+
+def _rs_detect_file(file_path: str) -> list[dict]:
+    """Run Rust pattern detection on a single .rs file.
+
+    Tries tree-sitter-languages first; falls back to regex when unavailable.
+    """
+    src = pathlib.Path(file_path).read_bytes()
+    try:
+        from tree_sitter_languages import get_parser  # type: ignore[import]
+        parser = get_parser("rust")
+        tree = parser.parse(src)
+        return _rs_detect_via_tree_sitter(file_path, tree, src)
+    except Exception:
+        pass
+    results = _rs_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
+    for hit in results:
+        hit.setdefault("language", "rust")
     return results
 
 
