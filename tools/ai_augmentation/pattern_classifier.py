@@ -319,7 +319,7 @@ def _ast_detect_file(file_path: str) -> list[dict]:
 
 
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
-    """AST-based fallback for Python/C# files when Semgrep is unavailable."""
+    """AST-based fallback for Python/C#/TypeScript files when Semgrep is unavailable."""
     p = pathlib.Path(target_path)
     if p.is_file():
         suffix = p.suffix.lower()
@@ -327,13 +327,19 @@ def _detect_via_ast_fallback(target_path: str) -> list[dict]:
             return _ast_detect_file(target_path)
         if suffix == ".cs":
             return _cs_detect_file(target_path)
+        if suffix in (".ts", ".tsx", ".js", ".jsx"):
+            return _ts_detect_file(target_path)
         return []
-    # Directory: walk recursively for .py and .cs files.
+    # Directory: walk recursively for supported file types.
     results: list[dict] = []
     for py_file in sorted(p.rglob("*.py")):
         results.extend(_ast_detect_file(str(py_file)))
     for cs_file in sorted(p.rglob("*.cs")):
         results.extend(_cs_detect_file(str(cs_file)))
+    for ts_file in sorted(p.rglob("*.ts")):
+        results.extend(_ts_detect_file(str(ts_file)))
+    for tsx_file in sorted(p.rglob("*.tsx")):
+        results.extend(_ts_detect_file(str(tsx_file)))
     return results
 
 
@@ -1148,6 +1154,568 @@ def _cs_detect_file(file_path: str) -> list[dict]:
     results = _cs_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
     for hit in results:
         hit.setdefault("language", "csharp")
+    return results
+
+
+# ── TypeScript / JavaScript tree-sitter + regex fallback ─────────────────────
+
+_TS_FUNCTION_NODE_TYPES: frozenset[str] = frozenset({
+    "function_declaration",
+    "method_definition",
+    "arrow_function",
+    "function_expression",
+    "generator_function_declaration",
+    "generator_function",
+})
+
+_TS_REGEX_CALL_METHODS: frozenset[str] = frozenset({
+    "test", "exec", "match", "matchAll", "search",
+})
+_TS_TEMPLATE_RENDER_OBJS: frozenset[str] = frozenset({
+    "Handlebars", "Mustache", "ejs", "pug", "nunjucks", "hbs",
+})
+_TS_TEMPLATE_RENDER_METHODS: frozenset[str] = frozenset({
+    "compile", "render", "renderFile", "renderToString", "renderString",
+})
+_TS_CRON_BARE_FUNCS: frozenset[str] = frozenset({"setInterval", "setTimeout"})
+_TS_CRON_SCHEDULE_OBJS: frozenset[str] = frozenset({"cron", "schedule"})
+_TS_CRON_SCHEDULE_METHODS: frozenset[str] = frozenset({"schedule"})
+_TS_CRON_DECORATOR_KEYWORDS: frozenset[str] = frozenset({"Cron", "Interval", "Timeout"})
+_TS_CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "===", "!=", "!=="})
+_TS_DB_CALL_NAMES: frozenset[str] = frozenset({
+    "find", "findOne", "findMany", "findAll", "findById", "findAndCount",
+    "query", "execute", "where", "select", "get", "fetch", "count", "save", "create",
+})
+_TS_RENDER_CALL_NAMES: frozenset[str] = frozenset({
+    "compile", "render", "renderFile", "renderToString", "renderString",
+})
+_TS_NOTIFY_CALL_NAMES: frozenset[str] = frozenset({
+    "sendMail", "send", "sendMessage", "notify", "deliver", "dispatch", "emit", "publish",
+})
+_TS_KW_SEARCH_METHODS: frozenset[str] = frozenset({"includes", "has"})
+
+
+def _ts_walk_scoped(root: Any, src: bytes):
+    """Iterative DFS yielding (node, parent_type, scope_name) for TypeScript trees."""
+    stack: list[tuple[Any, str, str]] = [(root, "", "<module>")]
+    while stack:
+        node, parent_type, scope = stack.pop()
+        new_scope = scope
+        if node.type in _TS_FUNCTION_NODE_TYPES:
+            name_node = node.child_by_field_name("name")
+            if name_node is not None:
+                new_scope = src[name_node.start_byte:name_node.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+        yield node, parent_type, new_scope
+        for child in reversed(node.children):
+            stack.append((child, node.type, new_scope))
+
+
+def _ts_get_call_info(node: Any, src: bytes) -> tuple[str, str] | None:
+    """For call_expression, return (receiver_text, method_name) or None."""
+    if node.type != "call_expression":
+        return None
+    func_node = node.child_by_field_name("function")
+    if func_node is None or func_node.type != "member_expression":
+        return None
+    obj_node = func_node.child_by_field_name("object")
+    prop_node = func_node.child_by_field_name("property")
+    if obj_node is None or prop_node is None:
+        return None
+    obj = src[obj_node.start_byte:obj_node.end_byte].decode("utf-8", errors="replace")
+    prop = src[prop_node.start_byte:prop_node.end_byte].decode("utf-8", errors="replace")
+    return obj, prop
+
+
+def _ts_get_call_name(node: Any, src: bytes) -> str | None:
+    """For a bare call_expression (no receiver), return the function name or None."""
+    if node.type != "call_expression":
+        return None
+    func_node = node.child_by_field_name("function")
+    if func_node is None or func_node.type != "identifier":
+        return None
+    return src[func_node.start_byte:func_node.end_byte].decode("utf-8", errors="replace")
+
+
+def _ts_if_depth(root: Any) -> int:
+    """Max nesting depth of if_statements within root's subtree (no crossing functions)."""
+    max_depth = 0
+    stack: list[tuple[Any, int]] = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if node.type == "if_statement":
+            if depth > max_depth:
+                max_depth = depth
+        for child in node.children:
+            if child.type in _TS_FUNCTION_NODE_TYPES:
+                continue
+            new_depth = depth + 1 if child.type == "if_statement" else depth
+            stack.append((child, new_depth))
+    return max_depth
+
+
+def _ts_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, parent_type, scope in _ts_walk_scoped(root, src):
+        if node.type != "if_statement":
+            continue
+        if parent_type in ("if_statement", "else_clause"):
+            continue
+        depth = _ts_if_depth(node)
+        if depth >= _PATTERN_MIN_DEPTH:
+            results.append({
+                "pattern_type": "nested_conditionals",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"max_depth": depth},
+            })
+    return results
+
+
+def _ts_detect_regex_user_input_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        if node.type == "new_expression":
+            ctor = node.child_by_field_name("constructor")
+            if ctor is not None:
+                name = src[ctor.start_byte:ctor.end_byte].decode("utf-8", errors="replace")
+                if name == "RegExp":
+                    results.append({
+                        "pattern_type": "regex_user_input",
+                        "module_path": fp,
+                        "function_name": scope,
+                        "line_start": node.start_point[0] + 1,
+                        "line_end": node.end_point[0] + 1,
+                        "pattern_detail": {"call": "new RegExp()"},
+                    })
+        elif node.type == "call_expression":
+            call = _ts_get_call_info(node, src)
+            if call and call[1] in _TS_REGEX_CALL_METHODS:
+                results.append({
+                    "pattern_type": "regex_user_input",
+                    "module_path": fp,
+                    "function_name": scope,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "pattern_detail": {"call": f"{call[0]}.{call[1]}"},
+                })
+    return results
+
+
+def _ts_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        kind: str | None = None
+        detail: dict[str, Any] = {}
+        if node.type == "template_string":
+            # Only flag template literals that contain substitutions (${...})
+            if any(c.type == "template_substitution" for c in node.children):
+                kind = "template_literal"
+        elif node.type == "call_expression":
+            call = _ts_get_call_info(node, src)
+            if (
+                call
+                and call[0] in _TS_TEMPLATE_RENDER_OBJS
+                and call[1] in _TS_TEMPLATE_RENDER_METHODS
+            ):
+                kind = "template_library"
+                detail = {"call": f"{call[0]}.{call[1]}"}
+        if kind:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": kind, **detail},
+            })
+    return results
+
+
+def _ts_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        if node.type == "call_expression":
+            bare = _ts_get_call_name(node, src)
+            if bare in _TS_CRON_BARE_FUNCS:
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": fp,
+                    "function_name": scope,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "pattern_detail": {"kind": "call", "func": bare},
+                })
+            call = _ts_get_call_info(node, src)
+            if (
+                call
+                and call[0] in _TS_CRON_SCHEDULE_OBJS
+                and call[1] in _TS_CRON_SCHEDULE_METHODS
+            ):
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": fp,
+                    "function_name": scope,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "pattern_detail": {"kind": "call", "call": f"{call[0]}.{call[1]}"},
+                })
+        elif node.type == "decorator":
+            dec_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            if any(kw in dec_text for kw in _TS_CRON_DECORATOR_KEYWORDS):
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": fp,
+                    "function_name": scope,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "pattern_detail": {"kind": "decorator", "decorator": dec_text.strip()},
+                })
+    return results
+
+
+def _ts_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        if node.type != "binary_expression":
+            continue
+        op_token: str | None = None
+        for child in node.children:
+            if not child.is_named:
+                text = src[child.start_byte:child.end_byte].decode(
+                    "utf-8", errors="replace"
+                ).strip()
+                if text in _TS_CMP_OPS:
+                    op_token = text
+                    break
+        if not op_token:
+            continue
+        named_parts = [c for c in node.children if c.is_named]
+        numeric_literals = [
+            src[c.start_byte:c.end_byte].decode("utf-8", errors="replace")
+            for c in named_parts
+            if c.type == "number"
+        ]
+        if numeric_literals:
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
+            })
+    return results
+
+
+def _ts_collect_calls_in_func(func_node: Any, src: bytes) -> set[str]:
+    """Return all method/function names called within func_node's subtree."""
+    call_names: set[str] = set()
+    stack: list[Any] = [func_node]
+    while stack:
+        n = stack.pop()
+        if n is not func_node and n.type in _TS_FUNCTION_NODE_TYPES:
+            continue
+        if n.type == "call_expression":
+            call = _ts_get_call_info(n, src)
+            if call:
+                call_names.add(call[1])
+            else:
+                bare = _ts_get_call_name(n, src)
+                if bare:
+                    call_names.add(bare)
+        for child in n.children:
+            stack.append(child)
+    return call_names
+
+
+def _ts_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        if node.type not in _TS_FUNCTION_NODE_TYPES:
+            continue
+        call_names = _ts_collect_calls_in_func(node, src)
+        db_hits = call_names & _TS_DB_CALL_NAMES
+        render_hits = call_names & _TS_RENDER_CALL_NAMES
+        notify_hits = call_names & _TS_NOTIFY_CALL_NAMES
+        if db_hits and render_hits and notify_hits:
+            results.append({
+                "pattern_type": "db_render_notify_chain",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {
+                    "matched_calls": {
+                        "db": sorted(db_hits),
+                        "render": sorted(render_hits),
+                        "notify": sorted(notify_hits),
+                    }
+                },
+            })
+    return results
+
+
+def _ts_detect_keyword_list_search_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        call = _ts_get_call_info(node, src)
+        if call and call[1] in _TS_KW_SEARCH_METHODS:
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"method": call[1], "receiver": call[0]},
+            })
+    return results
+
+
+def _ts_detect_large_rule_table_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _ts_walk_scoped(root, src):
+        if node.type != "object":
+            continue
+        pair_count = sum(
+            1 for c in node.children
+            if c.type in ("pair", "shorthand_property_identifier")
+        )
+        if pair_count >= _RULE_MIN_KEYS:
+            results.append({
+                "pattern_type": "large_rule_table",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"key_count": pair_count},
+            })
+    return results
+
+
+def _ts_detect_via_tree_sitter(
+    file_path: str, tree: Any, src: bytes, lang: str = "typescript"
+) -> list[dict]:
+    """Run all 8 pattern detectors using a parsed tree-sitter TypeScript/TSX tree."""
+    root = tree.root_node
+    results: list[dict] = []
+    results.extend(_ts_detect_nested_conditionals_ts(file_path, root, src))
+    results.extend(_ts_detect_regex_user_input_ts(file_path, root, src))
+    results.extend(_ts_detect_string_template_ts(file_path, root, src))
+    results.extend(_ts_detect_scheduled_cron_ts(file_path, root, src))
+    results.extend(_ts_detect_hardcoded_threshold_ts(file_path, root, src))
+    results.extend(_ts_detect_db_render_notify_ts(file_path, root, src))
+    results.extend(_ts_detect_keyword_list_search_ts(file_path, root, src))
+    results.extend(_ts_detect_large_rule_table_ts(file_path, root, src))
+    for hit in results:
+        hit.setdefault("language", lang)
+    return results
+
+
+# ── TypeScript regex fallback (when tree-sitter-languages not installed) ──────
+
+_TS_RE_NEW_REGEXP = re.compile(r"\bnew\s+RegExp\s*\(")
+_TS_RE_REGEX_METHOD = re.compile(r"\.(test|exec|match|matchAll)\s*\(")
+_TS_RE_TEMPLATE_LIB = re.compile(
+    r"\b(Handlebars\.(?:compile|template)|Mustache\.render|ejs\.render(?:File)?|"
+    r"pug\.render|nunjucks\.render(?:String)?)\s*\("
+)
+_TS_RE_CRON_SETINTERVAL = re.compile(r"\bsetInterval\s*\(")
+_TS_RE_CRON_SCHEDULE = re.compile(r"\bcron\.schedule\s*\(")
+_TS_RE_CRON_DECORATOR = re.compile(r"@(?:Cron|Interval|Timeout)\s*\(")
+_TS_RE_THRESHOLD = re.compile(
+    r"(?:[<>]=?|===?|!==?)\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
+    r"|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(?:[<>]=?|===?|!==?)"
+)
+_TS_RE_KW_SEARCH = re.compile(r"\.(includes|has)\s*\(")
+_TS_RE_IF_INDENT = re.compile(r"^(\s*)if\s*[\(\s]")
+_TS_RE_OBJ_ENTRY = re.compile(r'^\s*(?:["\'][\w\s-]+["\']|[\w$]+)\s*:(?!:)')
+
+
+def _ts_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
+    """Indentation-based heuristic for nested if detection (TypeScript regex fallback)."""
+    results: list[dict] = []
+    if_stack: list[tuple[int, int]] = []
+    reported: set[int] = set()
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        m = _TS_RE_IF_INDENT.match(line)
+        if m:
+            indent = len(m.group(1).expandtabs(4))
+            if_stack = [(ind, ln) for ind, ln in if_stack if ind < indent]
+            if_stack.append((indent, i))
+            if len(if_stack) >= _PATTERN_MIN_DEPTH:
+                outer_ln = if_stack[0][1]
+                if outer_ln not in reported:
+                    reported.add(outer_ln)
+                    results.append({
+                        "pattern_type": "nested_conditionals",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": outer_ln,
+                        "line_end": i,
+                        "pattern_detail": {"max_depth": len(if_stack)},
+                    })
+    return results
+
+
+def _ts_regex_large_object(file_path: str, lines: list[str]) -> list[dict]:
+    """Multi-line scanner for large object literals (TypeScript regex fallback)."""
+    results: list[dict] = []
+    n = len(lines)
+    i = 0
+    while i < n:
+        line = lines[i]
+        if re.search(r"(?:=|:|\(|\[|,|=>)\s*\{", line) or line.rstrip().endswith("{"):
+            start_line = i + 1
+            entry_count = 0
+            brace_depth = line.count("{") - line.count("}")
+            j = i + 1
+            while j < n and brace_depth > 0:
+                brace_depth += lines[j].count("{") - lines[j].count("}")
+                if brace_depth > 0 and _TS_RE_OBJ_ENTRY.match(lines[j]):
+                    entry_count += 1
+                j += 1
+            if entry_count >= _RULE_MIN_KEYS:
+                results.append({
+                    "pattern_type": "large_rule_table",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": start_line,
+                    "line_end": j,
+                    "pattern_detail": {"key_count": entry_count},
+                })
+        i += 1
+    return results
+
+
+def _ts_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
+    """Regex-based TypeScript/JavaScript pattern detection (tree-sitter unavailable)."""
+    results: list[dict] = []
+    lines = source_text.splitlines()
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        # regex_user_input — new RegExp or .test/.exec/.match
+        if _TS_RE_NEW_REGEXP.search(line):
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"call": "new RegExp()"},
+            })
+        else:
+            m = _TS_RE_REGEX_METHOD.search(line)
+            if m:
+                results.append({
+                    "pattern_type": "regex_user_input",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i,
+                    "line_end": i,
+                    "pattern_detail": {"call": f".{m.group(1)}()"},
+                })
+
+        # string_template_rendering — library calls only (template literals too noisy)
+        m = _TS_RE_TEMPLATE_LIB.search(line)
+        if m:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "template_library", "call": m.group(1)},
+            })
+
+        # scheduled_cron
+        if _TS_RE_CRON_SETINTERVAL.search(line):
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "call", "func": "setInterval"},
+            })
+        elif _TS_RE_CRON_SCHEDULE.search(line):
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "call", "call": "cron.schedule"},
+            })
+        m = _TS_RE_CRON_DECORATOR.search(line)
+        if m:
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "decorator", "decorator": stripped},
+            })
+
+        # hardcoded_threshold
+        m = _TS_RE_THRESHOLD.search(line)
+        if m:
+            const = m.group(1) or m.group(2) or "?"
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
+            })
+
+        # keyword_list_search
+        m = _TS_RE_KW_SEARCH.search(line)
+        if m:
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"method": m.group(1)},
+            })
+
+    results.extend(_ts_regex_nested_ifs(file_path, lines))
+    results.extend(_ts_regex_large_object(file_path, lines))
+    return results
+
+
+def _ts_detect_file(file_path: str) -> list[dict]:
+    """Run TypeScript/JavaScript pattern detection on a single .ts/.tsx/.js/.jsx file.
+
+    Tries tree-sitter-languages first; falls back to regex when unavailable.
+    """
+    src = pathlib.Path(file_path).read_bytes()
+    lang = _language_from_path(file_path)
+    ts_lang = "tsx" if file_path.endswith(".tsx") else "typescript"
+    try:
+        from tree_sitter_languages import get_parser  # type: ignore[import]
+        parser = get_parser(ts_lang)
+        tree = parser.parse(src)
+        return _ts_detect_via_tree_sitter(file_path, tree, src, lang)
+    except Exception:  # ImportError or any tree-sitter parse error
+        pass
+    results = _ts_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
+    for hit in results:
+        hit.setdefault("language", lang)
     return results
 
 
