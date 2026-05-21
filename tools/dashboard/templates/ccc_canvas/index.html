@@ -26,6 +26,7 @@
     <a href="/ccc/circuits" class="btn btn-sm btn-outline-secondary">Circuits</a>
     <a href="/ccc/cross-connects" class="btn btn-sm btn-outline-secondary">Cross-Connects</a>
     <a href="/ccc/loa" class="btn btn-sm btn-outline-secondary">LOA Requests</a>
+    <a href="/ccc/orders" class="btn btn-sm btn-outline-secondary">Orders</a>
     <a href="/ccc/capacity" class="btn btn-sm btn-outline-secondary">Capacity Plans</a>
     <a href="/ccc/dwdm" class="btn btn-sm btn-outline-secondary">DWDM</a>
   </div>
@@ -67,6 +68,14 @@
         <div class="val" style="color:#f59e0b;" id="stat-open-loa">{{ overview.loa.open | default(0) }}</div>
         <div class="lbl">Open LOAs</div>
       </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <a href="/ccc/orders" style="text-decoration:none;">
+        <div class="ccc-stat" style="cursor:pointer;border-color:#38bdf8;">
+          <div class="val" style="color:#38bdf8;" id="stat-in-flight-orders">—</div>
+          <div class="lbl">In-Flight Orders</div>
+        </div>
+      </a>
     </div>
   </div>
 
@@ -132,6 +141,12 @@ fetch('/api/ccc/circuits?status=active')
     }).join('');
   })
   .catch(() => { document.getElementById('attn-circuits-table').innerHTML = '<tr><td colspan="5" class="text-muted text-center">Error loading</td></tr>'; });
+
+fetch('/api/ccc/cross-connect-orders')
+  .then(r => r.json())
+  .then(orders => {
+    document.getElementById('stat-in-flight-orders').textContent = Array.isArray(orders) ? orders.length : '—';
+  }).catch(() => {});
 
 fetch('/api/ccc/overview')
   .then(r => r.json())

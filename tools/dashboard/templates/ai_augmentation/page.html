@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}AI Augmentation Canvas — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">AI Augmentation Canvas</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Detect AI-augmentable patterns in source code and generate a prioritized modernization roadmap.</p>
+  </div>
+</div>
+
+<!-- ── Scan Form ─────────────────────────────────────────────────────────── -->
+<div id="aac-scan-panel" style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;margin:0 0 16px;font-size:15px;">New Scan</h3>
+  <div style="display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px;align-items:end;">
+    <div>
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;">Input Type</label>
+      <select id="aac-input-type" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:13px;">
+        <option value="local_path">Local Path</option>
+        <option value="git_url">Git URL</option>
+        <option value="upload">Upload</option>
+      </select>
+    </div>
+    <div>
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;">Source Path / URL</label>
+      <input id="aac-input-ref" type="text" placeholder="e.g. tools/modernization/" value=""
+             style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:13px;box-sizing:border-box;">
+    </div>
+    <div>
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;">IL Level</label>
+      <select id="aac-il-level" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:13px;">
+        <option value="il4">IL4</option>
+        <option value="il5">IL5</option>
+        <option value="il6">IL6</option>
+      </select>
+    </div>
+    <div>
+      <button id="aac-run-btn" onclick="aacRunScan()" style="background:#6366f1;color:#fff;border:none;padding:9px 20px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;">
+        Run Scan
+      </button>
+    </div>
+  </div>
+  <div id="aac-scan-status" style="display:none;margin-top:12px;padding:8px 12px;border-radius:5px;font-size:12px;"></div>
+</div>
+
+<!-- ── Opportunities Table ────────────────────────────────────────────────── -->
+<div id="aac-opportunities-section" style="margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;font-size:15px;margin-bottom:12px;">
+    Opportunities
+    <span id="aac-opp-count" style="font-size:12px;color:#5a7aa0;font-weight:400;margin-left:8px;">
+      {% if opportunities %}({{ opportunities|length }} from latest scan){% endif %}
+    </span>
+  </h3>
+  <div id="aac-opportunities-table">
+  {% if opportunities %}
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#060f22;color:#5a7aa0;">
+          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Module</th>
+          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Function</th>
+          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Pattern</th>
+          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">AI Paradigm</th>
+          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Model</th>
+          <th style="padding:8px 10px;text-align:right;border-bottom:1px solid #1a3560;">Score</th>
+        </tr>
+      </thead>
+      <tbody id="aac-opp-tbody">
+      {% for opp in opportunities %}
+        <tr style="border-bottom:1px solid #0d1e30;" onmouseover="this.style.background='#0a1830'" onmouseout="this.style.background=''">
+          <td style="padding:7px 10px;color:#a8c8e0;word-break:break-all;max-width:200px;">{{ opp.module_path }}</td>
+          <td style="padding:7px 10px;color:#a8c8e0;">{{ opp.function_name }}</td>
+          <td style="padding:7px 10px;"><span style="background:#0d2545;color:#6ab0e0;border:1px solid #1a4070;border-radius:3px;padding:2px 6px;font-size:11px;">{{ opp.pattern_type }}</span></td>
+          <td style="padding:7px 10px;color:#80c0a0;font-size:11px;">{{ opp.ai_paradigm }}</td>
+          <td style="padding:7px 10px;color:#7090b0;font-size:11px;">{{ opp.il_recommended_model or '—' }}</td>
+          <td style="padding:7px 10px;text-align:right;color:#f0c060;font-weight:600;">
+            {% if opp.composite_score is not none %}{{ (opp.composite_score * 100)|round(0)|int }}%{% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div id="aac-opp-empty" style="background:#060f22;border:1px solid #1a3560;border-radius:6px;padding:24px;text-align:center;color:#3a6080;font-size:13px;">
+    No opportunities yet. Run a scan to detect AI-augmentable patterns.
+  </div>
+  {% endif %}
+  </div>
+</div>
+
+<!-- ── Roadmap Section ────────────────────────────────────────────────────── -->
+<div id="aac-roadmap-section" style="margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;font-size:15px;margin-bottom:12px;">Roadmap</h3>
+  <div id="aac-roadmap-content">
+  {% if roadmap and roadmap.phases %}
+    <div style="color:#5a7aa0;font-size:12px;margin-bottom:12px;">{{ roadmap.title }} — {{ roadmap.total_effort_days }} total effort days</div>
+    {% for phase in roadmap.phases %}
+    <div class="aac-phase-card" style="background:#0d1b2e;border:1px solid #1a3560;border-radius:6px;padding:14px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span style="color:#a5b4fc;font-weight:600;font-size:13px;">{{ phase.label }}</span>
+        <span style="color:#5a7aa0;font-size:11px;">{{ phase.count }} opportunities · {{ phase.total_effort_days }}d effort</span>
+      </div>
+      {% if phase.opportunities %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        {% for opp in phase.opportunities[:5] %}
+        <span style="background:#060f22;border:1px solid #1a3560;border-radius:4px;padding:3px 8px;font-size:11px;color:#80a8c8;">
+          {{ opp.pattern_type }}
+        </span>
+        {% endfor %}
+        {% if phase.opportunities|length > 5 %}
+        <span style="color:#3a6080;font-size:11px;padding:3px 6px;">+{{ phase.opportunities|length - 5 }} more</span>
+        {% endif %}
+      </div>
+      {% else %}
+      <span style="color:#3a5070;font-size:11px;">No opportunities in this phase</span>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+  <div id="aac-roadmap-empty" style="background:#060f22;border:1px solid #1a3560;border-radius:6px;padding:24px;text-align:center;color:#3a6080;font-size:13px;">
+    No roadmap generated yet. Run a scan to generate a prioritized roadmap.
+  </div>
+  {% endif %}
+  </div>
+</div>
+
+<!-- ── Scan History ─────────────────────────────────────────────────────── -->
+{% if scans %}
+<div style="margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;font-size:15px;margin-bottom:12px;">Recent Scans</h3>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#060f22;color:#5a7aa0;">
+          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">ID</th>
+          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Type</th>
+          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Source</th>
+          <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #1a3560;">Files</th>
+          <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #1a3560;">LOC</th>
+          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Status</th>
+          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for scan in scans %}
+        <tr style="border-bottom:1px solid #0d1e30;">
+          <td style="padding:6px 10px;color:#6080a0;">#{{ scan.scan_id }}</td>
+          <td style="padding:6px 10px;color:#a8c8e0;">{{ scan.input_type }}</td>
+          <td style="padding:6px 10px;color:#a8c8e0;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ scan.input_ref }}</td>
+          <td style="padding:6px 10px;text-align:right;color:#80a0c0;">{{ scan.total_files }}</td>
+          <td style="padding:6px 10px;text-align:right;color:#80a0c0;">{{ scan.total_loc }}</td>
+          <td style="padding:6px 10px;">
+            {% if scan.status == 'completed' %}
+            <span style="color:#5aaa80;font-size:11px;">completed</span>
+            {% elif scan.status == 'running' %}
+            <span style="color:#f0c060;font-size:11px;">running</span>
+            {% else %}
+            <span style="color:#808090;font-size:11px;">{{ scan.status }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:6px 10px;color:#5a7090;font-size:11px;">{{ scan.created_at }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── IQE Widget ────────────────────────────────────────────────────────── -->
+{% include "includes/iqe_query_widget.html" %}
+
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-top:16px;">CUI // SP-CTI</div>
+
+<script>
+async function aacRunScan() {
+  var btn       = document.getElementById('aac-run-btn');
+  var statusEl  = document.getElementById('aac-scan-status');
+  var inputType = document.getElementById('aac-input-type').value;
+  var inputRef  = document.getElementById('aac-input-ref').value.trim();
+  var ilLevel   = document.getElementById('aac-il-level').value;
+
+  if (!inputRef) {
+    statusEl.style.display = '';
+    statusEl.style.background = '#1a0808';
+    statusEl.style.color = '#e05050';
+    statusEl.textContent = 'Source path is required.';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Scanning…';
+  statusEl.style.display = '';
+  statusEl.style.background = '#06101e';
+  statusEl.style.color = '#6a9aba';
+  statusEl.textContent = 'Running scan — detecting patterns…';
+
+  try {
+    var resp = await fetch('/ai-augmentation/api/scan', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({input_type: inputType, input_ref: inputRef, il_level: ilLevel})
+    });
+    var data = await resp.json();
+
+    if (data.error) {
+      statusEl.style.background = '#1a0808';
+      statusEl.style.color = '#e05050';
+      statusEl.textContent = 'Error: ' + data.error;
+    } else {
+      statusEl.style.background = '#081a10';
+      statusEl.style.color = '#5aaa80';
+      statusEl.textContent = 'Scan #' + data.scan_id + ' completed — ' +
+        data.opportunities_count + ' opportunities found. Refreshing results…';
+      setTimeout(function() { window.location.reload(); }, 1500);
+    }
+  } catch(e) {
+    statusEl.style.background = '#1a0808';
+    statusEl.style.color = '#e05050';
+    statusEl.textContent = 'Network error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Scan';
+  }
+}
+</script>
+{% endblock %}

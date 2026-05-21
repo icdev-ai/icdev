@@ -7,6 +7,7 @@
     <p class="page-subtitle">Track peering lifecycle from evaluation to operational — BGP, static, OSPF, L2</p>
   </div>
   <div class="page-actions">
+    <a href="/network/partners" class="btn btn-secondary">Partner Registry</a>
     <button class="btn btn-primary" onclick="document.getElementById('peer-modal').style.display='flex'">+ New Agreement</button>
     <button class="btn btn-secondary" onclick="document.getElementById('eval-modal').style.display='flex'">+ Evaluate Peer</button>
   </div>
@@ -79,7 +80,7 @@ async function load() {
   if (!agreements.length) { el.innerHTML = '<section class="panel panel-wide"><div style="padding:16px;color:var(--text-dim);">No peering agreements yet.</div></section>'; }
   else {
     el.innerHTML = '<section class="panel panel-wide"><div class="panel-header"><h2 class="panel-title">Agreements</h2></div><table class="data-table"><thead><tr><th>Peer</th><th>ASN</th><th>Type</th><th>Routing</th><th>Status</th><th>Port</th><th>Purpose</th><th>Cost/mo</th><th>Actions</th></tr></thead><tbody>' +
-      agreements.map(a => '<tr><td><strong>' + a.peer_name + '</strong></td><td>' + (a.peer_asn || '') + '</td><td>' + a.peering_type + '</td><td><span class="badge">' + a.routing_method + '</span></td><td><span class="badge badge-' + (a.status === 'operational' ? 'public' : 'info') + '">' + a.status + '</span></td><td>' + (a.port_speed || '') + '</td><td>' + (a.purpose_category || '') + '</td><td>$' + (a.monthly_cost || 0).toLocaleString() + '</td><td class="actions"><button class="action-btn danger" onclick="delPeer(\'' + a.id + '\')">&#x2715;</button></td></tr>').join('') +
+      agreements.map(a => '<tr><td><strong>' + a.peer_name + '</strong></td><td>' + (a.peer_asn || '') + '</td><td>' + a.peering_type + '</td><td><span class="badge">' + a.routing_method + '</span></td><td><span class="badge badge-' + (a.status === 'operational' ? 'public' : 'info') + '">' + a.status + '</span></td><td>' + (a.port_speed || '') + '</td><td>' + (a.purpose_category || '') + '</td><td>$' + (a.monthly_cost || 0).toLocaleString() + '</td><td class="actions"><a class="action-btn" href="/network/partners" title="View in Partner Registry" style="color:var(--accent);text-decoration:none;">⟳</a> <button class="action-btn" onclick="viewDoc(\'' + a.id + '\')">Doc</button> <button class="action-btn danger" onclick="delPeer(\'' + a.id + '\')">&#x2715;</button></td></tr>').join('') +
       '</tbody></table></section>';
   }
   // Evaluations
@@ -97,6 +98,13 @@ function evalPeer(e) { e.preventDefault(); const fd = new FormData(e.target), d 
   d.traffic_volume = parseFloat(d.traffic_volume) || 0; d.prefix_count = parseInt(d.prefix_count) || 0;
   fetch(NC_BASE + '/api/peering-evaluations', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(d)}).then(() => location.reload()); return false; }
 async function delPeer(id) { if(!confirm('Delete?')) return; await fetch(NC_BASE + '/api/peering-agreements/' + id, {method:'DELETE'}); location.reload(); }
+async function viewDoc(id) {
+  const d = await fetch(NC_BASE + '/api/peering-agreements/' + id + '/document').then(r=>r.json()).catch(()=>null);
+  if (!d || !d.document) { alert('Document not available.'); return; }
+  const w = window.open('', '_blank');
+  w.document.write('<pre style="font-family:monospace;padding:20px;white-space:pre-wrap;">' + d.document.replace(/</g,'&lt;') + '</pre>');
+  w.document.close();
+}
 load();
 </script>
 {% endblock %}

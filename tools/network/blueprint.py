@@ -4274,6 +4274,28 @@ def create_network_blueprint():
         finally:
             conn.close()
 
+    @bp.route("/api/partners/by-asn", methods=["GET"])
+    @nc_login_required
+    def nc_api_partner_by_asn():
+        """Return partner matching ?asn=<int>. Returns {} if not found."""
+        asn = request.args.get("asn", type=int)
+        if asn is None:
+            return jsonify({"error": "asn is required"}), 400
+        conn = get_connection()
+        try:
+            try:
+                cur = conn.execute("SELECT * FROM nc_partners WHERE asn = ? LIMIT 1", (asn,))
+            except Exception:
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM nc_partners WHERE asn = %s LIMIT 1", (asn,))
+            row = cur.fetchone()
+            if not row:
+                return jsonify({})
+            cols = [d[0] for d in cur.description]
+            return jsonify(dict(zip(cols, row)))
+        finally:
+            conn.close()
+
     # ── Agreement lifecycle routes ─────────────────────────────────────────
 
     @bp.route("/api/peering-agreements/<aid>/approve", methods=["POST"])

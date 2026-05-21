@@ -143,6 +143,12 @@
 const IQE_CANVAS = 'pmc';
 const IQE_COLLECTION = 'pmc.peers';
 let allPeers = [];
+let partnerAsnMap = {};  // asn → partner_id
+
+fetch('/api/partners').then(r=>r.json()).then(partners=>{
+  if (!Array.isArray(partners)) return;
+  partners.forEach(p => { if (p.asn) partnerAsnMap[p.asn] = p.id; });
+}).catch(()=>{});
 
 const STATUS_COLORS = {active:'badge-active',evaluation:'badge-evaluation',requested:'badge-requested',
   suspended:'badge-suspended',closed:'badge-closed'};
@@ -179,6 +185,7 @@ function renderPeers(peers) {
       <td>
         <button class="btn btn-xs btn-outline-info btn-sm py-0 px-1" onclick="event.stopPropagation();evaluatePeer('${p.id}','${p.asn}')">Evaluate</button>
         <button class="btn btn-xs btn-outline-warning btn-sm py-0 px-1" onclick="event.stopPropagation();syncPeer('${p.id}','${p.asn}')">Sync</button>
+        ${partnerAsnMap[p.asn] ? `<a class="btn btn-xs btn-outline-success btn-sm py-0 px-1" href="/network/partners" onclick="event.stopPropagation()" title="View in Partner Registry">Partner</a>` : ''}
       </td>`;
     tbody.appendChild(tr);
   });
