@@ -166,6 +166,7 @@
 - [DDC Data Science — Explore, Query Sandbox, Quality Rules](manifest/ddc-data-science.md)
 - [System Graph — Federated Sigma.js Graph](manifest/system-graph.md)
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
+- [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
 
 
 ## Auto-Registered (Coherence Fix)
