@@ -1,1 +1,3 @@
-foreach o in ai_augmentation.opportunities where o.ai_paradigm == "agentic_trigger" select o.module_path, o.function_name, o.il_recommended_model, o.composite_score
+foreach o in ai_augmentation.opportunities
+  where o.ai_paradigm == 'agentic_trigger'
+  select o.module_path, o.pattern_type, o.feasibility_score, o.il_recommended_model
