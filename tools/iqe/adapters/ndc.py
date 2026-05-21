@@ -51,6 +51,8 @@ _COLLECTIONS = [
     "network.cables",
     "network.cross_connects",
     "network.ai_decisions",
+    "network.partners",
+    "network.agreements_expiring",
 ]
 
 
@@ -137,6 +139,17 @@ class NDCAdapter(IQEAdapter):
             except Exception:
                 rows = []
             return rows
+        elif collection == "network.partners":
+            rows = _fetch(conn, "SELECT * FROM nc_partners ORDER BY name")
+        elif collection == "network.agreements_expiring":
+            rows = _fetch(
+                conn,
+                "SELECT id, peer_name, peer_asn, status, contract_end, "
+                "CAST((julianday(contract_end) - julianday('now')) AS INTEGER) AS days_remaining, "
+                "monthly_cost_usd FROM nc_peering_agreements "
+                "WHERE status='operational' AND contract_end != '' AND contract_end <= date('now', '+90 days') "
+                "ORDER BY contract_end ASC",
+            )
         else:
             raise ValueError(
                 f"NDCAdapter: unknown collection {collection!r}. "

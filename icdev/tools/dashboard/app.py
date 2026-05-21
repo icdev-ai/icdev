@@ -2530,7 +2530,7 @@ def create_app() -> Flask:
         from tools.iqe.executor import execute_query
 
         _CANVAS_MAP = {
-            "ndc":        ("tools.iqe.adapters.ndc",         ["network.topologies", "network.devices", "network.objects", "network.circuits", "network.sites", "network.ai_decisions"]),
+            "ndc":        ("tools.iqe.adapters.ndc",         ["network.topologies", "network.devices", "network.objects", "network.circuits", "network.sites", "network.ai_decisions", "network.partners", "network.agreements_expiring"]),
             "sdc":        ("tools.iqe.adapters.security",    ["attack.nodes", "attack.edges", "attack.paths", "security.ai_decisions"]),
             "pdc":        ("tools.iqe.adapters.pipeline",    ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges", "pipeline.ai_decisions"]),
             "ddc":        ("tools.iqe.adapters.data",        ["data.lineage.edges", "data.classifications", "data.ai_decisions"]),
@@ -2544,7 +2544,7 @@ def create_app() -> Flask:
             "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
             "nocc":       ("tools.iqe.adapters.nocc",        ["noc.alarms", "noc.incidents", "noc.rfcs", "noc.mops", "noc.maintenance_windows", "noc.sla_records"]),
             "pmc":        ("tools.iqe.adapters.pmc",         ["pmc.peers", "pmc.ix_memberships", "pmc.prefixes", "pmc.peering_requests", "pmc.route_policies"]),
-            "ccc":        ("tools.iqe.adapters.ccc",         ["ccc.circuits", "ccc.cross_connects", "ccc.loa", "ccc.capacity_plans", "ccc.dwdm_spans"]),
+            "ccc":        ("tools.iqe.adapters.ccc",         ["ccc.circuits", "ccc.cross_connects", "ccc.loa", "ccc.capacity_plans", "ccc.dwdm_spans", "ccc.xc_orders"]),
             "dsoc":       ("tools.iqe.adapters.dsoc",        ["dsoc.flowspec_rules", "dsoc.rtbh_entries", "dsoc.scrubbing_centers", "dsoc.threats", "dsoc.mitigations", "dsoc.bgp_hijacks"]),
             "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
             "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),

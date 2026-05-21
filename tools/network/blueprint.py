@@ -4204,6 +4204,154 @@ def create_network_blueprint():
         return render_template("network/peering.html")
 
     # ══════════════════════════════════════════════════════════════════════
+    # Partner Registry
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/network/partners")
+    @nc_login_required
+    def nc_partners_page():
+        return render_template("network/partners.html")
+
+    @bp.route("/api/partners", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_partners():
+        from tools.network.partner_registry import list_partners
+        conn = get_connection()
+        try:
+            status = request.args.get("status", "")
+            return jsonify(list_partners(conn, status=status))
+        finally:
+            conn.close()
+
+    @bp.route("/api/partners", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_partner():
+        from tools.network.partner_registry import create_partner
+        data = request.get_json(force=True) or {}
+        if not data.get("name"):
+            return jsonify({"error": "name is required"}), 400
+        conn = get_connection()
+        try:
+            result = create_partner(conn, data)
+            _audit("CREATE", "partner", result["partner_id"], conn)
+            return jsonify(result), 201
+        finally:
+            conn.close()
+
+    @bp.route("/api/partners/<pid>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_partner(pid):
+        from tools.network.partner_registry import get_partner
+        conn = get_connection()
+        try:
+            partner = get_partner(conn, pid)
+            if not partner:
+                return jsonify({"error": "not found"}), 404
+            return jsonify(partner)
+        finally:
+            conn.close()
+
+    @bp.route("/api/partners/<pid>", methods=["PUT"])
+    @nc_login_required
+    def nc_api_update_partner(pid):
+        from tools.network.partner_registry import update_partner
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            result = update_partner(conn, pid, data)
+            _audit("UPDATE", "partner", pid, conn)
+            return jsonify(result)
+        finally:
+            conn.close()
+
+    @bp.route("/api/partners/<pid>/unified-view", methods=["GET"])
+    @nc_login_required
+    def nc_api_partner_unified_view(pid):
+        from tools.network.partner_registry import get_unified_view
+        conn = get_connection()
+        try:
+            return jsonify(get_unified_view(conn, pid))
+        finally:
+            conn.close()
+
+    # ── Agreement lifecycle routes ─────────────────────────────────────────
+
+    @bp.route("/api/peering-agreements/<aid>/approve", methods=["POST"])
+    @nc_login_required
+    def nc_api_approve_agreement(aid):
+        from tools.network.agreement_lifecycle import approve_agreement
+        data = request.get_json(force=True) or {}
+        approver = data.get("approver", "")
+        role = data.get("role", "")
+        if not approver or not role:
+            return jsonify({"error": "approver and role are required"}), 400
+        conn = get_connection()
+        try:
+            result = approve_agreement(conn, aid, approver, role)
+            _audit("APPROVE", "peering_agreement", aid, conn)
+            return jsonify(result)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        finally:
+            conn.close()
+
+    @bp.route("/api/peering-agreements/<aid>/amend", methods=["POST"])
+    @nc_login_required
+    def nc_api_amend_agreement(aid):
+        from tools.network.agreement_lifecycle import create_amendment
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            result = create_amendment(
+                conn, aid,
+                changes=data.get("changes", {}),
+                reason=data.get("reason", ""),
+                amended_by=data.get("amended_by", ""),
+                effective_date=data.get("effective_date", ""),
+            )
+            _audit("AMEND", "peering_agreement", aid, conn)
+            return jsonify(result), 201
+        finally:
+            conn.close()
+
+    @bp.route("/api/peering-agreements/<aid>/amendments", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_amendments(aid):
+        conn = get_connection()
+        try:
+            try:
+                rows = conn.execute("SELECT * FROM nc_agreement_amendments WHERE agreement_id=%s ORDER BY amendment_number", (aid,)).fetchall()
+            except Exception:
+                rows = conn.execute("SELECT * FROM nc_agreement_amendments WHERE agreement_id=? ORDER BY amendment_number", (aid,)).fetchall()
+            return jsonify([_row_to_dict(r) for r in rows])
+        finally:
+            conn.close()
+
+    @bp.route("/api/peering-agreements/<aid>/document", methods=["GET"])
+    @nc_login_required
+    def nc_api_agreement_document(aid):
+        from tools.network.agreement_lifecycle import generate_agreement_document
+        conn = get_connection()
+        try:
+            doc = generate_agreement_document(conn, aid)
+            return jsonify({"agreement_id": aid, "document": doc})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 404
+        finally:
+            conn.close()
+
+    @bp.route("/api/peering-agreements/<aid>/sync-to-pmc", methods=["POST"])
+    @nc_login_required
+    def nc_api_agreement_sync_to_pmc(aid):
+        from tools.network.agreement_lifecycle import sync_to_pmc
+        conn = get_connection()
+        try:
+            result = sync_to_pmc(conn, aid)
+            return jsonify(result)
+        finally:
+            conn.close()
+
+    # ══════════════════════════════════════════════════════════════════════
     # Capacity Planning (Port/Slot/Fiber/Circuit)
     # ══════════════════════════════════════════════════════════════════════
 

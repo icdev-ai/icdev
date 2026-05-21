@@ -3667,3 +3667,8 @@ NETWORK_ONTOLOGY_MAP: dict[str, str] = {
     "twin-network": "https://icdev.dev/ontology/network#TwinNetwork",
     "twin-topo-simulator": "https://icdev.dev/ontology/network#TwinTopoSimulator",
 }
+
+# ── Partner Registry constants ──────────────────────────────────────────────
+PARTNER_TYPES = ['isp', 'carrier', 'cloud', 'content', 'enterprise', 'ix']
+PARTNER_STATUSES = ['active', 'suspended', 'terminated']
+

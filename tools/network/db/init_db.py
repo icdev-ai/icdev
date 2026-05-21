@@ -734,6 +734,43 @@ CREATE TABLE IF NOT EXISTS nc_peering_sessions (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ── Partner Registry ──────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_partners (
+    id               TEXT PRIMARY KEY,
+    name             TEXT NOT NULL,
+    partner_type     TEXT NOT NULL DEFAULT 'isp'
+                         CHECK(partner_type IN ('isp','carrier','cloud','content','enterprise','ix')),
+    asn              INTEGER,
+    noc_email        TEXT DEFAULT '',
+    noc_phone        TEXT DEFAULT '',
+    legal_entity     TEXT DEFAULT '',
+    contract_manager TEXT DEFAULT '',
+    status           TEXT NOT NULL DEFAULT 'active'
+                         CHECK(status IN ('active','suspended','terminated')),
+    notes            TEXT DEFAULT '',
+    classification   TEXT DEFAULT 'CUI',
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nc_partners_status ON nc_partners(status);
+CREATE INDEX IF NOT EXISTS idx_nc_partners_asn    ON nc_partners(asn);
+
+-- ── Agreement Amendments (APPEND-ONLY) ────────────────────────────────────
+CREATE TABLE IF NOT EXISTS nc_agreement_amendments (
+    id               TEXT PRIMARY KEY,
+    agreement_id     TEXT NOT NULL REFERENCES nc_peering_agreements(id) ON DELETE CASCADE,
+    amendment_number INTEGER NOT NULL DEFAULT 1,
+    changes_json     TEXT NOT NULL DEFAULT '{}',
+    amended_by       TEXT NOT NULL DEFAULT '',
+    reason           TEXT DEFAULT '',
+    effective_date   TEXT DEFAULT '',
+    classification   TEXT DEFAULT 'CUI',
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_nc_agreement_amendments_agreement ON nc_agreement_amendments(agreement_id);
+
 CREATE TABLE IF NOT EXISTS nc_peering_traffic (
     id              TEXT PRIMARY KEY,
     session_id      TEXT REFERENCES nc_peering_sessions(id) ON DELETE CASCADE,
@@ -13970,6 +14007,11 @@ def init_db():
             ("nc_migration_phases", "impact_level", "TEXT DEFAULT 'IL4'"),
             # NDC↔Migration integration: traffic flow ↔ phase link
             ("nc_traffic_flows", "phase_id", "TEXT"),
+            # Partner registry: add partner_id + approval columns to nc_peering_agreements
+            ("nc_peering_agreements", "partner_id", "TEXT"),
+            ("nc_peering_agreements", "approver_name", "TEXT DEFAULT ''"),
+            ("nc_peering_agreements", "approver_role", "TEXT DEFAULT ''"),
+            ("nc_peering_agreements", "approved_at", "TEXT DEFAULT ''"),
         ]
         for table, col, coltype in _migrations:
             try:
