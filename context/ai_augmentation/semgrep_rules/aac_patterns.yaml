@@ -222,3 +222,205 @@ rules:
     metadata:
       aac_pattern: large_rule_table
       ai_paradigm: decision_agent
+
+  # ── TypeScript / JavaScript patterns ──────────────────────────────────────────
+
+  # Pattern 1: nested_conditionals (TypeScript/JavaScript)
+  - id: aac-nested-conditionals-ts
+    patterns:
+      - pattern: |
+          if (...) {
+            if (...) {
+              if (...) {
+                ...
+              }
+            }
+          }
+    message: "Nested conditionals (depth ≥ 3) — replace with ML classifier"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: nested_conditionals
+      ai_paradigm: ml_classifier
+
+  # Pattern 2: regex_user_input (TypeScript/JavaScript)
+  - id: aac-regex-user-input-ts-new-regexp
+    patterns:
+      - pattern: new RegExp(...)
+    message: "RegExp constructor — replace with NLP/NLU extractor"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: regex_user_input
+      ai_paradigm: nlp_extractor
+
+  - id: aac-regex-user-input-ts-method
+    pattern-either:
+      - pattern: $X.test(...)
+      - pattern: $X.exec(...)
+      - pattern: $X.match(...)
+      - pattern: $X.search(...)
+    message: "Regex method call — replace with NLP/NLU extractor"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: regex_user_input
+      ai_paradigm: nlp_extractor
+
+  # Pattern 3: string_template_rendering (TypeScript/JavaScript)
+  - id: aac-string-template-rendering-ts-handlebars
+    pattern-either:
+      - pattern: Handlebars.compile(...)
+      - pattern: Handlebars.template(...)
+    message: "Handlebars template — replace with LLM generation"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  - id: aac-string-template-rendering-ts-ejs
+    pattern-either:
+      - pattern: ejs.render(...)
+      - pattern: ejs.renderFile(...)
+    message: "EJS template render — replace with LLM generation"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  - id: aac-string-template-rendering-ts-mustache
+    patterns:
+      - pattern: Mustache.render(...)
+    message: "Mustache template render — replace with LLM generation"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  # Pattern 4: scheduled_cron (TypeScript/JavaScript)
+  - id: aac-scheduled-cron-ts-setinterval
+    patterns:
+      - pattern: setInterval($FUNC, $INTERVAL)
+    message: "setInterval polling — replace with agentic trigger"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  - id: aac-scheduled-cron-ts-cron-schedule
+    pattern-either:
+      - pattern: cron.schedule($EXPR, $FUNC)
+      - pattern: cron.schedule($EXPR, $FUNC, ...)
+    message: "node-cron schedule — replace with agentic trigger"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  - id: aac-scheduled-cron-ts-nestjs-cron
+    patterns:
+      - pattern: |
+          @Cron(...)
+          $FUNC(...) { ... }
+    message: "NestJS @Cron decorator — replace with agentic trigger"
+    languages: [typescript]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  # Pattern 5: hardcoded_threshold (TypeScript/JavaScript)
+  - id: aac-hardcoded-threshold-ts
+    patterns:
+      - pattern-either:
+          - pattern: $X > $LITERAL
+          - pattern: $X < $LITERAL
+          - pattern: $X >= $LITERAL
+          - pattern: $X <= $LITERAL
+      - metavariable-regex:
+          metavariable: $LITERAL
+          regex: '^[0-9]+(\.[0-9]+)?$'
+    message: "Hardcoded numeric threshold — replace with ML anomaly detection"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: hardcoded_threshold
+      ai_paradigm: anomaly_detection
+
+  # Pattern 6: db_render_notify_chain (TypeScript/JavaScript)
+  - id: aac-db-render-notify-chain-ts-typeorm
+    patterns:
+      - pattern: |
+          async function $FUNC(...) {
+            ...
+            $RESULT = await $REPO.find(...)
+            ...
+            $MSG = $TEMPLATE.render(...)
+            ...
+            await $TRANSPORT.sendMail(...)
+            ...
+          }
+    message: "DB→template→nodemailer pipeline — replace with LLM synthesis"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: db_render_notify_chain
+      ai_paradigm: llm_generation
+
+  - id: aac-db-render-notify-chain-ts-prisma
+    patterns:
+      - pattern: |
+          async function $FUNC(...) {
+            ...
+            $RESULT = await $PRISMA.$MODEL.findMany(...)
+            ...
+            $MSG = $TEMPLATE.render(...)
+            ...
+            await $TRANSPORT.sendMail(...)
+            ...
+          }
+    message: "Prisma→template→nodemailer pipeline — replace with LLM synthesis"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: db_render_notify_chain
+      ai_paradigm: llm_generation
+
+  # Pattern 7: keyword_list_search (TypeScript/JavaScript)
+  - id: aac-keyword-list-search-ts-includes
+    patterns:
+      - pattern: $ARR.includes($X)
+    message: "Array.includes keyword search — replace with vector semantic search"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: keyword_list_search
+      ai_paradigm: embedding_retrieval
+
+  - id: aac-keyword-list-search-ts-set-has
+    patterns:
+      - pattern: $SET.has($X)
+    message: "Set.has keyword lookup — replace with vector semantic search"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: keyword_list_search
+      ai_paradigm: embedding_retrieval
+
+  # Pattern 8: large_rule_table (TypeScript/JavaScript)
+  - id: aac-large-rule-table-ts
+    patterns:
+      - pattern: |
+          {$K1: $V1, $K2: $V2, $K3: $V3, $K4: $V4, $K5: $V5,
+           $K6: $V6, $K7: $V7, $K8: $V8, $K9: $V9, $K10: $V10, ...}
+    message: "Large object/dispatch table — replace with ML/RL decision agent"
+    languages: [typescript, javascript]
+    severity: INFO
+    metadata:
+      aac_pattern: large_rule_table
+      ai_paradigm: decision_agent
