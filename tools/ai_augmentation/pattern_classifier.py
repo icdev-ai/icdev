@@ -318,16 +318,20 @@ def _ast_detect_file(file_path: str) -> list[dict]:
 
 
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
-    """AST-based fallback for Python files when Semgrep is unavailable."""
+    """AST-based fallback for Python and Java files when Semgrep is unavailable."""
     p = pathlib.Path(target_path)
     if p.is_file():
-        if p.suffix.lower() == ".py":
+        suffix = p.suffix.lower()
+        if suffix == ".py":
             return _ast_detect_file(target_path)
+        if suffix == ".java":
+            return _java_detect_file(target_path)
         return []
-    # Directory: walk recursively and collect results for all .py files.
     results: list[dict] = []
     for py_file in sorted(p.rglob("*.py")):
         results.extend(_ast_detect_file(str(py_file)))
+    for java_file in sorted(p.rglob("*.java")):
+        results.extend(_java_detect_file(str(java_file)))
     return results
 
 
@@ -614,6 +618,335 @@ def _detect_large_rule_table(
                 "line_end": node.end_lineno,
                 "pattern_detail": {"key_count": key_count},
             })
+    return results
+
+
+# ── Java AST detection (javalang) ─────────────────────────────────────────────
+
+_JAVA_COMPARISON_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">="})
+
+_JAVA_REGEX_METHODS: frozenset[str] = frozenset({"compile", "matches", "match", "find"})
+_JAVA_REGEX_QUALIFIERS: frozenset[str] = frozenset({"Pattern", "Matcher"})
+
+_JAVA_TEMPLATE_PAIRS: frozenset[tuple[str, str]] = frozenset({
+    ("String", "format"),
+    ("MessageFormat", "format"),
+    ("String", "formatted"),
+})
+_JAVA_TEMPLATE_CLASSES: frozenset[str] = frozenset({
+    "VelocityEngine", "Template", "VelocityContext",
+})
+_JAVA_TEMPLATE_METHOD_NAMES: frozenset[str] = frozenset({
+    "evaluate", "merge", "getTemplate",
+})
+
+_JAVA_CRON_ANNOTATIONS: frozenset[str] = frozenset({
+    "Scheduled", "Cron", "Job", "ScheduledTask", "EnableScheduling",
+})
+_JAVA_CRON_CLASSES: frozenset[str] = frozenset({
+    "CronTrigger", "PeriodicTrigger", "ScheduledThreadPoolExecutor",
+})
+_JAVA_CRON_METHODS: frozenset[str] = frozenset({
+    "scheduleAtFixedRate", "scheduleWithFixedDelay",
+})
+
+_JAVA_DB_METHODS: frozenset[str] = frozenset({
+    "executeQuery", "execute", "executeUpdate", "prepareStatement", "prepareCall",
+    "createQuery", "createNamedQuery", "find", "persist", "merge", "remove",
+    "findById", "findAll", "save", "saveAll", "delete",
+})
+_JAVA_RENDER_METHODS: frozenset[str] = frozenset({
+    "evaluate", "merge", "format", "getTemplate", "render",
+})
+_JAVA_NOTIFY_METHODS: frozenset[str] = frozenset({
+    "send", "sendMail", "sendMessage", "sendEmail",
+    "publish", "dispatch", "emit", "deliver",
+})
+
+_JAVA_MAP_CLASSES: frozenset[str] = frozenset({
+    "HashMap", "LinkedHashMap", "TreeMap", "Hashtable", "ConcurrentHashMap",
+})
+
+
+def _java_enclosing_method(path: list) -> str:
+    try:
+        import javalang
+    except ImportError:
+        return "<unknown>"
+    for ancestor in reversed(path):
+        if isinstance(ancestor, (javalang.tree.MethodDeclaration,
+                                  javalang.tree.ConstructorDeclaration)):
+            return ancestor.name
+    return "<unknown>"
+
+
+def _java_if_subtree_depth(root_node: Any, jl: Any) -> int:
+    """Return max depth of IfStatement nesting rooted at root_node (inclusive).
+
+    node.filter() includes root_node itself (empty path) and all descendants.
+    Descendants' paths contain root_node as an ancestor, so depth equals
+    if_ancestor_count_in_path + 1 (for the descendant itself).
+    """
+    max_depth = 1  # root itself
+    for nested_path, nested_node in root_node.filter(jl.tree.IfStatement):
+        if nested_node is root_node:
+            continue
+        if_ancestors = sum(1 for a in nested_path if isinstance(a, jl.tree.IfStatement))
+        max_depth = max(max_depth, if_ancestors + 1)
+    return max_depth
+
+
+def _java_detect_nested_conditionals(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.IfStatement):
+        if any(isinstance(a, jl.tree.IfStatement) for a in path):
+            continue
+        depth = _java_if_subtree_depth(node, jl)
+        if depth >= _PATTERN_MIN_DEPTH:
+            line: int = node.position.line if node.position else 0
+            results.append({
+                "pattern_type": "nested_conditionals",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"max_depth": depth},
+            })
+    return results
+
+
+def _java_detect_regex_user_input(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.MethodInvocation):
+        qualifier: str = getattr(node, "qualifier", "") or ""
+        member: str = getattr(node, "member", "") or ""
+        if member not in _JAVA_REGEX_METHODS:
+            continue
+        if qualifier in _JAVA_REGEX_QUALIFIERS or member == "matches":
+            line = node.position.line if node.position else 0
+            call = f"{qualifier}.{member}" if qualifier else member
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"call": call},
+            })
+    return results
+
+
+def _java_detect_string_template_rendering(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.MethodInvocation):
+        qualifier = getattr(node, "qualifier", "") or ""
+        member = getattr(node, "member", "") or ""
+        matched: str | None = None
+        if (qualifier, member) in _JAVA_TEMPLATE_PAIRS:
+            matched = f"{qualifier}.{member}"
+        elif qualifier in _JAVA_TEMPLATE_CLASSES or member in _JAVA_TEMPLATE_METHOD_NAMES:
+            matched = f"{qualifier}.{member}" if qualifier else member
+        if matched:
+            line = node.position.line if node.position else 0
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"kind": "java_template", "call": matched},
+            })
+    return results
+
+
+def _java_leaf_type_name(ref_type: Any) -> str:
+    """Return the leaf class name from a possibly-qualified ReferenceType."""
+    name = getattr(ref_type, "name", "") or ""
+    sub = getattr(ref_type, "sub_type", None)
+    while sub is not None:
+        name = getattr(sub, "name", "") or name
+        sub = getattr(sub, "sub_type", None)
+    return name
+
+
+def _java_detect_scheduled_cron(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.MethodDeclaration):
+        for ann in node.annotations or []:
+            if ann.name in _JAVA_CRON_ANNOTATIONS:
+                line = node.position.line if node.position else 0
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": file_path,
+                    "function_name": node.name,
+                    "line_start": line,
+                    "line_end": line,
+                    "pattern_detail": {"kind": "annotation", "annotation": f"@{ann.name}"},
+                })
+    for path, node in tree.filter(jl.tree.ClassCreator):
+        type_name: str = _java_leaf_type_name(getattr(node, "type", None))
+        if type_name in _JAVA_CRON_CLASSES:
+            line = node.position.line if node.position else 0
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"kind": "class_creation", "class": type_name},
+            })
+    for path, node in tree.filter(jl.tree.MethodInvocation):
+        member = getattr(node, "member", "") or ""
+        if member in _JAVA_CRON_METHODS:
+            line = node.position.line if node.position else 0
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"kind": "call", "method": member},
+            })
+    return results
+
+
+def _java_detect_hardcoded_threshold(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.BinaryOperation):
+        if node.operator not in _JAVA_COMPARISON_OPS:
+            continue
+        literals: list[str] = []
+        if isinstance(node.operandl, jl.tree.Literal):
+            literals.append(node.operandl.value)
+        if isinstance(node.operandr, jl.tree.Literal):
+            literals.append(node.operandr.value)
+        if literals:
+            line = node.position.line if node.position else 0
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"kind": "compare", "operator": node.operator, "constants": literals},
+            })
+    return results
+
+
+def _java_detect_db_render_notify_chain(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for _, method_node in tree.filter(jl.tree.MethodDeclaration):
+        method_calls: set[str] = {
+            getattr(inv, "member", "") or ""
+            for _, inv in method_node.filter(jl.tree.MethodInvocation)
+        }
+        db_hits = method_calls & _JAVA_DB_METHODS
+        render_hits = method_calls & _JAVA_RENDER_METHODS
+        notify_hits = method_calls & _JAVA_NOTIFY_METHODS
+        if db_hits and render_hits and notify_hits:
+            line = method_node.position.line if method_node.position else 0
+            results.append({
+                "pattern_type": "db_render_notify_chain",
+                "module_path": file_path,
+                "function_name": method_node.name,
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {
+                    "matched_calls": {
+                        "db": sorted(db_hits),
+                        "render": sorted(render_hits),
+                        "notify": sorted(notify_hits),
+                    }
+                },
+            })
+    return results
+
+
+def _java_detect_keyword_list_search(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.MethodInvocation):
+        member = getattr(node, "member", "") or ""
+        if member == "contains":
+            qualifier = getattr(node, "qualifier", "") or ""
+            line = node.position.line if node.position else 0
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": _java_enclosing_method(path),
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"call": f"{qualifier}.{member}" if qualifier else member},
+            })
+    return results
+
+
+def _java_detect_large_rule_table(file_path: str, tree: Any, jl: Any) -> list[dict]:
+    results: list[dict] = []
+    for path, node in tree.filter(jl.tree.MethodInvocation):
+        qualifier = getattr(node, "qualifier", "") or ""
+        member = getattr(node, "member", "") or ""
+        args = getattr(node, "arguments", []) or []
+        if qualifier in ("Map", "ImmutableMap") and member in ("of", "ofEntries"):
+            entry_count = len(args) // 2 if member == "of" else len(args)
+            if entry_count >= _RULE_MIN_KEYS:
+                line = node.position.line if node.position else 0
+                results.append({
+                    "pattern_type": "large_rule_table",
+                    "module_path": file_path,
+                    "function_name": _java_enclosing_method(path),
+                    "line_start": line,
+                    "line_end": line,
+                    "pattern_detail": {"kind": "map_of", "entry_count": entry_count},
+                })
+    for _, method_node in tree.filter(jl.tree.MethodDeclaration):
+        has_map_init = any(
+            _java_leaf_type_name(getattr(creator, "type", None)) in _JAVA_MAP_CLASSES
+            for _, creator in method_node.filter(jl.tree.ClassCreator)
+        )
+        if not has_map_init:
+            continue
+        put_count = sum(
+            1
+            for _, inv in method_node.filter(jl.tree.MethodInvocation)
+            if getattr(inv, "member", "") == "put"
+        )
+        if put_count >= _RULE_MIN_KEYS:
+            line = method_node.position.line if method_node.position else 0
+            results.append({
+                "pattern_type": "large_rule_table",
+                "module_path": file_path,
+                "function_name": method_node.name,
+                "line_start": line,
+                "line_end": line,
+                "pattern_detail": {"kind": "map_put_sequence", "put_count": put_count},
+            })
+    return results
+
+
+def _java_detect_file(file_path: str) -> list[dict]:
+    """Run all 8 pattern detectors on a single Java file using javalang."""
+    try:
+        import javalang as jl
+    except ImportError:
+        return []
+    source_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    try:
+        tree = jl.parse.parse(source_text)
+    except jl.parser.JavaSyntaxError:
+        return []
+    except Exception:
+        return []
+    results: list[dict] = []
+    results.extend(_java_detect_nested_conditionals(file_path, tree, jl))
+    results.extend(_java_detect_regex_user_input(file_path, tree, jl))
+    results.extend(_java_detect_string_template_rendering(file_path, tree, jl))
+    results.extend(_java_detect_scheduled_cron(file_path, tree, jl))
+    results.extend(_java_detect_hardcoded_threshold(file_path, tree, jl))
+    results.extend(_java_detect_db_render_notify_chain(file_path, tree, jl))
+    results.extend(_java_detect_keyword_list_search(file_path, tree, jl))
+    results.extend(_java_detect_large_rule_table(file_path, tree, jl))
+    for hit in results:
+        hit.setdefault("language", "java")
     return results
 
 
