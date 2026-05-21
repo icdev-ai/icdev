@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.ai_augmentation.agent_readiness import run_readiness_check
+from tools.ai_augmentation.batch_processor import is_batch_eligible, run_batch_scan
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.opportunity_scorer import score_opportunity
 from tools.ai_augmentation.pattern_classifier import detect_patterns
@@ -279,8 +280,24 @@ def run_scan(
     finally:
         conn.close()
 
-    # 2. Detect patterns (Semgrep or AST fallback)
-    patterns = detect_patterns(input_ref)
+    # 2. Detect patterns — batch API path for large repos, else Semgrep/AST
+    if is_batch_eligible(total_files):
+        batch_patterns, batch_id = run_batch_scan(input_ref, scan_id)
+        if batch_id is not None:
+            language_profile["batch_id"] = batch_id
+            conn = get_connection()
+            try:
+                _exec(
+                    conn,
+                    "UPDATE aac_scans SET language_profile = ? WHERE scan_id = ?",
+                    (_dump(language_profile), scan_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        patterns = batch_patterns if batch_patterns else detect_patterns(input_ref)
+    else:
+        patterns = detect_patterns(input_ref)
 
     # 3. Insert opportunities + scores
     opp_rows: list[dict] = []
