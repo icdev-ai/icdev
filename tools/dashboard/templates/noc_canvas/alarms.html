@@ -63,7 +63,15 @@
       <tr id="alarm-{{ a.id }}">
         <td><span class="sev-badge sev-{{ a.severity }}">{{ a.severity|upper }}</span></td>
         <td style="color:#94a3b8;">{{ a.alarm_type }}</td>
-        <td style="color:#e2e8f0;font-weight:600;">{{ a.device_name or '—' }}</td>
+        <td style="color:#e2e8f0;font-weight:600;">
+          {% if a.alarm_source == 'peering_renewal' %}
+            <a href="/network/partners" style="color:#38bdf8;text-decoration:none;" title="Agreement ID: {{ a.device_name }}">⟳ Peering Agreement</a>
+          {% elif a.alarm_source == 'xc_order_poller' %}
+            <a href="/ccc/orders" style="color:#38bdf8;text-decoration:none;" title="XC ID: {{ a.device_name }}">📦 XC Order #{{ a.device_name }}</a>
+          {% else %}
+            {{ a.device_name or '—' }}
+          {% endif %}
+        </td>
         <td style="color:#94a3b8;font-size:.78rem;">{{ a.circuit_id or '' }}{% if a.carrier %} / {{ a.carrier }}{% endif %}</td>
         <td style="color:#cbd5e1;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.description }}">{{ a.description }}</td>
         <td style="color:#64748b;font-size:.75rem;">{{ a.alarm_source }}</td>
@@ -73,6 +81,11 @@
           <button class="btn-ack" onclick="ackAlarm('{{ a.id }}')">Ack</button>
           {% endif %}
           <button class="btn-clear" onclick="clearAlarm('{{ a.id }}')">Clear</button>
+          {% if a.alarm_source == 'peering_renewal' %}
+          <a class="btn-ack" href="/network/partners" style="text-decoration:none;margin-left:4px;">View Partner</a>
+          {% elif a.alarm_source == 'xc_order_poller' %}
+          <a class="btn-ack" href="/ccc/orders" style="text-decoration:none;margin-left:4px;">View Orders</a>
+          {% endif %}
         </td>
       </tr>
       {% else %}

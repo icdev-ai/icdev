@@ -9,9 +9,11 @@
   {% block head %}{% endblock %}
 </head>
 <body style="display:flex;flex-direction:column;min-height:100vh;margin:0;">
+  {% block global_banner %}
   {% if classification_banner %}
   <div class="cui-banner">{{ classification_banner }}</div>
   {% endif %}
+  {% endblock %}
 
   <!-- Navbar -->
   <nav class="navbar">
@@ -47,6 +49,7 @@
             <a href="/network/replacements" class="mega-item">Replacement Map</a>
             <a href="/network/budget" class="mega-item">Budget Forecast</a>
             <a href="/network/innovation" class="mega-item">Innovation Hub</a>
+            <a href="/network/migration-hub" class="mega-item">🔄 Migration Hub</a>
           </div>
         </div>
       </div>
@@ -57,16 +60,19 @@
         <div class="nav-mega-panel">
           <div class="mega-group">
             <div class="mega-label">Connectivity</div>
+            <a href="/network/partners" class="mega-item {% if request.path == '/network/partners' %}active{% endif %}">Partner Registry</a>
             <a href="/network/peering" class="mega-item">Peering Agreements</a>
             <a href="/network/circuits" class="mega-item">Circuits</a>
             <a href="/network/cables" class="mega-item">Cables</a>
             <a href="/network/cross-connects" class="mega-item">Cross-Connects</a>
+            <a href="/network/connectivity" class="mega-item {% if request.path == '/network/connectivity' %}active{% endif %}">Connectivity Reference</a>
           </div>
           <div class="mega-group">
             <div class="mega-label">Infrastructure</div>
             <a href="/network/capacity" class="mega-item">Capacity Planning</a>
             <a href="/network/facilities" class="mega-item">Facilities / DCIM</a>
             <a href="/network/ipam" class="mega-item">IPAM</a>
+            <a href="/network/subnet-calc" class="mega-item {% if request.path == '/network/subnet-calc' %}active{% endif %}">Subnet Calculator</a>
             <a href="/network/customers" class="mega-item">Customers / Sites</a>
           </div>
           <div class="mega-group">
@@ -100,6 +106,7 @@
           <div class="mega-group">
             <div class="mega-label">Operations</div>
             <a href="/network/runbooks" class="mega-item">Runbooks</a>
+            <a href="/network/sops" class="mega-item {% if request.path == '/network/sops' %}active{% endif %}">SOP Library</a>
             <a href="/network/ingestion" class="mega-item">Data Ingestion</a>
           </div>
         </div>

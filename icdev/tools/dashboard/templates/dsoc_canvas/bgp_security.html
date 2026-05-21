@@ -51,7 +51,7 @@
             <th>Type</th>
             <th>Detected Prefix</th>
             <th>Expected Prefix</th>
-            <th>Expected ASN</th>
+            <th>Expected ASN / Peer</th>
             <th>Observed ASN</th>
             <th>Confidence</th>
             <th>Source</th>
@@ -80,7 +80,12 @@
             </td>
             <td><code>{{ h.detected_prefix }}</code></td>
             <td><code>{{ h.expected_prefix }}</code></td>
-            <td>{% if h.expected_origin_asn %}AS{{ h.expected_origin_asn }}{% else %}&mdash;{% endif %}</td>
+            <td>
+              {% if h.expected_origin_asn %}
+                <span>AS{{ h.expected_origin_asn }}</span>
+                <span class="text-muted peer-label" data-asn="{{ h.expected_origin_asn }}" style="font-size:.75rem;display:block;"></span>
+              {% else %}&mdash;{% endif %}
+            </td>
             <td>{% if h.observed_origin_asn %}<span class="text-danger fw-bold">AS{{ h.observed_origin_asn }}</span>{% else %}&mdash;{% endif %}</td>
             <td>
               {% set conf = h.confidence_pct | float %}
@@ -137,11 +142,13 @@
         <div class="row">
           <div class="col">
             <label class="form-label">Expected Origin ASN</label>
-            <input type="number" class="form-control" id="expectedAsn" placeholder="64512">
+            <input type="number" class="form-control" id="expectedAsn" placeholder="64512" oninput="lookupPeerName(this.value,'expectedPeerName')">
+            <small class="text-info" id="expectedPeerName"></small>
           </div>
           <div class="col">
             <label class="form-label">Observed Origin ASN</label>
-            <input type="number" class="form-control" id="observedAsn" placeholder="65001">
+            <input type="number" class="form-control" id="observedAsn" placeholder="65001" oninput="lookupPeerName(this.value,'observedPeerName')">
+            <small class="text-muted" id="observedPeerName"></small>
           </div>
         </div>
         <div class="mb-3 mt-3">
@@ -165,6 +172,24 @@
 
 <script>
 const IQE_CANVAS = 'dsoc';
+
+// Enrich peer-label spans with peer org name from PMC
+fetch('/api/pmc/peers').then(r=>r.json()).then(peers=>{
+  const asnMap = {};
+  (Array.isArray(peers) ? peers : (peers.peers||[])).forEach(p => { if (p.asn) asnMap[p.asn] = p.org_name; });
+  document.querySelectorAll('.peer-label[data-asn]').forEach(el => {
+    const name = asnMap[parseInt(el.dataset.asn)];
+    if (name) el.textContent = name;
+  });
+}).catch(()=>{});
+
+function lookupPeerName(asn, targetId) {
+  const el = document.getElementById(targetId);
+  if (!asn || asn.length < 1) { if (el) el.textContent = ''; return; }
+  fetch(`/api/pmc/peers/lookup?asn=${asn}`).then(r=>r.json()).then(d=>{
+    if (el) el.textContent = d.org_name || '';
+  }).catch(()=>{ if (el) el.textContent = ''; });
+}
 
 function resolveHijack(id, resolution) {
   if (!confirm(`Mark hijack #${id} as ${resolution}?`)) return;
