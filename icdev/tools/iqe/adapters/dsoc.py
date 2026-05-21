@@ -283,12 +283,60 @@ def mitigations_adapter(query: str, conn=None, **_) -> list[dict]:
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 
+def bgp_hijacks_adapter(query: str, conn=None, **_) -> list[dict]:
+    _conn, owned = _dsoc_conn(conn)
+    try:
+        q = query.lower()
+        if "high confidence" in q or "critical" in q or ">= 80" in q:
+            sql = (
+                "SELECT hijack_number, hijack_type, detected_prefix, expected_prefix, "
+                "expected_origin_asn, observed_origin_asn, confidence_pct, status, detected_at "
+                "FROM dsoc_bgp_hijacks WHERE status IN ('open','under_review') "
+                "AND confidence_pct >= 80 ORDER BY confidence_pct DESC, detected_at DESC"
+            )
+        elif "type_0" in q or "exact" in q:
+            sql = (
+                "SELECT hijack_number, hijack_type, detected_prefix, expected_prefix, "
+                "observed_origin_asn, confidence_pct, status, detected_at "
+                "FROM dsoc_bgp_hijacks WHERE hijack_type='type_0' "
+                "ORDER BY status, confidence_pct DESC"
+            )
+        elif "route.?leak" in q or "leak" in q:
+            sql = (
+                "SELECT hijack_number, hijack_type, detected_prefix, observed_origin_asn, "
+                "peer_asn, route_leak_type, confidence_pct, status, detected_at "
+                "FROM dsoc_bgp_hijacks WHERE hijack_type='route_leak' "
+                "ORDER BY status, confidence_pct DESC"
+            )
+        elif "resolved" in q or "false" in q or "closed" in q:
+            sql = (
+                "SELECT hijack_number, hijack_type, detected_prefix, status, detected_at "
+                "FROM dsoc_bgp_hijacks WHERE status IN ('resolved','false_positive','mitigated') "
+                "ORDER BY detected_at DESC LIMIT 50"
+            )
+        else:
+            sql = (
+                "SELECT hijack_number, hijack_type, detected_prefix, expected_prefix, "
+                "expected_origin_asn, observed_origin_asn, confidence_pct, status, detected_at "
+                "FROM dsoc_bgp_hijacks WHERE status IN ('open','under_review') "
+                "ORDER BY confidence_pct DESC, detected_at DESC LIMIT 50"
+            )
+        return _safe_fetch(_conn, sql)
+    finally:
+        if owned:
+            try:
+                _conn.close()
+            except Exception:
+                pass
+
+
 _COLLECTION_MAP = {
     "dsoc.flowspec_rules":    flowspec_rules_adapter,
     "dsoc.rtbh_entries":      rtbh_entries_adapter,
     "dsoc.scrubbing_centers": scrubbing_centers_adapter,
     "dsoc.threats":           threats_adapter,
     "dsoc.mitigations":       mitigations_adapter,
+    "dsoc.bgp_hijacks":       bgp_hijacks_adapter,
 }
 
 

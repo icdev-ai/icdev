@@ -34,12 +34,6 @@ def _safe_fetch(conn, sql_pg: str, sql_sq: str, params: tuple = ()) -> list[dict
 def _next_mitigation_number(conn) -> str:
     """Generate a sequential RTBH mitigation number: RTBH-YYYYMM-NNNN."""
     month_prefix = datetime.now(timezone.utc).strftime("RTBH-%Y%m-")
-    rows = _safe_fetch(
-        conn,
-        "SELECT COUNT(*) AS cnt FROM dsoc_rtbh_entries WHERE mitigation_number LIKE %s",
-        "SELECT COUNT(*) AS cnt FROM dsoc_rtbh_entries WHERE mitigation_number LIKE ?",
-        (f"{month_prefix}%",),
-    )
     # mitigation_number column does not exist on dsoc_rtbh_entries; use id-based fallback
     count_rows = _safe_fetch(
         conn,

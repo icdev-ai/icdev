@@ -104,6 +104,19 @@ def get_dsoc_overview(conn) -> dict:
         default=0,
     )
 
+    open_hijacks = _scalar(
+        conn,
+        "SELECT COUNT(*) FROM dsoc_bgp_hijacks WHERE status IN ('open','under_review')",
+        "SELECT COUNT(*) FROM dsoc_bgp_hijacks WHERE status IN ('open','under_review')",
+        default=0,
+    )
+    high_conf_hijacks = _scalar(
+        conn,
+        "SELECT COUNT(*) FROM dsoc_bgp_hijacks WHERE status IN ('open','under_review') AND confidence_pct >= 80",
+        "SELECT COUNT(*) FROM dsoc_bgp_hijacks WHERE status IN ('open','under_review') AND confidence_pct >= 80",
+        default=0,
+    )
+
     return {
         "active_mitigations": int(active_mitigations),
         "active_rtbh": int(active_rtbh),
@@ -114,5 +127,7 @@ def get_dsoc_overview(conn) -> dict:
         "scrubbing_utilization_pct": scrubbing_utilization_pct,
         "active_threats": int(active_threats),
         "high_confidence_threats": int(high_confidence_threats),
+        "open_hijacks": int(open_hijacks),
+        "high_confidence_hijacks": int(high_conf_hijacks),
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }

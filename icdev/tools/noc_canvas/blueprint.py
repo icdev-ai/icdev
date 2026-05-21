@@ -447,6 +447,15 @@ def create_noc_canvas_blueprint() -> Blueprint:
         finally:
             conn.close()
 
+    # ── Looking Glass ─────────────────────────────────────────────────────────
+
+    @bp.route("/noc/looking-glass")
+    def noc_looking_glass():
+        import os
+        hyperglass_url = os.environ.get("HYPERGLASS_URL", "")
+        return render_template("noc_canvas/looking_glass.html",
+                               hyperglass_url=hyperglass_url)
+
     # ── JSON API — IQE ───────────────────────────────────────────────────────
 
     @bp.route("/api/noc/iqe-query", methods=["POST"])

@@ -1827,6 +1827,45 @@ def dsoc_flowspec_activate(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def dsoc_hijack_report(args: dict) -> dict:
+    """Return open BGP hijack and route-leak events from DSOC."""
+    try:
+        from tools.dsoc_canvas.db.init_db import get_connection
+        from tools.dsoc_canvas.bgp_hijack_detector import get_active_hijacks
+        conn = get_connection()
+        try:
+            return {"hijacks": get_active_hijacks(conn)}
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("dsoc_hijack_report: %s", exc)
+        return {"error": str(exc)}
+
+
+def routinator_validate(args: dict) -> dict:
+    """Validate a prefix+ASN pair via on-premises Routinator RPKI validator."""
+    prefix = args.get("prefix", "").strip()
+    origin_asn = args.get("origin_asn")
+    if not prefix or origin_asn is None:
+        return {"error": "prefix and origin_asn required"}
+    try:
+        from tools.databridge.connectors.routinator_connector import validate_prefix
+        return validate_prefix(prefix, int(origin_asn))
+    except Exception as exc:
+        logger.warning("routinator_validate: %s", exc)
+        return {"error": str(exc)}
+
+
+def pmacct_ingest(args: dict) -> dict:
+    """Test pmacct connector health and return connection status."""
+    try:
+        from tools.databridge.connectors.pmacct_connector import test_connection
+        return test_connection()
+    except Exception as exc:
+        logger.warning("pmacct_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
 def dsoc_overview(args: dict) -> dict:
     """Return DSOC overview: active mitigations, RTBH, scrubbing utilization, threats."""
     try:

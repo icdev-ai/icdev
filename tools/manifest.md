@@ -749,3 +749,18 @@
 | Test Gcpl Ext 06 | tools\testing\test_gcpl_ext_06.py | Auto-registered: testing/test_gcpl_ext_06.py | --json | JSON |
 | Test Gcpl Map 02 | tools\testing\test_gcpl_map_02.py | Auto-registered: testing/test_gcpl_map_02.py | --json | JSON |
 | Circuit Capacity Monitor | tools\genesis\reflexes\circuit_capacity_monitor.py | Auto-registered: reflexes/circuit_capacity_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Opportunity Scorer | tools\ai_augmentation\opportunity_scorer.py | Auto-registered: ai_augmentation/opportunity_scorer.py | --json | JSON |
+| Pattern Classifier | tools\ai_augmentation\pattern_classifier.py | Auto-registered: ai_augmentation/pattern_classifier.py | --json | JSON |
+| Roadmap Generator | tools\ai_augmentation\roadmap_generator.py | Auto-registered: ai_augmentation/roadmap_generator.py | --json | JSON |
+| Bgp Hijack Detector | tools\dsoc_canvas\bgp_hijack_detector.py | Auto-registered: dsoc_canvas/bgp_hijack_detector.py | --json | JSON |
+| Bgpq4 Wrapper | tools\pmc_canvas\bgpq4_wrapper.py | Auto-registered: pmc_canvas/bgpq4_wrapper.py | --json | JSON |
+| Ai Augmentation | tools\iqe\adapters\ai_augmentation.py | Auto-registered: adapters/ai_augmentation.py | --json | JSON |
+| Bgp Alerter Ingest | tools\genesis\reflexes\bgp_alerter_ingest.py | Auto-registered: reflexes/bgp_alerter_ingest.py | --json | JSON |
+| Peering Manager Connector | tools\databridge\connectors\peering_manager_connector.py | Auto-registered: connectors/peering_manager_connector.py | --json | JSON |
+| Pmacct Connector | tools\databridge\connectors\pmacct_connector.py | Auto-registered: connectors/pmacct_connector.py | --json | JSON |
+| Routinator Connector | tools\databridge\connectors\routinator_connector.py | Auto-registered: connectors/routinator_connector.py | --json | JSON |

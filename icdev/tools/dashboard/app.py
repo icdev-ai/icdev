@@ -2545,7 +2545,7 @@ def create_app() -> Flask:
             "nocc":       ("tools.iqe.adapters.nocc",        ["noc.alarms", "noc.incidents", "noc.rfcs", "noc.mops", "noc.maintenance_windows", "noc.sla_records"]),
             "pmc":        ("tools.iqe.adapters.pmc",         ["pmc.peers", "pmc.ix_memberships", "pmc.prefixes", "pmc.peering_requests", "pmc.route_policies"]),
             "ccc":        ("tools.iqe.adapters.ccc",         ["ccc.circuits", "ccc.cross_connects", "ccc.loa", "ccc.capacity_plans", "ccc.dwdm_spans"]),
-            "dsoc":       ("tools.iqe.adapters.dsoc",        ["dsoc.flowspec_rules", "dsoc.rtbh_entries", "dsoc.scrubbing_centers", "dsoc.threats", "dsoc.mitigations"]),
+            "dsoc":       ("tools.iqe.adapters.dsoc",        ["dsoc.flowspec_rules", "dsoc.rtbh_entries", "dsoc.scrubbing_centers", "dsoc.threats", "dsoc.mitigations", "dsoc.bgp_hijacks"]),
             "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
             "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
             "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),

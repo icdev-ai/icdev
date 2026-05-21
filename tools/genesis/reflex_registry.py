@@ -105,6 +105,8 @@ REGISTRY: List[ReflexEntry] = [
                 "NOCC: Query LibreNMS/SolarWinds for BGP session state; raise alarms for down sessions"),
     ReflexEntry("peering_health_monitor",   DOMAIN, 6.0,
                 "PMC: Re-sync stale PeeringDB data (>7d); re-validate RPKI for high-traffic peers"),
+    ReflexEntry("bgp_alerter_ingest",       DOMAIN, 1.0,
+                "NOCC: Ingest BGPalerter JSON alerts into noc_alarms (hijack, route-leak, RPKI, session)"),
 ]
 
 # Quick lookup: name → entry
