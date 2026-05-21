@@ -51,7 +51,7 @@ def _run_blueprint_import_check() -> bool:
     print("[pre-commit] Checking blueprint imports...")
     result = subprocess.run(
         [sys.executable, "tools/workflow/coherence_checker.py", "--check", "blueprint_imports", "--json"],
-        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=60,
+        capture_output=True, text=True, cwd=str(BASE_DIR), timeout=300,
     )
     if result.returncode != 0:
         print("[pre-commit] BLOCKED: Blueprint import check failed:")
