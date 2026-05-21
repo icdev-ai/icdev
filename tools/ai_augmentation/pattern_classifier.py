@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import json
 import pathlib
+import re
 import subprocess
 import shutil
 from typing import Any
@@ -318,16 +319,21 @@ def _ast_detect_file(file_path: str) -> list[dict]:
 
 
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
-    """AST-based fallback for Python files when Semgrep is unavailable."""
+    """AST-based fallback for Python/C# files when Semgrep is unavailable."""
     p = pathlib.Path(target_path)
     if p.is_file():
-        if p.suffix.lower() == ".py":
+        suffix = p.suffix.lower()
+        if suffix == ".py":
             return _ast_detect_file(target_path)
+        if suffix == ".cs":
+            return _cs_detect_file(target_path)
         return []
-    # Directory: walk recursively and collect results for all .py files.
+    # Directory: walk recursively for .py and .cs files.
     results: list[dict] = []
     for py_file in sorted(p.rglob("*.py")):
         results.extend(_ast_detect_file(str(py_file)))
+    for cs_file in sorted(p.rglob("*.cs")):
+        results.extend(_cs_detect_file(str(cs_file)))
     return results
 
 
@@ -614,6 +620,534 @@ def _detect_large_rule_table(
                 "line_end": node.end_lineno,
                 "pattern_detail": {"key_count": key_count},
             })
+    return results
+
+
+# ── C# tree-sitter / regex fallback ──────────────────────────────────────────
+
+_CS_METHOD_NODE_TYPES: frozenset[str] = frozenset({
+    "method_declaration",
+    "constructor_declaration",
+    "local_function_statement",
+    "lambda_expression",
+})
+
+_CS_REGEX_METHODS: frozenset[str] = frozenset({
+    "Match", "IsMatch", "Replace", "Split", "Matches", "Escape",
+})
+_CS_CRON_BASES: frozenset[str] = frozenset({"IHostedService", "BackgroundService"})
+_CS_CRON_INVOC_OBJS: frozenset[str] = frozenset({"RecurringJob", "BackgroundJob"})
+_CS_DB_CALL_NAMES: frozenset[str] = frozenset({
+    "ToList", "ToListAsync", "FirstOrDefault", "FirstOrDefaultAsync",
+    "Where", "Select", "Find", "FindAsync", "Single", "SingleOrDefault",
+    "SingleOrDefaultAsync", "FromSqlRaw", "SaveChanges", "SaveChangesAsync",
+})
+_CS_RENDER_CALL_NAMES: frozenset[str] = frozenset({"View", "PartialView", "Json"})
+_CS_NOTIFY_CALL_NAMES: frozenset[str] = frozenset({
+    "Send", "SendAsync", "SendMailAsync", "Notify", "Publish",
+})
+_CS_NOTIFY_TYPE_NAMES: frozenset[str] = frozenset({"SmtpClient", "MailMessage"})
+
+# Compiled regex patterns for the C# regex fallback
+_CS_RE_REGEX_CALL = re.compile(
+    r'\bRegex\s*\.\s*(Match|IsMatch|Replace|Split|Matches)\s*\('
+)
+_CS_RE_INTERP_STR = re.compile(r'\$"')
+_CS_RE_STRING_FMT = re.compile(r'\b[Ss]tring\s*\.\s*Format\s*\(')
+_CS_RE_HTML_RAW = re.compile(r'\bHtml\s*\.\s*Raw\s*\(')
+_CS_RE_CRON_BASE = re.compile(r':\s*(IHostedService|BackgroundService)\b')
+_CS_RE_CRON_CALL = re.compile(
+    r'\b(RecurringJob|BackgroundJob)\s*\.\s*(AddOrUpdate(?:Async)?|Schedule|Enqueue)\s*\('
+)
+_CS_RE_THRESHOLD = re.compile(
+    r'(?:[<>]=?)\s*(-?\d+(?:\.\d+)?)|(-?\d+(?:\.\d+)?)\s*(?:[<>]=?)'
+)
+_CS_RE_CONTAINS = re.compile(r'\.\s*Contains\s*\(')
+_CS_RE_DICT_START = re.compile(r'\bnew\s+(?:Dictionary|Hashtable)\s*(?:<[^>]*>)?\s*\{')
+_CS_RE_DICT_ENTRY = re.compile(r'^\s*\{|^\s*\[')
+_CS_RE_IF_INDENT = re.compile(r'^(\s+)if\s*\(')
+
+
+def _cs_walk_scoped(root: Any, src: bytes):
+    """Iterative DFS generator yielding (node, parent_type, scope_name)."""
+    stack: list[tuple[Any, str, str]] = [(root, "", "<module>")]
+    while stack:
+        node, parent_type, scope = stack.pop()
+        new_scope = scope
+        if node.type in _CS_METHOD_NODE_TYPES:
+            name_child = node.child_by_field_name("name")
+            if name_child is not None:
+                new_scope = src[name_child.start_byte:name_child.end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+        yield node, parent_type, new_scope
+        for child in reversed(node.children):
+            stack.append((child, node.type, new_scope))
+
+
+def _cs_get_method_call(node: Any, src: bytes) -> tuple[str, str] | None:
+    """For invocation_expression, return (receiver_text, method_name) or None."""
+    if node.type != "invocation_expression":
+        return None
+    callee = node.children[0] if node.children else None
+    if callee is None or callee.type != "member_access_expression":
+        return None
+    named_parts = [c for c in callee.children if c.is_named]
+    if len(named_parts) < 2:
+        return None
+    obj = src[named_parts[0].start_byte:named_parts[0].end_byte].decode(
+        "utf-8", errors="replace"
+    )
+    name = src[named_parts[-1].start_byte:named_parts[-1].end_byte].decode(
+        "utf-8", errors="replace"
+    )
+    return obj, name
+
+
+def _cs_if_depth(root: Any) -> int:
+    """Max nesting depth of if_statements within root's subtree (iterative, no crossing methods)."""
+    max_depth = 0
+    stack: list[tuple[Any, int]] = [(root, 1)]
+    while stack:
+        node, depth = stack.pop()
+        if node.type == "if_statement":
+            if depth > max_depth:
+                max_depth = depth
+        for child in node.children:
+            if child.type in _CS_METHOD_NODE_TYPES:
+                continue
+            new_depth = depth + 1 if child.type == "if_statement" else depth
+            stack.append((child, new_depth))
+    return max_depth
+
+
+def _cs_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, parent_type, scope in _cs_walk_scoped(root, src):
+        if node.type != "if_statement":
+            continue
+        if parent_type in ("if_statement", "else_clause"):
+            continue
+        depth = _cs_if_depth(node)
+        if depth >= _PATTERN_MIN_DEPTH:
+            results.append({
+                "pattern_type": "nested_conditionals",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"max_depth": depth},
+            })
+    return results
+
+
+def _cs_detect_regex_user_input_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _cs_walk_scoped(root, src):
+        call = _cs_get_method_call(node, src)
+        if call and call[0] == "Regex" and call[1] in _CS_REGEX_METHODS:
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"call": f"Regex.{call[1]}"},
+            })
+    return results
+
+
+def _cs_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _cs_walk_scoped(root, src):
+        kind: str | None = None
+        detail: dict[str, Any] = {}
+        if node.type == "interpolated_string_expression":
+            kind = "interpolated_string"
+        elif node.type == "invocation_expression":
+            call = _cs_get_method_call(node, src)
+            if call:
+                obj, method = call
+                if method == "Format" and obj.lower() == "string":
+                    kind = "string_format"
+                    detail = {"call": f"{obj}.Format"}
+                elif method == "Raw" and obj == "Html":
+                    kind = "html_raw"
+                    detail = {"call": "Html.Raw"}
+        if kind:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": kind, **detail},
+            })
+    return results
+
+
+def _cs_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type == "class_declaration":
+            for child in node.children:
+                if child.type != "base_list":
+                    continue
+                for base in child.children:
+                    if not base.is_named:
+                        continue
+                    base_text = src[base.start_byte:base.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
+                    base_name = base_text.split("<")[0].strip()
+                    if base_name in _CS_CRON_BASES:
+                        name_child = node.child_by_field_name("name")
+                        class_name = (
+                            src[name_child.start_byte:name_child.end_byte].decode(
+                                "utf-8", errors="replace"
+                            )
+                            if name_child
+                            else "<unknown>"
+                        )
+                        results.append({
+                            "pattern_type": "scheduled_cron",
+                            "module_path": fp,
+                            "function_name": class_name,
+                            "line_start": node.start_point[0] + 1,
+                            "line_end": node.end_point[0] + 1,
+                            "pattern_detail": {"kind": "base_type", "base": base_name},
+                        })
+        elif node.type == "invocation_expression":
+            call = _cs_get_method_call(node, src)
+            if call and call[0] in _CS_CRON_INVOC_OBJS:
+                results.append({
+                    "pattern_type": "scheduled_cron",
+                    "module_path": fp,
+                    "function_name": scope,
+                    "line_start": node.start_point[0] + 1,
+                    "line_end": node.end_point[0] + 1,
+                    "pattern_detail": {"kind": "invocation", "call": f"{call[0]}.{call[1]}"},
+                })
+    return results
+
+
+def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    _CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type != "binary_expression":
+            continue
+        op_token: str | None = None
+        for child in node.children:
+            if not child.is_named:
+                text = src[child.start_byte:child.end_byte].decode(
+                    "utf-8", errors="replace"
+                ).strip()
+                if text in _CMP_OPS:
+                    op_token = text
+                    break
+        if not op_token:
+            continue
+        named_parts = [c for c in node.children if c.is_named]
+        numeric_literals = [
+            src[c.start_byte:c.end_byte].decode("utf-8", errors="replace")
+            for c in named_parts
+            if c.type in ("integer_literal", "real_literal")
+        ]
+        if numeric_literals:
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
+            })
+    return results
+
+
+def _cs_collect_calls_in_method(
+    method_node: Any, src: bytes
+) -> tuple[set[str], set[str]]:
+    """Return (method_call_names, created_type_names) within method_node's subtree."""
+    call_names: set[str] = set()
+    created_types: set[str] = set()
+    stack: list[Any] = [method_node]
+    while stack:
+        n = stack.pop()
+        if n is not method_node and n.type in _CS_METHOD_NODE_TYPES:
+            continue
+        if n.type == "invocation_expression":
+            call = _cs_get_method_call(n, src)
+            if call:
+                call_names.add(call[1])
+        if n.type == "object_creation_expression":
+            named = [c for c in n.children if c.is_named]
+            if named:
+                type_text = src[named[0].start_byte:named[0].end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                created_types.add(type_text.split("<")[0].strip())
+        for child in n.children:
+            stack.append(child)
+    return call_names, created_types
+
+
+def _cs_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type not in ("method_declaration", "constructor_declaration"):
+            continue
+        call_names, created_types = _cs_collect_calls_in_method(node, src)
+        db_hits = call_names & _CS_DB_CALL_NAMES
+        render_hits = call_names & _CS_RENDER_CALL_NAMES
+        notify_hits = call_names & _CS_NOTIFY_CALL_NAMES
+        notify_type_hits = created_types & _CS_NOTIFY_TYPE_NAMES
+        if db_hits and render_hits and (notify_hits or notify_type_hits):
+            results.append({
+                "pattern_type": "db_render_notify_chain",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {
+                    "matched_calls": {
+                        "db": sorted(db_hits),
+                        "render": sorted(render_hits),
+                        "notify": sorted(notify_hits | notify_type_hits),
+                    }
+                },
+            })
+    return results
+
+
+def _cs_detect_keyword_list_search_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _cs_walk_scoped(root, src):
+        call = _cs_get_method_call(node, src)
+        if call and call[1] == "Contains":
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"method": "Contains", "receiver": call[0]},
+            })
+    return results
+
+
+def _cs_detect_large_rule_table_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+    results: list[dict] = []
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type != "object_creation_expression":
+            continue
+        node_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+        if "Dictionary" not in node_text and "Hashtable" not in node_text:
+            continue
+        for child in node.children:
+            if child.type == "initializer_expression":
+                named_entries = [c for c in child.children if c.is_named]
+                if len(named_entries) >= _RULE_MIN_KEYS:
+                    results.append({
+                        "pattern_type": "large_rule_table",
+                        "module_path": fp,
+                        "function_name": scope,
+                        "line_start": node.start_point[0] + 1,
+                        "line_end": node.end_point[0] + 1,
+                        "pattern_detail": {"key_count": len(named_entries)},
+                    })
+                break
+    return results
+
+
+def _cs_detect_via_tree_sitter(file_path: str, tree: Any, src: bytes) -> list[dict]:
+    """Run all 8 pattern detectors using a parsed tree-sitter C# tree."""
+    root = tree.root_node
+    results: list[dict] = []
+    results.extend(_cs_detect_nested_conditionals_ts(file_path, root, src))
+    results.extend(_cs_detect_regex_user_input_ts(file_path, root, src))
+    results.extend(_cs_detect_string_template_ts(file_path, root, src))
+    results.extend(_cs_detect_scheduled_cron_ts(file_path, root, src))
+    results.extend(_cs_detect_hardcoded_threshold_ts(file_path, root, src))
+    results.extend(_cs_detect_db_render_notify_ts(file_path, root, src))
+    results.extend(_cs_detect_keyword_list_search_ts(file_path, root, src))
+    results.extend(_cs_detect_large_rule_table_ts(file_path, root, src))
+    for hit in results:
+        hit.setdefault("language", "csharp")
+    return results
+
+
+# ── C# regex fallback (when tree-sitter-languages not installed) ──────────────
+
+def _cs_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
+    """Indentation-based heuristic for nested if detection (regex fallback)."""
+    results: list[dict] = []
+    if_stack: list[tuple[int, int]] = []  # (indent_col, line_number)
+    reported: set[int] = set()
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        m = _CS_RE_IF_INDENT.match(line)
+        if m:
+            indent = len(m.group(1).expandtabs(4))
+            # Pop entries at same or deeper indent — they're out of scope
+            if_stack = [(ind, ln) for ind, ln in if_stack if ind < indent]
+            if_stack.append((indent, i))
+            if len(if_stack) >= _PATTERN_MIN_DEPTH:
+                outer_ln = if_stack[0][1]
+                if outer_ln not in reported:
+                    reported.add(outer_ln)
+                    results.append({
+                        "pattern_type": "nested_conditionals",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": outer_ln,
+                        "line_end": i,
+                        "pattern_detail": {"max_depth": len(if_stack)},
+                    })
+    return results
+
+
+def _cs_regex_large_dict(file_path: str, lines: list[str]) -> list[dict]:
+    """Multi-line scanner for large Dictionary initializers (regex fallback)."""
+    results: list[dict] = []
+    n = len(lines)
+    i = 0
+    while i < n:
+        if _CS_RE_DICT_START.search(lines[i]):
+            start_line = i + 1
+            entry_count = 0
+            brace_depth = lines[i].count("{") - lines[i].count("}")
+            j = i + 1
+            while j < n and brace_depth > 0:
+                brace_depth += lines[j].count("{") - lines[j].count("}")
+                if brace_depth > 0 and _CS_RE_DICT_ENTRY.match(lines[j]):
+                    entry_count += 1
+                j += 1
+            if entry_count >= _RULE_MIN_KEYS:
+                results.append({
+                    "pattern_type": "large_rule_table",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": start_line,
+                    "line_end": j,
+                    "pattern_detail": {"key_count": entry_count},
+                })
+        i += 1
+    return results
+
+
+def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
+    """Regex-based C# pattern detection when tree-sitter-languages is unavailable."""
+    results: list[dict] = []
+    lines = source_text.splitlines()
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        # regex_user_input
+        m = _CS_RE_REGEX_CALL.search(line)
+        if m:
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"call": f"Regex.{m.group(1)}"},
+            })
+
+        # string_template_rendering (first match wins per line)
+        for pat, kind, extra in (
+            (_CS_RE_INTERP_STR, "interpolated_string", {}),
+            (_CS_RE_STRING_FMT, "string_format", {"call": "string.Format"}),
+            (_CS_RE_HTML_RAW, "html_raw", {"call": "Html.Raw"}),
+        ):
+            if pat.search(line):
+                results.append({
+                    "pattern_type": "string_template_rendering",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i,
+                    "line_end": i,
+                    "pattern_detail": {"kind": kind, **extra},
+                })
+                break
+
+        # scheduled_cron — base type
+        m = _CS_RE_CRON_BASE.search(line)
+        if m:
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "base_type", "base": m.group(1)},
+            })
+
+        # scheduled_cron — call site
+        m = _CS_RE_CRON_CALL.search(line)
+        if m:
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "invocation", "call": f"{m.group(1)}.{m.group(2)}"},
+            })
+
+        # hardcoded_threshold
+        m = _CS_RE_THRESHOLD.search(line)
+        if m:
+            const = m.group(1) or m.group(2) or "?"
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
+            })
+
+        # keyword_list_search
+        if _CS_RE_CONTAINS.search(line):
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"method": "Contains"},
+            })
+
+    results.extend(_cs_regex_nested_ifs(file_path, lines))
+    results.extend(_cs_regex_large_dict(file_path, lines))
+    return results
+
+
+def _cs_detect_file(file_path: str) -> list[dict]:
+    """Run C# pattern detection on a single .cs file.
+
+    Tries tree-sitter-languages first; falls back to regex when unavailable.
+    """
+    src = pathlib.Path(file_path).read_bytes()
+    try:
+        from tree_sitter_languages import get_parser  # type: ignore[import]
+        parser = get_parser("c_sharp")
+        tree = parser.parse(src)
+        return _cs_detect_via_tree_sitter(file_path, tree, src)
+    except Exception:  # ImportError or any tree-sitter parse error
+        pass
+    results = _cs_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
+    for hit in results:
+        hit.setdefault("language", "csharp")
     return results
 
 
