@@ -159,11 +159,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     _save_seen(seen)
 
     result = {
+        "success": True,  # completing the scan cycle without error is success
+        "metric_value": float(created),  # tasks_created is the tracked metric
         "reflex": "log_triage",
         "events_scanned": len(events),
         "signatures_seen": len(sigs),
         "new_signatures": len(new_sigs),
         "tasks_created": created,
+        "details": {"status": "no_changes" if created == 0 else "tasks_created", "tasks_created": created},
     }
     log.info("log_triage cycle complete", extra={"extra": result})
     return result
