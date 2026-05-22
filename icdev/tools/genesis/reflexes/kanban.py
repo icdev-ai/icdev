@@ -3961,9 +3961,13 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             # group (...) instead of non-capturing (?:...), no \b word boundary.
             # Git's -E uses POSIX ERE which does not support \s or (?:...).
             _safe = re.escape(table_name).replace(r"\-", r"[-]")
+            # Accept both CREATE TABLE and ALTER TABLE ... RENAME TO as proof
+            # that the table is defined (rename-copy-drop migration pattern).
             pattern = (
-                rf"CREATE[[:space:]]+TABLE[[:space:]]+"
+                rf"(CREATE[[:space:]]+TABLE[[:space:]]+"
                 rf"(IF[[:space:]]+NOT[[:space:]]+EXISTS[[:space:]]+)?{_safe}"
+                rf"|ALTER[[:space:]]+TABLE[[:space:]]+[[:alnum:]_]+[[:space:]]+"
+                rf"RENAME[[:space:]]+TO[[:space:]]+{_safe})"
             )
             found = False
             try:
@@ -3997,7 +4001,9 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                 # engine differences). Reading files with Python is robust.
                 import re as _re
                 _py_pat = _re.compile(
-                    rf"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?{re.escape(table_name)}\b",
+                    rf"(?:CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?"
+                    rf"|ALTER\s+TABLE\s+\w+\s+RENAME\s+TO\s+)"
+                    rf"{re.escape(table_name)}\b",
                     _re.IGNORECASE,
                 )
                 for _root in [
