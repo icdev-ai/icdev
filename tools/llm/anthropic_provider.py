@@ -173,6 +173,28 @@ class AnthropicLLMProvider(LLMProvider):
         try:
             message = client.messages.create(**kwargs)
         except Exception as exc:
+            exc_str = str(exc).lower()
+            is_rate_limit = (
+                "rate limit" in exc_str
+                or "ratelimit" in exc_str
+                or "429" in exc_str
+                or "too many requests" in exc_str
+                or "token limit" in exc_str
+                or "quota exceeded" in exc_str
+                or "usage limit" in exc_str
+                or "billing" in exc_str
+                or "capacity" in exc_str
+                or "please try again" in exc_str
+                or "exceeded" in exc_str
+            )
+            if is_rate_limit:
+                from tools.llm.provider import LLMRateLimitError
+
+                raise LLMRateLimitError(
+                    f"Anthropic rate limit: {exc}",
+                    provider="anthropic",
+                    model_id=model_id,
+                ) from exc
             if use_thinking:
                 # Model or endpoint doesn't support extended thinking — retry without it
                 logger.warning("Extended thinking not supported, retrying without: %s", exc)

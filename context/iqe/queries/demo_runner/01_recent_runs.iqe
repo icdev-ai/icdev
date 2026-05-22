@@ -1,0 +1,5 @@
+// IQE-DR-001: Recent demo runs — last 10 runs with status and elapsed time
+foreach r in demo_runner.runs
+select r.run_id, r.audience, r.status, r.scenarios_passed, r.scenarios_total, r.elapsed_ms, r.created_at
+order by r.created_at desc
+limit 10

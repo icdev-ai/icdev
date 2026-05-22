@@ -1,0 +1,4 @@
+foreach d in aadc.designs
+  join l in aadc.lifecycle_states on l.design_id == d.id
+  where l.to_state == "APPROVED"
+  select d.name, d.domain, l.actor, l.created_at

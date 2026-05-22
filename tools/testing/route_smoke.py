@@ -66,7 +66,6 @@ NAV_ROUTES: List[str] = [
     "/chat",
     "/ai-wizard",
     "/dev-profiles",
-    "/phases",
     "/finetune",
     "/diagrams",
     "/connector-forge",

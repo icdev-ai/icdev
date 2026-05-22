@@ -2784,3 +2784,365 @@ def ingest_devices_topology(src_topology_id: str) -> dict:
         "updated": updated,
         "total": len(nodes),
     }
+
+
+# ---------------------------------------------------------------------------
+# 3-COA Migration Planning (Phase 4)
+# ---------------------------------------------------------------------------
+
+def generate_coas(
+    src_device: dict[str, Any],
+    tgt_device: dict[str, Any],
+    parsed_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate three Courses of Action for a network device migration.
+
+    Returns dict with keys ``coa_1``, ``coa_2``, ``coa_3``.
+    """
+    src_vendor = src_device.get("vendor", "")
+    src_model = src_device.get("model", "")
+    tgt_vendor = tgt_device.get("vendor", "")
+    tgt_model = tgt_device.get("model", "")
+    site = src_device.get("site", "")
+    device_type = src_device.get("device_type", "")
+
+    # Common pre-work across all COAs
+    common_prework = [
+        "Order and rack target hardware",
+        "Apply base config (hostname, Mgmt, AAA, SNMP, NTP)",
+        "Verify out-of-band console + management connectivity",
+    ]
+
+    # COA 1: Rip & Replace
+    coa1 = {
+        "name": "Rip & Replace",
+        "description": "Swap hardware in a single maintenance window. Highest risk, shortest timeline.",
+        "risk_level": "high",
+        "estimated_downtime": "2–4 hours",
+        "duration_days": 1,
+        "phases": [
+            {
+                "phase_no": 1,
+                "name": "Pre-Work",
+                "duration_hours": 8,
+                "actions": common_prework + [
+                    "Load converted production config (interfaces shutdown)",
+                    "Validate config syntax with commit-check / dry-run",
+                ],
+                "validation": "Target config loaded; zero commit errors; all interfaces administratively down.",
+                "rollback": "N/A — pre-work only",
+            },
+            {
+                "phase_no": 2,
+                "name": "Drain & Decomm",
+                "duration_hours": 2,
+                "actions": [
+                    "Drain traffic (raise OSPF cost / BGP MED / route-map local-pref)",
+                    "Power down source device",
+                    "Re-cable all circuits to target device",
+                    "No-shutdown target interfaces",
+                ],
+                "validation": "All BGP/OSPF neighbors Established; ping tests 0% loss; traffic counters incrementing.",
+                "rollback": "Re-cable back to source; restore source config; reverse routing metrics.",
+            },
+            {
+                "phase_no": 3,
+                "name": "Post-Cutover",
+                "duration_hours": 4,
+                "actions": [
+                    "24-hour monitoring watch",
+                    "Update NMS / NetFlow / syslog sources",
+                    "Close change request",
+                ],
+                "validation": "Zero critical alarms; traffic within ±10% of baseline; no CRC errors.",
+                "rollback": "If issues >2h: full rollback to source hardware (source remains racked 30d).",
+            },
+        ],
+    }
+
+    # COA 2: Phased Cutover
+    coa2 = {
+        "name": "Phased Cutover",
+        "description": "Migrate circuits/services in phases over 1–2 weeks. Medium risk, minutes of downtime per phase.",
+        "risk_level": "medium",
+        "estimated_downtime": "5–15 minutes per phase",
+        "duration_days": 14,
+        "phases": [
+            {
+                "phase_no": 1,
+                "name": "Pre-Work & Parallel Build",
+                "duration_hours": 16,
+                "actions": common_prework + [
+                    "Load converted config on target (all interfaces shutdown)",
+                    "Establish routing adjacencies in passive/no-export mode",
+                    "Verify route tables match source",
+                ],
+                "validation": "Route count delta ≤ 1%; all adjacencies in passive FULL/Established.",
+                "rollback": "N/A — target not yet carrying traffic",
+            },
+            {
+                "phase_no": 2,
+                "name": "Phase A — Management & Low-Traffic Circuits",
+                "duration_hours": 4,
+                "actions": [
+                    "Migrate management and test circuits first",
+                    "Monitor for 24h before next phase",
+                ],
+                "validation": "No alarms; ping/SSH stable; syslog clean.",
+                "rollback": "Shutdown target ports; re-enable source ports; restore routing.",
+            },
+            {
+                "phase_no": 3,
+                "name": "Phase B — Core BGP/MPLS Circuits",
+                "duration_hours": 4,
+                "actions": [
+                    "Drain first BGP peer via community/MED",
+                    "Cut over peer to target; verify prefix count",
+                    "Repeat per-peer or per-VRF",
+                ],
+                "validation": "All BGP peers Established; prefix counts stable; no route churn.",
+                "rollback": "Shift peer back to source; restore source interface config.",
+            },
+            {
+                "phase_no": 4,
+                "name": "Phase C — Final Circuits & Decomm",
+                "duration_hours": 4,
+                "actions": [
+                    "Migrate remaining circuits",
+                    "Decommission source device after 48h stability",
+                ],
+                "validation": "All services green; NOC sign-off; zero rollback events in 48h.",
+                "rollback": "Re-enable any source circuits still present; shift traffic back.",
+            },
+        ],
+    }
+
+    # COA 3: Side-by-Side (Safe)
+    coa3 = {
+        "name": "Side-by-Side VLAN",
+        "description": (
+            "Run old and new devices in parallel on the same L2 VLAN domain. "
+            "New device learns routes without carrying production traffic. Gradual shift. Near-zero downtime."
+        ),
+        "risk_level": "low",
+        "estimated_downtime": "Near-zero (sub-second hit during final preference shift)",
+        "duration_days": 21,
+        "phases": [
+            {
+                "phase_no": 1,
+                "name": "Pre-Work & Parallel Wiring",
+                "duration_hours": 12,
+                "actions": common_prework + [
+                    "Physically connect new device alongside old (not inline) — same VLAN trunk",
+                    "Configure identical SVIs on new device with unique but valid IPs in same subnet",
+                    "Configure HSRP/VRRP on both devices with same VIP; new device as standby (lower priority)",
+                ],
+                "validation": "Both devices see HSRP/VRRP hello packets; new device shows Standby state; no IP conflict.",
+                "rollback": "Disconnect new device trunk links; remove SVIs.",
+            },
+            {
+                "phase_no": 2,
+                "name": "Learning & Validation",
+                "duration_hours": 48,
+                "actions": [
+                    "Allow new device to form routing adjacencies (passive/no-export)",
+                    "Mirror production traffic to new device port (SPAN/tap) for validation",
+                    "Run synthetic traffic through new device without affecting production paths",
+                ],
+                "validation": "Route table converged; BGP/OSPF neighbors Established; no drops on mirrored traffic.",
+                "rollback": "Disable routing adjacencies on new device; revert to pure standby.",
+            },
+            {
+                "phase_no": 3,
+                "name": "Gradual Traffic Shift",
+                "duration_hours": 24,
+                "actions": [
+                    "Raise HSRP/VRRP priority on new device to make it Active for one VLAN at a time",
+                    "Or: shift BGP route preference (local-pref / MED) per peer to new device",
+                    "Monitor end-to-end latency and loss for 4h per shift",
+                ],
+                "validation": "Active gateway transitions to new device; ARP/MAC tables update; sub-second hit.",
+                "rollback": "Lower new device HSRP/VRRP priority; traffic immediately returns to old device.",
+            },
+            {
+                "phase_no": 4,
+                "name": "Drain Old & Decomm",
+                "duration_hours": 8,
+                "actions": [
+                    "Once all traffic shifted, set old device SVIs to shutdown",
+                    "Remove old device from routing adjacencies",
+                    "Keep old device racked & powered 30 days for emergency rollback",
+                ],
+                "validation": "All traffic confirmed on new device; zero packets ingress on old device SVIs.",
+                "rollback": "Re-enable old device SVIs; restore HSRP/VRRP priority; traffic returns instantly.",
+            },
+        ],
+    }
+
+    # Attach protocol-specific steps to each COA if config is available
+    if parsed_config:
+        proto_plans = _build_protocol_steps_for_coas(parsed_config, src_vendor, tgt_vendor)
+        for coa in (coa1, coa2, coa3):
+            coa["protocol_steps"] = proto_plans
+
+    return {
+        "classification": "CUI // SP-CTI",
+        "source_device": f"{src_vendor} {src_model}",
+        "target_device": f"{tgt_vendor} {tgt_model}",
+        "site": site,
+        "device_type": device_type,
+        "coa_1": coa1,
+        "coa_2": coa2,
+        "coa_3": coa3,
+        "recommendation": (
+            "COA-3 (Side-by-Side VLAN) recommended for critical production devices "
+            "with low tolerance for downtime. COA-2 (Phased) for moderate risk tolerance. "
+            "COA-1 (Rip & Replace) only when maintenance windows are long and rollback hardware is standby."
+        ),
+    }
+
+
+def _build_protocol_steps_for_coas(parsed: dict[str, Any], src_vendor: str, tgt_vendor: str) -> dict[str, Any]:
+    """Build protocol-specific step lists relevant to all three COAs."""
+    result: dict[str, Any] = {}
+    if parsed.get("bgp_neighbors"):
+        result["bgp"] = _bgp_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("ospf_areas"):
+        result["ospf"] = _ospf_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("mpls_interfaces") or parsed.get("ldp_interfaces") or parsed.get("l3vpn_vrfs"):
+        result["mpls"] = _mpls_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("lag_count", 0):
+        result["lag"] = _lag_plan(parsed, src_vendor, tgt_vendor)
+    if parsed.get("firewall_filters"):
+        result["acl"] = _acl_plan(parsed, src_vendor, tgt_vendor)
+    result["vlan"] = _vlan_plan(parsed, src_vendor, tgt_vendor)
+    return result
+
+
+def generate_phase_diagram(
+    phase_info: dict[str, Any],
+    topology_json: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Generate an SVG + JSON phase diagram for a migration phase.
+
+    Args:
+        phase_info: A phase dict from a COA (must have ``phase_no``, ``name``, ``actions``).
+        topology_json: Optional topology graph_json dict with ``nodes`` and ``edges``.
+
+    Returns:
+        dict with ``svg`` (SVG string), ``json`` (structured diagram data), and ``legend``.
+    """
+    import textwrap
+
+    phase_no = phase_info.get("phase_no", 0)
+    name = phase_info.get("name", "Unknown Phase")
+    actions = phase_info.get("actions", [])
+    validation = phase_info.get("validation", "")
+    rollback = phase_info.get("rollback", "")
+
+    # Node list from topology if provided
+    nodes = []
+    edges = []
+    if topology_json:
+        nodes = topology_json.get("nodes", [])
+        edges = topology_json.get("edges", [])
+
+    # Build simplified JSON diagram structure
+    diagram_json = {
+        "phase": phase_no,
+        "name": name,
+        "nodes": [],
+        "edges": [],
+        "legend": {
+            "blue": "Existing (old) device",
+            "green": "New device",
+            "orange": "Device being changed / cut over",
+            "red": "Device being retired",
+        },
+    }
+
+    # Color-code nodes by phase
+    for node in nodes:
+        node_id = node.get("id", "")
+        node_type = node.get("type", "")
+        color = "blue"
+        if "new" in node_id.lower() or "tgt" in node_id.lower():
+            color = "green"
+        elif "old" in node_id.lower() or "src" in node_id.lower():
+            if phase_no >= 3:
+                color = "red"
+            elif phase_no == 2:
+                color = "orange"
+            else:
+                color = "blue"
+        diagram_json["nodes"].append({
+            "id": node_id,
+            "label": node.get("label", node_id),
+            "type": node_type,
+            "color": color,
+            "x": node.get("x", 0),
+            "y": node.get("y", 0),
+        })
+
+    for edge in edges:
+        diagram_json["edges"].append({
+            "id": edge.get("id", ""),
+            "source": edge.get("source", ""),
+            "target": edge.get("target", ""),
+            "label": edge.get("label", ""),
+            "style": "solid" if phase_no < 3 else "dashed",
+        })
+
+    # Generate a simple SVG representation
+    width, height = 800, 400
+    svg_parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
+        '  <rect width="100%" height="100%" fill="#f8f9fa"/>',
+        f'  <text x="20" y="30" font-size="16" font-weight="bold" fill="#212529">Phase {phase_no}: {name}</text>',
+    ]
+
+    # Draw nodes as simple circles + labels
+    y_offset = 80
+    for i, node in enumerate(diagram_json["nodes"]):
+        x = 100 + (i % 4) * 180
+        y = y_offset + (i // 4) * 100
+        color_map = {"blue": "#0d6efd", "green": "#198754", "orange": "#fd7e14", "red": "#dc3545"}
+        fill = color_map.get(node["color"], "#6c757d")
+        svg_parts.append(f'  <circle cx="{x}" cy="{y}" r="30" fill="{fill}" stroke="#fff" stroke-width="2"/>')
+        svg_parts.append(
+            f'  <text x="{x}" y="{y+5}" text-anchor="middle" font-size="10" fill="#fff">'
+            f'{textwrap.shorten(node["label"], width=12, placeholder="..")}</text>'
+        )
+        # Update JSON with computed positions
+        node["x"] = x
+        node["y"] = y
+
+    # Draw edges as lines
+    node_positions = {n["id"]: (n["x"], n["y"]) for n in diagram_json["nodes"]}
+    for edge in diagram_json["edges"]:
+        src_pos = node_positions.get(edge["source"])
+        tgt_pos = node_positions.get(edge["target"])
+        if src_pos and tgt_pos:
+            style_attr = 'stroke-dasharray="5,5"' if edge.get("style") == "dashed" else ""
+            svg_parts.append(
+                f'  <line x1="{src_pos[0]}" y1="{src_pos[1]}" x2="{tgt_pos[0]}" y2="{tgt_pos[1]}" '
+                f'stroke="#adb5bd" stroke-width="2" {style_attr}/>'
+            )
+
+    # Info box
+    info_y = height - 100
+    svg_parts.append(f'  <rect x="20" y="{info_y}" width="760" height="80" fill="#fff" stroke="#dee2e6" rx="4"/>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 20}" font-size="11" font-weight="bold" fill="#212529">Validation:</text>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 36}" font-size="10" fill="#495057">{textwrap.shorten(validation, width=100)}</text>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 54}" font-size="11" font-weight="bold" fill="#212529">Rollback:</text>')
+    svg_parts.append(f'  <text x="30" y="{info_y + 70}" font-size="10" fill="#495057">{textwrap.shorten(rollback, width=100)}</text>')
+
+    svg_parts.append("</svg>")
+
+    return {
+        "phase": phase_no,
+        "name": name,
+        "svg": "\n".join(svg_parts),
+        "json": diagram_json,
+        "legend": diagram_json["legend"],
+    }

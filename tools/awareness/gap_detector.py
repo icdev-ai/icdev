@@ -568,6 +568,19 @@ def _extract_py_string_literals(py_path: Path) -> List[str]:
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             strings.append(node.value)
+        elif isinstance(node, ast.JoinedStr) and node.values:
+            # f-strings are JoinedStr in the AST; their Constant children are
+            # already visited individually by ast.walk, but a trailing segment
+            # (e.g. the part after the last {var}) may not start with a SQL
+            # keyword and fails _is_likely_sql on its own.  Joining all static
+            # parts preserves the full schema text so create_re can find every
+            # CREATE TABLE regardless of where f-string substitutions fall.
+            parts = [
+                n.value for n in node.values
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)
+            ]
+            if parts:
+                strings.append("".join(parts))
     return strings
 
 

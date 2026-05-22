@@ -21,8 +21,8 @@ _CCC_BACKEND = os.environ.get(
 def get_connection():
     if _CCC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _pg
-            return _pg(db_path=os.environ.get("CCC_PG_DATABASE", "ccc_canvas"))
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("CCC_PG_DATABASE")
         except Exception:
             pass
     import sqlite3

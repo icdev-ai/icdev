@@ -667,6 +667,27 @@ _CS_RE_DICT_START = re.compile(r'\bnew\s+(?:Dictionary|Hashtable)\s*(?:<[^>]*>)?
 _CS_RE_DICT_ENTRY = re.compile(r'^\s*\{|^\s*\[')
 _CS_RE_IF_INDENT = re.compile(r'^(\s+)if\s*\(')
 
+# ── Java regex fallback constants ─────────────────────────────────────────────
+_JAVA_RE_IF_INDENT      = re.compile(r'^(\s*)(?:else\s+)?if\s*\(')
+_JAVA_RE_PATTERN_ANN    = re.compile(r'@Pattern\s*\(')
+_JAVA_RE_PATTERN_COMPILE = re.compile(r'\bPattern\.compile\s*\(')
+_JAVA_RE_STRING_MATCHES = re.compile(r'\.matches\s*\(\s*"')
+# view return: any string literal return that is NOT a redirect/forward/error
+_JAVA_RE_VIEW_RETURN    = re.compile(r'\breturn\s+"(?!redirect:|forward:|error)([a-zA-Z0-9_/\-.]+)"\s*;')
+_JAVA_RE_MODEL_VIEW     = re.compile(r'\bnew\s+ModelAndView\s*\(')
+_JAVA_RE_ADD_ATTR       = re.compile(r'\bmodel\.addAttribute\s*\(|\bmodel\.put\s*\(')
+_JAVA_RE_SCHEDULED      = re.compile(r'@Scheduled\s*\(')
+_JAVA_RE_PAGEREQUEST    = re.compile(r'PageRequest\.of\s*\([^,)]+,\s*(\d+)\s*\)')
+_JAVA_RE_STATIC_INT     = re.compile(r'(?:private|protected|public)?\s+(?:static\s+)?(?:final\s+)?int\s+\w+\s*=\s*(\d{1,4})\s*;')
+_JAVA_RE_FINDBY_KEYWORD = re.compile(r'\b(findBy\w+(?:StartingWith|Containing|Like))\s*\(')
+_JAVA_RE_EQUALS_IC      = re.compile(r'\.equalsIgnoreCase\s*\(')
+_JAVA_RE_STREAM_FILTER  = re.compile(r'\.stream\s*\(\s*\)\s*\.\s*filter\s*\(')
+_JAVA_RE_SWITCH         = re.compile(r'\bswitch\s*\(')
+_JAVA_RE_CASE           = re.compile(r'^\s*case\s+\S')
+_JAVA_RE_MODEL_ATTR     = re.compile(r'@ModelAttribute\b')
+_JAVA_RE_REPO_FIND      = re.compile(r'\.\s*find(?:All|By\w+)\s*\(')
+_JAVA_MIN_IF_DEPTH: int = 2  # Spring controllers rarely nest ≥3; 2 is enough signal
+
 
 def _cs_walk_scoped(root: Any, src: bytes):
     """Iterative DFS generator yielding (node, parent_type, scope_name)."""
@@ -1151,14 +1172,302 @@ def _cs_detect_file(file_path: str) -> list[dict]:
     return results
 
 
+# ── Java regex fallback ───────────────────────────────────────────────────────
+
+def _java_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
+    """Indentation-based nested-if detection for Java source."""
+    results: list[dict] = []
+    if_stack: list[tuple[int, int]] = []
+    reported: set[int] = set()
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        m = _JAVA_RE_IF_INDENT.match(line)
+        if m:
+            indent = len(m.group(1).expandtabs(4))
+            if_stack = [(ind, ln) for ind, ln in if_stack if ind < indent]
+            if_stack.append((indent, i))
+            if len(if_stack) >= _JAVA_MIN_IF_DEPTH:
+                outer_ln = if_stack[0][1]
+                if outer_ln not in reported:
+                    reported.add(outer_ln)
+                    results.append({
+                        "pattern_type": "nested_conditionals",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": outer_ln,
+                        "line_end": i,
+                        "pattern_detail": {"max_depth": len(if_stack)},
+                    })
+    return results
+
+
+def _java_regex_switch_cases(file_path: str, lines: list[str]) -> list[dict]:
+    """Detect large switch-case blocks (≥ RULE_MIN_KEYS cases)."""
+    results: list[dict] = []
+    n = len(lines)
+    i = 0
+    while i < n:
+        if _JAVA_RE_SWITCH.search(lines[i]):
+            start_line = i + 1
+            brace = lines[i].count("{") - lines[i].count("}")
+            case_count = 0
+            j = i + 1
+            while j < n and (brace > 0 or j == i + 1):
+                brace += lines[j].count("{") - lines[j].count("}")
+                if _JAVA_RE_CASE.match(lines[j]):
+                    case_count += 1
+                j += 1
+            if case_count >= _RULE_MIN_KEYS:
+                results.append({
+                    "pattern_type": "large_rule_table",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": start_line,
+                    "line_end": j,
+                    "pattern_detail": {"case_count": case_count, "kind": "switch"},
+                })
+        i += 1
+    return results
+
+
+def _java_detect_db_render_chain(file_path: str, lines: list[str]) -> list[dict]:
+    """Detect methods that fetch from a repository and return a view name."""
+    results: list[dict] = []
+    in_method = False
+    method_start = 0
+    brace_depth = 0
+    has_find = False
+    has_attr = False
+    has_view_return = False
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        # Simple heuristic: track brace depth to detect method boundaries
+        brace_depth += line.count("{") - line.count("}")
+        if not in_method:
+            # Look for method signature start (public/private return type methodName)
+            if re.search(r'(?:public|private|protected)\s+\w[\w<>, ]*\s+\w+\s*\(', line):
+                in_method = True
+                method_start = i
+                has_find = has_attr = has_view_return = False
+        if in_method:
+            if _JAVA_RE_REPO_FIND.search(line):
+                has_find = True
+            if _JAVA_RE_ADD_ATTR.search(line):
+                has_attr = True
+            if _JAVA_RE_VIEW_RETURN.search(line):
+                has_view_return = True
+            if brace_depth <= 0 and i > method_start:
+                # Method ended
+                if has_find and has_attr and has_view_return:
+                    results.append({
+                        "pattern_type": "db_render_notify_chain",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": method_start,
+                        "line_end": i,
+                        "pattern_detail": {"kind": "db_fetch_template_render"},
+                    })
+                in_method = False
+    return results
+
+
+def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
+    """Regex-based Java pattern detection for all 8 AAC pattern types."""
+    results: list[dict] = []
+    lines = source_text.splitlines()
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+
+        # regex_user_input — @Pattern annotation or Pattern.compile / String.matches
+        if _JAVA_RE_PATTERN_ANN.search(line):
+            m = re.search(r'regexp\s*=\s*"([^"]*)"', line)
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "@Pattern", "regexp": m.group(1) if m else ""},
+            })
+        elif _JAVA_RE_PATTERN_COMPILE.search(line):
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "Pattern.compile"},
+            })
+        elif _JAVA_RE_STRING_MATCHES.search(line):
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "String.matches"},
+            })
+
+        # string_template_rendering — view name return or ModelAndView
+        m = _JAVA_RE_VIEW_RETURN.search(line)
+        if m:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "view_return", "view": m.group(1)},
+            })
+        elif _JAVA_RE_MODEL_VIEW.search(line):
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "ModelAndView"},
+            })
+
+        # scheduled_cron — @Scheduled annotation
+        if _JAVA_RE_SCHEDULED.search(line):
+            m = re.search(r'cron\s*=\s*"([^"]*)"', line)
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "@Scheduled",
+                                   "cron": m.group(1) if m else ""},
+            })
+
+        # hardcoded_threshold — PageRequest literal or static int constant
+        m = _JAVA_RE_PAGEREQUEST.search(line)
+        if m:
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "PageRequest.of", "page_size": int(m.group(1))},
+            })
+        else:
+            m = _JAVA_RE_STATIC_INT.search(line)
+            if m and int(m.group(1)) > 0:
+                results.append({
+                    "pattern_type": "hardcoded_threshold",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i, "line_end": i,
+                    "pattern_detail": {"kind": "static_int_const", "value": int(m.group(1))},
+                })
+
+        # keyword_list_search — Spring Data method or manual equalsIgnoreCase loop
+        m = _JAVA_RE_FINDBY_KEYWORD.search(line)
+        if m:
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"method": m.group(1), "kind": "spring_data_derived"},
+            })
+        elif _JAVA_RE_EQUALS_IC.search(line):
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "equalsIgnoreCase_loop"},
+            })
+        elif _JAVA_RE_STREAM_FILTER.search(line):
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "stream_filter"},
+            })
+
+        # large_rule_table — @ModelAttribute returning a repository collection
+        if _JAVA_RE_MODEL_ATTR.search(line):
+            results.append({
+                "pattern_type": "large_rule_table",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "@ModelAttribute_lookup"},
+            })
+
+    results.extend(_java_regex_nested_ifs(file_path, lines))
+    results.extend(_java_regex_switch_cases(file_path, lines))
+    results.extend(_java_detect_db_render_chain(file_path, lines))
+    return results
+
+
+def _java_detect_file(file_path: str) -> list[dict]:
+    """Run Java pattern detection on a single .java file."""
+    try:
+        source = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    results = _java_detect_via_regex(file_path, source)
+    for hit in results:
+        hit.setdefault("language", "java")
+    return results
+
+
+# ── Language-specific fallback walkers ────────────────────────────────────────
+# Registry maps language string → single-file detector callable.
+# Add a new entry here to support a new language without touching detect_patterns().
+
+_LANG_FALLBACK_REGISTRY: dict[str, Any] = {
+    "java":   _java_detect_file,
+    "csharp": _cs_detect_file,
+    # python is handled separately by _detect_via_ast_fallback (stdlib ast walker)
+}
+
+
+def _walk_files_by_language(target_path: str, language: str) -> list[str]:
+    """Return all files of the given language under target_path."""
+    ext_map = {v: k for k, v in _EXT_LANGUAGE.items()}
+    ext = ext_map.get(language)
+    if not ext:
+        return []
+    p = pathlib.Path(target_path)
+    if p.is_file() and p.suffix.lower() == ext:
+        return [str(p)]
+    return [str(f) for f in p.rglob(f"*{ext}") if f.is_file()]
+
+
+def _detect_via_language_fallbacks(target_path: str) -> list[dict]:
+    """Run all registered language fallbacks on target_path.
+
+    To add support for a new language, register its detector in
+    _LANG_FALLBACK_REGISTRY — no changes to detect_patterns() needed.
+    """
+    results: list[dict] = []
+    for language, detector in _LANG_FALLBACK_REGISTRY.items():
+        for file_path in _walk_files_by_language(target_path, language):
+            results.extend(detector(file_path))
+    return results
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
 def detect_patterns(target_path: str) -> list[dict]:
     """Detect AI-augmentable patterns in a source file or directory tree.
 
-    Tries Semgrep CLI first (multi-language, all 8 patterns via YAML rules).
-    Falls back to Python stdlib ast when Semgrep is unavailable (air-gap).
+    Primary path  — Semgrep CLI (multi-language, YAML rules).
+    Supplemental  — language-specific regex/AST fallbacks from
+                    _LANG_FALLBACK_REGISTRY, always run and merged with
+                    Semgrep results.  Semgrep wins on conflicts (same file +
+                    line + pattern_type).  To add a new language, register
+                    its detector in _LANG_FALLBACK_REGISTRY only.
 
     Args:
         target_path: Path to a source file or directory to analyze.
@@ -1169,6 +1478,27 @@ def detect_patterns(target_path: str) -> list[dict]:
         Returns [] on error or if no patterns are found.
     """
     semgrep_results = _detect_via_semgrep(target_path)
-    if semgrep_results is not None:
-        return semgrep_results
-    return _detect_via_ast_fallback(target_path)
+
+    if semgrep_results is None:
+        # Semgrep unavailable — run all fallbacks (Python AST + registry)
+        results = _detect_via_ast_fallback(target_path)
+        results.extend(_detect_via_language_fallbacks(target_path))
+        return results
+
+    # Semgrep available: supplement with language fallbacks to catch idioms
+    # that the Semgrep rules don't cover (e.g. Spring annotations, Spring Data
+    # derived query methods, ORM fetch+render chains, …).
+    supplemental = _detect_via_language_fallbacks(target_path)
+
+    # Deduplicate: prefer Semgrep result when (file, line, pattern) collides.
+    covered: set[tuple[str, int, str]] = {
+        (r["module_path"], r["line_start"], r["pattern_type"])
+        for r in semgrep_results
+    }
+    for hit in supplemental:
+        key = (hit["module_path"], hit["line_start"], hit["pattern_type"])
+        if key not in covered:
+            semgrep_results.append(hit)
+            covered.add(key)
+
+    return semgrep_results

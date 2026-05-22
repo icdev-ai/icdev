@@ -55,14 +55,18 @@ def _now() -> str:
 
 
 def _dump(value: Any) -> Any:
-    """Return value for storage: keep dict/list for PG JSONB, stringify for SQLite TEXT."""
+    """Return value for storage: Json-wrapped for PG JSONB, serialized string for SQLite TEXT."""
     import os
     backend = os.environ.get(
         "AAC_STORAGE_BACKEND",
         os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
     ).lower()
     if backend == "postgresql":
-        return value
+        try:
+            from psycopg2.extras import Json
+            return Json(value)
+        except ImportError:
+            pass
     return json.dumps(value)
 
 

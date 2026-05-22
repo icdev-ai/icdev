@@ -15,7 +15,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from tools.db.storage import get_connection
+from icdev.tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
@@ -24,7 +24,7 @@ try:
 except ImportError:
     yaml = None
 
-from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
+from icdev.tools.llm.provider import LLMProvider, LLMRequest, LLMResponse, EmbeddingProvider
 
 logger = logging.getLogger("icdev.llm.router")
 

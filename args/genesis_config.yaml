@@ -27,8 +27,8 @@ trust_mode: full
 # Reflexes only run within this window. Outside it, is_due() returns false.
 # Interval/continuous reflexes (research, ingest, heal) are also gated.
 active_hours:
-  enabled: true
-  start_hour: 0    # 12 AM — overnight run enabled (restore to 9 AM tomorrow)
+  enabled: false   # Time gate disabled — running until BACKLOG clears (17 AAC tasks). Re-enable at 09:00 tomorrow.
+  start_hour: 9    # restore to 9 AM once backlog is done
   end_hour: 23     # 11 PM local
   timezone: "America/New_York"
 

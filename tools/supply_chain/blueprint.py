@@ -42,7 +42,7 @@ def create_supply_chain_blueprint() -> Blueprint:
     def _db():
         from tools.db.storage import get_connection
         conn = get_connection()
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: supply chain reads cross-tenant catalog data; session context not applicable
         return conn
 
     def _rows(cur) -> list[dict]:

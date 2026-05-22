@@ -3,164 +3,314 @@
 {% block content %}
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
 
+<!-- ── Header ──────────────────────────────────────────────────────────────── -->
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
   <div>
-    <h2 style="margin:0;color:#eaeaea;">AI Augmentation Canvas</h2>
-    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">Detect AI-augmentable patterns in source code and generate a prioritized modernization roadmap.</p>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">AI Augmentation Canvas</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Detect AI-augmentable patterns · Score opportunities · Generate modernization roadmap</p>
   </div>
+  {% if roadmap %}
+  <div style="display:flex;gap:8px;">
+    <button onclick="sendAllToKanban()" id="send-all-btn"
+            style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border:none;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;">
+      <span style="font-size:16px;">&#10148;</span> Send All to Kanban
+    </button>
+  </div>
+  {% endif %}
 </div>
 
 <!-- ── Scan Form ─────────────────────────────────────────────────────────── -->
-<div id="aac-scan-panel" style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px;margin-bottom:24px;">
-  <h3 style="color:#9bb8d8;margin:0 0 16px;font-size:15px;">New Scan</h3>
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.8px;">New Scan</h3>
   <div style="display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px;align-items:end;">
     <div>
-      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;">Input Type</label>
-      <select id="aac-input-type" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:13px;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Input Type</label>
+      <select id="aac-input-type" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;">
         <option value="local_path">Local Path</option>
         <option value="git_url">Git URL</option>
         <option value="upload">Upload</option>
       </select>
     </div>
     <div>
-      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;">Source Path / URL</label>
-      <input id="aac-input-ref" type="text" placeholder="e.g. tools/modernization/" value=""
-             style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:13px;box-sizing:border-box;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">Source Path / URL</label>
+      <input id="aac-input-ref" type="text" placeholder="e.g. tools/modernization/ or /path/to/project"
+             style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;box-sizing:border-box;">
     </div>
     <div>
-      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;">IL Level</label>
-      <select id="aac-il-level" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:5px;font-size:13px;">
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;">IL Level</label>
+      <select id="aac-il-level" style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:5px;font-size:13px;">
         <option value="il4">IL4</option>
         <option value="il5">IL5</option>
         <option value="il6">IL6</option>
       </select>
     </div>
     <div>
-      <button id="aac-run-btn" onclick="aacRunScan()" style="background:#6366f1;color:#fff;border:none;padding:9px 20px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;">
+      <button id="aac-run-btn" onclick="aacRunScan()"
+              style="background:linear-gradient(135deg,#6366f1,#4f46e5);color:#fff;border:none;padding:9px 22px;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;">
         Run Scan
       </button>
     </div>
   </div>
-  <div id="aac-scan-status" style="display:none;margin-top:12px;padding:8px 12px;border-radius:5px;font-size:12px;"></div>
+  <div id="aac-scan-status" style="display:none;margin-top:12px;padding:10px 14px;border-radius:5px;font-size:12px;"></div>
 </div>
 
-<!-- ── Opportunities Table ────────────────────────────────────────────────── -->
-<div id="aac-opportunities-section" style="margin-bottom:24px;">
-  <h3 style="color:#9bb8d8;font-size:15px;margin-bottom:12px;">
-    Opportunities
-    <span id="aac-opp-count" style="font-size:12px;color:#5a7aa0;font-weight:400;margin-left:8px;">
-      {% if opportunities %}({{ opportunities|length }} from latest scan){% endif %}
-    </span>
-  </h3>
-  <div id="aac-opportunities-table">
-  {% if opportunities %}
-  <div style="overflow-x:auto;">
-    <table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead>
-        <tr style="background:#060f22;color:#5a7aa0;">
-          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Module</th>
-          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Function</th>
-          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Pattern</th>
-          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">AI Paradigm</th>
-          <th style="padding:8px 10px;text-align:left;border-bottom:1px solid #1a3560;">Model</th>
-          <th style="padding:8px 10px;text-align:right;border-bottom:1px solid #1a3560;">Score</th>
-        </tr>
-      </thead>
-      <tbody id="aac-opp-tbody">
-      {% for opp in opportunities %}
+{% if roadmap and roadmap.phases %}
+
+<!-- ── Executive Summary ──────────────────────────────────────────────────── -->
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px;">
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#a5b4fc;">{{ opportunities|length }}</div>
+    <div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">Opportunities</div>
+  </div>
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#34d399;">{{ roadmap.total_effort_days }}</div>
+    <div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">Est. Days</div>
+  </div>
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#f59e0b;">{{ roadmap.phases|length }}</div>
+    <div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">Phases</div>
+  </div>
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:16px;text-align:center;">
+    {% if scans %}
+    <div style="font-size:28px;font-weight:700;color:#60a5fa;">{{ scans[0].total_files }}</div>
+    <div style="color:#5a7aa0;font-size:11px;text-transform:uppercase;letter-spacing:.6px;margin-top:4px;">Files Scanned</div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Migration Workflow Diagram ─────────────────────────────────────────── -->
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px 24px;margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;margin:0 0 18px;font-size:14px;text-transform:uppercase;letter-spacing:.8px;">Migration Workflow</h3>
+  <div style="display:flex;align-items:center;justify-content:center;gap:0;overflow-x:auto;padding:4px 0;">
+
+    <!-- Step 1 -->
+    <div style="text-align:center;min-width:130px;">
+      <div style="background:linear-gradient(135deg,#1e3a5f,#0d2545);border:1px solid #2563eb;border-radius:8px;padding:14px 12px;">
+        <div style="font-size:22px;margin-bottom:6px;">&#128269;</div>
+        <div style="color:#60a5fa;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">1. Detect</div>
+        <div style="color:#5a7aa0;font-size:10px;margin-top:4px;">Semgrep + AST<br>pattern scan</div>
+      </div>
+    </div>
+
+    <div style="color:#2563eb;font-size:20px;font-weight:700;padding:0 6px;">&#10132;</div>
+
+    <!-- Step 2 -->
+    <div style="text-align:center;min-width:130px;">
+      <div style="background:linear-gradient(135deg,#2a1f4f,#1a0d45);border:1px solid #7c3aed;border-radius:8px;padding:14px 12px;">
+        <div style="font-size:22px;margin-bottom:6px;">&#128200;</div>
+        <div style="color:#a78bfa;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">2. Score</div>
+        <div style="color:#5a7aa0;font-size:10px;margin-top:4px;">Value · Feasibility<br>Risk composite</div>
+      </div>
+    </div>
+
+    <div style="color:#7c3aed;font-size:20px;font-weight:700;padding:0 6px;">&#10132;</div>
+
+    <!-- Step 3 -->
+    <div style="text-align:center;min-width:130px;">
+      <div style="background:linear-gradient(135deg,#1a3a1f,#0d2a14);border:1px solid #059669;border-radius:8px;padding:14px 12px;">
+        <div style="font-size:22px;margin-bottom:6px;">&#128203;</div>
+        <div style="color:#34d399;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">3. Phase</div>
+        <div style="color:#5a7aa0;font-size:10px;margin-top:4px;">P1 Quick Wins<br>P2 Core · P3 Long</div>
+      </div>
+    </div>
+
+    <div style="color:#059669;font-size:20px;font-weight:700;padding:0 6px;">&#10132;</div>
+
+    <!-- Step 4 -->
+    <div style="text-align:center;min-width:130px;">
+      <div style="background:linear-gradient(135deg,#3a2a0a,#2a1a00);border:1px solid #d97706;border-radius:8px;padding:14px 12px;">
+        <div style="font-size:22px;margin-bottom:6px;">&#9881;</div>
+        <div style="color:#fbbf24;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">4. Implement</div>
+        <div style="color:#5a7aa0;font-size:10px;margin-top:4px;">Kanban tasks<br>sprint planning</div>
+      </div>
+    </div>
+
+    <div style="color:#d97706;font-size:20px;font-weight:700;padding:0 6px;">&#10132;</div>
+
+    <!-- Step 5 -->
+    <div style="text-align:center;min-width:130px;">
+      <div style="background:linear-gradient(135deg,#3a1a2a,#2a0d1a);border:1px solid #db2777;border-radius:8px;padding:14px 12px;">
+        <div style="font-size:22px;margin-bottom:6px;">&#128640;</div>
+        <div style="color:#f472b6;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.5px;">5. Deploy</div>
+        <div style="color:#5a7aa0;font-size:10px;margin-top:4px;">CI/CD gated<br>agent rollout</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Phase Cards ─────────────────────────────────────────────────────────── -->
+<div id="kanban-toast" style="display:none;position:fixed;bottom:24px;right:24px;background:#1a3a1f;border:1px solid #34d399;border-radius:8px;padding:12px 18px;color:#34d399;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.5);">
+  <span id="kanban-toast-msg"></span>
+</div>
+
+<div style="margin-bottom:24px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <h3 style="color:#9bb8d8;font-size:14px;margin:0;text-transform:uppercase;letter-spacing:.8px;">Roadmap Phases</h3>
+    <span style="color:#5a7aa0;font-size:11px;">{{ roadmap.title }}</span>
+  </div>
+
+  {% set phase_colors = {'P1': {'bg': '#1a2e1a', 'border': '#16a34a', 'label': '#4ade80', 'badge': '#14532d'},
+                         'P2': {'bg': '#1a1a2e', 'border': '#4f46e5', 'label': '#818cf8', 'badge': '#1e1b4b'},
+                         'P3': {'bg': '#2e1a0e', 'border': '#b45309', 'label': '#f59e0b', 'badge': '#451a03'}} %}
+
+  {% for phase in roadmap.phases %}
+  {% set ph_key = phase.label.split(' ')[0] if phase.label else 'P3' %}
+  {% set colors = phase_colors.get(ph_key, phase_colors['P3']) %}
+
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;margin-bottom:16px;overflow:hidden;">
+    <!-- Phase header -->
+    <div style="background:{{ colors.bg }};border-bottom:1px solid {{ colors.border }};padding:12px 18px;display:flex;justify-content:space-between;align-items:center;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="background:{{ colors.border }};color:#fff;border-radius:4px;padding:2px 10px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;">{{ ph_key }}</span>
+        <span style="color:{{ colors.label }};font-weight:600;font-size:14px;">{{ phase.label.split('—')[1].strip() if '—' in phase.label else phase.label }}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <span style="color:#5a7aa0;font-size:12px;">{{ phase.count }} opportunities &middot; {{ phase.total_effort_days }}d</span>
+        <button onclick="sendPhaseToKanban('{{ roadmap.roadmap_id }}', '{{ ph_key }}')"
+                id="send-btn-{{ ph_key }}"
+                style="background:{{ colors.border }};color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
+          &#10148; Send {{ ph_key }} to Kanban
+        </button>
+      </div>
+    </div>
+
+    <!-- Opportunity rows -->
+    {% if phase.opportunities %}
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:#060f22;color:#3a5a80;">
+            <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Module</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Pattern</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">AI Paradigm</th>
+            <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Model</th>
+            <th style="padding:7px 12px;text-align:center;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;min-width:120px;">Score</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for opp in phase.opportunities %}
         <tr style="border-bottom:1px solid #0d1e30;" onmouseover="this.style.background='#0a1830'" onmouseout="this.style.background=''">
-          <td style="padding:7px 10px;color:#a8c8e0;word-break:break-all;max-width:200px;">{{ opp.module_path }}</td>
-          <td style="padding:7px 10px;color:#a8c8e0;">{{ opp.function_name }}</td>
-          <td style="padding:7px 10px;"><span style="background:#0d2545;color:#6ab0e0;border:1px solid #1a4070;border-radius:3px;padding:2px 6px;font-size:11px;">{{ opp.pattern_type }}</span></td>
-          <td style="padding:7px 10px;color:#80c0a0;font-size:11px;">{{ opp.ai_paradigm }}</td>
-          <td style="padding:7px 10px;color:#7090b0;font-size:11px;">{{ opp.il_recommended_model or '—' }}</td>
-          <td style="padding:7px 10px;text-align:right;color:#f0c060;font-weight:600;">
-            {% if opp.composite_score is not none %}{{ (opp.composite_score * 100)|round(0)|int }}%{% else %}—{% endif %}
+          <td style="padding:8px 12px;color:#a8c8e0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.module_path }}">
+            {{ opp.module_path.split('/')[-1] if '/' in (opp.module_path or '') else (opp.module_path or '—') }}
+          </td>
+          <td style="padding:8px 12px;">
+            <span style="background:{{ colors.badge }};color:{{ colors.label }};border:1px solid {{ colors.border }};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:500;">
+              {{ opp.pattern_type or '—' }}
+            </span>
+          </td>
+          <td style="padding:8px 12px;color:#80c0a0;font-size:11px;">{{ opp.ai_paradigm or '—' }}</td>
+          <td style="padding:8px 12px;color:#6080a0;font-size:10px;white-space:nowrap;">
+            {% if opp.il_recommended_model %}
+            <span style="background:#0a1428;border:1px solid #1a3560;border-radius:3px;padding:1px 6px;">{{ opp.il_recommended_model }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td style="padding:8px 12px;">
+            {% set score = opp.composite_score if opp.composite_score is not none else 0 %}
+            {% set pct = (score * 100)|round(0)|int %}
+            {% if pct >= 70 %}{% set bar_color = '#16a34a' %}
+            {% elif pct >= 50 %}{% set bar_color = '#4f46e5' %}
+            {% else %}{% set bar_color = '#b45309' %}{% endif %}
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="flex:1;background:#060f22;border-radius:3px;height:6px;overflow:hidden;">
+                <div style="width:{{ pct }}%;background:{{ bar_color }};height:100%;border-radius:3px;"></div>
+              </div>
+              <span style="color:{{ bar_color }};font-weight:700;font-size:12px;min-width:32px;text-align:right;">{{ pct }}%</span>
+            </div>
           </td>
         </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <div id="aac-opp-empty" style="background:#060f22;border:1px solid #1a3560;border-radius:6px;padding:24px;text-align:center;color:#3a6080;font-size:13px;">
-    No opportunities yet. Run a scan to detect AI-augmentable patterns.
-  </div>
-  {% endif %}
-  </div>
-</div>
-
-<!-- ── Roadmap Section ────────────────────────────────────────────────────── -->
-<div id="aac-roadmap-section" style="margin-bottom:24px;">
-  <h3 style="color:#9bb8d8;font-size:15px;margin-bottom:12px;">Roadmap</h3>
-  <div id="aac-roadmap-content">
-  {% if roadmap and roadmap.phases %}
-    <div style="color:#5a7aa0;font-size:12px;margin-bottom:12px;">{{ roadmap.title }} — {{ roadmap.total_effort_days }} total effort days</div>
-    {% for phase in roadmap.phases %}
-    <div class="aac-phase-card" style="background:#0d1b2e;border:1px solid #1a3560;border-radius:6px;padding:14px;margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="color:#a5b4fc;font-weight:600;font-size:13px;">{{ phase.label }}</span>
-        <span style="color:#5a7aa0;font-size:11px;">{{ phase.count }} opportunities · {{ phase.total_effort_days }}d effort</span>
-      </div>
-      {% if phase.opportunities %}
-      <div style="display:flex;flex-wrap:wrap;gap:6px;">
-        {% for opp in phase.opportunities[:5] %}
-        <span style="background:#060f22;border:1px solid #1a3560;border-radius:4px;padding:3px 8px;font-size:11px;color:#80a8c8;">
-          {{ opp.pattern_type }}
-        </span>
         {% endfor %}
-        {% if phase.opportunities|length > 5 %}
-        <span style="color:#3a6080;font-size:11px;padding:3px 6px;">+{{ phase.opportunities|length - 5 }} more</span>
-        {% endif %}
-      </div>
-      {% else %}
-      <span style="color:#3a5070;font-size:11px;">No opportunities in this phase</span>
-      {% endif %}
+        </tbody>
+      </table>
     </div>
-    {% endfor %}
-  {% else %}
-  <div id="aac-roadmap-empty" style="background:#060f22;border:1px solid #1a3560;border-radius:6px;padding:24px;text-align:center;color:#3a6080;font-size:13px;">
-    No roadmap generated yet. Run a scan to generate a prioritized roadmap.
+    {% else %}
+    <div style="padding:16px 18px;color:#3a6080;font-size:12px;">No opportunities in this phase.</div>
+    {% endif %}
   </div>
-  {% endif %}
+  {% endfor %}
+</div>
+
+<!-- ── Gantt Timeline ──────────────────────────────────────────────────────── -->
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;margin:0 0 16px;font-size:14px;text-transform:uppercase;letter-spacing:.8px;">Sprint Timeline</h3>
+  {% set total_days = roadmap.total_effort_days|int %}
+  {% set bar_width = 60 %}
+  <div style="font-family:'Courier New',monospace;font-size:11px;color:#5a7aa0;line-height:1.8;">
+    <div style="margin-bottom:6px;color:#3a5a80;">
+      Weeks: {% for w in range(1, (total_days // 5 + 3)) %}W{{ w }}{{ '   ' if loop.index < (total_days // 5 + 3) else '' }}{% endfor %}
+    </div>
+    {% set ns = namespace(offset=0) %}
+    {% for phase in roadmap.phases %}
+    {% set ph_key = phase.label.split(' ')[0] if phase.label else 'P?' %}
+    {% set days = phase.total_effort_days|int %}
+    {% set start_col = (ns.offset / total_days * bar_width)|int if total_days > 0 else 0 %}
+    {% set width_col = (days / total_days * bar_width)|int if total_days > 0 else 0 %}
+    {% set ph_char = '#' if ph_key == 'P1' else ('=' if ph_key == 'P2' else '-') %}
+    {% set ph_color = '#4ade80' if ph_key == 'P1' else ('#818cf8' if ph_key == 'P2' else '#f59e0b') %}
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span style="color:{{ ph_color }};font-weight:700;min-width:26px;">{{ ph_key }}</span>
+      <span style="color:#2a4a6a;">|</span>
+      <span style="color:#1a3050;">{{ ' ' * start_col }}</span><span style="color:{{ ph_color }};">{{ ph_char * [width_col, 1]|max }}</span>
+      <span style="color:#5a7aa0;margin-left:4px;">{{ days }}d · {{ (days / 5)|round(0)|int }}w</span>
+    </div>
+    {% set ns.offset = ns.offset + days %}
+    {% endfor %}
   </div>
 </div>
 
-<!-- ── Scan History ─────────────────────────────────────────────────────── -->
-{% if scans %}
+{% else %}
+
+<!-- ── Empty State ────────────────────────────────────────────────────────── -->
+<div style="background:#060f22;border:1px solid #1a3560;border-radius:8px;padding:40px;text-align:center;margin-bottom:24px;">
+  <div style="font-size:40px;margin-bottom:12px;">&#128270;</div>
+  <div style="color:#5a7aa0;font-size:15px;font-weight:500;margin-bottom:6px;">No scan results yet</div>
+  <div style="color:#3a5070;font-size:12px;">Enter a source path above and click Run Scan to detect AI-augmentable patterns.</div>
+</div>
+
+{% endif %}
+
+<!-- ── Opportunities Table ────────────────────────────────────────────────── -->
+{% if opportunities %}
 <div style="margin-bottom:24px;">
-  <h3 style="color:#9bb8d8;font-size:15px;margin-bottom:12px;">Recent Scans</h3>
+  <h3 style="color:#9bb8d8;font-size:14px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.8px;">
+    All Opportunities
+    <span style="font-size:11px;color:#5a7aa0;font-weight:400;margin-left:8px;text-transform:none;letter-spacing:0;">({{ opportunities|length }} from latest scan)</span>
+  </h3>
   <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:12px;">
       <thead>
-        <tr style="background:#060f22;color:#5a7aa0;">
-          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">ID</th>
-          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Type</th>
-          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Source</th>
-          <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #1a3560;">Files</th>
-          <th style="padding:7px 10px;text-align:right;border-bottom:1px solid #1a3560;">LOC</th>
-          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Status</th>
-          <th style="padding:7px 10px;text-align:left;border-bottom:1px solid #1a3560;">Created</th>
+        <tr style="background:#060f22;color:#3a5a80;">
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">#</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Module</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Function</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Pattern</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">AI Paradigm</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Model</th>
+          <th style="padding:7px 12px;text-align:center;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;min-width:100px;">Score</th>
         </tr>
       </thead>
       <tbody>
-      {% for scan in scans %}
-        <tr style="border-bottom:1px solid #0d1e30;">
-          <td style="padding:6px 10px;color:#6080a0;">#{{ scan.scan_id }}</td>
-          <td style="padding:6px 10px;color:#a8c8e0;">{{ scan.input_type }}</td>
-          <td style="padding:6px 10px;color:#a8c8e0;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ scan.input_ref }}</td>
-          <td style="padding:6px 10px;text-align:right;color:#80a0c0;">{{ scan.total_files }}</td>
-          <td style="padding:6px 10px;text-align:right;color:#80a0c0;">{{ scan.total_loc }}</td>
-          <td style="padding:6px 10px;">
-            {% if scan.status == 'completed' %}
-            <span style="color:#5aaa80;font-size:11px;">completed</span>
-            {% elif scan.status == 'running' %}
-            <span style="color:#f0c060;font-size:11px;">running</span>
-            {% else %}
-            <span style="color:#808090;font-size:11px;">{{ scan.status }}</span>
-            {% endif %}
+      {% for opp in opportunities %}
+        {% set score = opp.composite_score if opp.composite_score is not none else 0 %}
+        {% set pct = (score * 100)|round(0)|int %}
+        {% if pct >= 70 %}{% set bar_color = '#16a34a' %}
+        {% elif pct >= 50 %}{% set bar_color = '#4f46e5' %}
+        {% else %}{% set bar_color = '#b45309' %}{% endif %}
+        <tr style="border-bottom:1px solid #0d1e30;" onmouseover="this.style.background='#0a1830'" onmouseout="this.style.background=''">
+          <td style="padding:7px 12px;color:#3a5a80;font-size:11px;">{{ loop.index }}</td>
+          <td style="padding:7px 12px;color:#a8c8e0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ opp.module_path }}">{{ opp.module_path }}</td>
+          <td style="padding:7px 12px;color:#a8c8e0;">{{ opp.function_name }}</td>
+          <td style="padding:7px 12px;"><span style="background:#0d2545;color:#6ab0e0;border:1px solid #1a4070;border-radius:3px;padding:2px 6px;font-size:11px;">{{ opp.pattern_type }}</span></td>
+          <td style="padding:7px 12px;color:#80c0a0;font-size:11px;">{{ opp.ai_paradigm }}</td>
+          <td style="padding:7px 12px;color:#6080a0;font-size:11px;">{{ opp.il_recommended_model or '—' }}</td>
+          <td style="padding:7px 12px;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div style="flex:1;background:#060f22;border-radius:3px;height:5px;overflow:hidden;">
+                <div style="width:{{ pct }}%;background:{{ bar_color }};height:100%;border-radius:3px;"></div>
+              </div>
+              <span style="color:{{ bar_color }};font-weight:700;font-size:11px;min-width:28px;text-align:right;">{{ pct }}%</span>
+            </div>
           </td>
-          <td style="padding:6px 10px;color:#5a7090;font-size:11px;">{{ scan.created_at }}</td>
         </tr>
       {% endfor %}
       </tbody>
@@ -169,18 +319,58 @@
 </div>
 {% endif %}
 
-<!-- ── IQE Widget ────────────────────────────────────────────────────────── -->
+<!-- ── Recent Scans ────────────────────────────────────────────────────────── -->
+{% if scans %}
+<div style="margin-bottom:24px;">
+  <h3 style="color:#9bb8d8;font-size:14px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.8px;">Recent Scans</h3>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead>
+        <tr style="background:#060f22;color:#3a5a80;">
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">ID</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Type</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Source</th>
+          <th style="padding:7px 12px;text-align:right;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Files</th>
+          <th style="padding:7px 12px;text-align:right;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">LOC</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Status</th>
+          <th style="padding:7px 12px;text-align:left;font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.5px;">Created</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for scan in scans %}
+        <tr style="border-bottom:1px solid #0d1e30;" onmouseover="this.style.background='#0a1830'" onmouseout="this.style.background=''">
+          <td style="padding:6px 12px;color:#6080a0;">#{{ scan.scan_id }}</td>
+          <td style="padding:6px 12px;color:#a8c8e0;">{{ scan.input_type }}</td>
+          <td style="padding:6px 12px;color:#a8c8e0;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ scan.input_ref }}">{{ scan.input_ref }}</td>
+          <td style="padding:6px 12px;text-align:right;color:#80a0c0;">{{ scan.total_files }}</td>
+          <td style="padding:6px 12px;text-align:right;color:#80a0c0;">{{ scan.total_loc }}</td>
+          <td style="padding:6px 12px;">
+            {% if scan.status == 'completed' %}<span style="color:#4ade80;font-size:11px;">&#10003; completed</span>
+            {% elif scan.status == 'running' %}<span style="color:#f59e0b;font-size:11px;">&#9711; running</span>
+            {% else %}<span style="color:#808090;font-size:11px;">{{ scan.status }}</span>
+            {% endif %}
+          </td>
+          <td style="padding:6px 12px;color:#5a7090;font-size:11px;">{{ scan.created_at }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── IQE Widget ─────────────────────────────────────────────────────────── -->
 {% include "includes/iqe_query_widget.html" %}
 
 <div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-top:16px;">CUI // SP-CTI</div>
 
 <script>
 async function aacRunScan() {
-  var btn       = document.getElementById('aac-run-btn');
-  var statusEl  = document.getElementById('aac-scan-status');
-  var inputType = document.getElementById('aac-input-type').value;
-  var inputRef  = document.getElementById('aac-input-ref').value.trim();
-  var ilLevel   = document.getElementById('aac-il-level').value;
+  const btn      = document.getElementById('aac-run-btn');
+  const statusEl = document.getElementById('aac-scan-status');
+  const inputType = document.getElementById('aac-input-type').value;
+  const inputRef  = document.getElementById('aac-input-ref').value.trim();
+  const ilLevel   = document.getElementById('aac-il-level').value;
 
   if (!inputRef) {
     statusEl.style.display = '';
@@ -193,17 +383,17 @@ async function aacRunScan() {
   btn.disabled = true;
   btn.textContent = 'Scanning…';
   statusEl.style.display = '';
-  statusEl.style.background = '#06101e';
+  statusEl.style.background = '#060f1a';
   statusEl.style.color = '#6a9aba';
-  statusEl.textContent = 'Running scan — detecting patterns…';
+  statusEl.textContent = 'Running scan — detecting patterns (this may take 30-60s)…';
 
   try {
-    var resp = await fetch('/ai-augmentation/api/scan', {
+    const resp = await fetch('/ai-augmentation/api/scan', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({input_type: inputType, input_ref: inputRef, il_level: ilLevel})
     });
-    var data = await resp.json();
+    const data = await resp.json();
 
     if (data.error) {
       statusEl.style.background = '#1a0808';
@@ -211,10 +401,10 @@ async function aacRunScan() {
       statusEl.textContent = 'Error: ' + data.error;
     } else {
       statusEl.style.background = '#081a10';
-      statusEl.style.color = '#5aaa80';
+      statusEl.style.color = '#4ade80';
       statusEl.textContent = 'Scan #' + data.scan_id + ' completed — ' +
-        data.opportunities_count + ' opportunities found. Refreshing results…';
-      setTimeout(function() { window.location.reload(); }, 1500);
+        data.opportunities_count + ' opportunities found, roadmap generated. Refreshing…';
+      setTimeout(() => window.location.reload(), 1800);
     }
   } catch(e) {
     statusEl.style.background = '#1a0808';
@@ -223,6 +413,69 @@ async function aacRunScan() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Run Scan';
+  }
+}
+
+function showToast(msg, ok=true) {
+  const toast = document.getElementById('kanban-toast');
+  const msgEl = document.getElementById('kanban-toast-msg');
+  if (!toast || !msgEl) return;
+  msgEl.textContent = msg;
+  toast.style.background = ok ? '#1a3a1f' : '#3a1a1a';
+  toast.style.borderColor = ok ? '#34d399' : '#e05050';
+  toast.style.color       = ok ? '#34d399' : '#e05050';
+  toast.style.display = '';
+  setTimeout(() => { toast.style.display = 'none'; }, 3500);
+}
+
+async function sendPhaseToKanban(roadmapId, phaseId) {
+  const btn = document.getElementById('send-btn-' + phaseId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+
+  try {
+    const resp = await fetch('/ai-augmentation/api/send-to-kanban', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({roadmap_id: roadmapId, phase_id: phaseId})
+    });
+    const data = await resp.json();
+    if (data.error) {
+      showToast('Error: ' + data.error, false);
+    } else {
+      showToast(phaseId + ': ' + data.created + ' tasks created, ' + data.skipped + ' skipped');
+      if (btn) { btn.textContent = '&#10003; Sent'; btn.style.background = '#16a34a'; }
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message, false);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function sendAllToKanban() {
+  const btn = document.getElementById('send-all-btn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span>Sending all…</span>'; }
+
+  const roadmapId = '{{ roadmap.roadmap_id if roadmap else "" }}';
+  if (!roadmapId) { showToast('No roadmap available', false); return; }
+
+  try {
+    const resp = await fetch('/ai-augmentation/api/send-to-kanban', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({roadmap_id: roadmapId, phase_id: 'all'})
+    });
+    const data = await resp.json();
+    if (data.error) {
+      showToast('Error: ' + data.error, false);
+    } else {
+      showToast('All phases: ' + data.created + ' tasks created, ' + data.skipped + ' already existed');
+      if (btn) { btn.innerHTML = '<span style="font-size:16px;">&#10003;</span> Sent to Kanban'; btn.style.background='linear-gradient(135deg,#16a34a,#15803d)'; }
+    }
+  } catch(e) {
+    showToast('Network error: ' + e.message, false);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 </script>

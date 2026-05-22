@@ -94,6 +94,11 @@ class LLMRouter:
     # Response cache singleton (D-CACHE-1)
     _response_cache_instance: Optional["LLMResponseCache"] = None
 
+    # Degraded tier2 models — circuit-breaker for rate-limited models (D-AUTO-DEGRADE)
+    _degraded_tier2_models: set = set()
+    _degraded_tier2_probed_at: Dict[str, float] = {}
+    _DEGRADATION_PROBE_INTERVAL_SECONDS: float = 300.0  # 5 minutes
+
     def __init__(self, config_path=None):
         self._config_path = Path(config_path) if config_path else DEFAULT_CONFIG_PATH
         self._config: Dict = {}
@@ -104,6 +109,7 @@ class LLMRouter:
         self._cache_ttl: float = 1800.0
 
         self._load_config()
+        self._load_degraded_tier2_state()
 
     # -------------------------------------------------------------------
     # Dual-model mode (RTX 4060 Ti 8GB VRAM — 2 models resident)
@@ -197,6 +203,109 @@ class LLMRouter:
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
+
+    # -------------------------------------------------------------------
+    # Tier2 auto-degradation helpers (D-AUTO-DEGRADE)
+    # -------------------------------------------------------------------
+    def _degrade_tier2_model(self, model_name: str, resume_at: float = 0.0) -> None:
+        """Mark a tier2 model as degraded and persist the state.
+
+        Args:
+            model_name: Model to degrade.
+            resume_at: Optional Unix timestamp when the model is expected to recover
+                (parsed from provider error message). If 0, default probe interval is used.
+        """
+        LLMRouter._degraded_tier2_models.add(model_name)
+        LLMRouter._degraded_tier2_probed_at[model_name] = resume_at if resume_at else time.time()
+        logger.warning(
+            "Tier2 model degraded: %s (rate limit detected, resume_at=%s)",
+            model_name,
+            datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
+        )
+        self._persist_degraded_tier2_state()
+
+    def _recover_tier2_model(self, model_name: str) -> None:
+        """Clear degradation for a recovered tier2 model."""
+        LLMRouter._degraded_tier2_models.discard(model_name)
+        LLMRouter._degraded_tier2_probed_at.pop(model_name, None)
+        logger.info("Tier2 model recovered: %s", model_name)
+        self._persist_degraded_tier2_state()
+
+    def _is_tier2_degraded(self, model_name: str) -> bool:
+        """Check if a tier2 model is currently degraded."""
+        return model_name in LLMRouter._degraded_tier2_models
+
+    def _should_probe_degraded(self, model_name: str) -> bool:
+        """Check if enough time has passed since last probe (or resume_at) to try again."""
+        last_probe = LLMRouter._degraded_tier2_probed_at.get(model_name, 0.0)
+        # If resume_at was parsed from error message, use it directly
+        if last_probe > time.time():
+            return False
+        return (time.time() - last_probe) >= self._DEGRADATION_PROBE_INTERVAL_SECONDS
+
+    def _get_degraded_tier2_fallback(self, cfg: dict) -> str:
+        """Return the fallback model to use when tier2 is degraded.
+
+        Prefers the configured tier1_model, falling back to qwen3-local or kimi-cloud.
+        """
+        tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
+        return tier1
+
+    def _probe_degraded_tier2(self, model_name: str) -> bool:
+        """Attempt a lightweight probe of a degraded tier2 model.
+
+        Returns True if the model responds successfully, False otherwise.
+        """
+        LLMRouter._degraded_tier2_probed_at[model_name] = time.time()
+        model_cfg = self._get_model_config(model_name)
+        if not model_cfg:
+            return False
+        provider_name = model_cfg.get("provider", "")
+        provider = self._get_provider(provider_name)
+        if provider is None:
+            return False
+        model_id = model_cfg.get("model_id", "")
+        try:
+            # Minimal request — hard 8-second timeout
+            resp = provider.invoke(
+                LLMRequest(messages=[{"role": "user", "content": "ping"}]),
+                model_id,
+                model_cfg,
+            )
+            return bool(resp.content) or bool(resp.stop_reason)
+        except Exception:
+            return False
+
+    def _persist_degraded_tier2_state(self) -> None:
+        """Persist degraded tier2 state to a lightweight JSON file."""
+        try:
+            state_path = BASE_DIR / "data" / "llm_degraded_tier2.json"
+            state = {
+                "degraded": sorted(list(LLMRouter._degraded_tier2_models)),
+                "probed_at": {k: v for k, v in LLMRouter._degraded_tier2_probed_at.items()},
+            }
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+        except Exception:
+            pass  # Best-effort persistence
+
+    def _load_degraded_tier2_state(self) -> None:
+        """Load degraded tier2 state from persistent JSON file."""
+        try:
+            state_path = BASE_DIR / "data" / "llm_degraded_tier2.json"
+            if state_path.exists():
+                with open(state_path, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+                LLMRouter._degraded_tier2_models = set(state.get("degraded", []))
+                LLMRouter._degraded_tier2_probed_at = state.get("probed_at", {})
+                if LLMRouter._degraded_tier2_models:
+                    logger.info(
+                        "Loaded %d degraded tier2 models from state: %s",
+                        len(LLMRouter._degraded_tier2_models),
+                        sorted(list(LLMRouter._degraded_tier2_models)),
+                    )
+        except Exception:
+            pass
 
     # -------------------------------------------------------------------
     # No-LLM mode (deterministic-only environments)
@@ -332,7 +441,6 @@ class LLMRouter:
                 api_key_env = provider_cfg.get("api_key_env", "")
                 api_key = _expand_env(provider_cfg.get("api_key", ""))
                 if not api_key and api_key_env:
-                    import os
                     api_key = os.getenv(api_key_env, "")
                 instance = OllamaProvider(base_url=base_url, api_key=api_key)
 
@@ -1193,6 +1301,10 @@ class LLMRouter:
           planner_functions  → Claude directly (no qwen3 pre-step)
           worker_functions   → qwen3 compact draft → Claude review
           scanner_functions  → qwen3 only (no review)
+
+        D-AUTO-DEGRADE: When tier2 (Claude) hits rate limits, it is degraded
+        and the fallback tier1 model is used instead. Recovery probes run
+        every 5 minutes to detect when Anthropic is available again.
         """
         cfg = self._config.get("two_tier", {})
         # Allow env var override: LLM_TWO_TIER_ENABLED=false disables two-tier
@@ -1208,6 +1320,29 @@ class LLMRouter:
         workers = cfg.get("worker_functions", [])
         scanners = cfg.get("scanner_functions", [])
 
+        # D-AUTO-DEGRADE: If tier2 is degraded, use tier1 as fallback
+        effective_tier2 = tier2
+        if self._is_tier2_degraded(tier2):
+            if self._should_probe_degraded(tier2):
+                if self._probe_degraded_tier2(tier2):
+                    self._recover_tier2_model(tier2)
+                else:
+                    effective_tier2 = self._get_degraded_tier2_fallback(cfg)
+                    logger.warning(
+                        "Two-tier: tier2 %s is degraded, falling back to %s for %s",
+                        tier2,
+                        effective_tier2,
+                        function,
+                    )
+            else:
+                effective_tier2 = self._get_degraded_tier2_fallback(cfg)
+                logger.debug(
+                    "Two-tier: tier2 %s still degraded, using %s for %s",
+                    tier2,
+                    effective_tier2,
+                    function,
+                )
+
         # Dual-model mode: swap tier1 for smaller model to fit 2 models in VRAM
         if self.is_dual_model_active(cfg):
             dm = cfg.get("dual_model", {})
@@ -1217,9 +1352,26 @@ class LLMRouter:
                 logger.debug("Dual-model active: tier1 swapped to %s", tier1)
 
         if function in planners:
-            # Claude plans directly
-            logger.debug("Two-tier: %s → planner (Claude direct)", function)
-            result = self._invoke_model_direct(tier2, request)
+            # Claude plans directly (or degraded fallback)
+            logger.debug("Two-tier: %s → planner (%s direct)", function, effective_tier2)
+            try:
+                result = self._invoke_model_direct(effective_tier2, request)
+            except Exception as exc:
+                # D-AUTO-DEGRADE: Detect rate limit during invocation
+                if self._is_rate_limit_error(exc):
+                    resume_at = self._parse_reset_time_from_error(exc)
+                    self._degrade_tier2_model(effective_tier2, resume_at=resume_at)
+                    fallback = self._get_degraded_tier2_fallback(cfg)
+                    logger.warning(
+                        "Two-tier: planner %s rate-limited for %s, falling back to %s (resume_at=%s)",
+                        effective_tier2,
+                        function,
+                        fallback,
+                        datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
+                    )
+                    result = self._invoke_model_direct(fallback, request)
+                else:
+                    raise
             if result is not None:
                 return result
             # Fall through to chain on failure
@@ -1238,9 +1390,10 @@ class LLMRouter:
             if ft_override:
                 # Fine-tuned model replaces qwen3 as drafter
                 logger.debug(
-                    "Two-tier: %s → worker (fine-tuned %s draft → Claude review)",
+                    "Two-tier: %s → worker (fine-tuned %s draft → %s review)",
                     function,
                     ft_override,
+                    effective_tier2,
                 )
                 draft = self._invoke_finetuned_model(
                     ft_override,
@@ -1248,12 +1401,27 @@ class LLMRouter:
                 )
             else:
                 # Default: qwen3 drafts
-                logger.debug("Two-tier: %s → worker (qwen3 draft → Claude review)", function)
+                logger.debug("Two-tier: %s → worker (qwen3 draft → %s review)", function, effective_tier2)
                 draft = self._invoke_model_direct(tier1, self._draft_request(augmented))
 
             if draft is not None:
                 review_req = self._review_request(request, draft, function)
-                reviewed = self._invoke_model_direct(tier2, review_req)
+                try:
+                    reviewed = self._invoke_model_direct(effective_tier2, review_req)
+                except Exception as exc:
+                    # D-AUTO-DEGRADE: Detect rate limit during review
+                    if self._is_rate_limit_error(exc):
+                        resume_at = self._parse_reset_time_from_error(exc)
+                        self._degrade_tier2_model(effective_tier2, resume_at=resume_at)
+                        logger.warning(
+                            "Two-tier: review %s rate-limited for %s, returning draft (resume_at=%s)",
+                            effective_tier2,
+                            function,
+                            datetime.fromtimestamp(resume_at, tz=timezone.utc).isoformat() if resume_at else "default",
+                        )
+                        return draft
+                    else:
+                        raise
                 if reviewed is not None:
                     # Store draft on response for audit/observability
                     reviewed.draft_content = draft.content  # type: ignore[attr-defined]
@@ -1280,6 +1448,73 @@ class LLMRouter:
             # Fall through to chain on failure
 
         return None  # Not in two_tier config or model unavailable → use chain
+
+    @staticmethod
+    def _is_rate_limit_error(exc: Exception) -> bool:
+        """Check if an exception is a rate-limit error."""
+        exc_str = str(exc).lower()
+        if "llmratelimit" in type(exc).__name__.lower() or "rate limit" in exc_str:
+            return True
+        if any(pattern in exc_str for pattern in (
+            "429", "too many requests", "token limit", "quota exceeded",
+            "usage limit", "capacity", "please try again", "exceeded",
+        )):
+            return True
+        return False
+
+    @staticmethod
+    def _parse_reset_time_from_error(exc: Exception) -> float:
+        """Parse a reset/resume time from an Anthropic rate-limit error message.
+
+        Returns Unix timestamp (float) if a reset time is found, otherwise 0.0.
+        """
+        import re
+        from datetime import datetime, timezone
+
+        text = str(exc)
+        now = datetime.now(timezone.utc)
+
+        # Pattern 1: "resets 7am (America/New_York)" or "resets at 7am"
+        m = re.search(r'resets\s+(?:at\s+)?(\d{1,2}:\d{2}\s*(?:am|pm))', text, re.IGNORECASE)
+        if m:
+            time_str = m.group(1).strip()
+            # Try to parse with timezone context — assume today, use UTC if no tz
+            try:
+                # Use dateparser if available; otherwise simple parse
+                try:
+                    import dateparser
+                    dt = dateparser.parse(time_str, settings={'RELATIVE_BASE': now.replace(tzinfo=None)})
+                    if dt:
+                        return dt.replace(tzinfo=timezone.utc).timestamp()
+                except ImportError:
+                    pass
+                # Simple fallback: parse "7:00am" as today's time in UTC
+                fmt = "%I:%M%p" if ":" in time_str else "%I%p"
+                parsed = datetime.strptime(time_str.replace(":", "").replace(" ", ""), fmt)
+                resume = now.replace(hour=parsed.hour, minute=parsed.minute, second=0, microsecond=0)
+                if resume <= now:
+                    resume = resume.replace(day=resume.day + 1)  # Next day if already passed
+                return resume.timestamp()
+            except Exception:
+                pass
+
+        # Pattern 2: "try again in 5 minutes" or "retry after 5 minutes"
+        m = re.search(r'(?:try again|retry after|wait)\s+(?:in\s+)?(\d+)\s*minute', text, re.IGNORECASE)
+        if m:
+            minutes = int(m.group(1))
+            return (now.replace(minute=now.minute + minutes)).timestamp()
+
+        # Pattern 3: ISO timestamp in error body (some APIs embed JSON)
+        m = re.search(r'"retry_after"\s*:\s*"([^"]+)"', text)
+        if m:
+            try:
+                from datetime import datetime as _dt
+                dt = _dt.fromisoformat(m.group(1).replace("Z", "+00:00"))
+                return dt.timestamp()
+            except Exception:
+                pass
+
+        return 0.0
 
     def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
@@ -1456,14 +1691,12 @@ class LLMRouter:
                 )
 
             try:
-                import time as _time
-
-                _start = _time.time()
+                _start = time.time()
                 # Stamp route-level config onto request so providers can read flags like disable_thinking
                 route_cfg = self._config.get("routing", {}).get(function, {})
                 request._route_config = route_cfg
                 response = provider.invoke(request, model_id, model_cfg)
-                _latency = int((_time.time() - _start) * 1000)
+                _latency = int((time.time() - _start) * 1000)
 
                 if span:
                     span.set_attribute("gen_ai.response.model", getattr(response, "model_id", model_id))
