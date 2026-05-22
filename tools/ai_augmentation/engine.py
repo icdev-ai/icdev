@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from tools.ai_augmentation.agent_readiness import run_readiness_check
+from tools.ai_augmentation.capability_mapper import map_capabilities
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.opportunity_scorer import score_opportunity
 from tools.ai_augmentation.pattern_classifier import detect_patterns
@@ -292,6 +293,15 @@ def run_scan(
             paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
             il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
 
+            # Compute score first so capability mapper can use it.
+            score = score_opportunity(pat, scan_context)
+
+            # Enrich pattern_detail with NIST AI RMF + OWASP tags.
+            tags = map_capabilities(pat, score, scan_context)
+            pattern_detail = dict(pat.get("pattern_detail", {}))
+            pattern_detail["nist_ai_rmf"] = tags["nist_ai_rmf"]
+            pattern_detail["owasp_llm_risk"] = tags["owasp_llm_risk"]
+
             cur = _exec(
                 conn,
                 "INSERT INTO aac_opportunities "
@@ -306,7 +316,7 @@ def run_scan(
                     pat.get("line_end", 0),
                     pat.get("language", "python"),
                     pat["pattern_type"],
-                    _dump(pat.get("pattern_detail", {})),
+                    _dump(pattern_detail),
                     paradigm,
                     il_model,
                     _dump({}),
@@ -315,7 +325,6 @@ def run_scan(
             conn.commit()
             opp_id: int = cur.lastrowid
 
-            score = score_opportunity(pat, scan_context)
             _exec(
                 conn,
                 "INSERT INTO aac_scores "
