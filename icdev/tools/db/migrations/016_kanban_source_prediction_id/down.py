@@ -11,6 +11,28 @@ import sqlite3
 MIGRATION_ID = "016"
 MIGRATION_NAME = "kanban_source_prediction_id"
 
+# Snapshot DDL: schema of kanban_tasks at the time migration 016 was applied
+# (post-012 TEXT PK rebuild, post-015 depends_on_task_id, plus 016 source_prediction_id).
+# Used as fallback in the rename-copy-drop path when sqlite_master returns None.
+_CREATE_TABLE_KANBAN_TASKS_OLD_016 = """\
+CREATE TABLE kanban_tasks_old_016 (
+    id                   TEXT PRIMARY KEY,
+    title                TEXT NOT NULL,
+    description          TEXT,
+    task_type            TEXT DEFAULT 'build',
+    priority             TEXT DEFAULT 'high',
+    status               TEXT DEFAULT 'backlog',
+    scheduled_at         TEXT,
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    completed_at         TEXT,
+    executor_type        TEXT DEFAULT 'claude_cli',
+    execution_id         TEXT,
+    executor_url         TEXT,
+    depends_on_task_id   TEXT,
+    source_prediction_id TEXT
+)"""
+
 
 def _has_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
@@ -34,11 +56,13 @@ def down(conn: sqlite3.Connection) -> dict:
         ]
         col_list = ", ".join(cols)
         conn.execute("ALTER TABLE kanban_tasks RENAME TO kanban_tasks_old_016")
-        create_sql = conn.execute(
+        row = conn.execute(
             "SELECT sql FROM sqlite_master WHERE type='table' "
             "AND name='kanban_tasks_old_016'"
-        ).fetchone()[0]
-        create_sql = create_sql.replace("kanban_tasks_old_016", "kanban_tasks")
+        ).fetchone()
+        create_sql = (row[0] if row else _CREATE_TABLE_KANBAN_TASKS_OLD_016).replace(
+            "kanban_tasks_old_016", "kanban_tasks"
+        )
         import re
 
         create_sql = re.sub(
