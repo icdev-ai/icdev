@@ -487,6 +487,10 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
     effort: medium
 
+  ip_planning:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
   panel_persona_response:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, kimi-cloud]

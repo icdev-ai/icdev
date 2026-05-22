@@ -14005,6 +14005,7 @@ def init_db():
             # NDC↔Migration integration: phase lifecycle metadata
             ("nc_migration_phases", "classification", "TEXT DEFAULT 'CUI'"),
             ("nc_migration_phases", "impact_level", "TEXT DEFAULT 'IL4'"),
+            ("nc_migration_phases", "properties_json", "TEXT DEFAULT '{}'"),
             # NDC↔Migration integration: traffic flow ↔ phase link
             ("nc_traffic_flows", "phase_id", "TEXT"),
             # Partner registry: add partner_id + approval columns to nc_peering_agreements

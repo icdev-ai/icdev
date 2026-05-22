@@ -84,6 +84,7 @@ DEMO_PROJECTS = [
                 "duration_days": 5,
                 "maintenance_window": "Business hours",
                 "rollback_criteria": "N/A - read-only phase",
+                "properties": {"changing_devices": [], "new_devices": [], "retiring_devices": [], "context_devices": ["node-dewie-mx1003"]},
                 "sop_keywords": [
                     ("bcap", "nIPRNet", "onboarding"),
                     ("bgp route filtering", "prefix list"),
@@ -104,6 +105,7 @@ DEMO_PROJECTS = [
                 "duration_days": 7,
                 "maintenance_window": "Business hours",
                 "rollback_criteria": "Lab only — no production impact",
+                "properties": {"changing_devices": ["node-dewie-mx1003"], "new_devices": ["node-dewie-mx304"], "retiring_devices": []},
                 "sop_keywords": [
                     ("bgp route filtering", "prefix list"),
                     ("juniper", "junos", "vpn peer"),
@@ -123,6 +125,7 @@ DEMO_PROJECTS = [
                 "duration_days": 5,
                 "maintenance_window": "Business hours",
                 "rollback_criteria": "Lab — decommission lab BGP sessions",
+                "properties": {"changing_devices": ["node-dewie-mx1003"], "new_devices": ["node-dewie-mx304"], "retiring_devices": []},
                 "sop_keywords": [
                     ("ebgp multi-hop", "multi-hop"),
                     ("jwics connectivity troubleshooting", "connectivity troubleshooting"),
@@ -142,6 +145,7 @@ DEMO_PROJECTS = [
                 "duration_days": 1,
                 "maintenance_window": "0200-0600 EST (DISA window)",
                 "rollback_criteria": "Revert patch panel to MX1003 within 10 minutes if BGP not up",
+                "properties": {"changing_devices": ["node-dewie-mx1003"], "new_devices": ["node-dewie-mx304"], "retiring_devices": []},
                 "sop_keywords": [
                     ("full network connectivity verification", "nipr + jwics"),
                     ("bcap onboarding", "nIPRNet cloud on-ramp"),
@@ -161,6 +165,7 @@ DEMO_PROJECTS = [
                 "duration_days": 1,
                 "maintenance_window": "0200-0600 EST",
                 "rollback_criteria": "Move ISP handoff back to MX1003 if BGP not stable in 15 min",
+                "properties": {"changing_devices": ["node-dewie-mx1003"], "new_devices": ["node-dewie-mx304"], "retiring_devices": []},
                 "sop_keywords": [
                     ("bgp route filtering", "prefix list"),
                     ("bgp session", "diagnosis"),
@@ -180,6 +185,7 @@ DEMO_PROJECTS = [
                 "duration_days": 3,
                 "maintenance_window": "Business hours",
                 "rollback_criteria": "N/A - decom only after 48h stability confirmation",
+                "properties": {"changing_devices": [], "new_devices": [], "retiring_devices": ["node-dewie-mx1003"]},
                 "sop_keywords": [
                     ("full network connectivity verification", "nipr + jwics"),
                 ],
@@ -215,16 +221,17 @@ def seed_demo_migrations(reset: bool = False) -> dict:
                 projects_created += 1
 
             for ph in proj["phases"]:
+                props = json.dumps(ph.get("properties", {}))
                 # Create phase
                 conn.execute(
                     """INSERT OR IGNORE INTO nc_migration_phases
                        (id, project_id, phase_num, title, description,
                         duration_days, maintenance_window, rollback_criteria,
-                        status, classification, impact_level, created_at)
-                       VALUES (?,?,?,?,?,?,?,?,'pending','CUI','IL4',?)""",
+                        status, classification, impact_level, properties_json, created_at)
+                       VALUES (?,?,?,?,?,?,?,?,'pending','CUI','IL4',?,?)""",
                     (ph["id"], proj["id"], ph["phase_num"], ph["title"],
                      ph["description"], ph["duration_days"],
-                     ph["maintenance_window"], ph["rollback_criteria"], _now()),
+                     ph["maintenance_window"], ph["rollback_criteria"], props, _now()),
                 )
                 if conn.execute("SELECT changes()").fetchone()[0] > 0:
                     phases_created += 1

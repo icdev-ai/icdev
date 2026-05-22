@@ -255,11 +255,16 @@
                     <li><a href="/quality/runbooks">Runbooks</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
-                    {% if aadc_enabled %}
+                    {% if aadc_enabled or demo_runner_enabled %}
                     <li class="nav-section-label">Agentic AI</li>
+                    {% if aadc_enabled %}
                     <li><a href="/agentic-ai/" style="color:#a5b4fc;">Dashboard</a></li>
                     <li><a href="/agentic-ai/canvas/new">New Design</a></li>
                     <li><a href="/agentic-ai/impact-graph">Impact Graph</a></li>
+                    {% endif %}
+                    {% if demo_runner_enabled %}
+                    <li><a href="/demo-runner/" style="color:#f59e0b;">&#9654; Demo Runner</a></li>
+                    {% endif %}
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if aimc_enabled %}
@@ -326,11 +331,6 @@
                     {% if aac_enabled %}
                     <li class="nav-section-label">AI Augmentation</li>
                     <li><a href="/ai-augmentation/" style="color:#6ee7b7;">AI Augmentation</a></li>
-                    <li class="nav-dropdown-divider"></li>
-                    {% endif %}
-                    {% if demo_runner_enabled %}
-                    <li class="nav-section-label">Demo Runner</li>
-                    <li><a href="/demo-runner/" style="color:#f59e0b;">AI Canvas Demo Runner</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if govlift_enabled %}

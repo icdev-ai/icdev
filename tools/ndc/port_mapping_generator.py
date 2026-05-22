@@ -35,12 +35,12 @@ _INTERFACE_PATTERNS = {
         "tunnel": re.compile(r"interface Tunnel(\d+)"),
     },
     "juniper": {
-        "ge": re.compile(r"interface ge-(\d+/\d+/\d+)"),
-        "xe": re.compile(r"interface xe-(\d+/\d+/\d+)"),
-        "et": re.compile(r"interface et-(\d+/\d+/\d+)"),
-        "ae": re.compile(r"interface ae(\d+)"),
-        "lo": re.compile(r"interface lo(\d+)"),
-        "irb": re.compile(r"interface irb\.(\d+)"),
+        "ge": re.compile(r"(?:interface\s+)?ge-(\d+/\d+/\d+)"),
+        "xe": re.compile(r"(?:interface\s+)?xe-(\d+/\d+/\d+)"),
+        "et": re.compile(r"(?:interface\s+)?et-(\d+/\d+/\d+)"),
+        "ae": re.compile(r"(?:interface\s+)?ae(\d+)"),
+        "lo": re.compile(r"(?:interface\s+)?lo(\d+)"),
+        "irb": re.compile(r"(?:interface\s+)?irb\.(\d+)"),
     },
     "arista": {
         "ethernet": re.compile(r"interface Ethernet(\d+)"),
@@ -74,6 +74,7 @@ _PORT_MAP_RULES = {
     ("juniper", "et"): ("arista", "Ethernet", lambda x: x.replace("-", "")),
     ("juniper", "ae"): ("arista", "Port-Channel", lambda x: x),
     ("juniper", "lo"): ("arista", "Loopback", lambda x: x),
+    ("juniper", "irb"): ("arista", "Vlan", lambda x: x),
 }
 
 
@@ -94,7 +95,7 @@ def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[Dict[str, 
 def _get_config(conn: sqlite3.Connection, device_id: str) -> str:
     row = conn.execute(
         """SELECT config_text FROM ni_device_configs
-           WHERE device_id=? ORDER BY collected_at DESC LIMIT 1""",
+           WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
         (device_id,),
     ).fetchone()
     return row["config_text"] if row and row["config_text"] else ""

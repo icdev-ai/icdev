@@ -78,12 +78,23 @@ _RULES_CISCO_TO_JUNIPER: List[tuple[str, str]] = [
 ]
 
 _RULES_JUNIPER_TO_ARISTA: List[tuple[str, str]] = [
-    (r"interface ge-", "interface Ethernet"),
-    (r"interface xe-", "interface Ethernet"),
-    (r"interface et-", "interface Ethernet"),
-    (r"interface ae", "interface Port-Channel"),
-    (r"interface lo", "interface Loopback"),
-    (r"interface irb\.", "interface Vlan"),
+    # Interface declarations (JunOS uses "ge-0/0/0 {" without "interface" prefix)
+    (r"^\s*ge-(\d+/\d+/\d+)\s*\{", r"interface Ethernet\1 {"),
+    (r"^\s*xe-(\d+/\d+/\d+)\s*\{", r"interface Ethernet\1 {"),
+    (r"^\s*et-(\d+/\d+/\d+)\s*\{", r"interface Ethernet\1 {"),
+    (r"^\s*ae(\d+)\s*\{", r"interface Port-Channel\1 {"),
+    (r"^\s*lo(\d+)\s*\{", r"interface Loopback\1 {"),
+    (r"^\s*irb\.(\d+)\s*\{", r"interface Vlan\1 {"),
+    # Descriptions (strip trailing semicolon)
+    (r'\s+description "([^"]+)";', r'  description \1'),
+    # Basic protocol flattening hints
+    (r"^\s*protocols\s*\{bgp\s*\{", "router bgp {"),
+    (r"^\s*protocols\s*\{ospf\s*\{", "router ospf {"),
+    (r"^\s*routing-options\s*\{", "! routing-options (flattened)"),
+    (r"^\s*policy-options\s*\{", "! policy-options (flattened)"),
+    (r"^\s*firewall\s*\{", "! firewall (flattened)"),
+    # Braces cleanup
+    (r"^\s*}\s*$", "! }"),
 ]
 
 
@@ -104,7 +115,7 @@ def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[Dict[str, 
 def _get_config(conn: sqlite3.Connection, device_id: str) -> str:
     row = conn.execute(
         """SELECT config_text FROM ni_device_configs
-           WHERE device_id=? ORDER BY collected_at DESC LIMIT 1""",
+           WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
         (device_id,),
     ).fetchone()
     return row["config_text"] if row and row["config_text"] else ""

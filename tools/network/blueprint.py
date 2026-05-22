@@ -1131,6 +1131,8 @@ def create_network_blueprint():
                 coa_data = {}
 
         # Pick an EOL edge device from the first topology for demo consistency
+        target_node_id = None
+        target_device_id_for_tools = None
         if first_topo_id:
             try:
                 graph = json.loads(
@@ -1144,11 +1146,20 @@ def create_network_blueprint():
                     if n.get("eol") or n.get("meta", {}).get("eol_date")
                 ]
                 if eol_nodes:
-                    target_device_id = eol_nodes[0].get("id")
+                    target_node_id = eol_nodes[0].get("id")
+                    # Resolve topology node_id → ni_devices.id for tool calls
+                    dev_row = conn.execute(
+                        "SELECT id FROM ni_devices WHERE node_id=?",
+                        (target_node_id,),
+                    ).fetchone()
+                    target_device_id_for_tools = dev_row["id"] if dev_row else target_node_id
             except Exception:
-                target_device_id = None
+                target_node_id = None
+                target_device_id_for_tools = None
 
-        if target_device_id:
+        target_device_id = target_node_id
+
+        if target_device_id_for_tools:
             # Generate COAs if missing
             if not coa_data:
                 try:
@@ -1191,14 +1202,14 @@ def create_network_blueprint():
             # Port mapping
             try:
                 from tools.ndc.port_mapping_generator import generate_port_mapping
-                port_mapping = generate_port_mapping(target_device_id)
+                port_mapping = generate_port_mapping(target_device_id_for_tools)
             except Exception:
                 port_mapping = {}
 
             # Config translation
             try:
                 from tools.ndc.config_translator import generate_config_translation
-                config_translation = generate_config_translation(target_device_id, target_vendor="arista")
+                config_translation = generate_config_translation(target_device_id_for_tools, target_vendor="arista")
             except Exception:
                 config_translation = {}
 
@@ -12159,7 +12170,11 @@ Planning rules:
     @bp.route("/api/topologies/<topo_id>/plan-ips", methods=["POST"])
     @nc_login_required
     def nc_api_plan_ips(topo_id):
-        """AI-assisted IP address planning: supernet → subnet/host allocation."""
+        """AI-assisted IP address planning: supernet → subnet/host allocation.
+
+        Uses ICDEV™ LLM Router when available; falls back to deterministic
+        subnet allocation so the feature works regardless of API keys.
+        """
         conn = get_connection()
         topo = conn.execute(
             "SELECT id, name, graph_json FROM topologies WHERE id=?",
@@ -12177,11 +12192,6 @@ Planning rules:
         if strategy not in ("balanced", "power-of-2", "flat"):
             strategy = "balanced"
 
-        import re
-
-        import requests as _req
-        from tools.http.client import request as _req_request
-
         # Parse graph nodes
         try:
             graph_data = json.loads(topo["graph_json"] or "{}")
@@ -12189,7 +12199,6 @@ Planning rules:
             graph_data = {}
         nodes = graph_data.get("nodes", [])
 
-        # Skip purely decorative/drawing elements
         _SKIP_TYPES = {
             "draw-rect", "draw-rounded-rect", "text-heading", "text-label",
             "text-badge", "media-fiber", "media-ge", "media-10ge", "media-100ge",
@@ -12203,17 +12212,90 @@ Planning rules:
         if not routable:
             return jsonify({"error": "No addressable nodes found in topology"}), 400
 
-        user_prompt = (
-            f"Topology: {topo['name']}\n"
-            f"Supernet: {supernet}\n"
-            f"Strategy: {strategy}\n\n"
-            f"Nodes:\n{json.dumps(routable, indent=2)}\n\n"
-            f"Assign IP CIDRs from the supernet to these nodes using the {strategy} strategy."
-        )
+        def _plan_ips_deterministic(nodes, strategy):
+            """Deterministic subnet allocator using Python ipaddress."""
+            import ipaddress
+            net = ipaddress.ip_network(supernet, strict=False)
+
+            SEGMENT_TYPES = {
+                "subnet", "vlan", "security-zone", "vrf",
+                "aws-subnet", "aws-vpc", "az-vnet", "gcp-vpc",
+            }
+            INFRA_TYPES = {"router", "firewall", "sdwan-edge"}
+            DIST_TYPES = {"switch-l2", "switch-l3", "switch", "load-balancer"}
+            COMPUTE_TYPES = {"server", "siem", "wap"}
+
+            groups = {}
+            for node in nodes:
+                t = node.get("type", "")
+                if t in SEGMENT_TYPES:
+                    key = "segment_" + t
+                elif t in INFRA_TYPES:
+                    key = "infra"
+                elif t in DIST_TYPES:
+                    key = "distribution"
+                elif t in COMPUTE_TYPES:
+                    key = "compute"
+                else:
+                    key = "general"
+                groups.setdefault(key, []).append(node)
+
+            if not groups:
+                return {"assignments": []}
+
+            group_items = list(groups.items())
+
+            if strategy == "flat":
+                prefix_len = 24
+                base = int(net.network_address)
+                subnets = []
+                for i in range(len(group_items)):
+                    subnets.append(
+                        ipaddress.ip_network(
+                            f"{ipaddress.ip_address(base + i * 256)}/{prefix_len}",
+                            strict=False,
+                        )
+                    )
+            else:
+                needed_bits = (len(group_items) - 1).bit_length()
+                new_prefix = net.prefixlen + needed_bits
+                if new_prefix > 30:
+                    new_prefix = 30
+                subnets = list(net.subnets(new_prefix=new_prefix))[:len(group_items)]
+
+            assignments = []
+            vlan_base = 10
+            for idx, (key, members) in enumerate(group_items):
+                subnet = subnets[idx]
+                hosts = list(subnet.hosts())
+                gateway = str(hosts[0]) if hosts else str(subnet.network_address + 1)
+                vlan = vlan_base + idx * 10
+                host_idx = 1
+                for node in members:
+                    t = node.get("type", "")
+                    if t in SEGMENT_TYPES:
+                        cidr = f"{subnet.network_address}/{subnet.prefixlen}"
+                    else:
+                        if host_idx < len(hosts):
+                            ip = hosts[host_idx]
+                            host_idx += 1
+                        else:
+                            ip = subnet.network_address + 2
+                        cidr = f"{ip}/{subnet.prefixlen}"
+                    assignments.append({
+                        "node_id": node.get("id", ""),
+                        "label": node.get("label", ""),
+                        "type": t,
+                        "cidr": cidr,
+                        "gateway": gateway,
+                        "vlan": vlan,
+                    })
+            return {"assignments": assignments}
 
         def _parse_ip_plan(content):
+            import re
             text = content.strip()
-            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            text = re.sub(r"\n?[\s\S]*?\n?", "", text, flags=re.DOTALL).strip()
             if text.startswith("```"):
                 lines = [ln for ln in text.split("\n") if not ln.strip().startswith("```")]
                 text = "\n".join(lines).strip()
@@ -12221,100 +12303,56 @@ Planning rules:
             end = text.rfind("}") + 1
             if start < 0 or end <= start:
                 return None, text[:500]
-            result = json.loads(text[start:end])
+            try:
+                result = json.loads(text[start:end])
+            except json.JSONDecodeError:
+                return None, text[:500]
             if "assignments" not in result:
                 return None, text[:500]
             return result, None
 
-        def _call_claude_ip(prompt):
-            api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-            if not api_key:
-                return None, "No ANTHROPIC_API_KEY set"
-            model = os.environ.get("ANTHROPIC_TOPO_MODEL", "claude-sonnet-4-20250514")
-            r = _req_request(
-                "POST",
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "max_tokens": 4096,
-                    "temperature": 0.1,
-                    "system": _IP_PLAN_SYSTEM_PROMPT,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-                timeout=60,
-            )
-            r.raise_for_status()
-            return r.json().get("content", [{}])[0].get("text", ""), None
+        # Deterministic result is always available
+        used_provider = "deterministic"
+        result = _plan_ips_deterministic(routable, strategy)
 
-        def _call_ollama_ip(prompt):
-            ollama_url = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-            ollama_model = os.environ.get("OLLAMA_TOPO_MODEL", "llama3.2:3b")
-            r = _req_request(
-                "POST",
-                f"{ollama_url}/api/chat",
-                json={
-                    "model": ollama_model,
-                    "messages": [
-                        {"role": "system", "content": _IP_PLAN_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
-                    ],
-                    "stream": False,
-                    "options": {"num_predict": 4096, "temperature": 0.1},
-                },
-                timeout=120,
-            )
-            r.raise_for_status()
-            return r.json().get("message", {}).get("content", ""), None
-
+        # Attempt LLM enhancement via ICDEV™ router (optional, non-blocking)
         try:
-            provider = os.environ.get("NC_AI_PROVIDER", "auto")
-            content = None
-            used_provider = ""
+            from icdev.tools.llm.router import LLMRouter
+            from icdev.tools.llm.provider import LLMRequest
+            router = LLMRouter()
+            req = LLMRequest(
+                system_prompt=_IP_PLAN_SYSTEM_PROMPT,
+                messages=[
+                    {"role": "user", "content": (
+                        f"Topology: {topo['name']}\n"
+                        f"Supernet: {supernet}\n"
+                        f"Strategy: {strategy}\n\n"
+                        f"Nodes:\n{json.dumps(routable, indent=2)}\n\n"
+                        f"Assign IP CIDRs from the supernet to these nodes using the {strategy} strategy."
+                    )},
+                ],
+                max_tokens=4096,
+                temperature=0.1,
+            )
+            resp = router.invoke("ip_planning", req)
+            if resp and resp.content:
+                llm_result, raw = _parse_ip_plan(resp.content)
+                if llm_result and llm_result.get("assignments"):
+                    result = llm_result
+                    used_provider = resp.provider or "llm"
+        except Exception:
+            pass  # deterministic result already set
 
-            if provider in ("auto", "claude"):
-                content, err = _call_claude_ip(user_prompt)
-                if content:
-                    used_provider = "claude"
-                elif provider == "claude":
-                    return jsonify({"error": f"Claude API failed: {err}"}), 503
-
-            if not content and provider in ("auto", "ollama"):
-                content, err = _call_ollama_ip(user_prompt)
-                if content:
-                    used_provider = "ollama"
-                elif provider == "ollama":
-                    return jsonify({"error": f"Ollama failed: {err}"}), 503
-
-            if not content:
-                return jsonify({"error": "No LLM provider available. Set ANTHROPIC_API_KEY or start Ollama."}), 503
-
-            result, raw = _parse_ip_plan(content)
-            if result is None:
-                return jsonify({"error": "LLM did not return valid JSON", "raw": raw}), 422
-
-            _audit("IP_PLAN", "topology", topo_id,
-                   f"[{used_provider}] {supernet} ({strategy}) → {len(result['assignments'])} assignments")
-            return jsonify({
-                "assignments": result["assignments"],
-                "supernet": supernet,
-                "strategy": strategy,
-                "provider": used_provider,
-            })
-
-        except _req.exceptions.ConnectionError:
-            return jsonify({"error": "Cannot connect to LLM provider"}), 503
-        except _req.exceptions.Timeout:
-            return jsonify({"error": "LLM timed out — try a simpler topology"}), 504
-        except json.JSONDecodeError as exc:
-            return jsonify({"error": f"Invalid JSON from LLM: {exc}"}), 422
-        except Exception as exc:
-            logger.exception("IP plan failed")
-            return jsonify({"error": str(exc)}), 500
+        _audit(
+            "IP_PLAN", "topology", topo_id,
+            f"[{used_provider}] {supernet} ({strategy}) → {len(result['assignments'])} assignments",
+        )
+        return jsonify({
+            "assignments": result["assignments"],
+            "supernet": supernet,
+            "strategy": strategy,
+            "provider": used_provider,
+        })
 
     # ── AI Context Messages ────────────────────────────────────────────────
     @bp.route("/api/ai-context/<ctx_id>/messages", methods=["GET"])
@@ -12557,6 +12595,9 @@ Planning rules:
         from tools.network.migration_phases import (
             compute_infoboxes, compute_final_infoboxes,
             generate_phase_graph, generate_final_graph,
+            generate_phase_physical_graph, generate_phase_logical_graph,
+            compute_physical_infoboxes, compute_logical_infoboxes,
+            _annotate_physical_edges, _build_logical_graph,
             run_consolidation_analysis, load_consolidation,
         )
 
@@ -12575,7 +12616,8 @@ Planning rules:
             """
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
-                   mp.maintenance_window, mp.dependencies, mp.status
+                   mp.maintenance_window, mp.dependencies, mp.status,
+                   mp.properties_json
             FROM nc_migration_phases mp
             JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
             WHERE pt.topology_id = ?
@@ -12583,14 +12625,17 @@ Planning rules:
             """,
             (topo_id,),
         ).fetchall()
-        conn.close()
 
-        phases_list = [dict(p) if hasattr(p, "keys") else {
-            "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
-            "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
-            "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
-            "total_phases": len(phases),
-        } for p in phases]
+        phases_list = []
+        for p in phases:
+            d = dict(p) if hasattr(p, "keys") else {
+                "id": p[0], "phase_num": p[1], "title": p[2], "description": p[3],
+                "duration_days": p[4], "parallel_run": p[5], "rollback_criteria": p[6],
+                "maintenance_window": p[7], "dependencies": p[8], "status": p[9],
+                "properties_json": p[10] if len(p) > 10 else "{}",
+            }
+            d["total_phases"] = len(phases)
+            phases_list.append(d)
 
         # Build per-phase graphs and info boxes
         phase_data = []
@@ -12598,13 +12643,34 @@ Planning rules:
             pm["total_phases"] = len(phases_list)
             ph_graph = generate_phase_graph(current_graph, pm)
             ph_boxes = compute_infoboxes(ph_graph, phase_key=f"phase-{pm['phase_num']}", phase_meta=pm)
+
+            # Physical & Logical views (2-hop subgraphs with annotations)
+            try:
+                phy_graph = generate_phase_physical_graph(current_graph, pm, conn)
+                phy_boxes = compute_physical_infoboxes(phy_graph, phase_meta=pm)
+            except Exception:
+                phy_graph = ph_graph
+                phy_boxes = ph_boxes
+            try:
+                log_graph = generate_phase_logical_graph(current_graph, pm)
+                log_boxes = compute_logical_infoboxes(log_graph, phase_meta=pm)
+            except Exception:
+                log_graph = ph_graph
+                log_boxes = ph_boxes
+
             phase_data.append({
                 "phase_num": pm["phase_num"],
                 "title": pm["title"],
                 "status": pm["status"],
                 "graph": ph_graph,
                 "infoboxes": ph_boxes,
+                "graph_physical": phy_graph,
+                "infoboxes_physical": phy_boxes,
+                "graph_logical": log_graph,
+                "infoboxes_logical": log_boxes,
             })
+
+        conn.close()
 
         # Final/To-Be graph + consolidation
         final_graph = generate_final_graph(current_graph, phases_list)

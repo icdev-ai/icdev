@@ -774,3 +774,309 @@ def load_consolidation(topo_id: str) -> dict:
     except Exception:
         pass
     return {}
+
+
+# ── Physical / Logical Topology Diagram Builders ──────────────────────────────
+
+import re as _re
+
+
+def _two_hop_subgraph(graph: dict, center_ids: list[str]) -> dict:
+    """Return a subgraph containing all nodes within 2 hops of center_ids."""
+    if not center_ids:
+        return dict(graph)
+
+    nodes = {n["id"]: n for n in graph.get("nodes", [])}
+    edges = graph.get("edges", [])
+
+    # Build adjacency
+    adj: dict[str, list[str]] = {}
+    for e in edges:
+        s, t = e.get("source"), e.get("target")
+        if s and t:
+            adj.setdefault(s, []).append(t)
+            adj.setdefault(t, []).append(s)
+
+    # BFS up to 2 hops
+    included = set()
+    for cid in center_ids:
+        if cid not in nodes:
+            continue
+        included.add(cid)
+        for n1 in adj.get(cid, []):
+            included.add(n1)
+            for n2 in adj.get(n1, []):
+                included.add(n2)
+
+    filtered_nodes = [dict(nodes[nid]) for nid in included if nid in nodes]
+    filtered_edges = [
+        dict(e) for e in edges
+        if e.get("source") in included and e.get("target") in included
+    ]
+    return {"nodes": filtered_nodes, "edges": filtered_edges}
+
+
+def _get_device_interfaces(conn, device_id: str) -> list[dict]:
+    """Fetch running config and extract interface names + descriptions."""
+    try:
+        row = conn.execute(
+            """SELECT config_text FROM ni_device_configs
+               WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
+            (device_id,),
+        ).fetchone()
+        config = row["config_text"] if row and row["config_text"] else ""
+    except Exception:
+        config = ""
+
+    if not config:
+        # Try resolving node_id -> device_id
+        try:
+            dev_row = conn.execute(
+                "SELECT id FROM ni_devices WHERE node_id=?", (device_id,)
+            ).fetchone()
+            if dev_row:
+                did = dev_row["id"]
+                row = conn.execute(
+                    """SELECT config_text FROM ni_device_configs
+                       WHERE device_id=? ORDER BY created_at DESC LIMIT 1""",
+                    (did,),
+                ).fetchone()
+                config = row["config_text"] if row and row["config_text"] else ""
+        except Exception:
+            pass
+
+    if not config:
+        return []
+
+    interfaces = []
+    # Juniper style: ge-0/0/0 { description "..."; }
+    for m in _re.finditer(r'^\s*([gx]e-\d+/\d+/\d+|et-\d+/\d+/\d+|ae\d+|lo\d+|irb\.\d+)\s*\{', config, _re.MULTILINE):
+        name = m.group(1)
+        desc_match = _re.search(
+            rf'{_re.escape(name)}\s*\{{[^}}]*description\s+"([^"]+)"',
+            config, _re.DOTALL,
+        )
+        desc = desc_match.group(1) if desc_match else ""
+        interfaces.append({"name": name, "description": desc})
+    return interfaces
+
+
+def _infer_interface(edge: dict, device_interfaces: list[dict], is_source: bool) -> str | None:
+    """Heuristic: pick the best interface from device_interfaces for this edge."""
+    etype = (edge.get("type") or "").lower()
+    label = (edge.get("label") or "").lower()
+    desc_keyword = ""
+
+    if "wan" in etype or "isp" in label or "bgp" in label:
+        desc_keyword = "isp"
+    elif "circuit" in etype or "core" in label or "inside" in etype:
+        desc_keyword = "south|lag|owned|core"
+    elif "backbone" in etype:
+        desc_keyword = "backbone|trunk"
+    elif "e" in etype and "bgp" in label:
+        desc_keyword = "bgp|peer"
+
+    # Prefer interface whose description matches the keyword
+    if desc_keyword:
+        for iface in device_interfaces:
+            if _re.search(desc_keyword, iface.get("description", "").lower()):
+                return iface["name"]
+
+    # Fallback: first physical interface (skip loopback)
+    for iface in device_interfaces:
+        if not iface["name"].startswith("lo") and not iface["name"].startswith("irb"):
+            return iface["name"]
+
+    # Last resort: any interface
+    return device_interfaces[0]["name"] if device_interfaces else None
+
+
+def _annotate_physical_edges(graph: dict, conn) -> dict:
+    """Annotate each edge with source_interface and target_interface."""
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    # Pre-fetch interfaces for all nodes
+    node_id_to_interfaces: dict[str, list[dict]] = {}
+    for n in nodes:
+        nid = n.get("id", "")
+        node_id_to_interfaces[nid] = _get_device_interfaces(conn, nid)
+
+    for e in edges:
+        src = e.get("source", "")
+        tgt = e.get("target", "")
+        src_if = _infer_interface(e, node_id_to_interfaces.get(src, []), True)
+        tgt_if = _infer_interface(e, node_id_to_interfaces.get(tgt, []), False)
+        if src_if:
+            e["source_interface"] = src_if
+        if tgt_if:
+            e["target_interface"] = tgt_if
+        e["diagram_type"] = "physical"
+
+    return graph
+
+
+def _build_logical_graph(base_graph: dict) -> dict:
+    """Build a logical view: edges colored by protocol, nodes annotated with ASN/subnet."""
+    graph = {"nodes": [dict(n) for n in base_graph.get("nodes", [])], "edges": []}
+
+    # Enhance nodes with logical metadata
+    for n in graph["nodes"]:
+        meta = n.get("meta") or {}
+        n["logical"] = {
+            "asn": meta.get("bgp_asn") or "",
+            "role": meta.get("role") or n.get("type", ""),
+            "subnet": meta.get("mgmt_ip") or meta.get("ip") or "",
+            "vrfs": meta.get("vrfs") or [],
+            "vlans": meta.get("vlans") or [],
+        }
+
+    for e in base_graph.get("edges", []):
+        edge = dict(e)
+        etype = (edge.get("type") or "").lower()
+        label = (edge.get("label") or "").lower()
+
+        # Determine logical protocol
+        if "bgp" in label or "bgp" in etype:
+            edge["logical_type"] = "bgp"
+            edge["protocol"] = "BGP"
+            edge["protocol_color"] = "#8e44ad"  # purple
+        elif "ospf" in label or "ospf" in etype:
+            edge["logical_type"] = "ospf"
+            edge["protocol"] = "OSPF"
+            edge["protocol_color"] = "#27ae60"  # green
+        elif "isis" in label or "isis" in etype:
+            edge["logical_type"] = "isis"
+            edge["protocol"] = "ISIS"
+            edge["protocol_color"] = "#e67e22"  # orange
+        elif "static" in label or "static" in etype:
+            edge["logical_type"] = "static"
+            edge["protocol"] = "Static"
+            edge["protocol_color"] = "#7f8c8d"  # gray
+        elif "wan" in etype or "circuit" in etype or "backbone" in etype:
+            edge["logical_type"] = "transport"
+            edge["protocol"] = "Transport"
+            edge["protocol_color"] = "#2980b9"  # blue
+        elif "inside" in etype or "lag" in label:
+            edge["logical_type"] = "internal"
+            edge["protocol"] = "Internal"
+            edge["protocol_color"] = "#1abc9c"  # teal
+        else:
+            edge["logical_type"] = "unknown"
+            edge["protocol"] = "Unknown"
+            edge["protocol_color"] = "#95a5a6"
+
+        edge["diagram_type"] = "logical"
+        graph["edges"].append(edge)
+
+    return graph
+
+
+def _phase_center_ids(phase: dict) -> list[str]:
+    """Extract center node IDs from phase metadata."""
+    props = phase.get("properties_json") or phase.get("properties") or {}
+    if isinstance(props, str):
+        try:
+            props = json.loads(props)
+        except Exception:
+            props = {}
+    centers = []
+    for key in ("changing_devices", "new_devices", "retiring_devices", "context_devices"):
+        centers.extend(props.get(key) or [])
+    # Also include any explicit phase lists
+    centers.extend(phase.get("changing_devices") or [])
+    centers.extend(phase.get("new_devices") or [])
+    centers.extend(phase.get("retiring_devices") or [])
+    return list(dict.fromkeys(centers))  # dedupe preserve order
+
+
+def generate_phase_physical_graph(current_graph: dict, phase: dict, conn) -> dict:
+    """Generate a 2-hop physical topology with interface annotations."""
+    base = generate_phase_graph(current_graph, phase)
+    centers = _phase_center_ids(phase)
+    subgraph = _two_hop_subgraph(base, centers)
+    return _annotate_physical_edges(subgraph, conn)
+
+
+def generate_phase_logical_graph(current_graph: dict, phase: dict) -> dict:
+    """Generate a 2-hop logical topology with protocol annotations."""
+    base = generate_phase_graph(current_graph, phase)
+    centers = _phase_center_ids(phase)
+    subgraph = _two_hop_subgraph(base, centers)
+    return _build_logical_graph(subgraph)
+
+
+def compute_physical_infoboxes(graph: dict, phase_meta: dict | None = None) -> list[dict]:
+    """Info boxes specific to the physical connectivity view."""
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    iface_edges = [e for e in edges if e.get("source_interface") or e.get("target_interface")]
+    lag_count = sum(1 for e in edges if "ae" in (e.get("source_interface") or "") or "ae" in (e.get("target_interface") or ""))
+    fiber_count = sum(1 for e in edges if "xe" in (e.get("source_interface") or "") or "xe" in (e.get("target_interface") or ""))
+    copper_count = sum(1 for e in edges if "ge" in (e.get("source_interface") or "") or "ge" in (e.get("target_interface") or ""))
+
+    # Identify the migration focal device
+    focal = "—"
+    if phase_meta:
+        for key in ("changing_devices", "new_devices", "retiring_devices", "context_devices"):
+            devs = phase_meta.get(key) or phase_meta.get("properties", {}).get(key) or []
+            if devs:
+                focal = devs[0]
+                break
+
+    rows = [
+        {"label": "View", "value": "Physical (L1/L2)", "status": "info"},
+        {"label": "Devices Shown", "value": str(len(nodes)), "status": ""},
+        {"label": "Physical Links", "value": str(len(edges)), "status": ""},
+        {"label": "Interface-Mapped Links", "value": str(len(iface_edges)), "status": "ok" if iface_edges else "warn"},
+        {"label": "LAG / Port-Channels", "value": str(lag_count), "status": ""},
+        {"label": "Fiber (10G+)", "value": str(fiber_count), "status": ""},
+        {"label": "Copper (1G)", "value": str(copper_count), "status": ""},
+        {"label": "Focal Device", "value": focal, "status": "info"},
+    ]
+
+    return [
+        {"id": "phy-view-summary", "title": "Physical View Summary", "icon": "🔌", "color": "#1e6eb5", "rows": rows},
+        _box_device_inventory(nodes),
+        _box_link_utilization(edges, nodes),
+        _box_hardware_health(nodes),
+    ]
+
+
+def compute_logical_infoboxes(graph: dict, phase_meta: dict | None = None) -> list[dict]:
+    """Info boxes specific to the logical/routing view."""
+    nodes = graph.get("nodes", [])
+    edges = graph.get("edges", [])
+
+    protocols: dict[str, int] = {}
+    bgp_peers = 0
+    ospf_areas: set[str] = set()
+    for e in edges:
+        p = e.get("protocol") or e.get("logical_type", "Unknown")
+        protocols[p] = protocols.get(p, 0) + 1
+        if e.get("logical_type") == "bgp":
+            bgp_peers += 1
+
+    for n in nodes:
+        meta = n.get("meta") or {}
+        for a in (meta.get("ospf_areas") or []):
+            ospf_areas.add(str(a))
+
+    proto_rows = [{"label": p, "value": str(c), "status": "info"} for p, c in sorted(protocols.items(), key=lambda x: -x[1])]
+
+    rows = [
+        {"label": "View", "value": "Logical (L3)", "status": "info"},
+        {"label": "Devices Shown", "value": str(len(nodes)), "status": ""},
+        {"label": "Logical Links", "value": str(len(edges)), "status": ""},
+        {"label": "BGP Peerings", "value": str(bgp_peers), "status": "ok" if bgp_peers else "warn"},
+        {"label": "OSPF Areas", "value": ", ".join(sorted(ospf_areas)) if ospf_areas else "—", "status": ""},
+    ]
+    rows.extend(proto_rows)
+
+    return [
+        {"id": "log-view-summary", "title": "Logical View Summary", "icon": "🌐", "color": "#8e44ad", "rows": rows},
+        _box_routing_protocols(nodes, edges),
+        _box_ip_vlan(nodes, edges),
+        _box_security(nodes, edges),
+    ]
