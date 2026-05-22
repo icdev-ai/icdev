@@ -685,6 +685,13 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-zA-Z_][\w]*)",
         re.IGNORECASE,
     )
+    # ALTER TABLE x RENAME TO y is equivalent to "CREATE TABLE y" for the
+    # purposes of this check: the renamed table exists under the new name and
+    # any subsequent INSERT/SELECT against it is valid.
+    rename_re = re.compile(
+        r"ALTER\s+TABLE\s+[a-zA-Z_][\w]*\s+RENAME\s+TO\s+([a-zA-Z_][\w]*)",
+        re.IGNORECASE,
+    )
     # INSERT INTO must be followed by a SQL-valid continuation: a column
     # list `(...)`, ``VALUES``, a sub-``SELECT``, or ``DEFAULT VALUES``.
     # The lookahead filters out English prose like "Insert into append-only
@@ -701,15 +708,17 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         re.IGNORECASE,
     )
 
-    # First pass: collect CREATE TABLE from SQL-shaped string literals
-    # in .py files. Comments are stripped first so documentation inside
-    # SQL doesn't leak English prose into the regex matcher.
+    # First pass: collect CREATE TABLE (and RENAME TO) from SQL-shaped string
+    # literals in .py files. Comments are stripped first so documentation
+    # inside SQL doesn't leak English prose into the regex matcher.
     for py in _walk_py(tools_dir):
         for sql in _extract_py_string_literals(py):
             if not _is_likely_sql(sql):
                 continue
             sql_clean = _strip_sql_comments(sql)
             for m in create_re.finditer(sql_clean):
+                created.add(m.group(1).lower())
+            for m in rename_re.finditer(sql_clean):
                 created.add(m.group(1).lower())
 
     # Also scan raw .sql files (migrations written as pure SQL). These
@@ -720,6 +729,8 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
             continue
         src = _strip_sql_comments(_read_text(sql_path))
         for m in create_re.finditer(src):
+            created.add(m.group(1).lower())
+        for m in rename_re.finditer(src):
             created.add(m.group(1).lower())
 
     # Second pass: references from SQL-shaped string literals. Python
