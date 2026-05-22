@@ -44,6 +44,20 @@ AADC → MCP Tool Registry sync — upserts agent/tool nodes from a design into 
 - Syncs node types: `llm`, `llm-local`, `autonomous-agent`, `orchestrator`, `sub-agent`, `researcher-agent`, `writer-agent`, `reviewer-agent`, `mcp-server`, `mcp-gateway`, `tool-chain`, `external-api`
 - Supports both SQLite (`INSERT OR REPLACE`) and PostgreSQL (`ON CONFLICT DO UPDATE`) backends via `get_connection()`
 
+### `tools/db/seeds/seed_ai_canvases_aadc.py`
+Seed 8 DoD/IC synthetic AADC designs with full assessment, threat model, ATO, risk, red team, lifecycle, scorecard, and deploy gate data.
+```bash
+python tools/db/seeds/seed_ai_canvases_aadc.py          # idempotent
+python tools/db/seeds/seed_ai_canvases_aadc.py --reset  # wipe + reseed
+```
+
+### `tools/db/seeds/seed_ai_canvases_all.py`
+Combined orchestrator — seeds all AI canvas DoD/IC demo data (AADC, AIMC, AAC, Observatory, KG).
+```bash
+python tools/db/seeds/seed_ai_canvases_all.py --json        # all 5 steps
+python tools/db/seeds/seed_ai_canvases_all.py --reset-all   # wipe + reseed
+```
+
 ### `tools/agentic_ai_canvas/events.py`
 AADC Activity Feed Emitter — writes one row to `aadc_design_events` on each significant canvas action.
 - `emit_event(design_id, event_type, actor, metadata)` → bool (True on success, False if table missing or write fails — non-fatal)

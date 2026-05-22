@@ -222,3 +222,103 @@ rules:
     metadata:
       aac_pattern: large_rule_table
       ai_paradigm: decision_agent
+
+  # ── Spring Boot / JVM supplemental rules ─────────────────────────────────────
+
+  # Spring @Pattern annotation — regex constraint on a field
+  - id: aac-spring-pattern-annotation-java
+    pattern-either:
+      - pattern: |
+          @Pattern(regexp = $X)
+          private $TYPE $FIELD;
+      - pattern: |
+          @Pattern(regexp = $X, message = $MSG)
+          private $TYPE $FIELD;
+    message: "Spring @Pattern regexp constraint — replace with NLP-based phone/address normalizer"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: regex_user_input
+      ai_paradigm: nlp_extractor
+
+  # Spring Data derived query: findBy…StartingWith / Containing / Like
+  - id: aac-spring-data-keyword-query-java
+    pattern-either:
+      - pattern: $REPO.findBy$X($QUERY, ...)
+    message: "Spring Data keyword query — replace with embedding-based semantic search"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: keyword_list_search
+      ai_paradigm: embedding_search
+
+  # PageRequest with a numeric literal page size
+  - id: aac-pagerequest-literal-java
+    patterns:
+      - pattern: PageRequest.of($PAGE, $N)
+      - metavariable-regex:
+          metavariable: $N
+          regex: '^\d+$'
+    message: "Hardcoded page size in PageRequest.of — replace with adaptive pagination"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: hardcoded_threshold
+      ai_paradigm: anomaly_detection
+
+  # Spring @Scheduled — move to agentic workflow trigger
+  - id: aac-spring-scheduled-java
+    pattern: |
+      @Scheduled(...)
+      $MODS $RETURN $METHOD(...) {
+        ...
+      }
+    message: "@Scheduled annotation — replace with agentic workflow trigger"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: scheduled_cron
+      ai_paradigm: agentic_trigger
+
+  # @ModelAttribute returning a static collection from a repository
+  - id: aac-modelattribute-static-collection-java
+    pattern: |
+      @ModelAttribute($X)
+      public $COLLECTION $METHOD() {
+        return $REPO.$FIND(...);
+      }
+    message: "@ModelAttribute static collection — replace with ML-assisted suggestion/autocomplete"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: large_rule_table
+      ai_paradigm: decision_agent
+
+  # Spring MVC controller returning a Thymeleaf/JSP view name
+  - id: aac-spring-mvc-view-return-java
+    patterns:
+      - pattern: return "$VIEW";
+      - pattern-not: return "redirect:$X";
+      - pattern-not: return "forward:$X";
+    message: "Static MVC view-name return — consider LLM-augmented content generation"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: string_template_rendering
+      ai_paradigm: llm_generation
+
+  # Nested if depth ≥ 2 (Spring validation chains)
+  - id: aac-nested-conditionals-java-depth2
+    patterns:
+      - pattern: |
+          if (...) {
+            if (...) {
+              ...
+            }
+          }
+    message: "Nested conditionals (depth ≥ 2) in Java — replace with ML classifier"
+    languages: [java]
+    severity: INFO
+    metadata:
+      aac_pattern: nested_conditionals
+      ai_paradigm: ml_classifier

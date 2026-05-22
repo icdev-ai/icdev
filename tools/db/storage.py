@@ -1087,6 +1087,27 @@ def get_connection(db_path: str = None) -> StorageConnection:
         return conn
 
 
+def get_canvas_connection(canvas_env_var: str = None) -> "StorageConnection":
+    """Return a StorageConnection for a canvas-specific database, RLS disabled.
+
+    Canvas tables (aac_*, dsoc_*, ccc_*, etc.) do not have classification/tenant_id
+    columns, so the global RLS predicate injected by _attach_flask_security_context
+    would raise UndefinedColumn on every query.  Call this instead of get_connection()
+    in any canvas db/init_db.py that connects to a dedicated canvas schema.
+
+    Args:
+        canvas_env_var: Optional env-var name for a custom PG database name
+                        (e.g. ``"AAC_PG_DATABASE"``).  Falls through to the
+                        main backend if not set.
+
+    Returns:
+        A StorageConnection with security_context=None (no RLS filtering).
+    """
+    conn = get_connection(db_path=canvas_env_var and os.environ.get(canvas_env_var))
+    conn.set_security_context(None)
+    return conn
+
+
 def get_backend() -> str:
     """Return the current storage backend name."""
     return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()

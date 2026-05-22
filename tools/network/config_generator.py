@@ -94,6 +94,18 @@ def _nokia_sros_iface(index: int, is_loopback: bool = False) -> str:
     return f"1/1/{index + 1}"
 
 
+def _panos_iface(index: int, is_loopback: bool = False) -> str:
+    if is_loopback:
+        return f"loopback.{index + 1}"
+    return f"ethernet1/{index + 1}"
+
+
+def _fortios_iface(index: int, is_loopback: bool = False) -> str:
+    if is_loopback:
+        return "lo0"
+    return f"port{index + 1}"
+
+
 _IFACE_GEN: dict[str, Any] = {
     "ios_router": _ios_iface,
     "ios_switch": _ios_iface,
@@ -101,6 +113,8 @@ _IFACE_GEN: dict[str, Any] = {
     "junos": _junos_iface,
     "ios_xr": _ios_xr_iface,
     "nokia_sros": _nokia_sros_iface,
+    "panos": _panos_iface,
+    "fortios": _fortios_iface,
 }
 
 # ---------------------------------------------------------------------------
@@ -127,6 +141,13 @@ hostname {{ hostname }}
 no ip domain-lookup
 {% if domain_name %}ip domain-name {{ domain_name }}
 {% endif %}!
+{% for vrf in vrfs %}
+ip vrf {{ vrf.name }}
+ rd {{ vrf.rd }}
+ route-target export {{ vrf.rt_export }}
+ route-target import {{ vrf.rt_import }}
+!
+{% endfor %}
 {% for iface in interfaces %}
 interface {{ iface.name }}
  description {{ iface.description }}
@@ -139,6 +160,16 @@ interface {{ iface.name }}
 {% if iface.vlan and not iface.is_loopback %} encapsulation dot1Q {{ iface.vlan }}
 {% endif %}
 {% if iface.mtu and not iface.is_loopback %} ip mtu {{ iface.mtu }}
+{% endif %}
+ no shutdown
+!
+{% endfor %}
+{% for svi in svis %}
+interface {{ svi.name }}
+ description {{ svi.description }}
+{% if svi.vrf %} ip vrf forwarding {{ svi.vrf }}
+{% endif %}
+{% if svi.ip_addr %} ip address {{ svi.ip_addr }} {{ svi.ip_mask }}
 {% endif %}
  no shutdown
 !
@@ -166,6 +197,13 @@ router bgp {{ bgp.asn }}
 {% if bgp.community %} neighbor {{ neighbor.ip }} send-community
 {% endif %}
 {% if bgp.bfd %} neighbor {{ neighbor.ip }} fall-over bfd{% endif %}
+{% endfor %}
+{% for vrf in vrfs %}
+ address-family ipv4 vrf {{ vrf.name }}
+  redistribute connected
+  redistribute static
+ exit-address-family
+!
 {% endfor %}
 !
 {% endif %}
@@ -212,9 +250,18 @@ vlan {{ vlan_id }}
  name VLAN_{{ vlan_id }}
 !
 {% endfor %}
+{% for vrf in vrfs %}
+ip vrf {{ vrf.name }}
+ rd {{ vrf.rd }}
+ route-target export {{ vrf.rt_export }}
+ route-target import {{ vrf.rt_import }}
+!
+{% endfor %}
 {% for iface in interfaces %}
 interface {{ iface.name }}
  description {{ iface.description }}
+{% if iface.vrf %} ip vrf forwarding {{ iface.vrf }}
+{% endif %}
 {% if iface.is_loopback %}
 {% if iface.ip_addr %} ip address {{ iface.ip_addr }} {{ iface.ip_mask }}{% endif %}
 {% elif iface.is_routed %}
@@ -230,6 +277,16 @@ interface {{ iface.name }}
  switchport mode access
 {% endif %}
 {% if iface.mtu %} mtu {{ iface.mtu }}
+{% endif %}
+ no shutdown
+!
+{% endfor %}
+{% for svi in svis %}
+interface {{ svi.name }}
+ description {{ svi.description }}
+{% if svi.vrf %} ip vrf forwarding {{ svi.vrf }}
+{% endif %}
+{% if svi.ip_addr %} ip address {{ svi.ip_addr }} {{ svi.ip_mask }}
 {% endif %}
  no shutdown
 !
@@ -275,9 +332,16 @@ vlan {{ vlan_id }}
    name VLAN_{{ vlan_id }}
 !
 {% endfor %}
+{% for vrf in vrfs %}
+vrf instance {{ vrf.name }}
+   rd {{ vrf.rd }}
+!
+{% endfor %}
 {% for iface in interfaces %}
 interface {{ iface.name }}
    description {{ iface.description }}
+{% if iface.vrf %}   vrf {{ iface.vrf }}
+{% endif %}
 {% if iface.is_loopback %}
 {% if iface.ip_addr %}   ip address {{ iface.ip_addr }}/{{ iface.prefix_len }}{% endif %}
 {% elif iface.is_routed %}
@@ -291,6 +355,16 @@ interface {{ iface.name }}
    switchport access vlan {{ iface.vlan }}
 {% endif %}
 {% if iface.mtu %}   mtu {{ iface.mtu }}
+{% endif %}
+   no shutdown
+!
+{% endfor %}
+{% for svi in svis %}
+interface {{ svi.name }}
+   description {{ svi.description }}
+{% if svi.vrf %}   vrf {{ svi.vrf }}
+{% endif %}
+{% if svi.ip_addr %}   ip address {{ svi.ip_addr }}/{{ svi.prefix_len }}
 {% endif %}
    no shutdown
 !
@@ -373,6 +447,16 @@ interfaces {
 {% endif %}
     }
 {% endfor %}
+{% for svi in svis %}
+    {{ svi.junos_name }} {
+        description "{{ svi.description }}";
+        unit 0 {
+            family inet {
+                address {{ svi.ip_addr }}/{{ svi.prefix_len }};
+            }
+        }
+    }
+{% endfor %}
 }
 {% if ospf %}
 protocols {
@@ -424,6 +508,25 @@ routing-options {
 {% endif %}
 }
 {% endif %}
+{% for vrf in vrfs %}
+routing-instances {
+    {{ vrf.name }} {
+        instance-type vrf;
+        interface irb.{{ vrf.name }};
+        route-distinguisher {{ vrf.rd }};
+        vrf-target target:{{ vrf.rt_import }};
+        vrf-export EXPORT-{{ vrf.name }};
+        vrf-import IMPORT-{{ vrf.name }};
+        protocols {
+            bgp {
+                group PEERS {
+                    family inet unicast;
+                }
+            }
+        }
+    }
+}
+{% endfor %}
 """
 
 _IOS_XR_TEMPLATE = """\
@@ -455,6 +558,25 @@ interface {{ iface.name }}
  no shutdown
 !
 {% endfor %}
+{% for svi in svis %}
+interface {{ svi.name }}
+ description {{ svi.description }}
+{% if svi.vrf %} vrf {{ svi.vrf }}
+{% endif %}
+{% if svi.ip_addr %} ipv4 address {{ svi.ip_addr }} {{ svi.ip_mask }}
+{% endif %}
+ no shutdown
+!
+{% endfor %}
+{% for vrf in vrfs %}
+vrf {{ vrf.name }}
+ rd {{ vrf.rd }}
+ address-family ipv4 unicast
+  route-target export {{ vrf.rt_export }}
+  route-target import {{ vrf.rt_import }}
+ !
+!
+{% endfor %}
 {% if ospf %}
 router ospf {{ ospf.process_id }}
  router-id {{ ospf.router_id }}
@@ -478,6 +600,15 @@ router bgp {{ bgp.asn }}
    route-policy IMPORT-{{ neighbor.asn }} in
    route-policy EXPORT-{{ neighbor.asn }} out
    soft-reconfiguration inbound always
+  !
+ !
+{% endfor %}
+{% for vrf in vrfs %}
+ vrf {{ vrf.name }}
+  rd {{ vrf.rd }}
+  address-family ipv4 unicast
+   redistribute connected
+   redistribute static
   !
  !
 {% endfor %}
@@ -561,6 +692,144 @@ exit
 {% endif %}
 """
 
+_PANOS_TEMPLATE = """\
+# ============================================================
+# ICDEV(tm) Network Canvas -- Generated Configuration
+# Device   : {{ hostname }}
+# Topology : {{ topo_name }}
+# OS       : Palo Alto PAN-OS
+# Generated: {{ generated_at }}
+# WARNING  : Review all TODO comments before deploying.
+# ============================================================
+#
+set deviceconfig system hostname {{ hostname }}
+set deviceconfig system timezone UTC
+set deviceconfig system domain icdev.local
+#
+{% for vlan_id in vlans %}
+set network vlan VLAN_{{ vlan_id }} {{ vlan_id }}
+{% endfor %}
+{% for iface in interfaces %}
+{% if not iface.is_loopback %}
+set network interface {{ iface.name }} layer3 ip {{ iface.ip_addr }}/{{ iface.prefix_len }}
+set network interface {{ iface.name }} comment "{{ iface.description }}"
+{% endif %}
+{% endfor %}
+{% for vrf in vrfs %}
+set network virtual-router {{ vrf.name }} interface {{ interfaces[0].name }}
+{% endfor %}
+{% if ospf %}
+set network virtual-router default protocol ospf enable yes
+set network virtual-router default protocol ospf area {{ ospf.area }} type normal
+{% for net in ospf.networks %}
+set network virtual-router default protocol ospf area {{ ospf.area }} interface {{ net.address }}
+{% endfor %}
+{% endif %}
+{% if bgp %}
+set network virtual-router default protocol bgp enable yes
+set network virtual-router default protocol bgp router-id {{ bgp.router_id }}
+set network virtual-router default protocol bgp local-as {{ bgp.asn }}
+{% for neighbor in bgp.neighbors %}
+set network virtual-router default protocol bgp peer-group PEERS peer {{ neighbor.ip }} peer-as {{ neighbor.asn }}
+set network virtual-router default protocol bgp peer-group PEERS peer {{ neighbor.ip }} connection-options multihop ttl 2
+{% endfor %}
+{% endif %}
+set zone trust network layer3 {{ interfaces[0].name }}
+set zone untrust network layer3 {{ interfaces[1].name }}
+commit
+"""
+
+_FORTIOS_TEMPLATE = """\
+# ============================================================
+# ICDEV(tm) Network Canvas -- Generated Configuration
+# Device   : {{ hostname }}
+# Topology : {{ topo_name }}
+# OS       : Fortinet FortiOS
+# Generated: {{ generated_at }}
+# WARNING  : Review all TODO comments before deploying.
+# ============================================================
+#
+config system global
+    set hostname {{ hostname }}
+    set timezone 04
+end
+{% for vrf in vrfs %}
+config vdom
+    edit "{{ vrf.name }}"
+next
+end
+{% endfor %}
+{% for vlan_id in vlans %}
+config system switch-interface
+    edit "VLAN_{{ vlan_id }}"
+        set vdom "root"
+        set type vlan
+        set vlanid {{ vlan_id }}
+        set interface {{ interfaces[0].name }}
+    next
+end
+{% endfor %}
+{% for iface in interfaces %}
+config system interface
+    edit "{{ iface.name }}"
+{% if iface.is_loopback %}
+        set vdom "root"
+        set ip {{ iface.ip_addr }} {{ iface.ip_mask }}
+        set type loopback
+{% elif iface.ip_addr %}
+        set vdom "root"
+        set ip {{ iface.ip_addr }} {{ iface.ip_mask }}
+        set type physical
+{% endif %}
+        set description "{{ iface.description }}"
+        set status up
+    next
+end
+{% endfor %}
+{% for svi in svis %}
+config system interface
+    edit "VLAN_{{ svi.vlan_id }}"
+        set vdom "root"
+        set ip {{ svi.ip_addr }} {{ svi.ip_mask }}
+        set type vlan
+        set vlanid {{ svi.vlan_id }}
+        set interface {{ interfaces[0].name }}
+    next
+end
+{% endfor %}
+{% if ospf %}
+config router ospf
+    set router-id {{ ospf.router_id }}
+    config area
+        edit {{ ospf.area }}
+        next
+    end
+{% for net in ospf.networks %}
+    config ospf-interface
+        edit "{{ net.address }}"
+            set interface {{ interfaces[0].name }}
+        next
+    end
+{% endfor %}
+end
+{% endif %}
+{% if bgp %}
+config router bgp
+    set as {{ bgp.asn }}
+    set router-id {{ bgp.router_id }}
+{% for neighbor in bgp.neighbors %}
+    config neighbor
+        edit "{{ neighbor.ip }}"
+            set remote-as {{ neighbor.asn }}
+            set description "{{ neighbor.description }}"
+            set bfd enable
+        next
+    end
+{% endfor %}
+end
+{% endif %}
+"""
+
 _TEMPLATES: dict[str, str] = {
     "ios_router": _IOS_ROUTER_TEMPLATE,
     "ios_switch": _IOS_SWITCH_TEMPLATE,
@@ -568,6 +837,8 @@ _TEMPLATES: dict[str, str] = {
     "junos": _JUNOS_TEMPLATE,
     "ios_xr": _IOS_XR_TEMPLATE,
     "nokia_sros": _NOKIA_SROS_TEMPLATE,
+    "panos": _PANOS_TEMPLATE,
+    "fortios": _FORTIOS_TEMPLATE,
 }
 
 # ---------------------------------------------------------------------------
@@ -687,6 +958,7 @@ def _build_device_context(
       - Subsequent indices correspond to edges connected to this node,
         using the edge label/ip if available.
     """
+    ntype = node.get("type", "") or node.get("nodeType", "")
     nid = node["id"]
     cfg = _node_cfg(node)
     hostname = _safe_hostname(cfg.get("hostname") or node.get("label") or nid)
@@ -775,6 +1047,39 @@ def _build_device_context(
 
     sorted_vlans = sorted(vlan_set)
 
+    # ── VRF context ─────────────────────────────────────────────────────
+    vrf_set: set[str] = set()
+    for iface in interfaces:
+        if iface.get("vrf"):
+            vrf_set.add(iface["vrf"])
+    node_vrf = cfg.get("vrf")
+    if node_vrf:
+        vrf_set.add(str(node_vrf))
+
+    vrfs: list[dict] = []
+    for vname in sorted(vrf_set):
+        # Derive a simple RD/RT from VRF name hash for deterministic demo values
+        rd = f"65000:{abs(hash(vname)) % 4096}"
+        rt = f"65000:{abs(hash(vname)) % 4096}"
+        vrfs.append({"name": vname, "rd": rd, "rt_import": rt, "rt_export": rt})
+
+    # ── SVI context (VLAN interfaces on L3 switches) ───────────────────────
+    svis: list[dict] = []
+    if ntype in {"switch-l3", "router"} and sorted_vlans:
+        # Generate an SVI per VLAN with a deterministic .1 gateway
+        for vid in sorted_vlans:
+            svi_ip = f"10.{(vid % 255)}.{(vid // 255) % 255}.1"
+            svis.append({
+                "vlan_id": vid,
+                "name": f"Vlan{vid}" if os_type in ("ios_switch", "ios_router") else f"Vlan{vid}",
+                "junos_name": f"irb.{vid}",
+                "ip_addr": svi_ip,
+                "ip_mask": "255.255.255.0",
+                "prefix_len": 24,
+                "vrf": cfg.get("vrf") or "",
+                "description": f"SVI for VLAN {vid}",
+            })
+
     # ── OSPF context ──────────────────────────────────────────────────────
     ospf_area_raw = cfg.get("ospf_area")
     ospf_ctx: dict | None = None
@@ -839,6 +1144,8 @@ def _build_device_context(
         "domain_name": "",
         "interfaces": interfaces,
         "vlans": sorted_vlans,
+        "vrfs": vrfs,
+        "svis": svis,
         "ospf": ospf_ctx,
         "bgp": bgp_ctx,
     }
@@ -931,6 +1238,10 @@ def generate_device_configs(graph: dict, topo_name: str) -> dict[str, str]:
             "ios_switch": "ios",
             "eos": "eos",
             "junos": "junos",
+            "ios_xr": "ios_xr",
+            "nokia_sros": "sros",
+            "panos": "panos",
+            "fortios": "fortios",
         }.get(os_type, os_type)
         base = f"{ctx['hostname']}_{_os_suffix}.txt"
 

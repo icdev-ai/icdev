@@ -1,0 +1,5 @@
+// IQE-DR-003: Failed or partial demo runs — for debugging and triage
+foreach r in demo_runner.runs
+where r.status != "pass"
+select r.run_id, r.audience, r.status, r.scenarios_passed, r.scenarios_total, r.created_at
+order by r.created_at desc

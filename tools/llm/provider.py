@@ -12,6 +12,27 @@ from typing import Any, Dict, Iterator, List, Optional
 
 
 # ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
+class LLMRateLimitError(RuntimeError):
+    """Raised when an LLM provider rejects a request due to rate or token limits.
+
+    Subclasses ``RuntimeError`` so existing ``except RuntimeError`` blocks
+    keep working. Callers that want to react specifically to rate-limit
+    exhaustion should catch this class and degrade to an alternative provider.
+
+    Attributes:
+        provider: Provider name that returned the rate limit.
+        model_id: Model ID that was rate-limited.
+    """
+
+    def __init__(self, message: str, *, provider: str = "", model_id: str = ""):
+        super().__init__(message)
+        self.provider = provider
+        self.model_id = model_id
+
+
+# ---------------------------------------------------------------------------
 # Vendor-agnostic request / response
 # ---------------------------------------------------------------------------
 @dataclass

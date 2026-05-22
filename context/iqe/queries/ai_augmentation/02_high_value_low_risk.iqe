@@ -1,1 +1,4 @@
-foreach o in ai_augmentation.opportunities where o.value_score >= 0.7 and o.risk_score <= 0.4 select o.module_path, o.pattern_type, o.ai_paradigm, o.value_score, o.risk_score
+foreach o in ai_augmentation.opportunities
+  where o.value_score > 0.7
+  where o.risk_score < 0.3
+  select o.module_path, o.function_name, o.ai_paradigm, o.il_recommended_model, o.effort_days

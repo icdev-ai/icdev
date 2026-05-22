@@ -10,7 +10,6 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     CriterionResult,
     Pillar,
     _glob_files,
-    _read,
     _search,
 )
 

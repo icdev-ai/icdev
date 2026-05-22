@@ -61,14 +61,44 @@ def _dump(value: Any) -> Any:
         "AAC_STORAGE_BACKEND",
         os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
     ).lower()
-    return value if backend == "postgresql" else json.dumps(value)
+    if backend == "postgresql":
+        try:
+            from psycopg2.extras import Json
+            return Json(value)
+        except ImportError:
+            pass
+    return json.dumps(value)
 
 
 def _exec(conn: Any, sql: str, params: tuple) -> Any:
     try:
         return conn.execute(sql, params)
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return conn.execute(sql.replace("?", "%s"), params)
+
+
+def _backend() -> str:
+    return os.environ.get(
+        "AAC_STORAGE_BACKEND",
+        os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
+    ).lower()
+
+
+def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
+    """Execute INSERT and return the generated PK for both SQLite and PostgreSQL."""
+    if _backend() == "postgresql":
+        pg_sql = sql.replace("?", "%s") + f" RETURNING {id_col}"
+        cur = conn.execute(pg_sql, params)
+        row = cur.fetchone()
+        conn.commit()
+        return int(row[0]) if row else 0
+    cur = conn.execute(sql, params)
+    conn.commit()
+    return cur.lastrowid or 0
 
 
 def _phase_label(score: float) -> str:
@@ -260,15 +290,14 @@ def run_scan(
     # 1b. Insert scan record
     conn = get_connection()
     try:
-        cur = _exec(
+        scan_id: int = _insert(
             conn,
             "INSERT INTO aac_scans "
             "(input_type, input_ref, language_profile, total_files, total_loc, status) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
+            "scan_id",
         )
-        conn.commit()
-        scan_id: int = cur.lastrowid
 
         _exec(
             conn,
@@ -292,7 +321,7 @@ def run_scan(
             paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
             il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
 
-            cur = _exec(
+            opp_id: int = _insert(
                 conn,
                 "INSERT INTO aac_opportunities "
                 "(scan_id, module_path, function_name, line_start, line_end, language, "
@@ -311,9 +340,8 @@ def run_scan(
                     il_model,
                     _dump({}),
                 ),
+                "opportunity_id",
             )
-            conn.commit()
-            opp_id: int = cur.lastrowid
 
             score = score_opportunity(pat, scan_context)
             _exec(

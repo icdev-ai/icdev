@@ -1,0 +1,5 @@
+// IQE-DR-002: Executive audience demo runs — passed runs for exec audience
+foreach r in demo_runner.runs
+where r.audience == "exec" and r.status == "pass"
+select r.run_id, r.audience, r.scenarios_passed, r.scenarios_total, r.elapsed_ms, r.created_at
+order by r.created_at desc

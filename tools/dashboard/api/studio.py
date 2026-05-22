@@ -784,7 +784,7 @@ def api_app_builder_from_prd(intake_session_id: str):
         else:
             conn = get_connection(db_path=str(_DB_PATH))
         try:
-            conn.set_security_context(None)
+            conn.set_security_context(None)  # rls-bypass: studio reads intake_requirements by session_id, not user tenant
         except Exception:
             pass
         rows = conn.execute(

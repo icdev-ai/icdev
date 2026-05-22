@@ -30,8 +30,8 @@ _CHECK_LANGUAGE = f"language IN ({_lang_list})"
 def get_connection():
     if _AAC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _pg
-            return _pg(db_path=os.environ.get("AAC_PG_DATABASE", "aac_canvas"))
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("AAC_PG_DATABASE")
         except Exception:
             pass
     import sqlite3

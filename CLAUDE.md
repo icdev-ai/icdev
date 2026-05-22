@@ -281,6 +281,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 ## Guardrails
 
 ### Development Rules
+- **Canvas DB connections MUST use `get_canvas_connection()`** — Canvas-specific tables (e.g. `aac_*`, `dsoc_*`, `ccc_*`) have no `classification`/`tenant_id` columns. Using `get_connection()` directly in a canvas `db/init_db.py` attaches the global RLS predicate and raises `UndefinedColumn` on every query. Always use `from tools.db.storage import get_canvas_connection` in canvas init files. See `tools/ai_augmentation/db/init_db.py` for the canonical pattern.
 - Always grep `tools/manifest/` shards before writing a new script
 - Verify tool output format before chaining into another tool
 - Don't assume APIs support batch operations — check first

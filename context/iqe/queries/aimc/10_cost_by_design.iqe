@@ -1,0 +1,4 @@
+foreach d in aimc.designs
+  join ar in aimc.artifacts on ar.design_id == d.id
+  where ar.artifact_type == "model_card"
+  select d.name, d.il_level, d.adaptation_strategy, ar.title

@@ -1,3 +1,7 @@
+<<<<<<< Updated upstream
 foreach o in ai_augmentation.opportunities
   where o.composite_score > 0.6
   select o.module_path, o.pattern_type, o.ai_paradigm, o.composite_score, o.il_recommended_model
+=======
+foreach o in ai_augmentation.opportunities select o.module_path, o.pattern_type, o.ai_paradigm, o.composite_score order by o.composite_score desc limit 10
+>>>>>>> Stashed changes

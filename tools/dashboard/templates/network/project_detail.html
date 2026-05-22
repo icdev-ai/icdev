@@ -111,6 +111,60 @@
   <div id="impact-results" style="display:none;padding:10px 16px;border-top:1px solid var(--border);"></div>
 </section>
 
+<!-- ═══════════════ AI COA COMPARISON ═══════════════ -->
+<section class="panel panel-wide" id="coa-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">AI-Generated Courses of Action</h2>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span style="font-size:11px;color:#8099b8;">HITL Review &rarr; Select &rarr; AI regenerates plan</span>
+      {% if first_topo_id %}
+      <a href="/network/migration-phases/{{ first_topo_id }}" class="btn btn-primary" style="font-size:0.75rem;padding:3px 10px;" target="_blank">&#x1F5FA; Phase Diagrams</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="padding:12px 16px;">
+    {% set coas = [
+      ('coa_1', '#e74c3c', 'high', 'Rip & Replace', '2–4h', '1 day', 'Swap hardware in single window. Fastest, highest risk.'),
+      ('coa_2', '#f39c12', 'medium', 'Phased Cutover', '5–15 min/phase', '2 weeks', 'Migrate per circuit over 1–2 weeks. Balanced risk.'),
+      ('coa_3', '#27ae60', 'low', 'Side-by-Side VLAN', 'Near-zero', '3 weeks', 'Old + new parallel on same VLAN. Safest. Recommended.')
+    ] %}
+
+    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;">
+      {% for key, color, risk, name, downtime, duration, desc in coas %}
+      {% set coa_obj = coa_data.get(key, {}) %}
+      {% set is_selected = project.selected_coa == coa_obj.get('id', loop.index) %}
+      <div class="coa-card {% if is_selected %}coa-selected{% endif %}" id="coa-card-{{ loop.index }}" style="border:1px solid {{ color }};border-radius:8px;padding:14px;background:{{ color }}08;position:relative;">
+        {% if is_selected %}
+        <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:{{ color }};color:#fff;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;">SELECTED</div>
+        {% endif %}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:14px;color:{{ color }};">{{ name }}</div>
+          <span class="health-pill {% if risk == 'high' %}pill-red{% elif risk == 'medium' %}pill-yellow{% else %}pill-green{% endif %}" style="font-size:10px;text-transform:uppercase;">{{ risk }} risk</span>
+        </div>
+        <div style="font-size:12px;color:#b0c4dc;line-height:1.5;margin-bottom:10px;">{{ desc }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#8099b8;margin-bottom:12px;">
+          <div><span style="color:#a0b8d0;font-weight:600;">Downtime:</span> {{ downtime }}</div>
+          <div><span style="color:#a0b8d0;font-weight:600;">Duration:</span> {{ duration }}</div>
+        </div>
+        <button onclick="selectCoa({{ loop.index }}, '{{ name }}')" class="btn {% if is_selected %}btn-secondary{% else %}btn-primary{% endif %}" style="width:100%;font-size:12px;" {% if is_selected %}disabled{% endif %}>
+          {% if is_selected %}✓ Selected{% else %}Select {{ name }}{% endif %}
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Feedback box -->
+    <div style="margin-top:14px;display:flex;gap:8px;align-items:flex-start;">
+      <input id="coa-feedback" type="text" placeholder="HITL feedback: e.g. 'Add rollback window' or 'Too risky for Friday'"
+             value="{{ project.coa_feedback or '' }}"
+             style="flex:1;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 10px;color:#e2e8f0;font-size:12px;">
+      <button onclick="submitCoaFeedback()" class="btn btn-secondary" style="font-size:11px;padding:5px 12px;">Save Feedback</button>
+    </div>
+    <div id="coa-feedback-status" style="font-size:11px;margin-top:6px;color:#8099b8;"></div>
+  </div>
+</section>
+
 <!-- ═══════════════ MIGRATION PLAN ═══════════════ -->
 <section class="panel panel-wide" id="migration-plan-section" style="margin-bottom:20px;">
   <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
@@ -263,6 +317,83 @@
     <a href="/network/migration-hub" style="color:#60a5fa;">Create one in the Migration Hub →</a>
   </div>
   {% endif %}
+</section>
+
+<!-- ═══════════════ PORT MAPPING & CONFIG TRANSLATION ═══════════════ -->
+<section class="panel panel-wide" id="port-mapping-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">Port Mapping & Config Translation</h2>
+    {% if target_device_id %}
+    <div style="font-size:11px;color:#8099b8;">Device: <span style="color:#a0b8d0;font-weight:600;">{{ target_device_id }}</span> &rarr; AI-mapped to replacement</div>
+    {% endif %}
+  </div>
+
+  <div style="padding:12px 16px;">
+    {% if port_mapping.port_mappings %}
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8099b8;margin-bottom:8px;">AI-Generated Port Mapping</div>
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Old Port</th><th>&rarr;</th><th>New Port</th><th>Service / Role</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pm in port_mapping.port_mappings %}
+          <tr>
+            <td style="font-family:monospace;color:#e2e8f0;">{{ pm.old_port }}</td>
+            <td style="color:#8099b8;">&rarr;</td>
+            <td style="font-family:monospace;color:#a5b4fc;">{{ pm.new_port }}</td>
+            <td>{{ pm.service }}</td>
+            <td>
+              {% if pm.status == 'mapped' %}
+                <span class="health-pill pill-green">Auto</span>
+              {% else %}
+                <span class="health-pill pill-yellow">Manual</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="display:flex;gap:12px;margin-top:8px;font-size:11px;color:#8099b8;">
+        <div><span style="color:#eaeaea;font-weight:700;">{{ port_mapping.mapped_count or 0 }}</span> auto-mapped</div>
+        <div><span style="color:#eaeaea;font-weight:700;">{{ port_mapping.unmapped_count or 0 }}</span> manual</div>
+        {% if port_mapping.conflicts %}
+        <div><span style="color:#e74c3c;font-weight:700;">{{ port_mapping.conflicts|length }}</span> conflicts</div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p style="padding:8px 0;color:#8099b8;font-size:12px;">No port mapping data available. Select a COA above to trigger AI generation.</p>
+    {% endif %}
+
+    {% if config_translation.lines %}
+    <div style="margin-top:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8099b8;margin-bottom:8px;">Config Translation ({{ config_translation.source_vendor }} &rarr; {{ config_translation.target_vendor }}) — Confidence {{ (config_translation.confidence * 100)|round(0)|int }}%</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;color:#8099b8;text-transform:uppercase;margin-bottom:6px;">Original Config</div>
+          <pre style="margin:0;font-size:11px;color:#b0c4dc;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;">{% for line in config_translation.lines[:80] %}{% if not line.changed %}{{ line.old }}
+{% endif %}{% endfor %}</pre>
+        </div>
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;color:#8099b8;text-transform:uppercase;margin-bottom:6px;">Translated Config</div>
+          <pre style="margin:0;font-size:11px;color:#b0c4dc;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;">{% for line in config_translation.lines[:80] %}{% if line.changed %}
+<span style="color:#a5b4fc;background:#1e3a6e;padding:0 2px;border-radius:2px;">{{ line.new }}</span>{% else %}{{ line.new }}{% endif %}
+{% endfor %}</pre>
+        </div>
+      </div>
+      {% if config_translation.notes %}
+      <div style="margin-top:8px;font-size:11px;color:#8099b8;">
+        {% for note in config_translation.notes %}
+        <div><span style="color:#f39c12;">⚠</span> {{ note }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
 </section>
 
 <!-- Submit Review Modal -->
@@ -624,5 +755,31 @@ function checkGate(target){fetch(NC_BASE+`/api/projects/${PID}/gate-check`,{meth
   .then(r=>r.json()).then(d=>{const el=document.getElementById('gate-result');
     if(d.blocked){el.innerHTML='<div style="color:var(--danger);font-size:12px;"><strong>BLOCKED:</strong> '+d.failures.map(f=>'<div style="margin:2px 0;">- '+f+'</div>').join('')+'</div>';}
     else{el.innerHTML='<div style="color:var(--success);font-size:12px;">READY for '+target+'</div>';}});}
+
+// ── COA Selection ─────────────────────────────────────────────────────
+function selectCoa(coaId, coaName) {
+  if(!confirm('Select "'+coaName+'" as the migration strategy?\n\nAI will regenerate the migration plan, port mappings, and config translation based on this COA.')) return;
+  const feedback = document.getElementById('coa-feedback').value;
+  fetch(NC_BASE+`/api/projects/${PID}/select-coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({coa_id: coaId, feedback: feedback})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){ location.reload(); }
+    else { alert(d.error||'Failed to select COA'); }
+  });
+}
+function submitCoaFeedback() {
+  const feedback = document.getElementById('coa-feedback').value;
+  fetch(NC_BASE+`/api/projects/${PID}/select-coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({coa_id: {{ project.selected_coa or 0 }}, feedback: feedback})
+  }).then(r=>r.json()).then(d=>{
+    const el = document.getElementById('coa-feedback-status');
+    if(d.ok){ el.textContent = '✓ Feedback saved.'; el.style.color = '#27ae60'; }
+    else { el.textContent = '✗ ' + (d.error||'Failed'); el.style.color = '#e74c3c'; }
+  });
+}
 </script>
 {% endblock %}

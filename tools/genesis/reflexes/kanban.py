@@ -2514,6 +2514,39 @@ _ollama_running_count: int = 0
 # routing through the in_progress polling loop.
 _ollama_completed: set = set()
 
+# D-AUTO-DEGRADE: Track executors that have hit rate/token limits.
+# When degraded, the scheduler skips them in the fallback chain.
+_degraded_executors: set = set()
+_degraded_executors_probed_at: Dict[str, datetime] = {}
+_DEGRADATION_PROBE_INTERVAL = timedelta(minutes=5)  # Default if no reset hint parsed
+
+
+def _build_effective_executor_chain(original_chain: list) -> list:
+    """Return executor chain with degraded executors moved to the end (or removed).
+
+    If all executors are degraded, returns the original chain anyway so the
+    scheduler can attempt them as a last resort.
+    """
+    degraded = [tier for tier in original_chain if tier in _degraded_executors]
+    active = [tier for tier in original_chain if tier not in _degraded_executors]
+
+    # Check if any degraded executor is past its resume time
+    now = datetime.now(timezone.utc)
+    recovered = []
+    for tier in degraded:
+        resume_at = _degraded_executors_probed_at.get(tier)
+        if resume_at is not None and now >= resume_at:
+            recovered.append(tier)
+            _degraded_executors.discard(tier)
+            _degraded_executors_probed_at.pop(tier, None)
+            logger.info("kanban: executor %s recovered (resume_at passed)", tier)
+
+    active.extend(recovered)
+
+    if active:
+        return active
+    return original_chain
+
 
 class _LLMTaskHandle:
     """Popen-compatible handle around a threaded LLMRouter.invoke() call.
@@ -3064,6 +3097,20 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
 
 
+def _get_executor_type(task_id: str) -> str | None:
+    """Read executor_type from the task row."""
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT executor_type FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        conn.close()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
 def _dispatch_to_claude(task: dict, prompt_path: str):
     """Dispatch a task to the appropriate executor.
 
@@ -3139,8 +3186,12 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_desc = task.get("description", task.get("title", ""))
     task_type = task.get("task_type", "chore")
 
+    # D-AUTO-DEGRADE: Build effective chain skipping degraded executors.
+    # If all executors are degraded, fall back to the full chain anyway.
+    effective_chain = _build_effective_executor_chain(_fallback_chain)
+
     dispatched = False
-    for tier in _fallback_chain:
+    for tier in effective_chain:
         if tier == "claude_cli":
             if _claude_code_available():
                 _dispatch_via_claude_cli(task, prompt_path, instruction, work_dir, task_log)
@@ -5037,6 +5088,19 @@ def _check_completed():
                     wait_minutes = int(wait_seconds / 60) + 1
                     reset_msg = f" (reset hint: {reset_hint})" if reset_hint else ""
                     resume_local = resume_at.astimezone().strftime("%I:%M %p")
+
+                    # D-AUTO-DEGRADE: Mark claude_cli as degraded
+                    executor_type = _get_executor_type(task_id) or "claude_cli"
+                    if executor_type == "claude_cli":
+                        _degraded_executors.add(executor_type)
+                        _degraded_executors_probed_at[executor_type] = resume_at
+                        logger.info(
+                            "kanban: executor %s degraded for %s (resume_at=%s)",
+                            executor_type,
+                            task_id,
+                            resume_local,
+                        )
+
                     print(
                         f"  Kanban: {task_id} TOKEN EXHAUSTED"
                         f"{reset_msg} — retry {retry_count}/"

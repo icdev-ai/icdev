@@ -765,3 +765,49 @@
 | Peering Manager Connector | tools\databridge\connectors\peering_manager_connector.py | Auto-registered: connectors/peering_manager_connector.py | --json | JSON |
 | Pmacct Connector | tools\databridge\connectors\pmacct_connector.py | Auto-registered: connectors/pmacct_connector.py | --json | JSON |
 | Routinator Connector | tools\databridge\connectors\routinator_connector.py | Auto-registered: connectors/routinator_connector.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Xc Order Manager | tools\ccc_canvas\xc_order_manager.py | Auto-registered: ccc_canvas/xc_order_manager.py | --json | JSON |
+| Agreement Lifecycle | tools\network\agreement_lifecycle.py | Auto-registered: network/agreement_lifecycle.py | --json | JSON |
+| Partner Registry | tools\network\partner_registry.py | Auto-registered: network/partner_registry.py | --json | JSON |
+| Peering Agreement Renewal | tools\genesis\reflexes\peering_agreement_renewal.py | Auto-registered: reflexes/peering_agreement_renewal.py | --json | JSON |
+| Xc Order Poller | tools\genesis\reflexes\xc_order_poller.py | Auto-registered: reflexes/xc_order_poller.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Append Only Audit | tools\ai_augmentation\agent_readiness\pillars\append_only_audit.py | Auto-registered: pillars/append_only_audit.py | --json | JSON |
+| Il Classification | tools\ai_augmentation\agent_readiness\pillars\il_classification.py | Auto-registered: pillars/il_classification.py | --json | JSON |
+| Nist Controls | tools\ai_augmentation\agent_readiness\pillars\nist_controls.py | Auto-registered: pillars/nist_controls.py | --json | JSON |
+| Stig Compliance | tools\ai_augmentation\agent_readiness\pillars\stig_compliance.py | Auto-registered: pillars/stig_compliance.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Synthetic Network Generator | tools\ndc\synthetic_network_generator.py | Auto-registered: ndc/synthetic_network_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Eol Scanner | tools\ndc\eol_scanner.py | Auto-registered: ndc/eol_scanner.py | --json | JSON |
+| Replacement Recommender | tools\ndc\replacement_recommender.py | Auto-registered: ndc/replacement_recommender.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Config Alignment Analyzer | tools\ndc\config_alignment_analyzer.py | Auto-registered: ndc/config_alignment_analyzer.py | --json | JSON |
+| Migration Document Generator | tools\ndc\migration_document_generator.py | Auto-registered: ndc/migration_document_generator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Cloud Topology Overlay | tools\ndc\cloud_topology_overlay.py | Auto-registered: ndc/cloud_topology_overlay.py | --json | JSON |
+| Executive Summary Generator | tools\ndc\executive_summary_generator.py | Auto-registered: ndc/executive_summary_generator.py | --json | JSON |

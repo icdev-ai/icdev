@@ -163,6 +163,134 @@ def api_get_scan(scan_id: int):
         conn.close()
 
 
+@aac_bp.route("/api/send-to-kanban", methods=["POST"])
+def api_send_to_kanban():
+    """Promote roadmap opportunities to kanban_tasks.
+
+    Body: {"roadmap_id": str, "phase_id": "all" | "P1" | "P2" | "P3"}
+    Returns: {"created": N, "skipped": M, "phase_id": str}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    roadmap_id = (data.get("roadmap_id") or "").strip()
+    phase_id   = (data.get("phase_id") or "all").strip()
+
+    if not roadmap_id:
+        return jsonify({"error": "roadmap_id is required"}), 400
+
+    conn = _conn()
+    try:
+        rm = conn.execute(
+            "SELECT scan_id, phases FROM aac_roadmaps WHERE roadmap_id = ?",
+            (roadmap_id,),
+        ).fetchone()
+        if not rm:
+            return jsonify({"error": "roadmap not found"}), 404
+        scan_id = rm["scan_id"]
+        phases  = _parse_phases(rm["phases"])
+    finally:
+        conn.close()
+
+    # Collect opportunities for the requested phase(s)
+    target_opps: list[dict] = []
+    for ph in phases:
+        label = ph.get("label", "")
+        if phase_id != "all" and not label.startswith(phase_id):
+            continue
+        for opp in ph.get("opportunities", []):
+            opp["_phase_label"] = label
+            target_opps.append(opp)
+
+    if not target_opps:
+        return jsonify({"created": 0, "skipped": 0, "phase_id": phase_id})
+
+    # Fetch scores for composite ranking
+    opp_ids = [o["opportunity_id"] for o in target_opps if "opportunity_id" in o]
+    score_map: dict[int, dict] = {}
+    if opp_ids:
+        conn = _conn()
+        try:
+            placeholders = ",".join("?" * len(opp_ids))
+            rows = conn.execute(
+                f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
+                f"FROM aac_scores WHERE opportunity_id IN ({placeholders})",
+                tuple(opp_ids),
+            ).fetchall()
+            for r in rows:
+                score_map[r["opportunity_id"]] = dict(r)
+        finally:
+            conn.close()
+
+    _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
+
+    from tools.db.storage import get_connection as _icdev_conn
+
+    created = skipped = 0
+    icdev_conn = _icdev_conn()
+    try:
+        for opp in target_opps:
+            opp_id    = opp.get("opportunity_id", 0)
+            ph_label  = opp.get("_phase_label", "")
+            ph_key    = ph_label.split(" ")[0] if ph_label else "P3"
+            priority  = _PHASE_PRIORITY.get(ph_key, "medium")
+            task_id   = f"aac-{roadmap_id[:8]}-{ph_key.lower()}-{opp_id}"
+
+            existing = icdev_conn.execute(
+                "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if existing:
+                skipped += 1
+                continue
+
+            scores = score_map.get(opp_id, {})
+            title = (
+                f"[{ph_key}] {opp.get('pattern_type','?')} in "
+                f"{opp.get('module_path','?')} -> {opp.get('ai_paradigm','?')}"
+            )
+            description = json.dumps({
+                "opportunity_id": opp_id,
+                "scan_id": scan_id,
+                "roadmap_id": roadmap_id,
+                "phase": ph_label,
+                "pattern_type": opp.get("pattern_type"),
+                "module_path": opp.get("module_path"),
+                "function_name": opp.get("function_name"),
+                "ai_paradigm": opp.get("ai_paradigm"),
+                "model_recommendation": opp.get("il_recommended_model"),
+                "scores": {
+                    "composite": scores.get("composite_score"),
+                    "value": scores.get("value_score"),
+                    "feasibility": scores.get("feasibility_score"),
+                    "risk": scores.get("risk_score"),
+                },
+            }, indent=2)
+
+            icdev_conn.execute(
+                "INSERT INTO kanban_tasks "
+                "(id, title, description, task_type, priority, status, executor_type) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (task_id, title, description, "build", priority, "backlog", "claude_cli"),
+            )
+            icdev_conn.commit()
+            created += 1
+    finally:
+        icdev_conn.close()
+
+    # Audit log
+    conn = _conn()
+    try:
+        conn.execute(
+            "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            ("kanban_promoted", scan_id, "user",
+             json.dumps({"roadmap_id": roadmap_id, "phase_id": phase_id,
+                         "created": created, "skipped": skipped})),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"created": created, "skipped": skipped, "phase_id": phase_id})
+
+
 @aac_bp.route("/api/iqe-query", methods=["POST"])
 def api_iqe_query():
     data = request.get_json(force=True, silent=True) or {}

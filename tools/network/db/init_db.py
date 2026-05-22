@@ -14012,6 +14012,10 @@ def init_db():
             ("nc_peering_agreements", "approver_name", "TEXT DEFAULT ''"),
             ("nc_peering_agreements", "approver_role", "TEXT DEFAULT ''"),
             ("nc_peering_agreements", "approved_at", "TEXT DEFAULT ''"),
+            # NDC AI-assisted migration: COA selection + feedback
+            ("nc_projects", "selected_coa", "INTEGER DEFAULT 0"),
+            ("nc_projects", "coa_feedback", "TEXT DEFAULT ''"),
+            ("nc_projects", "coa_json", "TEXT DEFAULT '{}'"),
         ]
         for table, col, coltype in _migrations:
             try:
