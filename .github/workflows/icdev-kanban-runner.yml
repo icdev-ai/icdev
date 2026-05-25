@@ -187,21 +187,32 @@ jobs:
         if: always()
         run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
 
-      # ── CI auto-fix commit + push ─────────────────────────────────────────
+      # ── CI auto-fix commit + PR ───────────────────────────────────────────
       # Fires only for ci-fix-* tasks. After ANVIL applies the fix, commit any
-      # changed files and push to main so CI can re-run and validate the fix.
-      # The push uses GITHUB_TOKEN (read-write by default for workflow_dispatch).
-      # Guard: only pushes when git diff finds staged changes — avoids empty commits.
-      - name: Commit and push CI auto-fix
+      # changed files, push to a ci-autofix/* branch, and open a PR against main.
+      # Avoids direct-push branch protection; PR can be merged by maintainers or
+      # auto-merged if the repo has auto-merge enabled.
+      # Guard: only runs when git diff finds staged changes — avoids empty PRs.
+      - name: Commit and open PR for CI auto-fix
         if: startsWith(github.event.inputs.task_id, 'ci-fix-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          BRANCH="ci-autofix/${{ github.event.inputs.task_id }}"
           git config user.email "ci-autofix@github.com"
           git config user.name "ICDEV CI AutoFix [bot]"
           git add -A
           if ! git diff --cached --quiet; then
+            git checkout -b "$BRANCH"
             git commit -m "fix(ci-auto): ${{ github.event.inputs.task_id }} — ${{ github.event.inputs.task_desc }}"
-            git push origin HEAD:main
-            echo "Pushed CI auto-fix commit to main."
+            git push origin "$BRANCH"
+            gh pr create \
+              --title "fix(ci-auto): ${{ github.event.inputs.task_id }}" \
+              --body "Automated CI fix for [${{ github.event.inputs.task_id }}](${{ github.event.inputs.task_desc }})" \
+              --base main \
+              --head "$BRANCH" \
+              --label "ci-autofix" 2>/dev/null || true
+            echo "Opened PR from $BRANCH → main."
           else
             echo "No changes to commit — fix already applied or ANVIL found nothing to change."
           fi
