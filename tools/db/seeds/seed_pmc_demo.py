@@ -65,19 +65,28 @@ def _reset_demo_data(conn) -> None:
 _PEER_IDS = {f"peer-{i:03d}": _uid() for i in range(12)}
 _IX_IDS = {f"ix-{i:03d}": _uid() for i in range(6)}
 
+# Map country code to RIR for CHECK constraint compliance
+_COUNTRY_RIR = {
+    "US": "ARIN", "CA": "ARIN",
+    "JP": "APNIC", "AU": "APNIC", "SG": "APNIC",
+    "SE": "RIPE", "GB": "RIPE", "FR": "RIPE", "DE": "RIPE", "NL": "RIPE",
+    "BR": "LACNIC", "MX": "LACNIC",
+    "ZA": "AFRINIC",
+}
+
 _PEERS = [
-    (_PEER_IDS["peer-000"], "Akamai Technologies", 32787, "public", "open", "active", 1000, 500, "AKAMAI", "US", "noc@akamai.com"),
-    (_PEER_IDS["peer-001"], "Cloudflare Inc", 13335, "public", "open", "active", 2000, 1000, "CLOUDFLARE", "US", "peering@cloudflare.com"),
-    (_PEER_IDS["peer-002"], "NTT Communications", 2914, "transit", "selective", "active", 5000, 2000, "NTT", "JP", "peering@ntt.net"),
-    (_PEER_IDS["peer-003"], "Telia Company", 1299, "transit", "selective", "active", 4500, 1500, "TELIANET", "SE", "peering@telia.net"),
-    (_PEER_IDS["peer-004"], "Hurricane Electric", 6939, "public", "open", "active", 3000, 1000, "HENET", "US", "peering@he.net"),
-    (_PEER_IDS["peer-005"], "GTT Communications", 3257, "transit", "selective", "evaluation", 4000, 1200, "GTT", "US", "peering@gtt.net"),
-    (_PEER_IDS["peer-006"], "Cogent Communications", 174, "transit", "no", "suspended", 6000, 2500, "COGENT", "US", "peering@cogentco.com"),
-    (_PEER_IDS["peer-007"], "Level 3 (Lumen)", 3356, "transit", "selective", "active", 7000, 3000, "LEVEL3", "US", "peering@level3.com"),
-    (_PEER_IDS["peer-008"], "Orange", 5511, "customer", "selective", "active", 2000, 800, "ORANGE", "FR", "peering@orange.com"),
-    (_PEER_IDS["peer-009"], "Deutsche Telekom", 3320, "customer", "selective", "active", 3500, 1200, "DTAG", "DE", "peering@telekom.de"),
-    (_PEER_IDS["peer-010"], "RETN", 9002, "public", "open", "requested", 800, 400, "RETN", "GB", "peering@retn.net"),
-    (_PEER_IDS["peer-011"], "Netflix", 2906, "public", "open", "active", 1200, 600, "NETFLIX", "US", "peering@netflix.com"),
+    (_PEER_IDS["peer-000"], "Akamai Technologies", 32787, "public", "open", "active", 1000, 500, "AKAMAI", "ARIN", "noc@akamai.com"),
+    (_PEER_IDS["peer-001"], "Cloudflare Inc", 13335, "public", "open", "active", 2000, 1000, "CLOUDFLARE", "ARIN", "peering@cloudflare.com"),
+    (_PEER_IDS["peer-002"], "NTT Communications", 2914, "transit", "selective", "active", 5000, 2000, "NTT", "APNIC", "peering@ntt.net"),
+    (_PEER_IDS["peer-003"], "Telia Company", 1299, "transit", "selective", "active", 4500, 1500, "TELIANET", "RIPE", "peering@telia.net"),
+    (_PEER_IDS["peer-004"], "Hurricane Electric", 6939, "public", "open", "active", 3000, 1000, "HENET", "ARIN", "peering@he.net"),
+    (_PEER_IDS["peer-005"], "GTT Communications", 3257, "transit", "selective", "evaluation", 4000, 1200, "GTT", "ARIN", "peering@gtt.net"),
+    (_PEER_IDS["peer-006"], "Cogent Communications", 174, "transit", "no", "suspended", 6000, 2500, "COGENT", "ARIN", "peering@cogentco.com"),
+    (_PEER_IDS["peer-007"], "Level 3 (Lumen)", 3356, "transit", "selective", "active", 7000, 3000, "LEVEL3", "ARIN", "peering@level3.com"),
+    (_PEER_IDS["peer-008"], "Orange", 5511, "customer", "selective", "active", 2000, 800, "ORANGE", "RIPE", "peering@orange.com"),
+    (_PEER_IDS["peer-009"], "Deutsche Telekom", 3320, "customer", "selective", "active", 3500, 1200, "DTAG", "RIPE", "peering@telekom.de"),
+    (_PEER_IDS["peer-010"], "RETN", 9002, "public", "open", "requested", 800, 400, "RETN", "RIPE", "peering@retn.net"),
+    (_PEER_IDS["peer-011"], "Netflix", 2906, "public", "open", "active", 1200, 600, "NETFLIX", "ARIN", "peering@netflix.com"),
 ]
 
 _IX = [
@@ -157,7 +166,7 @@ def seed_peers(conn) -> int:
         id, asn, org_name, peer_type, policy, status, peeringdb_net_id, peeringdb_synced_at,
         ipv4_prefix_count, ipv6_prefix_count, max_prefixes_v4, max_prefixes_v6, traffic_ratio,
         noc_email, irr_as_set, rir, md5_password, multihop, notes, classification, created_at, updated_at
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _PEERS:
         conn.execute(sql, (
@@ -191,7 +200,11 @@ def seed_prefixes(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _PREFIXES:
-        conn.execute(sql, tuple(row.values()))
+        conn.execute(sql, (
+            row["id"], row["peer_id"], row["prefix"], row["address_family"], row["max_length"],
+            row["origin_asn"], row["rpki_status"], row["roa_found"], row["irr_registered"],
+            row["last_validated"], row["classification"], row["last_validated"],
+        ))
         count += 1
     return count
 
@@ -203,7 +216,11 @@ def seed_requests(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _REQUESTS:
-        conn.execute(sql, tuple(row.values()))
+        conn.execute(sql, (
+            row["id"], row["peer_id"], row["request_type"], row["status"], row["ix_id"],
+            row["proposed_speed"], row["contact_method"], row["contact_address"], row["notes"],
+            row["sent_at"], row["responded_at"], row["classification"], row["sent_at"], row["sent_at"],
+        ))
         count += 1
     return count
 

@@ -792,9 +792,9 @@ def _register_govcon_pages(app: "Flask", _get_db):
             opp = dict(opp)
             orphaned = conn.execute(
                 """SELECT * FROM proposal_compliance_matrix
-                   WHERE opportunity_id = ? AND (section_id IS NULL OR section_id = '')
+                   WHERE opportunity_id = ? AND (proposal_section_id IS NULL OR proposal_section_id = '')
                      AND compliance_status != 'not_applicable'
-                   ORDER BY requirement_number""",
+                   ORDER BY sort_order""",
                 (opp_id,),
             ).fetchall()
             orphaned = [dict(r) for r in orphaned]

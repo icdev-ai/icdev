@@ -10709,6 +10709,12 @@ def init_db(db_path=None):
             conn.execute(sql)
         except sqlite3.OperationalError:
             pass
+    # Proposals Module Enhancement — capture / review / compliance columns
+    for sql in PROPOSALS_ALTER_SQL:
+        try:
+            conn.execute(sql)
+        except sqlite3.OperationalError:
+            pass
     conn.commit()
     conn.close()
     print(f"ICDEV™ database initialized at {path}")
