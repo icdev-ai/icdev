@@ -22,11 +22,15 @@ _NOCC_BACKEND = os.environ.get(
 
 
 def get_connection():
-    """Return a DB connection — PostgreSQL (default) or SQLite fallback."""
+    """Return a DB connection — PostgreSQL (default) or SQLite fallback.
+
+    Uses get_canvas_connection() to disable RLS; canvas tables lack
+    classification/tenant_id columns required by the global predicate.
+    """
     if _NOCC_BACKEND != "sqlite":
         try:
-            from tools.db.storage import get_connection as _pg_conn
-            return _pg_conn(db_path=os.environ.get("NOCC_PG_DATABASE", "icdev"))
+            from tools.db.storage import get_canvas_connection
+            return get_canvas_connection("NOCC_PG_DATABASE")
         except Exception as exc:
             print(f"[nocc-db] PostgreSQL unavailable ({exc}), falling back to SQLite")
     import sqlite3 as _sqlite3

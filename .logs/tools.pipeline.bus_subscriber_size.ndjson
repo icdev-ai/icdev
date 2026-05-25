@@ -57,3 +57,8 @@
 {"ts": "2026-05-25T14:58:14.435187+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T15:00:43.786104+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
 {"ts": "2026-05-25T15:01:45.401996+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:24:24.135682+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:28:08.565102+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:29:04.510251+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:31:14.842409+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}
+{"ts": "2026-05-25T15:32:50.638988+00:00", "level": "INFO", "component": "tools.pipeline.bus_subscriber", "message": "pdc.bus: subscriptions registered", "trace_id": null, "session_id": null, "extra": {}}

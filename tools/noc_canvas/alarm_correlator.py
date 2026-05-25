@@ -63,7 +63,7 @@ def get_active_alarms(conn: Any) -> list[dict]:
     severity_order = "CASE severity WHEN 'critical' THEN 0 WHEN 'major' THEN 1 WHEN 'minor' THEN 2 WHEN 'warning' THEN 3 ELSE 4 END"
     try:
         cur = conn.execute(
-            f"SELECT * FROM noc_alarms WHERE cleared = FALSE OR cleared = 0 "
+            f"SELECT * FROM noc_alarms WHERE cleared = FALSE "
             f"ORDER BY {severity_order}, last_seen DESC LIMIT 500"
         )
         cols = [d[0] for d in cur.description]
@@ -78,7 +78,7 @@ def get_alarm_summary(conn: Any) -> dict:
     try:
         rows = conn.execute(
             "SELECT severity, COUNT(*) AS cnt FROM noc_alarms "
-            "WHERE cleared = FALSE OR cleared = 0 GROUP BY severity"
+            "WHERE cleared = FALSE GROUP BY severity"
         ).fetchall()
         for row in rows:
             sev = row[0] if not hasattr(row, "keys") else row["severity"]
