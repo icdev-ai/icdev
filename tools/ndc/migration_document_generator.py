@@ -155,7 +155,7 @@ def _build_config_diff(src: Dict[str, Any], tgt: Dict[str, Any]) -> str:
 def _render_markdown(context: Dict[str, Any]) -> str:
     try:
         from jinja2 import Environment, FileSystemLoader
-        env = Environment(loader=FileSystemLoader(str(_TEMPLATE_DIR)), autoescape=False)
+        env = Environment(loader=FileSystemLoader(str(_TEMPLATE_DIR)), autoescape=False)  # nosec: B701 — output is Markdown (.md.j2), not HTML; XSS not applicable
         template = env.get_template("runbook.md.j2")
         return template.render(**context)
     except Exception as exc:

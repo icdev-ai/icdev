@@ -78,10 +78,11 @@ reports/
 
 # Test suite (local only — exclude generated/temp artifacts)
 tests/
-# But track committed E2E Playwright specs
+# But track committed E2E Playwright specs and core unit tests
 !tests/e2e/
 !tests/e2e/*.spec.ts
 !tests/conftest.py
+!tests/test_*.py
 
 # Vendored binaries (downloaded via setup, not committed)
 # Use layered rules so vendor/drivers README + .gitkeep + CHECKSUMS manifest
