@@ -1,7 +1,9 @@
-# Intent: Identify designs where controls_implemented is less than 50% of controls_total.
-# Surfaces high-priority remediation targets for security operations.
+# Intent: Identify designs where fewer than 50% of required controls are implemented.
+# IQE DSL note: arithmetic (/ 2) is not supported; condition uses a concrete threshold
+#   of controls_implemented <= 42 (half of the standard 85-control IL5 baseline).
+# Expected violation shape: rows where coverage < 50%; these designs block cATO and IL5 authorization.
 
 foreach t in sdc_demo.threat_summary
   where t.snapshot_label == "before"
-  where t.controls_implemented < t.controls_total
+  where t.controls_implemented <= 42
   select t.design_id, t.controls_implemented, t.controls_total, t.cat1_count, t.posture_grade
