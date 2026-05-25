@@ -63,6 +63,12 @@
   <!-- 12-step progress bar (Scenario B) -->
   <div id="workflow-panel" class="hidden" style="margin-top:24px;"></div>
 
+  <!-- Compliance timeline (always-visible before/after posture comparison) -->
+  <div style="margin-top:32px;">
+    <script>var timelineDesignId = 'demo-design-001';</script>
+    {% include "security_canvas/_compliance_timeline.html" %}
+  </div>
+
   <!-- IQE query widget -->
   <div style="margin-top:32px;">
     {% include "includes/iqe_query_widget.html" %}
