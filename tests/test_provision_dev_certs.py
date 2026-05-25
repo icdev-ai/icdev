@@ -6,9 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 """Tests for tools.a2a.provision_dev_certs — cross-platform dev TLS provisioning."""
 
-import pytest
-
-from tools.a2a.provision_dev_certs import provision, AGENT_NAMES, CERTS_DIR
+from tools.a2a.provision_dev_certs import provision, AGENT_NAMES
 
 
 class TestProvisionDevCerts:
@@ -16,7 +14,6 @@ class TestProvisionDevCerts:
 
     def test_generates_all_certs(self, tmp_path):
         """Provision creates CA and all agent certs in the certs dir."""
-        import os
         # Override CERTS_DIR to a temp location so we don't pollute the real one
         import tools.a2a.provision_dev_certs as mod
         original_certs_dir = mod.CERTS_DIR
