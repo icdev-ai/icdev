@@ -32,7 +32,7 @@ spec:
       containers:
         - name: gateway-agent
           image: ${REGISTRY}/icdev-gateway-agent:latest
-          args: ["tools/a2a/agent_server.py", "--agent-id", "gateway-agent", "--port", "8458"]
+          args: ["tools/a2a/agent_entrypoint.py", "--agent-id", "gateway-agent", "--port", "8458", "--no-tls"]
           ports:
             - containerPort: 8458
               protocol: TCP

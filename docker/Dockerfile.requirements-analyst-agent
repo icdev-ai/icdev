@@ -52,4 +52,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
 
 EXPOSE 8453
 
-ENTRYPOINT ["python", "tools/a2a/agent_server.py", "--agent-id", "requirements-analyst-agent", "--port", "8453"]
+ENTRYPOINT ["python", "tools/a2a/agent_entrypoint.py", "--agent-id", "requirements-analyst-agent", "--port", "8453", "--no-tls"]

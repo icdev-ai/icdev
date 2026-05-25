@@ -32,7 +32,7 @@ spec:
       containers:
         - name: integration-agent
           image: ${ECR_REGISTRY}/icdev-agent:latest
-          args: ["tools/a2a/agent_server.py", "--agent-id", "integration-agent", "--port", "8456"]
+          args: ["tools/a2a/agent_entrypoint.py", "--agent-id", "integration-agent", "--port", "8456", "--no-tls"]
           ports:
             - containerPort: 8456
               protocol: TCP

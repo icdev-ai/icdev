@@ -55,4 +55,4 @@ EXPOSE 8456
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:8456/health || exit 1
 
-ENTRYPOINT ["python", "tools/a2a/agent_server.py", "--agent-id", "integration-agent", "--port", "8456"]
+ENTRYPOINT ["python", "tools/a2a/agent_entrypoint.py", "--agent-id", "integration-agent", "--port", "8456", "--no-tls"]
