@@ -449,6 +449,8 @@ def list_drafts(opp_id):
             confidence = float(d.get("confidence_score") or 0.0)
             best_coverage = float(meta.get("best_coverage", 0.0))
             d["quality_score"] = _compute_quality_score(confidence, best_coverage)
+            if not d.get("domain"):
+                d["domain"] = d.get("domain_category") or ""
 
         return jsonify({"drafts": drafts, "total": len(drafts)})
     finally:
