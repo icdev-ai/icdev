@@ -30,7 +30,6 @@ from tools.logging.icdev_logger import get_logger
 
 import base64
 import hashlib
-import logging
 import os
 import shutil
 import sqlite3

@@ -18,7 +18,6 @@ import io
 import json as json_mod
 import sys
 import time
-import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

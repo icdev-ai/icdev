@@ -24,7 +24,6 @@ Usage:
 
 import contextvars
 import json
-import logging
 import sqlite3
 import threading
 import uuid

@@ -21,7 +21,6 @@ v6b additions:
 - Color badge on WriteGuard Score: Green ≥80, Yellow 60-79, Red <60
 """
 
-import logging
 import math
 import re
 import sys

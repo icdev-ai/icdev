@@ -6,7 +6,6 @@ from tools.logging.icdev_logger import get_logger
 Wires the canvas orchestrator into the dashboard REST API.
 """
 
-import logging
 
 from flask import Blueprint, jsonify, request
 

@@ -22,7 +22,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import hashlib
 import json
-import logging
 import re
 import time
 from tools.db.storage import get_connection

@@ -34,7 +34,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import base64
 import json
-import logging
 import re
 import sys
 import time

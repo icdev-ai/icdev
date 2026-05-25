@@ -3,7 +3,6 @@
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 
 from tools.workflow_hitl.adapters.base import ExternalStepAdapter

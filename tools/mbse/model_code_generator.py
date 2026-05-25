@@ -1,5 +1,4 @@
 
-from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Model Code Generator -- generate code scaffolding from SysML model elements.
 

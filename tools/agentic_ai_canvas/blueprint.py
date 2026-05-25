@@ -44,7 +44,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 
@@ -2974,7 +2973,6 @@ def generate_ops_config_api(design_id: str):
     except ValueError as e:
         return jsonify({"error": str(e)}), 404
     except Exception as e:
-        import logging
         get_logger(__name__).error("Ops config generation error: %s", e)
         return jsonify({"error": str(e)}), 500
 

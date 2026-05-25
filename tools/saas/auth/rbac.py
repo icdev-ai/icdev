@@ -5,7 +5,6 @@ from tools.logging.icdev_logger import get_logger
 CUI // SP-CTI
 """
 
-import logging
 from typing import Optional
 
 logger = get_logger("saas.auth.rbac")

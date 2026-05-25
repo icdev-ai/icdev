@@ -17,7 +17,6 @@ Thread-local and Flask ``g`` integration for synchronous code;
 """
 
 import json
-import logging
 import threading
 from contextvars import ContextVar
 from dataclasses import dataclass, field

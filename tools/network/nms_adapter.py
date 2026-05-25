@@ -17,7 +17,6 @@ Usage::
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 

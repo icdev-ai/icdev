@@ -7,7 +7,6 @@ Pure deterministic functions for evaluating infrastructure designs against
 compliance rules. No Flask dependency — takes graph data and returns results.
 """
 
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any

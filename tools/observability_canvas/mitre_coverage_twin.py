@@ -16,7 +16,6 @@ Gap score = fraction of techniques in 'gap' state (0.0 = fully covered, 1.0 = al
 """
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 

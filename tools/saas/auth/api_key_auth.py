@@ -6,7 +6,6 @@ CUI // SP-CTI
 """
 
 import hashlib
-import logging
 import os
 import sys
 from datetime import datetime, timezone

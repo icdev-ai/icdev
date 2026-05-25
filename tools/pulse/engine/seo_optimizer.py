@@ -7,7 +7,6 @@ extraction, JSON-LD schema markup, YAML frontmatter generation,
 sitemap entries, and scoring with actionable recommendations.
 """
 
-import logging
 import re
 from datetime import datetime, timezone
 from typing import Any

@@ -17,7 +17,6 @@ Configuration:
     args/observability_tracing_config.yaml — full config
 """
 
-import logging
 import os
 from typing import Any, Dict, Optional
 

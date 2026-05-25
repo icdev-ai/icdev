@@ -42,7 +42,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for

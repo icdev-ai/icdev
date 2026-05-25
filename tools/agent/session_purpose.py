@@ -13,7 +13,6 @@ Decision D-ORCH-5: Session purpose for NIST AU-3 event detail traceability.
 import argparse
 import hashlib
 import json
-import logging
 import sqlite3
 import sys
 import uuid

@@ -10,7 +10,6 @@ Provides:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional, Type

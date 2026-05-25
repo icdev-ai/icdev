@@ -164,6 +164,7 @@ def get_wave_summary() -> dict:
                 "completed": by_status.get("completed", 0),
                 "paused": by_status.get("paused", 0),
                 "by_status": by_status,
+                "by_wave": waves,
                 "workload_breakdown": waves,
             }
         finally:

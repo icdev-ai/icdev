@@ -27,7 +27,6 @@ from tools.logging.icdev_logger import get_logger
 
 import base64
 import json
-import logging
 import os
 import sys
 import uuid

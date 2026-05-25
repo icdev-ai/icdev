@@ -19,7 +19,6 @@ Usage:
 """
 
 import functools
-import logging
 import random
 import time
 from typing import Callable, Optional, Sequence, Type

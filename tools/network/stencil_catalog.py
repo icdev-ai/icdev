@@ -9,7 +9,6 @@ Users may also define custom vendors and supply their own URLs.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from html.parser import HTMLParser
 from urllib.request import Request, urlopen  # nosec B310
 

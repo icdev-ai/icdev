@@ -27,7 +27,6 @@ CLI:
 """
 
 import json
-import logging
 import re
 import sys
 from datetime import datetime, timezone

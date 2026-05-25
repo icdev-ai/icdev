@@ -208,6 +208,13 @@ def get_scanner_summary() -> dict:
             total = _row_to_dict(total_row).get("cnt", 0) if total_row else 0
 
             return {
+                "total_workloads": total,
+                "discovered": by_status.get("discovered", 0),
+                "assessed": by_status.get("assessed", 0),
+                "wave_assigned": by_status.get("wave_assigned", 0),
+                "in_migration": by_status.get("in_migration", 0),
+                "migrated": by_status.get("migrated", 0),
+                "failed": by_status.get("failed", 0),
                 "total": total,
                 "by_status": by_status,
                 "by_risk": by_risk,

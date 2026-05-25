@@ -7,7 +7,6 @@ Extends SaaSBaseConnector with healthcare-specific resource handling.
 Concrete connectors override: connector_name, _protocol(), _base_url(), _auth_headers().
 """
 
-import logging
 import time
 from abc import abstractmethod
 from enum import Enum

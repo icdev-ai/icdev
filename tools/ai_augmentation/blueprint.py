@@ -12,7 +12,6 @@ from tools.logging.icdev_logger import get_logger
 
 import importlib
 import json
-import logging
 
 from flask import Blueprint, jsonify, render_template, request
 

@@ -13,7 +13,6 @@ This module is the integration point that combines both optimizations.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import queue
 import sqlite3
 import threading

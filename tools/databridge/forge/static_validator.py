@@ -14,7 +14,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import ast
-import logging
 import re
 import subprocess
 import sys

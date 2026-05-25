@@ -9,7 +9,6 @@ structured output, and model fallback with retry/backoff.
 """
 
 import json
-import logging
 import os
 import random
 import time

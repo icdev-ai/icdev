@@ -19,7 +19,7 @@
 .back-link:hover{color:#34d399;}
 .gl-table{width:100%;border-collapse:collapse;}
 .gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
-.gl-table tbody tr{border-bottom:1px solid #1e293b;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
 .gl-table tbody tr:hover{background:#1a2540;}
 .gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
 .gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
@@ -138,7 +138,7 @@
     <tbody id="jobs-tbody">
       {% if data.migrations %}
         {% for job in data.migrations %}
-        <tr>
+        <tr onclick="window.location='/govlift/migrations/{{ job.id }}'">
           <td style="font-size:.75rem;color:#64748b;">{{ job.get('id', '') }}</td>
           <td style="font-size:.78rem;font-family:monospace;">{{ job.get('workload_id', '—') }}</td>
           <td style="font-size:.78rem;color:#94a3b8;">{{ job.get('wave_id', '—') }}</td>
@@ -176,7 +176,7 @@
           <td style="font-size:.75rem;color:#94a3b8;">{{ job.get('completed_at', '—') }}</td>
           <td>
             {% if job.get('executor_log') %}
-            <div class="log-preview" onclick="showLog({{ loop.index0 }}, this.dataset.log)" data-log="{{ job.executor_log|e }}">{{ job.executor_log[:60] }}...</div>
+            <div class="log-preview" onclick="event.stopPropagation();showLog({{ loop.index0 }}, this.dataset.log)" data-log="{{ job.executor_log|e }}">{{ job.executor_log[:60] }}...</div>
             {% else %}
               <span style="color:#334155;font-size:.78rem;">—</span>
             {% endif %}
@@ -222,7 +222,7 @@ function applyJobFilters() {
   if (status) params.set('status', status);
   if (preCheck !== '') params.set('pre_check_passed', preCheck);
   if (postCheck !== '') params.set('post_check_passed', postCheck);
-  fetch('/api/govlift/executor?' + params.toString())
+  fetch('/api/govlift/migrations?' + params.toString())
     .then(r => r.json())
     .then(data => {
       const jobs = data.migrations || data || [];
@@ -232,8 +232,8 @@ function applyJobFilters() {
         const sCls = statusMap[j.status] || 'bg-secondary';
         const preIcon = j.pre_check_passed === null || j.pre_check_passed === undefined ? '<span class="check-na">—</span>' : (j.pre_check_passed ? '<span class="check-pass">PASS</span>' : '<span class="check-fail">FAIL</span>');
         const postIcon = j.post_check_passed === null || j.post_check_passed === undefined ? '<span class="check-na">—</span>' : (j.post_check_passed ? '<span class="check-pass">PASS</span>' : '<span class="check-fail">FAIL</span>');
-        const logCell = j.executor_log ? `<div class="log-preview" onclick="showLog(0,'${(j.executor_log||'').replace(/'/g,'&#39;')}')" data-log="${(j.executor_log||'').replace(/"/g,'&quot;')}">${(j.executor_log||'').substring(0,60)}...</div>` : '<span style="color:#334155;font-size:.78rem;">—</span>';
-        return `<tr>
+        const logCell = j.executor_log ? `<div class="log-preview" onclick="event.stopPropagation();showLog(0,'${(j.executor_log||'').replace(/'/g,'&#39;')}')" data-log="${(j.executor_log||'').replace(/"/g,'&quot;')}">${(j.executor_log||'').substring(0,60)}...</div>` : '<span style="color:#334155;font-size:.78rem;">—</span>';
+        return `<tr onclick="window.location='/govlift/migrations/${j.id}'">
           <td style="font-size:.75rem;color:#64748b;">${j.id||''}</td>
           <td style="font-size:.78rem;font-family:monospace;">${j.workload_id||'—'}</td>
           <td style="font-size:.78rem;color:#94a3b8;">${j.wave_id||'—'}</td>

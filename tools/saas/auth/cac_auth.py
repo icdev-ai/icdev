@@ -9,7 +9,6 @@ In production, nginx or ALB terminates mutual TLS and passes:
   X-Client-Cert-Serial: "serial_number"
 """
 
-import logging
 import os
 import sys
 from tools.db.storage import get_connection

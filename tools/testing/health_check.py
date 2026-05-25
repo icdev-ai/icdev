@@ -16,7 +16,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import importlib
 import json
-import logging
 import os
 import subprocess
 import sys

@@ -19,7 +19,6 @@ from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
-import logging
 import time
 from tools.db.storage import get_connection
 from pathlib import Path

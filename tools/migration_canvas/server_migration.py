@@ -13,7 +13,6 @@ public pricing APIs when internet is available).
 import csv
 import io
 import json
-import logging
 import socket
 import uuid
 from datetime import datetime, timezone

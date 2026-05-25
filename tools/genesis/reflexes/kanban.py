@@ -16,7 +16,6 @@ execute without human approval. The daemon monitors subprocess completion.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import re
 import shutil
 import subprocess
@@ -2999,6 +2998,7 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
             "task_id": task_id,
             "task_desc": task_desc,
             "task_type": task_type,
+            "llm_provider": "ollama",
         },
     }
 

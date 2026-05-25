@@ -13,7 +13,6 @@ Usage in app.py::create_app():
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

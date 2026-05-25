@@ -20,7 +20,6 @@ POC: ICDEV™ System Administrator
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 from pathlib import Path
 from typing import List

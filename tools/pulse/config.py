@@ -7,7 +7,6 @@ Updated 2026-03-12: Added template support, LLM router integration,
 and multi-stage pipeline configuration.
 """
 
-import logging
 import os
 from pathlib import Path
 

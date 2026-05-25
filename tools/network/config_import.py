@@ -32,7 +32,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import ipaddress
 import json
-import logging
 import re
 import sys
 from pathlib import Path
@@ -259,7 +258,6 @@ def _parse_cisco(text: str) -> dict:
     try:
         from ciscoconfparse2 import CiscoConfParse  # type: ignore
     except ImportError:
-        import logging
         get_logger(__name__).warning(
             "ciscoconfparse2 not installed — Cisco config parsing unavailable. "
             "Install it in an isolated environment if needed."

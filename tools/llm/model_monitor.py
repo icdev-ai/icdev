@@ -14,7 +14,6 @@ Tables:
 
 import argparse
 import json
-import logging
 import math
 import statistics
 import sys

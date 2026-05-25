@@ -105,6 +105,25 @@ CHECK_RISK_LEVEL        = f"risk_level IN ('{_rl}')"
 CHECK_INTEGRATION_SYS   = f"system_name IN ('{_is}')"
 CHECK_ROLLBACK_STATUS   = f"status IN ('{_rs}')"
 
+# Marketplace item lifecycle
+MARKETPLACE_STATUSES = ["submitted", "approved", "rejected"]
+
+# Runbook template categories
+RUNBOOK_CATEGORIES = [
+    "stig_remediation",
+    "cloud_migration",
+    "security_hardening",
+    "compliance_audit",
+    "disaster_recovery",
+    "network_configuration",
+]
+
+_mps = "', '".join(MARKETPLACE_STATUSES)
+_rc = "', '".join(RUNBOOK_CATEGORIES)
+
+CHECK_MARKETPLACE_STATUS = f"status IN ('{_mps}')"
+CHECK_RUNBOOK_CATEGORY = f"category IN ('{_rc}')"
+
 # Ontology class mappings for KG enrichment
 GOVLIFT_ONTOLOGY_MAP: dict[str, str] = {
     "web_app":           "infra:ComputeInstance",

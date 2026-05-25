@@ -18,7 +18,6 @@ Exports:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 
 logger = get_logger("icdev.extensions.migration_advisory_chat")
 

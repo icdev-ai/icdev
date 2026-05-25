@@ -13,7 +13,6 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe (graceful degradation).
 
 import hashlib
 import json
-import logging
 import os
 import sys
 import xml.etree.ElementTree as ET

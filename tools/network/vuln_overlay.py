@@ -14,7 +14,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import ipaddress
-import logging
 import uuid
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone

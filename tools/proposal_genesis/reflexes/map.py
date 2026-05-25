@@ -9,7 +9,6 @@ GraphRAG/KARL enrichment for compliance-neighborhood discovery (§3.4, D-KARL-1/
 Scanner-tier only (zero Claude tokens).
 """
 
-import logging
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed

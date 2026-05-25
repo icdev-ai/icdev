@@ -11,7 +11,6 @@ from tools.logging.icdev_logger import get_logger
 import hashlib
 import io
 import json
-import logging
 import sqlite3
 import uuid
 import zipfile

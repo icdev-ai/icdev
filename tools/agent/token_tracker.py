@@ -15,7 +15,6 @@ Budget enforcement (inspired by Paperclip AI's per-agent budget model):
 
 import argparse
 import json
-import logging
 import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timezone

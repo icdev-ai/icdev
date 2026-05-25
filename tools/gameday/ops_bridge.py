@@ -8,7 +8,6 @@ tools/ops_hub/ pipeline so they appear in the /ops dashboard.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 
 log = get_logger(__name__)
 

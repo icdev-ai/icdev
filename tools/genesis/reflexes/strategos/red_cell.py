@@ -19,7 +19,6 @@ from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
-import logging
 import math
 import sys
 from datetime import datetime, timezone

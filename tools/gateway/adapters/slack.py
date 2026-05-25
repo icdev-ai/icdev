@@ -15,7 +15,6 @@ Decision D133: Channel adapters are ABC + implementations.
 """
 
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone

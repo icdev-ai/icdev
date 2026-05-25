@@ -10,7 +10,6 @@ Target session: rsess-1e2fb0fe6c96
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Optional
 
 from tools.db.storage import get_connection

@@ -13,7 +13,6 @@ Before sending any response back to a messaging channel:
 Decision D135: Response filter strips content above channel max_il, never upgrades.
 """
 
-import logging
 import re
 import sys
 from pathlib import Path

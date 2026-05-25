@@ -9,7 +9,6 @@ per-sync DB open/close overhead. All writes are INSERT-only (NIST AU compliant).
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import queue
 import sqlite3
 import threading

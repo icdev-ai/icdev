@@ -9,7 +9,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 
 logger = get_logger(__name__)

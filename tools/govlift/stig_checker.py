@@ -63,6 +63,21 @@ def _row_to_dict(row) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def get_stig_check(check_id: str) -> dict | None:
+    """Return a single STIG check by its internal id, or None if not found."""
+    try:
+        conn = get_connection()
+        try:
+            sql = translate_sql("SELECT * FROM govlift_stig_checks WHERE id = ?")
+            row = conn.execute(sql, (check_id,)).fetchone()
+            return _row_to_dict(row) if row else None
+        finally:
+            conn.close()
+    except Exception as exc:
+        print(f"stig_checker.get_stig_check error: {exc}", file=sys.stderr)
+        return None
+
+
 def list_stig_checks(
     workload_id: str | None = None,
     severity: str | None = None,

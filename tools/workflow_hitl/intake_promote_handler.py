@@ -12,7 +12,6 @@ All other instances are silently skipped.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path

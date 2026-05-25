@@ -11,7 +11,6 @@ Implements the binding ceremony:
 Decision D136: User binding is mandatory before any command execution.
 """
 
-import logging
 import secrets
 import sqlite3
 import sys

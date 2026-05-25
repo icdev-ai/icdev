@@ -10,7 +10,6 @@ Bidirectional sync between Network Design Canvas and Security Design Canvas:
 """
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 

@@ -36,7 +36,6 @@ Usage:
 
 import hashlib
 import json
-import logging
 import os
 import secrets
 import sys

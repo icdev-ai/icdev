@@ -29,7 +29,6 @@ from tools.logging.icdev_logger import get_logger
 
 import concurrent.futures
 import json
-import logging
 import os
 import subprocess
 import tempfile

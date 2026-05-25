@@ -95,7 +95,6 @@ hook registered inside register_api_blueprints().
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone

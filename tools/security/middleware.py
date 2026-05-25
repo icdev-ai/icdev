@@ -16,7 +16,6 @@ Usage:
     init_security(app, classification="CUI")
 """
 
-import logging
 from typing import Any, Optional, Set
 
 logger = get_logger("security.middleware")

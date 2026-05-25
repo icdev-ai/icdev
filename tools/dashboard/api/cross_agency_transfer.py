@@ -15,7 +15,6 @@ GET  /transfers/<id>     — query all audit events for a transfer_id
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 
 from flask import Blueprint, jsonify, request
 

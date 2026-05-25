@@ -8,7 +8,6 @@ Provides a unified interface for both SQLite and PostgreSQL connections.
 Tools can use this adapter to work with either backend transparently.
 """
 
-import logging
 import os
 import sqlite3
 import sys

@@ -35,7 +35,6 @@ import argparse
 import base64
 import hashlib
 import json
-import logging
 import os
 import uuid
 from datetime import datetime, timezone, timedelta

@@ -1072,7 +1072,6 @@ def get_connection(db_path: str = None) -> StorageConnection:
                     f"refusing to fall back to SQLite. Fix PG or unset the flag. "
                     f"Original error: {exc}"
                 ) from exc
-            import logging
 
             get_logger(__name__).warning(
                 "PostgreSQL unavailable (%s), falling back to SQLite",

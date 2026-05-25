@@ -11,7 +11,6 @@ blueprint on save inside a try/except:
 """
 
 import json
-import logging
 import sqlite3
 import time
 import uuid

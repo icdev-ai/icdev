@@ -8,7 +8,6 @@ Exposes the lab_health probe results at /api/ndc/labs/health and
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 
 from flask import Blueprint, jsonify
 

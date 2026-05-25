@@ -23,7 +23,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json as _json
-import logging
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone

@@ -20,7 +20,6 @@ from tools.logging.icdev_logger import get_logger
 
 import base64
 import io
-import logging
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request, render_template, send_file

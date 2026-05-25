@@ -14,7 +14,6 @@ parallel subagent runs don't race on shared state.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import time
 
 logger = get_logger("icdev.agent_toolkit.subagent")

@@ -19,7 +19,7 @@
 .back-link:hover{color:#34d399;}
 .gl-table{width:100%;border-collapse:collapse;}
 .gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
-.gl-table tbody tr{border-bottom:1px solid #1e293b;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
 .gl-table tbody tr:hover{background:#1a2540;}
 .gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
 .gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
@@ -172,7 +172,7 @@
         {% for chk in data.checks %}
         {% set is_cat1 = chk.get('severity', '') in ['CAT1', 'CAT I', 'I'] %}
         {% set is_cat2 = chk.get('severity', '') in ['CAT2', 'CAT II', 'II'] %}
-        <tr class="{{ 'cat1-row' if is_cat1 else '' }}">
+        <tr class="{{ 'cat1-row' if is_cat1 else '' }}" onclick="window.location='/govlift/stig/{{ chk.id }}'">
           <td style="font-family:monospace;font-size:.75rem;{% if is_cat1 %}color:#f87171;{% elif is_cat2 %}color:#fbbf24;{% else %}color:#94a3b8;{% endif %}">{{ chk.get('check_id', '') }}</td>
           <td style="font-size:.75rem;color:#64748b;">{{ chk.get('workload_id', '—') }}</td>
           <td style="font-size:.78rem;">{{ chk.get('stig_benchmark', '—') }}</td>
@@ -233,7 +233,7 @@ function applyStigFilters() {
         const sevHtml = isCat1 ? '<span class="stig-cat1">CAT I</span>' : (isCat2 ? '<span class="stig-cat2">CAT II</span>' : '<span class="stig-cat3">CAT III</span>');
         const statusMap = {not_a_finding:'<span class="badge bg-info">Not a Finding</span>',not_applicable:'<span class="badge bg-secondary">N/A</span>',not_reviewed:'<span class="badge bg-secondary">Not Reviewed</span>'};
         const statusHtml = statusMap[chk.status] || '<span class="badge bg-danger">Open</span>';
-        return `<tr class="${isCat1?'cat1-row':''}">
+        return `<tr class="${isCat1?'cat1-row':''}" onclick="window.location='/govlift/stig/${chk.id}'">
           <td style="font-family:monospace;font-size:.75rem;${isCat1?'color:#f87171;':isCat2?'color:#fbbf24;':'color:#94a3b8;'}">${chk.check_id||''}</td>
           <td style="font-size:.75rem;color:#64748b;">${chk.workload_id||'—'}</td>
           <td style="font-size:.78rem;">${chk.stig_benchmark||'—'}</td>

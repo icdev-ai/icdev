@@ -6,7 +6,6 @@ CUI // SP-CTI
 """
 
 import json
-import logging
 import os
 import sys
 import time

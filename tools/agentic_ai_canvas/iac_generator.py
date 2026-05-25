@@ -11,7 +11,6 @@ from tools.logging.icdev_logger import get_logger
 
 import io
 import json
-import logging
 import re
 import zipfile
 from datetime import datetime, timezone

@@ -18,7 +18,6 @@ Translation rules applied:
   - CREATE INDEX IF NOT EXISTS         ->  kept as-is (PG supports it)
 """
 
-import logging
 import sys
 from pathlib import Path
 

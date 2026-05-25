@@ -11,7 +11,6 @@ from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import time
 import uuid
 from datetime import datetime, timezone

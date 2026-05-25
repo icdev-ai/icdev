@@ -10,7 +10,6 @@ Uses ibm-watsonx-ai SDK with graceful degradation (D73).
 Government deployment: watsonx on AWS GovCloud or IBM Cloud for Government (IC4G).
 """
 
-import logging
 import os
 import sys
 from pathlib import Path

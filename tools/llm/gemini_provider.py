@@ -12,7 +12,6 @@ Graceful degradation on missing SDK per D73.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict, Iterator, List
 

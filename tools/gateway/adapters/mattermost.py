@@ -21,7 +21,6 @@ Decision D140: Mattermost uses REST API (no WebSocket), consistent with D20.
 
 import hmac
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone

@@ -838,6 +838,7 @@ def check_import_usage(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 _RUFF_GATE_RULES = ("F401", "F811", "F841")
 _RUFF_GATE_CONFIG = PROJECT_ROOT / "args" / "ruff_gate.yaml"
+_PAGE_COMPLETENESS_WHITELIST_CONFIG = PROJECT_ROOT / "args" / "page_completeness_whitelist.yaml"
 
 
 def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
@@ -880,6 +881,32 @@ def _load_ruff_gate_whitelist() -> Dict[str, Set[str]]:
         elif isinstance(codes, str):
             normalized[key] = {codes.upper()}
     return normalized
+
+
+def _load_page_completeness_whitelist() -> Set[str]:
+    """Load grandfathered canvas names from args/page_completeness_whitelist.yaml.
+
+    Schema:
+        # reason for each canvas
+        whitelisted_canvases:
+          - canvas_name  # reason (task-id)
+
+    Returns a set of canvas names to skip. Missing/malformed file → empty set.
+    """
+    if not _PAGE_COMPLETENESS_WHITELIST_CONFIG.exists():
+        return set()
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        return set()
+    try:
+        raw = yaml.safe_load(_PAGE_COMPLETENESS_WHITELIST_CONFIG.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return set()
+    canvases = raw.get("whitelisted_canvases") or []
+    if not isinstance(canvases, list):
+        return set()
+    return {str(c).strip() for c in canvases if c}
 
 
 def _run_ruff_lint(
@@ -2764,12 +2791,17 @@ def check_new_page_completeness() -> CoherenceCheck:
     base_html_text = _read_text(base_html_path)
     iqe_adapters_dir = PROJECT_ROOT / "tools" / "iqe" / "adapters"
     iqe_queries_dir = PROJECT_ROOT / "context" / "iqe" / "queries"
+    whitelist = _load_page_completeness_whitelist()
 
     violations: List[str] = []
+    whitelisted_count = 0
 
     # Find all canvas page.html files (sub-directory only)
     for page_html in sorted(templates_dir.rglob("*/page.html")):
         canvas = page_html.parent.name  # e.g. "govcon", "digital_twin"
+        if canvas in whitelist:
+            whitelisted_count += 1
+            continue
         rel_page = page_html.relative_to(PROJECT_ROOT)
         page_text = _read_text(page_html)
         missing: List[str] = []
@@ -2821,18 +2853,19 @@ def check_new_page_completeness() -> CoherenceCheck:
 
     status = "fail" if violations else "pass"
     canvas_count = len(list(templates_dir.rglob("*/page.html")))
+    wl_note = f" ({whitelisted_count} whitelisted)" if whitelisted_count else ""
     return CoherenceCheck(
         check_id="new_page_completeness",
         check_name="New Page 8-Component Completeness",
         status=status,
-        expected=[f"All {canvas_count} canvas pages have all 8 required components"],
-        actual=[f"{len(violations)} incomplete page(s)"],
+        expected=[f"All {canvas_count - whitelisted_count} canvas pages have all 8 required components"],
+        actual=[f"{len(violations)} incomplete page(s){wl_note}"],
         missing=violations,
         extra=[],
         message=(
             f"{len(violations)} canvas page(s) are missing required components — "
             "these features will be broken or unreachable"
-        ) if violations else f"All {canvas_count} canvas pages have required components",
+        ) if violations else f"All {canvas_count - whitelisted_count} canvas pages have required components{wl_note}",
     )
 
 

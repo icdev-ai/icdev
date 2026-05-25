@@ -13,7 +13,6 @@ Decision D138: Deploy commands disabled by default on all remote channels.
 """
 
 import json
-import logging
 import subprocess
 import sys
 import time
