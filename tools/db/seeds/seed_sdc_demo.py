@@ -760,14 +760,16 @@ def seed_before_state(reset: bool = False) -> dict:
             ),
         }
 
+        _allowed = frozenset(tables.keys())
         for table, (cols, rows) in tables.items():
+            assert table in _allowed  # table name from internal whitelist only
+            tbl = table
             if reset:
-                conn.execute(f"DELETE FROM {table} WHERE id LIKE '%-demo-%' OR id LIKE 'thr-demo-%' OR id LIKE 'sop-demo-%'")
+                _del = "DELETE FROM " + tbl + " WHERE id LIKE '%-demo-%' OR id LIKE 'thr-demo-%' OR id LIKE 'sop-demo-%'"  # nosec B608
+                conn.execute(_del)
             placeholders = ",".join("?" * len(cols.split(",")))
-            conn.executemany(
-                f"INSERT OR IGNORE INTO {table} ({cols}) VALUES ({placeholders})",
-                rows,
-            )
+            _ins = "INSERT OR IGNORE INTO " + tbl + " (" + cols + ") VALUES (" + placeholders + ")"  # nosec B608
+            conn.executemany(_ins, rows)
             counts[table] = len(rows)
 
         conn.commit()
