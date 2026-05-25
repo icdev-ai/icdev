@@ -2,7 +2,7 @@
 {% extends "network/base.html" %}
 {% block title %}Migration Phases — {{ topo_name }} — Network Design Canvas{% endblock %}
 
-{% block extra_css %}
+{% block head %}
 <style>
 /* ── Layout ───────────────────────────────────────────────────────────────── */
 .mp-shell { display: flex; flex-direction: column; height: calc(100vh - 56px); overflow: hidden; }
@@ -13,13 +13,13 @@
 
 /* ── Phase Navigator ──────────────────────────────────────────────────────── */
 .mp-nav { width: 200px; min-width: 200px; background: #081525; border-right: 1px solid #1e3a6e; display: flex; flex-direction: column; overflow-y: auto; }
-.mp-nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #4a6080; padding: 12px 14px 6px; }
-.mp-nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; color: #7a8cb0; font-size: 12px; border-left: 3px solid transparent; transition: all 0.15s; }
+.mp-nav-title { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #8099b8; padding: 12px 14px 6px; }
+.mp-nav-item { display: flex; align-items: center; gap: 8px; padding: 9px 14px; cursor: pointer; color: #b0c4dc; font-size: 12px; border-left: 3px solid transparent; transition: all 0.15s; }
 .mp-nav-item:hover { color: #eaeaea; background: #111f35; }
 .mp-nav-item.active { color: #27ae60; border-left-color: #27ae60; background: #0f1e30; }
 .mp-nav-item.current { border-left-color: #2980b9; }
 .mp-nav-item.final { border-left-color: #8e44ad; }
-.mp-nav-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #1e3a6e; color: #7a8cb0; margin-left: auto; }
+.mp-nav-badge { font-size: 10px; padding: 1px 6px; border-radius: 10px; background: #2a4a8a; color: #c0d4f0; margin-left: auto; }
 .mp-nav-item.active .mp-nav-badge { background: #1a5e2d; color: #27ae60; }
 .mp-nav-sep { height: 1px; background: #1e3a6e; margin: 6px 0; }
 
@@ -36,7 +36,7 @@
 
 /* ── Export Toolbar ───────────────────────────────────────────────────────── */
 .export-toolbar { display: flex; gap: 6px; }
-.export-btn { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 4px; border: 1px solid #2d4a7a; background: #111f35; color: #7a8cb0; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
+.export-btn { display: flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 4px; border: 1px solid #2d4a7a; background: #111f35; color: #b0c4dc; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.15s; text-decoration: none; }
 .export-btn:hover { background: #1e3a6e; color: #eaeaea; border-color: #4a6ea0; }
 .export-btn.pdf { border-color: #6e2d2d; color: #e07070; }
 .export-btn.pdf:hover { background: #3d1515; color: #ef9090; }
@@ -52,9 +52,9 @@
 
 /* ── Info Boxes Panel ─────────────────────────────────────────────────────── */
 .mp-infoboxes { width: 320px; min-width: 280px; overflow-y: auto; background: #081525; border-left: 1px solid #1e3a6e; display: flex; flex-direction: column; }
-.mp-infoboxes-header { padding: 10px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #4a6080; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+.mp-infoboxes-header { padding: 10px 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8099b8; flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
 .mp-infoboxes-header span { flex: 1; }
-.infoboxes-toggle-all { font-size: 10px; color: #4a6080; cursor: pointer; padding: 2px 6px; background: #1e3a6e; border-radius: 3px; border: none; }
+.infoboxes-toggle-all { font-size: 10px; color: #8099b8; cursor: pointer; padding: 2px 6px; background: #1e3a6e; border-radius: 3px; border: none; }
 .infoboxes-toggle-all:hover { color: #eaeaea; }
 
 /* ── Single Info Box ──────────────────────────────────────────────────────── */
@@ -69,7 +69,7 @@
 .infobox.collapsed .infobox-body { display: none; }
 .infobox-row { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; border-top: 1px solid #0f1e30; font-size: 11px; }
 .infobox-row:first-child { border-top: none; }
-.infobox-label { color: #7a8cb0; }
+.infobox-label { color: #a0b8d0; }
 .infobox-value { font-weight: 600; color: #eaeaea; text-align: right; }
 .infobox-value.ok { color: #27ae60; }
 .infobox-value.warn { color: #f39c12; }
@@ -78,18 +78,19 @@
 
 /* ── Phase Status Badge ───────────────────────────────────────────────────── */
 .phase-status { font-size: 10px; padding: 2px 7px; border-radius: 10px; font-weight: 600; }
-.phase-status.planned { background: #1e3a6e; color: #7a8cb0; }
+.phase-status.planned { background: #2a4a8a; color: #c0d4f0; }
+.phase-status.pending { background: #2a4a8a; color: #c0d4f0; }
 .phase-status.in_progress { background: #1a4a2e; color: #27ae60; }
 .phase-status.completed { background: #0f3a20; color: #1abc9c; }
 .phase-status.rolled_back { background: #3d1515; color: #e74c3c; }
 
 /* ── Legend bar ───────────────────────────────────────────────────────────── */
 .mp-legend { display: flex; gap: 12px; align-items: center; padding: 6px 14px; background: #0a1628; border-top: 1px solid #1e3a6e; flex-shrink: 0; }
-.legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #7a8cb0; }
+.legend-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #a8bdd6; }
 .legend-dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
 
 /* ── Loading / empty states ───────────────────────────────────────────────── */
-.mp-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: #4a6080; font-size: 13px; flex-direction: column; gap: 12px; }
+.mp-loading { display: flex; align-items: center; justify-content: center; height: 100%; color: #8099b8; font-size: 13px; flex-direction: column; gap: 12px; }
 .mp-spinner { width: 28px; height: 28px; border: 3px solid #1e3a6e; border-top-color: #27ae60; border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -99,20 +100,25 @@
 .consol-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .consol-stat { text-align: center; }
 .consol-stat .cval { font-size: 18px; font-weight: 700; color: #27ae60; }
-.consol-stat .clbl { font-size: 10px; color: #4a6080; }
+.consol-stat .clbl { font-size: 10px; color: #8099b8; }
+
+/* ── View Tabs (Physical / Logical) ─────────────────────────────────────── */
+.mp-view-tabs { display: flex; gap: 0; padding: 0 14px; background: #0d1b2e; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+.mp-view-tab { padding: 6px 14px; font-size: 11px; font-weight: 600; color: #8099b8; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; background: none; border-top: none; border-left: none; border-right: none; }
+.mp-view-tab:hover { color: #a0b8d0; }
+.mp-view-tab.active { color: #27ae60; border-bottom-color: #27ae60; background: #0f1e30; }
 
 /* ── Resize handle ────────────────────────────────────────────────────────── */
 .resize-handle { width: 5px; cursor: col-resize; background: #1e3a6e; flex-shrink: 0; transition: background 0.15s; }
 .resize-handle:hover { background: #27ae60; }
 </style>
 {% endblock %}
-
 {% block content %}
 <div class="mp-shell">
   <!-- Top Toolbar -->
   <div class="mp-toolbar">
     <h2>Network Migration Phases <span class="topo-name">— {{ topo_name }}</span></h2>
-    <a href="/network/canvas/{{ topo_id }}" class="export-btn" title="Open in canvas editor">✏ Edit Canvas</a>
+    <a href="/network/canvas/{{ topo_id }}" class="export-btn" title="Open in canvas editor" target="_blank">✏ Edit Canvas</a>
     <a href="/network/" class="export-btn">← Network</a>
   </div>
 
@@ -153,8 +159,8 @@
 
       <!-- Consolidation Quick Stats -->
       <div style="margin-top:auto;padding:12px 14px;border-top:1px solid #1e3a6e">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#4a6080;margin-bottom:8px">Consolidation</div>
-        <div id="nav-consol-stats" style="color:#4a6080;font-size:11px">Loading…</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;color:#8099b8;margin-bottom:8px">Consolidation</div>
+        <div id="nav-consol-stats" style="color:#a0b8d0;font-size:11px">Loading…</div>
       </div>
     </nav>
 
@@ -172,7 +178,14 @@
               <button class="export-btn drawio" onclick="exportPhase('current','drawio')" title="Export as Draw.io">⬇ Draw.io</button>
             </div>
           </div>
-          <div class="mp-diagram-canvas" id="canvas-current">
+          <div class="mp-view-tabs">
+            <button class="mp-view-tab active" data-view="physical" onclick="switchView('current','physical',this)">🔌 Physical</button>
+            <button class="mp-view-tab" data-view="logical" onclick="switchView('current','logical',this)">🌐 Logical</button>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-current-physical" style="display:block;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Loading topology…</span></div>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-current-logical" style="display:none;">
             <div class="mp-loading"><div class="mp-spinner"></div><span>Loading topology…</span></div>
           </div>
           <div class="mp-legend" id="legend-current"></div>
@@ -203,7 +216,14 @@
               <button class="export-btn drawio" onclick="exportPhase('phase-{{ ph.phase_num }}','drawio')" title="Export as Draw.io">⬇ Draw.io</button>
             </div>
           </div>
-          <div class="mp-diagram-canvas" id="canvas-phase-{{ ph.phase_num }}">
+          <div class="mp-view-tabs">
+            <button class="mp-view-tab active" data-view="physical" onclick="switchView('phase-{{ ph.phase_num }}','physical',this)">🔌 Physical</button>
+            <button class="mp-view-tab" data-view="logical" onclick="switchView('phase-{{ ph.phase_num }}','logical',this)">🌐 Logical</button>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-phase-{{ ph.phase_num }}-physical" style="display:block;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Loading phase {{ ph.phase_num }}…</span></div>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-phase-{{ ph.phase_num }}-logical" style="display:none;">
             <div class="mp-loading"><div class="mp-spinner"></div><span>Loading phase {{ ph.phase_num }}…</span></div>
           </div>
           <div class="mp-legend" id="legend-phase-{{ ph.phase_num }}">
@@ -236,9 +256,16 @@
               <button class="export-btn drawio" onclick="exportPhase('final','drawio')" title="Export as Draw.io">⬇ Draw.io</button>
             </div>
           </div>
+          <div class="mp-view-tabs">
+            <button class="mp-view-tab active" data-view="physical" onclick="switchView('final','physical',this)">🔌 Physical</button>
+            <button class="mp-view-tab" data-view="logical" onclick="switchView('final','logical',this)">🌐 Logical</button>
+          </div>
           <!-- Consolidation Summary Banner (injected by JS) -->
           <div id="consol-banner-wrap"></div>
-          <div class="mp-diagram-canvas" id="canvas-final">
+          <div class="mp-diagram-canvas" id="canvas-final-physical" style="display:block;">
+            <div class="mp-loading"><div class="mp-spinner"></div><span>Computing final state…</span></div>
+          </div>
+          <div class="mp-diagram-canvas" id="canvas-final-logical" style="display:none;">
             <div class="mp-loading"><div class="mp-spinner"></div><span>Computing final state…</span></div>
           </div>
           <div class="mp-legend" id="legend-final"></div>
@@ -258,7 +285,7 @@
 </div><!-- /.mp-shell -->
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
 const TOPO_ID = {{ topo_id|tojson }};
 const TOPO_NAME = {{ topo_name|tojson }};
@@ -273,6 +300,61 @@ function activatePanel(panelId, navEl) {
   if (navEl) navEl.classList.add('active');
 }
 
+// ── Active view tracker per panel ───────────────────────────────────────────
+const _activeViews = {};
+
+function _viewKey(panelKey) {
+  return panelKey;
+}
+
+function getActiveView(panelKey) {
+  return _activeViews[_viewKey(panelKey)] || 'physical';
+}
+
+function setActiveView(panelKey, view) {
+  _activeViews[_viewKey(panelKey)] = view;
+}
+
+// ── Tab Switching ──────────────────────────────────────────────────────────
+function switchView(panelKey, view, btnEl) {
+  setActiveView(panelKey, view);
+
+  // Toggle canvases
+  const phyCanvas = document.getElementById(`canvas-${panelKey}-physical`);
+  const logCanvas = document.getElementById(`canvas-${panelKey}-logical`);
+  if (phyCanvas) phyCanvas.style.display = view === 'physical' ? 'block' : 'none';
+  if (logCanvas) logCanvas.style.display = view === 'logical' ? 'block' : 'none';
+
+  // Toggle tab buttons
+  const tabsContainer = btnEl.parentElement;
+  if (tabsContainer) {
+    tabsContainer.querySelectorAll('.mp-view-tab').forEach(t => t.classList.remove('active'));
+  }
+  if (btnEl) btnEl.classList.add('active');
+
+  // Swap infoboxes if we have cached data
+  if (!_phaseData) return;
+  let boxes = null;
+  if (panelKey === 'current') {
+    boxes = view === 'physical' ? (_phaseData.current.infoboxes_physical || _phaseData.current.infoboxes)
+                                  : (_phaseData.current.infoboxes_logical || _phaseData.current.infoboxes);
+  } else if (panelKey === 'final') {
+    boxes = view === 'physical' ? (_phaseData.final.infoboxes_physical || _phaseData.final.infoboxes)
+                                : (_phaseData.final.infoboxes_logical || _phaseData.final.infoboxes);
+  } else if (panelKey.startsWith('phase-')) {
+    const phNum = parseInt(panelKey.replace('phase-', ''), 10);
+    const ph = (_phaseData.phases || []).find(p => p.phase_num === phNum);
+    if (ph) {
+      boxes = view === 'physical' ? (ph.infoboxes_physical || ph.infoboxes)
+                                  : (ph.infoboxes_logical || ph.infoboxes);
+    }
+  }
+  const boxContainerId = `boxes-${panelKey}`;
+  if (boxes) {
+    renderInfoboxes(boxContainerId, boxes);
+  }
+}
+
 // ── Load All Phase Data ────────────────────────────────────────────────────
 async function loadAllPhaseData() {
   try {
@@ -281,18 +363,21 @@ async function loadAllPhaseData() {
     const data = await resp.json();
     _phaseData = data;
 
-    // Render Current
-    renderDiagram('canvas-current', data.current.graph, 'current');
+    // Render Current (both views)
+    renderDiagram('canvas-current-physical', data.current.graph, 'current', 'physical');
+    renderDiagram('canvas-current-logical', data.current.graph, 'current', 'logical');
     renderInfoboxes('boxes-current', data.current.infoboxes);
 
-    // Render Phases
+    // Render Phases (both views)
     (data.phases || []).forEach(ph => {
-      renderDiagram(`canvas-phase-${ph.phase_num}`, ph.graph, `phase-${ph.phase_num}`);
+      renderDiagram(`canvas-phase-${ph.phase_num}-physical`, ph.graph_physical || ph.graph, `phase-${ph.phase_num}`, 'physical');
+      renderDiagram(`canvas-phase-${ph.phase_num}-logical`, ph.graph_logical || ph.graph, `phase-${ph.phase_num}`, 'logical');
       renderInfoboxes(`boxes-phase-${ph.phase_num}`, ph.infoboxes);
     });
 
-    // Render Final
-    renderDiagram('canvas-final', data.final.graph, 'final');
+    // Render Final (both views)
+    renderDiagram('canvas-final-physical', data.final.graph, 'final', 'physical');
+    renderDiagram('canvas-final-logical', data.final.graph, 'final', 'logical');
     renderInfoboxes('boxes-final', data.final.infoboxes);
     renderConsolidationBanner(data.final.consolidation);
     updateNavConsolStats(data.final.consolidation);
@@ -314,7 +399,8 @@ const STATE_COLORS = {
   default:  '#1e6eb5',
 };
 
-function renderDiagram(containerId, graph, phaseKey) {
+function renderDiagram(containerId, graph, phaseKey, diagramType) {
+  diagramType = diagramType || 'physical';
   const container = document.getElementById(containerId);
   if (!container) return;
 
@@ -340,22 +426,50 @@ function renderDiagram(containerId, graph, phaseKey) {
     pos[n.id] = { x: (n.x || 0) - minX + 60, y: (n.y || 0) - minY + 40 };
   });
 
-  // Build SVG
+  // Build SVG edges
   let edgeSvg = '';
   edges.slice(0, 200).forEach(e => {
     const s = pos[e.source], t = pos[e.target];
     if (!s || !t) return;
     const bw = e.bandwidth_gbps || e.bandwidth || '';
     const util = e.utilization_pct || 0;
-    const stroke = util > 80 ? '#e74c3c' : util > 60 ? '#f39c12' : '#1e4a7e';
-    const sw = util > 80 ? 2.5 : 1.5;
-    edgeSvg += `<line x1="${s.x+50}" y1="${s.y+16}" x2="${t.x+50}" y2="${t.y+16}" stroke="${stroke}" stroke-width="${sw}" opacity="0.7"/>`;
-    if (bw) {
-      const mx = (s.x + t.x) / 2 + 50, my = (s.y + t.y) / 2 + 16;
-      edgeSvg += `<text x="${mx}" y="${my-4}" fill="#4a6080" font-size="9" text-anchor="middle">${bw}G</text>`;
+
+    let stroke, sw, labelText;
+    if (diagramType === 'logical') {
+      stroke = e.protocol_color || (util > 80 ? '#e74c3c' : util > 60 ? '#f39c12' : '#1e4a7e');
+      sw = 2.0;
+      labelText = e.protocol || '';
+    } else {
+      stroke = util > 80 ? '#e74c3c' : util > 60 ? '#f39c12' : '#1e4a7e';
+      sw = util > 80 ? 2.5 : 1.5;
+      const srcIf = e.source_interface || '';
+      const tgtIf = e.target_interface || '';
+      if (srcIf && tgtIf) {
+        labelText = `${srcIf} ↔ ${tgtIf}`;
+      } else if (srcIf) {
+        labelText = srcIf;
+      } else if (tgtIf) {
+        labelText = tgtIf;
+      } else {
+        labelText = '';
+      }
+    }
+
+    const x1 = s.x + 50, y1 = s.y + 16, x2 = t.x + 50, y2 = t.y + 16;
+    edgeSvg += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}" opacity="0.85"/>`;
+
+    // Edge label
+    const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+    if (labelText) {
+      edgeSvg += `<rect x="${mx - 36}" y="${my - 14}" width="72" height="14" rx="3" fill="#0a1628" opacity="0.85"/>`;
+      edgeSvg += `<text x="${mx}" y="${my - 4}" fill="#b0c4dc" font-size="8" text-anchor="middle" font-family="monospace">${_esc(labelText.substring(0, 28))}</text>`;
+    }
+    if (bw && diagramType === 'physical') {
+      edgeSvg += `<text x="${mx}" y="${my + 8}" fill="#4a6080" font-size="8" text-anchor="middle">${bw}G</text>`;
     }
   });
 
+  // Build SVG nodes
   let nodeSvg = '';
   nodes.slice(0, 150).forEach(n => {
     const p = pos[n.id];
@@ -367,24 +481,33 @@ function renderDiagram(containerId, graph, phaseKey) {
     const icon = _typeIcon(type);
     const isEol = n.eol && new Date(n.eol) < new Date();
 
+    // Logical overlay: show ASN or role
+    let extraText = '';
+    if (diagramType === 'logical' && n.logical) {
+      const asn = n.logical.asn;
+      const role = n.logical.role;
+      extraText = asn ? `AS${asn}` : (role || '');
+    }
+
     nodeSvg += `
       <g class="nc-node" transform="translate(${p.x},${p.y})" onclick="showNodeDetail(${JSON.stringify(JSON.stringify(n))})" style="cursor:pointer">
-        <rect x="0" y="0" width="100" height="32" rx="5" fill="${color}" stroke="${isEol ? '#e74c3c' : 'rgba(255,255,255,0.15)'}" stroke-width="${isEol ? 2 : 1}"/>
+        <rect x="0" y="0" width="100" height="${extraText ? 40 : 32}" rx="5" fill="${color}" stroke="${isEol ? '#e74c3c' : 'rgba(255,255,255,0.15)'}" stroke-width="${isEol ? 2 : 1}"/>
         <text x="12" y="14" fill="rgba(255,255,255,0.8)" font-size="12">${icon}</text>
         <text x="28" y="13" fill="#ffffff" font-size="10" font-weight="700">${_esc(label)}</text>
         <text x="28" y="24" fill="rgba(255,255,255,0.6)" font-size="8">${_esc((n.type||'').substring(0,16))}</text>
+        ${extraText ? `<text x="28" y="35" fill="#a5b4fc" font-size="7" font-family="monospace">${_esc(extraText)}</text>` : ''}
         ${isEol ? '<text x="86" y="10" fill="#e74c3c" font-size="9" font-weight="bold">EOL</text>' : ''}
       </g>`;
   });
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="background:#0a1628">
     <defs>
-      <marker id="arr-${phaseKey}" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
+      <marker id="arr-${phaseKey}-${diagramType}" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
         <path d="M0,0 L0,6 L6,3 z" fill="#1e4a7e"/>
       </marker>
     </defs>
-    <g id="edges-${phaseKey}">${edgeSvg}</g>
-    <g id="nodes-${phaseKey}">${nodeSvg}</g>
+    <g id="edges-${phaseKey}-${diagramType}">${edgeSvg}</g>
+    <g id="nodes-${phaseKey}-${diagramType}">${nodeSvg}</g>
   </svg>`;
 
   const wrap = document.createElement('div');

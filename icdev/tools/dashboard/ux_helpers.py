@@ -129,6 +129,27 @@ def format_timestamp_short(value):
         return str(value)
 
 
+def format_ts(value):
+    """Convert ISO-8601 string or datetime to compact format.
+
+    Examples:
+        "2026-02-18T14:30:00Z"  -> "2026-02-18 14:30"
+        datetime(2026,2,18,14,30) -> "2026-02-18 14:30"
+        None or ""              -> "—"
+    """
+    if not value:
+        return "—"
+    if isinstance(value, str):
+        try:
+            dt = _parse_iso(value)
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return value[:16].replace("T", " ")
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d %H:%M")
+    return str(value)[:16]
+
+
 def format_time_ago(value):
     """Convert ISO-8601 string to relative time description.
 
@@ -916,6 +937,7 @@ def register_ux_filters(app):
     app.jinja_env.filters["friendly_time"] = format_timestamp
     app.jinja_env.filters["short_time"] = format_timestamp_short
     app.jinja_env.filters["time_ago"] = format_time_ago
+    app.jinja_env.filters["ts"] = format_ts
     app.jinja_env.filters["glossary"] = glossary_term
 
     # Template globals (callable directly in templates)

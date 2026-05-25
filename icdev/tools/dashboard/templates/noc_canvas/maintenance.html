@@ -38,8 +38,8 @@
       <tr>
         <td style="font-family:monospace;font-size:.75rem;color:#94a3b8;">{{ w.window_number }}</td>
         <td style="color:#e2e8f0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ w.title }}</td>
-        <td style="color:#64748b;font-size:.78rem;white-space:nowrap;">{{ w.scheduled_start[:16] if w.scheduled_start else '—' }}</td>
-        <td style="color:#64748b;font-size:.78rem;white-space:nowrap;">{{ w.scheduled_end[:16] if w.scheduled_end else '—' }}</td>
+        <td style="color:#64748b;font-size:.78rem;white-space:nowrap;">{{ w.scheduled_start | ts }}</td>
+        <td style="color:#64748b;font-size:.78rem;white-space:nowrap;">{{ w.scheduled_end | ts }}</td>
         <td class="scope-{{ w.impact_scope|replace(' ','-') }}">{{ w.impact_scope }}</td>
         <td><span class="status-pill status-{{ w.status|replace(' ','-') }}">{{ w.status }}</span></td>
         <td>{% if w.notification_sent %}<span class="notify-yes">Yes</span>{% else %}<span class="notify-no">No</span>{% endif %}</td>

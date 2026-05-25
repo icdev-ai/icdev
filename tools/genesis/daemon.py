@@ -18,10 +18,13 @@ Usage:
 
 import importlib
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Tuple
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Path bootstrapping

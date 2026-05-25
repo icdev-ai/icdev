@@ -125,7 +125,8 @@
     transition: transform .15s, box-shadow .15s;
 }
 .phase-dot:hover { transform: scale(1.15); box-shadow: 0 2px 8px rgba(0,0,0,.18); }
-.phase-dot.planned    { border-color: #cbd5e0; background: #f7fafc; color: #718096; }
+.phase-dot.planned    { border-color: #cbd5e0; background: #f7fafc; color: #4a5568; }
+.phase-dot.pending    { border-color: #cbd5e0; background: #f7fafc; color: #4a5568; }
 .phase-dot.in_progress{ border-color: #3182ce; background: #ebf8ff; color: #2b6cb0; }
 .phase-dot.completed  { border-color: #38a169; background: #f0fff4; color: #276749; }
 .phase-dot.rolled_back{ border-color: #e53e3e; background: #fff5f5; color: #c53030; }
@@ -138,7 +139,7 @@
     word-break: break-word;
     line-height: 1.3;
 }
-.phase-days { font-size: 0.65rem; color: #a0aec0; margin-top: 2px; }
+.phase-days { font-size: 0.65rem; color: #718096; margin-top: 2px; }
 
 /* ── Docs grid ──────────────────────────────────────────────────────── */
 .docs-section {
@@ -431,7 +432,7 @@
         </div>
         <div class="docs-grid drawer-docs"></div>
         <div style="margin-top:12px;" class="drawer-no-docs" style="display:none;">
-            <span style="font-size:0.8rem;color:#a0aec0;">No documents linked to this phase yet.</span>
+            <span style="font-size:0.8rem;color:#718096;">No documents linked to this phase yet.</span>
         </div>
     </div>
 </template>
@@ -519,7 +520,8 @@ function buildProjectCard(proj) {
                     ${proj.owner ? ' &nbsp;·&nbsp; Owner: ' + esc(proj.owner) : ''}
                 </div>
             </div>
-            <span class="toggle-icon" style="font-size:1.1rem;color:#a0aec0;">▾</span>
+            <span class="toggle-icon" style="font-size:1.1rem;color:#718096;">▾</span>
+            <a href="/network/projects/${proj.id}" target="_blank" onclick="event.stopPropagation()" class="qa-btn" style="font-size:11px;padding:3px 10px;margin-left:6px;" title="Open unified project dashboard">📊 Dashboard</a>
         </div>
         <div class="project-card-body" style="display:none;">
             ${buildPhaseTimeline(proj, phases)}
@@ -531,7 +533,7 @@ function buildProjectCard(proj) {
 
 function buildPhaseTimeline(proj, phases) {
     if (!phases.length) {
-        return `<div class="phase-timeline"><span style="font-size:0.82rem;color:#a0aec0;">No phases defined yet.</span></div>`;
+        return `<div class="phase-timeline"><span style="font-size:0.82rem;color:#718096;">No phases defined yet.</span></div>`;
     }
     const steps = phases.map((ph, i) => {
         const st = ph.status || 'planned';
@@ -555,14 +557,14 @@ function buildPhaseDrawer(ph, proj) {
     const docs = ph.documents || [];
     const docCards = docs.length
         ? docs.map(d => buildDocCard(d)).join('')
-        : '<span style="font-size:0.8rem;color:#a0aec0;">No documents linked to this phase yet.</span>';
+        : '<span style="font-size:0.8rem;color:#718096;">No documents linked to this phase yet.</span>';
     const parallel = ph.parallel_run ? 'Yes — parallel operation' : 'No';
     return `
         <div class="phase-drawer" id="drawer-${ph.id}" data-topo-id="${proj.id || ''}">
             <div class="phase-drawer-header">
                 <h4>Phase ${ph.phase_num}: ${esc(ph.title)}</h4>
                 <div style="display:flex;gap:8px;">
-                    ${proj.id ? `<a href="/network/migration-phases/${proj.id}" class="qa-btn" target="_blank">Open 3-Panel Diagram</a>` : ''}
+                    ${proj.topology_id ? `<a href="/network/migration-phases/${proj.topology_id}" class="qa-btn" target="_blank">Open 3-Panel Diagram</a>` : ''}
                 </div>
             </div>
             <div class="phase-detail-grid">
@@ -583,7 +585,7 @@ function buildPhaseDrawer(ph, proj) {
                     <div class="value">${parallel}</div>
                 </div>
             </div>
-            ${ph.description ? `<p style="font-size:0.82rem;color:#4a5568;margin:0 0 10px;">${esc(ph.description)}</p>` : ''}
+            ${ph.description ? buildStepsList(ph.description) : ''}
             ${ph.rollback_criteria ? `
             <div class="docs-section-title" style="margin-bottom:6px;">Rollback Criteria</div>
             <p style="font-size:0.82rem;color:#4a5568;margin:0 0 14px;">${esc(ph.rollback_criteria)}</p>
@@ -631,15 +633,18 @@ function renderSidebar(data) {
     const topoEl = document.getElementById('sideTopo');
     if (topos.length) {
         topoEl.innerHTML = topos.map(t => `
-            <div class="lib-item" onclick="window.open('/network/migration-phases/${t.id}','_blank')">
+            <div class="lib-item">
                 <span class="lib-icon">🗺️</span>
-                <div>
+                <div style="flex:1;min-width:0;">
                     <div class="lib-title">${esc(t.name)}</div>
-                    <div class="lib-sub">3-Panel Migration View</div>
+                    <div class="lib-sub" style="display:flex;gap:8px;margin-top:4px;">
+                        <button class="tb-btn" style="font-size:11px;padding:2px 8px;" onclick="window.open('/network/canvas/${t.id}','_blank')" title="Open topology in canvas editor">✏ Open Canvas</button>
+                        <button class="tb-btn" style="font-size:11px;padding:2px 8px;color:#5b21b6;" onclick="window.open('/network/migration-phases/${t.id}','_blank')" title="View migration phases for this topology">Migration Phases</button>
+                    </div>
                 </div>
             </div>`).join('');
     } else {
-        topoEl.innerHTML = '<div class="lib-sub" style="color:#a0aec0;">No topologies yet.</div>';
+        topoEl.innerHTML = '<div class="lib-sub" style="color:#718096;">No topologies yet.</div>';
     }
 
     // Runbooks
@@ -658,7 +663,7 @@ function renderSidebar(data) {
             rbEl.innerHTML += `<div class="lib-sub" style="margin-top:6px;"><a href="/network/runbooks">View all ${runbooks.length} runbooks →</a></div>`;
         }
     } else {
-        rbEl.innerHTML = '<div class="lib-sub" style="color:#a0aec0;">No runbooks yet.</div>';
+        rbEl.innerHTML = '<div class="lib-sub" style="color:#718096;">No runbooks yet.</div>';
     }
 
     // SOPs
@@ -677,7 +682,7 @@ function renderSidebar(data) {
             sopEl.innerHTML += `<div class="lib-sub" style="margin-top:6px;"><a href="/data/sops">View all ${sops.length} SOPs →</a></div>`;
         }
     } else {
-        sopEl.innerHTML = '<div class="lib-sub" style="color:#a0aec0;">No SOPs yet.</div>';
+        sopEl.innerHTML = '<div class="lib-sub" style="color:#718096;">No SOPs yet.</div>';
     }
 }
 
@@ -749,6 +754,20 @@ function filterHub() {
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
+function buildStepsList(description) {
+  if (!description) return '';
+  const steps = description.split('. ').map(s => s.trim().replace(/\.$/, '')).filter(Boolean);
+  if (steps.length <= 1) {
+    return `<p style="font-size:0.82rem;color:#4a5568;margin:0 0 10px;">${esc(description)}</p>`;
+  }
+  const rows = steps.map((s, i) => `
+    <div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #f0f4f8;align-items:flex-start;">
+      <span style="width:20px;height:20px;border-radius:50%;background:#ebf8ff;color:#2b6cb0;font-size:0.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">${i+1}</span>
+      <span style="font-size:0.81rem;color:#2d3748;line-height:1.45;">${esc(s)}</span>
+    </div>`).join('');
+  return `<div style="margin:0 0 12px;">${rows}</div>`;
+}
+
 function esc(s) {
     if (!s) return '';
     return String(s)

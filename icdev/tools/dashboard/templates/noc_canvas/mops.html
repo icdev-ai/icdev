@@ -32,7 +32,7 @@
     </div>
     <div class="d-flex align-items-center gap-2">
       <span class="gen-badge gen-{{ 'ai' if m.generated_by != 'manual' else 'manual' }}">{{ m.generated_by }}</span>
-      <span style="color:#64748b;font-size:.75rem;">{{ m.created_at[:10] if m.created_at else '' }}</span>
+      <span style="color:#64748b;font-size:.75rem;">{{ m.created_at | ts }}</span>
     </div>
   </div>
   <div id="mop-steps-{{ m.id }}" style="display:none;margin-top:14px;">

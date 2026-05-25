@@ -9,9 +9,9 @@ agents:
     host: "0.0.0.0"
     port: 8443
     tls:
-      cert: "/etc/icdev/certs/orchestrator.crt"
-      key: "/etc/icdev/certs/orchestrator.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/orchestrator.crt"
+      key: "data/certs/orchestrator.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -53,9 +53,9 @@ agents:
     host: "0.0.0.0"
     port: 8444
     tls:
-      cert: "/etc/icdev/certs/architect.crt"
-      key: "/etc/icdev/certs/architect.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/architect.crt"
+      key: "data/certs/architect.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -71,9 +71,9 @@ agents:
     host: "0.0.0.0"
     port: 8445
     tls:
-      cert: "/etc/icdev/certs/builder.crt"
-      key: "/etc/icdev/certs/builder.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/builder.crt"
+      key: "data/certs/builder.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -89,9 +89,9 @@ agents:
     host: "0.0.0.0"
     port: 8446
     tls:
-      cert: "/etc/icdev/certs/compliance.crt"
-      key: "/etc/icdev/certs/compliance.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/compliance.crt"
+      key: "data/certs/compliance.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -107,9 +107,9 @@ agents:
     host: "0.0.0.0"
     port: 8447
     tls:
-      cert: "/etc/icdev/certs/security.crt"
-      key: "/etc/icdev/certs/security.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/security.crt"
+      key: "data/certs/security.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -125,9 +125,9 @@ agents:
     host: "0.0.0.0"
     port: 8448
     tls:
-      cert: "/etc/icdev/certs/infra.crt"
-      key: "/etc/icdev/certs/infra.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/infra.crt"
+      key: "data/certs/infra.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -143,9 +143,9 @@ agents:
     host: "0.0.0.0"
     port: 8449
     tls:
-      cert: "/etc/icdev/certs/knowledge.crt"
-      key: "/etc/icdev/certs/knowledge.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/knowledge.crt"
+      key: "data/certs/knowledge.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -161,9 +161,9 @@ agents:
     host: "0.0.0.0"
     port: 8450
     tls:
-      cert: "/etc/icdev/certs/monitor.crt"
-      key: "/etc/icdev/certs/monitor.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/monitor.crt"
+      key: "data/certs/monitor.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"
       region: "us-gov-west-1"
@@ -179,9 +179,9 @@ agents:
     host: "0.0.0.0"
     port: 8451
     tls:
-      cert: "/etc/icdev/certs/mbse.crt"
-      key: "/etc/icdev/certs/mbse.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/mbse.crt"
+      key: "data/certs/mbse.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"
@@ -204,9 +204,9 @@ agents:
     host: "0.0.0.0"
     port: 8452
     tls:
-      cert: "/etc/icdev/certs/modernization.crt"
-      key: "/etc/icdev/certs/modernization.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/modernization.crt"
+      key: "data/certs/modernization.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"
@@ -229,9 +229,9 @@ agents:
     host: "0.0.0.0"
     port: 8453
     tls:
-      cert: "/etc/icdev/certs/requirements-analyst.crt"
-      key: "/etc/icdev/certs/requirements-analyst.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/requirements-analyst.crt"
+      key: "data/certs/requirements-analyst.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"
@@ -255,9 +255,9 @@ agents:
     host: "0.0.0.0"
     port: 8454
     tls:
-      cert: "/etc/icdev/certs/supply-chain.crt"
-      key: "/etc/icdev/certs/supply-chain.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/supply-chain.crt"
+      key: "data/certs/supply-chain.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"
@@ -280,9 +280,9 @@ agents:
     host: "0.0.0.0"
     port: 8455
     tls:
-      cert: "/etc/icdev/certs/simulation.crt"
-      key: "/etc/icdev/certs/simulation.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/simulation.crt"
+      key: "data/certs/simulation.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"
@@ -307,9 +307,9 @@ agents:
     host: "0.0.0.0"
     port: 8458
     tls:
-      cert: "/etc/icdev/certs/gateway.crt"
-      key: "/etc/icdev/certs/gateway.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/gateway.crt"
+      key: "data/certs/gateway.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"
@@ -333,9 +333,9 @@ agents:
     host: "0.0.0.0"
     port: 8457
     tls:
-      cert: "/etc/icdev/certs/devsecops.crt"
-      key: "/etc/icdev/certs/devsecops.key"
-      ca: "/etc/icdev/certs/ca.crt"
+      cert: "data/certs/devsecops.crt"
+      key: "data/certs/devsecops.key"
+      ca: "data/certs/ca.crt"
     bedrock:
       model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
       region: "us-gov-west-1"

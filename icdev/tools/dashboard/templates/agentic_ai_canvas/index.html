@@ -95,7 +95,7 @@
       <a href="/agentic-ai/ato/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">🏛 ATO</a>
       <a href="/agentic-ai/exec-summary/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">📊 Brief</a>
       <a href="/agentic-ai/red-team/{{ d.id }}" style="background:#431407;color:#fb923c;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">⚔ Red Team</a>
-      <a href="/agentic-ai/api/designs/{{ d.id }}/accred-package" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">📦 Accred</a>
+      <button onclick="downloadAccred('{{ d.id }}', '{{ d.name|e }}')" style="background:#1e293b;color:#94a3b8;border:1px solid #334155;padding:6px 10px;border-radius:4px;font-size:11px;cursor:pointer;">📦 Accred</button>
       <a href="/agentic-ai/patterns/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">🔍 Patterns</a>
       <a href="/agentic-ai/impact/{{ d.id }}" style="background:#0f3460;color:#7ab3f0;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">💥 Impact</a>
       <a href="/agentic-ai/scorecard/{{ d.id }}" style="background:#065f46;color:#6ee7b7;padding:6px 10px;border-radius:4px;text-decoration:none;font-size:11px;">🎯 Scorecard</a>
@@ -265,6 +265,27 @@ function renderPortfolio(d) {
 
 // Auto-load portfolio on page load
 if (document.getElementById('portfolio-panel')) loadPortfolio();
+
+function downloadAccred(id, name) {
+  fetch('/agentic-ai/api/designs/' + id + '/accred-package')
+    .then(function(r) {
+      if (!r.ok) { alert('Download failed (status ' + r.status + ')'); return; }
+      return r.text();
+    })
+    .then(function(text) {
+      if (!text) return;
+      var blob = new Blob([text], {type: 'application/yaml'});
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = (name || 'design') + '-accred-package.yaml';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    })
+    .catch(function(e) { alert('Download failed: ' + e); });
+}
 
 function deleteDesign(id, name) {
   if (!confirm('Delete "' + name + '"?\nThis cannot be undone.')) return;

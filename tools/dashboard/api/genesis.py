@@ -8,7 +8,6 @@ implementations versus stubs, plus daemon health and coverage metrics.
 Read-only against daemon state and reflex modules.
 """
 
-import json
 import os
 import sys
 from pathlib import Path
