@@ -160,7 +160,7 @@ class A2AAgentServer:
         card = {
             "name": self.name,
             "description": self.description,
-            "url": f"https://{self.host}:{self.port}",
+            "url": f"{'https' if self.tls_cert else 'http'}://{self.host}:{self.port}",
             "version": self.version,
             "capabilities": {
                 "streaming": False,

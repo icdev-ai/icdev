@@ -76,13 +76,13 @@ spec:
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
-              app.kubernetes.io/name: requirements-analyst-agent
+              app.kubernetes.io/name: requirements-analyst
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
-              app.kubernetes.io/name: requirements-analyst-agent
+              app.kubernetes.io/name: requirements-analyst
       volumes:
         - name: data
           persistentVolumeClaim:
