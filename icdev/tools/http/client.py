@@ -5,15 +5,18 @@ All outbound HTTPS calls (LLM providers, SAM.gov, Ollama, marketplace, etc.)
 should go through `get_session()` or `request()` so operators can harden the
 outbound posture with a single set of env vars.
 
-Env vars (all optional):
+Thresholds (connect/read timeout, retries, backoff, max_redirects) are read
+from ``args/http_client.yaml``.  All numeric values can be overridden there
+without touching code — no hardcoded thresholds here.
+
+Env vars (all optional, override yaml where noted):
 
     ICDEV_MTLS_CLIENT_CERT   path to client certificate (PEM)
     ICDEV_MTLS_CLIENT_KEY    path to client private key (PEM)
     ICDEV_MTLS_CA_BUNDLE     path to CA bundle used to verify the server
     ICDEV_MTLS_VERIFY        "true" (default) | "false" — disable TLS
                              verification entirely (NOT for production)
-    ICDEV_HTTP_TIMEOUT       default timeout in seconds (connect + read),
-                             default: 30
+    ICDEV_HTTP_TIMEOUT       overrides yaml timeout.read (seconds)
     ICDEV_HTTP_PROXY         proxy URL for http:// requests (also reads
                              HTTP_PROXY)
     ICDEV_HTTPS_PROXY        proxy URL for https:// requests (also reads
@@ -21,7 +24,7 @@ Env vars (all optional):
 
 Usage:
 
-    from tools.http.client import get_session, request
+    from icdev.tools.http.client import get_session, request
 
     # Option 1 — one-shot
     r = request("GET", "https://api.example.gov/v1/opps", timeout=10)
@@ -42,12 +45,79 @@ Notes:
 from __future__ import annotations
 
 import os
+import pathlib
 from typing import Any
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
 
 
-_DEFAULT_TIMEOUT = None  # populated lazily
+# ── YAML config loading ───────────────────────────────────────────────────────
+
+_HTTP_CONFIG: dict | None = None
+# icdev/tools/http/client.py → parents[3] = project root
+_ARGS_FILE = pathlib.Path(__file__).resolve().parents[3] / "args" / "http_client.yaml"
+
+
+def _load_config() -> dict:
+    global _HTTP_CONFIG
+    if _HTTP_CONFIG is None:
+        if _yaml is not None and _ARGS_FILE.exists():
+            with _ARGS_FILE.open(encoding="utf-8") as fh:
+                _HTTP_CONFIG = _yaml.safe_load(fh) or {}
+        else:
+            _HTTP_CONFIG = {}
+    return _HTTP_CONFIG
+
+
+def _cfg(section: str, key: str, default: float) -> float:
+    cfg = _load_config()
+    try:
+        return float(cfg.get(section, {}).get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+# ── Derived thresholds (all sourced from yaml, no inline magic numbers) ───────
+
+def _connect_timeout() -> float:
+    return _cfg("timeout", "connect", 10.0)
+
+
+def _read_timeout() -> float:
+    # ICDEV_HTTP_TIMEOUT env var overrides yaml for backward compat.
+    env = os.environ.get("ICDEV_HTTP_TIMEOUT")
+    if env:
+        try:
+            return float(env)
+        except ValueError:
+            pass
+    return _cfg("timeout", "read", 30.0)
+
+
+def _max_retries() -> int:
+    return int(_cfg("", "max_retries", 3))
+
+
+def _backoff_factor() -> float:
+    return _cfg("", "backoff_factor", 0.5)
+
+
+def _max_redirects() -> int:
+    return int(_cfg("", "max_redirects", 10))
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
+
+def default_timeout() -> tuple[float, float]:
+    """Return (connect_timeout, read_timeout) sourced from args/http_client.yaml."""
+    return (_connect_timeout(), _read_timeout())
 
 
 def _env_flag(name: str, default: bool = True) -> bool:
@@ -86,19 +156,23 @@ def _build_proxies() -> dict[str, str]:
     return proxies
 
 
-def default_timeout() -> float:
-    global _DEFAULT_TIMEOUT
-    if _DEFAULT_TIMEOUT is None:
-        try:
-            _DEFAULT_TIMEOUT = float(os.environ.get("ICDEV_HTTP_TIMEOUT", "30"))
-        except ValueError:
-            _DEFAULT_TIMEOUT = 30.0
-    return _DEFAULT_TIMEOUT
-
-
 def get_session() -> requests.Session:
-    """Return a configured requests.Session with mTLS + CA + proxy applied."""
+    """Return a configured requests.Session with mTLS + CA + proxy + retry applied."""
     session = requests.Session()
+
+    # Retry adapter — thresholds sourced from args/http_client.yaml.
+    retry = Retry(
+        total=_max_retries(),
+        backoff_factor=_backoff_factor(),
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    session.max_redirects = _max_redirects()
+
     cert = _build_cert()
     if cert:
         session.cert = cert
