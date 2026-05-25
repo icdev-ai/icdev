@@ -4,6 +4,29 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: prop
+  name: Proposals Module Enhancement
+  description: RLS hardening + Capture Manager / Executive Reviewer / Compliance Editor features for the GovCon Proposals module.
+  task_prefix: prop-
+  default_open: true
+  briefs:
+    - "Fix RLS bypass and add missing API endpoints (questions, amendments, question-responses)"
+    - "Add capture pipeline, competitor intel, PTW tracking, and teaming partners"
+    - "Add executive review dashboard, outcome-aware pipeline colors, and version diff"
+    - "Add shred matrix, amendment impact tracking, and compliance gap drill-down"
+  epics:
+    - key: fix
+      title: RLS & API Fixes
+      priority: critical
+    - key: cap
+      title: Capture Manager
+      priority: high
+    - key: rev
+      title: Executive Reviewer
+      priority: high
+    - key: cmp
+      title: Compliance Editor
+      priority: high
 - key: fix_dispatcher
   name: Fix Dispatcher Project
   description: Auto-registered project for tasks with prefix 'fix-dispatcher-'. Update
