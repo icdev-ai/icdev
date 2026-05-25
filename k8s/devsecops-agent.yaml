@@ -31,7 +31,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: devsecops-agent
-          image: ${REGISTRY}/icdev-devsecops-agent:latest
+          image: ${ECR_REGISTRY}/icdev-devsecops-agent:latest
           args: ["tools/a2a/agent_entrypoint.py", "--agent-id", "devsecops-agent", "--port", "8457", "--no-tls"]
           ports:
             - containerPort: 8457

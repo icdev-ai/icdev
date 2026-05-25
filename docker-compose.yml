@@ -311,7 +311,7 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "infrastructure-agent", "--port", "8448", "--no-tls"]
+    command: ["tools/a2a/agent_entrypoint.py", "--agent-id", "infra-agent", "--port", "8448", "--no-tls"]
 
   # MBSE Agent — SysML parsing, DOORS NG, digital thread, model-code sync
   icdev-mbse:
