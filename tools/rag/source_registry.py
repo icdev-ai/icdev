@@ -316,6 +316,27 @@ SOURCE_REGISTRY: Dict[str, Dict[str, Any]] = {
         "description": "Network Design Canvas SOPs — change windows, provisioning, firewall rules, DNS, etc.",
     },
     # SDC — Security Design Canvas
+    "disa_stig": {
+        "table": "sdc_rag_stigs",
+        "db": "security_canvas",
+        "pk": "vuln_id",
+        "content_cols": ["title", "description", "fix_text"],
+        "metadata_cols": ["severity", "nist_control", "benchmark"],
+        "priority": 1,
+        "mode": "batch",
+        "description": "DISA STIG vulnerability rules — severity, fix text, and NIST control mappings",
+    },
+    "mitre_attack": {
+        "table": "sdc_rag_attack_techniques",
+        "db": "security_canvas",
+        "pk": "technique_id",
+        "content_cols": ["name", "description", "detection", "mitigations"],
+        "metadata_cols": ["tactic", "platform", "is_subtechnique", "source_url"],
+        "priority": 1,
+        "mode": "batch",
+        "stix_url": "https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/enterprise-attack.json",
+        "description": "MITRE ATT&CK Enterprise techniques (STIX 2.1) — tactics, platforms, detection, and mitigations",
+    },
     "sdc_designs": {
         "table": "security_designs",
         "db": "security_canvas",
