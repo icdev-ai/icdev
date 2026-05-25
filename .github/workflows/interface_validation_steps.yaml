@@ -12,6 +12,9 @@ name: Interface Validation Steps
 on:
   workflow_call:
 
+env:
+  PYTHONPATH: "."
+
 jobs:
   interface-validation-scan:
     name: Interface Validation & Security Scan
