@@ -7,13 +7,14 @@ Graceful fallback to rule-based heuristics when LLM is unavailable.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.data_canvas.anomaly_detector")
+logger = get_logger("icdev.data_canvas.anomaly_detector")
 
 try:
     from tools.canvas.ai_trace_mixin import record_canvas_decision as _record_decision

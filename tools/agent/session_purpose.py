@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Session Purpose Declaration — session-level intent tracking for audit.
 
@@ -38,7 +40,7 @@ except ImportError:
         pass
 
 
-logger = logging.getLogger("icdev.session_purpose")
+logger = get_logger("icdev.session_purpose")
 
 
 # ---------------------------------------------------------------------------

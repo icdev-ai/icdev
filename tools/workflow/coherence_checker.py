@@ -2983,9 +2983,20 @@ def check_log_standard_compliance() -> CoherenceCheck:
       - tools/logging/ (the implementation itself)
       - tests/ directories
       - __init__.py and setup files
+      - Specific allowlisted files documented below
     """
     tools_dir = PROJECT_ROOT / "tools"
     violations: List[str] = []
+
+    # Files that legitimately need raw logging.getLogger():
+    #   testing/utils.py   — sets up per-run test loggers with custom handlers
+    #   workflow/coherence_checker.py — references the pattern in check source
+    #   refactor/migrate_to_icdev_logger.py — migration script references the pattern
+    LOG_STANDARD_ALLOWLIST = {
+        Path("tools/testing/utils.py"),
+        Path("tools/workflow/coherence_checker.py"),
+        Path("tools/refactor/migrate_to_icdev_logger.py"),
+    }
 
     for py_file in sorted(tools_dir.rglob("*.py")):
         rel = py_file.relative_to(PROJECT_ROOT)
@@ -2994,6 +3005,8 @@ def check_log_standard_compliance() -> CoherenceCheck:
         if "logging" in parts or "tests" in parts or "__pycache__" in parts:
             continue
         if py_file.name in ("conftest.py", "setup.py"):
+            continue
+        if rel in LOG_STANDARD_ALLOWLIST:
             continue
         try:
             src = py_file.read_text(encoding="utf-8", errors="replace")

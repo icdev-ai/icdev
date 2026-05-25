@@ -7,6 +7,7 @@ Records delivery metrics to the siem_delivery_log table for audit.
 Air-gap safe: stdlib urllib only; no external dependencies.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -18,7 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-logger = logging.getLogger("icdev.siem_alert_forwarder")
+logger = get_logger("icdev.siem_alert_forwarder")
 
 # Requirement: alerts must be delivered to downstream SIEM within 5 seconds.
 SLA_SECONDS = 5

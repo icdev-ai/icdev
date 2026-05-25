@@ -2,6 +2,7 @@
 """AI GameDay League — database helpers for gd_ai_* tables."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -9,7 +10,7 @@ from datetime import datetime, timezone
 
 from tools.db.storage import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _now() -> str:

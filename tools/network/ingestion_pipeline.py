@@ -20,6 +20,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import csv
 import hashlib
@@ -31,7 +32,7 @@ from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("icdev.network.ingestion_pipeline")
+logger = get_logger("icdev.network.ingestion_pipeline")
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_DB = _ICDEV_ROOT / "data" / "network_canvas.db"

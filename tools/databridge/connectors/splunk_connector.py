@@ -16,6 +16,7 @@ Search lifecycle:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import json
@@ -36,7 +37,7 @@ from tools.databridge.connector import (
     SchemaField,
 )
 
-logger = logging.getLogger("databridge.splunk")
+logger = get_logger("databridge.splunk")
 
 REQUEST_TIMEOUT = 30
 POLL_INTERVAL = 1.0   # seconds between job status checks

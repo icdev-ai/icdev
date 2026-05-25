@@ -14,6 +14,7 @@ and community cluster IDs from greedy modularity communities.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -24,7 +25,7 @@ import re
 import time
 from typing import Any
 
-_log = logging.getLogger(__name__)
+_log = get_logger(__name__)
 
 from .constants import (
     CLUSTER_COLORS,

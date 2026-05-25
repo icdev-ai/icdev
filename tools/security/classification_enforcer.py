@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Bell-LaPadula MAC Enforcer for ICDEV™.
 
 Implements:
@@ -22,7 +24,7 @@ import json
 import logging
 from typing import Callable, Optional, Set
 
-logger = logging.getLogger("security.mac")
+logger = get_logger("security.mac")
 
 # ---------------------------------------------------------------------------
 # Clearance helpers

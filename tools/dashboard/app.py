@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """
 ICDEV™ Web Dashboard - Flask Application
@@ -182,7 +184,7 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
                 _CANVAS_BLUEPRINTS[_key] = _bp
                 _CANVAS_FLAGS[_key] = True
         except Exception as _exc:
-            logging.getLogger("icdev.dashboard").warning(
+            get_logger("icdev.dashboard").warning(
                 "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
             )
 
@@ -211,7 +213,7 @@ for _key, _env, _mod, _attr in _APP_DEFS:
                 _APP_BLUEPRINTS[_key] = _bp
                 _APP_FLAGS[_key] = True
         except Exception as _exc:
-            logging.getLogger("icdev.dashboard").warning(
+            get_logger("icdev.dashboard").warning(
                 "App module %s import failed (%s): %s", _key, _mod, _exc
             )
 
@@ -1911,6 +1913,10 @@ def create_app() -> Flask:
                     ("Data", BASE_DIR / "data" / "data_canvas.db"),
                     ("Boundary", BASE_DIR / "data" / "boundary_canvas.db"),
                     ("Observability", BASE_DIR / "data" / "observability_canvas.db"),
+                    ("Agentic AI", BASE_DIR / "data" / "agentic_ai_canvas.db"),
+                    ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db"),
+                    ("QDC", BASE_DIR / "data" / "qdc_canvas.db"),
+                    ("Migration", BASE_DIR / "data" / "migration_canvas.db"),
                 ]
 
                 canvas_compliance = []
@@ -2025,6 +2031,46 @@ def create_app() -> Flask:
                                 score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
                                 open_f = 0
                                 closed_f = 0
+                            elif canvas_name == "Agentic AI":
+                                score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
+                                open_f = 0
+                                closed_f = 0
+                            elif canvas_name == "AI/ML":
+                                score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
+                                open_f = 0
+                                closed_f = 0
+                            elif canvas_name == "QDC":
+                                score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
+                                open_f = 0
+                                closed_f = 0
+                            elif canvas_name == "Migration":
+                                # Validation rows always write score=0 (engine bug); derive
+                                # score from CAT findings using migration_engine formula:
+                                # score = max(0, 100 - cat1*20 - cat2*10 - cat3*5)
+                                try:
+                                    cat_row = cconn.execute(
+                                        "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                        "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
+                                        "WHERE assessment_type = 'validation' "
+                                        "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
+                                        "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
+                                    ).fetchone()
+                                    c1 = int(cat_row["c1"] or 0)
+                                    c2 = int(cat_row["c2"] or 0)
+                                    c3 = int(cat_row["c3"] or 0)
+                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                    open_f = c1 + c2 + c3
+                                except Exception:
+                                    row = cconn.execute(
+                                        "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                        "SUM(cat3_findings) as cat3 FROM mc_assessments"
+                                    ).fetchone()
+                                    c1 = int(row["cat1"] or 0)
+                                    c2 = int(row["cat2"] or 0)
+                                    c3 = int(row["cat3"] or 0)
+                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                    open_f = c1 + c2 + c3
+                                closed_f = 0
                             else:
                                 continue
 
@@ -2042,6 +2088,30 @@ def create_app() -> Flask:
                             cconn.close()
                     except Exception:
                         pass  # Graceful if canvas DB has no data yet
+
+                # GovLift STIG checks (stored in main icdev.db, not a canvas DB)
+                try:
+                    stig_row = conn.execute(
+                        "SELECT "
+                        "SUM(CASE WHEN status = 'not_a_finding' THEN 1 ELSE 0 END) as passed, "
+                        "SUM(CASE WHEN status = 'open' THEN 1 ELSE 0 END) as open_cnt, "
+                        "COUNT(*) as total FROM govlift_stig_checks"
+                    ).fetchone()
+                    stig_total = int(stig_row["total"] or 0)
+                    if stig_total > 0:
+                        stig_passed = int(stig_row["passed"] or 0)
+                        stig_open = int(stig_row["open_cnt"] or 0)
+                        stig_score = round(stig_passed / stig_total * 100, 1)
+                        canvas_compliance.append({
+                            "name": "GovLift",
+                            "score": stig_score,
+                            "open_findings": stig_open,
+                            "closed_findings": stig_passed,
+                        })
+                        if stig_score > 0:
+                            overall_scores.append(stig_score)
+                except Exception:
+                    pass  # GovLift tables may not be initialized yet
 
                 overall_score = round(sum(overall_scores) / len(overall_scores), 1) if overall_scores else 0.0
                 _CANVAS_COMPLIANCE_CACHE["entry"] = {
@@ -2143,6 +2213,18 @@ def create_app() -> Flask:
                 "created_at",
                 "direct",
             ),
+            (
+                "Agentic AI",
+                BASE_DIR / "data" / "agentic_ai_canvas.db",
+                "aadc_assessments",
+                "score",
+                "created_at",
+                "direct",
+            ),
+            ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db", "aiml_assessments", "score", "created_at", "direct"),
+            ("QDC", BASE_DIR / "data" / "qdc_canvas.db", "qdc_assessments", "score", "created_at", "direct"),
+            ("Migration", None, None, None, None, "skip"),
+            ("GovLift", None, None, None, None, "skip"),
         ]
 
         results = []

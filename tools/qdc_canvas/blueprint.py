@@ -7,6 +7,7 @@ enhancements, and emitting OSCAL evidence artifacts.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -44,7 +45,7 @@ from tools.qdc_canvas.qdc_engine import (
     map_gate_to_sa11,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Config

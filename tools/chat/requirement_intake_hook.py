@@ -16,6 +16,7 @@ Programmatic:
     result = process_message_for_intake("ctx-abc123", "The system shall support SSO via SAML 2.0")
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import logging
@@ -26,7 +27,7 @@ from typing import Any
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.chat.intake_hook")
+logger = get_logger("icdev.chat.intake_hook")
 
 # ---------------------------------------------------------------------------
 # Requirement signal patterns -- fast pre-filter, no LLM

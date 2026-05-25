@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Cryptographic key manager for audit signing and attestation.
 
@@ -34,7 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("crypto.key_manager")
+logger = get_logger("crypto.key_manager")
 
 # Optional cryptography library (required for ECDSA/Ed25519)
 try:

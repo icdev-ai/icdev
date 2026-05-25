@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Column-Level Security for ICDEV™.
 
 SQLite fallback (default):
@@ -24,7 +26,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List
 
-logger = logging.getLogger("security.column")
+logger = get_logger("security.column")
 
 # ---------------------------------------------------------------------------
 # Config loader

@@ -17,6 +17,7 @@ Usage:
   python -m tools.migration_canvas.inventory_scanner --nmap scan.xml --session-id <sid> --dry-run
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import csv
@@ -27,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.migration_canvas.inventory_scanner")
+logger = get_logger("icdev.migration_canvas.inventory_scanner")
 
 # ---------------------------------------------------------------------------
 # SLA & performance constants

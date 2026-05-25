@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ Security Context — thread-local user security attributes.
 
 Provides a ``SecurityContext`` dataclass that captures:
@@ -21,7 +23,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Optional, Set
 
-logger = logging.getLogger("security.context")
+logger = get_logger("security.context")
 
 # ---------------------------------------------------------------------------
 # Classification helper

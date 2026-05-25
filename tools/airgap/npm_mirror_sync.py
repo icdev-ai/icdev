@@ -66,6 +66,7 @@ Usage::
         --dest frontend/node_modules
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import datetime
@@ -79,7 +80,7 @@ import tarfile
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.airgap.npm_mirror_sync")
+logger = get_logger("icdev.airgap.npm_mirror_sync")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 NPM_VENDOR_DIR = BASE_DIR / "vendor" / "npm"

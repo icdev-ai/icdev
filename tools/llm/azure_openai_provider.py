@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -36,7 +38,7 @@ from tools.llm.provider import (
     tools_to_openai,
 )
 
-logger = logging.getLogger("icdev.llm.azure_openai")
+logger = get_logger("icdev.llm.azure_openai")
 
 try:
     from openai import AzureOpenAI

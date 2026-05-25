@@ -5,6 +5,7 @@ Orchestrates: style guide resolution → section routing → LLM synthesis (or
 assembled fallback) → Jinja2 HTML rendering → citation population.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -18,7 +19,7 @@ from tools.db.storage import get_connection
 from tools.workflow_hitl.report_schema import ReportSection, get_sections
 from tools.workflow_hitl.section_router import SectionRouter, RoutedChunk, SectionRouteResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _TEMPLATE_DIR = Path("context/workflow_report_templates")
 _DEFAULT_MAX_WORDS = 800

@@ -8,6 +8,7 @@ used by tools.gameday.base_agent.GameDayAgent.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -17,7 +18,7 @@ from typing import Any, Dict, Optional
 
 from .chain_bridge import GameDayChainBridge
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Re-use GameDay defaults for direct-Ollama fallback
 from tools.gameday.constants import DEFAULT_AGENT_MODEL, OLLAMA_BASE_URL

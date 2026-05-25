@@ -18,6 +18,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import json
@@ -26,7 +27,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("marketplace.license_client")
+logger = get_logger("marketplace.license_client")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_PUBLIC_KEY_PATH = str(BASE_DIR / "args" / "marketplace_public_key.pem")

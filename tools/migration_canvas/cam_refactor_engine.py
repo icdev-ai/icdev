@@ -34,7 +34,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("icdev.cam_refactor_engine")
+logger = get_logger("icdev.cam_refactor_engine")
 
 _ROOT = Path(__file__).resolve().parents[2]
 _REFACTOR_RULES_PATH = _ROOT / "context" / "migration" / "refactor_rules.yaml"
@@ -1383,6 +1383,8 @@ def _scaffold_documentdb(job, params, output_dir) -> tuple[list[dict], str]:
     arts = []
     arts.append(_write(output_dir / "mongodump_restore.sh", """\
         #!/usr/bin/env bash
+
+from tools.logging.icdev_logger import get_logger
         # CUI // SP-CTI
         # MongoDB → DocumentDB migration using mongodump/mongorestore
         set -euo pipefail

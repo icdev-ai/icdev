@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """WATCHCON alert tier support.
 
@@ -14,7 +16,7 @@ import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 from tools.db.storage import get_connection
 from tools.monitor.constants import (

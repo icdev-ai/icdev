@@ -44,6 +44,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ipaddress
@@ -58,7 +59,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.network.enclave_scanner")
+logger = get_logger("icdev.network.enclave_scanner")
 
 # ── Classification ────────────────────────────────────────────────────────────
 

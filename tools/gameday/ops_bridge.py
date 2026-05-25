@@ -6,10 +6,11 @@ tools/ops_hub/ pipeline so they appear in the /ops dashboard.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def publish_llmops_summary(tournament_id: int) -> dict:

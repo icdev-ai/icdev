@@ -21,6 +21,7 @@ Integrated tools (all MIT/Apache/BSD, air-gap safe, pure Python):
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -31,7 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 ICDEV_ROOT = Path(__file__).resolve().parents[2]
 

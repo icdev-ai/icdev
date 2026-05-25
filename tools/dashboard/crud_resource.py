@@ -38,6 +38,7 @@ Non-goals:
     * No GraphQL.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import re
@@ -47,7 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from flask import Blueprint, jsonify, request
 
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Single safe character class for SQL identifiers. Anything else is
 # rejected — stops caller typos turning into SQL injection.

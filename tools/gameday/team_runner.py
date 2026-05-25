@@ -7,6 +7,7 @@ synthesises the final team artifact.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -25,7 +26,7 @@ from .constants import (
 )
 from .db import save_artifact, get_team
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _TEAMS_YAML = Path(__file__).parent.parent.parent / "args" / "gameday_teams.yaml"
 

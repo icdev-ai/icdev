@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS -- AWS Account Provisioner.
 
 CUI // SP-CTI
@@ -53,7 +55,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("account_provisioner")
+logger = get_logger("account_provisioner")
 
 # ---------------------------------------------------------------------------
 # boto3 import (graceful fallback)

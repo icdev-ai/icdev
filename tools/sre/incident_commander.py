@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Automated incident lifecycle management for ICDEV™ SRE module.
 
@@ -21,7 +23,7 @@ import yaml  # noqa: E402
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CONFIG_PATH = BASE_DIR / "args" / "sre_config.yaml"
 

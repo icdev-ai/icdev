@@ -1,13 +1,14 @@
 # CUI // SP-CTI
 """Email external step adapter — SMTP via tools/notifications/adapters/email_adapter.py."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
 
 from tools.workflow_hitl.adapters.base import ExternalStepAdapter
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class EmailAdapter(ExternalStepAdapter):

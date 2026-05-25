@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Unified dangerous code pattern detection (Phase 44 — D278).
 
@@ -22,7 +24,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-logger = logging.getLogger("icdev.code_pattern_scanner")
+logger = get_logger("icdev.code_pattern_scanner")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

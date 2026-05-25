@@ -13,6 +13,7 @@ Combined grade examples:
   F6 = Cannot judge reliability OR information validity (lowest)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import math
@@ -20,7 +21,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.source_registry")
+logger = get_logger("icdev.strategos.source_registry")
 
 RELIABILITY_GRADES = {
     "A": "Completely reliable — no doubt about authenticity, trustworthiness, competency",

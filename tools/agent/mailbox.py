@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Agent Mailbox — HMAC-SHA256 signed inter-agent messaging.
 
@@ -32,7 +34,7 @@ try:
 except ImportError:
     get_db_connection = None
 
-logger = logging.getLogger("icdev.mailbox")
+logger = get_logger("icdev.mailbox")
 
 # HMAC secret from environment or default (override in production)
 HMAC_SECRET = os.environ.get("ICDEV_MAILBOX_SECRET", "icdev-default-hmac-key")

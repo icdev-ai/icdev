@@ -14,6 +14,7 @@ execute without human approval. The daemon monitors subprocess completion.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import re
@@ -25,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -2965,6 +2966,69 @@ def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
     return False
 
 
+def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bool:
+    """Trigger a GitHub Actions workflow for the given task (EXEC_GITHUB_ACTIONS tier).
+
+    POSTs to the GitHub API workflow_dispatch endpoint with task_id, task_desc,
+    and task_type as inputs. Stores the returned run_id in the task row.
+    Returns True on HTTP 204, False on any error.
+    """
+    import os as _os
+    try:
+        import requests as _requests
+    except ImportError:
+        logger.warning("kanban: requests library not available — cannot dispatch via GitHub Actions")
+        return False
+
+    token = _os.getenv("GITHUB_TOKEN", "").strip()
+    repo = _os.getenv("GITHUB_RUNNER_REPO", "").strip()
+    if not token or not repo:
+        logger.warning("kanban: GITHUB_TOKEN / GITHUB_RUNNER_REPO not set")
+        return False
+
+    workflow_file = _os.getenv("GITHUB_WORKFLOW_FILE", "icdev-kanban-runner.yml")
+    url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow_file}/dispatches"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    payload = {
+        "ref": "main",
+        "inputs": {
+            "task_id": task_id,
+            "task_desc": task_desc,
+            "task_type": task_type,
+        },
+    }
+
+    try:
+        resp = _requests.post(url, headers=headers, json=payload, timeout=15)
+    except _requests.RequestException as exc:
+        logger.warning("kanban: GitHub Actions dispatch failed for %s: %s", task_id, exc)
+        return False
+
+    if resp.status_code == 204:
+        run_url = f"https://github.com/{repo}/actions"
+        try:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                ("pending", run_url, datetime.now(timezone.utc).isoformat(), task_id),
+            )
+            conn.commit()
+        except Exception as _db_exc:
+            logger.warning("kanban: failed to store execution_id for %s: %s", task_id, _db_exc)
+        logger.info("kanban: GitHub Actions workflow triggered for task %s", task_id)
+        return True
+
+    logger.warning(
+        "kanban: GitHub Actions dispatch returned %d for %s: %s",
+        resp.status_code, task_id, resp.text[:200],
+    )
+    return False
+
+
 def _dispatch_ollama_local(task_id: str, task_desc: str, task_type: str) -> bool:
     """Run an Ollama-backed anvil script directly for the EXEC_OLLAMA_LOCAL tier.
 
@@ -3209,6 +3273,14 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
                 _set_executor_type(task_id, "gitlab")
                 print(f"  Kanban: dispatched {task_id} via GitLab CI pipeline")
+                dispatched = True
+                break
+        elif tier == "github_actions":
+            ok = _dispatch_github_actions(task_id, task_desc, task_type)
+            if ok:
+                _dispatch_times[task_id] = datetime.now(timezone.utc)
+                _set_executor_type(task_id, "github_actions")
+                print(f"  Kanban: dispatched {task_id} via GitHub Actions")
                 dispatched = True
                 break
         elif tier == "ollama_local":

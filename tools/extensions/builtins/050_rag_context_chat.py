@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """RAG source attribution chat extension (D-RAG-2, D-RAG-8).
 
@@ -20,7 +22,7 @@ Exports:
 
 import logging
 
-logger = logging.getLogger("icdev.extensions.rag_context_chat")
+logger = get_logger("icdev.extensions.rag_context_chat")
 
 
 # ---------------------------------------------------------------------------

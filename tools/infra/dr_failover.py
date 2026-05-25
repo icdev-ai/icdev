@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Disaster Recovery Failover Automation.
 
@@ -42,7 +44,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%dT%H:%M:%SZ",
 )
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _load_config() -> dict:

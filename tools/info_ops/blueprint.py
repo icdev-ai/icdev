@@ -11,13 +11,14 @@ Routes:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
 
 from flask import Blueprint, jsonify, render_template, request
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _INFO_OPS_ENABLED = os.environ.get("ICDEV_INFO_OPS_ENABLED", "true").lower() not in ("0", "false", "no")
 

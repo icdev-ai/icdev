@@ -25,6 +25,7 @@ Config keys:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -55,7 +56,7 @@ except ImportError:
     NoCredentialsError = Exception  # type: ignore[assignment,misc]
     _BOTO3_AVAILABLE = False
 
-logger = logging.getLogger("databridge.connectors.aws_control_tower")
+logger = get_logger("databridge.connectors.aws_control_tower")
 
 # Table names -> (boto3 service, method name, result key)
 _READ_MAP: Dict[str, tuple[str, str, str]] = {

@@ -7,6 +7,7 @@ Mirrors the PDC deploy_generator.py signature/pattern.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import io
 import json
@@ -17,7 +18,7 @@ from datetime import datetime, timezone
 
 from tools.agentic_ai_canvas.constants import AADC_IAC_NODE_MAP
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _SAFE = re.compile(r"[^a-z0-9\-]")
 

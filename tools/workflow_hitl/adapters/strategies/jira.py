@@ -1,6 +1,7 @@
 # CUI // SP-CTI
 """Jira REST API v3 ticket strategy."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -8,7 +9,7 @@ import os
 import urllib.error
 import urllib.request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _cfg():

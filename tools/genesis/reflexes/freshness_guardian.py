@@ -6,6 +6,7 @@ quality rules across all data designs, writes results to dd_freshness_alerts
 and dd_quality_runs, and logs breaches to genesis_audit.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -13,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 1
 

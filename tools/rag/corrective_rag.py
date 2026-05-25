@@ -20,6 +20,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -35,7 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.rag.corrective_rag")
+logger = get_logger("icdev.rag.corrective_rag")
 
 ICDEV_DB = BASE_DIR / "data" / "icdev.db"
 

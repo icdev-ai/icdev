@@ -6,11 +6,12 @@ conflicts across mission data, policies, or configurations.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Optional
 
-logger = logging.getLogger("icdev.mission_canvas.conflict_resolver")
+logger = get_logger("icdev.mission_canvas.conflict_resolver")
 
 
 def detect_conflicts(

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """OpenAI-compatible LLM Provider.
 
@@ -24,7 +26,7 @@ from tools.llm.provider import (
     tools_to_openai,
 )
 
-logger = logging.getLogger("icdev.llm.openai_compat")
+logger = get_logger("icdev.llm.openai_compat")
 
 try:
     import openai as openai_sdk

@@ -13,12 +13,13 @@ Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import re
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.extensions.build_kanban_sync")
+logger = get_logger("icdev.extensions.build_kanban_sync")
 
 # ---------------------------------------------------------------------------
 # Config

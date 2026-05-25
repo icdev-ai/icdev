@@ -22,6 +22,7 @@ Each signal object is compatible with osint_harvester's _process_inbox_json:
     {"title": str, "body": str, "source": str, "date": str, "url": str, "geo_hint": null}
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -40,7 +41,7 @@ _USER_AGENT = "ICDEV-Strategos-Prestager/1.0"
 BASE_DIR = Path(__file__).resolve().parents[2]
 _DEFAULT_INBOX = BASE_DIR / "data" / "osint_inbox"
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 
 

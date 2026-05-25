@@ -7,12 +7,13 @@ publishes a canvas warning event and updates noc_alarms if NOCC is enabled.
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 4
 WARN_THRESHOLD_PCT = 70.0

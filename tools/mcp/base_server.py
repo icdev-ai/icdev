@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Base MCP (Model Context Protocol) server implementing JSON-RPC 2.0 over stdio.
 
@@ -21,7 +23,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("mcp.base")
+logger = get_logger("mcp.base")
 
 PROTOCOL_VERSION = "2024-11-05"
 

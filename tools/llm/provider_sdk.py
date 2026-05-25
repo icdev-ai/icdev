@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ LLM Provider SDK — Public API for custom provider development.
 
@@ -44,7 +46,7 @@ from tools.llm.provider import (
     tools_to_openai,
 )
 
-logger = logging.getLogger("icdev.llm.provider_sdk")
+logger = get_logger("icdev.llm.provider_sdk")
 
 __all__ = [
     "BaseProvider",

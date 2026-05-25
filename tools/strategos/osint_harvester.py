@@ -13,6 +13,7 @@ Usage:
 Always exits 0 — structured errors are returned in the JSON envelope.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -26,7 +27,7 @@ from typing import Any, Dict, List, Optional
 BASE_DIR = Path(__file__).resolve().parents[2]
 _DEFAULT_INBOX = BASE_DIR / "data" / "osint_inbox"
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s  %(message)s")
 
 # ── Source tier scoring ────────────────────────────────────────────────────────

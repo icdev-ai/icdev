@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Resilience — Correlation ID Middleware.
 
@@ -19,7 +21,7 @@ import threading
 import uuid
 from typing import Optional
 
-logger = logging.getLogger("icdev.resilience.correlation")
+logger = get_logger("icdev.resilience.correlation")
 
 # Header name for propagation
 CORRELATION_HEADER = "X-Correlation-ID"

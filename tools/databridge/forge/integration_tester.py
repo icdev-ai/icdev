@@ -6,6 +6,7 @@ Writes results to db_forge_validations as 'integration' stage.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
@@ -15,7 +16,7 @@ from typing import Any, Dict, List, Optional
 from tools.databridge.forge.spec_parser import ForgeApiManifest
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("databridge.forge.integration_tester")
+logger = get_logger("databridge.forge.integration_tester")
 
 DB_PATH = Path(__file__).resolve().parents[3] / "data" / "icdev.db"
 

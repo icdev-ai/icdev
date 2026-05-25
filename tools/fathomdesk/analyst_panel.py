@@ -14,6 +14,7 @@ Usage::
     #       "size_modifier": float, "reasoning": str, "source": str}
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -22,7 +23,7 @@ from typing import Any
 
 import yaml
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "fathomdesk_config.yaml"
 

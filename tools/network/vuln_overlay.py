@@ -11,6 +11,7 @@ Schema: nc_vuln_scans, nc_vuln_hosts, nc_vuln_findings (see init_db.py)
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import ipaddress
 import logging
@@ -20,7 +21,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.network.vuln_overlay")
+logger = get_logger("icdev.network.vuln_overlay")
 
 # Severity mapping: Nessus risk_factor / severity integer → label
 SEVERITY_LABELS = {

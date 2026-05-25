@@ -17,6 +17,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -25,7 +26,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("marketplace.token_store")
+logger = get_logger("marketplace.token_store")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TOKEN_FILE = Path(

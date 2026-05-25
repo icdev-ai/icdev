@@ -14,6 +14,7 @@ FORGE-compliant: LLM calls go through tools/llm/router.py, not direct API.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -37,7 +38,7 @@ from tools.pulse.config import (  # noqa: E402
     TEMPLATE_DEFAULTS,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Template-aware prompt builders

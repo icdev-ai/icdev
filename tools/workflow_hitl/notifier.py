@@ -1,10 +1,11 @@
 # CUI // SP-CTI
 """HITL Workflow notifications — wraps tools/notifications/gateway.py."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _gateway():

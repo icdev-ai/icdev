@@ -2,6 +2,7 @@
 """AI GameDay Scenario Registry — ontology-enriched scenario loading."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -11,7 +12,7 @@ from typing import Any
 from tools.ttx.scenario_loader import load_scenario as _load_scenario, list_scenario_slugs as _list_scenario_slugs
 from .ontology import resolve_scenario_ontology, resolve_role_ontology
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 class OntologyScenarioRegistry:

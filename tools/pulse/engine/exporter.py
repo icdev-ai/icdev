@@ -6,6 +6,7 @@ Exports blog posts as:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -18,7 +19,7 @@ import markdown
 from tools.pulse.config import DRAFTS_DIR, EXPORTS_DIR, PUBLISHED_DIR, SITE_URL, GA_MEASUREMENT_ID
 from tools.pulse.db import get_row, update_row
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Ensure image export directory exists
 IMAGES_DIR = EXPORTS_DIR / "images"

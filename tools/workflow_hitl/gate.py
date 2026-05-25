@@ -1,12 +1,13 @@
 # CUI // SP-CTI
 """HITLGate — hooks into the Kanban state machine to block in_progress→done."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class HITLGate:

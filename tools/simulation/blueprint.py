@@ -19,13 +19,14 @@ Register in app.py:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request
 
-logger = logging.getLogger("icdev.simulation")
+logger = get_logger("icdev.simulation")
 
 _SIM_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _SIM_DIR.parent.parent

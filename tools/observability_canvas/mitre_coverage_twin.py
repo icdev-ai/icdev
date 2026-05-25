@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV ODC Digital Twin — MITRE ATT&CK Coverage Gap Engine.
 
@@ -18,7 +20,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.observability_canvas.mitre_coverage_twin")
+logger = get_logger("icdev.observability_canvas.mitre_coverage_twin")
 
 # ── MITRE Technique Catalog ────────────────────────────────────────────────────
 # Curated high-priority techniques for DoD/Gov environments.

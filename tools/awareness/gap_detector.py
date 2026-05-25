@@ -35,6 +35,7 @@ CLI:
     python tools/awareness/gap_detector.py --stats --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ast
@@ -47,7 +48,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-LOG = logging.getLogger("gap_detector")
+LOG = get_logger("gap_detector")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

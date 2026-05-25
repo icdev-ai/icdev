@@ -17,6 +17,7 @@ Implements the contract documented in
 clean-room rewrite).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -49,7 +50,7 @@ _AGENTS_ROOT: Path = _REPO_ROOT / "agents"
 _STATE_FILENAME: str = "icdev_state.json"
 
 
-_module_logger = logging.getLogger(__name__)
+_module_logger = get_logger(__name__)
 
 
 def _resolve_logger(injected) -> logging.Logger:

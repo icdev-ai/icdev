@@ -31,13 +31,14 @@ Public API:
   register() -> bool
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-LOG = logging.getLogger("awareness.hooks")
+LOG = get_logger("awareness.hooks")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

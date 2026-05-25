@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """3-Tier history compression for chat contexts (Phase 44 — D271-D274).
 
@@ -20,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Optional
 
-logger = logging.getLogger("icdev.history_compressor")
+logger = get_logger("icdev.history_compressor")
 
 # Stopwords for keyword extraction (small set, air-gap safe)
 _STOPWORDS = frozenset(

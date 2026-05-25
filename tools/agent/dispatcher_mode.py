@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Dispatcher-Only Orchestrator Mode (Phase 61, D-DISP-1).
 
@@ -45,7 +47,7 @@ if str(BASE_DIR) not in sys.path:
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 CONFIG_PATH = BASE_DIR / "args" / "agent_config.yaml"
 
-logger = logging.getLogger("icdev.dispatcher_mode")
+logger = get_logger("icdev.dispatcher_mode")
 
 
 # ---------------------------------------------------------------------------

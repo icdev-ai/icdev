@@ -2,13 +2,14 @@
 """TTX Engine — LLM-based persona generation for exercise participants."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 import random
 from typing import Any
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 # Deterministic fallback persona pools by role category
 _FALLBACK_PERSONAS: dict[str, list[dict]] = {

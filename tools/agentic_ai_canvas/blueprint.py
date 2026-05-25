@@ -41,6 +41,7 @@ Routes:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -68,7 +69,7 @@ try:
 except Exception:
     def _record_decision(**_kw): pass  # type: ignore[assignment]
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 aadc_bp = Blueprint(
     "agentic_ai_canvas",
@@ -2974,7 +2975,7 @@ def generate_ops_config_api(design_id: str):
         return jsonify({"error": str(e)}), 404
     except Exception as e:
         import logging
-        logging.getLogger(__name__).error("Ops config generation error: %s", e)
+        get_logger(__name__).error("Ops config generation error: %s", e)
         return jsonify({"error": str(e)}), 500
 
 

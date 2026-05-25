@@ -17,12 +17,13 @@ NIST 800-53: SC-28, AU-12, SA-11
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
 from flask import Blueprint, jsonify, render_template, request as flask_request
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 bp = Blueprint("cache_savings", __name__)
 

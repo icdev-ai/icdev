@@ -10,6 +10,7 @@ Scanner-tier only (zero Claude tokens).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import subprocess
@@ -21,7 +22,7 @@ from typing import Any
 from tools.db.storage import get_connection
 from tools.oracle.base_lens import BaseLens, OraclePrediction
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Security Posture Auditor for ICDEV™.
 
 Checks all framework layers and reports health:
@@ -23,7 +25,7 @@ import logging
 import os
 from typing import Any, Dict
 
-logger = logging.getLogger("security.posture")
+logger = get_logger("security.posture")
 
 # ---------------------------------------------------------------------------
 # Layer checks

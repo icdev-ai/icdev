@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ SaaS Phase 5 -- Artifact Signer.
 
@@ -49,7 +51,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("saas.artifacts.signer")
+logger = get_logger("saas.artifacts.signer")
 
 # ---------------------------------------------------------------------------
 # Optional dependency: cryptography (for RSA signing)

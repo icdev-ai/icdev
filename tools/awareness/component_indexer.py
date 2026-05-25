@@ -28,6 +28,7 @@ CLI:
 See docs/features/internal-awareness-engine.md for the broader plan.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ast
@@ -41,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-LOG = logging.getLogger("component_indexer")
+LOG = get_logger("component_indexer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

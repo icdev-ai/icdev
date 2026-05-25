@@ -7,12 +7,13 @@ inventory export, flagging stale diagrams and suggesting a re-export.
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 4
 

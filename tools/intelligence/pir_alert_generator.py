@@ -8,6 +8,7 @@ baseline threshold a PIR (or CCIR/EEI) alert is generated automatically.
 NIST 800-53: SI-4 (System Monitoring), RA-5 (Vulnerability Monitoring).
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from typing import Any
@@ -15,7 +16,7 @@ from typing import Any
 from tools.intelligence.pir_manager import create_pir
 from tools.threat_analysis.service import validate_indicator_score
 
-logger = logging.getLogger("icdev.intelligence.pir_alert_generator")
+logger = get_logger("icdev.intelligence.pir_alert_generator")
 
 
 # Severity-to-priority mapping (1 = critical … 4 = low)

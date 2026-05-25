@@ -10,6 +10,7 @@ Cross-platform: stdlib only (sqlite3, json, pathlib, uuid, datetime). No Flask.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -26,7 +27,7 @@ from tools.network.constants import (
     NODE_TYPE_CONTAINER,
 )
 
-logger = logging.getLogger("icdev.network.container_node")
+logger = get_logger("icdev.network.container_node")
 
 # Resolve NDC DB path consistently with the rest of the network module.
 _NETWORK_DIR = Path(__file__).resolve().parent

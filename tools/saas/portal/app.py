@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 """ICDEV™ SaaS Tenant Admin Portal -- Flask Blueprint.
 
 CUI // SP-CTI
@@ -64,7 +66,7 @@ TENANTS_DIR = DATA_DIR / "tenants"
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("saas.portal")
+logger = get_logger("saas.portal")
 
 # ---------------------------------------------------------------------------
 # CUI Banner Configuration (matches Dashboard config.py pattern)

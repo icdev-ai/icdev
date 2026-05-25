@@ -31,6 +31,7 @@ CLI:
     python tools/awareness/health_prober.py --stats --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import ast
@@ -47,7 +48,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
-LOG = logging.getLogger("health_prober")
+LOG = get_logger("health_prober")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:

@@ -12,6 +12,7 @@ Max 5 auto-remediations per hour (module-level counter).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -22,7 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.canvas.auto_remediate")
+logger = get_logger("icdev.canvas.auto_remediate")
 
 # ---------------------------------------------------------------------------
 # Rate limiter — max 5 auto-fix actions per hour (module-level)

@@ -24,6 +24,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -44,7 +45,7 @@ from tools.pulse.engine.capability_scanner import (  # noqa: E402
     match_capabilities,
 )
 
-logger = logging.getLogger("pulse.demand_detector")
+logger = get_logger("pulse.demand_detector")
 
 HIGH_DEMAND_THRESHOLD = 5
 

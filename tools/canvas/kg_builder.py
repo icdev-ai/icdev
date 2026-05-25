@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Cross-canvas Knowledge Graph builder.
 
@@ -16,7 +18,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("icdev.canvas.kg_builder")
+logger = get_logger("icdev.canvas.kg_builder")
 
 # ---------------------------------------------------------------------------
 # Canvas -> (DB filename, designs table) mapping

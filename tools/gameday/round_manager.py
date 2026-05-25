@@ -6,6 +6,7 @@ then hands results to the judge for scoring.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -22,7 +23,7 @@ from .db import (
 from .team_runner import TeamRunner
 from .judge_agent import JudgeAgent
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 
 def _now() -> str:

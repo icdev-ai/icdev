@@ -13,7 +13,9 @@ Multi-LLM orchestration engine.
 | `ChainOrchestrator.invoke_chain_of_thought(function, request)` | Run CoT: reasoner → critic → synthesizer (up to `max_rounds`). Returns `ChainResult`. |
 | `ChainOrchestrator.invoke_chain_of_debate(function, request)` | Run CoD: N parallel debaters → neutral judge synthesis. Returns `ChainResult`. |
 
-**Config:** `args/llm_config.yaml` → `chain_orchestration` section (cost cap, token cap, timeout, per-function overrides, model assignments).
+**Config:** `args/llm_config.yaml` → `chain_orchestration` section (cost cap, token cap, timeout, per-function overrides, model assignments, role keys).
+
+**Role-based routing (multi-LLM):** CoT roles (`reasoner_role`, `critic_role`, `synthesizer_role`) and CoD roles (`judge_role`, `debater_pool_role`) reference routing chain keys in `routing:`. Each role resolves through the full `LLMRouter` stack (availability check, RL reranking, fallback chain) via `router.invoke_for_role()`. CoD uses `router.get_diverse_models(cod_debater_pool, num_debaters)` to assign distinct models from different provider families to each debater slot, ensuring genuine multi-LLM debate. Legacy `*_model` keys remain as per-function override fallbacks.
 
 **Telemetry:** writes to `llm_chain_telemetry` table in `icdev.db`. Publishes `cot_reasoning_completed` events via `tools/canvas/event_bus`.
 

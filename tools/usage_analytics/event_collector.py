@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """Usage analytics: event collection and Flask middleware for dashboard routes."""
 
 import hashlib
@@ -13,7 +15,7 @@ import yaml
 from tools.db.storage import get_connection
 
 _CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "args" / "usage_analytics_config.yaml"
-_log = logging.getLogger(__name__)
+_log = get_logger(__name__)
 
 
 def _load_config() -> dict:

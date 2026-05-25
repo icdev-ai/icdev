@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Regulatory Foresight — main engine (D352, pint-regfore-05/06).
 
@@ -23,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _CONFIG_PATH = (
     Path(__file__).parent.parent.parent / "args" / "regulatory_foresight_config.yaml"

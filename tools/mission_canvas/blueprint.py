@@ -6,6 +6,7 @@ Feature flag: ICDEV_MISSION_CANVAS_ENABLED.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, redirect, render_template, request, session
 
-logger = logging.getLogger("icdev.mission_canvas")
+logger = get_logger("icdev.mission_canvas")
 
 _MC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _MC_DIR.parent.parent.parent

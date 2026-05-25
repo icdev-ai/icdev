@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Internal Chat adapter — bridges ICDEV™'s existing /chat page to the gateway.
 
@@ -22,7 +24,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
 from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
-logger = logging.getLogger("icdev.gateway.adapters.internal")
+logger = get_logger("icdev.gateway.adapters.internal")
 
 
 class InternalChatAdapter(BaseChannelAdapter):

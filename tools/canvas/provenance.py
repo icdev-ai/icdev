@@ -6,13 +6,14 @@ Called from each canvas blueprint after design save and assessment complete.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
 import logging
 from typing import Any
 
-logger = logging.getLogger("canvas.provenance")
+logger = get_logger("canvas.provenance")
 
 
 def register_canvas_provenance(

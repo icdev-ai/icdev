@@ -1,10 +1,11 @@
 # CUI // SP-CTI
 """Genesis reflex: wf_ext_poller — 15-min reflex to poll external step status."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def run(config: dict, trust) -> dict:

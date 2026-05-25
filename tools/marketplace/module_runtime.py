@@ -21,12 +21,13 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
 from typing import Set
 
-logger = logging.getLogger("marketplace.module_runtime")
+logger = get_logger("marketplace.module_runtime")
 
 # Operating mode: "oss" (all unlocked) or "saas" (token-gated)
 MODE = os.environ.get("ICDEV_MARKETPLACE_MODE", "oss")

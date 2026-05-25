@@ -16,6 +16,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import logging
@@ -23,7 +24,7 @@ from typing import Any, Dict, List
 
 from tools.databridge.connectors.saas_base import SaaSBaseConnector
 
-logger = logging.getLogger("databridge.servicenow_cmdb")
+logger = get_logger("databridge.servicenow_cmdb")
 
 # Field map: ServiceNow cmdb_ci_appl → mc_app_inventory columns
 _APP_FIELD_MAP = {

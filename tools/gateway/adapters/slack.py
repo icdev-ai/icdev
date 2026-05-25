@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Slack adapter for the Remote Command Gateway.
 
@@ -29,7 +31,7 @@ if str(BASE_DIR) not in sys.path:
 from tools.gateway.adapters.base import BaseChannelAdapter  # noqa: E402
 from tools.gateway.event_envelope import CommandEnvelope, parse_command_text  # noqa: E402
 
-logger = logging.getLogger("icdev.gateway.adapters.slack")
+logger = get_logger("icdev.gateway.adapters.slack")
 
 SLACK_API_BASE = "https://slack.com/api"
 

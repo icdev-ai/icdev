@@ -17,6 +17,7 @@ CLI:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -27,7 +28,7 @@ from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.strategos.strategy_agent")
+logger = get_logger("icdev.strategos.strategy_agent")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 

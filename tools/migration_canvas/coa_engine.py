@@ -18,12 +18,13 @@ Public API:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("icdev.coa_engine")
+logger = get_logger("icdev.coa_engine")
 
 _ICDEV_ROOT = Path(__file__).resolve().parent.parent.parent
 _SERVICE_MAPPINGS_PATH = _ICDEV_ROOT / "context" / "migration" / "service_mappings.yaml"

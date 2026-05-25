@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Local-only PDF extraction for air-gapped environments.
 
@@ -29,7 +31,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List
 
-logger = logging.getLogger("icdev.airgap.pdf_fallback")
+logger = get_logger("icdev.airgap.pdf_fallback")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

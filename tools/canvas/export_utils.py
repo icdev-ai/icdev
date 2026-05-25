@@ -8,6 +8,7 @@ No external dependencies — stdlib only.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import csv
 import io
@@ -15,7 +16,7 @@ import json
 import logging
 import xml.etree.ElementTree as ET
 
-logger = logging.getLogger("icdev.canvas.export_utils")
+logger = get_logger("icdev.canvas.export_utils")
 
 # ---------------------------------------------------------------------------
 # Helpers

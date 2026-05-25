@@ -24,12 +24,13 @@ Called from:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import re
 from pathlib import Path
 
-logger = logging.getLogger("icdev.migration_chat_advisor")
+logger = get_logger("icdev.migration_chat_advisor")
 
 _ICDEV_ROOT = Path(__file__).resolve().parent.parent.parent
 

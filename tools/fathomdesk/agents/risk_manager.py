@@ -18,6 +18,7 @@ Return shape::
     }
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import uuid
@@ -41,7 +42,7 @@ from tools.fathomdesk.signal_generator import load_thresholds
 if TYPE_CHECKING:
     from tools.fathomdesk.agents.debate_engine import DebateResult
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _UNIVERSE_YAML = Path(__file__).parent.parent.parent.parent / "args" / "fathomdesk_universe.yaml"
 

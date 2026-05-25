@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Security Design Canvas — Intelligent Security Agent.
 
@@ -17,7 +19,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("icdev.security_canvas.agent")
+logger = get_logger("icdev.security_canvas.agent")
 
 
 # ── IaC Security Scan Rules ──────────────────────────────────────────────────

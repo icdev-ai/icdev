@@ -18,13 +18,14 @@ Exports:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path
 
-logger = logging.getLogger("icdev.extensions.intake_enrichment_chat")
+logger = get_logger("icdev.extensions.intake_enrichment_chat")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

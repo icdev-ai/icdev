@@ -9,6 +9,7 @@ Routes:
   POST /demo-runner/api/iqe-query   IQE natural-language query
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import importlib
 import json
@@ -21,7 +22,7 @@ from pathlib import Path
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 _ROOT = Path(__file__).resolve().parents[2]
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 demo_runner_bp = Blueprint(
     "demo_runner",

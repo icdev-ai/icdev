@@ -14,6 +14,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -28,7 +29,7 @@ from tools.databridge.scale.connection_pool import ConnectionPool
 from tools.databridge.scale.worker_pool import ScaleWorkerPool
 from tools.databridge.scale.write_batcher import WriteBatcher
 
-logger = logging.getLogger("databridge.scale.engine")
+logger = get_logger("databridge.scale.engine")
 
 DB_PATH = Path(__file__).resolve().parents[3] / "data" / "icdev.db"
 

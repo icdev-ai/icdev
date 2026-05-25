@@ -6,11 +6,12 @@ All service names, SOP categories, and AI service labels come from cam_constants
 (which reads context/migration/service_mappings.yaml) — nothing hardcoded here.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
 
-logger = logging.getLogger("icdev.cam_engine")
+logger = get_logger("icdev.cam_engine")
 
 
 def _mc_conn():

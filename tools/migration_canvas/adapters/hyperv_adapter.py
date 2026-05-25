@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Hyper-V adapter — pull live VM inventory via PowerShell remoting.
 
@@ -15,7 +17,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("icdev.migration_canvas.adapters.hyperv")
+logger = get_logger("icdev.migration_canvas.adapters.hyperv")
 
 # PowerShell script that outputs VM inventory as JSON array.
 _PS_SCRIPT = r"""

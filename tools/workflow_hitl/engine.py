@@ -1,6 +1,7 @@
 # CUI // SP-CTI
 """WorkflowEngine — state machine for HITL approval instances."""
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -10,7 +11,7 @@ from datetime import datetime, timezone
 from tools.db.storage import get_connection
 from tools.workflow_hitl.constants import WfStatus
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def _now() -> str:

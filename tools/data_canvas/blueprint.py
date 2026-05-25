@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Data Design Canvas — Flask Blueprint integration.
 
@@ -28,7 +30,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.data_canvas")
+logger = get_logger("icdev.data_canvas")
 
 _DC_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _DC_DIR.parent.parent

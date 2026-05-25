@@ -7,12 +7,13 @@ in more than STALE_DAYS. Publishes canvas events for each stale pipeline.
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 6
 STALE_DAYS = 14  # Pipelines not updated in this many days are flagged

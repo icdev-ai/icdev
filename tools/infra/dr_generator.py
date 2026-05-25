@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Generate Terraform configurations for ICDEV™ Disaster Recovery infrastructure.
 
@@ -738,7 +740,7 @@ data "archive_file" "snapshot_copier" {{
 import boto3, os, json, logging
 from datetime import datetime, timezone, timedelta
 
-logger = logging.getLogger()
+logger = get_logger()
 logger.setLevel(logging.INFO)
 
 DB_IDENTIFIER   = os.environ["DB_IDENTIFIER"]
@@ -832,7 +834,7 @@ data "archive_file" "backup_verifier" {{
 import boto3, os, json, logging
 from datetime import datetime, timezone, timedelta
 
-logger = logging.getLogger()
+logger = get_logger()
 logger.setLevel(logging.INFO)
 
 DB_IDENTIFIER  = os.environ["DB_IDENTIFIER"]

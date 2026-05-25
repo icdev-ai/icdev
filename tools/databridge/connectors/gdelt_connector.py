@@ -28,6 +28,7 @@ Usage (standalone CLI):
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -50,7 +51,7 @@ from tools.databridge.connector import (  # noqa: E402
 from tools.databridge.connectors.saas_base import SaaSBaseConnector  # noqa: E402
 from tools.databridge.registry import register_connector  # noqa: E402
 
-logger = logging.getLogger("databridge.gdelt")
+logger = get_logger("databridge.gdelt")
 
 GDELT_DEFAULT_BASE_URL = "https://api.gdeltproject.org"
 GDELT_MAX_RECORDS = 250  # GDELT API hard cap per request

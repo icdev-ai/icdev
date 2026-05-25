@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -56,7 +58,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = Path(os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db")))
 
-logger = logging.getLogger("icdev.requirements.document_extractor")
+logger = get_logger("icdev.requirements.document_extractor")
 
 # Image extensions supported for direct upload
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".tiff", ".bmp"}

@@ -10,7 +10,17 @@
     <input type="text" id="kanban-filter-input" placeholder="Filter by title, id, priority..." aria-label="Filter tasks"
            style="flex:1; max-width:420px; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
     <span id="kanban-filter-count" style="font-size:12px; color:var(--text-dim);"></span>
-    <div style="margin-left:auto;">
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+        <label style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Executor:</label>
+        <select id="kanban-executor-chain" onchange="setExecutorChain(this.value)" title="Global executor fallback chain (affects scheduler dispatch)"
+                style="padding:6px 8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px; cursor:pointer;">
+            <option value="claude_cli,gitlab,ollama_local">🤖 Claude CLI → GitLab → Ollama</option>
+            <option value="gitlab,ollama_local">🦊 GitLab → Ollama (air-gap)</option>
+            <option value="github_actions,ollama_local">⚙️ GitHub Actions → Ollama (air-gap)</option>
+            <option value="ollama_local">🦙 Ollama Local only</option>
+        </select>
+        <button class="btn" onclick="openDepMapModal()" title="View dependency graph">🔗 Dep Map</button>
+        <button class="btn" onclick="openTagManagerModal()" title="Manage tags">🏷 Tags</button>
         <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
     </div>
 </div>
@@ -96,6 +106,16 @@
                     <input type="datetime-local" id="task-scheduled-at" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
                 </div>
             </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Start Date</label>
+                    <input type="date" id="task-start-date" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Target Date</label>
+                    <input type="date" id="task-target-date" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+            </div>
             <div style="margin-bottom:12px;">
                 <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Executor</label>
                 <select id="task-executor-type" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
@@ -103,6 +123,27 @@
                     <option value="gitlab">&#129418; GitLab CI</option>
                     <option value="github_actions">&#9881;&#65039; GitHub Actions</option>
                 </select>
+            </div>
+        </div>
+        <!-- Tags section (only shown when editing an existing task) -->
+        <div id="task-tags-section" style="display:none; margin-top:4px; border-top:1px solid var(--border); padding-top:12px;">
+            <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px;">Tags</label>
+            <div id="task-tags-assigned" style="display:flex; flex-wrap:wrap; gap:4px; min-height:24px; margin-bottom:8px;"></div>
+            <div style="display:flex; gap:8px; align-items:center;">
+                <select id="task-tag-picker" style="flex:1; padding:6px 8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px;">
+                    <option value="">— assign tag —</option>
+                </select>
+                <button class="btn btn-sm btn-primary" onclick="assignTag()">Add</button>
+            </div>
+        </div>
+
+        <!-- Comments section (only shown when editing an existing task) -->
+        <div id="task-comments-section" style="display:none; margin-top:4px; border-top:1px solid var(--border); padding-top:12px;">
+            <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:6px;">Comments</label>
+            <div id="task-comments-list" style="max-height:140px; overflow-y:auto; margin-bottom:8px; display:flex; flex-direction:column; gap:6px;"></div>
+            <div style="display:flex; gap:8px;">
+                <input type="text" id="task-comment-input" placeholder="Add a comment..." style="flex:1; padding:6px 10px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px;">
+                <button class="btn btn-sm btn-primary" onclick="postComment()" style="white-space:nowrap;">Post</button>
             </div>
         </div>
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
@@ -128,6 +169,43 @@
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
             <button class="btn" onclick="closeMessageModal()">Cancel</button>
             <button class="btn btn-primary" id="kanban-msg-send" onclick="submitMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
+<!-- Dependency DAG Modal -->
+<div id="depmap-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1300; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card,#1e293b); border:1px solid var(--border); border-radius:12px; width:min(860px,96vw); max-height:92vh; display:flex; flex-direction:column;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:16px;">🔗 Dependency Map</h3>
+            <button class="kanban-move-btn" onclick="closeDepMapModal()">✕</button>
+        </div>
+        <div style="padding:16px 20px; overflow:auto; flex:1;">
+            <div id="depmap-mermaid" style="min-height:200px; text-align:center; color:var(--text-dim);">Loading…</div>
+        </div>
+        <div style="padding:10px 20px; border-top:1px solid var(--border); font-size:11px; color:var(--text-dim);">
+            🟢 done &nbsp; 🔵 in_progress &nbsp; ⬜ backlog/scheduled &nbsp; 🔴 token_exhausted/suggested
+        </div>
+    </div>
+</div>
+
+<!-- Tag Manager Modal -->
+<div id="tagmgr-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:1300; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card,#1e293b); border:1px solid var(--border); border-radius:12px; width:min(420px,96vw); max-height:80vh; display:flex; flex-direction:column;">
+        <div style="padding:14px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:16px;">🏷 Tag Manager</h3>
+            <button class="kanban-move-btn" onclick="closeTagManagerModal()">✕</button>
+        </div>
+        <div style="padding:16px 20px; overflow:auto; flex:1;">
+            <div id="tagmgr-list" style="display:flex; flex-direction:column; gap:6px; margin-bottom:16px;"></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <input type="text" id="tagmgr-name" placeholder="Tag name" maxlength="64"
+                       style="flex:1; min-width:100px; padding:6px 10px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-size:13px;">
+                <input type="color" id="tagmgr-color" value="#6b7280" title="Tag color"
+                       style="width:36px; height:34px; padding:2px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; cursor:pointer;">
+                <button class="btn btn-primary btn-sm" onclick="createTag()">Create</button>
+            </div>
+            <div id="tagmgr-status" style="font-size:12px; margin-top:8px; min-height:1em; color:var(--text-dim);"></div>
         </div>
     </div>
 </div>
@@ -167,7 +245,11 @@ function openAddTaskModal() {
     document.getElementById('task-priority').value = 'medium';
     document.getElementById('task-status').value = 'backlog';
     document.getElementById('task-scheduled-at').value = '';
+    document.getElementById('task-start-date').value = '';
+    document.getElementById('task-target-date').value = '';
     document.getElementById('task-executor-type').value = 'claude_cli';
+    document.getElementById('task-comments-section').style.display = 'none';
+    document.getElementById('task-tags-section').style.display = 'none';
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -180,7 +262,13 @@ function openEditTaskModal(task) {
     document.getElementById('task-priority').value = task.priority;
     document.getElementById('task-status').value = task.status;
     document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
+    document.getElementById('task-start-date').value = task.start_date || '';
+    document.getElementById('task-target-date').value = task.target_date || '';
     document.getElementById('task-executor-type').value = task.executor_type || 'claude_cli';
+    document.getElementById('task-tags-section').style.display = 'block';
+    _loadTaskTags(task.id, task.tags || []);
+    document.getElementById('task-comments-section').style.display = 'block';
+    _loadComments(task.id);
     document.getElementById('task-modal').style.display = 'flex';
 }
 
@@ -197,7 +285,9 @@ function saveTask() {
         priority: document.getElementById('task-priority').value,
         status: document.getElementById('task-status').value,
         scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value),
-        executor_type: document.getElementById('task-executor-type').value
+        executor_type: document.getElementById('task-executor-type').value,
+        start_date: document.getElementById('task-start-date').value || null,
+        target_date: document.getElementById('task-target-date').value || null
     };
     if (!payload.title.trim()) { alert('Title is required'); return; }
 
@@ -401,6 +491,49 @@ function renderTaskKanban(tasks) {
 
             var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">\u{1F4C5} ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
 
+            // Target date line with overdue warning
+            var targetLine = '';
+            if (t.target_date) {
+                var today = new Date(); today.setHours(0,0,0,0);
+                var td = new Date(t.target_date + 'T00:00:00');
+                var overdue = td < today && t.status !== 'done';
+                targetLine = '<div style="font-size:11px; color:' + (overdue ? '#ef4444' : 'var(--text-dim)') + '; margin-top:3px;" title="Target: ' + esc(t.target_date) + '">'
+                    + (overdue ? '🔴' : '🎯') + ' ' + esc(t.target_date) + (overdue ? ' <strong>OVERDUE</strong>' : '') + '</div>';
+            }
+
+            // Phantom completion risk badge
+            var phantomBadge = '';
+            if (t.phantom_ratio && t.phantom_ratio > 0.5) {
+                var pr = Math.round(t.phantom_ratio * 100);
+                phantomBadge = '<span class="badge" style="background:#f97316; color:#fff; font-size:10px;" title="Phantom completion risk: output/claim ratio ' + pr + '%">⚠️ ' + pr + '% phantom</span>';
+            }
+
+            // Change metrics + branch badge (done cards only)
+            var changeMetrics = '';
+            if (t.status === 'done' && (t.files_changed || t.lines_added || t.lines_removed)) {
+                var fc = t.files_changed || 0;
+                var la = t.lines_added || 0;
+                var lr = t.lines_removed || 0;
+                changeMetrics = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;" title="' + fc + ' files changed">'
+                    + fc + ' file' + (fc !== 1 ? 's' : '')
+                    + ' <span style="color:#22c55e;">+' + la + '</span>'
+                    + ' <span style="color:#ef4444;">-' + lr + '</span>'
+                    + '</div>';
+            }
+            if (t.status === 'done' && t.branch_name) {
+                changeMetrics += '<div style="font-size:10px; color:var(--text-dim); margin-top:2px;" title="' + esc(t.commit_summary || '') + '">⑃ ' + esc(t.branch_name) + '</div>';
+            }
+
+            // Tag chips
+            var tagChips = '';
+            if (t.tags && t.tags.length) {
+                tagChips = '<div style="display:flex; flex-wrap:wrap; gap:3px; margin-top:4px;">'
+                    + t.tags.map(function(tg) {
+                        return '<span style="background:' + esc(tg.color) + '33; color:' + esc(tg.color) + '; font-size:10px; padding:1px 5px; border-radius:3px; font-weight:600;">' + esc(tg.name) + '</span>';
+                    }).join('')
+                    + '</div>';
+            }
+
             // Executor badge
             var execInfo = executorLabels[t.executor_type] || executorLabels['claude_cli'];
             var execBadge = '<span class="badge" style="background:' + execInfo.color + '20;color:' + execInfo.color + ';font-size:10px;" title="Executor: ' + execInfo.label + '">'
@@ -480,11 +613,15 @@ function renderTaskKanban(tasks) {
                 + execBadge
                 + llmBadge
                 + attemptBadge
+                + phantomBadge
                 + '</div>'
                 + depLine
                 + tifLine
                 + lastKilledLine
                 + schedLine
+                + targetLine
+                + changeMetrics
+                + tagChips
                 + execIdLine
                 + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
                 + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
@@ -547,6 +684,226 @@ function submitMessage() {
     });
 }
 
+// ── Tier 2: Dependency DAG ────────────────────────────────────────────────
+function openDepMapModal() {
+    document.getElementById('depmap-modal').style.display = 'flex';
+    var el = document.getElementById('depmap-mermaid');
+    el.innerHTML = 'Loading…';
+    fetch('/api/kanban/deps-graph')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var nodes = data.nodes || [];
+            var edges = data.edges || [];
+            if (!nodes.length && !edges.length) {
+                el.innerHTML = '<div style="color:var(--text-dim); padding:40px;">No dependencies defined yet. Set <code>depends_on_task_id</code> on tasks to see the graph.</div>';
+                return;
+            }
+            var statusColor = {
+                done: '#22c55e', in_progress: '#3b82f6',
+                token_exhausted: '#ef4444', suggested: '#f97316',
+                backlog: '#6b7280', scheduled: '#a78bfa'
+            };
+            var nodeMap = {};
+            nodes.forEach(function(n) { nodeMap[n.id] = n; });
+
+            var lines = ['graph TD'];
+            nodes.forEach(function(n) {
+                var safeId = n.id.replace(/[^a-zA-Z0-9_]/g, '_');
+                var label = (n.title || n.id).substring(0, 32).replace(/"/g, "'");
+                var color = statusColor[n.status] || '#6b7280';
+                lines.push('  ' + safeId + '["' + label + '"]');
+                lines.push('  style ' + safeId + ' fill:' + color + '33,stroke:' + color + ',color:#e0e0e0');
+            });
+            edges.forEach(function(e) {
+                var fromId = e.from.replace(/[^a-zA-Z0-9_]/g, '_');
+                var toId = e.to.replace(/[^a-zA-Z0-9_]/g, '_');
+                lines.push('  ' + fromId + ' --> ' + toId);
+            });
+            var def = lines.join('\n');
+
+            el.innerHTML = '<div class="mermaid">' + def + '</div>';
+            if (window.ICDEV && ICDEV.mermaid && ICDEV.mermaid.renderAll) {
+                ICDEV.mermaid.renderAll();
+            } else if (window.mermaid) {
+                mermaid.init(undefined, el.querySelector('.mermaid'));
+            }
+        })
+        .catch(function(e) {
+            document.getElementById('depmap-mermaid').innerHTML = '<div style="color:#ef4444;">Failed to load graph: ' + e + '</div>';
+        });
+}
+function closeDepMapModal() { document.getElementById('depmap-modal').style.display = 'none'; }
+
+// ── Tier 2: Tag Manager ───────────────────────────────────────────────────
+var _allTags = [];
+
+function _loadAllTags(cb) {
+    fetch('/api/kanban/tags')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _allTags = data.tags || [];
+            if (cb) cb(_allTags);
+        })
+        .catch(function() { _allTags = []; if (cb) cb([]); });
+}
+
+function openTagManagerModal() {
+    document.getElementById('tagmgr-modal').style.display = 'flex';
+    document.getElementById('tagmgr-name').value = '';
+    document.getElementById('tagmgr-status').textContent = '';
+    _refreshTagManagerList();
+}
+function closeTagManagerModal() { document.getElementById('tagmgr-modal').style.display = 'none'; }
+
+function _refreshTagManagerList() {
+    _loadAllTags(function(tags) {
+        var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+        var el = document.getElementById('tagmgr-list');
+        if (!el) return;
+        if (!tags.length) { el.innerHTML = '<div style="font-size:12px; color:var(--text-dim); font-style:italic;">No tags yet.</div>'; return; }
+        el.innerHTML = tags.map(function(t) {
+            return '<div style="display:flex; align-items:center; gap:8px; background:var(--bg-code); border-radius:4px; padding:5px 8px;">'
+                + '<span style="display:inline-block; width:12px; height:12px; border-radius:2px; background:' + esc(t.color) + ';"></span>'
+                + '<span style="flex:1; font-size:13px;">' + esc(t.name) + '</span>'
+                + '<button class="kanban-move-btn" style="color:#ef4444;" onclick="deleteTag(\'' + esc(t.id) + '\')">✕</button>'
+                + '</div>';
+        }).join('');
+    });
+}
+
+function createTag() {
+    var name = (document.getElementById('tagmgr-name').value || '').trim();
+    var color = document.getElementById('tagmgr-color').value || '#6b7280';
+    if (!name) return;
+    var st = document.getElementById('tagmgr-status');
+    st.textContent = 'Creating…'; st.style.color = 'var(--text-dim)';
+    fetch('/api/kanban/tags', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name: name, color: color })
+    }).then(function(r) { return r.json().then(function(b) { return {ok: r.ok, body: b}; }); })
+    .then(function(res) {
+        if (res.ok) {
+            document.getElementById('tagmgr-name').value = '';
+            st.textContent = 'Created!'; st.style.color = '#22c55e';
+            _refreshTagManagerList();
+            _refreshTagPicker();
+        } else {
+            st.textContent = res.body.error || 'Error'; st.style.color = '#ef4444';
+        }
+    });
+}
+
+function deleteTag(tagId) {
+    if (!confirm('Delete this tag? It will be removed from all tasks.')) return;
+    fetch('/api/kanban/tags/' + tagId, { method: 'DELETE' })
+        .then(function() { _refreshTagManagerList(); _refreshTagPicker(); refreshKanbanTasks(); });
+}
+
+// ── Tier 2: Task Tag Picker ───────────────────────────────────────────────
+var _tagPickerTaskId = null;
+
+function _refreshTagPicker() {
+    _loadAllTags(function(tags) {
+        var sel = document.getElementById('task-tag-picker');
+        if (!sel) return;
+        var current = sel.value;
+        sel.innerHTML = '<option value="">— assign tag —</option>'
+            + tags.map(function(t) {
+                return '<option value="' + t.id + '"' + (t.id === current ? ' selected' : '') + '>' + (t.name) + '</option>';
+            }).join('');
+    });
+}
+
+function _loadTaskTags(taskId, existingTags) {
+    _tagPickerTaskId = taskId;
+    var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+    var el = document.getElementById('task-tags-assigned');
+    if (!el) return;
+    function renderAssigned(tags) {
+        el.innerHTML = tags.length
+            ? tags.map(function(t) {
+                return '<span style="background:' + esc(t.color) + '33; color:' + esc(t.color) + '; font-size:11px; padding:2px 7px; border-radius:4px; cursor:pointer;" '
+                    + 'title="Remove tag" onclick="removeTaskTag(\'' + esc(t.id) + '\')">'
+                    + esc(t.name) + ' ✕</span>';
+            }).join('')
+            : '<span style="font-size:11px; color:var(--text-dim); font-style:italic;">None</span>';
+    }
+    renderAssigned(existingTags || []);
+    _refreshTagPicker();
+}
+
+function assignTag() {
+    if (!_tagPickerTaskId) return;
+    var tagId = document.getElementById('task-tag-picker').value;
+    if (!tagId) return;
+    fetch('/api/kanban/tasks/' + _tagPickerTaskId + '/tags', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ tag_id: tagId })
+    }).then(function() {
+        fetch('/api/kanban/tasks/' + _tagPickerTaskId + '/tags')
+            .then(function(r) { return r.json(); })
+            .then(function(data) { _loadTaskTags(_tagPickerTaskId, data.tags || []); refreshKanbanTasks(); });
+    });
+}
+
+function removeTaskTag(tagId) {
+    if (!_tagPickerTaskId) return;
+    fetch('/api/kanban/tasks/' + _tagPickerTaskId + '/tags/' + tagId, { method: 'DELETE' })
+        .then(function() {
+            fetch('/api/kanban/tasks/' + _tagPickerTaskId + '/tags')
+                .then(function(r) { return r.json(); })
+                .then(function(data) { _loadTaskTags(_tagPickerTaskId, data.tags || []); refreshKanbanTasks(); });
+        });
+}
+
+// Comments
+var _commentsTaskId = null;
+function _loadComments(taskId) {
+    _commentsTaskId = taskId;
+    var listEl = document.getElementById('task-comments-list');
+    if (!listEl) return;
+    listEl.innerHTML = '<div style="font-size:11px; color:var(--text-dim);">Loading…</div>';
+    fetch('/api/kanban/tasks/' + taskId + '/comments')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var comments = data.comments || [];
+            if (comments.length === 0) {
+                listEl.innerHTML = '<div style="font-size:11px; color:var(--text-dim); font-style:italic;">No comments yet.</div>';
+                return;
+            }
+            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+            listEl.innerHTML = comments.map(function(c) {
+                var ts = c.created_at ? new Date(c.created_at).toLocaleString() : '';
+                return '<div style="background:var(--bg-code); border-radius:4px; padding:6px 8px; font-size:12px;">'
+                    + '<span style="font-weight:600; color:var(--text-primary);">' + esc(c.author) + '</span>'
+                    + '<span style="color:var(--text-dim); margin-left:6px; font-size:10px;">' + ts + '</span>'
+                    + '<div style="margin-top:3px; white-space:pre-wrap; word-break:break-word;">' + esc(c.body) + '</div>'
+                    + '</div>';
+            }).join('');
+            listEl.scrollTop = listEl.scrollHeight;
+        })
+        .catch(function() {
+            listEl.innerHTML = '<div style="font-size:11px; color:#ef4444;">Failed to load comments.</div>';
+        });
+}
+
+function postComment() {
+    if (!_commentsTaskId) return;
+    var input = document.getElementById('task-comment-input');
+    var body = (input.value || '').trim();
+    if (!body) return;
+    fetch('/api/kanban/tasks/' + _commentsTaskId + '/comments', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ body: body, author: 'dashboard' })
+    }).then(function(r) {
+        if (r.ok) {
+            input.value = '';
+            _loadComments(_commentsTaskId);
+        }
+    });
+}
+
 // OPT-68 Pattern 1: filter-as-you-type across all visible kanban cards
 function applyKanbanFilter(query) {
     var q = (query || '').trim().toLowerCase();
@@ -562,8 +919,52 @@ function applyKanbanFilter(query) {
     if (countEl) countEl.textContent = q ? matched + ' match' + (matched === 1 ? '' : 'es') : '';
 }
 
+function setExecutorChain(value) {
+    fetch('/api/kanban/settings/executor-chain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({chain: value.split(',')}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Executor chain update failed: ' + data.error);
+        } else {
+            // Best-effort toast instead of alert
+            var el = document.getElementById('kanban-filter-count');
+            if (el) {
+                var old = el.textContent;
+                el.textContent = 'Executor chain updated ✓';
+                setTimeout(function() { el.textContent = old; }, 2000);
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('setExecutorChain failed:', err);
+    });
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     refreshKanbanTasks();
+
+    // Load current executor chain setting into the header toggle
+    fetch('/api/kanban/settings/executor-chain')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.chain) {
+            var sel = document.getElementById('kanban-executor-chain');
+            var wanted = data.chain.join(',');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === wanted) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('Failed to load executor chain setting:', err);
+    });
 
     // Wire filter input once debounce_filter.js is ready
     var input = document.getElementById('kanban-filter-input');
@@ -580,6 +981,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <script src="{{ url_for('static', filename='js/debounce_filter.js') }}"></script>
 <script src="{{ url_for('static', filename='js/undo_toast.js') }}"></script>
+<script src="{{ url_for('static', filename='js/mermaid-icdev.js') }}"></script>
 
 <style>
 .kanban-move-btn {
@@ -588,4 +990,15 @@ document.addEventListener('DOMContentLoaded', function() {
 }
 .kanban-move-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 </style>
+
+{% set iqe_canvas = "kanban" %}
+{% set iqe_api_route = "/api/kanban/iqe-query" %}
+{% set iqe_title = "Query Task Board" %}
+{% set iqe_examples = [
+    {"label": "In-progress tasks", "query": "foreach t in kanban.tasks where t.status == \"in_progress\" select t.id, t.title, t.priority, t.executor_type"},
+    {"label": "High priority backlog", "query": "foreach t in kanban.tasks where t.priority == \"high\" where t.status == \"backlog\" select t.id, t.title, t.task_type, t.created_at"},
+    {"label": "Failed tasks", "query": "foreach t in kanban.tasks where t.failure_count > 0 select t.id, t.title, t.failure_count, t.last_failure_reason"},
+    {"label": "Epic summary", "query": "foreach e in kanban.epics select e.epic_key, e.task_count, e.done_count, e.in_progress_count"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 {% endblock %}

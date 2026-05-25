@@ -35,6 +35,7 @@ CLI::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -46,7 +47,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.browser.driver_manager")
+logger = get_logger("icdev.browser.driver_manager")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 

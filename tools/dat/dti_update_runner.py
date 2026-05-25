@@ -13,6 +13,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -26,7 +27,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-logger = logging.getLogger("icdev.dat.dti_update_runner")
+logger = get_logger("icdev.dat.dti_update_runner")
 
 INTERVAL_HOURS = 6
 MAX_RUNTIME_MINUTES = 10

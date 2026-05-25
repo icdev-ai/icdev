@@ -13,13 +13,14 @@ Usage:
   python tools/migration_canvas/cam_seed_sops.py --json
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
 import logging
 from pathlib import Path
 
-logger = logging.getLogger("icdev.cam_seed_sops")
+logger = get_logger("icdev.cam_seed_sops")
 
 _CATALOG_DIR = Path(__file__).resolve().parent.parent.parent / "context" / "migration" / "sop_catalog"
 

@@ -1,0 +1,4 @@
+collection: network.agreements_expiring
+query: peering agreements expiring 90 days
+description: Operational peering agreements with contract end within 90 days — renewal risk list
+tags: [agreements, renewal, expiring, risk]

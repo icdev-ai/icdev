@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 """WriteGuard integration bridge for ICDEV™ Pulse.
 
 FORGE-compliant: All checks are deterministic (no LLM). Rewriting is
@@ -25,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Path to ICDEV™ WriteGuard tools
 ICDEV_ROOT = Path(__file__).resolve().parent.parent.parent  # Up to ICDev/

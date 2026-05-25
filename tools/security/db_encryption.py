@@ -26,6 +26,7 @@ Design:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import hashlib
@@ -38,7 +39,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger("icdev.db.encryption")
+logger = get_logger("icdev.db.encryption")
 
 # File header: magic + nonce + tag + ciphertext
 _DB_ENC_MAGIC = b"ICDEVDB1"

@@ -18,6 +18,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -25,7 +26,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("pmc.transit_pricing")
+logger = get_logger("pmc.transit_pricing")
 
 # ── Transit Price Benchmarks (USD/Mbps/month) ─────────────────────────────────
 # Prices reflect 95th-percentile burstable billing, 1-year term, no commit discount.

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """XAI Compliance Assessor — Explainable AI assessment (D289).
 
@@ -31,7 +33,7 @@ from typing import Dict, Optional
 
 from tools.compliance.base_assessor import BaseAssessor
 
-logger = logging.getLogger("icdev.compliance.xai_assessor")
+logger = get_logger("icdev.compliance.xai_assessor")
 
 
 class XAIAssessor(BaseAssessor):

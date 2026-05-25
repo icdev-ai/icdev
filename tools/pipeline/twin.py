@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI — PDC Pipeline Twin Engine
 """Pre-merge what-if simulation for DevSecOps pipelines.
 
@@ -19,7 +21,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.pipeline.twin")
+logger = get_logger("icdev.pipeline.twin")
 
 
 # ── lazy imports so this module loads even without Flask app context ──────────

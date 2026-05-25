@@ -9,12 +9,13 @@ open incident.
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 2
 

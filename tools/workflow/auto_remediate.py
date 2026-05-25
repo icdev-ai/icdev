@@ -14,6 +14,7 @@ re-run still fails, the task goes to backlog with an annotated reason.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import re
@@ -23,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from tools.workflow.git_utils import default_branch
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

@@ -141,6 +141,29 @@ python tools/security/audit_posture.py --json
 
 ---
 
+## Security Canvas (SDC) — Demo Runner
+```bash
+# Run all 3 scenarios (A: Red Team, B: 12-Step Workflow, C: After State)
+python tools/sdc/demo_runner.py --audience exec --json
+python tools/sdc/demo_runner.py --audience tech --json
+python tools/sdc/demo_runner.py --audience engineer --json
+
+# Run a specific scenario
+python tools/sdc/demo_runner.py --scenario A --audience exec --json          # Red Team: STRIDE + attack paths
+python tools/sdc/demo_runner.py --scenario B --simulate --json               # 12-Step Workflow + auto-approve ISSO gates
+python tools/sdc/demo_runner.py --scenario C --audience tech --json          # After State: 0 CAT1, IaC, crosswalk
+
+# Write output to file
+python tools/sdc/demo_runner.py --audience exec --json --output demo_result.json
+
+# Seed demo data before first run
+python tools/db/seeds/seed_sdc_demo.py --all
+
+# Dashboard route: http://localhost:5050/security/demo
+```
+
+---
+
 ## AI Security Commands
 ```bash
 python tools/security/prompt_injection_detector.py --text "input" --json

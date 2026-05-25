@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ SaaS Phase 5 -- Bedrock LLM Proxy.
 
@@ -60,7 +62,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
-logger = logging.getLogger("saas.bedrock.proxy")
+logger = get_logger("saas.bedrock.proxy")
 
 # ---------------------------------------------------------------------------
 # Optional dependency: boto3

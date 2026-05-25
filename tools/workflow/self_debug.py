@@ -13,6 +13,7 @@ Public entry point: ``check_and_diagnose(task_id, reason, cwd)``.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -24,7 +25,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 KANBAN_DIR = BASE_DIR / ".tmp" / "kanban"

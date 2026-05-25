@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """SaaS Tenant LLM Key Management (Phase 32 -- D141).
 
@@ -15,7 +17,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-logger = logging.getLogger("saas.tenant_llm_keys")
+logger = get_logger("saas.tenant_llm_keys")
 
 VALID_PROVIDERS = ("anthropic", "openai", "bedrock", "ollama", "vllm")
 

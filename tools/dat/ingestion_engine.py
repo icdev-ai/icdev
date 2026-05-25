@@ -17,6 +17,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import csv
@@ -36,7 +37,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.dat.ingestion_engine")
+logger = get_logger("icdev.dat.ingestion_engine")
 
 _DEFAULT_CONFIG = _REPO_ROOT / "args" / "dat_config.yaml"
 

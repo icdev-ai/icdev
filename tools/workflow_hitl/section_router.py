@@ -7,6 +7,7 @@ For each section:
   3. Cross-section greedy deduplication (each chunk assigned to highest-scoring section)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import dataclasses
 import json
@@ -15,7 +16,7 @@ from typing import List, Optional
 
 from tools.workflow_hitl.report_schema import ReportSection
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 @dataclasses.dataclass

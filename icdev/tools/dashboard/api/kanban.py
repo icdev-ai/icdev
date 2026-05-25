@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
@@ -1398,6 +1399,65 @@ def remove_task_tag(task_id, tag_id):
         conn.close()
 
 
+# ── Executor chain toggle ───────────────────────────────────────────────
+
+def _read_env_file(key: str) -> str | None:
+    """Read a key from the .env file, or None if absent."""
+    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    if not env_path.exists():
+        return None
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if stripped.startswith(f"{key}="):
+            return stripped[len(key) + 1 :]
+    return None
+
+
+def _update_env_file(key: str, value: str) -> None:
+    """Update or append a key in the .env file."""
+    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    found = False
+    new_lines = []
+    for line in lines:
+        if line.strip().startswith(f"{key}="):
+            new_lines.append(f"{key}={value}")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        new_lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
+@kanban_api.route("/settings/executor-chain", methods=["GET", "POST"])
+def executor_chain_setting():
+    """Read or update the global ICDEV_KANBAN_EXECUTOR_CHAIN env override."""
+    if request.method == "GET":
+        chain = os.environ.get("ICDEV_KANBAN_EXECUTOR_CHAIN", "")
+        if not chain:
+            chain = _read_env_file("ICDEV_KANBAN_EXECUTOR_CHAIN") or ""
+        if not chain:
+            return jsonify({"chain": None, "message": "Using fallback from args/strategos_config.yaml"})
+        return jsonify({"chain": [x.strip() for x in chain.split(",") if x.strip()]})
+
+    data = request.get_json(force=True, silent=True) or {}
+    chain_list = data.get("chain")
+    if not isinstance(chain_list, list) or not chain_list:
+        return jsonify({"error": "chain must be a non-empty list of executor names"}), 400
+    valid = {"claude_cli", "gitlab", "github_actions", "ollama_local"}
+    invalid = [x for x in chain_list if x not in valid]
+    if invalid:
+        return jsonify({"error": f"Invalid executors: {invalid}. Valid: {sorted(valid)}"}), 400
+    chain_str = ",".join(chain_list)
+    try:
+        _update_env_file("ICDEV_KANBAN_EXECUTOR_CHAIN", chain_str)
+        os.environ["ICDEV_KANBAN_EXECUTOR_CHAIN"] = chain_str
+        return jsonify({"status": "updated", "chain": chain_list})
+    except Exception as exc:
+        return jsonify({"error": str(exc)[:200]}), 500
+
+
 @kanban_api.route("/iqe-query", methods=["POST"])
 def kanban_iqe_query():
     """Natural-language IQE query against Kanban collections."""
@@ -1469,89 +1529,6 @@ def _plan_priority(title: str) -> str:
     return "medium"
 
 
-# Map intake requirement_type to kanban task_type
-_REQ_TYPE_TO_TASK_TYPE = {
-    "functional": "build",
-    "security": "security",
-    "performance": "performance",
-    "compliance": "compliance",
-    "interface": "interface",
-    "data": "data",
-    "non_functional": "build",
-    "constraint": "build",
-    "operational": "build",
-    "transitional": "build",
-}
-
-
-def _truncate_title(text: str, max_len: int = 120) -> str:
-    """First sentence or first N chars, whichever is shorter."""
-    if not text:
-        return "Untitled task"
-    # Split on sentence terminators
-    for delim in ".\n!":
-        if delim in text:
-            first = text.split(delim, 1)[0].strip()
-            if first:
-                text = first
-                break
-    if len(text) > max_len:
-        text = text[: max_len - 3].rsplit(" ", 1)[0] + "..."
-    return text.strip()
-
-
-def _create_tasks_from_requirements(conn, requirements: list, now: str) -> list:
-    """Create rich kanban_tasks from intake_requirements rows.
-
-    Returns list of created task IDs.
-    """
-    created_ids = []
-    prev_task_id = None
-    for req in requirements:
-        req_type = (req.get("requirement_type") or "functional").lower()
-        raw_text = (req.get("raw_text") or "").strip()
-        ac = (req.get("acceptance_criteria") or "").strip()
-        priority = (req.get("priority") or "medium").lower()
-        if priority not in ("critical", "high", "medium", "low"):
-            priority = "medium"
-
-        task_id = f"task-plan-{uuid.uuid4().hex[:12]}"
-        title = _truncate_title(raw_text)
-        description = raw_text
-        if ac:
-            description += "\n\nAcceptance Criteria:\n" + ac
-
-        task_type = _REQ_TYPE_TO_TASK_TYPE.get(req_type, "build")
-
-        conn.execute(
-            "INSERT INTO kanban_tasks "
-            "(id, title, description, task_type, priority, "
-            "status, scheduled_at, executor_type, depends_on_task_id, "
-            "start_date, target_date, dispatch_source, "
-            "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                task_id,
-                title,
-                description,
-                task_type,
-                priority,
-                "backlog",
-                None,
-                "claude_cli",
-                prev_task_id,
-                None,
-                None,
-                "chat_import",
-                now,
-                now,
-            ),
-        )
-        created_ids.append(task_id)
-        prev_task_id = task_id
-    return created_ids
-
-
 @kanban_api.route("/preview-plan", methods=["POST"])
 def preview_plan():
     """Return a preview of tasks that would be created from a markdown plan."""
@@ -1566,86 +1543,54 @@ def preview_plan():
 
 @kanban_api.route("/from-plan", methods=["POST"])
 def create_from_plan():
-    """Create Kanban backlog tasks extracted from a markdown plan.
-
-    If ``session_id`` is provided, fetches the intake requirements directly
-    and creates rich tasks with descriptions, dependencies, and proper types.
-    """
+    """Create Kanban backlog tasks extracted from a markdown plan."""
     data = request.get_json(silent=True) or {}
     markdown = (data.get("markdown") or "").strip()
-    session_id = (data.get("session_id") or "").strip()
+    if not markdown:
+        return jsonify({"error": "markdown is required"}), 400
+    titles = _parse_plan_markdown(markdown)
+    if not titles:
+        return jsonify({"error": "No tasks could be extracted from the plan"}), 400
     conn = get_connection()
     now = _utcnow()
     created = 0
-    created_ids = []
     try:
-        if session_id:
-            # Rich path: create from structured requirements
-            rows = conn.execute(
-                "SELECT raw_text, acceptance_criteria, requirement_type, priority "
-                "FROM intake_requirements WHERE session_id = ? AND status != 'rejected' "
-                "ORDER BY created_at",
-                (session_id,),
-            ).fetchall()
-            requirements = [dict(r) for r in rows]
-            if requirements:
-                created_ids = _create_tasks_from_requirements(conn, requirements, now)
-                created = len(created_ids)
-            # Fallback to markdown if no requirements found
-            if not created and markdown:
-                titles = _parse_plan_markdown(markdown)
-                for t in titles:
-                    task_id = f"task-plan-{uuid.uuid4().hex[:12]}"
-                    priority = _plan_priority(t)
-                    conn.execute(
-                        "INSERT INTO kanban_tasks "
-                        "(id, title, description, task_type, priority, "
-                        "status, scheduled_at, executor_type, depends_on_task_id, "
-                        "start_date, target_date, dispatch_source, "
-                        "created_at, updated_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            task_id, t, "", "build", priority,
-                            "backlog", None, "claude_cli", None,
-                            None, None, "chat_import", now, now,
-                        ),
-                    )
-                    created_ids.append(task_id)
-                    created += 1
-        elif markdown:
-            titles = _parse_plan_markdown(markdown)
-            if not titles:
-                return jsonify({"error": "No tasks could be extracted from the plan"}), 400
-            for t in titles:
-                task_id = f"task-plan-{uuid.uuid4().hex[:12]}"
-                priority = _plan_priority(t)
-                conn.execute(
-                    "INSERT INTO kanban_tasks "
-                    "(id, title, description, task_type, priority, "
-                    "status, scheduled_at, executor_type, depends_on_task_id, "
-                    "start_date, target_date, "
-                    "created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        task_id, t, "", "build", priority,
-                        "backlog", None, "claude_cli", None,
-                        None, None, now, now,
-                    ),
-                )
-                created_ids.append(task_id)
-                created += 1
-        else:
-            return jsonify({"error": "markdown or session_id is required"}), 400
-
+        for t in titles:
+            task_id = f"task-plan-{uuid.uuid4().hex[:12]}"
+            priority = _plan_priority(t)
+            conn.execute(
+                "INSERT INTO kanban_tasks "
+                "(id, title, description, task_type, priority, "
+                "status, scheduled_at, executor_type, depends_on_task_id, "
+                "start_date, target_date, "
+                "created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    task_id,
+                    t,
+                    "",
+                    "build",
+                    priority,
+                    "backlog",
+                    None,
+                    "claude_cli",
+                    None,
+                    None,
+                    None,
+                    now,
+                    now,
+                ),
+            )
+            created += 1
         conn.commit()
         try:
             sse_manager.broadcast(
-                {"action": "plan_imported", "tasks_created": created, "task_ids": created_ids},
+                {"action": "plan_imported", "tasks_created": created},
                 "kanban",
             )
         except Exception:
             pass
-        return jsonify({"tasks_created": created, "task_ids": created_ids})
+        return jsonify({"tasks_created": created})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:

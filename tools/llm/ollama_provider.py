@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Native Ollama LLM Provider using the Ollama REST API directly.
 
@@ -21,7 +23,7 @@ from tools.llm.provider import (
     LLMResponse,
 )
 
-logger = logging.getLogger("icdev.llm.ollama")
+logger = get_logger("icdev.llm.ollama")
 
 try:
     import requests

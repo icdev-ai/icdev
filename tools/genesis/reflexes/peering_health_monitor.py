@@ -9,12 +9,13 @@ prefixes or significant policy changes.
 Air-gap safe: uses stdlib urllib for PeeringDB and Cloudflare RPKI APIs.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 CADENCE_HOURS = 6
 

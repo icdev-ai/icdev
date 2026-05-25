@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Claude Code hook compatibility layer.
 
@@ -35,7 +37,7 @@ from typing import Any, Dict, Optional
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.airgap.hook_compat")
+logger = get_logger("icdev.airgap.hook_compat")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

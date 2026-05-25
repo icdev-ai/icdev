@@ -1,0 +1,4 @@
+collection: ccc.xc_orders
+query: in-flight cross-connect orders status pipeline
+description: All cross-connect orders currently in-flight (quoted through testing) with ETA and carrier ticket
+tags: [orders, cross-connect, in-flight, pipeline]

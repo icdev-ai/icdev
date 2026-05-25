@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """MLflow Batch Exporter — Export SQLite spans to MLflow (D283).
 
@@ -23,7 +25,7 @@ from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Dict, List, Optional
 
-logger = logging.getLogger("icdev.observability.mlflow_exporter")
+logger = get_logger("icdev.observability.mlflow_exporter")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "data" / "icdev.db"

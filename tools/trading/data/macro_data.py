@@ -8,6 +8,7 @@ Falls back to sample data when FRED/yfinance are unavailable.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import sys
@@ -1314,7 +1315,7 @@ def fetch_macro_context(headlines: list[str] | None = None) -> dict:
         raw = _generate_sample_macro()
         data_source = "sample"
         import logging
-        logging.getLogger(__name__).warning(
+        get_logger(__name__).warning(
             "MACRO DATA FALLBACK: using sample data — live FRED/yfinance unavailable. "
             "Trading decisions may be based on synthetic indicators."
         )

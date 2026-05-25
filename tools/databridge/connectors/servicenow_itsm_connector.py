@@ -20,6 +20,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import base64
 import logging
@@ -27,7 +28,7 @@ from typing import Any, Dict, List, Optional
 
 from tools.databridge.connectors.saas_base import SaaSBaseConnector
 
-logger = logging.getLogger("databridge.servicenow_itsm")
+logger = get_logger("databridge.servicenow_itsm")
 
 # ServiceNow change_request state → human-readable
 _CHANGE_REQUEST_STATE_MAP = {

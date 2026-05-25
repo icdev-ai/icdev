@@ -14,6 +14,7 @@ NIST 800-53: SI-12 (Information Management and Retention),
              AC-3 (Access Enforcement), AU-2 (Audit Events)
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
@@ -22,7 +23,7 @@ from flask import Blueprint, jsonify, request
 
 from tools.db.storage import get_connection
 
-logger = logging.getLogger("icdev.api.jise")
+logger = get_logger("icdev.api.jise")
 
 jise_api = Blueprint("jise_api", __name__, url_prefix="/api/v1/jise")
 

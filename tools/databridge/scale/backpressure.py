@@ -7,13 +7,14 @@ then no-op (Windows without psutil = no-op with warning).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
 import threading
 from typing import Any, Dict, Set
 
-logger = logging.getLogger("databridge.scale.backpressure")
+logger = get_logger("databridge.scale.backpressure")
 
 
 def _detect_memory_backend() -> str:

@@ -27,6 +27,7 @@ Usage (standalone CLI):
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -58,7 +59,7 @@ from tools.databridge.connector import (  # noqa: E402
 )
 from tools.databridge.registry import register_connector  # noqa: E402
 
-logger = logging.getLogger("databridge.rss")
+logger = get_logger("databridge.rss")
 
 DEFAULT_MAX_ITEMS = 50
 USER_AGENT = "ICDEV-DataBridge/1.0"

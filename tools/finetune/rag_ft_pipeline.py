@@ -21,6 +21,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -37,7 +38,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.common.helpers import now_iso  # noqa: E402
 
-logger = logging.getLogger("icdev.finetune.rag_ft_pipeline")
+logger = get_logger("icdev.finetune.rag_ft_pipeline")
 
 
 # ---------------------------------------------------------------------------

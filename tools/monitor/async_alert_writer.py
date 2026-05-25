@@ -11,6 +11,7 @@ thread without adding to the caller's wall-clock latency.
 This module is the integration point that combines both optimizations.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import queue
@@ -21,7 +22,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-logger = logging.getLogger("icdev.async_alert_writer")
+logger = get_logger("icdev.async_alert_writer")
 
 _WRITE_TIMEOUT_SEC = 30     # background writer drains at most every 30s
 _BATCH_SIZE = 50            # flush queue after this many records

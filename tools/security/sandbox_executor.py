@@ -12,6 +12,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -31,7 +32,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.db.storage import get_connection  # noqa: E402
 
-logger = logging.getLogger("icdev.security.sandbox_executor")
+logger = get_logger("icdev.security.sandbox_executor")
 
 # ---------------------------------------------------------------------------
 # Defaults

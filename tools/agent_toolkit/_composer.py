@@ -31,6 +31,7 @@ factory. ICDEV implementation is independent: no LangGraph, no
 langchain-core. Pure Python + LLMRouter.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -50,7 +51,7 @@ from tools.agent_toolkit._planning import update_todo, write_todos
 from tools.agent_toolkit._shell import execute_shell
 from tools.agent_toolkit._subagent import spawn_subagent
 
-logger = logging.getLogger("icdev.agent_toolkit.composer")
+logger = get_logger("icdev.agent_toolkit.composer")
 
 
 # Default tools exposed to every Agent unless the caller overrides.

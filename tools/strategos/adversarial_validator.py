@@ -12,6 +12,7 @@ NIST 800-53 mappings:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -25,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.strategos.adversarial_validator")
+logger = get_logger("icdev.strategos.adversarial_validator")
 logging.basicConfig(level=logging.WARNING, format="%(levelname)s  %(message)s")
 
 

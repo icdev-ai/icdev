@@ -34,6 +34,7 @@ Public surface:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -42,7 +43,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.tfw_chat_agent")
+logger = get_logger("icdev.tfw_chat_agent")
 
 # ---------------------------------------------------------------------------
 # Canvas-specific command visibility

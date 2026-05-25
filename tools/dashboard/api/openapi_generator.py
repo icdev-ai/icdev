@@ -67,6 +67,7 @@ Air-gap considerations (will land in B4 / Phase H)
   any environment.
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import ast
 import copy
@@ -82,7 +83,7 @@ import requests
 if TYPE_CHECKING:
     from flask import Flask
 
-logger = logging.getLogger("icdev.dashboard.api.openapi_generator")
+logger = get_logger("icdev.dashboard.api.openapi_generator")
 
 # ---------------------------------------------------------------------------
 # OpenAPI 3.1 base skeleton

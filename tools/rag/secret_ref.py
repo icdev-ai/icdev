@@ -14,12 +14,13 @@ Integrates with tools/cloud/provider_factory.py for cloud secret backends.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import os
 from pathlib import Path
 
-logger = logging.getLogger("icdev.rag.secret_ref")
+logger = get_logger("icdev.rag.secret_ref")
 
 
 def resolve_secret(ref: str) -> str:

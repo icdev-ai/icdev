@@ -13,6 +13,7 @@ Usage in ICDEV dashboard app.py:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -31,7 +32,7 @@ from flask import (
     session,
 )
 
-logger = logging.getLogger("icdev.boundary_canvas")
+logger = get_logger("icdev.boundary_canvas")
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _BDC_DIR = Path(__file__).resolve().parent

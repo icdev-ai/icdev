@@ -13,12 +13,13 @@ Output pages:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _CLASSIFICATION = "CUI // SP-CTI"
 _BRAND = "ICDEV Network Migration Phases"  # TM stripped — fpdf2 core fonts are latin-1 only

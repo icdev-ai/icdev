@@ -13,6 +13,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import hashlib
@@ -22,7 +23,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-logger = logging.getLogger("icdev.rag.auto_indexer")
+logger = get_logger("icdev.rag.auto_indexer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 

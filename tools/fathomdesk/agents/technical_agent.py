@@ -2,6 +2,7 @@
 """TechnicalAgent — price-action and signal-based analyst lens."""
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -12,7 +13,7 @@ from tools.fathomdesk.factor_model import compute_factor_exposure
 from tools.fathomdesk.signal_generator import load_thresholds, generate
 from tools.llm.provider import LLMRequest
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SYSTEM = (
     "You are a senior technical analyst. "

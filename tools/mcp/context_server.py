@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Semantic layer MCP server for on-demand context delivery (Phase 44 — D277).
 
@@ -20,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.context_server")
+logger = get_logger("icdev.context_server")
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 

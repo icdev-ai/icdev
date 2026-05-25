@@ -15,6 +15,7 @@ is also set. All edits are confined to a fresh ``.tmp/autofix/<task>__
 Returns: ``{"scanned": N, "applied": N, "suggested": N, "skipped": N}``
 """
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import logging
 import sys
@@ -25,7 +26,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:

@@ -8,6 +8,7 @@ Riverbed NetIM REST API base: https://{host}/api/v1
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -17,7 +18,7 @@ from urllib.request import Request, urlopen
 from tools.databridge.connector import ConnectorRequest, ConnectorResponse
 from tools.databridge.connectors.saas_base import REQUEST_TIMEOUT, SaaSBaseConnector
 
-logger = logging.getLogger("databridge.riverbed_netim")
+logger = get_logger("databridge.riverbed_netim")
 
 _ENDPOINTS: Dict[str, str] = {
     "devices": "/api/v1/inventory/devices",

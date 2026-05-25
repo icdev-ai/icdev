@@ -19,6 +19,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -37,7 +38,7 @@ import yaml
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
-logger = logging.getLogger("cost_intelligence")
+logger = get_logger("cost_intelligence")
 
 # Alert / recommendation type enums (mirrored in CHECK constraints)
 ALERT_TYPES = ("spike", "overspend", "projection", "optimization")

@@ -45,6 +45,7 @@ touches the network.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import json
@@ -61,7 +62,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.airgap.driver_vendor")
+logger = get_logger("icdev.airgap.driver_vendor")
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 

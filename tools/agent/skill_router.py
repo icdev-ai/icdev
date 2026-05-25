@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Health-aware agent-skill routing module.
 
@@ -25,7 +27,7 @@ if str(BASE_DIR) not in sys.path:
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
-logger = logging.getLogger("icdev.skill_router")
+logger = get_logger("icdev.skill_router")
 
 
 # ---------------------------------------------------------------------------

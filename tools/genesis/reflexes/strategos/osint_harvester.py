@@ -12,6 +12,7 @@ Config: args/strategos_config.yaml (osint section).
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import hashlib
 import io
@@ -41,7 +42,7 @@ from tools.strategos.tier_resolver import (  # noqa: E402
     resolve_tiers,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _INBOX = BASE_DIR / "data" / "osint_inbox"
 _FILE_INBOX_MAX = 500

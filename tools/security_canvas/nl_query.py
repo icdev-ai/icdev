@@ -28,6 +28,7 @@ Usage:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -53,7 +54,7 @@ except ImportError:
     _http_request = None  # type: ignore[assignment]
     _HAS_REQUESTS = False
 
-logger = logging.getLogger("icdev.security_canvas.nl_query")
+logger = get_logger("icdev.security_canvas.nl_query")
 
 # ---------------------------------------------------------------------------
 # Configuration

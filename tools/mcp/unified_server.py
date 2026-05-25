@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Unified MCP Gateway Server — single entry point for all ICDEV™ tools.
 
@@ -40,7 +42,7 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.mcp.base_server import MCPServer  # noqa: E402
 
-logger = logging.getLogger("mcp.unified")
+logger = get_logger("mcp.unified")
 
 
 class UnifiedMCPServer(MCPServer):

@@ -19,6 +19,7 @@ Air-gap safe: both providers work fully offline once installed.
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -35,7 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("icdev.network.ocr_fallback")
+logger = get_logger("icdev.network.ocr_fallback")
 
 # ── Data classes ────────────────────────────────────────────────────────────
 

@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """ICDEV™ Pulse configuration — integrated as ICDEV™ marketplace module.
 
@@ -11,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Load .env if present (for OPENAI_API_KEY, etc.)
 _env_path = Path(__file__).resolve().parent.parent.parent / ".env"

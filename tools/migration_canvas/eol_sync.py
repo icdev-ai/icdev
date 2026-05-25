@@ -12,6 +12,7 @@ Public functions:
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import json
 import logging
@@ -20,7 +21,7 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger("icdev.migration_canvas.eol_sync")
+logger = get_logger("icdev.migration_canvas.eol_sync")
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _EOL_YAML = _ICDEV_ROOT / "args" / "eol_data.yaml"

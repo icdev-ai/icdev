@@ -1,3 +1,5 @@
+
+from tools.logging.icdev_logger import get_logger
 # [TEMPLATE: CUI // SP-CTI]
 """Direct Anthropic API LLM Provider.
 
@@ -18,7 +20,7 @@ from tools.llm.provider import (
     tools_to_anthropic,
 )
 
-logger = logging.getLogger("icdev.llm.anthropic")
+logger = get_logger("icdev.llm.anthropic")
 
 try:
     import anthropic as anthropic_sdk

@@ -19,6 +19,7 @@ Usage::
 """
 
 from __future__ import annotations
+from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
@@ -27,7 +28,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger("icdev.cache_savings.warmer")
+logger = get_logger("icdev.cache_savings.warmer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_SEEDS_PATH = BASE_DIR / "context" / "cache_seeds" / "default_seeds.yaml"
