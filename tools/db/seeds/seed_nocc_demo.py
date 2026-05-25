@@ -200,6 +200,7 @@ for i in range(12):
         "period_start": _ts(i * 6),
         "period_end": _ts(i * 6 + 168),
         "classification": "CUI",
+        "created_at": _ts(i * 6),
     })
 
 
@@ -229,7 +230,13 @@ def seed_alarms(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _ALARMS:
-        conn.execute(sql, tuple(row.values()))
+        conn.execute(sql, (
+            row["id"], row["alarm_source"], row["source_alarm_id"], row["severity"], row["alarm_type"],
+            row["device_name"], row["device_ip"], row["circuit_id"], row["carrier"], row["description"],
+            row["raw_payload"], row["correlated_incident_id"], row["suppressed"], row["acknowledged"],
+            row["acknowledged_by"], row["acknowledged_at"], row["cleared"], row["cleared_at"],
+            row["classification"], row["first_seen"], row["last_seen"],
+        ))
         count += 1
     return count
 
@@ -286,7 +293,12 @@ def seed_sla_records(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _SLA_RECORDS:
-        conn.execute(sql, tuple(row.values()))
+        conn.execute(sql, (
+            row["id"], row["circuit_id"], row["carrier"], row["customer"], row["sla_type"],
+            row["target_value"], row["measured_value"], row["measurement_period"], row["breach"],
+            row["breach_minutes"], row["credit_eligible"], row["period_start"], row["period_end"],
+            row["classification"], row["created_at"],
+        ))
         count += 1
     return count
 

@@ -38,23 +38,23 @@
                 <th>#</th>
                 <th>Requirement Text</th>
                 <th>RFP Section</th>
-                <th>Source</th>
-                <th>Priority</th>
+                <th>Volume</th>
+                <th>Type</th>
                 <th>Assign to Section</th>
             </tr>
         </thead>
         <tbody>
             {% for item in orphaned %}
             <tr>
-                <td>{{ item.requirement_number }}</td>
+                <td>{{ item.sort_order or loop.index }}</td>
                 <td style="max-width:400px;" title="{{ item.requirement_text }}">
                     {{ item.requirement_text[:120] if item.requirement_text else '—' }}{% if item.requirement_text and item.requirement_text|length > 120 %}...{% endif %}
                 </td>
-                <td>{{ item.source_section or '—' }}</td>
-                <td>{{ item.source_document or '—' }}</td>
+                <td>{{ item.section_ref or '—' }}</td>
+                <td>{{ item.volume_ref or '—' }}</td>
                 <td>
-                    {% set pri_colors = {'critical': 'error', 'high': 'warning', 'medium': 'info', 'low': 'info'} %}
-                    <span class="badge badge-{{ pri_colors.get(item.priority, 'info') }}">{{ item.priority or 'medium' }}</span>
+                    {% set type_colors = {'shall': 'error', 'must': 'error', 'will': 'warning', 'should': 'info'} %}
+                    <span class="badge badge-{{ type_colors.get(item.requirement_type, 'info') }}">{{ item.requirement_type or '—' }}</span>
                 </td>
                 <td>
                     <select onchange="assignToSection('{{ item.id }}', this.value)"
@@ -84,7 +84,7 @@ function assignToSection(complianceId, sectionId) {
     fetch('/api/proposals/compliance/' + complianceId, {
         method: 'PUT',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({section_id: sectionId})
+        body: JSON.stringify({proposal_section_id: sectionId})
     }).then(function(r) { return r.json(); }).then(function(resp) {
         if (resp.error) { alert(resp.error); }
         else { location.reload(); }

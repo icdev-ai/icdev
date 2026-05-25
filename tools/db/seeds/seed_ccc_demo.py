@@ -94,9 +94,9 @@ _CROSS_CONNECTS = [
 
 _LOA_REQUESTS = [
     ("LOA-001", 1, 1, "equinix", "Rack-A1", "Rack-Z1", "PP-A1", "PP-Z1", "John Smith", "jsmith@example.com", "Example Corp", "approved", 30, _ts(0), _ts(2), "", "Approved for CIR-1001"),
-    ("LOA-002", 5, 5, "coresite", "Rack-A5", "Rack-Z5", "PP-A5", "PP-Z5", "Jane Doe", "jdoe@example.com", "Example Corp", "submitted", 30, _ts(4), "", "", "Pending approval"),
+    ("LOA-002", 5, 5, "coresite", "Rack-A5", "Rack-Z5", "PP-A5", "PP-Z5", "Jane Doe", "jdoe@example.com", "Example Corp", "submitted", 30, _ts(4), None, "", "Pending approval"),
     ("LOA-003", 13, 6, "digital_realty", "Rack-A6", "Rack-Z6", "PP-A6", "PP-Z6", "Bob Brown", "bbrown@example.com", "Example Corp", "approved", 30, _ts(8), _ts(10), "", "Amsterdam install"),
-    ("LOA-004", 10, 0, "equinix", "Rack-A8", "Rack-Z8", "PP-A8", "PP-Z8", "Alice Green", "agreen@example.com", "Example Corp", "draft", 30, "", "", "", "Not yet submitted"),
+    ("LOA-004", 10, None, "equinix", "Rack-A8", "Rack-Z8", "PP-A8", "PP-Z8", "Alice Green", "agreen@example.com", "Example Corp", "draft", 30, None, None, "", "Not yet submitted"),
     ("LOA-005", 14, 7, "lumen", "Rack-A7", "Rack-Z7", "PP-A7", "PP-Z7", "Tom White", "twhite@example.com", "Example Corp", "approved", 30, _ts(12), _ts(14), "", "Tokyo 100G"),
 ]
 
@@ -191,8 +191,11 @@ def seed_capacity_plans(conn) -> int:
     ) VALUES (?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _CAPACITY_PLANS:
-        vals = list(row.values())
-        conn.execute(sql, vals)
+        conn.execute(sql, (
+            row["circuit_id"], row["plan_date"], row["current_utilization_pct"],
+            row["projected_utilization_pct"], row["months_to_saturation"], row["recommended_action"],
+            row["growth_rate_pct"], row["confidence_score"], row["classification"], _ts(count * 6),
+        ))
         count += 1
     return count
 
