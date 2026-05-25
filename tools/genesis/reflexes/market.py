@@ -7,6 +7,7 @@ generate improvement suggestions as GKP artifacts.
 
 GREEN tier (read-only analytics).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import sys
 from datetime import datetime, timezone

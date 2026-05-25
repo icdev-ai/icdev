@@ -6,6 +6,7 @@ inventory export, flagging stale diagrams and suggesting a re-export.
 
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

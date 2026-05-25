@@ -19,6 +19,7 @@ Reflex contract:
   - Must be idempotent — running twice in a 6h window is safe (snapshot IDs differ)
   - Must not raise — catches all exceptions per project, logs, continues
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger

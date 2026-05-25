@@ -8,6 +8,7 @@ mode writes a Kanban suggestion if any are found.
 
 COOLDOWN_HOURS = 4 (enforced by Genesis daemon).
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 
 import json

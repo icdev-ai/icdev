@@ -7,6 +7,7 @@ threshold.  Non-destructive read + regenerate (GREEN tier).
 
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import os

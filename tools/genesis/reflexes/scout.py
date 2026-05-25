@@ -10,6 +10,7 @@ context/genesis/competitors.yaml.  Generates intel briefs as markdown.
 Uses only GitHub's public API (no auth token required for basic info).
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import os

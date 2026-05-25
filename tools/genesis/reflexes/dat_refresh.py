@@ -7,6 +7,7 @@ theaters plus the global aggregate.
 
 COOLDOWN_HOURS = 6 prevents double-firing within the same cadence window.
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger

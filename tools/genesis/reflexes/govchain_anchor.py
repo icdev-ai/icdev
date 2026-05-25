@@ -10,6 +10,7 @@ In air-gap mode, operations are queued to govchain_pending_operations for deferr
 
 Risk tier: GREEN (read + write DB only, no network unless Fabric is reachable).
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import subprocess

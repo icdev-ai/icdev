@@ -15,6 +15,7 @@ Key design decisions:
   - D-SYN-3: Max 3 goals per run — prevent flooding review queue
   - D-SYN-4: Deduplication via chain_hash in genesis_tool_patterns
 """
+IMPLEMENTATION_STATUS = "full"
 
 import hashlib
 import json

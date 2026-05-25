@@ -7,6 +7,7 @@ parser/executor, and calls poam_generator for any new violations.
 
 Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 import importlib
 import sys

@@ -1,5 +1,6 @@
 # CUI // SP-CTI
 """Genesis reflex: check peering agreements expiring within 90 days."""
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 
 from typing import Any, Dict

@@ -5,6 +5,7 @@ Runs as a Genesis reflex every 1 hour. Checks all enabled freshness
 quality rules across all data designs, writes results to dd_freshness_alerts
 and dd_quality_runs, and logs breaches to genesis_audit.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

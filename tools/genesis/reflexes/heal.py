@@ -50,6 +50,8 @@ BUILTIN_ACTIONS = {
     "reinit_db_table",
 }
 
+IMPLEMENTATION_STATUS = "full"
+
 
 def _action_regenerate_artifact(params: Dict) -> Tuple[bool, str]:
     """Re-run a compliance/doc generator to refresh a stale artifact."""

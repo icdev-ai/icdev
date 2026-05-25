@@ -256,6 +256,9 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.orchestration import orchestration_api
     _mount(orchestration_api, v1_prefix="/api/v1/orchestration")
 
+    from tools.dashboard.api.genesis import genesis_api
+    _mount(genesis_api, v1_prefix="/api/v1/genesis")
+
     from tools.dashboard.api.studio import studio_api
     _mount(studio_api, v1_prefix="/api/v1/studio")
 
@@ -455,6 +458,7 @@ ALL_BLUEPRINTS = [
     ("canvas_projects_api", "/api/v1/canvas-projects", False),   # inline routes
     ("writeguard_api", "/api/v1/writeguard", False),
     ("orchestration_api", "/api/v1/orchestration", False),
+    ("genesis_api", "/api/v1/genesis", False),
     ("studio_api", "/api/v1/studio", False),
     # Optional
     ("finetune_api", "/api/v1/finetune", True),

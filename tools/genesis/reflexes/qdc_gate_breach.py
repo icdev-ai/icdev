@@ -7,6 +7,7 @@ designs where quality has regressed.
 
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

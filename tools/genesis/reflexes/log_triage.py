@@ -12,6 +12,7 @@ Risk tier: GREEN — read-only on logs, write-only to Kanban API.
 Returns: {"reflex": "log_triage", "signatures_seen": N, "tasks_created": N}
 """
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 import hashlib
 import json

@@ -9,6 +9,7 @@ and triggers Ollama fine-tuning when sufficient pairs are accumulated.
 YELLOW tier (writes training data, triggers Ollama API calls).
 Scanner-tier only (zero Claude tokens).
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import subprocess

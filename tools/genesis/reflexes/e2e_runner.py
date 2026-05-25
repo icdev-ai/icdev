@@ -25,6 +25,8 @@ from tools.logging.icdev_logger import get_logger  # noqa: E402
 
 logger = get_logger("e2e_runner")
 
+IMPLEMENTATION_STATUS = "full"
+
 _TASK_TITLE = "[AUTO-RUN] Playwright E2E Suite — full smoke"
 _TASK_DESC = (
     "Run the full Playwright E2E smoke suite targeting all menus, use cases, "

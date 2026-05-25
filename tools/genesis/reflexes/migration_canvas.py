@@ -14,6 +14,7 @@ Air-gap safe: no LLM calls — pure DB heuristics.
 """
 
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 
 from datetime import datetime, timezone
 from typing import Any, Dict

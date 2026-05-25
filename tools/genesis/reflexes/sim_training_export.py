@@ -14,6 +14,7 @@ Return value:
 Risk tier: GREEN (DB writes to ft_datasets / ft_dataset_examples only; no code mutation).
 Cadence: every 6h (configurable via genesis_config.yaml).
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 
 import json
