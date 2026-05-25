@@ -17,6 +17,7 @@ COOLDOWN_HOURS = 4 (enforced by Genesis daemon).
 Usage:
     python tools/genesis/reflexes/forge_academy_oracle.py [--dry-run] [--json]
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 
 import json

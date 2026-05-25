@@ -1,5 +1,6 @@
 # CUI // SP-CTI
 """Genesis reflex: wf_feedback_aggregation — 6h aggregation of HITL feedback into insights."""
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

@@ -9,6 +9,7 @@ stubs).
 YELLOW tier (reversible writes — new test files only, worktree sandbox).
 Scanner-tier only (zero Claude tokens).
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import os

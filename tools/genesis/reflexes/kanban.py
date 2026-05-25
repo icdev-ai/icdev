@@ -14,6 +14,7 @@ execute without human approval. The daemon monitors subprocess completion.
 """
 
 from __future__ import annotations
+IMPLEMENTATION_STATUS = "full"
 from tools.logging.icdev_logger import get_logger
 
 import re

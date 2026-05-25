@@ -14,6 +14,7 @@ prevents the same ticker from generating a duplicate event within 4 hours.
 
 GREEN tier (read + append-only writes, no LLM in hot path).  Air-gap safe.
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 

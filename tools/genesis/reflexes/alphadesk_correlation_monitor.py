@@ -11,6 +11,7 @@ Runs on a 2-hour cadence. Detects:
 Reflex tier: GREEN (auto-approved, no sandbox).
 Cooldown: 2 hours per catalyst (prevents alert fatigue).
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 

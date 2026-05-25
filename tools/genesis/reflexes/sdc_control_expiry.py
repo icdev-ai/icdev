@@ -6,6 +6,7 @@ already past. Publishes canvas events and suggests kanban cards for review.
 
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

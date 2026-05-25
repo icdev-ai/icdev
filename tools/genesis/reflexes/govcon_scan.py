@@ -8,6 +8,7 @@ Flow:
 3. Run demand signal detection
 4. Bridge high-demand signals to Pulse for article generation
 """
+IMPLEMENTATION_STATUS = "full"
 
 import sys
 from pathlib import Path

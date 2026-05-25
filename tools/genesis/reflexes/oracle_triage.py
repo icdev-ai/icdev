@@ -48,6 +48,7 @@ Genesis daemon
     Registered under the ``awareness`` cycle (runs every 3 h alongside
     gap detection so fresh Oracle cards are triaged in the same cycle).
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

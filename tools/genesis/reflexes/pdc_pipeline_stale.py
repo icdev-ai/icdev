@@ -6,6 +6,7 @@ in more than STALE_DAYS. Publishes canvas events for each stale pipeline.
 
 Air-gap safe: no LLM calls — pure DB heuristics.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

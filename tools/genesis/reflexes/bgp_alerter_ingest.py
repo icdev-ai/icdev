@@ -18,6 +18,7 @@ Configuration (env):
   BGPALERTER_ALERT_DIR  — path to BGPalerter JSON alert output directory
   BGPALERTER_MAX_AGE_H  — only ingest alerts younger than N hours (default: 2)
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

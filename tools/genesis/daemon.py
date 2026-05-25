@@ -234,6 +234,52 @@ class GenesisDaemon(DaemonBase):
     def create_trust_kernel(self, config: Dict[str, Any]) -> TrustKernelBase:
         return GenesisTrustKernel(config)
 
+    def _classify_reflex_impl(self, name: str) -> Dict[str, Any]:
+        """Return implementation metadata for a reflex without executing it.
+
+        Checks:
+        - module exists (importable)
+        - has 'run' callable
+        - IMPLEMENTATION_STATUS constant (full | partial | stub)
+        - run body is not just a stub return
+        """
+        status = {
+            "exists": False,
+            "has_run": False,
+            "implementation_status": "missing",
+            "is_stub": True,
+            "loc": 0,
+        }
+        try:
+            module = importlib.import_module(f"tools.genesis.reflexes.{name}")
+            status["exists"] = True
+
+            if hasattr(module, "run") and callable(getattr(module, "run")):
+                status["has_run"] = True
+                impl = getattr(module, "IMPLEMENTATION_STATUS", "unknown")
+                status["implementation_status"] = impl
+
+                # Detect stub by inspecting source
+                import inspect
+
+                try:
+                    source = inspect.getsource(module.run)
+                    status["loc"] = len(source.splitlines())
+                    # Heuristic: if run() contains "stub" in return or is very short, mark stub
+                    if impl == "stub" or ("stub" in source.lower() and status["loc"] < 10):
+                        status["is_stub"] = True
+                    elif impl in ("full", "partial") or status["loc"] > 15:
+                        status["is_stub"] = False
+                except Exception:
+                    pass
+            else:
+                status["implementation_status"] = "no_run_function"
+        except ImportError:
+            status["implementation_status"] = "missing"
+        except Exception as e:
+            status["implementation_status"] = f"error: {e}"
+        return status
+
     def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Execute a single reflex via tools/genesis/reflexes/<name>.py."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
@@ -271,7 +317,11 @@ class GenesisDaemon(DaemonBase):
         except Exception as e:
             return False, 0.0, {"error": str(e), "stage": "reflex_execution"}
 
-        # Stub mode
+        # Stub mode — log warning for operational visibility
+        logger.warning(
+            f"Reflex '{name}' executed in stub mode — no real implementation found. "
+            "Install or wire the reflex module to remove this warning."
+        )
         return (
             True,
             0.0,
@@ -280,6 +330,51 @@ class GenesisDaemon(DaemonBase):
                 "message": f"Reflex '{name}' not yet implemented -- stub mode (success)",
             },
         )
+
+    def get_reflex_coverage(self) -> Dict[str, Any]:
+        """Return coverage statistics for all configured reflexes."""
+        total = len(self.reflex_names)
+        real = 0
+        partial = 0
+        stubs = 0
+        missing = 0
+        details = []
+
+        for name in self.reflex_names:
+            meta = self._classify_reflex_impl(name)
+            impl = meta["implementation_status"]
+            is_stub = meta["is_stub"]
+
+            if impl == "full":
+                real += 1
+            elif impl == "partial":
+                partial += 1
+            elif is_stub or impl in ("missing", "no_run_function"):
+                stubs += 1
+            else:
+                missing += 1
+
+            details.append(
+                {
+                    "reflex": name,
+                    "exists": meta["exists"],
+                    "has_run": meta["has_run"],
+                    "implementation_status": impl,
+                    "is_stub": is_stub,
+                    "loc": meta["loc"],
+                }
+            )
+
+        coverage_pct = round((real / total) * 100, 1) if total else 0.0
+        return {
+            "total": total,
+            "real": real,
+            "partial": partial,
+            "stubs": stubs,
+            "missing": missing,
+            "coverage_percent": coverage_pct,
+            "details": details,
+        }
 
     def on_reflex_completed(self, name: str, result: Dict[str, Any]) -> None:
         """Post-reflex hook: run convergence gate and stagnation detector."""

@@ -8,6 +8,7 @@ that is not yet in sg_cve_feed is inserted as a new row (is_kev=1).
 
 COOLDOWN_HOURS = 24 prevents double-firing within a calendar day.
 """
+IMPLEMENTATION_STATUS = "full"
 
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger

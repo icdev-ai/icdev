@@ -8,6 +8,7 @@ prefixes or significant policy changes.
 
 Air-gap safe: uses stdlib urllib for PeeringDB and Cloudflare RPKI APIs.
 """
+IMPLEMENTATION_STATUS = "full"
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 

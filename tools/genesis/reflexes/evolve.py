@@ -21,6 +21,7 @@ DGM/Hyperagents-inspired capabilities:
   - Meta-Evolve: self-modifying selection strategy rotation based on acceptance rates
   - Peer-Review Gate: lightweight LLM diff review before full test suite
 """
+IMPLEMENTATION_STATUS = "full"
 
 import json
 import os

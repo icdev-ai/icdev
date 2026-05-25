@@ -28,6 +28,8 @@ sys.path.insert(0, str(BASE_DIR))
 from tools.db.storage import get_connection  # noqa: E402
 from tools.security.injection_scanner import scan_text  # noqa: E402
 
+IMPLEMENTATION_STATUS = "full"
+
 logger = get_logger(__name__)
 
 
