@@ -15,6 +15,7 @@ Decision D-DISP-1: Dispatcher mode enforcement in _execute_subtask (Phase 61).
 import argparse
 import json
 import logging
+import os
 import sqlite3
 import sys
 import time
@@ -662,10 +663,12 @@ class TeamOrchestrator:
 
         1. Checks dispatcher mode -- if enabled and orchestrator tries to
            execute a blocked tool, redirects to the appropriate domain agent.
-        2. Looks up the target agent from agent_registry.
-        3. Sends the task via A2AAgentClient.send_task().
-        4. Waits for completion with timeout.
-        5. Returns the updated subtask.
+        2. In remote-first mode (ICDEV_AGENT_MODE=remote), health-probes the
+           agent before dispatch and fails hard if unreachable.
+        3. Looks up the target agent from agent_registry.
+        4. Sends the task via A2AAgentClient.send_task().
+        5. Waits for completion with timeout.
+        6. Returns the updated subtask.
 
         Args:
             subtask: The subtask to execute.
@@ -738,6 +741,31 @@ class TeamOrchestrator:
                 subtask.duration_ms = int((time.time() - start_time) * 1000)
                 self._update_subtask_status(subtask, context.get("workflow_id", ""))
                 return subtask
+
+            # Remote-first mode: health-probe the agent before dispatch
+            remote_mode = os.environ.get("ICDEV_AGENT_MODE", "").lower() == "remote"
+            if remote_mode:
+                logger.info("Remote-first mode: health-probing %s at %s", subtask.agent_id, agent_url)
+                try:
+                    import urllib.request
+
+                    health_url = agent_url.rstrip("/") + "/health"
+                    req = urllib.request.Request(health_url, method="GET")
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        if resp.status != 200:
+                            raise ConnectionError(
+                                f"Agent health check returned {resp.status}"
+                            )
+                except Exception as exc:
+                    subtask.status = "failed"
+                    subtask.error_message = (
+                        f"[REMOTE-MODE] Agent '{subtask.agent_id}' at {agent_url} "
+                        f"is unreachable: {exc}"
+                    )
+                    subtask.duration_ms = int((time.time() - start_time) * 1000)
+                    self._update_subtask_status(subtask, context.get("workflow_id", ""))
+                    logger.error(subtask.error_message)
+                    return subtask
 
             # Build input data
             input_data = subtask.input_data or {}

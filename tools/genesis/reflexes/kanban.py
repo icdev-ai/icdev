@@ -2515,6 +2515,10 @@ _ollama_running_count: int = 0
 # routing through the in_progress polling loop.
 _ollama_completed: set = set()
 
+# Tasks dispatched to GitHub Actions (async, no local Popen). run() checks
+# this to move them to in_progress without the _running dict.
+_github_actions_dispatched: set = set()
+
 # D-AUTO-DEGRADE: Track executors that have hit rate/token limits.
 # When degraded, the scheduler skips them in the fallback chain.
 _degraded_executors: set = set()
@@ -3283,6 +3287,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             if ok:
                 _dispatch_times[task_id] = datetime.now(timezone.utc)
                 _set_executor_type(task_id, "github_actions")
+                _github_actions_dispatched.add(task_id)
                 print(f"  Kanban: dispatched {task_id} via GitHub Actions")
                 dispatched = True
                 break
@@ -4907,7 +4912,7 @@ def _startup_recover_stale_in_progress() -> None:
     try:
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, title FROM kanban_tasks WHERE status = 'in_progress'"
+            "SELECT id, title, executor_type FROM kanban_tasks WHERE status = 'in_progress'"
         ).fetchall()
         if not rows:
             conn.close()
@@ -4918,9 +4923,12 @@ def _startup_recover_stale_in_progress() -> None:
             "restarted — process died or scheduler crashed mid-run."
         )
         for r in rows:
-            tid = dict(r)["id"]
+            rd = dict(r)
+            tid = rd["id"]
             if tid in _running:
                 continue  # live process from this session — skip
+            if rd.get("executor_type") == "github_actions":
+                continue  # external executor — GitHub Actions runs independently
             conn.execute(
                 "UPDATE kanban_tasks SET status='backlog', "
                 "last_failure_reason=?, updated_at=? WHERE id=?",
@@ -6236,6 +6244,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     }
                 )
                 print(f"  Kanban: {task['id']} '{task['title']}' -> done (Ollama sync)")
+            elif task["id"] in _github_actions_dispatched:
+                # Async GitHub Actions dispatch — move to in_progress;
+                # completion is tracked externally (GitHub Actions run).
+                _github_actions_dispatched.discard(task["id"])
+                _move_task(task["id"], "in_progress")
+                _send_notification(task)
+                processed.append(
+                    {
+                        "id": task["id"],
+                        "title": task["title"],
+                        "prompt_file": prompt_path,
+                    }
+                )
+                print(f"  Kanban: {task['id']} '{task['title']}' -> in_progress (GitHub Actions)")
             elif task["id"] in _running:
                 # Async Claude/LLM subprocess launched — move to in_progress
                 _move_task(task["id"], "in_progress")
