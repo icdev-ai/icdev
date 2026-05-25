@@ -68,15 +68,20 @@ def _reset_demo_data(conn) -> None:
     conn.commit()
 
 
+# Pre-generate UUIDs so cross-references work
+_INCIDENT_IDS = {f"INC-2026-{i:04d}": _uid() for i in range(1, 9)}
+_RFC_IDS = {f"RFC-2026-{i:03d}": _uid() for i in range(1, 6)}
+_MOP_IDS = {f"MOP-2026-{i:03d}": _uid() for i in range(1, 6)}
+
 _INCIDENTS = [
-    ("INC-2026-0001", "BGP session flap on Core-RTR-01", "p1", "investigating", "CIR-1001", "POP-Ashburn", "Lumen", "upstream peer instability", "", False, 0, "noc-smith", "noc-jones"),
-    ("INC-2026-0002", "Power redundancy loss in DC-2", "p2", "resolved", "CIR-2003", "DC-Dallas", "Zayo", "ATS failure", "switched to secondary feed", True, 45, "noc-jones", "noc-lee"),
-    ("INC-2026-0003", "Latency spike to EU IX", "p3", "open", "CIR-1005", "POP-London", "Cogent", "congestion on LAG member", "", False, 0, "noc-lee", "noc-smith"),
-    ("INC-2026-0004", "Optical BER degradation on OC-192", "p2", "acknowledged", "CIR-3001", "POP-Seattle", "ATT", "fiber bend", "pending maintenance", False, 0, "noc-smith", "noc-jones"),
-    ("INC-2026-0005", "Firewall HA failover", "p3", "resolved", "CIR-4002", "DC-Chicago", "", "HA sync loss", "manual failback completed", False, 12, "noc-jones", "noc-lee"),
-    ("INC-2026-0006", "DDoS alert: UDP flood 12 Gbps", "p1", "resolved", "CIR-5001", "POP-Ashburn", "", "volumetric attack", "scrubbing center engaged", True, 18, "noc-lee", "noc-smith"),
-    ("INC-2026-0007", "SNMP trap storm from edge switches", "p3", "closed", "", "POP-Miami", "", "polling misconfiguration", "adjusted trap threshold", False, 0, "noc-smith", "noc-jones"),
-    ("INC-2026-0008", "Planned maintenance: router firmware", "p4", "closed", "CIR-1001", "POP-Ashburn", "Lumen", "scheduled", "completed", False, 0, "noc-jones", "noc-lee"),
+    (_INCIDENT_IDS["INC-2026-0001"], "INC-2026-0001", "BGP session flap on Core-RTR-01", "p1", "investigating", "CIR-1001", "POP-Ashburn", "Lumen", "upstream peer instability", "", False, 0, "noc-smith", "noc-jones"),
+    (_INCIDENT_IDS["INC-2026-0002"], "INC-2026-0002", "Power redundancy loss in DC-2", "p2", "resolved", "CIR-2003", "DC-Dallas", "Zayo", "ATS failure", "switched to secondary feed", True, 45, "noc-jones", "noc-lee"),
+    (_INCIDENT_IDS["INC-2026-0003"], "INC-2026-0003", "Latency spike to EU IX", "p3", "open", "CIR-1005", "POP-London", "Cogent", "congestion on LAG member", "", False, 0, "noc-lee", "noc-smith"),
+    (_INCIDENT_IDS["INC-2026-0004"], "INC-2026-0004", "Optical BER degradation on OC-192", "p2", "acknowledged", "CIR-3001", "POP-Seattle", "ATT", "fiber bend", "pending maintenance", False, 0, "noc-smith", "noc-jones"),
+    (_INCIDENT_IDS["INC-2026-0005"], "INC-2026-0005", "Firewall HA failover", "p3", "resolved", "CIR-4002", "DC-Chicago", "", "HA sync loss", "manual failback completed", False, 12, "noc-jones", "noc-lee"),
+    (_INCIDENT_IDS["INC-2026-0006"], "INC-2026-0006", "DDoS alert: UDP flood 12 Gbps", "p1", "resolved", "CIR-5001", "POP-Ashburn", "", "volumetric attack", "scrubbing center engaged", True, 18, "noc-lee", "noc-smith"),
+    (_INCIDENT_IDS["INC-2026-0007"], "INC-2026-0007", "SNMP trap storm from edge switches", "p3", "closed", "", "POP-Miami", "", "polling misconfiguration", "adjusted trap threshold", False, 0, "noc-smith", "noc-jones"),
+    (_INCIDENT_IDS["INC-2026-0008"], "INC-2026-0008", "Planned maintenance: router firmware", "p4", "closed", "CIR-1001", "POP-Ashburn", "Lumen", "scheduled", "completed", False, 0, "noc-jones", "noc-lee"),
 ]
 
 _ALARMS = []
@@ -119,37 +124,37 @@ for i in range(25):
     })
 
 _RFCS = [
-    ("RFC-2026-001", "Upgrade Core-RTR-01 IOS", "standard", "approved", "medium", "rollback to previous IOS partition", _ts(0), _ts(4), None, None, "", "[\"CIR-1001\"]", "[\"POP-Ashburn\"]", "noc-smith", "eng-mgr-brown"),
-    ("RFC-2026-002", "DC-2 ATS replacement", "emergency", "completed", "high", "manual bypass to secondary", _ts(8), _ts(12), _ts(8.5), _ts(11), "", "[\"CIR-2003\"]", "[\"DC-Dallas\"]", "noc-jones", "eng-mgr-brown"),
-    ("RFC-2026-003", "Enable BFD on all eBGP peers", "standard", "draft", "low", "disable BFD per peer if issue", _ts(24), _ts(28), None, None, "", "[\"CIR-1001\",\"CIR-1005\"]", "[\"POP-Ashburn\",\"POP-London\"]", "noc-lee", None),
-    ("RFC-2026-004", "Optical span re-splice Seattle", "normal", "submitted", "medium", "restore previous splice", _ts(48), _ts(52), None, None, "", "[\"CIR-3001\"]", "[\"POP-Seattle\"]", "noc-smith", "eng-mgr-brown"),
-    ("RFC-2026-005", "Firewall policy audit", "standard", "executing", "low", "revert to last known good", _ts(12), _ts(16), _ts(12.5), None, "", "[]", "[\"DC-Chicago\"]", "noc-jones", "sec-lead-white"),
+    (_RFC_IDS["RFC-2026-001"], "RFC-2026-001", "Upgrade Core-RTR-01 IOS", "standard", "approved", "medium", "rollback to previous IOS partition", _ts(0), _ts(4), None, None, _MOP_IDS["MOP-2026-001"], "[\"CIR-1001\"]", "[\"POP-Ashburn\"]", "noc-smith", "eng-mgr-brown"),
+    (_RFC_IDS["RFC-2026-002"], "RFC-2026-002", "DC-2 ATS replacement", "emergency", "completed", "high", "manual bypass to secondary", _ts(8), _ts(12), _ts(8.5), _ts(11), _MOP_IDS["MOP-2026-002"], "[\"CIR-2003\"]", "[\"DC-Dallas\"]", "noc-jones", "eng-mgr-brown"),
+    (_RFC_IDS["RFC-2026-003"], "RFC-2026-003", "Enable BFD on all eBGP peers", "standard", "draft", "low", "disable BFD per peer if issue", _ts(24), _ts(28), None, None, _MOP_IDS["MOP-2026-003"], "[\"CIR-1001\",\"CIR-1005\"]", "[\"POP-Ashburn\",\"POP-London\"]", "noc-lee", None),
+    (_RFC_IDS["RFC-2026-004"], "RFC-2026-004", "Optical span re-splice Seattle", "normal", "submitted", "medium", "restore previous splice", _ts(48), _ts(52), None, None, _MOP_IDS["MOP-2026-004"], "[\"CIR-3001\"]", "[\"POP-Seattle\"]", "noc-smith", "eng-mgr-brown"),
+    (_RFC_IDS["RFC-2026-005"], "RFC-2026-005", "Firewall policy audit", "standard", "executing", "low", "revert to last known good", _ts(12), _ts(16), _ts(12.5), None, _MOP_IDS["MOP-2026-005"], "[]", "[\"DC-Chicago\"]", "noc-jones", "sec-lead-white"),
 ]
 
 _MOPS = [
-    ("MOP-2026-001", "IOS upgrade procedure", "RFC-2026-001", json.dumps([
+    (_MOP_IDS["MOP-2026-001"], "MOP-2026-001", "IOS upgrade procedure", _RFC_IDS["RFC-2026-001"], json.dumps([
         {"step": 1, "action": "Pre-check: verify current version"},
         {"step": 2, "action": "Download target image"},
         {"step": 3, "action": "Schedule maintenance window"},
         {"step": 4, "action": "Execute reload with new image"},
         {"step": 5, "action": "Post-check: validate BGP sessions"},
     ]), "manual"),
-    ("MOP-2026-002", "ATS replacement hot-swap", "RFC-2026-002", json.dumps([
+    (_MOP_IDS["MOP-2026-002"], "MOP-2026-002", "ATS replacement hot-swap", _RFC_IDS["RFC-2026-002"], json.dumps([
         {"step": 1, "action": "Isolate failed ATS"},
         {"step": 2, "action": "Engage manual bypass"},
         {"step": 3, "action": "Rack replacement unit"},
         {"step": 4, "action": "Transfer load and verify"},
     ]), "manual"),
-    ("MOP-2026-003", "BFD enable per peer", "RFC-2026-003", json.dumps([
+    (_MOP_IDS["MOP-2026-003"], "MOP-2026-003", "BFD enable per peer", _RFC_IDS["RFC-2026-003"], json.dumps([
         {"step": 1, "action": "Generate peer list from PeeringDB"},
         {"step": 2, "action": "Push config via NetConf"},
         {"step": 3, "action": "Verify session up with BFD"},
     ]), "ai"),
-    ("MOP-2026-004", "Optical re-splice SOP", "RFC-2026-004", json.dumps([
+    (_MOP_IDS["MOP-2026-004"], "MOP-2026-004", "Optical re-splice SOP", _RFC_IDS["RFC-2026-004"], json.dumps([
         {"step": 1, "action": "Coordinate with field engineer"},
         {"step": 2, "action": "Verify OTDR trace post-splice"},
     ]), "manual"),
-    ("MOP-2026-005", "Firewall policy audit checklist", "RFC-2026-005", json.dumps([
+    (_MOP_IDS["MOP-2026-005"], "MOP-2026-005", "Firewall policy audit checklist", _RFC_IDS["RFC-2026-005"], json.dumps([
         {"step": 1, "action": "Export current rulebase"},
         {"step": 2, "action": "Run compliance scanner"},
         {"step": 3, "action": "Remediate orphaned rules"},
@@ -157,9 +162,9 @@ _MOPS = [
 ]
 
 _MAINTENANCE_WINDOWS = [
-    ("MW-2026-001", "Core-RTR-01 IOS upgrade", "RFC-2026-001", _ts(0), _ts(4), _ts(0), _ts(3.8), "completed", "single-circuit", True, "[\"Customer-A\",\"Customer-B\"]", "[\"CIR-1001\"]"),
-    ("MW-2026-002", "DC-2 ATS replacement", "RFC-2026-002", _ts(8), _ts(12), _ts(8), _ts(11), "completed", "site", True, "[\"Customer-C\"]", "[\"CIR-2003\"]"),
-    ("MW-2026-003", "BFD rollout window", "RFC-2026-003", _ts(24), _ts(28), None, None, "scheduled", "multi-circuit", False, "[]", "[\"CIR-1001\",\"CIR-1005\"]"),
+    (_uid(), "MW-2026-001", "Core-RTR-01 IOS upgrade", _RFC_IDS["RFC-2026-001"], _ts(0), _ts(4), _ts(0), _ts(3.8), "completed", "single-circuit", True, "[\"Customer-A\",\"Customer-B\"]", "[\"CIR-1001\"]"),
+    (_uid(), "MW-2026-002", "DC-2 ATS replacement", _RFC_IDS["RFC-2026-002"], _ts(8), _ts(12), _ts(8), _ts(11), "completed", "site", True, "[\"Customer-C\"]", "[\"CIR-2003\"]"),
+    (_uid(), "MW-2026-003", "BFD rollout window", _RFC_IDS["RFC-2026-003"], _ts(24), _ts(28), None, None, "scheduled", "multi-circuit", False, "[]", "[\"CIR-1001\",\"CIR-1005\"]"),
 ]
 
 _SLA_RECORDS = []
@@ -189,9 +194,9 @@ for i in range(12):
         "target_value": target,
         "measured_value": measured,
         "measurement_period": "monthly" if i < 6 else "weekly",
-        "breach": 1 if breach else 0,
+        "breach": breach,
         "breach_minutes": random.randint(0, 45) if breach else 0,
-        "credit_eligible": 1 if breach and random.random() > 0.5 else 0,
+        "credit_eligible": breach and random.random() > 0.5,
         "period_start": _ts(i * 6),
         "period_end": _ts(i * 6 + 168),
         "classification": "CUI",
@@ -199,19 +204,17 @@ for i in range(12):
 
 
 def seed_incidents(conn) -> int:
-    cols = [
-        "id", "incident_number", "title", "severity", "status", "affected_circuit",
-        "affected_site", "affected_carrier", "root_cause", "resolution", "sla_breach",
-        "mttr_minutes", "opened_by", "assigned_to", "classification", "created_at", "resolved_at", "updated_at",
-    ]
-    placeholders = ", ".join("?" * len(cols))
-    sql = f"INSERT OR IGNORE INTO noc_incidents ({', '.join(cols)}) VALUES ({placeholders})"
+    sql = """INSERT OR IGNORE INTO noc_incidents (
+        id, incident_number, title, severity, status, affected_circuit, affected_site, affected_carrier,
+        root_cause, resolution, sla_breach, mttr_minutes, opened_by, assigned_to, classification,
+        created_at, resolved_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _INCIDENTS:
         conn.execute(sql, (
-            _uid(), row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8],
-            row[9], row[10], row[11], row[12], "CUI",
-            _ts(count * 2), _ts(count * 2 + row[10]) if row[10] else None, _ts(count * 2),
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9],
+            row[10], row[11], row[12], row[13], "CUI",
+            _ts(count * 2), _ts(count * 2 + row[11]) if row[11] else None, _ts(count * 2),
         ))
         count += 1
     return count
@@ -232,19 +235,17 @@ def seed_alarms(conn) -> int:
 
 
 def seed_rfcs(conn) -> int:
-    cols = [
-        "id", "rfc_number", "title", "change_type", "status", "risk_level", "rollback_plan",
-        "scheduled_start", "scheduled_end", "actual_start", "actual_end", "mop_id",
-        "affected_circuits", "affected_sites", "change_owner", "approver", "classification",
-        "created_at", "updated_at",
-    ]
-    placeholders = ", ".join("?" * len(cols))
-    sql = f"INSERT OR IGNORE INTO noc_rfcs ({', '.join(cols)}) VALUES ({placeholders})"
+    sql = """INSERT OR IGNORE INTO noc_rfcs (
+        id, rfc_number, title, change_type, status, risk_level, rollback_plan,
+        scheduled_start, scheduled_end, actual_start, actual_end, mop_id,
+        affected_circuits, affected_sites, change_owner, approver, classification,
+        created_at, updated_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _RFCS:
         conn.execute(sql, (
-            _uid(), row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10],
-            row[11], row[12], row[13], row[14], "CUI", _ts(count * 4), _ts(count * 4),
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11],
+            row[12], row[13], row[14], row[15], "CUI", _ts(count * 4), _ts(count * 4),
         ))
         count += 1
     return count
@@ -257,7 +258,7 @@ def seed_mops(conn) -> int:
     count = 0
     for row in _MOPS:
         conn.execute(sql, (
-            _uid(), row[0], row[1], row[2], row[3], row[4], "", "CUI", _ts(count * 3), _ts(count * 3),
+            row[0], row[1], row[2], row[3], row[4], row[5], "", "CUI", _ts(count * 3), _ts(count * 3),
         ))
         count += 1
     return count
@@ -271,8 +272,8 @@ def seed_maintenance_windows(conn) -> int:
     count = 0
     for row in _MAINTENANCE_WINDOWS:
         conn.execute(sql, (
-            _uid(), row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8],
-            row[9], row[10], row[11], "CUI", _ts(count * 8), _ts(count * 8),
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9],
+            row[10], row[11], row[12], "CUI", _ts(count * 8), _ts(count * 8),
         ))
         count += 1
     return count

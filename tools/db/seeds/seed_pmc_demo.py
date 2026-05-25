@@ -61,35 +61,39 @@ def _reset_demo_data(conn) -> None:
     conn.commit()
 
 
+# Pre-generate UUIDs for cross-references
+_PEER_IDS = {f"peer-{i:03d}": _uid() for i in range(12)}
+_IX_IDS = {f"ix-{i:03d}": _uid() for i in range(6)}
+
 _PEERS = [
-    ("Akamai Technologies", 32787, "public", "open", "active", 1000, 500, "AKAMAI", "US", "noc@akamai.com"),
-    ("Cloudflare Inc", 13335, "public", "open", "active", 2000, 1000, "CLOUDFLARE", "US", "peering@cloudflare.com"),
-    ("NTT Communications", 2914, "transit", "selective", "active", 5000, 2000, "NTT", "JP", "peering@ntt.net"),
-    ("Telia Company", 1299, "transit", "selective", "active", 4500, 1500, "TELIANET", "SE", "peering@telia.net"),
-    ("Hurricane Electric", 6939, "public", "open", "active", 3000, 1000, "HENET", "US", "peering@he.net"),
-    ("GTT Communications", 3257, "transit", "selective", "evaluation", 4000, 1200, "GTT", "US", "peering@gtt.net"),
-    ("Cogent Communications", 174, "transit", "no", "suspended", 6000, 2500, "COGENT", "US", "peering@cogentco.com"),
-    ("Level 3 (Lumen)", 3356, "transit", "selective", "active", 7000, 3000, "LEVEL3", "US", "peering@level3.com"),
-    ("Orange", 5511, "customer", "selective", "active", 2000, 800, "ORANGE", "FR", "peering@orange.com"),
-    ("Deutsche Telekom", 3320, "customer", "selective", "active", 3500, 1200, "DTAG", "DE", "peering@telekom.de"),
-    ("RETN", 9002, "public", "open", "requested", 800, 400, "RETN", "GB", "peering@retn.net"),
-    ("Netflix", 2906, "public", "open", "active", 1200, 600, "NETFLIX", "US", "peering@netflix.com"),
+    (_PEER_IDS["peer-000"], "Akamai Technologies", 32787, "public", "open", "active", 1000, 500, "AKAMAI", "US", "noc@akamai.com"),
+    (_PEER_IDS["peer-001"], "Cloudflare Inc", 13335, "public", "open", "active", 2000, 1000, "CLOUDFLARE", "US", "peering@cloudflare.com"),
+    (_PEER_IDS["peer-002"], "NTT Communications", 2914, "transit", "selective", "active", 5000, 2000, "NTT", "JP", "peering@ntt.net"),
+    (_PEER_IDS["peer-003"], "Telia Company", 1299, "transit", "selective", "active", 4500, 1500, "TELIANET", "SE", "peering@telia.net"),
+    (_PEER_IDS["peer-004"], "Hurricane Electric", 6939, "public", "open", "active", 3000, 1000, "HENET", "US", "peering@he.net"),
+    (_PEER_IDS["peer-005"], "GTT Communications", 3257, "transit", "selective", "evaluation", 4000, 1200, "GTT", "US", "peering@gtt.net"),
+    (_PEER_IDS["peer-006"], "Cogent Communications", 174, "transit", "no", "suspended", 6000, 2500, "COGENT", "US", "peering@cogentco.com"),
+    (_PEER_IDS["peer-007"], "Level 3 (Lumen)", 3356, "transit", "selective", "active", 7000, 3000, "LEVEL3", "US", "peering@level3.com"),
+    (_PEER_IDS["peer-008"], "Orange", 5511, "customer", "selective", "active", 2000, 800, "ORANGE", "FR", "peering@orange.com"),
+    (_PEER_IDS["peer-009"], "Deutsche Telekom", 3320, "customer", "selective", "active", 3500, 1200, "DTAG", "DE", "peering@telekom.de"),
+    (_PEER_IDS["peer-010"], "RETN", 9002, "public", "open", "requested", 800, 400, "RETN", "GB", "peering@retn.net"),
+    (_PEER_IDS["peer-011"], "Netflix", 2906, "public", "open", "active", 1200, 600, "NETFLIX", "US", "peering@netflix.com"),
 ]
 
 _IX = [
-    ("Equinix Ashburn", "Ashburn", "US", "198.51.100.1", "2001:db8::1", 100.0, 8500.0, "active", 1, "198.51.100.254", "2001:db8::254"),
-    ("DE-CIX Frankfurt", "Frankfurt", "DE", "203.0.113.1", "2001:db8:de::1", 40.0, 3200.0, "active", 2, "203.0.113.254", "2001:db8:de::254"),
-    ("LINX London", "London", "GB", "192.0.2.1", "2001:db8:gb::1", 10.0, 4500.0, "active", 3, "192.0.2.254", "2001:db8:gb::254"),
-    ("AMS-IX", "Amsterdam", "NL", "198.51.100.129", "2001:db8:nl::1", 10.0, 2800.0, "active", 4, "198.51.100.253", "2001:db8:nl::254"),
-    ("JPIX Tokyo", "Tokyo", "JP", "203.0.113.129", "2001:db8:jp::1", 10.0, 1500.0, "active", 5, "203.0.113.253", "2001:db8:jp::254"),
-    ("Equinix Dallas", "Dallas", "US", "192.0.2.129", "2001:db8:us::1", 40.0, 6200.0, "pending", 6, "192.0.2.253", "2001:db8:us::254"),
+    (_IX_IDS["ix-000"], "Equinix Ashburn", "Ashburn", "US", "198.51.100.1", "2001:db8::1", 100.0, 8500.0, "active", 1, "198.51.100.254", "2001:db8::254"),
+    (_IX_IDS["ix-001"], "DE-CIX Frankfurt", "Frankfurt", "DE", "203.0.113.1", "2001:db8:de::1", 40.0, 3200.0, "active", 2, "203.0.113.254", "2001:db8:de::254"),
+    (_IX_IDS["ix-002"], "LINX London", "London", "GB", "192.0.2.1", "2001:db8:gb::1", 10.0, 4500.0, "active", 3, "192.0.2.254", "2001:db8:gb::254"),
+    (_IX_IDS["ix-003"], "AMS-IX", "Amsterdam", "NL", "198.51.100.129", "2001:db8:nl::1", 10.0, 2800.0, "active", 4, "198.51.100.253", "2001:db8:nl::254"),
+    (_IX_IDS["ix-004"], "JPIX Tokyo", "Tokyo", "JP", "203.0.113.129", "2001:db8:jp::1", 10.0, 1500.0, "active", 5, "203.0.113.253", "2001:db8:jp::254"),
+    (_IX_IDS["ix-005"], "Equinix Dallas", "Dallas", "US", "192.0.2.129", "2001:db8:us::1", 40.0, 6200.0, "pending", 6, "192.0.2.253", "2001:db8:us::254"),
 ]
 
 _PREFIXES = []
 for peer_idx, peer in enumerate(_PEERS):
-    peer_id = f"peer-{peer_idx:03d}"
-    v4_count = peer[5] // 500
-    v6_count = peer[6] // 500
+    peer_id = peer[0]
+    v4_count = peer[6] // 500
+    v6_count = peer[7] // 500
     for j in range(min(v4_count, 3)):
         _PREFIXES.append({
             "id": _uid(),
@@ -97,7 +101,7 @@ for peer_idx, peer in enumerate(_PEERS):
             "prefix": f"192.0.{peer_idx}.{j*64}/26",
             "address_family": "ipv4",
             "max_length": 28,
-            "origin_asn": peer[1],
+            "origin_asn": peer[2],
             "rpki_status": random.choice(["valid", "valid", "valid", "not-found", "unknown"]),
             "roa_found": True if random.random() > 0.2 else False,
             "irr_registered": True if random.random() > 0.3 else False,
@@ -111,10 +115,10 @@ for peer_idx, peer in enumerate(_PEERS):
             "prefix": f"2001:db8:{peer_idx:04x}::{j*4}/64",
             "address_family": "ipv6",
             "max_length": 68,
-            "origin_asn": peer[1],
+            "origin_asn": peer[2],
             "rpki_status": random.choice(["valid", "valid", "not-found", "unknown"]),
-            "roa_found": 1 if random.random() > 0.3 else 0,
-            "irr_registered": 1 if random.random() > 0.4 else 0,
+            "roa_found": True if random.random() > 0.3 else False,
+            "irr_registered": True if random.random() > 0.4 else False,
             "last_validated": _ts(peer_idx * 2 + j + 10),
             "classification": "CUI",
         })
@@ -125,10 +129,10 @@ for i in range(8):
     ix_idx = random.randint(0, len(_IX) - 1)
     _REQUESTS.append({
         "id": _uid(),
-        "peer_id": f"peer-{peer_idx:03d}",
+        "peer_id": _PEERS[peer_idx][0],
         "request_type": random.choice(["new", "new", "upgrade", "policy_change"]),
         "status": random.choice(["pending", "sent", "accepted", "rejected"]),
-        "ix_id": f"ix-{ix_idx:03d}",
+        "ix_id": _IX[ix_idx][0],
         "proposed_speed": random.choice(["1G", "10G", "40G", "100G"]),
         "contact_method": random.choice(["email", "peeringdb", "noc"]),
         "contact_address": "peering@example.com",
@@ -139,12 +143,12 @@ for i in range(8):
     })
 
 _POLICIES = [
-    ("IMPORT-PUBLIC-PEERS", 64512, "import", json.dumps({"asn": [13335, 32787, 6939, 2906]}), "accept", json.dumps({}), 100, 1),
-    ("IMPORT-TRANSIT", 64512, "import", json.dumps({"asn": [2914, 1299, 3257, 3356]}), "accept", json.dumps({"local_pref": 100}), 200, 1),
-    ("IMPORT-CUSTOMERS", 64512, "import", json.dumps({"asn": [5511, 3320]}), "accept", json.dumps({"local_pref": 200}), 50, 1),
-    ("EXPORT-PUBLIC", 64512, "export", json.dumps({"community": "64512:100"}), "accept", json.dumps({}), 100, 1),
-    ("EXPORT-TRANSIT", 64512, "export", json.dumps({"community": "64512:200"}), "accept", json.dumps({}), 200, 1),
-    ("REJECT-BOGONS", 64512, "import", json.dumps({"prefix_list": "bogons"}), "reject", json.dumps({}), 10, 1),
+    ("IMPORT-PUBLIC-PEERS", 64512, "import", json.dumps({"asn": [13335, 32787, 6939, 2906]}), "accept", json.dumps({}), 100, True),
+    ("IMPORT-TRANSIT", 64512, "import", json.dumps({"asn": [2914, 1299, 3257, 3356]}), "accept", json.dumps({"local_pref": 100}), 200, True),
+    ("IMPORT-CUSTOMERS", 64512, "import", json.dumps({"asn": [5511, 3320]}), "accept", json.dumps({"local_pref": 200}), 50, True),
+    ("EXPORT-PUBLIC", 64512, "export", json.dumps({"community": "64512:100"}), "accept", json.dumps({}), 100, True),
+    ("EXPORT-TRANSIT", 64512, "export", json.dumps({"community": "64512:200"}), "accept", json.dumps({}), 200, True),
+    ("REJECT-BOGONS", 64512, "import", json.dumps({"prefix_list": "bogons"}), "reject", json.dumps({}), 10, True),
 ]
 
 
@@ -155,11 +159,11 @@ def seed_peers(conn) -> int:
         noc_email, irr_as_set, rir, md5_password, multihop, notes, classification, created_at, updated_at
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
-    for i, row in enumerate(_PEERS):
+    for row in _PEERS:
         conn.execute(sql, (
-            f"peer-{i:03d}", row[1], row[0], row[2], row[3], row[4], None, _ts(i * 3),
-            row[5], row[6], 1000, 1000, random.uniform(0.5, 3.0), row[9], row[7], row[8], "", 1, "", "CUI",
-            _ts(i * 2), _ts(i * 2),
+            row[0], row[2], row[1], row[3], row[4], row[5], None, _ts(count * 3),
+            row[6], row[7], 1000, 1000, random.uniform(0.5, 3.0), row[10], row[8], row[9], "", 1, "", "CUI",
+            _ts(count * 2), _ts(count * 2),
         ))
         count += 1
     return count
@@ -171,10 +175,10 @@ def seed_ix(conn) -> int:
         peeringdb_ix_id, ixlan_id, routeserver_v4, routeserver_v6, classification, created_at, updated_at
     ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"""
     count = 0
-    for i, row in enumerate(_IX):
+    for row in _IX:
         conn.execute(sql, (
-            f"ix-{i:03d}", row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7],
-            row[8], row[8], row[9], row[10], "CUI", _ts(i * 4), _ts(i * 4),
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8],
+            row[9], row[9], row[10], row[11], "CUI", _ts(count * 4), _ts(count * 4),
         ))
         count += 1
     return count
