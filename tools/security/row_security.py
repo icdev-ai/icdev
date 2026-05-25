@@ -22,7 +22,6 @@ Public API:
 """
 
 import json
-import logging
 import re
 from typing import Any, Optional, Set, Tuple
 
@@ -40,6 +39,27 @@ _RE_SELECT = re.compile(r"^\s*SELECT\b", re.IGNORECASE)
 _RE_UPDATE = re.compile(r"^\s*UPDATE\b", re.IGNORECASE)
 _RE_DELETE = re.compile(r"^\s*DELETE\b", re.IGNORECASE)
 _RE_INSERT = re.compile(r"^\s*INSERT\b", re.IGNORECASE)
+_RE_JOIN = re.compile(r"\bJOIN\b", re.IGNORECASE)
+
+# Matches the primary table (and optional alias) in a FROM clause.
+# Negative lookahead excludes SQL keywords so "FROM foo JOIN bar" doesn't
+# capture "JOIN" as the alias of "foo".
+_SQL_KW = (
+    r"JOIN|WHERE|ON|GROUP|ORDER|LIMIT|HAVING|UNION|INNER|LEFT|RIGHT"
+    r"|FULL|CROSS|OUTER|NATURAL|SELECT|FROM|SET|AS"
+)
+_RE_FROM_TABLE = re.compile(
+    rf"\bFROM\s+(\w+)(?:\s+(?:AS\s+)?(?!(?:{_SQL_KW})\b)(\w+))?",
+    re.IGNORECASE,
+)
+
+
+def _primary_alias(sql: str) -> str | None:
+    """Return the alias (or table name) of the primary FROM table, or None."""
+    m = _RE_FROM_TABLE.search(sql)
+    if not m:
+        return None
+    return m.group(2) or m.group(1)
 
 
 def inject_row_predicate(
@@ -58,6 +78,15 @@ def inject_row_predicate(
     """
     extra_clauses: list[str] = []
     extra_params: list[Any] = []
+
+    # When the query joins multiple tables both columns must be qualified with
+    # the primary table's alias so PostgreSQL can resolve the reference
+    # unambiguously (AmbiguousColumn).
+    if _RE_JOIN.search(sql):
+        alias = _primary_alias(sql)
+        if alias:
+            tenant_column = f"{alias}.{tenant_column}"
+            classification_column = f"{alias}.{classification_column}"
 
     # Tenant predicate
     if tenant_id is not None:

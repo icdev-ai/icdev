@@ -5,7 +5,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from datetime import datetime, timezone
 
 from tools.db.storage import get_connection

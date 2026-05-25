@@ -13,7 +13,6 @@ writes directly into the knowledge graph for RAG retrieval.
 GREEN tier (non-destructive writes to KG tables).  Air-gap safe.
 """
 
-import logging
 import os
 import sys
 import uuid

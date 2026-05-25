@@ -13,7 +13,6 @@ No Flask dependency — takes graph dicts and returns strings,
 or takes XML/SVG strings and returns graph dicts.
 """
 
-import logging
 import math
 import re
 import uuid

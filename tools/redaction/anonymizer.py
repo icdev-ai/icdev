@@ -21,7 +21,6 @@ CLI:
 import argparse
 import hashlib
 import json
-import logging
 import sys
 import uuid
 from datetime import datetime, timezone

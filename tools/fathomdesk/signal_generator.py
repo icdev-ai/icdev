@@ -7,7 +7,6 @@ min_confidence and min_score before passing them downstream.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import math
 from pathlib import Path
 from typing import Any

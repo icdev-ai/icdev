@@ -7,7 +7,6 @@ Listens for PDC pipeline_deployed events and:
   1. Marks sc_threats entries stale for designs linked to the deployed pipeline.
   2. Queues the Genesis 'audit' reflex for the next daemon cycle.
 """
-import logging
 from datetime import datetime, timezone
 
 logger = get_logger("icdev.security_canvas.bus_subscriber")

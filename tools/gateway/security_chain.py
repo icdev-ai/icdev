@@ -24,7 +24,6 @@ Reuses existing modules:
     - tools.agent.authority       (domain authority vetoes)
 """
 
-import logging
 import os
 import sys
 import time

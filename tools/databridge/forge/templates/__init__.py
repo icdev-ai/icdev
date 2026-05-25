@@ -1,5 +1,4 @@
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Connector Forge Templates — inline Jinja2 connector skeletons (D-CF-3).
 

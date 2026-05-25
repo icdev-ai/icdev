@@ -8,7 +8,6 @@ then hands results to the judge for scoring.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 from datetime import datetime, timezone

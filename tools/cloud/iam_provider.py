@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-import logging
 
 logger = get_logger("icdev.cloud.iam")
 

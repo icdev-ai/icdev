@@ -15,7 +15,6 @@ All 8 required components per CLAUDE.md dashboard gate are present:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 
 from flask import Blueprint, jsonify, render_template, request as flask_request
 

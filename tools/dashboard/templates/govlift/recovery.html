@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Recovery — GovLift{% endblock %}
+{% block content %}
+<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:6px 12px;color:#86efac;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-align:center;margin-bottom:16px;">{{ classification }}</div>
+<a href="/govlift" style="color:#6ee7b7;text-decoration:none;font-size:.85rem;">← GovLift</a>
+<div style="background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:20px 26px;border-radius:10px;margin:16px 0 20px;">
+  <h1 style="margin:0;font-size:1.35rem;font-weight:700;color:#d1fae5;">Recovery &amp; Rollback</h1>
+  <p style="margin:4px 0 0;color:#6ee7b7;font-size:.83rem;">72-Hour SLA Rollback Events — NIST CA-7 Continuous Monitoring</p>
+</div>
+{% set s = data.summary %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px;text-align:center;">
+    <div style="font-size:1.7rem;font-weight:700;color:#d1fae5;">{{ s.get('total',0) }}</div>
+    <div style="font-size:.73rem;color:#64748b;margin-top:2px;">Total Events</div>
+  </div>
+  <div style="background:#1e293b;border:1px solid #f87171;border-radius:10px;padding:16px;text-align:center;">
+    <div style="font-size:1.7rem;font-weight:700;color:#f87171;">{{ s.get('active',0) }}</div>
+    <div style="font-size:.73rem;color:#64748b;margin-top:2px;">Active</div>
+  </div>
+  <div style="background:#1e293b;border:1px solid #10b981;border-radius:10px;padding:16px;text-align:center;">
+    <div style="font-size:1.7rem;font-weight:700;color:#10b981;">{{ s.get('completed',0) }}</div>
+    <div style="font-size:.73rem;color:#64748b;margin-top:2px;">Completed</div>
+  </div>
+  <div style="background:#1e293b;border:1px solid #60a5fa;border-radius:10px;padding:16px;text-align:center;">
+    <div style="font-size:1.7rem;font-weight:700;color:#60a5fa;">{{ s.get('sla_met_pct',0)|round(0)|int }}%</div>
+    <div style="font-size:.73rem;color:#64748b;margin-top:2px;">SLA Met</div>
+  </div>
+</div>
+<div style="background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;">
+    <thead><tr style="background:#0f172a;">
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">ID</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Status</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Reason</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">Initiated</th>
+      <th style="padding:10px 14px;text-align:left;color:#94a3b8;font-size:.73rem;text-transform:uppercase;">SLA</th>
+    </tr></thead>
+    <tbody>
+    {% for ev in data.events %}
+    <tr style="border-bottom:1px solid #1e293b;">
+      <td style="padding:10px 14px;color:#94a3b8;font-size:.78rem;">{{ ev.id[:12] }}…</td>
+      <td style="padding:10px 14px;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:.72rem;border:1px solid {% if ev.status=='completed' %}#10b981{% elif ev.status=='initiated' %}#fbbf24{% else %}#334155{% endif %};color:{% if ev.status=='completed' %}#10b981{% elif ev.status=='initiated' %}#fbbf24{% else %}#94a3b8{% endif %};">{{ ev.status }}</span>
+      </td>
+      <td style="padding:10px 14px;color:#94a3b8;font-size:.8rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ ev.reason or '—' }}</td>
+      <td style="padding:10px 14px;color:#64748b;font-size:.78rem;">{{ ev.initiated_at or 'N/A' }}</td>
+      <td style="padding:10px 14px;font-size:.78rem;color:{% if ev.sla_met %}#10b981{% else %}#f87171{% endif %};">{% if ev.sla_met is not none %}{% if ev.sla_met %}Met{% else %}Missed{% endif %}{% else %}—{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" style="padding:20px;text-align:center;color:#64748b;font-size:.83rem;">No rollback events.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

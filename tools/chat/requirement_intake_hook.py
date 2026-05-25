@@ -19,7 +19,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import hashlib
-import logging
 import re
 import time
 from datetime import datetime, timezone

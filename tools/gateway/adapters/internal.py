@@ -11,7 +11,6 @@ into CommandEnvelope objects.
 Decision D134: Air-gapped environments use internal chat + optional Mattermost.
 """
 
-import logging
 import sys
 from tools.db.storage import get_connection
 from pathlib import Path

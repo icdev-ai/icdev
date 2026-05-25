@@ -8,7 +8,6 @@ Moves forge connectors through the status state machine:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import sqlite3
 import uuid
 from tools.db.storage import get_connection

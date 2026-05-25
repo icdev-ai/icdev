@@ -39,7 +39,6 @@ Usage::
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import threading
 from datetime import datetime, timezone
 from functools import wraps

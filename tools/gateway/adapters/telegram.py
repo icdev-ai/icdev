@@ -17,7 +17,6 @@ Decision D134: Disabled in air-gapped environments (requires_internet: true).
 
 import hmac
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone

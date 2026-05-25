@@ -222,10 +222,16 @@ def get_migration_summary() -> dict:
                     pass
 
             avg_duration_sec = (sum(durations) / len(durations)) if durations else None
+            avg_duration_h = avg_duration_sec / 3600 if avg_duration_sec else None
 
             return {
                 "total": total,
+                "pending": by_status.get("pending", 0),
+                "running": by_status.get("running", 0),
+                "completed": by_status.get("completed", 0),
+                "failed": by_status.get("failed", 0),
                 "by_status": by_status,
+                "avg_duration_h": avg_duration_h,
                 "avg_duration_seconds": avg_duration_sec,
             }
         finally:

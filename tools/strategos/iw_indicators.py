@@ -11,7 +11,6 @@ This module covers classical J2 I&W: indicator → COA probability mapping.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone

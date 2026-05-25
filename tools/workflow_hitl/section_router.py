@@ -11,7 +11,6 @@ from tools.logging.icdev_logger import get_logger
 
 import dataclasses
 import json
-import logging
 from typing import List, Optional
 
 from tools.workflow_hitl.report_schema import ReportSection

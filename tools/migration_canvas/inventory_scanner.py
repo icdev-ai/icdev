@@ -22,7 +22,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import csv
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

@@ -9,7 +9,6 @@ back to the log so signal_scout can observe the drift on the next cycle.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

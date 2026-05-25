@@ -35,7 +35,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import hashlib
 import json
-import logging
 import sqlite3
 import sys
 from collections import defaultdict, deque

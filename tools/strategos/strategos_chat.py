@@ -15,7 +15,6 @@ Usage:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from tools.db.storage import get_connection, is_pg

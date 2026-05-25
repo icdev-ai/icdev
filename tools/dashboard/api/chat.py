@@ -522,7 +522,6 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
     Best-effort: logs warnings on failure but never raises.
     Returns list of validated artifact dicts (canvas, type, name, instance_id).
     """
-    import logging
     import uuid
     from datetime import datetime, timezone
     from tools.db.storage import get_connection as _gc

@@ -29,6 +29,8 @@ from tools.govlift.constants import (
     CHECK_RISK_LEVEL,
     CHECK_INTEGRATION_SYS,
     CHECK_ROLLBACK_STATUS,
+    CHECK_MARKETPLACE_STATUS,
+    CHECK_RUNBOOK_CATEGORY,
 )
 
 # ---------------------------------------------------------------------------
@@ -225,6 +227,43 @@ _SCHEMA_STATEMENTS = [
 
     "CREATE INDEX IF NOT EXISTS idx_govlift_scr_vendor ON govlift_supply_chain_risks(vendor_name)",
     "CREATE INDEX IF NOT EXISTS idx_govlift_scr_risk ON govlift_supply_chain_risks(risk_level)",
+
+    # ── Runbook Templates ────────────────────────────────────────────────────
+    f"""CREATE TABLE IF NOT EXISTS govlift_runbook_templates (
+        id              TEXT PRIMARY KEY,
+        name            TEXT NOT NULL,
+        category        TEXT DEFAULT ''
+                            CHECK ({CHECK_RUNBOOK_CATEGORY}),
+        description     TEXT DEFAULT '',
+        workload_type   TEXT DEFAULT 'web_app',
+        author          TEXT DEFAULT '',
+        steps_json      TEXT DEFAULT '[]',
+        created_at      TEXT DEFAULT (datetime('now'))
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rbt_category ON govlift_runbook_templates(category)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rbt_author ON govlift_runbook_templates(author)",
+
+    # ── Marketplace Items ────────────────────────────────────────────────────
+    f"""CREATE TABLE IF NOT EXISTS govlift_marketplace_items (
+        id              TEXT PRIMARY KEY,
+        template_id     TEXT NOT NULL
+                            REFERENCES govlift_runbook_templates(id),
+        title           TEXT NOT NULL,
+        author          TEXT NOT NULL,
+        description     TEXT DEFAULT '',
+        status          TEXT DEFAULT 'submitted'
+                            CHECK ({CHECK_MARKETPLACE_STATUS}),
+        reviewed_by     TEXT DEFAULT '',
+        review_notes    TEXT DEFAULT '',
+        published_at    TEXT,
+        downloads       INTEGER DEFAULT 0,
+        created_at      TEXT DEFAULT (datetime('now'))
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_mp_status ON govlift_marketplace_items(status)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_mp_author ON govlift_marketplace_items(author)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_mp_template ON govlift_marketplace_items(template_id)",
 ]
 
 

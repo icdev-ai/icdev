@@ -27,7 +27,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import enum
 import json
-import logging
 import os
 import shutil
 import subprocess

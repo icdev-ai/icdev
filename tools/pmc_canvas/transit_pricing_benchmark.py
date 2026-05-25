@@ -22,7 +22,6 @@ from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 

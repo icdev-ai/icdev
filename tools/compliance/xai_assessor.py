@@ -24,7 +24,6 @@ CLI:
     python tools/compliance/xai_assessor.py --project-id proj-123 --gate
 """
 
-import logging
 import sqlite3
 from tools.db.storage import get_connection
 from datetime import datetime, timedelta, timezone

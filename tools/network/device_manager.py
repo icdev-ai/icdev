@@ -18,7 +18,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import csv
 import json
-import logging
 import sys
 import uuid
 from collections import defaultdict

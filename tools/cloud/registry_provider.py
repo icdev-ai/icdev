@@ -9,7 +9,6 @@ Pattern: tools/llm/provider.py (D66 provider ABC).
 Each implementation ~40-60 lines with try/except ImportError.
 """
 
-import logging
 import os
 from tools.db.storage import get_connection
 from abc import ABC, abstractmethod

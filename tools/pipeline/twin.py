@@ -17,7 +17,6 @@ get_simulation(sim_id) -> dict | None
 """
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 

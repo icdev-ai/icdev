@@ -8,7 +8,6 @@ Feature flag: ICDEV_MISSION_CANVAS_ENABLED.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 from functools import wraps
 from pathlib import Path

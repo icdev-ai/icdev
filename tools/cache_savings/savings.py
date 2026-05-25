@@ -9,7 +9,6 @@ Two-level cache cost model:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import Any
 
 log = get_logger("icdev.cache_savings.savings")

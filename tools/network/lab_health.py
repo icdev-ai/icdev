@@ -15,7 +15,6 @@ Cross-platform: stdlib only (yaml is already a project dep per requirements.txt)
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import socket
 import time
 from datetime import datetime, timezone

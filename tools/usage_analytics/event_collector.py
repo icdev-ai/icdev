@@ -4,7 +4,6 @@ from tools.logging.icdev_logger import get_logger
 """Usage analytics: event collection and Flask middleware for dashboard routes."""
 
 import hashlib
-import logging
 import time
 import uuid
 from datetime import datetime, timezone

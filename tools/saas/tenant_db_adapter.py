@@ -26,7 +26,6 @@ Usage:
 """
 
 import inspect
-import logging
 import os
 import sqlite3
 import sys

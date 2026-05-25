@@ -21,7 +21,6 @@ Register in app.py:
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request

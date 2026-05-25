@@ -19,7 +19,7 @@
 .back-link:hover{color:#34d399;}
 .gl-table{width:100%;border-collapse:collapse;}
 .gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
-.gl-table tbody tr{border-bottom:1px solid #1e293b;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
 .gl-table tbody tr:hover{background:#1a2540;}
 .gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
 .gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
@@ -147,7 +147,7 @@
     <tbody id="workloads-tbody">
       {% if data.workloads %}
         {% for w in data.workloads %}
-        <tr>
+        <tr onclick="window.location='/govlift/workloads/{{ w.id }}'">
           <td style="color:#64748b;font-size:.75rem;">{{ w.get('id', '') }}</td>
           <td style="font-weight:600;">{{ w.get('name', '') }}</td>
           <td>{{ w.get('workload_type', '') }}</td>
@@ -224,7 +224,7 @@ function applyFilters() {
         const statusMap = {migrated:'bg-success',in_migration:'bg-warning text-dark',failed:'bg-danger',assessed:'bg-info',wave_assigned:'bg-primary',discovered:'bg-secondary'};
         const rCls = riskMap[w.risk_level] || 'bg-secondary';
         const sCls = statusMap[w.migration_status] || 'bg-secondary';
-        return `<tr>
+        return `<tr onclick="window.location='/govlift/workloads/${w.id}'">
           <td style="color:#64748b;font-size:.75rem;">${w.id||''}</td>
           <td style="font-weight:600;">${w.name||''}</td>
           <td>${w.workload_type||''}</td>

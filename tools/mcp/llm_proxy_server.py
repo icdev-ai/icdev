@@ -28,7 +28,6 @@ Goose config.yaml entry:
       timeout: 120
 """
 
-import logging
 import sys
 from pathlib import Path
 

@@ -11,7 +11,6 @@ Canonical output schema matches mc_srv_inventory columns.
 """
 
 import json
-import logging
 import socket
 import ssl
 import urllib.error

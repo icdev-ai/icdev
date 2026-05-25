@@ -20,7 +20,6 @@ Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
 
-import logging
 
 logger = get_logger("icdev.extensions.rag_context_chat")
 

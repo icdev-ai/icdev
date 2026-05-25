@@ -39,7 +39,6 @@ Usage:
 
 import hashlib
 import json as json_mod
-import logging
 import os
 import secrets
 import sys

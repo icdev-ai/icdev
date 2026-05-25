@@ -12,7 +12,6 @@ Scanner-tier only (zero Claude tokens).
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone

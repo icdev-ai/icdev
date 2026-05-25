@@ -31,7 +31,6 @@ Usage:
 
 import argparse
 import json
-import logging
 import sqlite3
 import sys
 from tools.db.storage import get_connection

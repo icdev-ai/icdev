@@ -15,7 +15,6 @@ Exports:
     EXTENSION_HOOKS — dict mapping hook point names to handler metadata.
 """
 
-import logging
 import sqlite3
 from tools.db.storage import get_connection
 from pathlib import Path

@@ -21,7 +21,6 @@ predates when that migration was committed — not an intentional skip.
 import hashlib
 import importlib.util
 import json
-import logging
 import re
 import sqlite3
 import sys

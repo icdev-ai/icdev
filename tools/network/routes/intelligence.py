@@ -8,7 +8,6 @@ Provides 16 endpoints for diagram ingestion, device management,
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import tempfile
 import uuid
 from pathlib import Path

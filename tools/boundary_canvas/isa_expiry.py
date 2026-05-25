@@ -12,7 +12,6 @@ Returns a summary dict: isas_checked, events_published, notifications_sent, dry_
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict
 

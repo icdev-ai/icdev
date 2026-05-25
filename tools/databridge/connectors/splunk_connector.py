@@ -20,7 +20,6 @@ from tools.logging.icdev_logger import get_logger
 
 import base64
 import json
-import logging
 import time
 from typing import Any, Dict, List
 from urllib.error import HTTPError

@@ -27,7 +27,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import hashlib
 import json
-import logging
 import math
 import sqlite3
 import struct

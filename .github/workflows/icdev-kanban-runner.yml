@@ -16,15 +16,23 @@ on:
         description: "Task type (feature, bug, chore, test, review, commit, status, monitor, maintain, secure, deploy, build, fix, research)"
         required: true
         type: string
+      llm_provider:
+        description: "LLM provider (ollama | claude | openai)"
+        required: false
+        default: "ollama"
+        type: string
 
 env:
   PYTHONPATH: "."
   ICDEV_STORAGE_BACKEND: sqlite
+  LLM_PROVIDER: ${{ github.event.inputs.llm_provider || 'ollama' }}
+  OLLAMA_BASE_URL: "http://localhost:11434"
+  OLLAMA_MODEL: ${{ secrets.OLLAMA_MODEL || 'qwen2.5:7b' }}
 
 jobs:
   run:
     name: Execute Kanban Task
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -32,10 +40,18 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install -r requirements.txt 2>/dev/null || true
           pip install flask pyyaml requests
+
+      - name: Install Ollama (GitHub-hosted runners only)
+        if: vars.RUNNER_LABEL == '' || vars.RUNNER_LABEL == 'ubuntu-latest'
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          sleep 5
+          ollama pull "$OLLAMA_MODEL"
 
       - name: ANVIL — Execute Task
         run: |

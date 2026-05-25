@@ -12,7 +12,6 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-import logging
 
 logger = get_logger("icdev.wave_planner")
 

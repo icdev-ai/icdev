@@ -10,7 +10,6 @@ Registers at /api/sre/* in the ICDEV dashboard.
 """
 
 import json
-import logging
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request
 from tools.common.helpers import now_isoformat

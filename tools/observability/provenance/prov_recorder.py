@@ -22,7 +22,6 @@ Usage:
 
 import hashlib
 import json
-import logging
 import os
 import sqlite3
 import uuid

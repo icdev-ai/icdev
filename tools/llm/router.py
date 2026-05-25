@@ -11,7 +11,6 @@ from tools.logging.icdev_logger import get_logger
 
 import copy
 import json
-import logging
 import os
 import re
 import time

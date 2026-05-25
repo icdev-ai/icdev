@@ -9,7 +9,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import hashlib
-import logging
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional

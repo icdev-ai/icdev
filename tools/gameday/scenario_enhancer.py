@@ -11,7 +11,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 
 from .constants import DEFAULT_AGENT_MODEL, OLLAMA_BASE_URL

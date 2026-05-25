@@ -39,7 +39,7 @@
 
 <!-- Actions -->
 <div style="margin: 16px 0; display: flex; gap: 8px;">
-    <button class="btn btn-primary" onclick="ICDEV™.proposals.openModal('create-opp-modal')">+ New Opportunity</button>
+    <button class="btn btn-primary" onclick="openOppModal()">+ New Opportunity</button>
 </div>
 
 <!-- Opportunity Table -->
@@ -91,9 +91,9 @@
     <div class="modal-content">
         <div class="modal-header">
             <h2>New Opportunity</h2>
-            <button class="modal-close" onclick="ICDEV™.proposals.closeModal('create-opp-modal')">&times;</button>
+            <button class="modal-close" onclick="closeOppModal()">&times;</button>
         </div>
-        <form id="create-opp-form" onsubmit="return ICDEV™.proposals.submitOppForm(event)">
+        <form id="create-opp-form" onsubmit="return submitOppForm(event)">
             <div class="form-grid">
                 <div class="form-group">
                     <label>Solicitation Number *</label>
@@ -109,7 +109,7 @@
                 </div>
                 <div class="form-group">
                     <label>Sub-Agency</label>
-                    <input type="text" name="sub_agency" placeholder="e.g., PEO IEW&S">
+                    <input type="text" name="sub_agency" placeholder="e.g., PEO IEW&amp;S">
                 </div>
                 <div class="form-group">
                     <label>Due Date *</label>
@@ -119,7 +119,7 @@
                     <label>Proposal Type *</label>
                     <select name="proposal_type" required>
                         <option value="FFP">FFP — Firm Fixed Price</option>
-                        <option value="T_AND_M">T&M — Time & Materials</option>
+                        <option value="T_AND_M">T&amp;M — Time &amp; Materials</option>
                         <option value="CPFF">CPFF — Cost Plus Fixed Fee</option>
                         <option value="CPIF">CPIF — Cost Plus Incentive Fee</option>
                         <option value="IDIQ_TO">IDIQ TO — Task Order</option>
@@ -131,7 +131,7 @@
                     <label>Set-Aside</label>
                     <select name="set_aside_type">
                         <option value="">None</option>
-                        <option value="full_open">Full & Open</option>
+                        <option value="full_open">Full &amp; Open</option>
                         <option value="small_business">Small Business</option>
                         <option value="8a">8(a)</option>
                         <option value="hubzone">HUBZone</option>
@@ -155,7 +155,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" onclick="ICDEV™.proposals.closeModal('create-opp-modal')">Cancel</button>
+                <button type="button" class="btn btn-secondary" onclick="closeOppModal()">Cancel</button>
                 <button type="submit" class="btn btn-primary">Create Opportunity</button>
             </div>
         </form>
@@ -178,4 +178,49 @@
 .text-warning { color: var(--status-yellow, #ffc107) !important; }
 @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } }
 </style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function openOppModal() {
+    document.getElementById('create-opp-modal').style.display = 'flex';
+}
+function closeOppModal() {
+    document.getElementById('create-opp-modal').style.display = 'none';
+    document.getElementById('create-opp-form').reset();
+}
+function submitOppForm(event) {
+    event.preventDefault();
+    var form = event.target;
+    var data = {};
+    new FormData(form).forEach(function(v, k) { data[k] = v; });
+    var btn = form.querySelector('button[type=submit]');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    fetch('/api/proposals/opportunities', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+        if (resp.id) {
+            window.location.href = '/proposals/' + resp.id;
+        } else {
+            alert('Error: ' + (resp.error || JSON.stringify(resp)));
+            btn.disabled = false;
+            btn.textContent = 'Create Opportunity';
+        }
+    })
+    .catch(function(err) {
+        alert('Request failed: ' + err);
+        btn.disabled = false;
+        btn.textContent = 'Create Opportunity';
+    });
+    return false;
+}
+document.getElementById('create-opp-modal').addEventListener('click', function(e) {
+    if (e.target === this) { closeOppModal(); }
+});
+</script>
 {% endblock %}

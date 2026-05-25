@@ -12,7 +12,6 @@ Scanner-tier only (zero Claude tokens).  Air-gap safe.
 """
 
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone

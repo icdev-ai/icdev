@@ -7,7 +7,6 @@ IL5 SLA timeout enforcement for the ingestion and display pipeline.
 
 Raises TimeoutError if the combined ingestion + display pipeline exceeds 30 seconds.
 """
-import logging
 import time
 from contextlib import contextmanager
 

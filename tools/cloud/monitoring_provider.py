@@ -10,7 +10,6 @@ Each implementation ~40-60 lines with try/except ImportError.
 """
 
 import json
-import logging
 import os
 from tools.db.storage import get_connection
 from abc import ABC, abstractmethod

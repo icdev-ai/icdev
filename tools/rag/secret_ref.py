@@ -16,7 +16,6 @@ Integrates with tools/cloud/provider_factory.py for cloud secret backends.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import os
 from pathlib import Path
 

@@ -13,7 +13,6 @@ CLI: --check-all, --check-service <name>, --history [--hours N], --json
 
 import argparse
 import json
-import logging
 import sys
 import time
 import uuid

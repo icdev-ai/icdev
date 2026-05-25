@@ -14,7 +14,6 @@ Uses LLM router with function='rag_rerank' (scanner_function category).
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from typing import List, Optional
 
 from tools.rag.vector_store_provider import SearchResult

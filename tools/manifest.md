@@ -821,3 +821,10 @@
 | Seed Dewie Demo | tools\ndc\seed_dewie_demo.py | Auto-registered: ndc/seed_dewie_demo.py | --json | JSON |
 | Isso Gate | tools\sdc\isso_gate.py | Auto-registered: sdc/isso_gate.py | --json | JSON |
 | Sdc Demo | tools\iqe\adapters\sdc_demo.py | Auto-registered: adapters/sdc_demo.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Version Anomaly Detector | tools\ai_augmentation\version_anomaly_detector.py | Auto-registered: ai_augmentation/version_anomaly_detector.py | --json | JSON |
+| Migrate To Icdev Logger | tools\refactor\migrate_to_icdev_logger.py | Auto-registered: refactor/migrate_to_icdev_logger.py | --json | JSON |

@@ -113,6 +113,64 @@ def create_govlift_blueprint() -> Blueprint:
         }
         return render_template("govlift/audit.html", data=data, classification=_CLS)
 
+    @bp.route("/govlift/workloads/<workload_id>")
+    def govlift_workload_detail(workload_id):
+        from tools.govlift.workload_scanner import get_workload
+        from tools.govlift.migration_executor import list_migrations
+        from tools.govlift.stig_checker import list_stig_checks
+        from tools.govlift.wave_planner import get_wave
+        wl = get_workload(workload_id) or {}
+        wave = None
+        if wl.get("wave_id"):
+            wave = get_wave(wl["wave_id"])
+        data = {
+            "workload": wl,
+            "wave": wave,
+            "migrations": list_migrations(workload_id=workload_id, limit=20),
+            "stig_checks": list_stig_checks(workload_id=workload_id, limit=50),
+        }
+        return render_template("govlift/workload_detail.html", data=data, classification=_CLS)
+
+    @bp.route("/govlift/waves/<wave_id>")
+    def govlift_wave_detail(wave_id):
+        from tools.govlift.wave_planner import get_wave
+        from tools.govlift.workload_scanner import list_workloads
+        from tools.govlift.migration_executor import list_migrations
+        wave = get_wave(wave_id) or {}
+        data = {
+            "wave": wave,
+            "workloads": list_workloads(wave_id=wave_id, limit=100),
+            "migrations": list_migrations(wave_id=wave_id, limit=50),
+        }
+        return render_template("govlift/wave_detail.html", data=data, classification=_CLS)
+
+    @bp.route("/govlift/migrations/<migration_id>")
+    def govlift_migration_detail(migration_id):
+        from tools.govlift.migration_executor import get_migration
+        from tools.govlift.workload_scanner import get_workload
+        from tools.govlift.wave_planner import get_wave
+        mig = get_migration(migration_id) or {}
+        wl = get_workload(mig.get("workload_id")) if mig.get("workload_id") else None
+        wave = get_wave(mig.get("wave_id")) if mig.get("wave_id") else None
+        data = {
+            "migration": mig,
+            "workload": wl,
+            "wave": wave,
+        }
+        return render_template("govlift/migration_detail.html", data=data, classification=_CLS)
+
+    @bp.route("/govlift/stig/<check_id>")
+    def govlift_stig_detail(check_id):
+        from tools.govlift.stig_checker import get_stig_check
+        from tools.govlift.workload_scanner import get_workload
+        chk = get_stig_check(check_id) or {}
+        wl = get_workload(chk.get("workload_id")) if chk.get("workload_id") else None
+        data = {
+            "check": chk,
+            "workload": wl,
+        }
+        return render_template("govlift/stig_detail.html", data=data, classification=_CLS)
+
     # ── JSON API ─────────────────────────────────────────────────────────────
 
     @bp.route("/api/govlift/overview")

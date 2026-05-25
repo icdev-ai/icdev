@@ -8,7 +8,6 @@ Manages per-tenant PostgreSQL connection pools. Each tenant gets its own pool
 to ensure connection isolation and efficient reuse.
 """
 
-import logging
 import os
 import sys
 import threading

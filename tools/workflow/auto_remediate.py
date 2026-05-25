@@ -16,7 +16,6 @@ re-run still fails, the task goes to backlog with an annotated reason.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 import re
 import subprocess
 from pathlib import Path

@@ -42,7 +42,6 @@ from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json
-import logging
 import sys
 import time
 from pathlib import Path

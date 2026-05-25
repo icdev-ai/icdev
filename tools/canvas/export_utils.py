@@ -13,7 +13,6 @@ from tools.logging.icdev_logger import get_logger
 import csv
 import io
 import json
-import logging
 import xml.etree.ElementTree as ET
 
 logger = get_logger("icdev.canvas.export_utils")

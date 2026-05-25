@@ -31,7 +31,6 @@ Decision D67: OpenAI-compatible covers Ollama, vLLM, Azure.
 Decision D68: Function-level LLM routing (not agent-level).
 """
 
-import logging
 from typing import List
 
 # Re-export core types

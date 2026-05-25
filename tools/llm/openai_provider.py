@@ -14,7 +14,6 @@ Uses the openai Python SDK with configurable base_url.
 """
 
 import json
-import logging
 import time
 from typing import Any, Dict, Iterator
 

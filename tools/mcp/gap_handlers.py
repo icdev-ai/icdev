@@ -15,7 +15,6 @@ Organized by category matching the tool_registry.py categories.
 """
 
 import json
-import logging
 import os
 import subprocess
 import sys

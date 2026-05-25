@@ -16,7 +16,6 @@ Usage:
     compressed = compressor.compress(messages, budget_tokens=4000)
 """
 
-import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime

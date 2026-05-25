@@ -8,7 +8,6 @@ Clients poll for changes via /api/collab/poll endpoint.
 No WebSocket dependency — works in air-gapped/CUI environments.
 """
 
-import logging
 import threading
 import uuid as _uuid
 from datetime import datetime, timezone

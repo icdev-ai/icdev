@@ -10,7 +10,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import dataclasses
-import logging
 import os
 
 from flask import Blueprint, request, jsonify

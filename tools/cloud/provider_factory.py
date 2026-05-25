@@ -11,7 +11,6 @@ Pattern: tools/llm/router.py (config-driven, lazy instantiation, fallback).
 ADRs: D223, D224, D225.
 """
 
-import logging
 import os
 import re
 from pathlib import Path

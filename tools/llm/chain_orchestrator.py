@@ -19,7 +19,6 @@ from tools.logging.icdev_logger import get_logger
 import argparse
 import copy
 import json
-import logging
 import sys
 import time
 import uuid

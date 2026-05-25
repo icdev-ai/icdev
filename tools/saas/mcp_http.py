@@ -34,7 +34,6 @@ Usage:
 """
 
 import json
-import logging
 import os
 import queue
 import secrets

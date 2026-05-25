@@ -29,7 +29,6 @@ Usage:
 import argparse
 import ipaddress
 import json
-import logging
 import subprocess
 import sys
 import uuid as _uuid

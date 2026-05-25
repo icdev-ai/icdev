@@ -10,7 +10,6 @@ Fires on a configurable cadence (default: daily at 08:00).
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from datetime import datetime, timezone
 
 log = get_logger(__name__)

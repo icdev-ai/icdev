@@ -33,7 +33,6 @@ Usage:
 
 import abc
 import functools
-import logging
 import sys
 import threading
 import time

@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Runbook Detail — GovLift{% endblock %}
+{% block content %}
+<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:6px 12px;color:#86efac;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-align:center;margin-bottom:16px;">{{ classification }}</div>
+<a href="/govlift/runbooks" style="color:#6ee7b7;text-decoration:none;font-size:.85rem;">← Runbooks</a>
+<div style="background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:20px 26px;border-radius:10px;margin:16px 0 20px;">
+  <h1 style="margin:0;font-size:1.35rem;font-weight:700;color:#d1fae5;">{{ data.runbook.name or 'Runbook Detail' }}</h1>
+  <p style="margin:4px 0 0;color:#6ee7b7;font-size:.83rem;">{{ data.runbook.description or 'DoD IL4 Migration Runbook' }}</p>
+</div>
+{% if data.runbook %}
+<a href="/govlift/runbooks/{{ data.runbook.id }}/execute" style="display:inline-block;background:#10b981;color:#fff;padding:8px 20px;border-radius:6px;text-decoration:none;font-size:.85rem;font-weight:600;margin-bottom:20px;">Execute Runbook</a>
+{% endif %}
+<h3 style="color:#d1fae5;font-size:1rem;margin-bottom:12px;">Steps ({{ data.steps|length }})</h3>
+{% for step in data.steps %}
+<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:14px 18px;margin-bottom:10px;display:flex;gap:14px;align-items:flex-start;">
+  <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:4px 10px;color:#94a3b8;font-size:.78rem;font-weight:700;white-space:nowrap;">{{ step.step_order }}</div>
+  <div>
+    <div style="color:#e2e8f0;font-size:.88rem;font-weight:600;">{{ step.title }}</div>
+    {% if step.description %}<div style="color:#94a3b8;font-size:.8rem;margin-top:4px;">{{ step.description }}</div>{% endif %}
+  </div>
+</div>
+{% else %}
+<p style="color:#64748b;font-size:.83rem;">No steps defined.</p>
+{% endfor %}
+<h3 style="color:#d1fae5;font-size:1rem;margin:20px 0 12px;">Recent Executions</h3>
+{% for ex in data.executions %}
+<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:12px 16px;margin-bottom:8px;font-size:.82rem;color:#94a3b8;">
+  <span style="color:#e2e8f0;">{{ ex.operator or 'system' }}</span> — {{ ex.status }} — {{ ex.started_at or 'N/A' }}
+</div>
+{% else %}
+<p style="color:#64748b;font-size:.83rem;">No executions yet.</p>
+{% endfor %}
+{% endblock %}

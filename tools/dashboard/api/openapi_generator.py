@@ -72,7 +72,6 @@ from tools.logging.icdev_logger import get_logger
 import ast
 import copy
 import inspect
-import logging
 import re
 import textwrap
 import urllib.parse

@@ -22,7 +22,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 import os
 from datetime import datetime, timezone, timedelta
 from pathlib import Path

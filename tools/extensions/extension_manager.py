@@ -34,7 +34,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import importlib.util
-import logging
 import threading
 import time
 from dataclasses import dataclass

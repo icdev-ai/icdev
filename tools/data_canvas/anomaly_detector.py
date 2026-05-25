@@ -10,7 +10,6 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
-import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime, timezone
 

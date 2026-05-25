@@ -15,7 +15,6 @@ CLI: python tools/builder/scaffolder.py --project-path PATH --name "my-app" --ty
 """
 
 from __future__ import annotations
-from tools.logging.icdev_logger import get_logger
 
 import argparse
 import json

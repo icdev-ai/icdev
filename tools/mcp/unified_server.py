@@ -28,7 +28,6 @@ Architecture Decision D301:
 
 import importlib
 import json
-import logging
 import os
 import sys
 from pathlib import Path

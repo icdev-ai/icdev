@@ -17,14 +17,14 @@
 .filter-btn:hover{background:#059669;}
 .back-link{color:#6ee7b7;text-decoration:none;font-size:.85rem;}
 .back-link:hover{color:#34d399;}
-.wave-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:14px;transition:border-color .15s;}
+.wave-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:14px;transition:border-color .15s;cursor:pointer;}
 .wave-card:hover{border-color:#10b981;}
 .wave-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
 .wave-seq{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 14px;font-size:1rem;font-weight:700;color:#6ee7b7;min-width:44px;text-align:center;}
 .wave-meta{font-size:.78rem;color:#64748b;margin-top:6px;}
 .gl-table{width:100%;border-collapse:collapse;}
 .gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
-.gl-table tbody tr{border-bottom:1px solid #1e293b;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
 .gl-table tbody tr:hover{background:#1a2540;}
 .gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
 .gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
@@ -97,7 +97,7 @@
 <div id="waves-cards-view">
   {% if data.waves %}
     {% for wave in data.waves %}
-    <div class="wave-card">
+    <div class="wave-card" onclick="window.location='/govlift/waves/{{ wave.id }}'">
       <div class="wave-card-header">
         <div style="display:flex;align-items:flex-start;gap:14px;">
           <div class="wave-seq">W{{ wave.get('sequence_num', '?') }}</div>
@@ -151,7 +151,7 @@
       <tbody id="waves-tbody">
         {% if data.waves %}
           {% for wave in data.waves %}
-          <tr>
+          <tr onclick="window.location='/govlift/waves/{{ wave.id }}'">
             <td style="font-weight:700;color:#6ee7b7;">W{{ wave.get('sequence_num', '?') }}</td>
             <td style="font-weight:600;">{{ wave.get('name', '') }}</td>
             <td>
@@ -203,7 +203,7 @@ function applyWaveFilters() {
       const cardsEl = document.getElementById('waves-cards-view');
       cardsEl.innerHTML = waves.length ? waves.map(w => {
         const sCls = statusMap[w.status] || 'bg-primary';
-        return `<div class="wave-card">
+        return `<div class="wave-card" onclick="window.location='/govlift/waves/${w.id}'">
           <div class="wave-card-header">
             <div style="display:flex;align-items:flex-start;gap:14px;">
               <div class="wave-seq">W${w.sequence_num||'?'}</div>
@@ -224,7 +224,7 @@ function applyWaveFilters() {
       const tbody = document.getElementById('waves-tbody');
       tbody.innerHTML = waves.length ? waves.map(w => {
         const sCls = statusMap[w.status] || 'bg-primary';
-        return `<tr>
+        return `<tr onclick="window.location='/govlift/waves/${w.id}'">
           <td style="font-weight:700;color:#6ee7b7;">W${w.sequence_num||'?'}</td>
           <td style="font-weight:600;">${w.name||''}</td>
           <td><span class="badge ${sCls}">${w.status||'planned'}</span></td>

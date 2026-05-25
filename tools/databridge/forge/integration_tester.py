@@ -8,7 +8,6 @@ Writes results to db_forge_validations as 'integration' stage.
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional

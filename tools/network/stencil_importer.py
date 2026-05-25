@@ -19,7 +19,6 @@ from tools.logging.icdev_logger import get_logger
 import base64
 import io
 import json
-import logging
 import re
 import uuid
 import zipfile

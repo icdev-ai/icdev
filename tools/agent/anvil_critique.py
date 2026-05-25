@@ -24,7 +24,6 @@ CLI:
 import argparse
 import hashlib
 import json
-import logging
 import sqlite3
 import sys
 import uuid

@@ -7,7 +7,6 @@ Supports: WSDL auto-parse, WS-Security, XSD schema inference.
 Concrete connectors override: _wsdl_url(), _operation_name(), connector_name.
 """
 
-import logging
 import time
 from abc import abstractmethod
 from typing import Any, Dict, List
